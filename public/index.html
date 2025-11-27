@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>React WebGPU App</title>
+  </head>
+  <script>
+  // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, options) {
+    if (type === 'webgl' || type === 'webgl2') {
+      options = options || {};
+      options.preserveDrawingBuffer = true;
+    }
+    return originalGetContext.call(this, type, options);
+  };
+</script>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

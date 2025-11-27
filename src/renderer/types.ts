@@ -1,0 +1,2 @@
+export type RenderMode = 
+  'streetview';
