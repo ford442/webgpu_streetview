@@ -40,7 +40,11 @@ function App() {
         const links = panorama.getLinks();
         if (!links) return;
 
-        const bestLink = findBestLink(links.filter(link => link !== null), heading, direction);
+        const bestLink = findBestLink(
+            links.filter((link): link is google.maps.StreetViewLink => link !== null),
+            heading,
+            direction
+        );
         if (bestLink && bestLink.pano) {
             panorama.setPano(bestLink.pano);
         }
