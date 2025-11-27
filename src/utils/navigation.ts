@@ -27,7 +27,7 @@ export function findBestLink(
     let smallestAngleDiff = Infinity;
 
     for (const link of links) {
-        if (link.heading === undefined) continue;
+        if (link.heading == null) continue;
         const linkHeading = link.heading;
 
         let angleDiff = Math.abs(targetHeading - linkHeading);
