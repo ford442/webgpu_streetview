@@ -7,6 +7,10 @@ import { RenderMode } from './renderer/types';
 import { findBestLink } from './utils/navigation';
 import './style.css';
 
+// Constants for cruise mode timing
+const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
+const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
+
 function App() {
     const [mode] = useState<RenderMode>('streetview');
     const [zoom, setZoom] = useState(1.0);
@@ -89,7 +93,7 @@ function App() {
             // This gives time for the new panorama tiles to load
             setTimeout(() => {
                 setIsTransitioning(false);
-            }, 1500); // Adjust delay as needed for smooth transitions
+            }, TRANSITION_DELAY_MS);
         };
 
         const listener = panorama.addListener('pano_changed', handlePanoChanged);
@@ -129,8 +133,8 @@ function App() {
             }
         };
 
-        // Set up interval for cruise hops (3 seconds between hops)
-        cruiseIntervalRef.current = setInterval(performCruiseHop, 3000);
+        // Set up interval for cruise hops
+        cruiseIntervalRef.current = setInterval(performCruiseHop, CRUISE_INTERVAL_MS);
 
         return () => {
             if (cruiseIntervalRef.current) {
