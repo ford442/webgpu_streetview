@@ -58,6 +58,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
             active = false; 
             cancelAnimationFrame(animationFrameId.current); 
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, source, zoom, panX, panY]);
 
     return (
