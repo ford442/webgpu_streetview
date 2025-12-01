@@ -4,3 +4,5 @@ node_modules/
 # npm lockfile
 package-lock.json
 
+# Build artifacts
+build/

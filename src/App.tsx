@@ -20,6 +20,10 @@ function App() {
     const [isConnected, setIsConnected] = useState(false);
     const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
     const [isCruiseMode, setIsCruiseMode] = useState(false);
+    
+    // Cruise mode state: track if panorama is transitioning
+    const [isTransitioning, setIsTransitioning] = useState(false);
+    const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const GOOGLE_MAPS_KEY = "AIzaSyABKwxIeRZX7VcFIejGkpSplxST_E0-Xn0";
     const rendererRef = useRef<Renderer | null>(null);
@@ -73,6 +77,69 @@ function App() {
         }
     }, [zoom, panorama]);
 
+    // Effect to detect panorama transitions via pano_changed event
+    useEffect(() => {
+        if (!panorama) return;
+
+        const handlePanoChanged = () => {
+            // Panorama is changing - start transitioning
+            setIsTransitioning(true);
+            
+            // After a delay to allow the panorama to load, end the transition
+            // This gives time for the new panorama tiles to load
+            setTimeout(() => {
+                setIsTransitioning(false);
+            }, 1500); // Adjust delay as needed for smooth transitions
+        };
+
+        const listener = panorama.addListener('pano_changed', handlePanoChanged);
+
+        return () => {
+            google.maps.event.removeListener(listener);
+        };
+    }, [panorama]);
+
+    // Effect to handle cruise mode auto-movement
+    useEffect(() => {
+        if (!isCruiseMode || !panorama) {
+            // Clear any existing interval when cruise mode is disabled
+            if (cruiseIntervalRef.current) {
+                clearInterval(cruiseIntervalRef.current);
+                cruiseIntervalRef.current = null;
+            }
+            return;
+        }
+
+        // Function to perform a cruise hop
+        const performCruiseHop = () => {
+            // Only hop if not currently transitioning
+            if (isTransitioning) return;
+
+            const links = panorama.getLinks();
+            if (!links) return;
+
+            const bestLink = findBestLink(
+                links.filter((link): link is google.maps.StreetViewLink => link !== null),
+                heading,
+                'forward'
+            );
+            
+            if (bestLink && bestLink.pano) {
+                panorama.setPano(bestLink.pano);
+            }
+        };
+
+        // Set up interval for cruise hops (3 seconds between hops)
+        cruiseIntervalRef.current = setInterval(performCruiseHop, 3000);
+
+        return () => {
+            if (cruiseIntervalRef.current) {
+                clearInterval(cruiseIntervalRef.current);
+                cruiseIntervalRef.current = null;
+            }
+        };
+    }, [isCruiseMode, panorama, heading, isTransitioning]);
+
     // --- UI ACTIONS ---
     const takeSnapshot = () => {
         if (rendererRef.current) {
@@ -89,7 +156,7 @@ function App() {
     return (
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
             <InputHandler
-                isEnabled={isConnected && !isCruiseMode}
+                isEnabled={isConnected && !isTransitioning}
                 onPan={handlePan}
                 onZoom={handleZoom}
                 onMove={handleMove}
@@ -108,7 +175,7 @@ function App() {
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
-                    source={isConnected ? streetViewCanvas : null}
+                    source={isConnected && !isTransitioning ? streetViewCanvas : null}
                     zoom={zoom}
                     // panX/panY are now controlled by heading/pitch
                     panX={heading / 360}
