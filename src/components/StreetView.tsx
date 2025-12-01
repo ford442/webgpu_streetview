@@ -10,6 +10,7 @@ interface StreetViewProps {
 const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanoramaReady }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [canvasFound, setCanvasFound] = useState(false);
 
     const startLocation = { lat: 39.2575004, lng: -121.021821 };
@@ -85,9 +86,11 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apiKey]);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleMoveForward = () => {
         if (!panorama) return;
         const links = panorama.getLinks();
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const pov = panorama.getPov();
         if (links) {
             // Simple logic: pick the first link that isn't roughly behind us
