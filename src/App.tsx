@@ -36,6 +36,7 @@ function App() {
     useEffect(() => {
         if (!audioRef.current) {
             audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
+            audioRef.current.crossOrigin = "anonymous";
         }
     }, []);
 
