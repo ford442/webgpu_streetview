@@ -126,6 +126,13 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
 
             setMap(newMap);
             setMarker(newMarker);
+
+            // Add Click Listener for Navigation
+            newMap.addListener("click", (e: google.maps.MapMouseEvent) => {
+                if (e.latLng && panorama) {
+                    panorama.setPosition(e.latLng);
+                }
+            });
         };
 
         if (window.google && window.google.maps) {
