@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Renderer } from '../renderer/Renderer';
 import { RenderMode } from '../renderer/types';
 
@@ -8,9 +8,9 @@ interface WebGPUCanvasProps {
     zoom?: number;
     panX?: number;
     panY?: number;
-    farthestPoint?: {x: number, y: number};
-    mousePosition?: {x: number, y: number};
-    setMousePosition?: (pos: {x: number, y: number}) => void;
+    farthestPoint?: { x: number, y: number };
+    mousePosition?: { x: number, y: number };
+    setMousePosition?: (pos: { x: number, y: number }) => void;
     isMouseDown?: boolean;
     setIsMouseDown?: (down: boolean) => void;
     rendererRef?: React.RefObject<Renderer | null>;
@@ -21,13 +21,26 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
 
+    // State to track window size for full-screen rendering
+    const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
     const currentRendererRef = rendererRef || internalRendererRef;
+
+    // Handle window resize
+    useEffect(() => {
+        const handleResize = () => {
+            setSize({ width: window.innerWidth, height: window.innerHeight });
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const renderer = new Renderer(canvas);
-        
+
         (async () => {
             const success = await renderer.init();
             if (success) {
@@ -36,12 +49,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
                 }
             }
         })();
-        
+
         return () => {
             cancelAnimationFrame(animationFrameId.current);
         };
     }, [rendererRef]);
-    
+
     useEffect(() => {
         let active = true;
         const animate = () => {
@@ -54,22 +67,26 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
             animationFrameId.current = requestAnimationFrame(animate);
         };
         animate();
-        return () => { 
-            active = false; 
-            cancelAnimationFrame(animationFrameId.current); 
+        return () => {
+            active = false;
+            cancelAnimationFrame(animationFrameId.current);
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, source, zoom, panX, panY]);
 
     return (
-        <canvas 
-            ref={canvasRef} 
-            width="1280" 
-            height="1280"
-            style={{ 
-                maxWidth: '100%', 
-                height: 'auto',
-                border: '2px solid #333'
+        <canvas
+            ref={canvasRef}
+            width={size.width}
+            height={size.height}
+            style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                // Override styles from style.css that might add borders/margins
+                border: 'none',
+                marginTop: 0,
+                borderRadius: 0
             }}
         />
     );

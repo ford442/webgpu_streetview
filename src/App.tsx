@@ -24,7 +24,7 @@ function App() {
     const [isConnected, setIsConnected] = useState(false);
     const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
     const [isCruiseMode, setIsCruiseMode] = useState(false);
-    
+
     // Cruise mode state: track if panorama is transitioning
     const [isTransitioning, setIsTransitioning] = useState(false);
     const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -39,7 +39,8 @@ function App() {
     }, []);
 
     const handleZoom = useCallback((deltaZ: number) => {
-        setZoom(prev => Math.max(0.5, Math.min(3.0, prev + deltaZ * 0.001)));
+        // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
+        setZoom(prev => Math.max(0.5, Math.min(3.0, prev - deltaZ * 0.001)));
     }, []);
 
     const handleMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
@@ -72,8 +73,6 @@ function App() {
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
         if (panorama) {
-            // This is where the hybrid zoom logic will go
-            // For now, a simple mapping:
             const panoZoom = Math.floor(zoom);
             if (panoZoom !== panorama.getZoom()) {
                 panorama.setZoom(panoZoom);
@@ -86,11 +85,7 @@ function App() {
         if (!panorama) return;
 
         const handlePanoChanged = () => {
-            // Panorama is changing - start transitioning
             setIsTransitioning(true);
-            
-            // After a delay to allow the panorama to load, end the transition
-            // This gives time for the new panorama tiles to load
             setTimeout(() => {
                 setIsTransitioning(false);
             }, TRANSITION_DELAY_MS);
@@ -106,7 +101,6 @@ function App() {
     // Effect to handle cruise mode auto-movement
     useEffect(() => {
         if (!isCruiseMode || !panorama) {
-            // Clear any existing interval when cruise mode is disabled
             if (cruiseIntervalRef.current) {
                 clearInterval(cruiseIntervalRef.current);
                 cruiseIntervalRef.current = null;
@@ -114,7 +108,6 @@ function App() {
             return;
         }
 
-        // Function to perform a cruise hop
         const performCruiseHop = () => {
             // Only hop if not currently transitioning
             if (isTransitioning) return;
@@ -122,18 +115,18 @@ function App() {
             const links = panorama.getLinks();
             if (!links) return;
 
+            // Always use current heading, allowing user to steer
             const bestLink = findBestLink(
                 links.filter((link): link is google.maps.StreetViewLink => link !== null),
                 heading,
                 'forward'
             );
-            
+
             if (bestLink && bestLink.pano) {
                 panorama.setPano(bestLink.pano);
             }
         };
 
-        // Set up interval for cruise hops
         cruiseIntervalRef.current = setInterval(performCruiseHop, CRUISE_INTERVAL_MS);
 
         return () => {
@@ -158,16 +151,27 @@ function App() {
     };
 
     return (
-        <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
+            {/* Input Handler enabled even during transitions to allow steering */}
             <InputHandler
-                isEnabled={isConnected && !isTransitioning}
+                isEnabled={isConnected}
                 onPan={handlePan}
                 onZoom={handleZoom}
                 onMove={handleMove}
                 onRightClickMove={handleRightClickMove}
             />
 
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: isConnected ? 0 : 2 }}>
+            {/* Original StreetView: Hidden via opacity when connected, but kept in DOM for scraping */}
+            <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: isConnected ? 0 : 2,
+                opacity: isConnected ? 0 : 1,
+                transition: 'opacity 0.5s ease-in-out'
+            }}>
                 <StreetView
                     apiKey={GOOGLE_MAPS_KEY}
                     onCanvasReady={setStreetViewCanvas}
@@ -175,13 +179,22 @@ function App() {
                 />
             </div>
 
-            <div data-testid="webgpu-canvas-container" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: isConnected ? 2 : 0, pointerEvents: isConnected ? 'auto' : 'none', opacity: isConnected ? 1 : 0 }}>
+            {/* WebGPU Output */}
+            <div data-testid="webgpu-canvas-container" style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: isConnected ? 2 : 0,
+                pointerEvents: isConnected ? 'auto' : 'none',
+                opacity: isConnected ? 1 : 0
+            }}>
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
                     source={isConnected && !isTransitioning ? streetViewCanvas : null}
                     zoom={zoom}
-                    // panX/panY are now controlled by heading/pitch
                     panX={heading / 360}
                     panY={(pitch + 90) / 180}
                 />
