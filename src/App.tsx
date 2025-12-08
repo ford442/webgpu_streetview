@@ -5,6 +5,7 @@ import InputHandler from './components/InputHandler';
 import { Renderer } from './renderer/Renderer';
 import { RenderMode } from './renderer/types';
 import { findBestLink } from './utils/navigation';
+import MiniMap from './components/MiniMap'; // Import MiniMap
 import './style.css';
 
 // Constants for cruise mode timing
@@ -18,6 +19,9 @@ function App() {
     // POV state
     const [heading, setHeading] = useState(34);
     const [pitch, setPitch] = useState(10);
+
+    // Map UI state
+    const [isMapOpen, setIsMapOpen] = useState(false);
 
     // Street View state
     const [streetViewCanvas, setStreetViewCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -223,7 +227,42 @@ function App() {
                 />
             </div>
 
+            {/* Slide-out Map Container */}
+            <div style={{
+                position: 'absolute',
+                top: 0,
+                right: isMapOpen ? 0 : '-400px', // Slide in from right
+                width: '400px',
+                height: '100%',
+                backgroundColor: '#222',
+                zIndex: 20, // Above controls
+                transition: 'right 0.3s ease-in-out',
+                boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
+                display: 'flex',
+                flexDirection: 'column'
+            }}>
+                <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444' }}>
+                    <h3 style={{ margin: 0, color: '#fff' }}>Map View</h3>
+                    <button onClick={() => setIsMapOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>×</button>
+                </div>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    {isConnected && panorama && (
+                        <MiniMap
+                            apiKey={GOOGLE_MAPS_KEY}
+                            panorama={panorama}
+                            heading={heading}
+                        />
+                    )}
+                </div>
+            </div>
+
             <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+                {/* Map Toggle Button */}
+                {isConnected && (
+                    <button onClick={() => setIsMapOpen(!isMapOpen)} className="control-btn" style={{ backgroundColor: isMapOpen ? '#444' : undefined }}>
+                        Map {isMapOpen ? '>>' : '<<'}
+                    </button>
+                )}
                 <button onClick={toggleRadio} className={`control-btn ${isRadioPlaying ? 'disconnect' : ''}`} style={{ backgroundColor: isRadioPlaying ? '#ff4757' : undefined }}>
                     Radio: {isRadioPlaying ? 'ON' : 'OFF'}
                 </button>

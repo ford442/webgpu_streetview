@@ -1,102 +1,173 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface MiniMapProps {
-    panX: number;
-    panY: number;
-    setPanX: (x: number) => void;
-    setPanY: (y: number) => void;
-    imageUrl?: string;
+    apiKey: string;
+    panorama: google.maps.StreetViewPanorama;
+    heading: number;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ panX, panY, setPanX, setPanY, imageUrl }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
+    const mapRef = useRef<HTMLDivElement>(null);
+    const [map, setMap] = useState<google.maps.Map | null>(null);
+    const [marker, setMarker] = useState<google.maps.Marker | null>(null);
 
+    // Initialize Map
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!mapRef.current || map) return;
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const initMap = () => {
+            const position = panorama.getPosition();
+            if (!position) return;
 
-        // Clear canvas
-        ctx.fillStyle = '#222';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const newMap = new google.maps.Map(mapRef.current!, {
+                center: position,
+                zoom: 16,
+                streetViewControl: false,
+                mapTypeControl: false,
+                fullscreenControl: false,
+                disableDefaultUI: true,
+                styles: [
+                    { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+                    { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+                    {
+                        featureType: "administrative.locality",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#d59563" }],
+                    },
+                    {
+                        featureType: "poi",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#d59563" }],
+                    },
+                    {
+                        featureType: "poi.park",
+                        elementType: "geometry",
+                        stylers: [{ color: "#263c3f" }],
+                    },
+                    {
+                        featureType: "poi.park",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#6b9a76" }],
+                    },
+                    {
+                        featureType: "road",
+                        elementType: "geometry",
+                        stylers: [{ color: "#38414e" }],
+                    },
+                    {
+                        featureType: "road",
+                        elementType: "geometry.stroke",
+                        stylers: [{ color: "#212a37" }],
+                    },
+                    {
+                        featureType: "road",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#9ca5b3" }],
+                    },
+                    {
+                        featureType: "road.highway",
+                        elementType: "geometry",
+                        stylers: [{ color: "#746855" }],
+                    },
+                    {
+                        featureType: "road.highway",
+                        elementType: "geometry.stroke",
+                        stylers: [{ color: "#1f2835" }],
+                    },
+                    {
+                        featureType: "road.highway",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#f3d19c" }],
+                    },
+                    {
+                        featureType: "transit",
+                        elementType: "geometry",
+                        stylers: [{ color: "#2f3948" }],
+                    },
+                    {
+                        featureType: "transit.station",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#d59563" }],
+                    },
+                    {
+                        featureType: "water",
+                        elementType: "geometry",
+                        stylers: [{ color: "#17263c" }],
+                    },
+                    {
+                        featureType: "water",
+                        elementType: "labels.text.fill",
+                        stylers: [{ color: "#515c6d" }],
+                    },
+                    {
+                        featureType: "water",
+                        elementType: "labels.text.stroke",
+                        stylers: [{ color: "#17263c" }],
+                    },
+                ],
+            });
 
-        // Draw grid
-        ctx.strokeStyle = '#444';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 10; i++) {
-            const x = (i / 10) * canvas.width;
-            const y = (i / 10) * canvas.height;
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
+            // Add marker
+            const newMarker = new google.maps.Marker({
+                position: position,
+                map: newMap,
+                icon: {
+                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    scale: 5,
+                    fillColor: "#00CCFF",
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    rotation: heading,
+                    anchor: new google.maps.Point(0, 2.5) // Adjust anchor to center of arrow
+                },
+                title: "You are here"
+            });
+
+            setMap(newMap);
+            setMarker(newMarker);
+        };
+
+        if (window.google && window.google.maps) {
+            initMap();
         }
+    }, [panorama, map]); // Dependencies
 
-        // Draw current position indicator
-        const x = panX * canvas.width;
-        const y = panY * canvas.height;
-        
-        // Draw viewing direction indicator
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-        ctx.beginPath();
-        ctx.arc(x, y, 20, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.fillStyle = '#0f0';
-        ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fill();
+    // Sync Map with Panorama Position
+    useEffect(() => {
+        if (!map || !marker || !panorama) return;
 
-        // Draw border
-        ctx.strokeStyle = '#666';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(0, 0, canvas.width, canvas.height);
-    }, [panX, panY, imageUrl]);
+        const updatePosition = () => {
+            const position = panorama.getPosition();
+            if (position) {
+                map.setCenter(position);
+                marker.setPosition(position);
+            }
+        };
 
-    const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        const listener = panorama.addListener('position_changed', updatePosition);
+        // Initial sync
+        updatePosition();
 
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / canvas.width;
-        const y = (e.clientY - rect.top) / canvas.height;
+        return () => {
+            google.maps.event.removeListener(listener);
+        };
+    }, [map, marker, panorama]);
 
-        setPanX(x);
-        setPanY(y);
-    };
+
+    // Sync Marker Heading
+    useEffect(() => {
+        if (!marker) return;
+
+        const icon = marker.getIcon() as google.maps.Symbol;
+        if (icon) {
+            icon.rotation = heading;
+            marker.setIcon(icon);
+        }
+    }, [heading, marker]);
 
     return (
-        <div className="minimap-container" style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            border: '2px solid #666',
-            borderRadius: '8px',
-            background: '#1a1a1a',
-            padding: '10px',
-            boxShadow: '0 4px 8px rgba(0,0,0,0.5)',
-            zIndex: 1000
-        }}>
-            <div style={{ marginBottom: '5px', color: '#ccc', fontSize: '12px', fontWeight: 'bold' }}>
-                Top-Down Map
-            </div>
-            <canvas
-                ref={canvasRef}
-                width={200}
-                height={200}
-                onClick={handleClick}
-                style={{ cursor: 'crosshair', display: 'block' }}
-            />
-            <div style={{ marginTop: '5px', color: '#999', fontSize: '10px' }}>
-                Click to navigate
-            </div>
-        </div>
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
     );
 };
 
