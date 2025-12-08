@@ -29,13 +29,24 @@ function App() {
     const [isTransitioning, setIsTransitioning] = useState(false);
     const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Radio state
+    const [isRadioPlaying, setIsRadioPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        if (!audioRef.current) {
+            audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
+        }
+    }, []);
+
     const GOOGLE_MAPS_KEY = "AIzaSyABKwxIeRZX7VcFIejGkpSplxST_E0-Xn0";
     const rendererRef = useRef<Renderer | null>(null);
 
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
+        // X is inverted (plus), Y is standard (minus) based on user feedback
         setHeading(prev => (prev + deltaX * 0.1) % 360);
-        setPitch(prev => Math.max(-90, Math.min(90, prev + deltaY * 0.1)));
+        setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
     }, []);
 
     const handleZoom = useCallback((deltaZ: number) => {
@@ -138,6 +149,17 @@ function App() {
     }, [isCruiseMode, panorama, heading, isTransitioning]);
 
     // --- UI ACTIONS ---
+    const toggleRadio = () => {
+        if (!audioRef.current) return;
+
+        if (isRadioPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play().catch(e => console.error("Audio play failed:", e));
+        }
+        setIsRadioPlaying(!isRadioPlaying);
+    };
+
     const takeSnapshot = () => {
         if (rendererRef.current) {
             const canvas = rendererRef.current['canvas'] as HTMLCanvasElement;
@@ -201,6 +223,9 @@ function App() {
             </div>
 
             <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+                <button onClick={toggleRadio} className={`control-btn ${isRadioPlaying ? 'disconnect' : ''}`} style={{ backgroundColor: isRadioPlaying ? '#ff4757' : undefined }}>
+                    Radio: {isRadioPlaying ? 'ON' : 'OFF'}
+                </button>
                 {!isConnected ? (
                     <button onClick={() => setIsConnected(true)} disabled={!streetViewCanvas} className="control-btn">
                         {streetViewCanvas ? "START" : "Loading Maps..."}
