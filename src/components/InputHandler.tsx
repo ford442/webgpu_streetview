@@ -14,23 +14,31 @@ interface InputHandlerProps {
 const InputHandler: React.FC<InputHandlerProps> = ({ onPan, onZoom, onMove, onRightClickMove, isEnabled }) => {
     const isMouseDownRef = useRef(false);
 
+    const dragDistanceRef = useRef(0);
+
     useEffect(() => {
         if (!isEnabled) return;
 
         const handleMouseDown = (e: MouseEvent) => {
             if (e.button === 0) { // Left mouse button
                 isMouseDownRef.current = true;
+                dragDistanceRef.current = 0;
             }
         };
 
         const handleMouseUp = (e: MouseEvent) => {
             if (e.button === 0) { // Left mouse button
                 isMouseDownRef.current = false;
+                if (dragDistanceRef.current < 5) {
+                    onMove('forward');
+                }
             }
         };
 
         const handleMouseMove = (e: MouseEvent) => {
             if (isMouseDownRef.current) {
+                const dist = Math.hypot(e.movementX, e.movementY);
+                dragDistanceRef.current += dist;
                 onPan(e.movementX, e.movementY);
             }
         };

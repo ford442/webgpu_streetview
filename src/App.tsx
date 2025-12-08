@@ -34,8 +34,8 @@ function App() {
 
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
-        setHeading(prev => (prev - deltaX * 0.1) % 360);
-        setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
+        setHeading(prev => (prev + deltaX * 0.1) % 360);
+        setPitch(prev => Math.max(-90, Math.min(90, prev + deltaY * 0.1)));
     }, []);
 
     const handleZoom = useCallback((deltaZ: number) => {
