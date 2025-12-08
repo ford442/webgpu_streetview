@@ -22,6 +22,7 @@ function App() {
 
     // Map UI state
     const [isMapOpen, setIsMapOpen] = useState(false);
+    const [locationName, setLocationName] = useState<string>('');
 
     // Street View state
     const [streetViewCanvas, setStreetViewCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -101,6 +102,11 @@ function App() {
         if (!panorama) return;
 
         const handlePanoChanged = () => {
+            const loc = panorama.getLocation();
+            if (loc) {
+                setLocationName(loc.description || loc.shortDescription || "Unknown Location");
+            }
+
             setIsTransitioning(true);
             setTimeout(() => {
                 setIsTransitioning(false);
@@ -242,7 +248,9 @@ function App() {
                 flexDirection: 'column'
             }}>
                 <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444' }}>
-                    <h3 style={{ margin: 0, color: '#fff' }}>Map View</h3>
+                    <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+                        {locationName || "Map View"}
+                    </h3>
                     <button onClick={() => setIsMapOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>×</button>
                 </div>
                 <div style={{ flex: 1, position: 'relative' }}>
