@@ -11,7 +11,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
     const mapRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
     const [marker, setMarker] = useState<google.maps.Marker | null>(null);
-    const [routePolyline, setRoutePolyline] = useState<google.maps.Polyline | null>(null);
+    const routePolylineRef = useRef<google.maps.Polyline | null>(null);
 
     // Initialize Map
     useEffect(() => {
@@ -179,16 +179,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
     useEffect(() => {
         if (!map) return;
         
-        let polyline: google.maps.Polyline | null = null;
-        
         // Clear existing polyline
-        if (routePolyline) {
-            routePolyline.setMap(null);
+        if (routePolylineRef.current) {
+            routePolylineRef.current.setMap(null);
+            routePolylineRef.current = null;
         }
         
         // Draw new route if available
         if (routePath && routePath.length > 0) {
-            polyline = new google.maps.Polyline({
+            const polyline = new google.maps.Polyline({
                 path: routePath,
                 geodesic: true,
                 strokeColor: '#00CCFF',
@@ -197,23 +196,14 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 map: map
             });
             
-            setRoutePolyline(polyline);
+            routePolylineRef.current = polyline;
             
             // Fit map bounds to show entire route
             const bounds = new google.maps.LatLngBounds();
             routePath.forEach(point => bounds.extend(point));
             map.fitBounds(bounds);
-        } else {
-            setRoutePolyline(null);
         }
-        
-        // Cleanup
-        return () => {
-            if (polyline) {
-                polyline.setMap(null);
-            }
-        };
-    }, [map, routePath, routePolyline]);
+    }, [map, routePath]);
 
     return (
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />

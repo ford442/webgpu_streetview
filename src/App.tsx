@@ -178,13 +178,16 @@ function App() {
                     
                     // If within ~50 meters, advance to next waypoint
                     if (distanceToWaypoint < 0.05) { // ~50 meters in km
-                        setCurrentWaypointIndex(prev => prev + 1);
-                        if (currentWaypointIndex + 1 >= routeWaypoints.length) {
-                            // Route completed!
-                            setIsCruiseMode(false);
-                            console.log('Route completed!');
-                            return;
-                        }
+                        setCurrentWaypointIndex(prev => {
+                            const nextIndex = prev + 1;
+                            if (nextIndex >= routeWaypoints.length) {
+                                // Route completed!
+                                setIsCruiseMode(false);
+                                console.log('Route completed!');
+                            }
+                            return nextIndex;
+                        });
+                        return;
                     }
                 }
             }
@@ -334,7 +337,7 @@ Image File: ${filename}
     };
     
     // Function to plot a route using Google Directions API
-    const plotRoute = async () => {
+    const plotRoute = () => {
         if (!panorama || !routeDestination.trim() || !directionsServiceRef.current) {
             console.error('Missing required data for route planning');
             return;
@@ -367,11 +370,20 @@ Image File: ${filename}
                     route.legs.forEach(leg => {
                         leg.steps.forEach(step => {
                             steps.push(step);
-                            step.path?.forEach(point => {
-                                path.push(point);
-                            });
+                            if (step.path) {
+                                step.path.forEach(point => {
+                                    path.push(point);
+                                });
+                            }
                         });
                     });
+                    
+                    // Validate that we have valid route data
+                    if (path.length === 0 || steps.length === 0) {
+                        console.error('Route has no valid path data');
+                        alert('Route calculated but has no valid path. Please try a different destination.');
+                        return;
+                    }
                     
                     setRoutePath(path);
                     setRouteWaypoints(steps);
