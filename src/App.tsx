@@ -172,15 +172,83 @@ function App() {
     };
 
     const takeSnapshot = () => {
-        if (rendererRef.current) {
+        if (rendererRef.current && panorama) {
             const canvas = rendererRef.current['canvas'] as HTMLCanvasElement;
+            
+            // Gather snapshot metadata
+            const position = panorama.getPosition();
+            const lat = position?.lat().toFixed(6) || '0';
+            const lng = position?.lng().toFixed(6) || '0';
+            const pov = panorama.getPov();
+            const currentHeading = pov?.heading?.toFixed(1) || heading.toFixed(1);
+            const currentPitch = pov?.pitch?.toFixed(1) || pitch.toFixed(1);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const location = locationName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+            
+            // Create descriptive filename with timestamp and coordinates
+            const filename = `streetview_${timestamp}_${lat}_${lng}.png`;
+            
+            // Download the image
             const link = document.createElement('a');
-            const lat = panorama?.getPosition()?.lat().toFixed(4);
-            const lng = panorama?.getPosition()?.lng().toFixed(4);
-            link.download = `snapshot-${lat},${lng}.png`;
+            link.download = filename;
             link.href = canvas.toDataURL('image/png');
             link.click();
+            
+            // Create and download a metadata text file
+            const metadata = `WebGPU StreetView Snapshot
+=========================
+Captured: ${new Date().toLocaleString()}
+Timestamp: ${new Date().toISOString()}
+
+Location Information:
+--------------------
+Location Name: ${locationName || 'Unknown Location'}
+Latitude: ${lat}°
+Longitude: ${lng}°
+Google Maps Link: https://www.google.com/maps/@${lat},${lng},3a,75y,${currentHeading}h,${currentPitch}t/data=!3m4!1e1!3m2!1s${panorama.getPano()}!2e0
+
+View Parameters:
+---------------
+Heading: ${currentHeading}° (${getCardinalDirection(parseFloat(currentHeading))})
+Pitch: ${currentPitch}° (${getPitchDescription(parseFloat(currentPitch))})
+Zoom: ${zoom.toFixed(2)}x
+
+Application State:
+-----------------
+Render Mode: ${mode}
+Cruise Mode: ${isCruiseMode ? 'ON' : 'OFF'}
+Panorama ID: ${panorama.getPano() || 'N/A'}
+
+Image File: ${filename}
+`;
+            
+            const metadataBlob = new Blob([metadata], { type: 'text/plain' });
+            const metadataLink = document.createElement('a');
+            metadataLink.download = filename.replace('.png', '.txt');
+            metadataLink.href = URL.createObjectURL(metadataBlob);
+            metadataLink.click();
+            URL.revokeObjectURL(metadataLink.href);
+            
+            console.log('Snapshot saved:', filename);
         }
+    };
+    
+    // Helper function to get cardinal direction from heading
+    const getCardinalDirection = (heading: number): string => {
+        const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+        const index = Math.round(((heading % 360) / 22.5));
+        return directions[index % 16];
+    };
+    
+    // Helper function to describe pitch angle
+    const getPitchDescription = (pitch: number): string => {
+        if (pitch > 60) return 'Looking up steeply';
+        if (pitch > 30) return 'Looking up';
+        if (pitch > 10) return 'Looking slightly up';
+        if (pitch > -10) return 'Looking straight ahead';
+        if (pitch > -30) return 'Looking slightly down';
+        if (pitch > -60) return 'Looking down';
+        return 'Looking down steeply';
     };
 
     return (
