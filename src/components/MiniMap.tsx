@@ -138,7 +138,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
         if (window.google && window.google.maps) {
             initMap();
         }
-    }, [panorama, map]); // Dependencies
+    }, [panorama, map, heading]); // Dependencies
 
     // Sync Map with Panorama Position
     useEffect(() => {

@@ -183,7 +183,6 @@ function App() {
             const currentHeading = pov?.heading?.toFixed(1) || heading.toFixed(1);
             const currentPitch = pov?.pitch?.toFixed(1) || pitch.toFixed(1);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const location = locationName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
             
             // Create descriptive filename with timestamp and coordinates
             const filename = `streetview_${timestamp}_${lat}_${lng}.png`;
