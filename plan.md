@@ -8,9 +8,10 @@ This document outlines potential features and enhancements for the WebGPU Street
 - ✅ WebGPU-based fluid simulation rendering
 - ✅ Mouse/keyboard controls for pan, zoom, and movement
 - ✅ Cruise mode (automatic navigation)
-- ✅ Mini-map with current location
+- ✅ **Route plotting for cruise mode** - Plan and follow routes to destinations
+- ✅ Mini-map with current location and route visualization
 - ✅ Radio integration
-- ✅ Basic snapshot/screenshot functionality with coordinates
+- ✅ Enhanced snapshot/screenshot functionality with metadata
 
 ## Planned Features
 
@@ -56,8 +57,10 @@ This document outlines potential features and enhancements for the WebGPU Street
 #### 7. Collaboration & Sharing
 - ⬜ **Shareable links** - Generate URLs with exact position/heading
 - ⬜ **Annotation tools** - Add notes or markers to locations
+- ✅ **Route planning** - Plan routes to destinations using Google Directions API
 - ⬜ **Tour creation** - Create guided tours through multiple locations
 - ⬜ **Export tours** - Save and share tour routes
+- ⬜ **Waypoint management** - Add custom waypoints to routes
 
 #### 8. Offline Mode
 - ⬜ **Cache management** - Download areas for offline viewing
