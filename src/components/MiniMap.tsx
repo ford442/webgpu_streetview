@@ -114,6 +114,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             const newMarker = new google.maps.Marker({
                 position: position,
                 map: newMap,
+                draggable: true, // Enable dragging
                 icon: {
                     path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
                     scale: 5,
@@ -121,7 +122,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                     fillOpacity: 1,
                     strokeWeight: 2,
                     rotation: heading,
-                    anchor: new google.maps.Point(0, 2.5) // Adjust anchor to center of arrow
+                    anchor: new google.maps.Point(0, 2.5)
                 },
                 title: "You are here"
             });
@@ -129,8 +130,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             setMap(newMap);
             setMarker(newMarker);
 
-            // Add Click Listener for Navigation
+            // Click listener (Teleport on map click)
             newMap.addListener("click", (e: google.maps.MapMouseEvent) => {
+                if (e.latLng && panorama) {
+                    panorama.setPosition(e.latLng);
+                }
+            });
+
+            // Drag listener (Teleport on marker drop)
+            newMarker.addListener('dragend', (e: google.maps.MapMouseEvent) => {
                 if (e.latLng && panorama) {
                     panorama.setPosition(e.latLng);
                 }
@@ -140,7 +148,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         if (window.google && window.google.maps) {
             initMap();
         }
-    }, [panorama, map, heading]); // Dependencies
+    }, [panorama, map, heading]); 
 
     // Sync Map with Panorama Position
     useEffect(() => {
