@@ -45,7 +45,7 @@ function App() {
         }
     }, []);
 
-    const GOOGLE_MAPS_KEY = "AIzaSyABKwxIeRZX7VcFIejGkpSplxST_E0-Xn0";
+    const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
     const rendererRef = useRef<Renderer | null>(null);
 
     // --- INPUT HANDLER ACTIONS ---
@@ -297,3 +297,4 @@ function App() {
 }
 
 export default App;
+
