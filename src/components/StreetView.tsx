@@ -3,21 +3,18 @@ import React, { useEffect, useRef, useState } from 'react';
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
     apiKey: string;
-    // New optional callback so parent (App) can receive the panorama instance
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
 }
 
 const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanoramaReady }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [canvasFound, setCanvasFound] = useState(false);
+    // Keep track of the currently active canvas to avoid unnecessary updates
+    const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const startLocation = { lat: 39.2575004, lng: -121.021821 };
 
     useEffect(() => {
-        let checkForCanvas: number | null = null;
-
         if (!(window as any).google) {
             const script = document.createElement('script');
             script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=alpha`;
@@ -32,6 +29,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
         function initialize() {
             if (!panoRef.current) return;
 
+            // Setup Google Maps services
             const mapDiv = document.createElement('div');
             const mapInstance = new google.maps.Map(mapDiv, {
                 center: startLocation,
@@ -51,59 +49,65 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
             mapInstance.setStreetView(panoInstance);
             setPanorama(panoInstance);
 
-            // Notify parent if requested
             if (onPanoramaReady) onPanoramaReady(panoInstance);
 
-            // --- POLLING FOR VALID CANVAS ---
-            // Keep checking because Google Maps might replace the canvas when moving
-            let lastCanvas: HTMLCanvasElement | null = null;
+            // --- Robust Canvas Detection ---
+            // Instead of polling, we check whenever the DOM changes (e.g., new tiles loaded)
+            const checkForCanvas = () => {
+                if (!panoRef.current) return;
 
-            checkForCanvas = window.setInterval(() => {
-                if (panoRef.current) {
-                    const canvases = panoRef.current.getElementsByTagName('canvas');
-                    if (canvases.length > 0) {
-                        const canvas = canvases[0];
-                        // Only accept if it has real dimensions (fixes the 1px stripe issue)
-                        if (canvas.width > 100 && canvas.height > 100) {
-                            // If it's a different canvas element, notify the parent
-                            if (canvas !== lastCanvas) {
-                                console.log(`[StreetView] New canvas detected: ${canvas.width}x${canvas.height}`);
-                                lastCanvas = canvas;
-                                onCanvasReady(canvas);
-                                setCanvasFound(true);
-                            }
-                        }
-                    }
+                const canvases = Array.from(panoRef.current.getElementsByTagName('canvas'));
+                
+                if (canvases.length === 0) return;
+
+                // 1. Sort canvases by area (Width * Height) descending
+                // Google Maps often creates multiple canvases; the main view is usually the largest.
+                canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height));
+                
+                const bestCanvas = canvases[0];
+
+                // 2. Filter out invalid or tiny canvases (loading placeholders)
+                if (bestCanvas.width < 100 || bestCanvas.height < 100) return;
+
+                // 3. Only notify if the canvas element reference has changed
+                // Note: If the *same* canvas changes dimensions, the Renderer handles it 
+                // by checking .width/.height every frame. We only need to notify App if the *element* changes.
+                if (bestCanvas !== activeCanvasRef.current) {
+                    console.log(`[StreetView] New active canvas found: ${bestCanvas.width}x${bestCanvas.height}`);
+                    activeCanvasRef.current = bestCanvas;
+                    onCanvasReady(bestCanvas);
                 }
-            }, 200);
-        }
+            };
 
-        return () => {
-            if (checkForCanvas) {
-                clearInterval(checkForCanvas);
-            }
-        };
+            // Initial check
+            checkForCanvas();
+
+            // Observe DOM changes (e.g. when moving to a new Pano, GMaps might swap canvases)
+            const observer = new MutationObserver((mutations) => {
+                checkForCanvas();
+            });
+
+            observer.observe(panoRef.current, { 
+                childList: true, 
+                subtree: true, 
+                attributes: true, // Also watch for attribute changes (like width/height)
+                attributeFilter: ['width', 'height', 'style'] 
+            });
+
+            // Cleanup observer on unmount
+            return () => {
+                observer.disconnect();
+            };
+        }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apiKey]);
 
+    // Cleanup helper (App controls navigation now)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const handleMoveForward = () => {
-        if (!panorama) return;
-        const links = panorama.getLinks();
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const pov = panorama.getPov();
-        if (links) {
-            // Simple logic: pick the first link that isn't roughly behind us
-            // Real logic would calculate heading diff like your original code
-            const next = links[0];
-
-            if (next) panorama.setPano(next.pano as string);
-        }
-    };
+    const handleMoveForward = () => {};
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Pano Container */}
             <div
                 ref={panoRef}
                 style={{
@@ -112,15 +116,12 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    // Keep opacity at 1 so we get valid pixel data; hiding is handled by z-index in App.tsx
-                    opacity: 1,
+                    opacity: 1, // Must be visible for canvas to render
                     pointerEvents: 'auto',
                 }}
             />
-
         </div>
     );
 };
-
 
 export default StreetView;
