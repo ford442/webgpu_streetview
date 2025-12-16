@@ -4,12 +4,14 @@ interface MiniMapProps {
     apiKey: string;
     panorama: google.maps.StreetViewPanorama;
     heading: number;
+    routePath?: google.maps.LatLng[] | null;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
+const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
     const [marker, setMarker] = useState<google.maps.Marker | null>(null);
+    const routePolylineRef = useRef<google.maps.Polyline | null>(null);
 
     // Initialize Map
     useEffect(() => {
@@ -112,6 +114,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
             const newMarker = new google.maps.Marker({
                 position: position,
                 map: newMap,
+                draggable: true, // Enable dragging
                 icon: {
                     path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
                     scale: 5,
@@ -119,7 +122,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
                     fillOpacity: 1,
                     strokeWeight: 2,
                     rotation: heading,
-                    anchor: new google.maps.Point(0, 2.5) // Adjust anchor to center of arrow
+                    anchor: new google.maps.Point(0, 2.5)
                 },
                 title: "You are here"
             });
@@ -127,8 +130,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
             setMap(newMap);
             setMarker(newMarker);
 
-            // Add Click Listener for Navigation
+            // Click listener (Teleport on map click)
             newMap.addListener("click", (e: google.maps.MapMouseEvent) => {
+                if (e.latLng && panorama) {
+                    panorama.setPosition(e.latLng);
+                }
+            });
+
+            // Drag listener (Teleport on marker drop)
+            newMarker.addListener('dragend', (e: google.maps.MapMouseEvent) => {
                 if (e.latLng && panorama) {
                     panorama.setPosition(e.latLng);
                 }
@@ -138,7 +148,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
         if (window.google && window.google.maps) {
             initMap();
         }
-    }, [panorama, map]); // Dependencies
+    }, [panorama, map, heading]); 
 
     // Sync Map with Panorama Position
     useEffect(() => {
@@ -172,6 +182,36 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
             marker.setIcon(icon);
         }
     }, [heading, marker]);
+    
+    // Draw route path on map
+    useEffect(() => {
+        if (!map) return;
+        
+        // Clear existing polyline
+        if (routePolylineRef.current) {
+            routePolylineRef.current.setMap(null);
+            routePolylineRef.current = null;
+        }
+        
+        // Draw new route if available
+        if (routePath && routePath.length > 0) {
+            const polyline = new google.maps.Polyline({
+                path: routePath,
+                geodesic: true,
+                strokeColor: '#00CCFF',
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+                map: map
+            });
+            
+            routePolylineRef.current = polyline;
+            
+            // Fit map bounds to show entire route
+            const bounds = new google.maps.LatLngBounds();
+            routePath.forEach(point => bounds.extend(point));
+            map.fitBounds(bounds);
+        }
+    }, [map, routePath]);
 
     return (
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
