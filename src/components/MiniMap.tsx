@@ -4,14 +4,16 @@ interface MiniMapProps {
     apiKey: string;
     panorama: google.maps.StreetViewPanorama;
     heading: number;
+    routePath?: google.maps.LatLng[] | null;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
+const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
     const [marker, setMarker] = useState<google.maps.Marker | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.Marker[]>([]);
+    const routeLineRef = useRef<google.maps.Polyline | null>(null);
 
     // Helper to add a breadcrumb at the current panorama position
     const addBreadcrumb = useCallback(() => {
@@ -261,6 +263,30 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
         });
 
     }, [breadcrumbs, map, panorama]); // Re-render when breadcrumbs change
+
+    // Render Route Path
+    useEffect(() => {
+        if (!map) return;
+
+        // Remove existing line
+        if (routeLineRef.current) {
+            routeLineRef.current.setMap(null);
+            routeLineRef.current = null;
+        }
+
+        if (routePath && routePath.length > 0) {
+            const line = new google.maps.Polyline({
+                path: routePath,
+                geodesic: true,
+                strokeColor: "#FF0000", // Red for visibility
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+                map: map,
+                zIndex: 1, // Ensure it's above the map tiles but below markers
+            });
+            routeLineRef.current = line;
+        }
+    }, [routePath, map]);
 
     return (
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
