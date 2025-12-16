@@ -461,19 +461,28 @@ Image File: ${filename}
             </div>
 
             {/* Slide-out Map Container */}
-            <div style={{
-                position: 'absolute',
-                top: 0,
-                right: isMapOpen ? 0 : '-400px', // Slide in from right
-                width: '400px',
-                height: '100%',
-                backgroundColor: '#222',
-                zIndex: 20, // Above controls
-                transition: 'right 0.3s ease-in-out',
-                boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
-                display: 'flex',
-                flexDirection: 'column'
-            }}>
+            <div
+                onMouseDown={(e) => e.stopPropagation()}
+                onMouseUp={(e) => e.stopPropagation()}
+                onMouseMove={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onContextMenu={(e) => e.stopPropagation()}
+                onWheel={(e) => e.stopPropagation()}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: isMapOpen ? 0 : '-400px', // Slide in from right
+                    width: '400px',
+                    height: '100%',
+                    backgroundColor: '#222',
+                    zIndex: 20, // Above controls
+                    transition: 'right 0.3s ease-in-out',
+                    boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}
+            >
                 <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444' }}>
                     <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
                         {locationName || "Map View"}

@@ -1,17 +1,44 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface MiniMapProps {
     apiKey: string;
     panorama: google.maps.StreetViewPanorama;
     heading: number;
-    routePath?: google.maps.LatLng[] | null;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath }) => {
+const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
     const [marker, setMarker] = useState<google.maps.Marker | null>(null);
-    const routePolylineRef = useRef<google.maps.Polyline | null>(null);
+    const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
+    const breadcrumbMarkersRef = useRef<google.maps.Marker[]>([]);
+
+    // Helper to add a breadcrumb at the current panorama position
+    const addBreadcrumb = useCallback(() => {
+        const position = panorama.getPosition();
+        if (position) {
+            setBreadcrumbs(prev => [...prev, position]);
+        }
+    }, [panorama]);
+
+    // Helper to move to a location (teleport)
+    const teleportTo = useCallback((latLng: google.maps.LatLng | null) => {
+        if (!latLng || !map) return;
+
+        const sv = new google.maps.StreetViewService();
+        sv.getPanorama({ location: latLng, radius: 50 }, (data, status) => {
+            if (status === google.maps.StreetViewStatus.OK && data && data.location && data.location.pano) {
+                // Save current location as breadcrumb before moving
+                addBreadcrumb();
+
+                // Move
+                panorama.setPano(data.location.pano);
+            } else {
+                console.warn("No Street View found near this location.");
+            }
+        });
+    }, [map, panorama, addBreadcrumb]);
+
 
     // Initialize Map
     useEffect(() => {
@@ -28,6 +55,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 mapTypeControl: false,
                 fullscreenControl: false,
                 disableDefaultUI: true,
+                clickableIcons: false, // Prevent clicking on POIs from hijacking
                 styles: [
                     { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
                     { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
@@ -110,11 +138,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 ],
             });
 
+            // Enable Street View Coverage Layer
+            const coverageLayer = new google.maps.StreetViewCoverageLayer();
+            coverageLayer.setMap(newMap);
+
             // Add marker
             const newMarker = new google.maps.Marker({
                 position: position,
                 map: newMap,
-                draggable: true, // Enable dragging
+                draggable: true, // Make draggable
                 icon: {
                     path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
                     scale: 5,
@@ -129,31 +161,18 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
 
             setMap(newMap);
             setMarker(newMarker);
-
-            // Click listener (Teleport on map click)
-            newMap.addListener("click", (e: google.maps.MapMouseEvent) => {
-                if (e.latLng && panorama) {
-                    panorama.setPosition(e.latLng);
-                }
-            });
-
-            // Drag listener (Teleport on marker drop)
-            newMarker.addListener('dragend', (e: google.maps.MapMouseEvent) => {
-                if (e.latLng && panorama) {
-                    panorama.setPosition(e.latLng);
-                }
-            });
         };
 
         if (window.google && window.google.maps) {
             initMap();
         }
-    }, [panorama, map, heading]); 
+    }, [panorama, map]); // Dependencies
 
-    // Sync Map with Panorama Position
+    // Sync Map with Panorama Position (and Handle Drag End)
     useEffect(() => {
         if (!map || !marker || !panorama) return;
 
+        // Sync marker to panorama
         const updatePosition = () => {
             const position = panorama.getPosition();
             if (position) {
@@ -163,13 +182,40 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         };
 
         const listener = panorama.addListener('position_changed', updatePosition);
+
+        // Handle Marker Drag End
+        const dragEndListener = marker.addListener('dragend', () => {
+            const newPos = marker.getPosition();
+            if (newPos) {
+                teleportTo(newPos);
+            }
+        });
+
+        // Handle Map Click
+        const mapClickListener = map.addListener("click", (e: google.maps.MapMouseEvent) => {
+             if (e.latLng) {
+                teleportTo(e.latLng);
+             }
+        });
+
+        // Handle Map Double Click
+         const mapDblClickListener = map.addListener("dblclick", (e: google.maps.MapMouseEvent) => {
+             if (e.latLng) {
+                teleportTo(e.latLng);
+             }
+        });
+
+
         // Initial sync
         updatePosition();
 
         return () => {
             google.maps.event.removeListener(listener);
+            google.maps.event.removeListener(dragEndListener);
+            google.maps.event.removeListener(mapClickListener);
+            google.maps.event.removeListener(mapDblClickListener);
         };
-    }, [map, marker, panorama]);
+    }, [map, marker, panorama, teleportTo]);
 
 
     // Sync Marker Heading
@@ -182,36 +228,39 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             marker.setIcon(icon);
         }
     }, [heading, marker]);
-    
-    // Draw route path on map
+
+    // Render Breadcrumbs
     useEffect(() => {
         if (!map) return;
-        
-        // Clear existing polyline
-        if (routePolylineRef.current) {
-            routePolylineRef.current.setMap(null);
-            routePolylineRef.current = null;
-        }
-        
-        // Draw new route if available
-        if (routePath && routePath.length > 0) {
-            const polyline = new google.maps.Polyline({
-                path: routePath,
-                geodesic: true,
-                strokeColor: '#00CCFF',
-                strokeOpacity: 0.8,
-                strokeWeight: 4,
-                map: map
+
+        // Clear old markers
+        breadcrumbMarkersRef.current.forEach(m => m.setMap(null));
+        breadcrumbMarkersRef.current = [];
+
+        // Add new markers
+        breadcrumbs.forEach((pos, index) => {
+             const crumb = new google.maps.Marker({
+                position: pos,
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 4,
+                    fillColor: "#888888",
+                    fillOpacity: 0.8,
+                    strokeColor: "#ffffff",
+                    strokeWeight: 1,
+                },
+                title: `Previous Location ${index + 1}`
             });
-            
-            routePolylineRef.current = polyline;
-            
-            // Fit map bounds to show entire route
-            const bounds = new google.maps.LatLngBounds();
-            routePath.forEach(point => bounds.extend(point));
-            map.fitBounds(bounds);
-        }
-    }, [map, routePath]);
+
+            crumb.addListener("click", () => {
+                 panorama.setPosition(pos);
+            });
+
+            breadcrumbMarkersRef.current.push(crumb);
+        });
+
+    }, [breadcrumbs, map, panorama]); // Re-render when breadcrumbs change
 
     return (
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
