@@ -52,11 +52,14 @@ function App() {
             audioRef.current.crossOrigin = "anonymous";
         }
         
-        // Initialize Directions Service
+    }, []);
+
+    // Initialize Directions Service when API is ready
+    useEffect(() => {
         if (window.google && window.google.maps && !directionsServiceRef.current) {
             directionsServiceRef.current = new google.maps.DirectionsService();
         }
-    }, []);
+    }, [panorama]);
 
     const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
     const rendererRef = useRef<Renderer | null>(null);
