@@ -74,7 +74,7 @@ export class Renderer {
             console.log("Device does not support 'shader-f16'.");
         }
         
-        const device = await adapter.requestDevice({
+       this.device = await adapter.requestDevice({
             requiredFeatures,
         });
             const context = this.canvas.getContext('webgpu');
@@ -287,4 +287,5 @@ export class Renderer {
         }
     }
 }
+
 
