@@ -36,44 +36,44 @@ export class Renderer {
         if (adapter.features.has('float32-filterable')) {
             requiredFeatures.push('float32-filterable');
         } else {
-            console.log("Device does not support 'float32-filterable'");
+            // console.log("Device does not support 'float32-filterable'");
         }
         if (adapter.features.has('float32-blendable')) {
             requiredFeatures.push('float32-blendable');
         } else {
-            console.log("Device does not support 'float32-blendable'.");
+            // console.log("Device does not support 'float32-blendable'.");
         }
         if (adapter.features.has('clip-distances')) {
             requiredFeatures.push('clip-distances');
         } else {
-            console.log("Device does not support 'clip-distances'.");
+            // console.log("Device does not support 'clip-distances'.");
         }
         if (adapter.features.has('depth32float-stencil8')) {
             requiredFeatures.push('depth32float-stencil8');
         } else {
-            console.log("Device does not support 'depth32float-stencil8'.");
+            // console.log("Device does not support 'depth32float-stencil8'.");
         }
         if (adapter.features.has('dual-source-blending')) {
             requiredFeatures.push('dual-source-blending');
         } else {
-            console.log("Device does not support 'dual-source-blending'.");
+            // console.log("Device does not support 'dual-source-blending'.");
         }
                 if (adapter.features.has('subgroups')) {
             requiredFeatures.push('subgroups');
         } else {
-            console.log("Device does not support 'subgroups'.");
+            // console.log("Device does not support 'subgroups'.");
         }
         if (adapter.features.has('texture-component-swizzle')) {
             requiredFeatures.push('texture-component-swizzle');
         } else {
-            console.log("Device does not support 'texture-component-swizzle'.");
+            // console.log("Device does not support 'texture-component-swizzle'.");
         }
         if (adapter.features.has('shader-f16')) {
             requiredFeatures.push('shader-f16');
         } else {
-            console.log("Device does not support 'shader-f16'.");
+            // console.log("Device does not support 'shader-f16'.");
         }
-        
+
        this.device = await adapter.requestDevice({
             requiredFeatures,
         });
@@ -98,7 +98,7 @@ export class Renderer {
 
             // Initialize with a 1x1 placeholder to prevent null errors before first frame
             this.createTexture(1, 1);
-            
+
             this.uniformBuffer = this.device.createBuffer({
                 size: 16, // 4 floats * 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -106,7 +106,7 @@ export class Renderer {
 
             await this.createPipeline();
 
-            console.log('WebGPU Renderer initialized');
+            // console.log('WebGPU Renderer initialized');
             return true;
         } catch (e) {
             console.error('Failed to initialize WebGPU:', e);
@@ -121,8 +121,8 @@ export class Renderer {
         this.texture = this.device.createTexture({
             size: [width, height],
             format: 'rgba8unorm',
-            usage: GPUTextureUsage.TEXTURE_BINDING | 
-                   GPUTextureUsage.COPY_DST | 
+            usage: GPUTextureUsage.TEXTURE_BINDING |
+                   GPUTextureUsage.COPY_DST |
                    GPUTextureUsage.RENDER_ATTACHMENT,
         });
     }
@@ -287,5 +287,3 @@ export class Renderer {
         }
     }
 }
-
-

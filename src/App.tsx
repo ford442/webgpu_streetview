@@ -5,7 +5,8 @@ import InputHandler from './components/InputHandler';
 import { Renderer } from './renderer/Renderer';
 import { RenderMode } from './renderer/types';
 import { findBestLink } from './utils/navigation';
-import MiniMap from './components/MiniMap'; // Import MiniMap
+import MiniMap from './components/MiniMap';
+import WelcomeModal from './components/WelcomeModal';
 import './style.css';
 
 // Constants for cruise mode timing
@@ -15,6 +16,9 @@ const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
 function App() {
     const [mode] = useState<RenderMode>('streetview');
     const [zoom, setZoom] = useState(1.0);
+
+    // Welcome Modal state
+    const [showWelcome, setShowWelcome] = useState(true);
 
     // POV state
     const [heading, setHeading] = useState(34);
@@ -33,7 +37,7 @@ function App() {
     // Cruise mode state: track if panorama is transitioning
     const [isTransitioning, setIsTransitioning] = useState(false);
     const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    
+
     // Route planning state
     const [routeDestination, setRouteDestination] = useState<string>('');
     const [routePath, setRoutePath] = useState<google.maps.LatLng[] | null>(null);
@@ -51,7 +55,7 @@ function App() {
             audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
             audioRef.current.crossOrigin = "anonymous";
         }
-        
+
     }, []);
 
     // Initialize Directions Service when API is ready
@@ -154,7 +158,7 @@ function App() {
             if (!links) return;
 
             let targetHeading = heading;
-            
+
             // If we have a route with waypoints, navigate towards the next waypoint
             if (routeWaypoints && routeWaypoints.length > 0 && currentWaypointIndex < routeWaypoints.length) {
                 const currentPos = panorama.getPosition();
@@ -162,23 +166,23 @@ function App() {
                     const targetWaypoint = routeWaypoints[currentWaypointIndex];
                     const targetLat = targetWaypoint.end_location.lat();
                     const targetLng = targetWaypoint.end_location.lng();
-                    
+
                     // Calculate heading to the target waypoint
                     targetHeading = calculateHeading(
-                        currentPos.lat(), 
-                        currentPos.lng(), 
-                        targetLat, 
+                        currentPos.lat(),
+                        currentPos.lng(),
+                        targetLat,
                         targetLng
                     );
-                    
+
                     // Check if we're close enough to the current waypoint to move to the next one
                     const distanceToWaypoint = calculateDistance(
-                        currentPos.lat(), 
-                        currentPos.lng(), 
-                        targetLat, 
+                        currentPos.lat(),
+                        currentPos.lng(),
+                        targetLat,
                         targetLng
                     );
-                    
+
                     // If within ~50 meters, advance to next waypoint
                     if (distanceToWaypoint < 0.05) { // ~50 meters in km
                         setCurrentWaypointIndex(prev => {
@@ -186,7 +190,6 @@ function App() {
                             if (nextIndex >= routeWaypoints.length) {
                                 // Route completed!
                                 setIsCruiseMode(false);
-                                console.log('Route completed!');
                             }
                             return nextIndex;
                         });
@@ -220,6 +223,11 @@ function App() {
     }, [isCruiseMode, panorama, heading, isTransitioning, routeWaypoints, currentWaypointIndex]);
 
     // --- UI ACTIONS ---
+    const handleStart = () => {
+        setShowWelcome(false);
+        setIsConnected(true);
+    };
+
     const toggleRadio = () => {
         if (!audioRef.current) return;
 
@@ -234,7 +242,7 @@ function App() {
     const takeSnapshot = () => {
         if (rendererRef.current && panorama) {
             const canvas = rendererRef.current['canvas'] as HTMLCanvasElement;
-            
+
             // Gather snapshot metadata
             const position = panorama.getPosition();
             const lat = position?.lat().toFixed(6) || '0';
@@ -243,16 +251,16 @@ function App() {
             const currentHeading = pov?.heading?.toFixed(1) || heading.toFixed(1);
             const currentPitch = pov?.pitch?.toFixed(1) || pitch.toFixed(1);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            
+
             // Create descriptive filename with timestamp and coordinates
             const filename = `streetview_${timestamp}_${lat}_${lng}.png`;
-            
+
             // Download the image
             const link = document.createElement('a');
             link.download = filename;
             link.href = canvas.toDataURL('image/png');
             link.click();
-            
+
             // Create and download a metadata text file
             const metadata = `WebGPU StreetView Snapshot
 =========================
@@ -280,25 +288,25 @@ Panorama ID: ${panorama.getPano() || 'N/A'}
 
 Image File: ${filename}
 `;
-            
+
             const metadataBlob = new Blob([metadata], { type: 'text/plain' });
             const metadataLink = document.createElement('a');
             metadataLink.download = filename.replace('.png', '.txt');
             metadataLink.href = URL.createObjectURL(metadataBlob);
             metadataLink.click();
             URL.revokeObjectURL(metadataLink.href);
-            
+
             console.log('Snapshot saved:', filename);
         }
     };
-    
+
     // Helper function to get cardinal direction from heading
     const getCardinalDirection = (heading: number): string => {
         const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
         const index = Math.round(((heading % 360) / 22.5));
         return directions[index % 16];
     };
-    
+
     // Helper function to describe pitch angle
     const getPitchDescription = (pitch: number): string => {
         if (pitch > 60) return 'Looking up steeply';
@@ -309,66 +317,66 @@ Image File: ${filename}
         if (pitch > -60) return 'Looking down';
         return 'Looking down steeply';
     };
-    
+
     // Helper function to calculate heading between two points
     const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
         const dLng = (lng2 - lng1) * Math.PI / 180;
         const lat1Rad = lat1 * Math.PI / 180;
         const lat2Rad = lat2 * Math.PI / 180;
-        
+
         const y = Math.sin(dLng) * Math.cos(lat2Rad);
         const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
                   Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
-        
+
         let heading = Math.atan2(y, x) * 180 / Math.PI;
         heading = (heading + 360) % 360;
         return heading;
     };
-    
+
     // Helper function to calculate distance between two points (Haversine formula)
     const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
         const R = 6371; // Earth's radius in km
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLng = (lng2 - lng1) * Math.PI / 180;
-        
+
         const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
                   Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                   Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        
+
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c; // Distance in km
     };
-    
+
     // Function to plot a route using Google Directions API
     const plotRoute = () => {
         if (!panorama || !routeDestination.trim() || !directionsServiceRef.current) {
             console.error('Missing required data for route planning');
             return;
         }
-        
+
         setIsRoutePlanning(true);
-        
+
         const currentPos = panorama.getPosition();
         if (!currentPos) {
             setIsRoutePlanning(false);
             return;
         }
-        
+
         try {
             const request: google.maps.DirectionsRequest = {
                 origin: new google.maps.LatLng(currentPos.lat(), currentPos.lng()),
                 destination: routeDestination,
                 travelMode: google.maps.TravelMode.WALKING,
             };
-            
+
             directionsServiceRef.current.route(request, (result, status) => {
                 setIsRoutePlanning(false);
-                
+
                 if (status === google.maps.DirectionsStatus.OK && result) {
                     const route = result.routes[0];
                     const path: google.maps.LatLng[] = [];
                     const steps: google.maps.DirectionsStep[] = [];
-                    
+
                     // Extract path and steps from the route
                     route.legs.forEach(leg => {
                         leg.steps.forEach(step => {
@@ -380,18 +388,18 @@ Image File: ${filename}
                             }
                         });
                     });
-                    
+
                     // Validate that we have valid route data
                     if (path.length === 0 || steps.length === 0) {
                         console.error('Route has no valid path data');
                         alert('Route calculated but has no valid path. Please try a different destination.');
                         return;
                     }
-                    
+
                     setRoutePath(path);
                     setRouteWaypoints(steps);
                     setCurrentWaypointIndex(0);
-                    
+
                     console.log(`Route calculated: ${steps.length} steps, ${path.length} points`);
                 } else {
                     console.error('Directions request failed:', status);
@@ -404,7 +412,7 @@ Image File: ${filename}
             alert('Error plotting route. Please try again.');
         }
     };
-    
+
     // Function to clear the current route
     const clearRoute = () => {
         setRoutePath(null);
@@ -415,9 +423,11 @@ Image File: ${filename}
 
     return (
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
+            {showWelcome && <WelcomeModal onStart={handleStart} />}
+
             {/* Input Handler enabled even during transitions to allow steering */}
             <InputHandler
-                isEnabled={isConnected}
+                isEnabled={isConnected && !showWelcome}
                 onPan={handlePan}
                 onZoom={handleZoom}
                 onMove={handleMove}
@@ -492,7 +502,7 @@ Image File: ${filename}
                     </h3>
                     <button onClick={() => setIsMapOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>×</button>
                 </div>
-                
+
                 {/* Route Planning Section */}
                 <div style={{ padding: '10px', borderBottom: '1px solid #444', backgroundColor: '#2a2a2a' }}>
                     <label style={{ display: 'block', color: '#ccc', fontSize: '12px', marginBottom: '5px' }}>Plan Route (Cruise Mode)</label>
@@ -552,7 +562,7 @@ Image File: ${filename}
                         </div>
                     )}
                 </div>
-                
+
                 <div style={{ flex: 1, position: 'relative' }}>
                     {isConnected && panorama && (
                         <MiniMap
@@ -598,4 +608,3 @@ Image File: ${filename}
 }
 
 export default App;
-
