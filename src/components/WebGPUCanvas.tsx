@@ -47,6 +47,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
                 if (rendererRef) {
                     (rendererRef as React.MutableRefObject<Renderer | null>).current = renderer;
                 }
+            } else {
+                // Handle WebGPU failure (e.g., show an error or fallback)
+                console.warn("WebGPU initialization failed. Please check your browser compatibility.");
             }
         })();
 
