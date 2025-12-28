@@ -77,7 +77,7 @@ function App() {
 
     const handleZoom = useCallback((deltaZ: number) => {
         // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
-        setZoom(prev => Math.max(0.5, Math.min(3.0, prev - deltaZ * 0.001)));
+        setZoom(prev => Math.max(1.0, Math.min(3.0, prev - deltaZ * 0.001)));
     }, []);
 
     const handleMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
