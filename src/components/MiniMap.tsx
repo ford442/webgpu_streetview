@@ -151,14 +151,17 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 draggable: true, // Make draggable
                 icon: {
                     path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 5,
+                    scale: 6, // Slightly larger icon
                     fillColor: "#00CCFF",
                     fillOpacity: 1,
-                    strokeWeight: 2,
+                    // Use a thick stroke to create a "halo" or "handle" that makes it easy to grab
+                    strokeColor: "#ffffff",
+                    strokeWeight: 12, // Very thick border for hit-testing
+                    strokeOpacity: 0.4, // Semi-transparent so it doesn't look like a block
                     rotation: heading,
                     anchor: new google.maps.Point(0, 2.5)
                 },
-                title: "You are here"
+                title: "You are here (Drag to move)"
             });
 
             setMap(newMap);
