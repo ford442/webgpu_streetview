@@ -473,7 +473,7 @@ Image File: ${filename}
                 />
             </div>
 
-            {/* Slide-out Map Container */}
+            {/* Slide-out Map Container (Expanded to 50%) */}
             <div
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseUp={(e) => e.stopPropagation()}
@@ -485,55 +485,72 @@ Image File: ${filename}
                 style={{
                     position: 'absolute',
                     top: 0,
-                    right: isMapOpen ? 0 : '-400px', // Slide in from right
-                    width: '400px',
+                    right: 0, // Pinned to right
+                    transform: isMapOpen ? 'translateX(0)' : 'translateX(100%)', // Slide effect using transform
+                    width: '50vw', // 50% of Viewport Width
+                    minWidth: '400px', // Minimum width for mobile/small screens
+                    maxWidth: '100vw', // Ensure it doesn't overflow horizontally on tiny screens
                     height: '100%',
                     backgroundColor: '#222',
                     zIndex: 20, // Above controls
-                    transition: 'right 0.3s ease-in-out',
+                    transition: 'transform 0.3s ease-in-out', // Animate the transform
                     boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
                     display: 'flex',
                     flexDirection: 'column'
                 }}
             >
-                <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444' }}>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+                <div style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444', backgroundColor: '#1f1f1f' }}>
+                    <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {locationName || "Map View"}
                     </h3>
-                    <button onClick={() => setIsMapOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>×</button>
+                    <button 
+                        onClick={() => setIsMapOpen(false)} 
+                        style={{ 
+                            background: 'rgba(255,255,255,0.1)', 
+                            border: '1px solid #555', 
+                            color: '#fff', 
+                            padding: '6px 12px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        Close Map ✕
+                    </button>
                 </div>
 
                 {/* Route Planning Section */}
-                <div style={{ padding: '10px', borderBottom: '1px solid #444', backgroundColor: '#2a2a2a' }}>
-                    <label style={{ display: 'block', color: '#ccc', fontSize: '12px', marginBottom: '5px' }}>Plan Route (Cruise Mode)</label>
-                    <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+                <div style={{ padding: '15px', borderBottom: '1px solid #444', backgroundColor: '#2a2a2a' }}>
+                    <label style={{ display: 'block', color: '#ccc', fontSize: '13px', marginBottom: '8px', fontWeight: 'bold' }}>Plan Route (Cruise Mode)</label>
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                         <input
                             type="text"
-                            placeholder="Enter destination..."
+                            placeholder="Enter destination (e.g., 'Eiffel Tower')..."
                             value={routeDestination}
                             onChange={(e) => setRouteDestination(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && plotRoute()}
                             style={{
                                 flex: 1,
-                                padding: '8px',
+                                padding: '10px',
                                 border: '1px solid #555',
                                 borderRadius: '4px',
                                 backgroundColor: '#333',
                                 color: '#fff',
-                                fontSize: '13px'
+                                fontSize: '14px'
                             }}
                         />
                         <button
                             onClick={plotRoute}
                             disabled={!routeDestination.trim() || isRoutePlanning}
                             style={{
-                                padding: '8px 12px',
+                                padding: '10px 20px',
                                 border: 'none',
                                 borderRadius: '4px',
                                 backgroundColor: isRoutePlanning ? '#555' : '#4CAF50',
                                 color: '#fff',
                                 cursor: isRoutePlanning ? 'wait' : 'pointer',
-                                fontSize: '13px',
+                                fontSize: '14px',
                                 fontWeight: 'bold'
                             }}
                         >
@@ -541,23 +558,23 @@ Image File: ${filename}
                         </button>
                     </div>
                     {routeWaypoints && (
-                        <div style={{ display: 'flex', gap: '5px', fontSize: '11px', color: '#aaa' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#aaa', backgroundColor: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>
                             <div style={{ flex: 1 }}>
-                                {routeWaypoints.length} steps • Waypoint {currentWaypointIndex + 1}/{routeWaypoints.length}
+                                <strong>Active Route:</strong> {routeWaypoints.length} steps • Waypoint {currentWaypointIndex + 1}/{routeWaypoints.length}
                             </div>
                             <button
                                 onClick={clearRoute}
                                 style={{
-                                    padding: '3px 8px',
+                                    padding: '4px 10px',
                                     border: 'none',
                                     borderRadius: '3px',
                                     backgroundColor: '#d9534f',
                                     color: '#fff',
                                     cursor: 'pointer',
-                                    fontSize: '11px'
+                                    fontSize: '12px'
                                 }}
                             >
-                                Clear
+                                Clear Route
                             </button>
                         </div>
                     )}
