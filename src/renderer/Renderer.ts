@@ -206,6 +206,11 @@ export class Renderer {
     }
 
     // NOTE: Accept a nullable source so we can render even if no new frame is provided
+    // [NEW] Export canvas data as PNG data URL for snapshot functionality
+    public getCanvasDataURL(): string {
+        return this.canvas.toDataURL('image/png', 1.0);
+    }
+
     public renderStreetView(mode: RenderMode, source: CanvasImageSource | null, heading?: number, pitch?: number, zoom?: number): void {
         if (!this.device || !this.pipeline) return;
 

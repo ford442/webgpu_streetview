@@ -3,16 +3,16 @@ import React, { useEffect, useRef, useState } from 'react';
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
     apiKey: string;
+    initialPosition?: { lat: number; lng: number };
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
 }
 
-const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanoramaReady }) => {
+const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady }) => {
     const panoRef = useRef<HTMLDivElement>(null);
-    const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
     // Keep track of the currently active canvas to avoid unnecessary updates
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const startLocation = { lat: 39.2575004, lng: -121.021821 };
+    const startLocation = initialPosition ?? { lat: 39.2575004, lng: -121.021821 };
 
     useEffect(() => {
         if (!(window as any).google?.maps) {  // Stricter check to prevent double-load
@@ -47,7 +47,6 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
             });
 
             mapInstance.setStreetView(panoInstance);
-            setPanorama(panoInstance);
 
             if (onPanoramaReady) onPanoramaReady(panoInstance);
 

@@ -12,6 +12,7 @@ interface ControlsProps {
     onUpdateZoom: (zoom: number) => void;
     onMove: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
     panorama: google.maps.StreetViewPanorama | null;
+    onSnapshot: () => void; // <--- NEW: Snapshot callback
 }
 
 const Controls: React.FC<ControlsProps> = ({
@@ -25,6 +26,7 @@ const Controls: React.FC<ControlsProps> = ({
     onUpdateZoom,
     onMove,
     panorama,
+    onSnapshot, // <--- NEW: Destructure snapshot handler
 }) => {
     const minimapRef = useRef<HTMLDivElement>(null);
     const minimapInstance = useRef<google.maps.Map | null>(null);
@@ -126,6 +128,17 @@ const Controls: React.FC<ControlsProps> = ({
                     value={zoom} 
                     onChange={(e) => onUpdateZoom(Number(e.target.value))} 
                 />
+            </div>
+
+            <div className="control-group">
+                <h3>Tools</h3>
+                <button 
+                    onClick={onSnapshot} 
+                    className="control-btn"
+                    style={{ width: '100%' }}
+                >
+                    📸 Take Snapshot
+                </button>
             </div>
 
             <div className="control-group">
