@@ -16,6 +16,8 @@ const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
 function App() {
     const [mode] = useState<RenderMode>('streetview');
     const [zoom, setZoom] = useState(1.0);
+    const [effectiveZoom, setEffectiveZoom] = useState(1.0);
+    const [webGPUAvailable, setWebGPUAvailable] = useState<boolean | null>(null); // null = checking, true = available, false = not available
 
     // Welcome Modal state
     const [showWelcome, setShowWelcome] = useState(true);
@@ -77,6 +79,7 @@ function App() {
 
     const handleZoom = useCallback((deltaZ: number) => {
         // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
+        // Clamp to maximum zoom level to prevent rendering issues
         setZoom(prev => Math.max(1.0, Math.min(3.0, prev - deltaZ * 0.001)));
     }, []);
 
@@ -110,10 +113,14 @@ function App() {
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
         if (panorama) {
-            const panoZoom = Math.floor(zoom);
-            if (panoZoom !== panorama.getZoom()) {
-                panorama.setZoom(panoZoom);
-            }
+            const panoZoom = Math.floor(Math.min(zoom, 3.0));
+            panorama.setZoom(panoZoom);
+
+            // Use the actual zoom level that Google Maps accepted, not our desired zoom
+            const actualZoom = panorama.getZoom();
+            setEffectiveZoom(actualZoom);
+        } else {
+            setEffectiveZoom(Math.min(zoom, 3.0));
         }
     }, [zoom, panorama]);
 
@@ -441,8 +448,8 @@ Image File: ${filename}
                 left: 0,
                 width: '100%',
                 height: '100%',
-                zIndex: isConnected ? 0 : 2,
-                opacity: isConnected ? 0 : 1,
+                zIndex: (isConnected && webGPUAvailable === true) ? 0 : 2,
+                opacity: (isConnected && webGPUAvailable === true) ? 0 : 1,
                 transition: 'opacity 0.5s ease-in-out'
             }}>
                 <StreetView
@@ -459,17 +466,18 @@ Image File: ${filename}
                 left: 0,
                 width: '100%',
                 height: '100%',
-                zIndex: isConnected ? 2 : 0,
-                pointerEvents: isConnected ? 'auto' : 'none',
-                opacity: isConnected ? 1 : 0
+                zIndex: (isConnected && webGPUAvailable === true) ? 2 : 0,
+                pointerEvents: (isConnected && webGPUAvailable === true) ? 'auto' : 'none',
+                opacity: (isConnected && webGPUAvailable === true) ? 1 : 0
             }}>
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
                     source={isConnected && !isTransitioning ? streetViewCanvas : null}
-                    zoom={zoom}
+                    zoom={effectiveZoom}
                     panX={heading / 360}
                     panY={(pitch + 90) / 180}
+                    onWebGPUStatus={setWebGPUAvailable}
                 />
             </div>
 
@@ -593,6 +601,37 @@ Image File: ${filename}
             </div>
 
             <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+                {/* WebGPU Status Indicator */}
+                {webGPUAvailable === false && (
+                    <div style={{
+                        backgroundColor: '#ff6b6b',
+                        color: 'white',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                        maxWidth: '200px'
+                    }}>
+                        ⚠️ WebGPU Not Available<br/>
+                        <span style={{ fontSize: '10px', fontWeight: 'normal' }}>
+                            Using fallback mode
+                        </span>
+                    </div>
+                )}
+                {webGPUAvailable === true && (
+                    <div style={{
+                        backgroundColor: '#2ed573',
+                        color: 'white',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 'bold'
+                    }}>
+                        WebGPU ✓
+                    </div>
+                )}
+
                 {/* Map Toggle Button */}
                 {isConnected && (
                     <button onClick={() => setIsMapOpen(!isMapOpen)} className="control-btn" style={{ backgroundColor: isMapOpen ? '#444' : undefined }}>

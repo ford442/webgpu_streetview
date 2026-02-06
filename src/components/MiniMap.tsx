@@ -196,13 +196,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 teleportTo(newPos);
                 // Optional: Flash marker for feedback
                 const icon = marker.getIcon() as google.maps.Symbol;
-                const originalScale = icon.scale;
-                icon.scale += 2;  // Brief enlarge
-                marker.setIcon(icon);
-                setTimeout(() => {
-                    icon.scale = originalScale;
+                if (icon && icon.scale !== null && icon.scale !== undefined) {
+                    const originalScale = icon.scale;
+                    icon.scale += 2;  // Brief enlarge
                     marker.setIcon(icon);
-                }, 200);
+                    setTimeout(() => {
+                        icon.scale = originalScale;
+                        marker.setIcon(icon);
+                    }, 200);
+                }
             }
         });
 
