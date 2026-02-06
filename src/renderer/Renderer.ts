@@ -109,7 +109,7 @@ export class Renderer {
             // console.log('WebGPU Renderer initialized');
             return true;
         } catch (e) {
-            console.warn('WebGPU init failed (expected in some envs). Fallback active:', e.message);
+            console.warn('WebGPU init failed (expected in some envs). Fallback active:', e instanceof Error ? e.message : String(e));
             return false;
         }
     }
