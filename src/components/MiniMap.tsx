@@ -197,7 +197,11 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         const dragEndListener = marker.addListener('dragend', () => {
             const newPos = marker.position;
             if (newPos) {
-                teleportTo(newPos);
+                // Convert position to LatLng if it's not already
+                const latLng = newPos instanceof google.maps.LatLng
+                    ? newPos
+                    : new google.maps.LatLng(newPos.lat, newPos.lng);
+                teleportTo(latLng);
                 // Optional: Flash marker for feedback
                 const content = marker.content as HTMLElement;
                 if (content) {
