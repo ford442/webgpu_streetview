@@ -104,3 +104,11 @@ input[type="text"]:focus {
     border-color: #4CAF50 !important;
     outline: none;
 }
+
+/* Google Maps marker grab cursor */
+.gm-style .gm-style-iw { /* Google Maps marker hit area */
+    cursor: grab !important;
+}
+.gm-style .gm-style-iw:active {
+    cursor: grabbing !important;
+}

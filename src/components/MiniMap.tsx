@@ -151,17 +151,18 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 draggable: true, // Make draggable
                 icon: {
                     path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 6, // Slightly larger icon
+                    scale: 10, // Increased from 6 for larger target
                     fillColor: "#00CCFF",
                     fillOpacity: 1,
                     // Use a thick stroke to create a "halo" or "handle" that makes it easy to grab
                     strokeColor: "#ffffff",
-                    strokeWeight: 12, // Very thick border for hit-testing
-                    strokeOpacity: 0.4, // Semi-transparent so it doesn't look like a block
+                    strokeWeight: 18, // Increased from 12 for bigger halo/grab area
+                    strokeOpacity: 0.6, // Slightly more opaque for visibility
                     rotation: heading,
-                    anchor: new google.maps.Point(0, 2.5)
+                    anchor: new google.maps.Point(0, 5)  // Adjusted down from 2.5 for better centering/grab
                 },
-                title: "You are here (Drag to move)"
+                title: "Drag to move (You are here) 🖱️",  // Enhanced tooltip
+                cursor: 'grab'  // Native grab cursor (works on drag start)
             });
 
             setMap(newMap);
@@ -171,7 +172,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         if (window.google && window.google.maps) {
             initMap();
         }
-    }, [panorama, map]); // Dependencies
+    }, [panorama, map, heading]); // Dependencies
 
     // Sync Map with Panorama Position (and Handle Drag End)
     useEffect(() => {
@@ -193,6 +194,15 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             const newPos = marker.getPosition();
             if (newPos) {
                 teleportTo(newPos);
+                // Optional: Flash marker for feedback
+                const icon = marker.getIcon() as google.maps.Symbol;
+                const originalScale = icon.scale;
+                icon.scale += 2;  // Brief enlarge
+                marker.setIcon(icon);
+                setTimeout(() => {
+                    icon.scale = originalScale;
+                    marker.setIcon(icon);
+                }, 200);
             }
         });
 
