@@ -46,4 +46,41 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart }) => {
                 <div style={{
                     textAlign: 'left',
                     backgroundColor: '#f5f9f5',
-                    padding
+                    padding: '20px',
+                    borderRadius: '8px',
+                    marginBottom: '30px',
+                    border: '1px solid #e0e0e0'
+                }}>
+                    <h3 style={{ marginTop: 0, color: '#2e7d32' }}>Features:</h3>
+                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#555' }}>
+                        <li>360° panoramic navigation</li>
+                        <li>WebGPU-accelerated rendering</li>
+                        <li>Route planning and cruise mode</li>
+                        <li>Interactive mini-map</li>
+                        <li>Snapshot functionality</li>
+                    </ul>
+                </div>
+
+                <button
+                    onClick={onStart}
+                    style={{
+                        backgroundColor: '#2e7d32',
+                        color: 'white',
+                        border: 'none',
+                        padding: '12px 30px',
+                        borderRadius: '6px',
+                        fontSize: '1.1rem',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.3s'
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1b5e20'}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2e7d32'}
+                >
+                    Start Exploring
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export default WelcomeModal;

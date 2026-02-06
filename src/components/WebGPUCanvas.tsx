@@ -14,9 +14,10 @@ interface WebGPUCanvasProps {
     isMouseDown?: boolean;
     setIsMouseDown?: (down: boolean) => void;
     rendererRef?: React.RefObject<Renderer | null>;
+    onWebGPUStatus?: (available: boolean) => void;
 }
 
-const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, panY, farthestPoint, mousePosition, setMousePosition, isMouseDown, setIsMouseDown, rendererRef }) => {
+const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, panY, farthestPoint, mousePosition, setMousePosition, isMouseDown, setIsMouseDown, rendererRef, onWebGPUStatus }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
@@ -47,9 +48,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
                 if (rendererRef) {
                     (rendererRef as React.MutableRefObject<Renderer | null>).current = renderer;
                 }
+                onWebGPUStatus?.(true);
             } else {
                 // Handle WebGPU failure (e.g., show an error or fallback)
                 console.warn("WebGPU initialization failed. Please check your browser compatibility.");
+                onWebGPUStatus?.(false);
             }
         })();
 
