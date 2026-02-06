@@ -16,8 +16,6 @@ const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
 function App() {
     const [mode] = useState<RenderMode>('streetview');
     const [zoom, setZoom] = useState(1.0);
-    const [effectiveZoom, setEffectiveZoom] = useState(1.0);
-    const [webGPUAvailable, setWebGPUAvailable] = useState<boolean | null>(null); // null = checking, true = available, false = not available
 
     // Welcome Modal state
     const [showWelcome, setShowWelcome] = useState(true);
@@ -478,7 +476,7 @@ Image File: ${filename}
             pitch: pitch.toFixed(1)
         });
         window.history.replaceState({}, '', `?${params.toString()}`);
-    }, [currentCoords, heading, pitch]);
+    }, [currentCoords, heading, pitch, panorama]);
 
     return (
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>

@@ -9,7 +9,6 @@ interface StreetViewProps {
 
 const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady }) => {
     const panoRef = useRef<HTMLDivElement>(null);
-    const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
     // Keep track of the currently active canvas to avoid unnecessary updates
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -48,7 +47,6 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             });
 
             mapInstance.setStreetView(panoInstance);
-            setPanorama(panoInstance);
 
             if (onPanoramaReady) onPanoramaReady(panoInstance);
 

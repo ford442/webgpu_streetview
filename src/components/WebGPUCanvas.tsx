@@ -59,7 +59,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
         return () => {
             cancelAnimationFrame(animationFrameId.current);
         };
-    }, [rendererRef]);
+    }, [rendererRef, onWebGPUStatus]);
 
     useEffect(() => {
         let active = true;
