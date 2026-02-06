@@ -10,10 +10,25 @@ interface MiniMapProps {
 const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
-    const [marker, setMarker] = useState<google.maps.Marker | null>(null);
+    const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
-    const breadcrumbMarkersRef = useRef<google.maps.Marker[]>([]);
+    const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
+
+    // Helper to create custom marker content
+    const createMarkerContent = (rotation: number): HTMLElement => {
+        const el = document.createElement('div');
+        el.style.cssText = `
+            width: 24px; height: 24px; cursor: grab;
+            background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, transparent 70%);
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            transform: rotate(${rotation}deg);
+            border: 3px solid #00CCFF;
+            box-shadow: 0 0 12px #00CCFF;
+        `;
+        el.title = "Drag to move (You are here) 🖱️";
+        return el;
+    };
 
     // Helper to add a breadcrumb at the current panorama position
     const addBreadcrumb = useCallback(() => {
@@ -53,6 +68,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             const newMap = new google.maps.Map(mapRef.current!, {
                 center: position,
                 zoom: 16,
+                mapId: 'DEMO_MAP_ID',  // Required for AdvancedMarker
                 streetViewControl: false,
                 mapTypeControl: false,
                 fullscreenControl: false,
@@ -145,24 +161,12 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             coverageLayer.setMap(newMap);
 
             // Add marker
-            const newMarker = new google.maps.Marker({
-                position: position,
+            const newMarker = new google.maps.marker.AdvancedMarkerElement({
                 map: newMap,
-                draggable: true, // Make draggable
-                icon: {
-                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 10, // Increased from 6 for larger target
-                    fillColor: "#00CCFF",
-                    fillOpacity: 1,
-                    // Use a thick stroke to create a "halo" or "handle" that makes it easy to grab
-                    strokeColor: "#ffffff",
-                    strokeWeight: 18, // Increased from 12 for bigger halo/grab area
-                    strokeOpacity: 0.6, // Slightly more opaque for visibility
-                    rotation: heading,
-                    anchor: new google.maps.Point(0, 5)  // Adjusted down from 2.5 for better centering/grab
-                },
-                title: "Drag to move (You are here) 🖱️",  // Enhanced tooltip
-                cursor: 'grab'  // Native grab cursor (works on drag start)
+                position: position,
+                title: "Drag to move (You are here) 🖱️",
+                gmpDraggable: true,  // Enables drag (AdvancedMarker prop)
+                content: createMarkerContent(heading),  // Custom arrow/glow via content
             });
 
             setMap(newMap);
@@ -183,7 +187,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
             const position = panorama.getPosition();
             if (position) {
                 map.setCenter(position);
-                marker.setPosition(position);
+                marker.position = position;
             }
         };
 
@@ -191,18 +195,16 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
 
         // Handle Marker Drag End
         const dragEndListener = marker.addListener('dragend', () => {
-            const newPos = marker.getPosition();
+            const newPos = marker.position;
             if (newPos) {
                 teleportTo(newPos);
                 // Optional: Flash marker for feedback
-                const icon = marker.getIcon() as google.maps.Symbol;
-                if (icon && icon.scale !== null && icon.scale !== undefined) {
-                    const originalScale = icon.scale;
-                    icon.scale += 2;  // Brief enlarge
-                    marker.setIcon(icon);
+                const content = marker.content as HTMLElement;
+                if (content) {
+                    const originalTransform = content.style.transform;
+                    content.style.transform = `scale(1.5) ${originalTransform}`;
                     setTimeout(() => {
-                        icon.scale = originalScale;
-                        marker.setIcon(icon);
+                        content.style.transform = originalTransform;
                     }, 200);
                 }
             }
@@ -239,10 +241,9 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
     useEffect(() => {
         if (!marker) return;
 
-        const icon = marker.getIcon() as google.maps.Symbol;
-        if (icon) {
-            icon.rotation = heading;
-            marker.setIcon(icon);
+        const content = marker.content as HTMLElement;
+        if (content) {
+            content.style.transform = `rotate(${heading}deg)`;
         }
     }, [heading, marker]);
 
@@ -251,23 +252,22 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         if (!map) return;
 
         // Clear old markers
-        breadcrumbMarkersRef.current.forEach(m => m.setMap(null));
+        breadcrumbMarkersRef.current.forEach(m => m.map = null);
         breadcrumbMarkersRef.current = [];
 
         // Add new markers
         breadcrumbs.forEach((pos, index) => {
-             const crumb = new google.maps.Marker({
-                position: pos,
+             const crumbContent = document.createElement('div');
+             crumbContent.style.cssText = `
+                 width: 8px; height: 8px; background: #888; border-radius: 50%; 
+                 border: 1px solid #fff; cursor: pointer;
+             `;
+
+             const crumb = new google.maps.marker.AdvancedMarkerElement({
                 map: map,
-                icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 4,
-                    fillColor: "#888888",
-                    fillOpacity: 0.8,
-                    strokeColor: "#ffffff",
-                    strokeWeight: 1,
-                },
-                title: `Previous Location ${index + 1}`
+                position: pos,
+                title: `Previous Location ${index + 1}`,
+                content: crumbContent,
             });
 
             crumb.addListener("click", () => {

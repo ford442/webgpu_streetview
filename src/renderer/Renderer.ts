@@ -19,23 +19,15 @@ export class Renderer {
     }
 
     public async init(): Promise<boolean> {
-        try {
-            if (!navigator.gpu) {
-                console.error('WebGPU not supported in this browser. WebGPU requires:');
-                console.error('- Chrome 113+ or Edge 113+ on Windows/Linux');
-                console.error('- Chrome 113+ on macOS (with Metal support)');
-                console.error('- Firefox 118+ (experimental, may need flags)');
-                console.error('- Safari 16.4+ on macOS (experimental)');
-                console.error('Please update your browser or enable WebGPU flags.');
-                return false;
-            }
+        if (!navigator.gpu) {
+            console.warn('WebGPU not supported. Using StreetView fallback.');
+            return false;
+        }
 
+        try {
             const adapter = await navigator.gpu.requestAdapter();
             if (!adapter) {
-                console.error('No WebGPU adapter found. This could mean:');
-                console.error('- Your GPU does not support WebGPU');
-                console.error('- WebGPU is disabled in your browser');
-                console.error('- You are using an unsupported browser or OS');
+                console.warn('No WebGPU adapter found. Fallback active.');
                 return false;
             }
 
@@ -87,7 +79,7 @@ export class Renderer {
         });
             const context = this.canvas.getContext('webgpu');
             if (!context) {
-                console.error('Could not get WebGPU context');
+                console.warn('Could not get WebGPU context. Fallback active.');
                 return false;
             }
 
@@ -117,7 +109,7 @@ export class Renderer {
             // console.log('WebGPU Renderer initialized');
             return true;
         } catch (e) {
-            console.error('Failed to initialize WebGPU:', e);
+            console.warn('WebGPU init failed (expected in some envs). Fallback active:', e.message);
             return false;
         }
     }

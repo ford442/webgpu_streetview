@@ -15,13 +15,13 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, onPanora
     const startLocation = { lat: 39.2575004, lng: -121.021821 };
 
     useEffect(() => {
-        if (!(window as any).google) {
+        if (!(window as any).google?.maps) {  // Stricter check to prevent double-load
             const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=alpha`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&libraries=marker`;  // Stable v=weekly + marker lib
             script.async = true;
             script.defer = true;
             script.onload = initialize;
-            document.body.appendChild(script);
+            document.head.appendChild(script);  // Use head, not body
         } else {
             initialize();
         }
