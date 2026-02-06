@@ -7,6 +7,7 @@ import { RenderMode } from './renderer/types';
 import { findBestLink } from './utils/navigation';
 import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
+import Compass from './components/Compass';
 import './style.css';
 
 // Constants for cruise mode timing
@@ -72,6 +73,7 @@ function App() {
 
     const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
     const rendererRef = useRef<Renderer | null>(null);
+    const canvasContainerRef = useRef<HTMLDivElement>(null); // Ref for input handling scope
 
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
@@ -263,84 +265,64 @@ function App() {
         setIsRadioPlaying(!isRadioPlaying);
     };
 
-    const takeSnapshot = () => {
-        if (rendererRef.current && panorama) {
-            const canvas = rendererRef.current['canvas'] as HTMLCanvasElement;
+    // [ENHANCED] Snapshot handler with JSON sidecar metadata
+    const handleSnapshot = useCallback(() => {
+        if (!rendererRef.current || !panorama) return;
 
-            // Gather snapshot metadata
-            const position = panorama.getPosition();
-            const lat = position?.lat().toFixed(6) || '0';
-            const lng = position?.lng().toFixed(6) || '0';
-            const pov = panorama.getPov();
-            const currentHeading = pov?.heading?.toFixed(1) || heading.toFixed(1);
-            const currentPitch = pov?.pitch?.toFixed(1) || pitch.toFixed(1);
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-            // Create descriptive filename with timestamp and coordinates
-            const filename = `streetview_${timestamp}_${lat}_${lng}.png`;
-
-            // Download the image
-            const link = document.createElement('a');
-            link.download = filename;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-
-            // Create and download a metadata text file
-            const metadata = `WebGPU StreetView Snapshot
-=========================
-Captured: ${new Date().toLocaleString()}
-Timestamp: ${new Date().toISOString()}
-
-Location Information:
---------------------
-Location Name: ${locationName || 'Unknown Location'}
-Latitude: ${lat}°
-Longitude: ${lng}°
-Google Maps Link: https://www.google.com/maps/@${lat},${lng},3a,75y,${currentHeading}h,${currentPitch}t/data=!3m4!1e1!3m2!1s${panorama.getPano()}!2e0
-
-View Parameters:
----------------
-Heading: ${currentHeading}° (${getCardinalDirection(parseFloat(currentHeading))})
-Pitch: ${currentPitch}° (${getPitchDescription(parseFloat(currentPitch))})
-Zoom: ${zoom.toFixed(2)}x
-
-Application State:
------------------
-Render Mode: ${mode}
-Cruise Mode: ${isCruiseMode ? 'ON' : 'OFF'}
-Panorama ID: ${panorama.getPano() || 'N/A'}
-
-Image File: ${filename}
-`;
-
-            const metadataBlob = new Blob([metadata], { type: 'text/plain' });
-            const metadataLink = document.createElement('a');
-            metadataLink.download = filename.replace('.png', '.txt');
-            metadataLink.href = URL.createObjectURL(metadataBlob);
-            metadataLink.click();
-            URL.revokeObjectURL(metadataLink.href);
-
-            console.log('Snapshot saved:', filename);
+        // 1. Capture Image
+        let dataUrl = '';
+        try {
+            dataUrl = rendererRef.current.getCanvasDataURL();
+        } catch (e) {
+            console.error("Failed to capture canvas:", e);
+            alert("Could not take snapshot. See console.");
+            return;
         }
-    };
 
-    // Helper function to get cardinal direction from heading
-    const getCardinalDirection = (heading: number): string => {
-        const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-        const index = Math.round(((heading % 360) / 22.5));
-        return directions[index % 16];
-    };
+        // 2. Gather Metadata
+        const position = panorama.getPosition();
+        const timestamp = new Date().toISOString();
+        const filenameBase = `streetview_${timestamp.replace(/[:.]/g, '-')}`;
 
-    // Helper function to describe pitch angle
-    const getPitchDescription = (pitch: number): string => {
-        if (pitch > 60) return 'Looking up steeply';
-        if (pitch > 30) return 'Looking up';
-        if (pitch > 10) return 'Looking slightly up';
-        if (pitch > -10) return 'Looking straight ahead';
-        if (pitch > -30) return 'Looking slightly down';
-        if (pitch > -60) return 'Looking down';
-        return 'Looking down steeply';
-    };
+        const metadata = {
+            version: "1.0",
+            timestamp: timestamp,
+            panoId: panorama.getPano(),
+            location: {
+                lat: position?.lat(),
+                lng: position?.lng(),
+                description: locationName || "Unknown Location"
+            },
+            pov: {
+                heading,
+                pitch,
+                zoom
+            },
+            renderSettings: {
+                mode,
+                effectiveZoom: zoom
+            }
+        };
+
+        // 3. Download Image
+        const imgLink = document.createElement('a');
+        imgLink.download = `${filenameBase}.png`;
+        imgLink.href = dataUrl;
+        document.body.appendChild(imgLink);
+        imgLink.click();
+        document.body.removeChild(imgLink);
+
+        // 4. Download Metadata (Sidecar JSON)
+        const metaBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
+        const metaLink = document.createElement('a');
+        metaLink.download = `${filenameBase}.json`;
+        metaLink.href = URL.createObjectURL(metaBlob);
+        document.body.appendChild(metaLink);
+        metaLink.click();
+        document.body.removeChild(metaLink);
+
+        console.log('Snapshot saved:', filenameBase);
+    }, [panorama, heading, pitch, zoom, mode, locationName]);
 
     // Helper function to calculate heading between two points
     const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -482,9 +464,10 @@ Image File: ${filename}
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
             {showWelcome && <WelcomeModal onStart={handleStart} />}
 
-            {/* Input Handler enabled even during transitions to allow steering */}
+            {/* Input Handler - scoped to canvas container */}
             <InputHandler
                 isEnabled={isConnected && !showWelcome}
+                targetRef={canvasContainerRef}
                 onPan={handlePan}
                 onZoom={handleZoom}
                 onMove={handleMove}
@@ -516,7 +499,7 @@ Image File: ${filename}
             </div>
 
             {/* WebGPU Output */}
-            <div data-testid="webgpu-canvas-container" style={{
+            <div ref={canvasContainerRef} data-testid="webgpu-canvas-container" style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
@@ -534,6 +517,9 @@ Image File: ${filename}
                     panX={heading / 360}
                     panY={(pitch + 90) / 180}
                 />
+                
+                {/* Compass Overlay - shows which direction is North */}
+                {isConnected && <Compass heading={heading} />}
             </div>
 
             {/* Slide-out Map Container (Expanded to 50%) */}
@@ -697,8 +683,8 @@ Image File: ${filename}
                         <button onClick={() => setIsConnected(false)} className="control-btn disconnect">
                             STOP
                         </button>
-                        <button onClick={takeSnapshot} className="control-btn">
-                            Save PNG
+                        <button onClick={handleSnapshot} className="control-btn">
+                            📸 Take Snapshot
                         </button>
                         <button onClick={() => setIsCruiseMode(!isCruiseMode)} className={`control-btn ${isCruiseMode ? 'disconnect' : ''}`}>
                             Cruise: {isCruiseMode ? 'ON' : 'OFF'} {routeWaypoints && '🗺️'}
