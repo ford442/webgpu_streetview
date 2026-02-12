@@ -27,6 +27,20 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     // Track if the current drag operation started on the target element
     const dragStartedOnTargetRef = useRef(false);
 
+    // Refs to store the latest versions of callbacks to prevent useEffect thrashing
+    const onPanRef = useRef(onPan);
+    const onZoomRef = useRef(onZoom);
+    const onMoveRef = useRef(onMove);
+    const onRightClickMoveRef = useRef(onRightClickMove);
+
+    // Keep refs up to date
+    useEffect(() => {
+        onPanRef.current = onPan;
+        onZoomRef.current = onZoom;
+        onMoveRef.current = onMove;
+        onRightClickMoveRef.current = onRightClickMove;
+    });
+
     useEffect(() => {
         if (!isEnabled) return;
         
@@ -45,12 +59,12 @@ const InputHandler: React.FC<InputHandlerProps> = ({
 
         const handleWheel = (e: WheelEvent) => {
             e.preventDefault();
-            onZoom(e.deltaY);
+            onZoomRef.current(e.deltaY);
         };
 
         const handleContextMenu = (e: MouseEvent) => {
             e.preventDefault();
-            onRightClickMove();
+            onRightClickMoveRef.current();
         };
 
         // --- GLOBAL MOUSE EVENTS (attached to window) ---
@@ -62,7 +76,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 
                 // Only trigger click-to-move if drag started on target
                 if (dragStartedOnTargetRef.current && dragDistanceRef.current < 5) {
-                    onMove('forward');
+                    onMoveRef.current('forward');
                 }
                 
                 dragStartedOnTargetRef.current = false;
@@ -74,7 +88,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
                 const dist = Math.hypot(e.movementX, e.movementY);
                 dragDistanceRef.current += dist;
-                onPan(e.movementX, e.movementY);
+                onPanRef.current(e.movementX, e.movementY);
             }
         };
 
@@ -89,16 +103,16 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             
             switch (e.key.toLowerCase()) {
                 case 'w':
-                    onMove('forward');
+                    onMoveRef.current('forward');
                     break;
                 case 's':
-                    onMove('backward');
+                    onMoveRef.current('backward');
                     break;
                 case 'a':
-                    onMove('left');
+                    onMoveRef.current('left');
                     break;
                 case 'd':
-                    onMove('right');
+                    onMoveRef.current('right');
                     break;
             }
         };
@@ -125,7 +139,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [isEnabled, onPan, onZoom, onMove, onRightClickMove, targetRef]);
+    }, [isEnabled, targetRef]);
 
     return null; // This component does not render anything
 };
