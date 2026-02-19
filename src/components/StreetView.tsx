@@ -15,19 +15,25 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     const startLocation = initialPosition ?? { lat: 39.2575004, lng: -121.021821 };
 
     useEffect(() => {
+        let isMounted = true;
+        let cleanup: (() => void) | null = null;
+
         if (!(window as any).google?.maps) {  // Stricter check to prevent double-load
             const script = document.createElement('script');
             script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&libraries=marker`;  // Stable v=weekly + marker lib
             script.async = true;
             script.defer = true;
-            script.onload = initialize;
+            script.onload = () => {
+                if (!isMounted) return;
+                cleanup = initialize();
+            };
             document.head.appendChild(script);  // Use head, not body
         } else {
-            initialize();
+            cleanup = initialize();
         }
 
         function initialize() {
-            if (!panoRef.current) return;
+            if (!panoRef.current) return null;
 
             // Setup Google Maps services
             const mapDiv = document.createElement('div');
@@ -98,6 +104,13 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 observer.disconnect();
             };
         }
+
+        return () => {
+            isMounted = false;
+            if (cleanup) {
+                cleanup();
+            }
+        };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apiKey]);
 
