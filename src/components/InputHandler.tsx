@@ -6,6 +6,7 @@ interface InputHandlerProps {
     onZoom: (deltaZ: number) => void;
     onMove: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
     onRightClickMove: () => void; // Specific callback for right-click forward movement
+    onToggleCarMode?: () => void; // Toggle car view with 'C' key
 
     // State from the parent to control behavior
     isEnabled: boolean; // Controls whether the handler is active
@@ -18,7 +19,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     onPan, 
     onZoom, 
     onMove, 
-    onRightClickMove, 
+    onRightClickMove,
+    onToggleCarMode,
     isEnabled,
     targetRef 
 }) => {
@@ -32,6 +34,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const onZoomRef = useRef(onZoom);
     const onMoveRef = useRef(onMove);
     const onRightClickMoveRef = useRef(onRightClickMove);
+    const onToggleCarModeRef = useRef(onToggleCarMode);
 
     // Keep refs up to date
     useEffect(() => {
@@ -39,6 +42,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         onZoomRef.current = onZoom;
         onMoveRef.current = onMove;
         onRightClickMoveRef.current = onRightClickMove;
+        onToggleCarModeRef.current = onToggleCarMode;
     });
 
     useEffect(() => {
@@ -113,6 +117,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                     break;
                 case 'd':
                     onMoveRef.current('right');
+                    break;
+                case 'c':
+                    onToggleCarModeRef.current?.();
                     break;
             }
         };
