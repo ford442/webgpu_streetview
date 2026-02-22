@@ -26,8 +26,9 @@ const INITIAL_HEADING = 34;
 const MAX_HEAD_YAW = 110;
 const MAX_HEAD_PITCH_UP = 45;
 const MAX_HEAD_PITCH_DOWN = 65;
-const HEAD_LOOK_SENSITIVITY = 0.15;
+const HEAD_LOOK_SENSITIVITY = 0.18;  // Mouse sensitivity for head look inside car
 const KEYBOARD_STEER_RATE = 60; // degrees per second
+const STREET_LOCK_LERP = 0.12;  // How fast car snaps to road direction (0-1)
 
 function App() {
     const [mode] = useState<RenderMode>('streetview');
@@ -113,7 +114,7 @@ function App() {
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
         if (isCarMode) {
-            // In car mode: head look only (car body stays level)
+            // In car mode: mouse only moves HEAD inside the car (car stays locked to street)
             setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         } else {
@@ -124,6 +125,7 @@ function App() {
     }, [isCarMode]);
 
     // Keyboard steering for car mode (A/D or ArrowLeft/ArrowRight)
+    // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
     const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
         if (!isCarMode) return;
         const turnRate = KEYBOARD_STEER_RATE * deltaTime;
@@ -132,6 +134,7 @@ function App() {
         } else {
             setCarHeading(prev => (prev + turnRate) % 360);
         }
+        // Note: headYawOffset stays the same - head turns with car (relative offset)
     }, [isCarMode]);
 
     const handleZoom = useCallback((deltaZ: number) => {
@@ -154,8 +157,17 @@ function App() {
         );
         if (bestLink && bestLink.pano) {
             panorama.setPano(bestLink.pano);
+            // In car mode: after moving, smoothly snap car to the actual road direction
             if (isCarMode && typeof bestLink.heading === 'number') {
-                setCarHeading(bestLink.heading);
+                // Smooth lerp to road direction - car follows street
+                setCarHeading(prev => {
+                    const target = bestLink.heading as number;
+                    // Handle angle wrapping for shortest path
+                    let diff = target - prev;
+                    while (diff > 180) diff -= 360;
+                    while (diff < -180) diff += 360;
+                    return prev + diff * STREET_LOCK_LERP;
+                });
             }
         }
     }, [panorama, heading, isCarMode, carHeading]);
@@ -309,9 +321,15 @@ function App() {
 
             if (bestLink && bestLink.pano) {
                 panorama.setPano(bestLink.pano);
-                // Update heading to face the direction we're moving
+                // In car mode: smoothly snap to road direction (street locking)
                 if (isCarMode) {
-                    setCarHeading(targetHeading);
+                    setCarHeading(prev => {
+                        // Handle angle wrapping for shortest path
+                        let diff = targetHeading - prev;
+                        while (diff > 180) diff -= 360;
+                        while (diff < -180) diff += 360;
+                        return prev + diff * STREET_LOCK_LERP;
+                    });
                 } else {
                     setHeading(targetHeading);
                 }
@@ -388,14 +406,16 @@ function App() {
     }, [isCarMode]);
 
     // Update car mode rendering each frame via effect
-    // Car interior stays locked to carHeading (body stays level with ground)
-    // Camera view uses viewHeading + headPitch (head looks freely)
+    // Car interior stays locked to carHeading (body follows street direction)
+    // Camera view uses viewHeading (carHeading + headYawOffset) + headPitch
+    // When car turns, head turns WITH the car - cockpit feels rigid
     useEffect(() => {
         if (!isCarMode || !carModeRef.current) return;
         let active = true;
         const animate = () => {
             if (!active) return;
-            // Pass carHeading for car body orientation, viewHeading+headPitch for camera
+            // Car interior rotates with carHeading (follows road)
+            // Mirror stays locked to car (180° behind car heading)
             updateCarMode(carHeading, viewHeading, headPitch);
             requestAnimationFrame(animate);
         };
