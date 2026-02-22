@@ -6,13 +6,17 @@ export class Renderer {
     private context!: GPUCanvasContext;
     private presentationFormat!: GPUTextureFormat;
     private pipeline!: GPURenderPipeline;
+    private carPipeline?: GPURenderPipeline; // Car view pipeline with post-processing
     private bindGroup!: GPUBindGroup;
+    private carBindGroup?: GPUBindGroup;
     private sampler!: GPUSampler;
     private texture!: GPUTexture; // static image texture
     private videoTexture?: GPUTexture; // dynamic texture for video/canvas frames
     private videoTextureWidth: number = 0;
     private videoTextureHeight: number = 0;
     private uniformBuffer!: GPUBuffer;
+    private effectsBuffer?: GPUBuffer; // Post-processing effects uniform buffer
+    private carModeActive: boolean = false;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -104,7 +108,15 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
+            // Effects uniform buffer for car view post-processing
+            // Layout: [rainIntensity, vignetteStrength, brightness, contrast, tintR, tintG, tintB, nightMode]
+            this.effectsBuffer = this.device.createBuffer({
+                size: 32, // 8 floats * 4 bytes
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+
             await this.createPipeline();
+            await this.createCarPipeline();
 
             // console.log('WebGPU Renderer initialized');
             return true;
@@ -155,6 +167,9 @@ export class Renderer {
                 { binding: 2, resource: { buffer: this.uniformBuffer } },
             ],
         });
+
+        // Also update car bind group if car pipeline exists
+        this.updateCarBindGroup();
     }
 
     private async createPipeline(): Promise<void> {
@@ -203,6 +218,97 @@ export class Renderer {
         });
 
         this.updateBindGroup();
+    }
+
+    private async createCarPipeline(): Promise<void> {
+        try {
+            const shaderCode = await fetch('./shaders/carview.wgsl').then(r => r.text());
+
+            const shaderModule = this.device.createShaderModule({
+                code: shaderCode,
+            });
+
+            const bindGroupLayout = this.device.createBindGroupLayout({
+                entries: [
+                    {
+                        binding: 0,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        sampler: { type: 'filtering' as GPUSamplerBindingType },
+                    },
+                    {
+                        binding: 1,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        texture: { sampleType: 'float' as GPUTextureSampleType },
+                    },
+                    {
+                        binding: 2,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        buffer: { type: 'uniform' as GPUBufferBindingType },
+                    },
+                    {
+                        binding: 3,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        buffer: { type: 'uniform' as GPUBufferBindingType },
+                    },
+                ],
+            });
+
+            const pipelineLayout = this.device.createPipelineLayout({
+                bindGroupLayouts: [bindGroupLayout],
+            });
+
+            this.carPipeline = this.device.createRenderPipeline({
+                layout: pipelineLayout,
+                vertex: {
+                    module: shaderModule,
+                    entryPoint: 'vs_main',
+                },
+                fragment: {
+                    module: shaderModule,
+                    entryPoint: 'fs_main',
+                    targets: [{ format: this.presentationFormat }],
+                },
+                primitive: { topology: 'triangle-strip' },
+            });
+
+            this.updateCarBindGroup();
+        } catch (e) {
+            // Car view shader is optional; fall back to standard pipeline
+            console.warn('Car view shader not available:', e instanceof Error ? e.message : String(e));
+        }
+    }
+
+    private updateCarBindGroup(): void {
+        if (!this.carPipeline || !this.texture || !this.sampler || !this.uniformBuffer || !this.effectsBuffer) return;
+
+        const textureView = (this.videoTexture ? this.videoTexture.createView() : this.texture.createView());
+
+        this.carBindGroup = this.device.createBindGroup({
+            layout: this.carPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: this.sampler },
+                { binding: 1, resource: textureView },
+                { binding: 2, resource: { buffer: this.uniformBuffer } },
+                { binding: 3, resource: { buffer: this.effectsBuffer } },
+            ],
+        });
+    }
+
+    /**
+     * Enable or disable car mode rendering with post-processing effects.
+     */
+    public setCarMode(active: boolean): void {
+        this.carModeActive = active;
+    }
+
+    /**
+     * Update post-processing effects data.
+     * @param effectsData - Float32Array of 8 floats: [rainIntensity, vignetteStrength, brightness, contrast, tintR, tintG, tintB, nightMode]
+     */
+    public updateEffects(effectsData: Float32Array): void {
+        if (this.effectsBuffer && this.device) {
+            this.device.queue.writeBuffer(this.effectsBuffer, 0, effectsData);
+        }
     }
 
     // NOTE: Accept a nullable source so we can render even if no new frame is provided
@@ -269,6 +375,11 @@ export class Renderer {
             this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
             // 3. Render using whichever texture the bind group currently references (videoTexture preferred)
+            // Use car pipeline with post-processing when car mode is active
+            const useCarPipeline = this.carModeActive && this.carPipeline && this.carBindGroup;
+            const activePipeline = useCarPipeline ? this.carPipeline! : this.pipeline;
+            const activeBindGroup = useCarPipeline ? this.carBindGroup! : this.bindGroup;
+
             const commandEncoder = this.device.createCommandEncoder();
             const textureView = this.context.getCurrentTexture().createView();
 
@@ -281,8 +392,8 @@ export class Renderer {
                 }],
             });
 
-            renderPass.setPipeline(this.pipeline);
-            renderPass.setBindGroup(0, this.bindGroup);
+            renderPass.setPipeline(activePipeline);
+            renderPass.setBindGroup(0, activeBindGroup);
             renderPass.draw(4, 1, 0, 0);
             renderPass.end();
 

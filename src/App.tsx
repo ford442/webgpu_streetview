@@ -8,6 +8,9 @@ import { findBestLink } from './utils/navigation';
 import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
 import Compass from './components/Compass';
+import DashboardUI from './car/DashboardUI';
+import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, CarModeState } from './car';
+import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
 
 // Constants for cruise mode timing
@@ -55,6 +58,14 @@ function App() {
     // Radio state
     const [isRadioPlaying, setIsRadioPlaying] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Car mode state
+    const [isCarMode, setIsCarMode] = useState(false);
+    const [isRoofOpen, setIsRoofOpen] = useState(false);
+    const [rainIntensity, setRainIntensity] = useState(0);
+    const [timeOfDay, setTimeOfDay] = useState<string>('day');
+    const carModeRef = useRef<CarModeState | null>(null);
+    const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
 
     useEffect(() => {
         if (!audioRef.current) {
@@ -265,6 +276,82 @@ function App() {
         setIsRadioPlaying(!isRadioPlaying);
     };
 
+    // --- CAR MODE ---
+    const handleToggleCarMode = useCallback(() => {
+        setIsCarMode(prev => !prev);
+    }, []);
+
+    // Initialize/teardown car mode when toggled
+    useEffect(() => {
+        if (isCarMode && canvasContainerRef.current) {
+            if (!carModeRef.current) {
+                const state = initCarMode(canvasContainerRef.current);
+                carModeRef.current = state;
+                postProcessingRef.current = state.postProcessing;
+            }
+            toggleCarMode(true);
+            if (rendererRef.current) {
+                rendererRef.current.setCarMode(true);
+            }
+        } else {
+            toggleCarMode(false);
+            if (rendererRef.current) {
+                rendererRef.current.setCarMode(false);
+            }
+        }
+    }, [isCarMode]);
+
+    // Update car mode rendering each frame via effect
+    useEffect(() => {
+        if (!isCarMode || !carModeRef.current) return;
+        let active = true;
+        const animate = () => {
+            if (!active) return;
+            updateCarMode(heading, pitch);
+            requestAnimationFrame(animate);
+        };
+        animate();
+        return () => { active = false; };
+    }, [isCarMode, heading, pitch]);
+
+    // Update post-processing effects when settings change
+    useEffect(() => {
+        if (!postProcessingRef.current || !rendererRef.current) return;
+        postProcessingRef.current.setRainIntensity(rainIntensity);
+        postProcessingRef.current.setTimeOfDay(timeOfDay);
+        rendererRef.current.updateEffects(postProcessingRef.current.getUniformData());
+    }, [rainIntensity, timeOfDay]);
+
+    // Handle car mode resize
+    useEffect(() => {
+        if (!isCarMode || !carModeRef.current) return;
+        const handleResize = () => {
+            carModeRef.current?.interior.resize(window.innerWidth, window.innerHeight);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [isCarMode]);
+
+    // Cleanup car mode on unmount
+    useEffect(() => {
+        return () => {
+            disposeCarMode();
+        };
+    }, []);
+
+    const handleToggleRoof = useCallback(() => {
+        setIsRoofOpen(prev => !prev);
+        carModeRef.current?.interior.toggleRoof();
+    }, []);
+
+    const handleRainIntensity = useCallback((value: number) => {
+        setRainIntensity(value);
+    }, []);
+
+    const handleTimeOfDay = useCallback((value: string) => {
+        setTimeOfDay(value);
+    }, []);
+
     // [ENHANCED] Snapshot handler with JSON sidecar metadata
     const handleSnapshot = useCallback(() => {
         if (!rendererRef.current || !panorama) return;
@@ -472,6 +559,7 @@ function App() {
                 onZoom={handleZoom}
                 onMove={handleMove}
                 onRightClickMove={handleRightClickMove}
+                onToggleCarMode={handleToggleCarMode}
             />
 
             {/* Original StreetView: Hidden via opacity when connected, but kept in DOM for scraping */}
@@ -683,6 +771,9 @@ function App() {
                         <button onClick={() => setIsConnected(false)} className="control-btn disconnect">
                             STOP
                         </button>
+                        <button onClick={handleToggleCarMode} className={`control-btn ${isCarMode ? 'disconnect' : ''}`} title="Toggle car view (C)">
+                            🚗 {isCarMode ? 'In-Car' : 'Standard'}
+                        </button>
                         <button onClick={handleSnapshot} className="control-btn">
                             📸 Take Snapshot
                         </button>
@@ -698,6 +789,23 @@ function App() {
                     </>
                 )}
             </div>
+
+            {/* Car Mode Dashboard UI */}
+            {isConnected && (
+                <DashboardUI
+                    isVisible={isCarMode}
+                    isRadioPlaying={isRadioPlaying}
+                    onToggleGPS={() => setIsMapOpen(!isMapOpen)}
+                    onToggleRadio={toggleRadio}
+                    onRainIntensity={handleRainIntensity}
+                    onTimeOfDay={handleTimeOfDay}
+                    onToggleRoof={handleToggleRoof}
+                    isRoofOpen={isRoofOpen}
+                    rainIntensity={rainIntensity}
+                    timeOfDay={timeOfDay}
+                    audioElement={audioRef.current}
+                />
+            )}
         </div>
     );
 }
