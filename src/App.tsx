@@ -16,6 +16,7 @@ import './style.css';
 // Constants for cruise mode timing
 const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
 const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
+const INITIAL_HEADING = 34;
 
 function App() {
     const [mode] = useState<RenderMode>('streetview');
@@ -25,8 +26,9 @@ function App() {
     const [showWelcome, setShowWelcome] = useState(true);
 
     // POV state
-    const [heading, setHeading] = useState(34);
+    const [heading, setHeading] = useState(INITIAL_HEADING);
     const [pitch, setPitch] = useState(10);
+    const [carHeading, setCarHeading] = useState(INITIAL_HEADING);
 
     // Map UI state
     const [isMapOpen, setIsMapOpen] = useState(false);
@@ -104,15 +106,20 @@ function App() {
         const links = panorama.getLinks();
         if (!links) return;
 
+        const movementHeading = isCarMode ? carHeading : heading;
+
         const bestLink = findBestLink(
             links.filter((link): link is google.maps.StreetViewLink => link !== null),
-            heading,
+            movementHeading,
             direction
         );
         if (bestLink && bestLink.pano) {
             panorama.setPano(bestLink.pano);
+            if (isCarMode && typeof bestLink.heading === 'number') {
+                setCarHeading(bestLink.heading);
+            }
         }
-    }, [panorama, heading]);
+    }, [panorama, heading, isCarMode, carHeading]);
 
     const handleRightClickMove = useCallback(() => {
         handleMove('forward');
@@ -194,7 +201,7 @@ function App() {
             const links = panorama.getLinks();
             if (!links) return;
 
-            let targetHeading = heading;
+            let targetHeading = isCarMode ? carHeading : heading;
 
             // If we have a route with waypoints, navigate towards the next waypoint
             if (routeWaypoints && routeWaypoints.length > 0 && currentWaypointIndex < routeWaypoints.length) {
@@ -245,7 +252,11 @@ function App() {
             if (bestLink && bestLink.pano) {
                 panorama.setPano(bestLink.pano);
                 // Update heading to face the direction we're moving
-                setHeading(targetHeading);
+                if (isCarMode) {
+                    setCarHeading(targetHeading);
+                } else {
+                    setHeading(targetHeading);
+                }
             }
         };
 
@@ -257,7 +268,7 @@ function App() {
                 cruiseIntervalRef.current = null;
             }
         };
-    }, [isCruiseMode, panorama, heading, isTransitioning, routeWaypoints, currentWaypointIndex]);
+    }, [isCruiseMode, panorama, heading, carHeading, isCarMode, isTransitioning, routeWaypoints, currentWaypointIndex]);
 
     // --- UI ACTIONS ---
     const handleStart = () => {
@@ -278,8 +289,14 @@ function App() {
 
     // --- CAR MODE ---
     const handleToggleCarMode = useCallback(() => {
-        setIsCarMode(prev => !prev);
-    }, []);
+        setIsCarMode(prev => {
+            const next = !prev;
+            if (next) {
+                setCarHeading(heading);
+            }
+            return next;
+        });
+    }, [heading]);
 
     // Initialize/teardown car mode when toggled
     useEffect(() => {
