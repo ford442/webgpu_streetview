@@ -63,7 +63,7 @@ function App() {
     const [isCarMode, setIsCarMode] = useState(false);
     const [isRoofOpen, setIsRoofOpen] = useState(false);
     const [rainIntensity, setRainIntensity] = useState(0);
-    const [timeOfDay, setTimeOfDay] = useState<string>('day');
+    const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
     const carModeRef = useRef<CarModeState | null>(null);
     const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
 
@@ -349,7 +349,9 @@ function App() {
     }, []);
 
     const handleTimeOfDay = useCallback((value: string) => {
-        setTimeOfDay(value);
+        if (value === 'day' || value === 'sunset' || value === 'night') {
+            setTimeOfDay(value);
+        }
     }, []);
 
     // [ENHANCED] Snapshot handler with JSON sidecar metadata

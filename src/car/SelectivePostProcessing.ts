@@ -23,7 +23,7 @@ const DEFAULT_SETTINGS: PostProcessingSettings = {
 /**
  * Get the color grading parameters for each time of day.
  */
-function getTimeOfDayParams(timeOfDay: string): { tint: [number, number, number]; brightness: number; contrast: number } {
+function getTimeOfDayParams(timeOfDay: 'day' | 'sunset' | 'night'): { tint: [number, number, number]; brightness: number; contrast: number } {
     switch (timeOfDay) {
         case 'sunset':
             return { tint: [1.2, 0.85, 0.7], brightness: 0.95, contrast: 1.1 };
@@ -86,10 +86,8 @@ export class SelectivePostProcessing {
     /**
      * Set time of day mode.
      */
-    public setTimeOfDay(value: string): void {
-        if (value === 'day' || value === 'sunset' || value === 'night') {
-            this.settings.timeOfDay = value;
-        }
+    public setTimeOfDay(value: 'day' | 'sunset' | 'night'): void {
+        this.settings.timeOfDay = value;
     }
 
     /**

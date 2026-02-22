@@ -109,9 +109,11 @@ export class Renderer {
             });
 
             // Effects uniform buffer for car view post-processing
-            // Layout: [rainIntensity, vignetteStrength, brightness, contrast, tintR, tintG, tintB, nightMode]
+            // Layout: array<vec4<f32>, 2> = 2 × vec4 (each 16-byte aligned) = 32 bytes total
+            // effects[0] = [rainIntensity, vignetteStrength, brightness, contrast]
+            // effects[1] = [tintR, tintG, tintB, nightMode]
             this.effectsBuffer = this.device.createBuffer({
-                size: 32, // 8 floats * 4 bytes
+                size: 32, // 2 vec4s × 16 bytes each
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 

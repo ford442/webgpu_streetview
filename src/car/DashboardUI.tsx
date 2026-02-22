@@ -89,7 +89,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
 
             draw();
         } catch (e) {
-            // Audio API may not be available in all contexts
+            console.warn('Audio visualizer initialization failed:', e instanceof Error ? e.message : String(e));
         }
 
         return () => {
