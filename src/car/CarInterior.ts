@@ -340,6 +340,21 @@ export class CarInterior {
     }
 
     /**
+     * Set the car body orientation (carHeading).
+     * The interior stays level with the ground while the head can look freely.
+     * @param carHeading - The car's travel direction in degrees
+     */
+    public setCarOrientation(carHeading: number): void {
+        // Car body stays level with ground - no pitch or roll, just yaw
+        // Convert heading to radians (negative for Three.js coordinate system)
+        const yawRad = -THREE.MathUtils.degToRad(carHeading);
+        this.interiorGroup.rotation.set(0, yawRad, 0);
+        
+        // Also update camera position to follow head movement would go here
+        // For now we keep the camera fixed in the driver's seat
+    }
+
+    /**
      * Render the car interior scene.
      */
     public render(): void {

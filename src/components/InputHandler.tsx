@@ -7,9 +7,12 @@ interface InputHandlerProps {
     onMove: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
     onRightClickMove: () => void; // Specific callback for right-click forward movement
     onToggleCarMode?: () => void; // Toggle car view with 'C' key
+    onSteer?: (direction: 'left' | 'right', deltaTime: number) => void; // Steering for car mode (A/D keys)
+    onRecenterHead?: () => void; // Recenter head look in car mode ('C' key when already in car mode)
 
     // State from the parent to control behavior
     isEnabled: boolean; // Controls whether the handler is active
+    isCarMode?: boolean; // Whether car mode is active (affects A/D behavior)
     
     // Target element for scoped mouse events
     targetRef: React.RefObject<HTMLElement | null>;
@@ -21,7 +24,10 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     onMove, 
     onRightClickMove,
     onToggleCarMode,
+    onSteer,
+    onRecenterHead,
     isEnabled,
+    isCarMode = false,
     targetRef 
 }) => {
     const isMouseDownRef = useRef(false);
@@ -35,6 +41,14 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const onMoveRef = useRef(onMove);
     const onRightClickMoveRef = useRef(onRightClickMove);
     const onToggleCarModeRef = useRef(onToggleCarMode);
+    const onSteerRef = useRef(onSteer);
+    const onRecenterHeadRef = useRef(onRecenterHead);
+    const isCarModeRef = useRef(isCarMode);
+
+    // Track keys pressed for continuous steering
+    const keysPressedRef = useRef<Set<string>>(new Set());
+    const lastTimeRef = useRef<number>(0);
+    const steerAnimationRef = useRef<number>(0);
 
     // Keep refs up to date
     useEffect(() => {
@@ -43,6 +57,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         onMoveRef.current = onMove;
         onRightClickMoveRef.current = onRightClickMove;
         onToggleCarModeRef.current = onToggleCarMode;
+        onSteerRef.current = onSteer;
+        onRecenterHeadRef.current = onRecenterHead;
+        isCarModeRef.current = isCarMode;
     });
 
     useEffect(() => {
@@ -105,24 +122,59 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 return;
             }
             
-            switch (e.key.toLowerCase()) {
+            const key = e.key.toLowerCase();
+            keysPressedRef.current.add(key);
+            
+            switch (key) {
                 case 'w':
                     onMoveRef.current('forward');
                     break;
                 case 's':
                     onMoveRef.current('backward');
                     break;
-                case 'a':
-                    onMoveRef.current('left');
-                    break;
-                case 'd':
-                    onMoveRef.current('right');
-                    break;
                 case 'c':
-                    onToggleCarModeRef.current?.();
+                    // Long press C for recenter, short press for toggle
+                    if (isCarModeRef.current) {
+                        onRecenterHeadRef.current?.();
+                    } else {
+                        onToggleCarModeRef.current?.();
+                    }
                     break;
             }
+            // A/D and Arrow keys are handled in the animation loop for continuous steering
         };
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            keysPressedRef.current.delete(e.key.toLowerCase());
+            keysPressedRef.current.delete(e.key); // Handle arrow keys too
+        };
+
+        // --- CONTINUOUS STEERING LOOP (for smooth A/D steering in car mode) ---
+        const steerLoop = (timestamp: number) => {
+            if (!isCarModeRef.current || !onSteerRef.current) {
+                lastTimeRef.current = timestamp;
+                steerAnimationRef.current = requestAnimationFrame(steerLoop);
+                return;
+            }
+
+            const deltaTime = lastTimeRef.current ? (timestamp - lastTimeRef.current) / 1000 : 0;
+            lastTimeRef.current = timestamp;
+
+            const keys = keysPressedRef.current;
+            const isLeft = keys.has('a') || keys.has('arrowleft');
+            const isRight = keys.has('d') || keys.has('arrowright');
+
+            if (isLeft && !isRight) {
+                onSteerRef.current('left', deltaTime);
+            } else if (isRight && !isLeft) {
+                onSteerRef.current('right', deltaTime);
+            }
+
+            steerAnimationRef.current = requestAnimationFrame(steerLoop);
+        };
+
+        // Start steering loop
+        steerAnimationRef.current = requestAnimationFrame(steerLoop);
 
         // Attach scoped listeners to target element
         target.addEventListener('mousedown', handleMouseDown);
@@ -133,6 +185,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         window.addEventListener('mouseup', handleMouseUp);
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
 
         // Cleanup
         return () => {
@@ -145,6 +198,10 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             window.removeEventListener('mouseup', handleMouseUp);
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+            
+            // Cancel steering loop
+            cancelAnimationFrame(steerAnimationRef.current);
         };
     }, [isEnabled, targetRef]);
 

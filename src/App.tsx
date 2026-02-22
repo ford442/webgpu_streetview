@@ -18,6 +18,17 @@ const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load aft
 const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
 const INITIAL_HEADING = 34;
 
+// Head/Car Steering Separation Constants
+// This implements a realistic car interior where the dashboard stays level with the
+// car body, but the driver can freely look around inside the cabin.
+// - headYawOffset: left/right head look relative to car heading (-110° to +110°)
+// - headPitch: up/down head look (-45° to +65°)
+const MAX_HEAD_YAW = 110;
+const MAX_HEAD_PITCH_UP = 45;
+const MAX_HEAD_PITCH_DOWN = 65;
+const HEAD_LOOK_SENSITIVITY = 0.15;
+const KEYBOARD_STEER_RATE = 60; // degrees per second
+
 function App() {
     const [mode] = useState<RenderMode>('streetview');
     const [zoom, setZoom] = useState(1.0);
@@ -26,9 +37,11 @@ function App() {
     const [showWelcome, setShowWelcome] = useState(true);
 
     // POV state
-    const [heading, setHeading] = useState(INITIAL_HEADING);
-    const [pitch, setPitch] = useState(10);
-    const [carHeading, setCarHeading] = useState(INITIAL_HEADING);
+    const [heading, setHeading] = useState(INITIAL_HEADING);  // Free mode heading
+    const [pitch, setPitch] = useState(10);                   // Free mode pitch
+    const [carHeading, setCarHeading] = useState(INITIAL_HEADING);  // Car body direction (stays level with ground)
+    const [headYawOffset, setHeadYawOffset] = useState(0);    // Head look left/right relative to car (-110° to +110°)
+    const [headPitch, setHeadPitch] = useState(0);            // Head look up/down (-45° to +65°)
 
     // Map UI state
     const [isMapOpen, setIsMapOpen] = useState(false);
@@ -63,6 +76,15 @@ function App() {
 
     // Car mode state
     const [isCarMode, setIsCarMode] = useState(false);
+
+    // Derived view heading: combines car heading + head offset in car mode
+    // This is the actual camera direction - carHeading is the body direction, headYawOffset is look deviation
+    const viewHeading = React.useMemo(() => {
+        return isCarMode
+            ? ((carHeading + headYawOffset + 360) % 360)
+            : heading;
+    }, [isCarMode, carHeading, headYawOffset, heading]);
+
     const [isRoofOpen, setIsRoofOpen] = useState(false);
     const [rainIntensity, setRainIntensity] = useState(0);
     const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
@@ -90,10 +112,27 @@ function App() {
 
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
-        // X is inverted (plus), Y is standard (minus) based on user feedback
-        setHeading(prev => (prev + deltaX * 0.1) % 360);
-        setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
-    }, []);
+        if (isCarMode) {
+            // In car mode: head look only (car body stays level)
+            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
+            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
+        } else {
+            // Free mode: normal look
+            setHeading(prev => (prev + deltaX * 0.1) % 360);
+            setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
+        }
+    }, [isCarMode]);
+
+    // Keyboard steering for car mode (A/D or ArrowLeft/ArrowRight)
+    const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
+        if (!isCarMode) return;
+        const turnRate = KEYBOARD_STEER_RATE * deltaTime;
+        if (direction === 'left') {
+            setCarHeading(prev => (prev - turnRate + 360) % 360);
+        } else {
+            setCarHeading(prev => (prev + turnRate) % 360);
+        }
+    }, [isCarMode]);
 
     const handleZoom = useCallback((deltaZ: number) => {
         // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
@@ -125,12 +164,16 @@ function App() {
         handleMove('forward');
     }, [handleMove]);
 
-    // Effect to update the panorama POV when heading or pitch changes
+    // Effect to update the panorama POV when view heading or pitch changes
+    // In car mode: uses viewHeading (carHeading + headYawOffset) and headPitch
+    // In free mode: uses heading and pitch directly
     useEffect(() => {
         if (panorama) {
-            panorama.setPov({ heading, pitch });
+            const povHeading = isCarMode ? viewHeading : heading;
+            const povPitch = isCarMode ? headPitch : pitch;
+            panorama.setPov({ heading: povHeading, pitch: povPitch });
         }
-    }, [heading, pitch, panorama]);
+    }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
 
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
@@ -179,10 +222,25 @@ function App() {
         const p = parseFloat(params.get('pitch') || '');
         if (!isNaN(lat) && !isNaN(lng) && panorama) {
             panorama.setPosition({ lat, lng });
-            if (!isNaN(h)) setHeading(h);
-            if (!isNaN(p)) setPitch(p);
+            if (!isNaN(h)) {
+                if (isCarMode) {
+                    // In car mode: set car heading, center head
+                    setCarHeading(h);
+                    setHeadYawOffset(0);
+                } else {
+                    setHeading(h);
+                }
+            }
+            if (!isNaN(p)) {
+                if (isCarMode) {
+                    setHeadPitch(0); // Center head pitch in car mode
+                } else {
+                    setPitch(p);
+                }
+            }
         }
-    }, [panorama]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [panorama]); // isCarMode is intentionally omitted - we only care about initial param parsing
 
     // Effect to handle cruise mode auto-movement
     useEffect(() => {
@@ -292,11 +350,22 @@ function App() {
         setIsCarMode(prev => {
             const next = !prev;
             if (next) {
+                // Entering car mode: sync car to current world direction, reset head to center
                 setCarHeading(heading);
+                setHeadYawOffset(0);
+                setHeadPitch(0);
             }
             return next;
         });
     }, [heading]);
+
+    // Recenter head look (press 'C' while in car mode)
+    const handleRecenterHead = useCallback(() => {
+        if (isCarMode) {
+            setHeadYawOffset(0);
+            setHeadPitch(0);
+        }
+    }, [isCarMode]);
 
     // Initialize/teardown car mode when toggled
     useEffect(() => {
@@ -319,17 +388,20 @@ function App() {
     }, [isCarMode]);
 
     // Update car mode rendering each frame via effect
+    // Car interior stays locked to carHeading (body stays level with ground)
+    // Camera view uses viewHeading + headPitch (head looks freely)
     useEffect(() => {
         if (!isCarMode || !carModeRef.current) return;
         let active = true;
         const animate = () => {
             if (!active) return;
-            updateCarMode(heading, pitch);
+            // Pass carHeading for car body orientation, viewHeading+headPitch for camera
+            updateCarMode(carHeading, viewHeading, headPitch);
             requestAnimationFrame(animate);
         };
         animate();
         return () => { active = false; };
-    }, [isCarMode, heading, pitch]);
+    }, [isCarMode, carHeading, viewHeading, headPitch]);
 
     // Update post-processing effects when settings change
     useEffect(() => {
@@ -579,6 +651,9 @@ function App() {
                 onMove={handleMove}
                 onRightClickMove={handleRightClickMove}
                 onToggleCarMode={handleToggleCarMode}
+                onSteer={handleSteer}
+                onRecenterHead={handleRecenterHead}
+                isCarMode={isCarMode}
             />
 
             {/* Original StreetView: Hidden via opacity when connected, but kept in DOM for scraping */}
@@ -621,12 +696,12 @@ function App() {
                     mode={mode}
                     source={isConnected && !isTransitioning ? streetViewCanvas : null}
                     zoom={zoom}
-                    panX={heading / 360}
-                    panY={(pitch + 90) / 180}
+                    panX={(isCarMode ? viewHeading : heading) / 360}
+                    panY={((isCarMode ? headPitch : pitch) + 90) / 180}
                 />
                 
                 {/* Compass Overlay - shows which direction is North */}
-                {isConnected && <Compass heading={heading} />}
+                {isConnected && <Compass heading={isCarMode ? viewHeading : heading} />}
             </div>
 
             {/* Slide-out Map Container (Expanded to 50%) */}
@@ -759,7 +834,7 @@ function App() {
                         <MiniMap
                             apiKey={GOOGLE_MAPS_KEY}
                             panorama={panorama}
-                            heading={heading}
+                            heading={isCarMode ? viewHeading : heading}
                             routePath={routePath}
                         />
                     )}
@@ -769,7 +844,8 @@ function App() {
             <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
                 {/* Coordinates Display */}
                 <div style={{ background: 'rgba(0,0,0,0.7)', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                    📍 {currentCoords.lat.toFixed(6)}, {currentCoords.lng.toFixed(6)} | {heading.toFixed(0)}° | {pitch.toFixed(0)}°
+                    📍 {currentCoords.lat.toFixed(6)}, {currentCoords.lng.toFixed(6)} | {(isCarMode ? viewHeading : heading).toFixed(0)}° | {(isCarMode ? headPitch : pitch).toFixed(0)}°
+                    {isCarMode && <span style={{ color: '#4CAF50', marginLeft: '8px' }}>🚗 {carHeading.toFixed(0)}°</span>}
                 </div>
 
                 {/* Map Toggle Button */}
@@ -800,7 +876,9 @@ function App() {
                             Cruise: {isCruiseMode ? 'ON' : 'OFF'} {routeWaypoints && '🗺️'}
                         </button>
                         <button onClick={() => {
-                            const url = `${window.location.origin}${window.location.pathname}?lat=${currentCoords.lat.toFixed(6)}&lng=${currentCoords.lng.toFixed(6)}&heading=${heading.toFixed(1)}&pitch=${pitch.toFixed(1)}`;
+                            const currentHeading = isCarMode ? viewHeading : heading;
+                            const currentPitch = isCarMode ? headPitch : pitch;
+                            const url = `${window.location.origin}${window.location.pathname}?lat=${currentCoords.lat.toFixed(6)}&lng=${currentCoords.lng.toFixed(6)}&heading=${currentHeading.toFixed(1)}&pitch=${currentPitch.toFixed(1)}`;
                             navigator.clipboard.writeText(url).then(() => alert('Link copied!'));
                         }} className="control-btn">
                             📎 Share Link

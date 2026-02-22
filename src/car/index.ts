@@ -68,10 +68,11 @@ export function toggleCarMode(enabled: boolean): void {
  * Update and render car mode elements each frame.
  * Should be called within the existing animation loop.
  * 
- * @param heading - Current view heading in degrees
- * @param pitch - Current view pitch in degrees  
+ * @param carHeading - Car body heading in degrees (stays level with ground)
+ * @param viewHeading - Current view heading in degrees (carHeading + headYawOffset)
+ * @param headPitch - Current head pitch in degrees (up/down look)
  */
-export function updateCarMode(heading: number, pitch: number): void {
+export function updateCarMode(carHeading: number, viewHeading: number, headPitch: number): void {
     if (!carModeState || !carModeState.isActive) return;
 
     const now = performance.now();
@@ -81,8 +82,13 @@ export function updateCarMode(heading: number, pitch: number): void {
     // Update interior animations (roof, etc.)
     carModeState.interior.update(deltaTime);
 
-    // Update mirror orientation based on driver head direction
-    carModeState.mirror.updateOrientation(heading, pitch);
+    // Update car body rotation to stay level with ground (carHeading only)
+    // This keeps dashboard, steering wheel, A-pillars fixed to the car body
+    carModeState.interior.setCarOrientation(carHeading);
+
+    // Update mirror orientation based on car heading (always shows behind the car)
+    // The mirror stays locked to the car body, not the driver's head
+    carModeState.mirror.updateOrientation(carHeading, headPitch);
 
     // Render the car interior
     carModeState.interior.render();
