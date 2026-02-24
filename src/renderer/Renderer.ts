@@ -256,7 +256,7 @@ export class Renderer {
             fragment: {
                 module: shaderModule,
                 entryPoint: 'fs_main',
-                targets: [{ format: 'rgba16float' }], // ← HDR intermediate
+                targets: [{ format: 'rgba16float' as GPUTextureFormat }], // ← HDR intermediate
             },
             primitive: { topology: 'triangle-strip' },
         });
@@ -303,7 +303,7 @@ export class Renderer {
             fragment: {
                 module: shaderModule,
                 entryPoint: 'fs_main',
-                targets: [{ format: this.presentationFormat }],
+                targets: [{ format: this.presentationFormat as GPUTextureFormat }],
             },
             primitive: { topology: 'triangle-list' }, // Triangle for full-screen quad
         });
@@ -330,6 +330,18 @@ export class Renderer {
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params);
+            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+        }
+    }
+
+    /**
+     * Update color grading parameters (backward compatible)
+     * @param params - Float32Array of 6 floats: [vibrance, saturation, contrast, exposure, temperature, tint]
+     */
+    public updateColorParams(params: Float32Array): void {
+        if (this.weatherParamsBuffer && this.device) {
+            // Update only the first 6 values (color grading)
+            this.weatherParams.set(params.slice(0, 6), 0);
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         }
     }
