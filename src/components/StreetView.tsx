@@ -20,10 +20,9 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
 
         if (!(window as any).google?.maps) {
             const script = document.createElement('script');
-            // Use loading="async" attribute (Google's recommended approach for async loading)
-            // Remove 'marker' library as it's not needed for StreetView and causes CORS issues
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly`;
-            script.setAttribute('loading', 'async');
+            // Use loading=async query parameter (Google's recommended approach)
+            // Include marker library for AdvancedMarkerElement in MiniMap
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker`;
             script.onload = () => {
                 if (!isMounted) return;
                 cleanup = initialize();
@@ -142,7 +141,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 cleanup();
             }
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apiKey]);
 
     // Cleanup helper (App controls navigation now)

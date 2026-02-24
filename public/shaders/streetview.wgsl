@@ -1,4 +1,7 @@
-// Streetview shader - panoramic image viewer with navigation
+// Streetview shader - panoramic image viewer
+// Outputs to HDR intermediate texture for post-processing
+// Note: Color grading and weather effects are applied in weather-post.wgsl
+
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -31,5 +34,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Clamp or wrap UVs for panoramic effect
     let wrappedUV = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 1.0));
     
-    return textureSample(tex, texSampler, wrappedUV);
+    // Sample the panorama texture
+    var color = textureSample(tex, texSampler, wrappedUV).rgb;
+    
+    // Output to HDR intermediate (color grading and weather applied in post-process)
+    return vec4<f32>(color, 1.0);
 }

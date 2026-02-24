@@ -20,6 +20,7 @@ import { useSnapshots } from './hooks/useSnapshots';
 import BookmarkPanel from './components/BookmarkPanel';
 import HistoryPanel from './components/HistoryPanel';
 import SnapshotGallery from './components/SnapshotGallery';
+import ColorGradingPanel from './components/ColorGradingPanel';
 
 // Constants for cruise mode timing
 const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
@@ -96,6 +97,15 @@ function App() {
     const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
     const [isSnapshotGalleryOpen, setIsSnapshotGalleryOpen] = useState(false);
 
+    // Color grading state
+    const [vibrance, setVibrance] = useState(1.0);
+    const [saturation, setSaturation] = useState(1.0);
+    const [contrast, setContrast] = useState(1.0);
+    const [exposure, setExposure] = useState(0.0);
+    const [temperature, setTemperature] = useState(0.0);
+    const [tint, setTint] = useState(0.0);
+    const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
+
     // Derived view heading: combines car heading + head offset in car mode
     // This is the actual camera direction - carHeading is the body direction, headYawOffset is look deviation
     const viewHeading = React.useMemo(() => {
@@ -106,6 +116,8 @@ function App() {
 
     const [isRoofOpen, setIsRoofOpen] = useState(false);
     const [rainIntensity, setRainIntensity] = useState(0);
+    const [snowIntensity, setSnowIntensity] = useState(0);
+    const [wind, setWind] = useState(0);
     const [wipersEnabled, setWipersEnabled] = useState(false);
     const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
     const carModeRef = useRef<CarModeState | null>(null);
@@ -210,6 +222,93 @@ function App() {
         handleMove('forward');
     }, [handleMove]);
 
+    // Color grading handlers
+    const handleVibranceChange = useCallback((value: number) => {
+        setVibrance(value);
+    }, []);
+
+    const handleSaturationChange = useCallback((value: number) => {
+        setSaturation(value);
+    }, []);
+
+    const handleContrastChange = useCallback((value: number) => {
+        setContrast(value);
+    }, []);
+
+    const handleExposureChange = useCallback((value: number) => {
+        setExposure(value);
+    }, []);
+
+    const handleTemperatureChange = useCallback((value: number) => {
+        setTemperature(value);
+    }, []);
+
+    const handleTintChange = useCallback((value: number) => {
+        setTint(value);
+    }, []);
+
+    // Preset handlers
+    const applyPreset = useCallback((preset: string) => {
+        switch (preset) {
+            case 'daylight':
+                setVibrance(1.0);
+                setSaturation(1.0);
+                setContrast(1.0);
+                setExposure(0.0);
+                setTemperature(0.0);
+                setTint(0.0);
+                break;
+            case 'golden':
+                setVibrance(1.2);
+                setSaturation(1.1);
+                setContrast(1.1);
+                setExposure(0.1);
+                setTemperature(0.3);
+                setTint(-0.1);
+                break;
+            case 'sunset':
+                setVibrance(1.3);
+                setSaturation(1.2);
+                setContrast(1.2);
+                setExposure(0.2);
+                setTemperature(0.5);
+                setTint(-0.2);
+                break;
+            case 'overcast':
+                setVibrance(0.8);
+                setSaturation(0.9);
+                setContrast(1.1);
+                setExposure(-0.1);
+                setTemperature(-0.2);
+                setTint(0.1);
+                break;
+            case 'rain':
+                setVibrance(0.7);
+                setSaturation(0.8);
+                setContrast(1.3);
+                setExposure(-0.2);
+                setTemperature(-0.3);
+                setTint(0.2);
+                break;
+            case 'night':
+                setVibrance(0.6);
+                setSaturation(0.7);
+                setContrast(1.4);
+                setExposure(-0.5);
+                setTemperature(-0.4);
+                setTint(0.3);
+                break;
+            case 'snow':
+                setVibrance(1.1);
+                setSaturation(0.9);
+                setContrast(1.2);
+                setExposure(0.3);
+                setTemperature(-0.1);
+                setTint(0.0);
+                break;
+        }
+    }, []);
+
     // Effect to update the panorama POV when view heading or pitch changes
     // In car mode: uses viewHeading (carHeading + headYawOffset) and headPitch
     // In free mode: uses heading and pitch directly
@@ -230,6 +329,33 @@ function App() {
             }
         }
     }, [zoom, panorama]);
+
+    // Update color params in renderer when they change
+    useEffect(() => {
+        if (rendererRef.current) {
+            const colorParams = new Float32Array([
+                vibrance, saturation, contrast, exposure, temperature, tint
+            ]);
+            rendererRef.current.updateColorParams(colorParams);
+        }
+    }, [vibrance, saturation, contrast, exposure, temperature, tint]);
+
+    // Update weather params in renderer when they change
+    useEffect(() => {
+        if (rendererRef.current) {
+            // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, ...]
+            const weatherParams = new Float32Array([
+                vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
+                0,                           // time (updated in render loop)
+                rainIntensity / 50,          // rainIntensity (0-2, scaled from 0-100)
+                snowIntensity / 50,          // snowIntensity (0-2, scaled from 0-100)
+                wind / 100,                  // wind (-1.0 to 1.0, scaled from -100 to 100)
+                1.0,                         // speed (animation speed multiplier)
+                0, 0, 0, 0, 0                // padding
+            ]);
+            rendererRef.current.updateWeatherParams(weatherParams);
+        }
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
@@ -530,6 +656,14 @@ function App() {
 
     const handleRainIntensity = useCallback((value: number) => {
         setRainIntensity(value);
+    }, []);
+
+    const handleSnowIntensity = useCallback((value: number) => {
+        setSnowIntensity(value);
+    }, []);
+
+    const handleWind = useCallback((value: number) => {
+        setWind(value);
     }, []);
 
     const handleTimeOfDay = useCallback((value: string) => {
@@ -1090,10 +1224,22 @@ function App() {
                                 setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
                                 setIsBookmarkPanelOpen(false);
                                 setIsHistoryPanelOpen(false);
+                                setIsColorGradingPanelOpen(false);
                             }}
                             className={`control-btn ${isSnapshotGalleryOpen ? 'disconnect' : ''}`}
                         >
                             📸 Gallery ({snapshots.length})
+                        </button>
+                        <button
+                            onClick={() => {
+                                setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
+                                setIsBookmarkPanelOpen(false);
+                                setIsHistoryPanelOpen(false);
+                                setIsSnapshotGalleryOpen(false);
+                            }}
+                            className={`control-btn ${isColorGradingPanelOpen ? 'disconnect' : ''}`}
+                        >
+                            🎨 Color
                         </button>
                     </>
                 )}
@@ -1130,6 +1276,24 @@ function App() {
                 isOpen={isSnapshotGalleryOpen}
             />
 
+            <ColorGradingPanel
+                vibrance={vibrance}
+                saturation={saturation}
+                contrast={contrast}
+                exposure={exposure}
+                temperature={temperature}
+                tint={tint}
+                onVibranceChange={handleVibranceChange}
+                onSaturationChange={handleSaturationChange}
+                onContrastChange={handleContrastChange}
+                onExposureChange={handleExposureChange}
+                onTemperatureChange={handleTemperatureChange}
+                onTintChange={handleTintChange}
+                onPreset={applyPreset}
+                onClose={() => setIsColorGradingPanelOpen(false)}
+                isOpen={isColorGradingPanelOpen}
+            />
+
             {/* Car Mode Dashboard UI */}
             {isConnected && (
                 <DashboardUI
@@ -1138,12 +1302,16 @@ function App() {
                     onToggleGPS={() => setIsMapOpen(!isMapOpen)}
                     onToggleRadio={toggleRadio}
                     onRainIntensity={handleRainIntensity}
+                    onSnowIntensity={handleSnowIntensity}
+                    onWind={handleWind}
                     onTimeOfDay={handleTimeOfDay}
                     onToggleRoof={handleToggleRoof}
                     onToggleWipers={handleToggleWipers}
                     isRoofOpen={isRoofOpen}
                     wipersEnabled={wipersEnabled}
                     rainIntensity={rainIntensity}
+                    snowIntensity={snowIntensity}
+                    wind={wind}
                     timeOfDay={timeOfDay}
                     audioElement={audioRef.current}
                 />

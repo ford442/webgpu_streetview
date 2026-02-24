@@ -11,12 +11,16 @@ interface DashboardUIProps {
     onToggleGPS: () => void;
     onToggleRadio: () => void;
     onRainIntensity: (value: number) => void;
+    onSnowIntensity?: (value: number) => void;
+    onWind?: (value: number) => void;
     onTimeOfDay: (value: string) => void;
     onToggleRoof: () => void;
     onToggleWipers?: () => void;
     isRoofOpen: boolean;
     wipersEnabled?: boolean;
     rainIntensity: number;
+    snowIntensity?: number;
+    wind?: number;
     timeOfDay: string;
     audioElement?: HTMLAudioElement | null;
 }
@@ -27,12 +31,16 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     onToggleGPS,
     onToggleRadio,
     onRainIntensity,
+    onSnowIntensity,
+    onWind,
     onTimeOfDay,
     onToggleRoof,
     onToggleWipers,
     isRoofOpen,
     wipersEnabled = false,
     rainIntensity,
+    snowIntensity = 0,
+    wind = 0,
     timeOfDay,
     audioElement,
 }) => {
@@ -208,7 +216,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
 
             {/* Bottom row: Sliders and visualizer */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {/* Rain intensity slider */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#4CAF50', fontSize: '11px', fontFamily: 'monospace' }}>🌧️ Rain</span>
@@ -219,14 +227,56 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                         value={rainIntensity}
                         onChange={(e) => onRainIntensity(parseInt(e.target.value))}
                         style={{
-                            width: '80px',
+                            width: '60px',
                             accentColor: '#4CAF50',
                         }}
                     />
-                    <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '28px' }}>
+                    <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}>
                         {rainIntensity}%
                     </span>
                 </div>
+
+                {/* Snow intensity slider */}
+                {onSnowIntensity && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: '#E3F2FD', fontSize: '11px', fontFamily: 'monospace' }}>❄️ Snow</span>
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={snowIntensity}
+                            onChange={(e) => onSnowIntensity(parseInt(e.target.value))}
+                            style={{
+                                width: '60px',
+                                accentColor: '#90CAF9',
+                            }}
+                        />
+                        <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}>
+                            {snowIntensity}%
+                        </span>
+                    </div>
+                )}
+
+                {/* Wind slider */}
+                {onWind && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: '#B3E5FC', fontSize: '11px', fontFamily: 'monospace' }}>💨 Wind</span>
+                        <input
+                            type="range"
+                            min="-100"
+                            max="100"
+                            value={wind}
+                            onChange={(e) => onWind(parseInt(e.target.value))}
+                            style={{
+                                width: '60px',
+                                accentColor: '#4FC3F7',
+                            }}
+                        />
+                        <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '28px' }}>
+                            {wind > 0 ? '+' : ''}{wind}
+                        </span>
+                    </div>
+                )}
 
                 {/* Audio Visualizer */}
                 <canvas

@@ -69,7 +69,7 @@ This document outlines potential features and enhancements for the WebGPU Street
 ### Low Priority (Future Exploration)
 
 #### 9. Advanced Rendering
-- ✅ **Weather effects** - Add rain, snow, fog effects (Rain + wipers implemented)
+- ✅ **Weather effects** - Full HDR dual-pass rain + snow with wind (implemented)
 - ✅ **Time of day simulation** - Simulate different lighting conditions (Day/Sunset/Night implemented)
 - ⬜ **Custom filters** - Instagram-like filters for rendering
 - ⬜ **3D object placement** - Add virtual objects to scenes

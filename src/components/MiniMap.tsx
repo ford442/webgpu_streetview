@@ -74,100 +74,34 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
                 fullscreenControl: false,
                 disableDefaultUI: true,
                 clickableIcons: false, // Prevent clicking on POIs from hijacking
-                styles: [
-                    { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-                    { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-                    { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-                    {
-                        featureType: "administrative.locality",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#d59563" }],
-                    },
-                    {
-                        featureType: "poi",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#d59563" }],
-                    },
-                    {
-                        featureType: "poi.park",
-                        elementType: "geometry",
-                        stylers: [{ color: "#263c3f" }],
-                    },
-                    {
-                        featureType: "poi.park",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#6b9a76" }],
-                    },
-                    {
-                        featureType: "road",
-                        elementType: "geometry",
-                        stylers: [{ color: "#38414e" }],
-                    },
-                    {
-                        featureType: "road",
-                        elementType: "geometry.stroke",
-                        stylers: [{ color: "#212a37" }],
-                    },
-                    {
-                        featureType: "road",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#9ca5b3" }],
-                    },
-                    {
-                        featureType: "road.highway",
-                        elementType: "geometry",
-                        stylers: [{ color: "#746855" }],
-                    },
-                    {
-                        featureType: "road.highway",
-                        elementType: "geometry.stroke",
-                        stylers: [{ color: "#1f2835" }],
-                    },
-                    {
-                        featureType: "road.highway",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#f3d19c" }],
-                    },
-                    {
-                        featureType: "transit",
-                        elementType: "geometry",
-                        stylers: [{ color: "#2f3948" }],
-                    },
-                    {
-                        featureType: "transit.station",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#d59563" }],
-                    },
-                    {
-                        featureType: "water",
-                        elementType: "geometry",
-                        stylers: [{ color: "#17263c" }],
-                    },
-                    {
-                        featureType: "water",
-                        elementType: "labels.text.fill",
-                        stylers: [{ color: "#515c6d" }],
-                    },
-                    {
-                        featureType: "water",
-                        elementType: "labels.text.stroke",
-                        stylers: [{ color: "#17263c" }],
-                    },
-                ],
+                // NOTE: Custom styles are managed via Cloud Console when mapId is present
+                // Removing inline styles to avoid conflict with mapId
             });
 
             // Enable Street View Coverage Layer
             const coverageLayer = new google.maps.StreetViewCoverageLayer();
             coverageLayer.setMap(newMap);
 
-            // Add marker
-            const newMarker = new google.maps.marker.AdvancedMarkerElement({
-                map: newMap,
-                position: position,
-                title: "Drag to move (You are here) 🖱️",
-                gmpDraggable: true,  // Enables drag (AdvancedMarker prop)
-                content: createMarkerContent(heading),  // Custom arrow/glow via content
-            });
+            // Add marker - guard against AdvancedMarkerElement not being available
+            let newMarker: google.maps.marker.AdvancedMarkerElement | null = null;
+            if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+                newMarker = new google.maps.marker.AdvancedMarkerElement({
+                    map: newMap,
+                    position: position,
+                    title: "Drag to move (You are here) 🖱️",
+                    gmpDraggable: true,  // Enables drag (AdvancedMarker prop)
+                    content: createMarkerContent(heading),  // Custom arrow/glow via content
+                });
+            } else {
+                console.warn('[MiniMap] AdvancedMarkerElement not available, using standard marker');
+                // Fallback to standard marker if AdvancedMarkerElement not available
+                newMarker = new google.maps.Marker({
+                    map: newMap,
+                    position: position,
+                    title: "Drag to move (You are here) 🖱️",
+                    draggable: true,
+                }) as any;
+            }
 
             setMap(newMap);
             setMarker(newMarker);
@@ -216,16 +150,16 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
 
         // Handle Map Click
         const mapClickListener = map.addListener("click", (e: google.maps.MapMouseEvent) => {
-             if (e.latLng) {
+            if (e.latLng) {
                 teleportTo(e.latLng);
-             }
+            }
         });
 
         // Handle Map Double Click
-         const mapDblClickListener = map.addListener("dblclick", (e: google.maps.MapMouseEvent) => {
-             if (e.latLng) {
+        const mapDblClickListener = map.addListener("dblclick", (e: google.maps.MapMouseEvent) => {
+            if (e.latLng) {
                 teleportTo(e.latLng);
-             }
+            }
         });
 
 
@@ -261,24 +195,40 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
 
         // Add new markers
         breadcrumbs.forEach((pos, index) => {
-             const crumbContent = document.createElement('div');
-             crumbContent.style.cssText = `
+            const crumbContent = document.createElement('div');
+            crumbContent.style.cssText = `
                  width: 8px; height: 8px; background: #888; border-radius: 50%; 
                  border: 1px solid #fff; cursor: pointer;
              `;
 
-             const crumb = new google.maps.marker.AdvancedMarkerElement({
-                map: map,
-                position: pos,
-                title: `Previous Location ${index + 1}`,
-                content: crumbContent,
-            });
+            // Guard against AdvancedMarkerElement not being available
+            if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+                const crumb = new google.maps.marker.AdvancedMarkerElement({
+                    map: map,
+                    position: pos,
+                    title: `Previous Location ${index + 1}`,
+                    content: crumbContent,
+                });
 
-            crumb.addListener("click", () => {
-                 panorama.setPosition(pos);
-            });
+                crumb.addListener("click", () => {
+                    panorama.setPosition(pos);
+                });
 
-            breadcrumbMarkersRef.current.push(crumb);
+                breadcrumbMarkersRef.current.push(crumb);
+            } else {
+                // Fallback to standard marker if AdvancedMarkerElement not available
+                const crumb = new google.maps.Marker({
+                    map: map,
+                    position: pos,
+                    title: `Previous Location ${index + 1}`,
+                }) as any;
+
+                crumb.addListener("click", () => {
+                    panorama.setPosition(pos);
+                });
+
+                breadcrumbMarkersRef.current.push(crumb);
+            }
         });
 
     }, [breadcrumbs, map, panorama]); // Re-render when breadcrumbs change
