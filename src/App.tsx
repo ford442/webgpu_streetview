@@ -509,14 +509,12 @@ function App() {
             // RPM correlates with steering input and speed
             carRPMRef.current = Math.abs(steeringInputRef.current) * 100 + carSpeedRef.current * 50;
             updateCarGauges(carSpeedRef.current, carRPMRef.current);
+        };
 
-
-            window.addEventListener('resize', handleResize);
-            return () => {
-                window.removeEventListener('resize', handleResize);
-                if (resizeTimeout) clearTimeout(resizeTimeout);
-            };
-        }, [isCarMode]);
+        return () => {
+            active = false;
+        };
+    }, [isCarMode, carHeading, viewHeading, headPitch]);
 
     // Cleanup car mode on unmount
     useEffect(() => {

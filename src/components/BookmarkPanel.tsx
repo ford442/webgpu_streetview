@@ -184,9 +184,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                 alignItems: 'center',
                                 gap: '10px',
                                 transition: 'background-color 0.2s',
-                                ':hover': {
-                                    backgroundColor: 'rgba(255,255,255,0.05)',
-                                },
+                                cursor: 'pointer',
                             }}
                         >
                             <div style={{ flex: 1, minWidth: 0 }}>

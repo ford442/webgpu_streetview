@@ -27,7 +27,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
 
     // Performance: Frame skipping state
     const frameCountRef = useRef<number>(0);
-    const lastSourceRef = useRef<CanvasImageSource | null>(null);
+    const lastSourceRef = useRef<CanvasImageSource | null | undefined>(null);
     const sourceChangeFlagRef = useRef<boolean>(true);
     const FRAME_SKIP = 3; // Render every 3rd frame (20fps) when source unchanged, 60fps when changed
 
@@ -92,18 +92,18 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
         let active = true;
         const animate = () => {
             if (!active) return;
-            
+
             // Performance: Frame skipping logic
             // Always render if source changed, otherwise render every Nth frame
             const shouldRender = sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0);
-            
+
             if (shouldRender && currentRendererRef.current && source) {
                 const heading = (panX || 0.5) * 360;
                 const pitch = (panY || 0.5) * 180 - 90;
                 currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
                 sourceChangeFlagRef.current = false;
             }
-            
+
             frameCountRef.current++;
             animationFrameId.current = requestAnimationFrame(animate);
         };

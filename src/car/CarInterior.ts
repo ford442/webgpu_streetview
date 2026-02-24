@@ -20,7 +20,7 @@ export class CarInterior {
     private wiperRight!: THREE.Group;
     private speedometerNeedle!: THREE.Mesh;
     private tachometerNeedle!: THREE.Mesh;
-    private headlightsLight!: THREE.Light;
+    private headlightsLight!: THREE.SpotLight;
 
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
