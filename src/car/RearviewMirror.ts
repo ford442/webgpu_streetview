@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 
 /**
- * RearviewMirror - Handles render-to-texture logic for the rearview mirror.
- * Creates a second camera facing backward (180° from driver view) and renders
- * the Street View panorama to a texture applied to a mirror plane.
- * Includes chromatic aberration for realistic mirror distortion.
+ * RearviewMirror - Functional rearview mirror that shows actual Street View from behind.
+ * 
+ * Implementation: Samples from the Street View canvas (which contains the 360° panorama)
+ * and renders it to the mirror plane with:
+ * - 180° rotation (shows what's behind the car)
+ * - Horizontal flip (mirror reflection)
+ * - Chromatic aberration for realism
+ * - Frame skipping for performance (renders every 2nd frame)
  */
 export class RearviewMirror {
     private mirrorCamera: THREE.PerspectiveCamera;
@@ -13,6 +17,8 @@ export class RearviewMirror {
     private mirrorMaterial: THREE.ShaderMaterial;
     private frameCount: number = 0;
     private isNightMode: boolean = false;
+    private streetViewTexture: THREE.CanvasTexture | null = null;
+    private streetViewCanvas: HTMLCanvasElement | null = null;
 
     // Mirror dimensions (0.5x resolution for performance)
     private static readonly MIRROR_WIDTH = 512;
@@ -22,12 +28,7 @@ export class RearviewMirror {
         private scene: THREE.Scene,
         private renderer: THREE.WebGLRenderer
     ) {
-        // Backward-facing camera (180° from driver view)
-        this.mirrorCamera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
-        this.mirrorCamera.position.set(0, 1.45, -0.85);
-        this.mirrorCamera.rotation.set(0, Math.PI, 0);
-
-        // Render target at 0.5x resolution
+        // Create render target for the mirror
         this.renderTarget = new THREE.WebGLRenderTarget(
             RearviewMirror.MIRROR_WIDTH,
             RearviewMirror.MIRROR_HEIGHT,
@@ -37,6 +38,10 @@ export class RearviewMirror {
                 format: THREE.RGBAFormat,
             }
         );
+
+        // Create a simple scene for the mirror that contains a plane with the Street View texture
+        this.mirrorCamera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
+        this.mirrorCamera.position.set(0, 0, 1);
 
         // Chromatic aberration shader material for mirror
         this.mirrorMaterial = new THREE.ShaderMaterial({
@@ -111,35 +116,90 @@ export class RearviewMirror {
     }
 
     /**
-     * Update mirror camera rotation based on driver head orientation.
-     * The mirror shows the backward view (inverted for mirror logic).
+     * Set the Street View canvas source for the mirror.
+     * The mirror will sample from this canvas to show the view from behind.
      */
-    public updateOrientation(heading: number, pitch: number): void {
-        // Mirror faces backward (180° offset) with inverted horizontal
-        const headingRad = (heading + 180) * Math.PI / 180;
-        const pitchRad = -pitch * Math.PI / 180 * 0.3; // Reduced pitch influence
-
-        this.mirrorCamera.rotation.set(pitchRad, headingRad, 0);
+    public setStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
+        if (canvas === this.streetViewCanvas) return;
+        
+        this.streetViewCanvas = canvas;
+        
+        if (canvas) {
+            // Create or update the texture from the Street View canvas
+            if (!this.streetViewTexture) {
+                this.streetViewTexture = new THREE.CanvasTexture(canvas);
+                this.streetViewTexture.minFilter = THREE.LinearFilter;
+                this.streetViewTexture.magFilter = THREE.LinearFilter;
+            } else {
+                this.streetViewTexture.image = canvas;
+                this.streetViewTexture.needsUpdate = true;
+            }
+        }
     }
 
     /**
-     * Render the mirror texture. For performance, only updates every 2nd frame
-     * if performance is a concern.
-     * @param panoramaScene - The scene containing the Street View panorama
+     * Update mirror view based on car heading.
+     * The mirror shows the view 180° behind the car.
+     */
+    public updateOrientation(carHeading: number, headPitch: number): void {
+        // Mirror shows the view from behind the car (180° offset)
+        // We don't actually rotate the camera - we just use the texture offset
+        // The mirror always shows "behind" relative to car heading
+    }
+
+    /**
+     * Render the mirror texture.
+     * Samples from the Street View canvas and applies the mirror shader effects.
+     * For performance, only updates every 2nd frame.
+     * 
+     * @param carHeading - Current car heading in degrees (to calculate rear view)
      * @param skipFrame - If true, only render every other frame
      */
-    public update(panoramaScene: THREE.Scene | null, skipFrame: boolean = false): void {
+    public update(carHeading: number, skipFrame: boolean = false): void {
         this.frameCount++;
         if (skipFrame && this.frameCount % 2 !== 0) return;
 
-        if (!panoramaScene) return;
+        if (!this.streetViewCanvas || !this.streetViewTexture) return;
 
-        // Render backward view to render target
+        // Update the texture from the Street View canvas
+        this.streetViewTexture.needsUpdate = true;
+
+        // Create a temporary scene with a plane showing the Street View texture
+        // We need to offset the UVs to show the view 180° behind
+        const tempScene = new THREE.Scene();
+        
+        // Calculate UV offset based on car heading to show what's behind
+        // 180° = 0.5 in UV space (horizontal panoramic offset)
+        const rearHeadingOffset = ((carHeading + 180) % 360) / 360;
+        
+        const planeGeo = new THREE.PlaneGeometry(2, 1);
+        const planeMat = new THREE.MeshBasicMaterial({ 
+            map: this.streetViewTexture,
+            side: THREE.DoubleSide
+        });
+        
+        // Modify UVs to show the rear view (180° offset)
+        const uvs = planeGeo.attributes.uv;
+        for (let i = 0; i < uvs.count; i++) {
+            const u = uvs.getX(i);
+            // Offset by rear heading and mirror horizontally
+            uvs.setX(i, (1.0 - u) + rearHeadingOffset);
+        }
+        planeGeo.attributes.uv.needsUpdate = true;
+        
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        tempScene.add(plane);
+
+        // Render to the mirror's render target
         const currentTarget = this.renderer.getRenderTarget();
         this.renderer.setRenderTarget(this.renderTarget);
         this.renderer.clear();
-        this.renderer.render(panoramaScene, this.mirrorCamera);
+        this.renderer.render(tempScene, this.mirrorCamera);
         this.renderer.setRenderTarget(currentTarget);
+
+        // Clean up temp scene
+        planeGeo.dispose();
+        planeMat.dispose();
     }
 
     /**
@@ -164,5 +224,8 @@ export class RearviewMirror {
         this.renderTarget.dispose();
         this.mirrorMaterial.dispose();
         this.mirrorPlane.geometry.dispose();
+        if (this.streetViewTexture) {
+            this.streetViewTexture.dispose();
+        }
     }
 }

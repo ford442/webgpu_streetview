@@ -25,16 +25,35 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
     // State to track window size for full-screen rendering
     const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
+    // Performance: Frame skipping state
+    const frameCountRef = useRef<number>(0);
+    const lastSourceRef = useRef<CanvasImageSource | null>(null);
+    const sourceChangeFlagRef = useRef<boolean>(true);
+    const FRAME_SKIP = 3; // Render every 3rd frame (20fps) when source unchanged, 60fps when changed
+
+    // Performance: Debounced resize
+    const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     const currentRendererRef = rendererRef || internalRendererRef;
 
-    // Handle window resize
+    // Handle window resize - debounced for performance
     useEffect(() => {
         const handleResize = () => {
-            setSize({ width: window.innerWidth, height: window.innerHeight });
+            if (resizeTimeoutRef.current) {
+                clearTimeout(resizeTimeoutRef.current);
+            }
+            resizeTimeoutRef.current = setTimeout(() => {
+                setSize({ width: window.innerWidth, height: window.innerHeight });
+            }, 150); // 150ms debounce
         };
 
         window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (resizeTimeoutRef.current) {
+                clearTimeout(resizeTimeoutRef.current);
+            }
+        };
     }, []);
 
     useEffect(() => {
@@ -62,14 +81,30 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
     }, [rendererRef, onWebGPUStatus]);
 
     useEffect(() => {
+        // Performance: Track source changes
+        if (source !== lastSourceRef.current) {
+            sourceChangeFlagRef.current = true;
+            lastSourceRef.current = source;
+        }
+    }, [source]);
+
+    useEffect(() => {
         let active = true;
         const animate = () => {
             if (!active) return;
-            if (currentRendererRef.current && source) {
+            
+            // Performance: Frame skipping logic
+            // Always render if source changed, otherwise render every Nth frame
+            const shouldRender = sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0);
+            
+            if (shouldRender && currentRendererRef.current && source) {
                 const heading = (panX || 0.5) * 360;
                 const pitch = (panY || 0.5) * 180 - 90;
                 currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
+                sourceChangeFlagRef.current = false;
             }
+            
+            frameCountRef.current++;
             animationFrameId.current = requestAnimationFrame(animate);
         };
         animate();

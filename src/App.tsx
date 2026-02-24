@@ -9,9 +9,17 @@ import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
 import Compass from './components/Compass';
 import DashboardUI from './car/DashboardUI';
-import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, CarModeState } from './car';
+import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, getWiperState, CarModeState, setCarSteering, setCarWipers, updateCarGauges, toggleCarHeadlights } from './car';
 import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
+
+// New Feature Imports
+import { useBookmarks } from './hooks/useBookmarks';
+import { useLocationHistory } from './hooks/useLocationHistory';
+import { useSnapshots } from './hooks/useSnapshots';
+import BookmarkPanel from './components/BookmarkPanel';
+import HistoryPanel from './components/HistoryPanel';
+import SnapshotGallery from './components/SnapshotGallery';
 
 // Constants for cruise mode timing
 const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
@@ -78,6 +86,16 @@ function App() {
     // Car mode state
     const [isCarMode, setIsCarMode] = useState(false);
 
+    // Feature: Bookmarks, History, Snapshots hooks
+    const { bookmarks, addBookmark, removeBookmark } = useBookmarks();
+    const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
+    const { snapshots, addSnapshot, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
+
+    // Panel visibility state
+    const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
+    const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+    const [isSnapshotGalleryOpen, setIsSnapshotGalleryOpen] = useState(false);
+
     // Derived view heading: combines car heading + head offset in car mode
     // This is the actual camera direction - carHeading is the body direction, headYawOffset is look deviation
     const viewHeading = React.useMemo(() => {
@@ -88,9 +106,15 @@ function App() {
 
     const [isRoofOpen, setIsRoofOpen] = useState(false);
     const [rainIntensity, setRainIntensity] = useState(0);
+    const [wipersEnabled, setWipersEnabled] = useState(false);
     const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
     const carModeRef = useRef<CarModeState | null>(null);
     const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
+
+    // Car steering and simulation
+    const steeringInputRef = useRef<number>(0); // -90 to 90 degrees
+    const carSpeedRef = useRef<number>(0); // 0-100 km/h (simulated)
+    const carRPMRef = useRef<number>(0); // 0-8000 RPM (simulated)
 
     useEffect(() => {
         if (!audioRef.current) {
@@ -131,9 +155,13 @@ function App() {
         const turnRate = KEYBOARD_STEER_RATE * deltaTime;
         if (direction === 'left') {
             setCarHeading(prev => (prev - turnRate + 360) % 360);
+            steeringInputRef.current = Math.max(-90, steeringInputRef.current - turnRate * 0.5);
         } else {
             setCarHeading(prev => (prev + turnRate) % 360);
+            steeringInputRef.current = Math.min(90, steeringInputRef.current + turnRate * 0.5);
         }
+        // Update steering wheel animation
+        setCarSteering(steeringInputRef.current);
         // Note: headYawOffset stays the same - head turns with car (relative offset)
     }, [isCarMode]);
 
@@ -209,13 +237,26 @@ function App() {
 
         const handlePanoChanged = () => {
             const loc = panorama.getLocation();
+            const locationDesc = loc?.description || loc?.shortDescription || "Unknown Location";
             if (loc) {
-                setLocationName(loc.description || loc.shortDescription || "Unknown Location");
+                setLocationName(locationDesc);
             }
 
             const position = panorama.getPosition();
             if (position) {
-                setCurrentCoords({ lat: position.lat(), lng: position.lng() });
+                const newCoords = { lat: position.lat(), lng: position.lng() };
+                setCurrentCoords(newCoords);
+
+                // Add to location history
+                const currentHeading = isCarMode ? viewHeading : heading;
+                const currentPitch = isCarMode ? headPitch : pitch;
+                addToHistory({
+                    lat: newCoords.lat,
+                    lng: newCoords.lng,
+                    heading: currentHeading,
+                    pitch: currentPitch,
+                    locationName: locationDesc,
+                });
             }
 
             setIsTransitioning(true);
@@ -229,7 +270,7 @@ function App() {
         return () => {
             google.maps.event.removeListener(listener);
         };
-    }, [panorama]);
+    }, [panorama, isCarMode, viewHeading, heading, headPitch, pitch, addToHistory]);
 
     // Parse URL params on mount
     useEffect(() => {
@@ -411,41 +452,71 @@ function App() {
         }
     }, [isCarMode]);
 
-    // Update car mode rendering each frame via effect
-    // Car interior stays locked to carHeading (body follows street direction)
-    // Camera view uses viewHeading (carHeading + headYawOffset) + headPitch
-    // When car turns, head turns WITH the car - cockpit feels rigid
+    // Update rearview mirror with Street View canvas
+    useEffect(() => {
+        if (isCarMode && streetViewCanvas) {
+            setMirrorStreetViewCanvas(streetViewCanvas);
+        }
+    }, [isCarMode, streetViewCanvas]);
+
+    // Performance: Optimized car mode rendering
+    // Only runs animation when there's actual movement or changes
     useEffect(() => {
         if (!isCarMode || !carModeRef.current) return;
+
         let active = true;
+        let lastCarHeading = carHeading;
+        let lastViewHeading = viewHeading;
+        let lastHeadPitch = headPitch;
+        let idleFrames = 0;
+        const MAX_IDLE_FRAMES = 30; // Stop RAF after 0.5s of no changes
+
         const animate = () => {
             if (!active) return;
-            // Car interior rotates with carHeading (follows road)
-            // Mirror stays locked to car (180° behind car heading)
-            updateCarMode(carHeading, viewHeading, headPitch);
-            requestAnimationFrame(animate);
-        };
-        animate();
-        return () => { active = false; };
-    }, [isCarMode, carHeading, viewHeading, headPitch]);
 
-    // Update post-processing effects when settings change
-    useEffect(() => {
-        if (!postProcessingRef.current || !rendererRef.current) return;
-        postProcessingRef.current.setRainIntensity(rainIntensity);
-        postProcessingRef.current.setTimeOfDay(timeOfDay);
-        rendererRef.current.updateEffects(postProcessingRef.current.getUniformData());
-    }, [rainIntensity, timeOfDay]);
+            // Check if anything changed
+            const headingChanged = carHeading !== lastCarHeading || viewHeading !== lastViewHeading;
+            const pitchChanged = headPitch !== lastHeadPitch;
+            const hasChanges = headingChanged || pitchChanged;
 
-    // Handle car mode resize
-    useEffect(() => {
-        if (!isCarMode || !carModeRef.current) return;
-        const handleResize = () => {
-            carModeRef.current?.interior.resize(window.innerWidth, window.innerHeight);
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [isCarMode]);
+            if (hasChanges) {
+                idleFrames = 0;
+                lastCarHeading = carHeading;
+                lastViewHeading = viewHeading;
+                lastHeadPitch = headPitch;
+
+                // Car interior rotates with carHeading (follows road)
+                updateCarMode(carHeading, viewHeading, headPitch);
+            } else {
+                idleFrames++;
+            }
+
+            // Gradually center steering when no input
+            if (steeringInputRef.current !== 0) {
+                steeringInputRef.current *= 0.92; // Decay
+                if (Math.abs(steeringInputRef.current) < 0.1) {
+                    steeringInputRef.current = 0;
+                }
+                setCarSteering(steeringInputRef.current);
+            }
+
+            // Simulate gradual speed increase based on forward movement
+            // This is basic - just simulate movement causing acceleration
+            if (carSpeedRef.current > 0) {
+                carSpeedRef.current = Math.max(0, carSpeedRef.current - 5); // Decay
+            }
+
+            // RPM correlates with steering input and speed
+            carRPMRef.current = Math.abs(steeringInputRef.current) * 100 + carSpeedRef.current * 50;
+            updateCarGauges(carSpeedRef.current, carRPMRef.current);
+
+
+            window.addEventListener('resize', handleResize);
+            return () => {
+                window.removeEventListener('resize', handleResize);
+                if (resizeTimeout) clearTimeout(resizeTimeout);
+            };
+        }, [isCarMode]);
 
     // Cleanup car mode on unmount
     useEffect(() => {
@@ -469,7 +540,13 @@ function App() {
         }
     }, []);
 
-    // [ENHANCED] Snapshot handler with JSON sidecar metadata
+    const handleToggleWipers = useCallback(() => {
+        const newState = toggleWipers();
+        setWipersEnabled(newState);
+        setCarWipers(newState);
+    }, []);
+
+    // [ENHANCED] Snapshot handler with gallery save and JSON sidecar metadata
     const handleSnapshot = useCallback(() => {
         if (!rendererRef.current || !panorama) return;
 
@@ -487,6 +564,8 @@ function App() {
         const position = panorama.getPosition();
         const timestamp = new Date().toISOString();
         const filenameBase = `streetview_${timestamp.replace(/[:.]/g, '-')}`;
+        const currentHeading = isCarMode ? viewHeading : heading;
+        const currentPitch = isCarMode ? headPitch : pitch;
 
         const metadata = {
             version: "1.0",
@@ -498,8 +577,8 @@ function App() {
                 description: locationName || "Unknown Location"
             },
             pov: {
-                heading,
-                pitch,
+                heading: currentHeading,
+                pitch: currentPitch,
                 zoom
             },
             renderSettings: {
@@ -508,7 +587,19 @@ function App() {
             }
         };
 
-        // 3. Download Image
+        // 3. Save to Gallery (localStorage)
+        addSnapshot({
+            name: filenameBase,
+            dataUrl: dataUrl,
+            lat: position?.lat() || 0,
+            lng: position?.lng() || 0,
+            heading: currentHeading,
+            pitch: currentPitch,
+            zoom: zoom,
+            locationName: locationName || "Unknown Location",
+        });
+
+        // 4. Download Image
         const imgLink = document.createElement('a');
         imgLink.download = `${filenameBase}.png`;
         imgLink.href = dataUrl;
@@ -516,7 +607,7 @@ function App() {
         imgLink.click();
         document.body.removeChild(imgLink);
 
-        // 4. Download Metadata (Sidecar JSON)
+        // 5. Download Metadata (Sidecar JSON)
         const metaBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
         const metaLink = document.createElement('a');
         metaLink.download = `${filenameBase}.json`;
@@ -525,8 +616,8 @@ function App() {
         metaLink.click();
         document.body.removeChild(metaLink);
 
-        console.log('Snapshot saved:', filenameBase);
-    }, [panorama, heading, pitch, zoom, mode, locationName]);
+        console.log('Snapshot saved to gallery and downloaded:', filenameBase);
+    }, [panorama, heading, pitch, zoom, mode, locationName, isCarMode, viewHeading, headPitch, addSnapshot]);
 
     // Helper function to calculate heading between two points
     const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -536,7 +627,7 @@ function App() {
 
         const y = Math.sin(dLng) * Math.cos(lat2Rad);
         const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
-                  Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
 
         let heading = Math.atan2(y, x) * 180 / Math.PI;
         heading = (heading + 360) % 360;
@@ -550,17 +641,52 @@ function App() {
         const dLng = (lng2 - lng1) * Math.PI / 180;
 
         const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
 
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c; // Distance in km
     };
 
-    // Teleport function
-    const teleportToCoords = (lat: number, lng: number) => {
+    // Teleport function with optional heading and pitch
+    const teleportToCoords = (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => {
         if (!panorama) return;
         panorama.setPosition({ lat, lng });
+
+        // Set heading and pitch if provided
+        if (targetHeading !== undefined) {
+            if (isCarMode) {
+                setCarHeading(targetHeading);
+                setHeadYawOffset(0);
+            } else {
+                setHeading(targetHeading);
+            }
+        }
+        if (targetPitch !== undefined) {
+            if (isCarMode) {
+                setHeadPitch(targetPitch);
+            } else {
+                setPitch(targetPitch);
+            }
+        }
+
+        // Close panels after teleport
+        setIsBookmarkPanelOpen(false);
+        setIsHistoryPanelOpen(false);
+        setIsSnapshotGalleryOpen(false);
+    };
+
+    // Bookmark helper functions
+    const handleAddBookmark = (name: string) => {
+        const currentHeading = isCarMode ? viewHeading : heading;
+        const currentPitch = isCarMode ? headPitch : pitch;
+        addBookmark({
+            name,
+            lat: currentCoords.lat,
+            lng: currentCoords.lng,
+            heading: currentHeading,
+            pitch: currentPitch,
+        });
     };
 
     // Search handler
@@ -652,16 +778,47 @@ function App() {
         setRouteDestination('');
     };
 
-    // Update URL on position change
+    // Performance: Throttled URL update to prevent excessive history operations
+    const urlUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const pendingUrlUpdateRef = useRef<(() => void) | null>(null);
+
     useEffect(() => {
         if (!panorama) return;
-        const params = new URLSearchParams({
-            lat: currentCoords.lat.toFixed(6),
-            lng: currentCoords.lng.toFixed(6),
-            heading: heading.toFixed(1),
-            pitch: pitch.toFixed(1)
-        });
-        window.history.replaceState({}, '', `?${params.toString()}`);
+
+        // Store the update function for later execution
+        pendingUrlUpdateRef.current = () => {
+            const params = new URLSearchParams({
+                lat: currentCoords.lat.toFixed(6),
+                lng: currentCoords.lng.toFixed(6),
+                heading: heading.toFixed(1),
+                pitch: pitch.toFixed(1)
+            });
+            window.history.replaceState({}, '', `?${params.toString()}`);
+        };
+
+        // Clear existing timeout
+        if (urlUpdateTimeoutRef.current) {
+            clearTimeout(urlUpdateTimeoutRef.current);
+        }
+
+        // Execute immediately on first call, then throttle subsequent calls
+        if (!urlUpdateTimeoutRef.current) {
+            pendingUrlUpdateRef.current();
+        }
+
+        // Set timeout for throttling (200ms)
+        urlUpdateTimeoutRef.current = setTimeout(() => {
+            if (pendingUrlUpdateRef.current) {
+                pendingUrlUpdateRef.current();
+            }
+            urlUpdateTimeoutRef.current = null;
+        }, 200);
+
+        return () => {
+            if (urlUpdateTimeoutRef.current) {
+                clearTimeout(urlUpdateTimeoutRef.current);
+            }
+        };
     }, [currentCoords, heading, pitch, panorama]);
 
     return (
@@ -726,7 +883,7 @@ function App() {
                     panX={(isCarMode ? viewHeading : heading) / 360}
                     panY={((isCarMode ? headPitch : pitch) + 90) / 180}
                 />
-                
+
                 {/* Compass Overlay - shows which direction is North */}
                 {isConnected && <Compass heading={isCarMode ? viewHeading : heading} />}
             </div>
@@ -761,12 +918,12 @@ function App() {
                     <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {locationName || "Map View"}
                     </h3>
-                    <button 
-                        onClick={() => setIsMapOpen(false)} 
-                        style={{ 
-                            background: 'rgba(255,255,255,0.1)', 
-                            border: '1px solid #555', 
-                            color: '#fff', 
+                    <button
+                        onClick={() => setIsMapOpen(false)}
+                        style={{
+                            background: 'rgba(255,255,255,0.1)',
+                            border: '1px solid #555',
+                            color: '#fff',
                             padding: '6px 12px',
                             borderRadius: '4px',
                             cursor: 'pointer',
@@ -910,9 +1067,70 @@ function App() {
                         }} className="control-btn">
                             📎 Share Link
                         </button>
+                        <button
+                            onClick={() => {
+                                setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
+                                setIsHistoryPanelOpen(false);
+                                setIsSnapshotGalleryOpen(false);
+                            }}
+                            className={`control-btn ${isBookmarkPanelOpen ? 'disconnect' : ''}`}
+                        >
+                            📌 Bookmarks ({bookmarks.length})
+                        </button>
+                        <button
+                            onClick={() => {
+                                setIsHistoryPanelOpen(!isHistoryPanelOpen);
+                                setIsBookmarkPanelOpen(false);
+                                setIsSnapshotGalleryOpen(false);
+                            }}
+                            className={`control-btn ${isHistoryPanelOpen ? 'disconnect' : ''}`}
+                        >
+                            🕐 History ({history.length})
+                        </button>
+                        <button
+                            onClick={() => {
+                                setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
+                                setIsBookmarkPanelOpen(false);
+                                setIsHistoryPanelOpen(false);
+                            }}
+                            className={`control-btn ${isSnapshotGalleryOpen ? 'disconnect' : ''}`}
+                        >
+                            📸 Gallery ({snapshots.length})
+                        </button>
                     </>
                 )}
             </div>
+
+            {/* Feature Panels */}
+            <BookmarkPanel
+                bookmarks={bookmarks}
+                currentCoords={currentCoords}
+                onTeleport={teleportToCoords}
+                onAddBookmark={handleAddBookmark}
+                onRemoveBookmark={removeBookmark}
+                onClose={() => setIsBookmarkPanelOpen(false)}
+                isOpen={isBookmarkPanelOpen}
+            />
+
+            <HistoryPanel
+                history={history}
+                onTeleport={teleportToCoords}
+                onRemoveEntry={removeFromHistory}
+                onClearHistory={clearHistory}
+                onClose={() => setIsHistoryPanelOpen(false)}
+                isOpen={isHistoryPanelOpen}
+            />
+
+            <SnapshotGallery
+                snapshots={snapshots}
+                onRemoveSnapshot={removeSnapshot}
+                onUpdateName={updateSnapshotName}
+                onDownload={downloadSnapshot}
+                onTeleport={teleportToCoords}
+                onClose={() => setIsSnapshotGalleryOpen(false)}
+                onClearAll={clearAllSnapshots}
+                isOpen={isSnapshotGalleryOpen}
+            />
 
             {/* Car Mode Dashboard UI */}
             {isConnected && (
@@ -924,7 +1142,9 @@ function App() {
                     onRainIntensity={handleRainIntensity}
                     onTimeOfDay={handleTimeOfDay}
                     onToggleRoof={handleToggleRoof}
+                    onToggleWipers={handleToggleWipers}
                     isRoofOpen={isRoofOpen}
+                    wipersEnabled={wipersEnabled}
                     rainIntensity={rainIntensity}
                     timeOfDay={timeOfDay}
                     audioElement={audioRef.current}

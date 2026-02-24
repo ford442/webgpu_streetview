@@ -13,7 +13,9 @@ interface DashboardUIProps {
     onRainIntensity: (value: number) => void;
     onTimeOfDay: (value: string) => void;
     onToggleRoof: () => void;
+    onToggleWipers?: () => void;
     isRoofOpen: boolean;
+    wipersEnabled?: boolean;
     rainIntensity: number;
     timeOfDay: string;
     audioElement?: HTMLAudioElement | null;
@@ -27,7 +29,9 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     onRainIntensity,
     onTimeOfDay,
     onToggleRoof,
+    onToggleWipers,
     isRoofOpen,
+    wipersEnabled = false,
     rainIntensity,
     timeOfDay,
     audioElement,
@@ -173,6 +177,17 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                 >
                     {isRoofOpen ? '☀️ OPEN' : '🏠 CLOSED'}
                 </button>
+
+                {/* Wiper toggle - only show when raining */}
+                {rainIntensity > 0 && onToggleWipers && (
+                    <button
+                        onClick={onToggleWipers}
+                        style={wipersEnabled ? activeButtonStyle : buttonStyle}
+                        title="Toggle Windshield Wipers"
+                    >
+                        🧹 {wipersEnabled ? 'ON' : 'OFF'}
+                    </button>
+                )}
 
                 {/* Time of Day presets */}
                 <select

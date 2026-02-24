@@ -21,7 +21,7 @@ This document outlines potential features and enhancements for the WebGPU Street
 - ✅ **Coordinates in filename** - Latitude and longitude
 - ✅ **Timestamp metadata** - Date and time of capture
 - ⬜ **EXIF metadata embedding** - Store GPS coordinates, heading, pitch in image metadata
-- ⬜ **Snapshot gallery** - View and manage previously saved snapshots
+- ✅ **Snapshot gallery** - View and manage previously saved snapshots
 - ⬜ **Share functionality** - Direct share to social media or copy link
 - ⬜ **Multiple format support** - PNG, JPEG, WebP options
 
@@ -32,8 +32,8 @@ This document outlines potential features and enhancements for the WebGPU Street
 
 #### 3. Location Features
 - ⬜ **Search functionality** - Search for addresses, landmarks, coordinates
-- ⬜ **Bookmarks/Favorites** - Save favorite locations for quick access
-- ⬜ **Location history** - Track and revisit previously viewed locations
+- ✅ **Bookmarks/Favorites** - Save favorite locations for quick access
+- ✅ **Location history** - Track and revisit previously viewed locations
 - ⬜ **POI (Points of Interest) overlay** - Show nearby restaurants, attractions, etc.
 
 #### 4. AR/Compass Integration
@@ -69,10 +69,11 @@ This document outlines potential features and enhancements for the WebGPU Street
 ### Low Priority (Future Exploration)
 
 #### 9. Advanced Rendering
-- ⬜ **Weather effects** - Add rain, snow, fog effects
-- ⬜ **Time of day simulation** - Simulate different lighting conditions
+- ✅ **Weather effects** - Add rain, snow, fog effects (Rain + wipers implemented)
+- ✅ **Time of day simulation** - Simulate different lighting conditions (Day/Sunset/Night implemented)
 - ⬜ **Custom filters** - Instagram-like filters for rendering
 - ⬜ **3D object placement** - Add virtual objects to scenes
+- ✅ **Functional rearview mirror** - Shows actual Street View from behind the car
 
 #### 10. Social Features
 - ⬜ **User-contributed content** - Allow users to upload 360° photos

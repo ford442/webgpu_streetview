@@ -92,11 +92,11 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 checkForCanvas();
             });
 
+            // Performance: Optimized observer - only watch childList, not entire subtree
+            // Canvas changes are detected via childList mutations when GMaps swaps canvases
             observer.observe(panoRef.current, { 
                 childList: true, 
-                subtree: true, 
-                attributes: true, // Also watch for attribute changes (like width/height)
-                attributeFilter: ['width', 'height', 'style'] 
+                subtree: false // Don't observe entire subtree - reduces CPU usage significantly
             });
 
             // Cleanup observer on unmount

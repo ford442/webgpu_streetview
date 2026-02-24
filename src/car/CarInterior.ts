@@ -13,15 +13,31 @@ export class CarInterior {
 
     private interiorGroup: THREE.Group;
     private roofGroup: THREE.Group;
+    private steeringWheelGroup!: THREE.Group;
+    private leftMirrorPlane!: THREE.Mesh;
+    private rightMirrorPlane!: THREE.Mesh;
+    private wiperLeft!: THREE.Group;
+    private wiperRight!: THREE.Group;
+    private speedometerNeedle!: THREE.Mesh;
+    private tachometerNeedle!: THREE.Mesh;
+    private headlightsLight!: THREE.Light;
+
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
     private animationId: number = 0;
+    private steeringAngle: number = 0;
+    private wiperAnimationTime: number = 0;
+    private isWiperActive: boolean = false;
+    private speedometer: number = 0; // 0-100 km/h
+    private tachometer: number = 0; // 0-8000 RPM
 
     // Materials
     private dashboardMaterial!: THREE.MeshStandardMaterial;
     private leatherMaterial!: THREE.MeshStandardMaterial;
     private metalMaterial!: THREE.MeshStandardMaterial;
     private frameMaterial!: THREE.MeshStandardMaterial;
+    private glassMaterial!: THREE.MeshStandardMaterial;
+    private mirrorMaterial!: THREE.MeshStandardMaterial;
 
     constructor(container: HTMLElement) {
         this.scene = new THREE.Scene();
@@ -103,6 +119,22 @@ export class CarInterior {
             metalness: 0.0,
             side: THREE.DoubleSide,
         });
+
+        // Glass material for mirrors with mirror-like reflectivity
+        this.glassMaterial = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
+            roughness: 0.1,
+            metalness: 0.95,
+            side: THREE.FrontSide,
+        });
+
+        // Mirror material (reflective)
+        this.mirrorMaterial = new THREE.MeshStandardMaterial({
+            color: 0xdddddd,
+            roughness: 0.05,
+            metalness: 1.0,
+            side: THREE.FrontSide,
+        });
     }
 
     private createLighting(): void {
@@ -116,6 +148,14 @@ export class CarInterior {
         const overhead = new THREE.DirectionalLight(0xffffff, 0.6);
         overhead.position.set(0, 3, 0);
         this.scene.add(overhead);
+
+        // Headlights (toggleable via toggleHeadlights())
+        this.headlightsLight = new THREE.SpotLight(0xffffcc, 0.3, 50, 0.5, 1.0, 1.0);
+        this.headlightsLight.position.set(0, 0.8, -1.2);
+        this.headlightsLight.target.position.set(0, 0, 10);
+        this.scene.add(this.headlightsLight);
+        this.scene.add(this.headlightsLight.target);
+        this.headlightsLight.intensity = 0; // Off by default
     }
 
     private buildInterior(): void {
@@ -126,6 +166,9 @@ export class CarInterior {
         this.buildFloor();
         this.buildRoof();
         this.buildWindshieldFrame();
+        this.buildSideMirrors();
+        this.buildWipers();
+        this.buildGauges();
     }
 
     private buildDashboard(): void {
@@ -158,36 +201,39 @@ export class CarInterior {
     }
 
     private buildSteeringWheel(): void {
+        // Create steering wheel group for rotation animation
+        this.steeringWheelGroup = new THREE.Group();
+        this.steeringWheelGroup.position.set(-0.35, 0.95, -0.6);
+        this.interiorGroup.add(this.steeringWheelGroup);
+
         // Steering wheel rim (torus)
         const wheelGeo = new THREE.TorusGeometry(0.18, 0.02, 8, 24);
         const wheel = new THREE.Mesh(wheelGeo, this.frameMaterial);
-        wheel.position.set(-0.35, 0.95, -0.6);
         wheel.rotation.set(Math.PI * 0.35, 0, 0);
-        this.interiorGroup.add(wheel);
+        this.steeringWheelGroup.add(wheel);
 
-        // Steering column
+        // Steering wheel center hub
+        const hubGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16);
+        const hub = new THREE.Mesh(hubGeo, this.dashboardMaterial);
+        hub.rotation.set(Math.PI * 0.35, 0, 0);
+        this.steeringWheelGroup.add(hub);
+
+        // Spokes (3 spokes) - attach to rotating wheel
+        for (let i = 0; i < 3; i++) {
+            const spokeGeo = new THREE.BoxGeometry(0.015, 0.16, 0.015);
+            const spoke = new THREE.Mesh(spokeGeo, this.metalMaterial);
+            const angle = (i * Math.PI * 2) / 3 + Math.PI * 0.35;
+            spoke.position.set(Math.cos(angle) * 0.12, Math.sin(angle) * 0.12, 0);
+            spoke.rotation.set(Math.PI * 0.35, 0, angle);
+            this.steeringWheelGroup.add(spoke);
+        }
+
+        // Steering column (separate from wheel group for aesthetic)
         const columnGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.4, 8);
         const column = new THREE.Mesh(columnGeo, this.metalMaterial);
         column.position.set(-0.35, 0.78, -0.7);
         column.rotation.set(Math.PI * 0.35, 0, 0);
         this.interiorGroup.add(column);
-
-        // Steering wheel center hub
-        const hubGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16);
-        const hub = new THREE.Mesh(hubGeo, this.dashboardMaterial);
-        hub.position.set(-0.35, 0.95, -0.6);
-        hub.rotation.set(Math.PI * 0.35, 0, 0);
-        this.interiorGroup.add(hub);
-
-        // Spokes (3 spokes)
-        for (let i = 0; i < 3; i++) {
-            const spokeGeo = new THREE.BoxGeometry(0.015, 0.16, 0.015);
-            const spoke = new THREE.Mesh(spokeGeo, this.metalMaterial);
-            spoke.position.set(-0.35, 0.95, -0.6);
-            const angle = (i * Math.PI * 2) / 3;
-            spoke.rotation.set(Math.PI * 0.35, 0, angle);
-            this.interiorGroup.add(spoke);
-        }
     }
 
     private buildDoorPanels(): void {
@@ -317,6 +363,96 @@ export class CarInterior {
         this.interiorGroup.add(mirrorMount);
     }
 
+    private buildSideMirrors(): void {
+        // Left side mirror
+        const leftMirrorFrameGeo = new THREE.BoxGeometry(0.05, 0.25, 0.08);
+        const leftMirrorFrame = new THREE.Mesh(leftMirrorFrameGeo, this.frameMaterial);
+        leftMirrorFrame.position.set(-1.0, 1.05, -0.5);
+        leftMirrorFrame.rotation.set(0, 0.3, 0);
+        this.interiorGroup.add(leftMirrorFrame);
+
+        const leftMirrorPlaneGeo = new THREE.PlaneGeometry(0.15, 0.2);
+        this.leftMirrorPlane = new THREE.Mesh(leftMirrorPlaneGeo, this.mirrorMaterial);
+        this.leftMirrorPlane.position.set(-0.98, 1.05, -0.52);
+        this.leftMirrorPlane.rotation.set(0, 0.5, 0);
+        this.interiorGroup.add(this.leftMirrorPlane);
+
+        // Right side mirror
+        const rightMirrorFrameGeo = new THREE.BoxGeometry(0.05, 0.25, 0.08);
+        const rightMirrorFrame = new THREE.Mesh(rightMirrorFrameGeo, this.frameMaterial);
+        rightMirrorFrame.position.set(1.0, 1.05, -0.5);
+        rightMirrorFrame.rotation.set(0, -0.3, 0);
+        this.interiorGroup.add(rightMirrorFrame);
+
+        const rightMirrorPlaneGeo = new THREE.PlaneGeometry(0.15, 0.2);
+        this.rightMirrorPlane = new THREE.Mesh(rightMirrorPlaneGeo, this.mirrorMaterial);
+        this.rightMirrorPlane.position.set(0.98, 1.05, -0.52);
+        this.rightMirrorPlane.rotation.set(0, -0.5, 0);
+        this.interiorGroup.add(this.rightMirrorPlane);
+    }
+
+    private buildWipers(): void {
+        // Left wiper (group for animation)
+        this.wiperLeft = new THREE.Group();
+        this.wiperLeft.position.set(-0.2, 1.4, -0.9);
+        this.interiorGroup.add(this.wiperLeft);
+
+        const leftWiperBladGeo = new THREE.BoxGeometry(0.02, 0.3, 0.02);
+        const leftWiperBlad = new THREE.Mesh(leftWiperBladGeo, this.metalMaterial);
+        leftWiperBlad.position.set(0, -0.15, 0);
+        leftWiperBlad.rotation.set(0, 0, -Math.PI / 6);
+        this.wiperLeft.add(leftWiperBlad);
+
+        // Right wiper (group for animation)
+        this.wiperRight = new THREE.Group();
+        this.wiperRight.position.set(0.2, 1.4, -0.9);
+        this.interiorGroup.add(this.wiperRight);
+
+        const rightWiperBladGeo = new THREE.BoxGeometry(0.02, 0.3, 0.02);
+        const rightWiperBlad = new THREE.Mesh(rightWiperBladGeo, this.metalMaterial);
+        rightWiperBlad.position.set(0, -0.15, 0);
+        rightWiperBlad.rotation.set(0, 0, Math.PI / 6);
+        this.wiperRight.add(rightWiperBlad);
+    }
+
+    private buildGauges(): void {
+        // Speedometer
+        const speedoGeo = new THREE.CircleGeometry(0.15, 32);
+        const speedoMat = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 0.8,
+            emissive: 0x001a00,
+            emissiveIntensity: 0.2,
+        });
+        const speedometer = new THREE.Mesh(speedoGeo, speedoMat);
+        speedometer.position.set(-0.5, 0.95, -0.72);
+        this.interiorGroup.add(speedometer);
+
+        // Speedometer needle
+        const needleGeo = new THREE.BoxGeometry(0.008, 0.12, 0.008);
+        this.speedometerNeedle = new THREE.Mesh(needleGeo, this.metalMaterial);
+        this.speedometerNeedle.position.set(-0.5, 0.98, -0.71);
+        this.interiorGroup.add(this.speedometerNeedle);
+
+        // Tachometer
+        const tachoGeo = new THREE.CircleGeometry(0.15, 32);
+        const tachoMat = new THREE.MeshStandardMaterial({
+            color: 0x1a0000,
+            roughness: 0.8,
+            emissive: 0x330000,
+            emissiveIntensity: 0.2,
+        });
+        const tachometer = new THREE.Mesh(tachoGeo, tachoMat);
+        tachometer.position.set(-0.15, 0.95, -0.72);
+        this.interiorGroup.add(tachometer);
+
+        // Tachometer needle
+        const tachoNeedleGeo = new THREE.BoxGeometry(0.008, 0.12, 0.008);
+        this.tachometerNeedle = new THREE.Mesh(tachoNeedleGeo, this.metalMaterial);
+        this.tachometerNeedle.position.set(-0.15, 0.98, -0.71);
+        this.interiorGroup.add(this.tachometerNeedle);
+    }
+
     /**
      * Toggle the convertible roof open/closed.
      * Animates the roof geometry to slide down through the floor.
@@ -327,7 +463,7 @@ export class CarInterior {
     }
 
     /**
-     * Update loop - call each frame to animate roof and other dynamic elements.
+     * Update loop - call each frame to animate roof, steering wheel, wipers, and gauges.
      */
     public update(deltaTime: number): void {
         // Animate roof position (lerp)
@@ -336,6 +472,52 @@ export class CarInterior {
         const diff = targetY - currentY;
         if (Math.abs(diff) > 0.001) {
             this.roofGroup.position.y += diff * Math.min(deltaTime * 3, 1);
+        }
+
+        // Smooth steering wheel rotation (lerp to target)
+        if (this.steeringWheelGroup) {
+            const targetAngle = this.steeringAngle;
+            const diff = targetAngle - this.steeringWheelGroup.rotation.z;
+            // Handle angle wrapping
+            let shortestDiff = diff;
+            if (shortestDiff > Math.PI) shortestDiff -= Math.PI * 2;
+            if (shortestDiff < -Math.PI) shortestDiff += Math.PI * 2;
+            this.steeringWheelGroup.rotation.z += shortestDiff * Math.min(deltaTime * 5, 1);
+        }
+
+        // Animate wipers
+        if (this.isWiperActive) {
+            this.wiperAnimationTime += deltaTime;
+            const wiperCycle = this.wiperAnimationTime % 1.0; // 1 second cycle
+            const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4); // Sweep ±45°
+            if (this.wiperLeft) {
+                this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
+            }
+            if (this.wiperRight) {
+                this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
+            }
+        }
+
+        // Update gauge needles
+        this.updateGaugles();
+    }
+
+    /**
+     * Update gauge needle positions based on speed/RPM.
+     * Speed: 0-100 km/h maps to gauge rotation
+     * RPM: 0-8000 maps to gauge rotation
+     */
+    private updateGaugles(): void {
+        if (this.speedometerNeedle) {
+            // Speedometer: 0-300° rotation (0-100 km/h)
+            const speedAngle = THREE.MathUtils.degToRad((this.speedometer / 100) * 300 - 150);
+            this.speedometerNeedle.rotation.z = speedAngle;
+        }
+
+        if (this.tachometerNeedle) {
+            // Tachometer: 0-300° rotation (0-8000 RPM)
+            const tachoAngle = THREE.MathUtils.degToRad((this.tachometer / 8000) * 300 - 150);
+            this.tachometerNeedle.rotation.z = tachoAngle;
         }
     }
 
@@ -349,9 +531,57 @@ export class CarInterior {
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
         this.interiorGroup.rotation.set(0, yawRad, 0);
-        
+
         // Also update camera position to follow head movement would go here
         // For now we keep the camera fixed in the driver's seat
+    }
+
+    /**
+     * Set the steering wheel angle based on car steering input.
+     * @param angle - Steering angle in degrees (-90 to +90)
+     */
+    public setSteeringAngle(angle: number): void {
+        // Clamp to reasonable steering range
+        this.steeringAngle = THREE.MathUtils.degToRad(Math.max(-90, Math.min(90, angle)));
+    }
+
+    /**
+     * Set the active wiper state.
+     */
+    public setWipersActive(active: boolean): void {
+        this.isWiperActive = active;
+        if (!active) {
+            // Reset wipers to rest position
+            this.wiperAnimationTime = 0;
+            if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
+            if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
+        }
+    }
+
+    /**
+     * Update speedometer and tachometer values.
+     * @param speed - Speed in km/h (0-100)
+     * @param rpm - RPM (0-8000)
+     */
+    public setGaugeValues(speed: number, rpm: number): void {
+        this.speedometer = Math.max(0, Math.min(100, speed));
+        this.tachometer = Math.max(0, Math.min(8000, rpm));
+    }
+
+    /**
+     * Toggle headlights on/off.
+     */
+    public toggleHeadlights(): void {
+        if (this.headlightsLight) {
+            this.headlightsLight.intensity = this.headlightsLight.intensity > 0 ? 0 : 0.5;
+        }
+    }
+
+    /**
+     * Get current headlights state.
+     */
+    public getHeadlightsState(): boolean {
+        return this.headlightsLight ? this.headlightsLight.intensity > 0 : false;
     }
 
     /**

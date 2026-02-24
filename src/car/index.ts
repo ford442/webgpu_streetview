@@ -14,6 +14,8 @@ export interface CarModeState {
     mirror: RearviewMirror;
     postProcessing: SelectivePostProcessing;
     isActive: boolean;
+    wipersEnabled: boolean;
+    wiperSpeed: number;
 }
 
 let carModeState: CarModeState | null = null;
@@ -41,6 +43,8 @@ export function initCarMode(container: HTMLElement): CarModeState {
         mirror,
         postProcessing,
         isActive: false,
+        wipersEnabled: false,
+        wiperSpeed: 1.0,
     };
 
     return carModeState;
@@ -65,6 +69,40 @@ export function toggleCarMode(enabled: boolean): void {
 }
 
 /**
+ * Set the Street View canvas source for the rearview mirror.
+ * Call this whenever the Street View canvas changes.
+ */
+export function setMirrorStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
+    if (!carModeState) return;
+    carModeState.mirror.setStreetViewCanvas(canvas);
+}
+
+/**
+ * Toggle windshield wipers on/off.
+ */
+export function toggleWipers(): boolean {
+    if (!carModeState) return false;
+    carModeState.wipersEnabled = !carModeState.wipersEnabled;
+    return carModeState.wipersEnabled;
+}
+
+/**
+ * Set wiper speed (0.5 = slow, 1.0 = normal, 2.0 = fast).
+ */
+export function setWiperSpeed(speed: number): void {
+    if (!carModeState) return;
+    carModeState.wiperSpeed = Math.max(0.5, Math.min(2.0, speed));
+}
+
+/**
+ * Get current wiper state.
+ */
+export function getWiperState(): { enabled: boolean; speed: number } {
+    if (!carModeState) return { enabled: false, speed: 1.0 };
+    return { enabled: carModeState.wipersEnabled, speed: carModeState.wiperSpeed };
+}
+
+/**
  * Update and render car mode elements each frame.
  * Should be called within the existing animation loop.
  * 
@@ -86,12 +124,49 @@ export function updateCarMode(carHeading: number, viewHeading: number, headPitch
     // This keeps dashboard, steering wheel, A-pillars fixed to the car body
     carModeState.interior.setCarOrientation(carHeading);
 
-    // Update mirror orientation based on car heading (always shows behind the car)
-    // The mirror stays locked to the car body, not the driver's head
-    carModeState.mirror.updateOrientation(carHeading, headPitch);
+    // Update mirror with the rear view (180° behind car heading)
+    // The mirror shows what's actually behind the car based on Street View
+    carModeState.mirror.update(carHeading, true); // skipFrame = true for performance
 
     // Render the car interior
     carModeState.interior.render();
+}
+
+/**
+ * Update car steering angle (for steering wheel animation).
+ * @param steeringInput - Steering angle in degrees (-90 to 90)
+ */
+export function setCarSteering(steeringInput: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setSteeringAngle(steeringInput);
+}
+
+/**
+ * Control car wipers.
+ * @param active - Whether wipers should be active
+ */
+export function setCarWipers(active: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setWipersActive(active);
+}
+
+/**
+ * Update dashboard gauges (speedometer, tachometer).
+ * @param speed - Speed in km/h (0-100)
+ * @param rpm - Engine RPM (0-8000)
+ */
+export function updateCarGauges(speed: number, rpm: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setGaugeValues(speed, rpm);
+}
+
+/**
+ * Toggle car headlights.
+ */
+export function toggleCarHeadlights(): boolean {
+    if (!carModeState) return false;
+    carModeState.interior.toggleHeadlights();
+    return carModeState.interior.getHeadlightsState();
 }
 
 /**

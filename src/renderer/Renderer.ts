@@ -143,6 +143,11 @@ export class Renderer {
 
     // Helper to create/recreate the dynamic video/canvas texture
     private createVideoTexture(width: number, height: number) {
+        // Performance: Only recreate if dimensions actually changed
+        if (this.videoTexture && this.videoTextureWidth === width && this.videoTextureHeight === height) {
+            return; // Skip recreation - texture already correct size
+        }
+        
         if (this.videoTexture) this.videoTexture.destroy();
 
         this.videoTexture = this.device.createTexture({
@@ -343,12 +348,13 @@ export class Renderer {
 
             // If we have a valid source size, ensure videoTexture exists and upload
             if (srcWidth > 0 && srcHeight > 0) {
-                // Resize/Create dynamic video texture if dimensions changed
-                // Note: GPUTexture does not expose width/height directly in the spec, but existing code
-                // used checks against texture.width/height; to be defensive, recreate unconditionally if absent
-                if (!this.videoTexture || this.videoTextureWidth !== srcWidth || this.videoTextureHeight !== srcHeight) {
-                    this.createVideoTexture(srcWidth, srcHeight);
-                    // Rebind so shader uses the videoTexture immediately
+                // Performance: createVideoTexture now checks dimensions internally
+                const needsBindGroupUpdate = !this.videoTexture || this.videoTextureWidth !== srcWidth || this.videoTextureHeight !== srcHeight;
+                
+                this.createVideoTexture(srcWidth, srcHeight);
+                
+                // Only update bind group when texture was actually recreated
+                if (needsBindGroupUpdate) {
                     this.updateBindGroup();
                 }
 
