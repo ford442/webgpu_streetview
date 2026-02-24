@@ -9,6 +9,7 @@ interface InputHandlerProps {
     onToggleCarMode?: () => void; // Toggle car view with 'C' key
     onSteer?: (direction: 'left' | 'right', deltaTime: number) => void; // Steering for car mode (A/D keys)
     onRecenterHead?: () => void; // Recenter head look in car mode ('C' key when already in car mode)
+    onMouseSteer?: (deltaX: number) => void; // Shift+drag car steering (horizontal mouse drag rotates car body)
 
     // State from the parent to control behavior
     isEnabled: boolean; // Controls whether the handler is active
@@ -26,6 +27,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     onToggleCarMode,
     onSteer,
     onRecenterHead,
+    onMouseSteer,
     isEnabled,
     isCarMode = false,
     targetRef 
@@ -34,6 +36,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const dragDistanceRef = useRef(0);
     // Track if the current drag operation started on the target element
     const dragStartedOnTargetRef = useRef(false);
+    // Track if Shift was held when the current drag started (for Shift+drag car steering)
+    const isShiftDragRef = useRef(false);
 
     // Refs to store the latest versions of callbacks to prevent useEffect thrashing
     const onPanRef = useRef(onPan);
@@ -43,6 +47,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const onToggleCarModeRef = useRef(onToggleCarMode);
     const onSteerRef = useRef(onSteer);
     const onRecenterHeadRef = useRef(onRecenterHead);
+    const onMouseSteerRef = useRef(onMouseSteer);
     const isCarModeRef = useRef(isCarMode);
 
     // Track keys pressed for continuous steering
@@ -59,6 +64,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         onToggleCarModeRef.current = onToggleCarMode;
         onSteerRef.current = onSteer;
         onRecenterHeadRef.current = onRecenterHead;
+        onMouseSteerRef.current = onMouseSteer;
         isCarModeRef.current = isCarMode;
     });
 
@@ -75,6 +81,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 isMouseDownRef.current = true;
                 dragStartedOnTargetRef.current = true;
                 dragDistanceRef.current = 0;
+                // Capture shift key state at drag start for Shift+drag car steering
+                isShiftDragRef.current = e.shiftKey;
             }
         };
 
@@ -109,7 +117,14 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
                 const dist = Math.hypot(e.movementX, e.movementY);
                 dragDistanceRef.current += dist;
-                onPanRef.current(e.movementX, e.movementY);
+                if (isCarModeRef.current && isShiftDragRef.current && onMouseSteerRef.current) {
+                    // Shift+drag in car mode: horizontal rotates car body (steering),
+                    // vertical is routed to onPan so head pitch still responds naturally
+                    onMouseSteerRef.current(e.movementX);
+                    onPanRef.current(0, e.movementY);
+                } else {
+                    onPanRef.current(e.movementX, e.movementY);
+                }
             }
         };
 
@@ -132,6 +147,22 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 case 's':
                     onMoveRef.current('backward');
                     break;
+                case 'arrowup':
+                    e.preventDefault(); // Prevent page scroll
+                    onMoveRef.current('forward');
+                    break;
+                case 'arrowdown':
+                    e.preventDefault(); // Prevent page scroll
+                    onMoveRef.current('backward');
+                    break;
+                case 'arrowleft':
+                    e.preventDefault(); // Prevent page scroll
+                    onMoveRef.current('left');
+                    break;
+                case 'arrowright':
+                    e.preventDefault(); // Prevent page scroll
+                    onMoveRef.current('right');
+                    break;
                 case 'c':
                     // Long press C for recenter, short press for toggle
                     if (isCarModeRef.current) {
@@ -141,7 +172,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                     }
                     break;
             }
-            // A/D and Arrow keys are handled in the animation loop for continuous steering
+            // A/D keys are handled in the animation loop for continuous steering
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
@@ -161,8 +192,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             lastTimeRef.current = timestamp;
 
             const keys = keysPressedRef.current;
-            const isLeft = keys.has('a') || keys.has('arrowleft');
-            const isRight = keys.has('d') || keys.has('arrowright');
+            const isLeft = keys.has('a');
+            const isRight = keys.has('d');
 
             if (isLeft && !isRight) {
                 onSteerRef.current('left', deltaTime);
