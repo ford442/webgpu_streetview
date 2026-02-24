@@ -330,15 +330,6 @@ function App() {
         }
     }, [zoom, panorama]);
 
-    // Update color params in renderer when they change
-    useEffect(() => {
-        if (rendererRef.current) {
-            const colorParams = new Float32Array([
-                vibrance, saturation, contrast, exposure, temperature, tint
-            ]);
-            rendererRef.current.updateColorParams(colorParams);
-        }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint]);
 
     // Update weather params in renderer when they change
     useEffect(() => {
