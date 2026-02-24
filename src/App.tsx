@@ -124,7 +124,7 @@ function App() {
         }
     }, [isCarMode]);
 
-    // Keyboard steering for car mode (A/D or ArrowLeft/ArrowRight)
+    // Keyboard steering for car mode (A/D keys only)
     // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
     const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
         if (!isCarMode) return;
@@ -135,6 +135,12 @@ function App() {
             setCarHeading(prev => (prev + turnRate) % 360);
         }
         // Note: headYawOffset stays the same - head turns with car (relative offset)
+    }, [isCarMode]);
+
+    // Mouse-based car steering: Shift+drag horizontal controls car heading (Option 2)
+    const handleMouseSteer = useCallback((deltaX: number) => {
+        if (!isCarMode) return;
+        setCarHeading(prev => ((prev + deltaX * 0.1) % 360 + 360) % 360);
     }, [isCarMode]);
 
     const handleZoom = useCallback((deltaZ: number) => {
@@ -673,6 +679,7 @@ function App() {
                 onToggleCarMode={handleToggleCarMode}
                 onSteer={handleSteer}
                 onRecenterHead={handleRecenterHead}
+                onMouseSteer={handleMouseSteer}
                 isCarMode={isCarMode}
             />
 
@@ -922,6 +929,33 @@ function App() {
                     timeOfDay={timeOfDay}
                     audioElement={audioRef.current}
                 />
+            )}
+
+            {/* Car Mode Control Hints Overlay */}
+            {isConnected && isCarMode && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.75)',
+                    color: '#fff',
+                    padding: '10px 18px',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    pointerEvents: 'none',
+                    zIndex: 1000,
+                    whiteSpace: 'nowrap',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    fontFamily: 'system-ui, sans-serif'
+                }}>
+                    🚗 <strong>Car Mode</strong>&nbsp;&nbsp;
+                    <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
+                    <span style={{ opacity: 0.85 }}>↑↓←→</span> = Move car &nbsp;|&nbsp;
+                    <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
+                    <span style={{ opacity: 0.85 }}>Shift+Drag</span> = Mouse steer &nbsp;|&nbsp;
+                    <span style={{ opacity: 0.85 }}>C</span> = Recenter
+                </div>
             )}
         </div>
     );
