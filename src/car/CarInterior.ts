@@ -77,13 +77,16 @@ export class CarInterior {
         leatherCanvas.width = 128;
         leatherCanvas.height = 128;
         const ctx = leatherCanvas.getContext('2d')!;
-        for (let y = 0; y < 128; y++) {
-            for (let x = 0; x < 128; x++) {
-                const v = Math.random() * 30 + 40;
-                ctx.fillStyle = `rgb(${v}, ${v * 0.8}, ${v * 0.6})`;
-                ctx.fillRect(x, y, 1, 1);
-            }
+        const imageData = ctx.createImageData(128, 128);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const v = Math.random() * 30 + 40;
+            data[i] = v;           // Red
+            data[i + 1] = v * 0.8; // Green
+            data[i + 2] = v * 0.6; // Blue
+            data[i + 3] = 255;     // Alpha
         }
+        ctx.putImageData(imageData, 0, 0);
         const leatherTexture = new THREE.CanvasTexture(leatherCanvas);
         leatherTexture.wrapS = THREE.RepeatWrapping;
         leatherTexture.wrapT = THREE.RepeatWrapping;
