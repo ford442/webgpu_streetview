@@ -111,7 +111,7 @@ export function getWiperState(): { enabled: boolean; speed: number } {
  * @param viewHeading - Current view heading in degrees (carHeading + headYawOffset)
  * @param headPitch - Current head pitch in degrees (up/down look)
  */
-export function updateCarMode(carHeading: number, viewHeading: number, headPitch: number): void {
+export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number): void {
     if (!carModeState || !carModeState.isActive) return;
 
     const now = performance.now();
@@ -125,9 +125,9 @@ export function updateCarMode(carHeading: number, viewHeading: number, headPitch
     // This keeps dashboard, steering wheel, A-pillars fixed to the car body
     carModeState.interior.setCarOrientation(carHeading);
 
-    // Update head/camera pitch for looking up/down inside the car
-    // This only affects the camera view, not the car body or outside view
-    carModeState.interior.setHeadPitch(headPitch);
+    // Update head/camera orientation for looking around inside the car
+    // Head can look freely without affecting outside view
+    carModeState.interior.setHeadOrientation(headYawOffset, headPitch);
 
     // Update mirror with the rear view (180° behind car heading)
     // The mirror shows what's actually behind the car based on Street View

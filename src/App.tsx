@@ -106,13 +106,20 @@ function App() {
     const [tint, setTint] = useState(0.0);
     const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
 
-    // Derived view heading: combines car heading + head offset in car mode
-    // This is the actual camera direction - carHeading is the body direction, headYawOffset is look deviation
+    // In car mode: 
+    // - Outside view (panorama) stays locked to carHeading (windshield view)
+    // - Head can look around freely inside car (headYawOffset, headPitch)
+    // In free mode: heading/pitch are used directly
     const viewHeading = React.useMemo(() => {
         return isCarMode
-            ? ((carHeading + headYawOffset + 360) % 360)
+            ? ((carHeading + headYawOffset + 360) % 360)  // Head direction (for car interior)
             : heading;
     }, [isCarMode, carHeading, headYawOffset, heading]);
+    
+    // Panorama/WebGPU heading - always car direction in car mode (windshield view)
+    const panoramaHeading = React.useMemo(() => {
+        return isCarMode ? carHeading : heading;
+    }, [isCarMode, carHeading, heading]);
 
     const [isRoofOpen, setIsRoofOpen] = useState(false);
     const [rainIntensity, setRainIntensity] = useState(0);
@@ -310,18 +317,18 @@ function App() {
     }, []);
 
     // Effect to update the panorama POV when view heading or pitch changes
-    // In car mode: uses viewHeading (carHeading + headYawOffset) but FIXED pitch (0)
-    //   - Mouse look only moves head inside car, outside view stays level
+    // In car mode: panorama stays locked to carHeading (windshield view)
+    //   - Head can look around freely inside car without affecting outside view
     // In free mode: uses heading and pitch directly
     useEffect(() => {
         if (panorama) {
-            const povHeading = isCarMode ? viewHeading : heading;
-            // In car mode: outside view stays at fixed pitch (0 = level)
-            // Head pitch only affects the car interior, not the outside view
+            // In car mode: outside view stays locked to car direction
+            // Head movement doesn't affect what you see through windshield
+            const povHeading = isCarMode ? carHeading : heading;
             const povPitch = isCarMode ? 0 : pitch;
             panorama.setPov({ heading: povHeading, pitch: povPitch });
         }
-    }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
+    }, [heading, pitch, carHeading, isCarMode, panorama]);
 
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
@@ -608,14 +615,14 @@ function App() {
                 lastHeadPitch = headPitch;
 
                 // Car interior rotates with carHeading (follows road)
-                updateCarMode(carHeading, viewHeading, headPitch);
+                updateCarMode(carHeading, headYawOffset, headPitch);
             } else {
                 idleFrames++;
             }
 
             // Always render car interior even when idle (for animations like wipers)
             if (idleFrames < MAX_IDLE_FRAMES || carModeRef.current?.wipersEnabled) {
-                updateCarMode(carHeading, viewHeading, headPitch);
+                updateCarMode(carHeading, headYawOffset, headPitch);
                 idleFrames = 0;
             }
 
@@ -1021,14 +1028,14 @@ function App() {
                     mode={mode}
                     source={isConnected && !isTransitioning ? streetViewCanvas : null}
                     zoom={zoom}
-                    panX={(isCarMode ? viewHeading : heading) / 360}
-                    // In car mode: outside view stays at fixed pitch (0 = level)
-                    // headPitch only affects car interior, not outside view
+                    // In car mode: WebGPU shows carHeading (windshield view)
+                    // Head movement doesn't affect outside view
+                    panX={panoramaHeading / 360}
                     panY={((isCarMode ? 0 : pitch) + 90) / 180}
                 />
 
-                {/* Compass Overlay - shows which direction is North */}
-                {isConnected && <Compass heading={isCarMode ? viewHeading : heading} />}
+                {/* Compass Overlay - shows which direction the head is looking */}
+                {isConnected && <Compass heading={viewHeading} />
             </div>
 
             {/* Slide-out Map Container (Expanded to 50%) */}
@@ -1161,7 +1168,8 @@ function App() {
                         <MiniMap
                             apiKey={GOOGLE_MAPS_KEY}
                             panorama={panorama}
-                            heading={isCarMode ? viewHeading : heading}
+                            // MiniMap shows car direction, not head direction
+                            heading={panoramaHeading}
                             routePath={routePath}
                         />
                     )}

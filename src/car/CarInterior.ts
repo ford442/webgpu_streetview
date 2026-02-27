@@ -539,16 +539,22 @@ export class CarInterior {
     }
 
     /**
-     * Set the head/camera pitch for looking up/down inside the car.
+     * Set the head/camera orientation for looking around inside the car.
      * This only affects the camera, not the car body.
+     * @param headYaw - Yaw angle in degrees (-110 to +110)
      * @param headPitch - Pitch angle in degrees (-45 to +65)
      */
-    public setHeadPitch(headPitch: number): void {
-        // Camera looks up/down - clamp to realistic head movement range
+    public setHeadOrientation(headYaw: number, headPitch: number): void {
+        // Clamp to realistic head movement ranges
+        const clampedYaw = Math.max(-110, Math.min(110, headYaw));
         const clampedPitch = Math.max(-45, Math.min(65, headPitch));
+        
+        const yawRad = THREE.MathUtils.degToRad(clampedYaw);
         const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
-        // Apply pitch to camera (looking up = negative rotation in Three.js)
-        this.camera.rotation.x = -pitchRad;
+        
+        // Apply rotation to camera (looking up = negative pitch in Three.js)
+        // Yaw is rotation around Y axis, pitch is rotation around X axis
+        this.camera.rotation.set(-pitchRad, yawRad, 0);
     }
 
     /**
