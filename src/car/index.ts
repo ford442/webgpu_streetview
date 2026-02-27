@@ -65,6 +65,8 @@ export function toggleCarMode(enabled: boolean): void {
     // Show/hide the Three.js canvas
     if (carModeState.interior.canvas) {
         carModeState.interior.canvas.style.display = enabled ? 'block' : 'none';
+        carModeState.interior.canvas.style.visibility = enabled ? 'visible' : 'hidden';
+        console.log(`[CarMode] ${enabled ? 'Enabled' : 'Disabled'}, canvas display:`, carModeState.interior.canvas.style.display);
     }
 }
 
@@ -130,6 +132,11 @@ export function updateCarMode(carHeading: number, viewHeading: number, headPitch
 
     // Render the car interior
     carModeState.interior.render();
+    
+    // Debug: log first few renders
+    if (Math.random() < 0.01) {
+        console.log('[CarInterior] Rendering... canvas visible:', carModeState.interior.canvas.style.display);
+    }
 }
 
 /**

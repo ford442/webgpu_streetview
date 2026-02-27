@@ -58,8 +58,11 @@ export class CarInterior {
         this.canvas.style.top = '0';
         this.canvas.style.left = '0';
         this.canvas.style.pointerEvents = 'none';
-        this.canvas.style.zIndex = '5';
+        this.canvas.style.zIndex = '100';
+        this.canvas.style.display = 'block';
+        this.canvas.style.visibility = 'visible';
         container.appendChild(this.canvas);
+        console.log('[CarInterior] Canvas created and appended to container:', container.className || container.id || 'unnamed');
 
         this.interiorGroup = new THREE.Group();
         this.roofGroup = new THREE.Group();
