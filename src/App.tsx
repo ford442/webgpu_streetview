@@ -151,14 +151,22 @@ function App() {
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
         if (isCarMode) {
             // In car mode: mouse only moves HEAD inside the car (car stays locked to street)
-            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
-            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
+            setHeadYawOffset(prev => {
+                const newVal = Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY));
+                console.log(`[Car Mode] Head yaw: ${newVal.toFixed(1)}° (car: ${carHeading.toFixed(1)}°, view: ${(carHeading + newVal).toFixed(1)}°)`);
+                return newVal;
+            });
+            setHeadPitch(prev => {
+                const newVal = Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY));
+                console.log(`[Car Mode] Head pitch: ${newVal.toFixed(1)}°`);
+                return newVal;
+            });
         } else {
             // Free mode: normal look
             setHeading(prev => (prev + deltaX * 0.1) % 360);
             setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
         }
-    }, [isCarMode]);
+    }, [isCarMode, carHeading]);
 
     // Keyboard steering for car mode (A/D keys only)
     // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
@@ -316,6 +324,7 @@ function App() {
         if (panorama) {
             const povHeading = isCarMode ? viewHeading : heading;
             const povPitch = isCarMode ? headPitch : pitch;
+            console.log(`[POV Update] Mode: ${isCarMode ? 'car' : 'free'}, Heading: ${povHeading.toFixed(1)}°, Pitch: ${povPitch.toFixed(1)}°`);
             panorama.setPov({ heading: povHeading, pitch: povPitch });
         }
     }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
