@@ -170,6 +170,17 @@ export function toggleCarHeadlights(): boolean {
 }
 
 /**
+ * Hit-test whether the given screen coordinates fall on the steering wheel.
+ * Returns false when car mode is not initialized.
+ * @param clientX - Mouse clientX from a DOM MouseEvent
+ * @param clientY - Mouse clientY from a DOM MouseEvent
+ */
+export function isCarSteeringWheelHit(clientX: number, clientY: number): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.isSteeringWheelHit(clientX, clientY);
+}
+
+/**
  * Dispose of all car mode resources.
  */
 export function disposeCarMode(): void {

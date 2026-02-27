@@ -588,6 +588,26 @@ export class CarInterior {
     }
 
     /**
+     * Test whether the given screen coordinates intersect the steering wheel geometry.
+     * Used to detect when the user clicks on the steering wheel for car-steering drag.
+     * @param clientX - Mouse clientX from a DOM MouseEvent
+     * @param clientY - Mouse clientY from a DOM MouseEvent
+     * @returns true if the ray from the camera hits the steering wheel group
+     */
+    public isSteeringWheelHit(clientX: number, clientY: number): boolean {
+        if (!this.steeringWheelGroup) return false;
+        const rect = this.canvas.getBoundingClientRect();
+        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+        // Ensure world matrices are current before testing
+        this.steeringWheelGroup.updateWorldMatrix(true, true);
+        const intersects = raycaster.intersectObject(this.steeringWheelGroup, true);
+        return intersects.length > 0;
+    }
+
+    /**
      * Render the car interior scene.
      */
     public render(): void {
