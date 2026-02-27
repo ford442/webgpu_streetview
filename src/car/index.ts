@@ -66,7 +66,6 @@ export function toggleCarMode(enabled: boolean): void {
     if (carModeState.interior.canvas) {
         carModeState.interior.canvas.style.display = enabled ? 'block' : 'none';
         carModeState.interior.canvas.style.visibility = enabled ? 'visible' : 'hidden';
-        console.log(`[CarMode] ${enabled ? 'Enabled' : 'Disabled'}, canvas display:`, carModeState.interior.canvas.style.display);
     }
 }
 
@@ -126,17 +125,16 @@ export function updateCarMode(carHeading: number, viewHeading: number, headPitch
     // This keeps dashboard, steering wheel, A-pillars fixed to the car body
     carModeState.interior.setCarOrientation(carHeading);
 
+    // Update head/camera pitch for looking up/down inside the car
+    // This only affects the camera view, not the car body or outside view
+    carModeState.interior.setHeadPitch(headPitch);
+
     // Update mirror with the rear view (180° behind car heading)
     // The mirror shows what's actually behind the car based on Street View
     carModeState.mirror.update(carHeading, true); // skipFrame = true for performance
 
     // Render the car interior
     carModeState.interior.render();
-    
-    // Debug: log first few renders
-    if (Math.random() < 0.01) {
-        console.log('[CarInterior] Rendering... canvas visible:', carModeState.interior.canvas.style.display);
-    }
 }
 
 /**

@@ -62,7 +62,6 @@ export class CarInterior {
         this.canvas.style.display = 'block';
         this.canvas.style.visibility = 'visible';
         container.appendChild(this.canvas);
-        console.log('[CarInterior] Canvas created and appended to container:', container.className || container.id || 'unnamed');
 
         this.interiorGroup = new THREE.Group();
         this.roofGroup = new THREE.Group();
@@ -94,9 +93,9 @@ export class CarInterior {
         leatherTexture.wrapS = THREE.RepeatWrapping;
         leatherTexture.wrapT = THREE.RepeatWrapping;
 
-        // Dashboard plastic material - BRIGHT RED for visibility testing
+        // Dashboard plastic material
         this.dashboardMaterial = new THREE.MeshStandardMaterial({
-            color: 0xff0000,  // Bright red to make it obvious
+            color: 0x1a1a1a,
             roughness: 0.8,
             metalness: 0.1,
             side: THREE.DoubleSide,
@@ -537,9 +536,19 @@ export class CarInterior {
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
         this.interiorGroup.rotation.set(0, yawRad, 0);
+    }
 
-        // Also update camera position to follow head movement would go here
-        // For now we keep the camera fixed in the driver's seat
+    /**
+     * Set the head/camera pitch for looking up/down inside the car.
+     * This only affects the camera, not the car body.
+     * @param headPitch - Pitch angle in degrees (-45 to +65)
+     */
+    public setHeadPitch(headPitch: number): void {
+        // Camera looks up/down - clamp to realistic head movement range
+        const clampedPitch = Math.max(-45, Math.min(65, headPitch));
+        const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
+        // Apply pitch to camera (looking up = negative rotation in Three.js)
+        this.camera.rotation.x = -pitchRad;
     }
 
     /**

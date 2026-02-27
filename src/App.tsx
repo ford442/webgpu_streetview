@@ -151,16 +151,8 @@ function App() {
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
         if (isCarMode) {
             // In car mode: mouse only moves HEAD inside the car (car stays locked to street)
-            setHeadYawOffset(prev => {
-                const newVal = Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY));
-                console.log(`[Car Mode] Head yaw: ${newVal.toFixed(1)}° (car: ${carHeading.toFixed(1)}°, view: ${(carHeading + newVal).toFixed(1)}°)`);
-                return newVal;
-            });
-            setHeadPitch(prev => {
-                const newVal = Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY));
-                console.log(`[Car Mode] Head pitch: ${newVal.toFixed(1)}°`);
-                return newVal;
-            });
+            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
+            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         } else {
             // Free mode: normal look
             setHeading(prev => (prev + deltaX * 0.1) % 360);
@@ -318,13 +310,15 @@ function App() {
     }, []);
 
     // Effect to update the panorama POV when view heading or pitch changes
-    // In car mode: uses viewHeading (carHeading + headYawOffset) and headPitch
+    // In car mode: uses viewHeading (carHeading + headYawOffset) but FIXED pitch (0)
+    //   - Mouse look only moves head inside car, outside view stays level
     // In free mode: uses heading and pitch directly
     useEffect(() => {
         if (panorama) {
             const povHeading = isCarMode ? viewHeading : heading;
-            const povPitch = isCarMode ? headPitch : pitch;
-            console.log(`[POV Update] Mode: ${isCarMode ? 'car' : 'free'}, Heading: ${povHeading.toFixed(1)}°, Pitch: ${povPitch.toFixed(1)}°`);
+            // In car mode: outside view stays at fixed pitch (0 = level)
+            // Head pitch only affects the car interior, not the outside view
+            const povPitch = isCarMode ? 0 : pitch;
             panorama.setPov({ heading: povHeading, pitch: povPitch });
         }
     }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
@@ -1028,7 +1022,9 @@ function App() {
                     source={isConnected && !isTransitioning ? streetViewCanvas : null}
                     zoom={zoom}
                     panX={(isCarMode ? viewHeading : heading) / 360}
-                    panY={((isCarMode ? headPitch : pitch) + 90) / 180}
+                    // In car mode: outside view stays at fixed pitch (0 = level)
+                    // headPitch only affects car interior, not outside view
+                    panY={((isCarMode ? 0 : pitch) + 90) / 180}
                 />
 
                 {/* Compass Overlay - shows which direction is North */}
