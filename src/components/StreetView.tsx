@@ -18,6 +18,17 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         let isMounted = true;
         let cleanup: (() => void) | null = null;
 
+        // Wait for Google Maps API to be fully loaded
+        const waitForGoogleMaps = (callback: () => void, retries = 50) => {
+            if ((window as any).google?.maps?.Map) {
+                callback();
+            } else if (retries > 0) {
+                setTimeout(() => waitForGoogleMaps(callback, retries - 1), 100);
+            } else {
+                console.error('[StreetView] Google Maps API failed to load after timeout');
+            }
+        };
+
         if (!(window as any).google?.maps) {
             const script = document.createElement('script');
             // Use loading=async query parameter (Google's recommended approach)
@@ -25,14 +36,23 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker`;
             script.onload = () => {
                 if (!isMounted) return;
-                cleanup = initialize();
+                // Wait for the API to be fully initialized
+                waitForGoogleMaps(() => {
+                    if (isMounted) {
+                        cleanup = initialize();
+                    }
+                });
             };
             script.onerror = () => {
                 console.error('[StreetView] Failed to load Google Maps API');
             };
             document.head.appendChild(script);
         } else {
-            cleanup = initialize();
+            waitForGoogleMaps(() => {
+                if (isMounted) {
+                    cleanup = initialize();
+                }
+            });
         }
 
         function initialize() {
