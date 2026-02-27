@@ -588,6 +588,8 @@ function App() {
         let idleFrames = 0;
         const MAX_IDLE_FRAMES = 30; // Stop RAF after 0.5s of no changes
 
+        let rafId: number;
+        
         const animate = () => {
             if (!active) return;
 
@@ -608,6 +610,12 @@ function App() {
                 idleFrames++;
             }
 
+            // Always render car interior even when idle (for animations like wipers)
+            if (idleFrames < MAX_IDLE_FRAMES || carModeRef.current?.wipersEnabled) {
+                updateCarMode(carHeading, viewHeading, headPitch);
+                idleFrames = 0;
+            }
+
             // Gradually center steering when no input
             if (steeringInputRef.current !== 0) {
                 steeringInputRef.current *= 0.92; // Decay
@@ -618,7 +626,6 @@ function App() {
             }
 
             // Simulate gradual speed increase based on forward movement
-            // This is basic - just simulate movement causing acceleration
             if (carSpeedRef.current > 0) {
                 carSpeedRef.current = Math.max(0, carSpeedRef.current - 5); // Decay
             }
@@ -626,10 +633,17 @@ function App() {
             // RPM correlates with steering input and speed
             carRPMRef.current = Math.abs(steeringInputRef.current) * 100 + carSpeedRef.current * 50;
             updateCarGauges(carSpeedRef.current, carRPMRef.current);
+            
+            // Continue animation loop
+            rafId = requestAnimationFrame(animate);
         };
+        
+        // Start animation loop
+        rafId = requestAnimationFrame(animate);
 
         return () => {
             active = false;
+            cancelAnimationFrame(rafId);
         };
     }, [isCarMode, carHeading, viewHeading, headPitch]);
 
