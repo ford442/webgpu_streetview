@@ -9,7 +9,7 @@ import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
 import Compass from './components/Compass';
 import DashboardUI from './car/DashboardUI';
-import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, getWiperState, CarModeState, setCarSteering, setCarWipers, updateCarGauges, toggleCarHeadlights } from './car';
+import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, getWiperState, CarModeState, setCarSteering, setCarWipers, updateCarGauges, toggleCarHeadlights, isCarSteeringWheelHit } from './car';
 import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
 
@@ -975,6 +975,7 @@ function App() {
                 onRecenterHead={handleRecenterHead}
                 onMouseSteer={handleMouseSteer}
                 isCarMode={isCarMode}
+                isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
             />
 
             {/* Original StreetView: Hidden via opacity when connected, but kept in DOM for scraping */}
