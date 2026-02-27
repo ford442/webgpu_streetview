@@ -63,14 +63,13 @@ fn applyExposure(col: vec3<f32>, exposure: f32) -> vec3<f32> {
 }
 
 fn applyTemperatureTint(col: vec3<f32>, temperature: f32, tint: f32) -> vec3<f32> {
-    // Temperature: warm (red) vs cool (blue)
-    col.r += temperature * 0.1;
-    col.b -= temperature * 0.1;
-    // Tint: green vs magenta
-    col.g += tint * 0.05;
-    col.r -= tint * 0.025;
-    col.b -= tint * 0.025;
-    return col;
+    var c = col;
+    c.r += temperature * 0.1;
+    c.b -= temperature * 0.1;
+    c.g += tint * 0.05;
+    c.r -= tint * 0.025;
+    c.b -= tint * 0.025;
+    return c;
 }
 
 // Rain streaks (4 tilted layers, very cheap)
