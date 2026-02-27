@@ -51,7 +51,7 @@ export class CarInterior {
         this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.setClearColor(0x000000, 0); // Transparent background
         this.renderer.autoClear = false;
         this.canvas = this.renderer.domElement;
         this.canvas.style.position = 'absolute';
@@ -94,9 +94,9 @@ export class CarInterior {
         leatherTexture.wrapS = THREE.RepeatWrapping;
         leatherTexture.wrapT = THREE.RepeatWrapping;
 
-        // Dashboard plastic material
+        // Dashboard plastic material - BRIGHT RED for visibility testing
         this.dashboardMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a1a,
+            color: 0xff0000,  // Bright red to make it obvious
             roughness: 0.8,
             metalness: 0.1,
             side: THREE.DoubleSide,
