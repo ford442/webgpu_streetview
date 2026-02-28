@@ -37,6 +37,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
 }) => {
     const isMouseDownRef = useRef(false);
     const dragDistanceRef = useRef(0);
+    // Minimum total pixel movement to distinguish a drag from a click
+    const CLICK_DRAG_THRESHOLD = 5;
     // Track if the current drag operation started on the target element
     const dragStartedOnTargetRef = useRef(false);
     // Track if Shift was held when the current drag started (for Shift+drag car steering)
@@ -113,13 +115,19 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         
         const handleMouseUp = (e: MouseEvent) => {
             if (e.button === 0) { // Left mouse button
+                // Capture flags before resetting them
+                const wasSteeringWheelDrag = isSteeringWheelDragRef.current;
+                const wasShiftDrag = isShiftDragRef.current;
+
                 isMouseDownRef.current = false;
                 isSteeringWheelDragRef.current = false;
+                isShiftDragRef.current = false;
                 // Restore cursor
                 if (target) (target as HTMLElement).style.cursor = '';
                 
-                // Only trigger click-to-move if drag started on target
-                if (dragStartedOnTargetRef.current && dragDistanceRef.current < 5) {
+                // Only trigger click-to-move on a clean click (no steering-wheel drag, no Shift-drag)
+                if (dragStartedOnTargetRef.current && dragDistanceRef.current < CLICK_DRAG_THRESHOLD
+                        && !wasSteeringWheelDrag && !wasShiftDrag) {
                     onMoveRef.current('forward');
                 }
                 

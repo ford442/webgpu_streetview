@@ -45,6 +45,7 @@ export class CarInterior {
         // Camera at driver seat eye level (~1.2m), slightly angled toward center console
         this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.01, 100);
         this.camera.position.set(-0.3, 1.2, 0.0);
+        this.camera.rotation.order = 'YXZ'; // FPS-style: yaw around world Y first, then pitch in yawed frame
         this.camera.rotation.set(0, 0, 0);
 
         // Renderer with alpha for transparency (Street View shows through)

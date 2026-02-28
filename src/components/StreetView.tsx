@@ -153,7 +153,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 cleanup();
             }
         };
-    }, [apiKey]); // Only re-run if apiKey changes
+    }, [apiKey]); // eslint-disable-line react-hooks/exhaustive-deps -- onCanvasReady, onPanoramaReady, and startLocation are intentionally omitted: the Google Maps instance should only be created once per apiKey, not recreated on every parent render
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
