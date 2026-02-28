@@ -46,11 +46,6 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
         }
     };
 
-    const cancelEdit = () => {
-        setEditingId(null);
-        setEditName('');
-    };
-
     // Modal for viewing full image
     if (selectedSnapshot) {
         return (

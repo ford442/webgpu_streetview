@@ -9,7 +9,7 @@ import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
 import Compass from './components/Compass';
 import DashboardUI from './car/DashboardUI';
-import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, getWiperState, CarModeState, setCarSteering, setCarWipers, updateCarGauges, toggleCarHeadlights, isCarSteeringWheelHit } from './car';
+import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, CarModeState, setCarSteering, setCarWipers, updateCarGauges, isCarSteeringWheelHit } from './car';
 import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
 
@@ -165,7 +165,7 @@ function App() {
             setHeading(prev => (prev + deltaX * 0.1) % 360);
             setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
         }
-    }, [isCarMode, carHeading]);
+    }, [isCarMode]);
 
     // Keyboard steering for car mode (A/D keys only)
     // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
@@ -655,7 +655,7 @@ function App() {
             active = false;
             cancelAnimationFrame(rafId);
         };
-    }, [isCarMode, carHeading, viewHeading, headPitch]);
+    }, [isCarMode, carHeading, viewHeading, headPitch, headYawOffset]);
 
     // Cleanup car mode on unmount
     useEffect(() => {
@@ -1035,7 +1035,7 @@ function App() {
                 />
 
                 {/* Compass Overlay - shows which direction the head is looking */}
-                {isConnected && <Compass heading={viewHeading} />
+                {isConnected && <Compass heading={viewHeading} />}
             </div>
 
             {/* Slide-out Map Container (Expanded to 50%) */}
