@@ -38,25 +38,47 @@ export function useSnapshots() {
 
     // Save snapshots to localStorage whenever they change
     useEffect(() => {
-        if (isLoaded) {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshots));
-            } catch (error) {
-                console.error('Failed to save snapshots:', error);
-                // If storage quota exceeded, remove oldest and try again
-                if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-                    setSnapshots(prev => {
-                        const reduced = prev.slice(0, -5); // Remove 5 oldest
-                        try {
-                            localStorage.setItem(STORAGE_KEY, JSON.stringify(reduced));
-                        } catch (e) {
-                            console.error('Still exceeded quota after reduction');
-                        }
-                        return reduced;
-                    });
+        if (!isLoaded) return;
+
+        let idleHandle: number | null = null;
+
+        // Debounce the save operation by 1000ms
+        const debounceTimer = setTimeout(() => {
+            const saveOperation = () => {
+                try {
+                    const serialized = JSON.stringify(snapshots);
+                    localStorage.setItem(STORAGE_KEY, serialized);
+                } catch (error) {
+                    console.error('Failed to save snapshots:', error);
+                    // If storage quota exceeded, remove oldest and try again
+                    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+                        setSnapshots(prev => {
+                            const reduced = prev.slice(0, -5); // Remove 5 oldest
+                            try {
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(reduced));
+                            } catch (e) {
+                                console.error('Still exceeded quota after reduction');
+                            }
+                            return reduced;
+                        });
+                    }
                 }
+            };
+
+            // Use requestIdleCallback to avoid blocking the main thread during heavy serialization
+            if ('requestIdleCallback' in window) {
+                idleHandle = (window as any).requestIdleCallback(saveOperation, { timeout: 2000 });
+            } else {
+                saveOperation();
             }
-        }
+        }, 1000);
+
+        return () => {
+            clearTimeout(debounceTimer);
+            if (idleHandle !== null && 'cancelIdleCallback' in window) {
+                (window as any).cancelIdleCallback(idleHandle);
+            }
+        };
     }, [snapshots, isLoaded]);
 
     const addSnapshot = useCallback((snapshot: Omit<SnapshotMetadata, 'id' | 'timestamp'>) => {
