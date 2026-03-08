@@ -178,16 +178,19 @@ const InputHandler: React.FC<InputHandlerProps> = ({
 
                 // MIDDLE MOUSE = Free look only (always)
                 if (isMiddleMouseRef.current) {
+                    console.log('[InputHandler] Middle mouse - free look');
                     onPanRef.current(e.movementX, e.movementY);
                 }
                 // Steering wheel drag = car steering
                 else if (isSteeringWheelDragRef.current && onMouseSteerRef.current) {
+                    console.log('[InputHandler] Steering wheel drag - car steering');
                     // Set cursor to 'grabbing' while dragging steering wheel
                     if (target) (target as HTMLElement).style.cursor = 'grabbing';
                     onMouseSteerRef.current(e.movementX);
                 }
                 // Shift+drag = car steering (plus head pitch in free mode)
                 else if (isCarModeRef.current && isShiftDragRef.current && onMouseSteerRef.current) {
+                    console.log('[InputHandler] Shift+drag - car steering');
                     onMouseSteerRef.current(e.movementX);
                     // In free coupling mode, also allow head pitch change
                     if (headCouplingRef.current === 'free') {
@@ -196,6 +199,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 }
                 // Normal drag = free look
                 else {
+                    console.log('[InputHandler] Normal drag - free look', { isCarMode: isCarModeRef.current });
                     onPanRef.current(e.movementX, e.movementY);
                 }
             }
