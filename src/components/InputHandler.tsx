@@ -11,7 +11,8 @@ interface InputHandlerProps {
     onRecenterHead?: () => void; // Recenter head look in car mode ('C' key when already in car mode)
     onMouseSteer?: (deltaX: number) => void; // Shift+drag car steering (horizontal mouse drag rotates car body)
     onToggleHeadCoupling?: () => void; // Toggle between rigid/free head coupling with 'H' key
-    /** Hit-test function: returns true when the given screen point is over the steering wheel */
+    /** Hit-test function: returns true when the given screen point is over the steering wheel.
+     *  NOTE: Steering wheel steering now requires Shift key to prevent accidental steering during free look */
     isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
 
     // State from the parent to control behavior
@@ -105,7 +106,10 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 // Capture shift key state at drag start for Shift+drag car steering
                 isShiftDragRef.current = e.shiftKey;
                 // Detect steering wheel click in car mode for click-to-steer behaviour
+                // NOTE: Now requires Shift key to steer by clicking steering wheel
+                // This prevents accidental steering when trying to free look
                 isSteeringWheelDragRef.current = isCarModeRef.current
+                    && e.shiftKey
                     && !!isSteeringWheelAtPointRef.current?.(e.clientX, e.clientY);
                 isMiddleMouseRef.current = false;
             } else if (e.button === 1) { // Middle mouse button - FREE LOOK only
