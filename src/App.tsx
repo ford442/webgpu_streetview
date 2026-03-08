@@ -161,9 +161,14 @@ function App() {
 
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
+        console.log('[handlePan] called', { deltaX, deltaY, isCarMode });
         if (isCarMode) {
             // In car mode: mouse only moves HEAD inside the car (car stays locked to street)
-            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
+            setHeadYawOffset(prev => {
+                const newVal = Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY));
+                console.log('[handlePan] setHeadYawOffset', prev, '->', newVal);
+                return newVal;
+            });
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         } else {
             // Free mode: normal look
