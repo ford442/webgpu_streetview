@@ -87,6 +87,14 @@ function App() {
     // Car mode state
     const [isCarMode, setIsCarMode] = useState(false);
 
+    // Head coupling mode state - determines how head/camera behaves when car steers
+    // 'rigid': Head turns with car (traditional cockpit feel, head stays fixed relative to car)
+    // 'free': Head stays looking at same world direction (like looking out side window while turning)
+    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
+
+    // Head coupling mode: 'rigid' = head turns with car, 'free' = head stays fixed
+    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
+
     // Feature: Bookmarks, History, Snapshots hooks
     const { bookmarks, addBookmark, removeBookmark } = useBookmarks();
     const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
@@ -169,20 +177,30 @@ function App() {
 
     // Keyboard steering for car mode (A/D keys only)
     // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
+    // In 'free' coupling mode, the head stays looking at the same world direction
     const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
         if (!isCarMode) return;
         const turnRate = KEYBOARD_STEER_RATE * deltaTime;
         if (direction === 'left') {
             setCarHeading(prev => (prev - turnRate + 360) % 360);
             steeringInputRef.current = Math.max(-90, steeringInputRef.current - turnRate * 0.5);
+            
+            // In free coupling mode, compensate head to stay looking same world direction
+            if (headCoupling === 'free') {
+                setHeadYawOffset(prev => prev + turnRate); // Compensate for car turn
+            }
         } else {
             setCarHeading(prev => (prev + turnRate) % 360);
             steeringInputRef.current = Math.min(90, steeringInputRef.current + turnRate * 0.5);
+            
+            // In free coupling mode, compensate head to stay looking same world direction
+            if (headCoupling === 'free') {
+                setHeadYawOffset(prev => prev - turnRate); // Compensate for car turn
+            }
         }
         // Update steering wheel animation
         setCarSteering(steeringInputRef.current);
-        // Note: headYawOffset stays the same - head turns with car (relative offset)
-    }, [isCarMode]);
+    }, [isCarMode, headCoupling]);
 
     // Mouse-based car steering: Shift+drag horizontal controls car heading (Option 2)
     const handleMouseSteer = useCallback((deltaX: number) => {
@@ -971,6 +989,36 @@ function App() {
     return (
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
             {showWelcome && <WelcomeModal onStart={handleStart} />}
+
+            {/* Head Coupling Mode Indicator - shows when in car mode */}
+            {isConnected && isCarMode && (
+                <div style={{ 
+                    position: 'absolute', 
+                    top: 10, 
+                    left: 10, 
+                    background: 'rgba(0,0,0,0.7)',
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    zIndex: 100,
+                    fontFamily: 'system-ui, sans-serif',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                        {headCoupling === 'rigid' ? '🚗 Rigid' : '👀 Free Look'}
+                    </div>
+                    <div style={{ fontSize: '11px', opacity: 0.8, lineHeight: '1.4' }}>
+                        {headCoupling === 'rigid' 
+                            ? 'Head turns with car (A/D steers)' 
+                            : 'Head stays fixed (A/D steers car only)'}
+                    </div>
+                    <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }}>
+                        Press [H] to toggle | Middle mouse = Free look
+                    </div>
+                </div>
+            )}
 
             {/* Input Handler - scoped to canvas container */}
             <InputHandler
