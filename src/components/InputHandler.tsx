@@ -10,12 +10,14 @@ interface InputHandlerProps {
     onSteer?: (direction: 'left' | 'right', deltaTime: number) => void; // Steering for car mode (A/D keys)
     onRecenterHead?: () => void; // Recenter head look in car mode ('C' key when already in car mode)
     onMouseSteer?: (deltaX: number) => void; // Shift+drag car steering (horizontal mouse drag rotates car body)
+    onToggleHeadCoupling?: () => void; // Toggle between rigid/free head coupling with 'H' key
     /** Hit-test function: returns true when the given screen point is over the steering wheel */
     isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
 
     // State from the parent to control behavior
     isEnabled: boolean; // Controls whether the handler is active
     isCarMode?: boolean; // Whether car mode is active (affects A/D behavior)
+    headCoupling?: 'rigid' | 'free'; // Current head coupling mode
     
     // Target element for scoped mouse events
     targetRef: React.RefObject<HTMLElement | null>;
@@ -30,9 +32,11 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     onSteer,
     onRecenterHead,
     onMouseSteer,
+    onToggleHeadCoupling,
     isSteeringWheelAtPoint,
     isEnabled,
     isCarMode = false,
+    headCoupling = 'rigid', // Default to rigid (head turns with car)
     targetRef 
 }) => {
     const isMouseDownRef = useRef(false);
@@ -45,6 +49,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const isShiftDragRef = useRef(false);
     // Track if the drag started on the steering wheel (for steering wheel click-to-steer)
     const isSteeringWheelDragRef = useRef(false);
+    // Track middle mouse button for dedicated free look
+    const isMiddleMouseRef = useRef(false);
 
     // Refs to store the latest versions of callbacks to prevent useEffect thrashing
     const onPanRef = useRef(onPan);
@@ -55,7 +61,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const onSteerRef = useRef(onSteer);
     const onRecenterHeadRef = useRef(onRecenterHead);
     const onMouseSteerRef = useRef(onMouseSteer);
+    const onToggleHeadCouplingRef = useRef(onToggleHeadCoupling);
     const isCarModeRef = useRef(isCarMode);
+    const headCouplingRef = useRef(headCoupling);
     const isSteeringWheelAtPointRef = useRef(isSteeringWheelAtPoint);
 
     // Track keys pressed for continuous steering
@@ -75,7 +83,9 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         onSteerRef.current = onSteer;
         onRecenterHeadRef.current = onRecenterHead;
         onMouseSteerRef.current = onMouseSteer;
+        onToggleHeadCouplingRef.current = onToggleHeadCoupling;
         isCarModeRef.current = isCarMode;
+        headCouplingRef.current = headCoupling;
         isSteeringWheelAtPointRef.current = isSteeringWheelAtPoint;
     });
 
@@ -97,6 +107,15 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 // Detect steering wheel click in car mode for click-to-steer behaviour
                 isSteeringWheelDragRef.current = isCarModeRef.current
                     && !!isSteeringWheelAtPointRef.current?.(e.clientX, e.clientY);
+                isMiddleMouseRef.current = false;
+            } else if (e.button === 1) { // Middle mouse button - FREE LOOK only
+                isMouseDownRef.current = true;
+                dragStartedOnTargetRef.current = true;
+                dragDistanceRef.current = 0;
+                isMiddleMouseRef.current = true;
+                isSteeringWheelDragRef.current = false;
+                isShiftDragRef.current = false;
+                e.preventDefault(); // Prevent scroll behavior
             }
         };
 
@@ -114,20 +133,22 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         // These are kept global so dragging continues smoothly even if cursor leaves element
         
         const handleMouseUp = (e: MouseEvent) => {
-            if (e.button === 0) { // Left mouse button
+            if (e.button === 0 || e.button === 1) { // Left or middle mouse button
                 // Capture flags before resetting them
                 const wasSteeringWheelDrag = isSteeringWheelDragRef.current;
                 const wasShiftDrag = isShiftDragRef.current;
+                const wasMiddleMouse = isMiddleMouseRef.current;
 
                 isMouseDownRef.current = false;
                 isSteeringWheelDragRef.current = false;
                 isShiftDragRef.current = false;
+                isMiddleMouseRef.current = false;
                 // Restore cursor
                 if (target) (target as HTMLElement).style.cursor = '';
                 
-                // Only trigger click-to-move on a clean click (no steering-wheel drag, no Shift-drag)
+                // Only trigger click-to-move on left click (not middle)
                 if (dragStartedOnTargetRef.current && dragDistanceRef.current < CLICK_DRAG_THRESHOLD
-                        && !wasSteeringWheelDrag && !wasShiftDrag) {
+                        && !wasSteeringWheelDrag && !wasShiftDrag && !wasMiddleMouse) {
                     onMoveRef.current('forward');
                 }
                 
@@ -150,16 +171,27 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
                 const dist = Math.hypot(e.movementX, e.movementY);
                 dragDistanceRef.current += dist;
-                if (isSteeringWheelDragRef.current && onMouseSteerRef.current) {
-                    // Steering wheel drag: horizontal-only car steering, no vertical pitch
-                    // (keeps the car level with the ground)
+
+                // MIDDLE MOUSE = Free look only (always)
+                if (isMiddleMouseRef.current) {
+                    onPanRef.current(e.movementX, e.movementY);
+                }
+                // Steering wheel drag = car steering
+                else if (isSteeringWheelDragRef.current && onMouseSteerRef.current) {
+                    // Set cursor to 'grabbing' while dragging steering wheel
+                    if (target) (target as HTMLElement).style.cursor = 'grabbing';
                     onMouseSteerRef.current(e.movementX);
-                } else if (isCarModeRef.current && isShiftDragRef.current && onMouseSteerRef.current) {
-                    // Shift+drag in car mode: horizontal rotates car body (steering),
-                    // vertical is routed to onPan so head pitch still responds naturally
+                }
+                // Shift+drag = car steering (plus head pitch in free mode)
+                else if (isCarModeRef.current && isShiftDragRef.current && onMouseSteerRef.current) {
                     onMouseSteerRef.current(e.movementX);
-                    onPanRef.current(0, e.movementY);
-                } else {
+                    // In free coupling mode, also allow head pitch change
+                    if (headCouplingRef.current === 'free') {
+                        onPanRef.current(0, e.movementY);
+                    }
+                }
+                // Normal drag = free look
+                else {
                     onPanRef.current(e.movementX, e.movementY);
                 }
             }
@@ -206,6 +238,11 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                         onRecenterHeadRef.current?.();
                     } else {
                         onToggleCarModeRef.current?.();
+                    }
+                    break;
+                case 'h': // Toggle head coupling mode
+                    if (isCarModeRef.current) {
+                        onToggleHeadCouplingRef.current?.();
                     }
                     break;
             }
