@@ -92,9 +92,6 @@ function App() {
     // 'free': Head stays looking at same world direction (like looking out side window while turning)
     const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
 
-    // Head coupling mode: 'rigid' = head turns with car, 'free' = head stays fixed
-    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
-
     // Feature: Bookmarks, History, Snapshots hooks
     const { bookmarks, addBookmark, removeBookmark } = useBookmarks();
     const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
@@ -577,6 +574,16 @@ function App() {
         }
     }, [isCarMode]);
 
+    // Toggle head coupling mode between 'rigid' and 'free' (press 'H' while in car mode)
+    const handleToggleHeadCoupling = useCallback(() => {
+        if (!isCarMode) return;
+        setHeadCoupling(prev => {
+            const next = prev === 'rigid' ? 'free' : 'rigid';
+            console.log(`Head coupling: ${next}`);
+            return next;
+        });
+    }, [isCarMode]);
+
     // Initialize/teardown car mode when toggled
     useEffect(() => {
         if (isCarMode && canvasContainerRef.current) {
@@ -1032,7 +1039,9 @@ function App() {
                 onSteer={handleSteer}
                 onRecenterHead={handleRecenterHead}
                 onMouseSteer={handleMouseSteer}
+                onToggleHeadCoupling={handleToggleHeadCoupling}
                 isCarMode={isCarMode}
+                headCoupling={headCoupling}
                 isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
             />
 
