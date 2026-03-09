@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { VehicleType, VehicleConfig, getVehicleConfig } from './VehicleManager';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
- * Uses Three.js primitives to create a low-poly convertible interior from the driver seat perspective.
+ * Uses Three.js primitives to create vehicle-specific interiors.
  * Renders as an overlay with transparent background so the Street View panorama shows through windows.
  */
 export class CarInterior {
@@ -10,9 +11,8 @@ export class CarInterior {
     public camera: THREE.PerspectiveCamera;
     public renderer: THREE.WebGLRenderer;
     public canvas: HTMLCanvasElement;
-
-    private interiorGroup: THREE.Group;
-    private roofGroup: THREE.Group;
+    public interiorGroup: THREE.Group;
+    public roofGroup: THREE.Group;
     private steeringWheelGroup!: THREE.Group;
     private leftMirrorPlane!: THREE.Mesh;
     private rightMirrorPlane!: THREE.Mesh;
@@ -31,6 +31,9 @@ export class CarInterior {
     private speedometer: number = 0; // 0-100 km/h
     private tachometer: number = 0; // 0-8000 RPM
 
+    private vehicleType: VehicleType = 'sedan';
+    private vehicleConfig: VehicleConfig;
+
     // Materials
     private dashboardMaterial!: THREE.MeshStandardMaterial;
     private leatherMaterial!: THREE.MeshStandardMaterial;
@@ -38,21 +41,25 @@ export class CarInterior {
     private frameMaterial!: THREE.MeshStandardMaterial;
     private glassMaterial!: THREE.MeshStandardMaterial;
     private mirrorMaterial!: THREE.MeshStandardMaterial;
+    private accentMaterial!: THREE.MeshStandardMaterial;
 
-    constructor(container: HTMLElement) {
+    constructor(container: HTMLElement, vehicleType: VehicleType = 'sedan') {
         this.scene = new THREE.Scene();
+        this.vehicleType = vehicleType;
+        this.vehicleConfig = getVehicleConfig(vehicleType);
 
         // Camera at driver seat eye level (~1.2m), slightly angled toward center console
+        const { x, y, z } = this.vehicleConfig.cameraPosition;
         this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.01, 100);
-        this.camera.position.set(-0.3, 1.2, 0.0);
-        this.camera.rotation.order = 'YXZ'; // FPS-style: yaw around world Y first, then pitch in yawed frame
+        this.camera.position.set(x, y, z);
+        this.camera.rotation.order = 'YXZ';
         this.camera.rotation.set(0, 0, 0);
 
-        // Renderer with alpha for transparency (Street View shows through)
+        // Renderer with alpha for transparency
         this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.setClearColor(0x000000, 0); // Transparent background
+        this.renderer.setClearColor(0x000000, 0);
         this.renderer.autoClear = false;
         this.canvas = this.renderer.domElement;
         this.canvas.style.position = 'absolute';
@@ -94,11 +101,19 @@ export class CarInterior {
         leatherTexture.wrapS = THREE.RepeatWrapping;
         leatherTexture.wrapT = THREE.RepeatWrapping;
 
-        // Dashboard plastic material
+        // Dashboard material varies by theme
+        const dashboardColors = {
+            dark: 0x1a1a1a,
+            light: 0x2a2a2a,
+            neon: 0x0a0a1a,
+            clinical: 0xf0f0f0,
+        };
+        const dashColor = dashboardColors[this.vehicleConfig.theme] ?? 0x1a1a1a;
+        
         this.dashboardMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a1a,
-            roughness: 0.8,
-            metalness: 0.1,
+            color: dashColor,
+            roughness: this.vehicleConfig.theme === 'clinical' ? 0.3 : 0.8,
+            metalness: this.vehicleConfig.theme === 'clinical' ? 0.1 : 0.1,
             side: THREE.DoubleSide,
         });
 
@@ -112,7 +127,7 @@ export class CarInterior {
 
         // Metal material for steering column, trim
         this.metalMaterial = new THREE.MeshStandardMaterial({
-            color: 0x888888,
+            color: this.vehicleConfig.theme === 'clinical' ? 0xcccccc : 0x888888,
             roughness: 0.3,
             metalness: 0.8,
             side: THREE.DoubleSide,
@@ -120,13 +135,13 @@ export class CarInterior {
 
         // Frame material for door panels, pillars
         this.frameMaterial = new THREE.MeshStandardMaterial({
-            color: 0x111111,
+            color: this.vehicleConfig.theme === 'clinical' ? 0xeeeeee : 0x111111,
             roughness: 0.9,
             metalness: 0.0,
             side: THREE.DoubleSide,
         });
 
-        // Glass material for mirrors with mirror-like reflectivity
+        // Glass material for mirrors
         this.glassMaterial = new THREE.MeshStandardMaterial({
             color: 0xcccccc,
             roughness: 0.1,
@@ -141,13 +156,27 @@ export class CarInterior {
             metalness: 1.0,
             side: THREE.FrontSide,
         });
+
+        // Accent material for vehicle-specific colors
+        this.accentMaterial = new THREE.MeshStandardMaterial({
+            color: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
+            roughness: 0.4,
+            metalness: 0.6,
+            emissive: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
+            emissiveIntensity: 0.2,
+            side: THREE.DoubleSide,
+        });
     }
 
     private createLighting(): void {
-        const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+        // Theme-specific lighting
+        const ambientIntensity = this.vehicleConfig.theme === 'clinical' ? 0.6 : 0.4;
+        const ambient = new THREE.AmbientLight(0xffffff, ambientIntensity);
         this.scene.add(ambient);
 
-        const dashLight = new THREE.PointLight(0x4CAF50, 0.3, 3);
+        // Dashboard light with accent color
+        const dashColor = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
+        const dashLight = new THREE.PointLight(dashColor, 0.3, 3);
         dashLight.position.set(0, 0.9, -0.8);
         this.scene.add(dashLight);
 
@@ -165,16 +194,156 @@ export class CarInterior {
     }
 
     private buildInterior(): void {
-        this.buildDashboard();
-        this.buildSteeringWheel();
+        // Build components based on vehicle configuration
+        if (this.vehicleConfig.hasDashboard) {
+            this.buildDashboard();
+        }
+        
+        if (this.vehicleConfig.hasSteeringWheel) {
+            this.buildSteeringWheel();
+        }
+        
         this.buildDoorPanels();
         this.buildSeats();
         this.buildFloor();
-        this.buildRoof();
+        
+        if (this.vehicleConfig.hasRoof) {
+            this.buildRoof();
+        }
+        
         this.buildWindshieldFrame();
-        this.buildSideMirrors();
-        this.buildWipers();
-        this.buildGauges();
+        
+        if (this.vehicleConfig.hasSideMirrors) {
+            this.buildSideMirrors();
+        }
+        
+        if (this.vehicleConfig.hasWipers) {
+            this.buildWipers();
+        }
+        
+        if (this.vehicleConfig.hasGauges) {
+            this.buildGauges();
+        }
+
+        // Build vehicle-specific features
+        this.buildVehicleSpecificFeatures();
+    }
+
+    /**
+     * Build vehicle-specific interior features
+     */
+    private buildVehicleSpecificFeatures(): void {
+        switch (this.vehicleConfig.type) {
+            case 'science-lab':
+                this.buildLabFeatures();
+                break;
+            case 'limousine':
+                this.buildLimoFeatures();
+                break;
+            case 'convertible':
+                this.buildConvertibleFeatures();
+                break;
+            default:
+                // Sedan uses default layout
+                break;
+        }
+    }
+
+    /**
+     * Build science lab specific features (monitors, equipment)
+     */
+    private buildLabFeatures(): void {
+        // Lab monitors on dashboard
+        const monitorGeo = new THREE.BoxGeometry(0.4, 0.25, 0.05);
+        const monitorMat = new THREE.MeshStandardMaterial({
+            color: 0x000000,
+            emissive: 0x004444,
+            emissiveIntensity: 0.5,
+            roughness: 0.2,
+        });
+        
+        const monitor1 = new THREE.Mesh(monitorGeo, monitorMat);
+        monitor1.position.set(0.2, 1.0, -0.72);
+        this.interiorGroup.add(monitor1);
+
+        const monitor2 = new THREE.Mesh(monitorGeo, monitorMat);
+        monitor2.position.set(-0.2, 1.0, -0.72);
+        this.interiorGroup.add(monitor2);
+
+        // Equipment racks behind seats
+        const rackGeo = new THREE.BoxGeometry(1.8, 0.6, 0.3);
+        const rackMat = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            roughness: 0.4,
+            metalness: 0.7,
+        });
+        const rack = new THREE.Mesh(rackGeo, rackMat);
+        rack.position.set(0, 1.0, 0.8);
+        this.interiorGroup.add(rack);
+    }
+
+    /**
+     * Build limousine specific features (mini bar, extended space)
+     */
+    private buildLimoFeatures(): void {
+        // Mini bar console between front seats
+        const barGeo = new THREE.BoxGeometry(0.25, 0.4, 0.6);
+        const barMat = new THREE.MeshStandardMaterial({
+            color: 0x1a1a1a,
+            roughness: 0.3,
+            metalness: 0.5,
+        });
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.set(0, 0.65, 0.4);
+        this.interiorGroup.add(bar);
+
+        // Glass holders
+        for (let i = 0; i < 3; i++) {
+            const holderGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.08, 8);
+            const holderMat = new THREE.MeshStandardMaterial({
+                color: 0xc0c0c0,
+                roughness: 0.2,
+                metalness: 0.9,
+            });
+            const holder = new THREE.Mesh(holderGeo, holderMat);
+            holder.position.set(-0.08 + i * 0.08, 0.9, 0.5);
+            this.interiorGroup.add(holder);
+        }
+
+        // Privacy divider hint
+        const dividerGeo = new THREE.BoxGeometry(1.6, 0.05, 0.02);
+        const dividerMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            roughness: 0.1,
+            metalness: 0.1,
+        });
+        const divider = new THREE.Mesh(dividerGeo, dividerMat);
+        divider.position.set(0, 1.4, 0.6);
+        this.interiorGroup.add(divider);
+    }
+
+    /**
+     * Build convertible specific features
+     */
+    private buildConvertibleFeatures(): void {
+        // Wind deflector behind seats
+        const deflectorGeo = new THREE.BoxGeometry(1.4, 0.3, 0.02);
+        const deflectorMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            transparent: true,
+            opacity: 0.7,
+            roughness: 0.1,
+        });
+        const deflector = new THREE.Mesh(deflectorGeo, deflectorMat);
+        deflector.position.set(0, 1.2, 0.5);
+        deflector.rotation.set(-0.2, 0, 0);
+        this.interiorGroup.add(deflector);
+
+        // Sport seats (smaller headrests)
+        const sportHeadrestGeo = new THREE.BoxGeometry(0.18, 0.15, 0.06);
+        const headrest = new THREE.Mesh(sportHeadrestGeo, this.leatherMaterial);
+        headrest.position.set(-0.35, 1.3, 0.5);
+        this.interiorGroup.add(headrest);
     }
 
     private buildDashboard(): void {
@@ -457,6 +626,45 @@ export class CarInterior {
         this.tachometerNeedle = new THREE.Mesh(tachoNeedleGeo, this.metalMaterial);
         this.tachometerNeedle.position.set(-0.15, 0.98, -0.71);
         this.interiorGroup.add(this.tachometerNeedle);
+    }
+
+    /**
+     * Switch to a different vehicle type
+     * Rebuilds the interior with the new configuration
+     */
+    public setVehicleType(vehicleType: VehicleType): void {
+        if (this.vehicleType === vehicleType) return;
+        
+        this.vehicleType = vehicleType;
+        this.vehicleConfig = getVehicleConfig(vehicleType);
+        
+        // Clear existing interior
+        this.interiorGroup.clear();
+        this.roofGroup.clear();
+        
+        // Update camera position
+        const { x, y, z } = this.vehicleConfig.cameraPosition;
+        this.camera.position.set(x, y, z);
+        
+        // Recreate materials and rebuild
+        this.createMaterials();
+        this.buildInterior();
+        
+        // Update roof state based on vehicle
+        if (this.vehicleConfig.hasRoof) {
+            this.isRoofOpen = false;
+            this.roofTargetY = 1.6;
+        } else {
+            this.isRoofOpen = true;
+            this.roofTargetY = -1.0;
+        }
+    }
+
+    /**
+     * Get current vehicle configuration
+     */
+    public getVehicleConfig(): VehicleConfig {
+        return this.vehicleConfig;
     }
 
     /**

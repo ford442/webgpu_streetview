@@ -1,10 +1,90 @@
 import { CarInterior } from './CarInterior';
 import { RearviewMirror } from './RearviewMirror';
 import { SelectivePostProcessing } from './SelectivePostProcessing';
+import {
+    VehicleType,
+    VehicleConfig,
+    VEHICLES,
+    VEHICLE_LIST,
+    DEFAULT_VEHICLE,
+    VehicleManager,
+    vehicleManager,
+    getVehicleConfig,
+    isValidVehicleType,
+    getNextVehicle,
+    getPreviousVehicle,
+} from './VehicleManager';
+import {
+    LimousineMode,
+    LimoState,
+    defaultLimoState,
+    initLimousineMode,
+} from './variants/LimousineMode';
+import {
+    ConvertibleMode,
+    ConvertibleState,
+    WindParticleSystem,
+    SportDashboard,
+    SportSeats,
+    ConvertibleInterior,
+} from './variants';
+import {
+    ScienceLabInterior,
+    LabState,
+    ScienceLabModeState,
+    initScienceLabMode,
+    initScienceLabModeSystem,
+    toggleScienceLabMode,
+    updateScienceLabMode,
+    toggleUVLight,
+    toggleLabEquipment,
+    getLabState,
+    disposeScienceLabMode,
+} from './variants/ScienceLabMode';
 
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
 export { SelectivePostProcessing } from './SelectivePostProcessing';
+export {
+    VehicleType,
+    VehicleConfig,
+    VEHICLES,
+    VEHICLE_LIST,
+    DEFAULT_VEHICLE,
+    VehicleManager,
+    vehicleManager,
+    getVehicleConfig,
+    isValidVehicleType,
+    getNextVehicle,
+    getPreviousVehicle,
+} from './VehicleManager';
+export {
+    ConvertibleMode,
+    ConvertibleState,
+    WindParticleSystem,
+    SportDashboard,
+    SportSeats,
+    ConvertibleInterior,
+} from './variants';
+export {
+    ScienceLabInterior,
+    LabState,
+    ScienceLabModeState,
+    initScienceLabMode,
+    initScienceLabModeSystem,
+    toggleScienceLabMode,
+    updateScienceLabMode,
+    toggleUVLight,
+    toggleLabEquipment,
+    getLabState,
+    disposeScienceLabMode,
+} from './variants/ScienceLabMode';
+export {
+    LimousineMode,
+    LimoState,
+    defaultLimoState,
+    initLimousineMode,
+} from './variants/LimousineMode';
 
 /**
  * CarMode state container holding all car view subsystems.
@@ -13,9 +93,11 @@ export interface CarModeState {
     interior: CarInterior;
     mirror: RearviewMirror;
     postProcessing: SelectivePostProcessing;
+    convertibleMode: ConvertibleMode | null;
     isActive: boolean;
     wipersEnabled: boolean;
     wiperSpeed: number;
+    currentVehicle: VehicleType;
 }
 
 let carModeState: CarModeState | null = null;
@@ -24,11 +106,12 @@ let lastTimestamp = 0;
 /**
  * Initialize car mode on a container element.
  * Sets up the Three.js car interior overlay, rearview mirror, and post-processing pipeline.
- * 
+ *
  * @param container - The DOM element to mount the car interior overlay onto
+ * @param initialVehicle - Initial vehicle type (defaults to 'sedan')
  * @returns CarModeState object for managing the car view
  */
-export function initCarMode(container: HTMLElement): CarModeState {
+export function initCarMode(container: HTMLElement, initialVehicle: VehicleType = DEFAULT_VEHICLE): CarModeState {
     // Create the car interior Three.js overlay
     const interior = new CarInterior(container);
 
@@ -38,14 +121,37 @@ export function initCarMode(container: HTMLElement): CarModeState {
     // Create post-processing settings manager
     const postProcessing = new SelectivePostProcessing();
 
+    // Create convertible mode (manages roof, wind effects, sport features)
+    const convertibleMode = new ConvertibleMode(
+        interior.scene,
+        interior.interiorGroup,
+        interior.roofGroup
+    );
+
+    // Set initial vehicle type
+    convertibleMode.setVehicleType(initialVehicle as import('./variants').VehicleType);
+
     carModeState = {
         interior,
         mirror,
         postProcessing,
+        convertibleMode,
         isActive: false,
         wipersEnabled: false,
         wiperSpeed: 1.0,
+        currentVehicle: initialVehicle,
     };
+
+    // Sync with vehicle manager
+    vehicleManager.setVehicle(initialVehicle);
+
+    // Listen for vehicle changes from manager
+    vehicleManager.onChange((vehicle) => {
+        if (carModeState?.convertibleMode) {
+            carModeState.convertibleMode.setVehicleType(vehicle as import('./variants').VehicleType);
+            carModeState.currentVehicle = vehicle;
+        }
+    });
 
     return carModeState;
 }
@@ -106,12 +212,13 @@ export function getWiperState(): { enabled: boolean; speed: number } {
 /**
  * Update and render car mode elements each frame.
  * Should be called within the existing animation loop.
- * 
+ *
  * @param carHeading - Car body heading in degrees (stays level with ground)
  * @param viewHeading - Current view heading in degrees (carHeading + headYawOffset)
  * @param headPitch - Current head pitch in degrees (up/down look)
+ * @param carSpeed - Current car speed for wind effects in convertible mode (km/h)
  */
-export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number): void {
+export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0): void {
     if (!carModeState || !carModeState.isActive) return;
 
     const now = performance.now();
@@ -120,6 +227,11 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
 
     // Update interior animations (roof, etc.)
     carModeState.interior.update(deltaTime);
+
+    // Update convertible mode (wind particles, etc.)
+    if (carModeState.convertibleMode) {
+        carModeState.convertibleMode.update(deltaTime, carSpeed);
+    }
 
     // Update car body rotation to stay level with ground (carHeading only)
     // This keeps dashboard, steering wheel, A-pillars fixed to the car body
@@ -186,11 +298,95 @@ export function isCarSteeringWheelHit(clientX: number, clientY: number): boolean
 }
 
 /**
+ * Toggle between sedan and convertible modes.
+ * @returns The new vehicle type
+ */
+export function toggleVehicleType(): VehicleType {
+    if (!carModeState) return DEFAULT_VEHICLE;
+
+    const newType = vehicleManager.getCurrentVehicle() === 'sedan' ? 'convertible' : 'sedan';
+    vehicleManager.setVehicle(newType);
+    carModeState.currentVehicle = newType;
+
+    if (carModeState.convertibleMode) {
+        carModeState.convertibleMode.setVehicleType(newType as import('./variants').VehicleType);
+    }
+
+    return newType;
+}
+
+/**
+ * Set specific vehicle type.
+ * @param type - Vehicle type to switch to
+ */
+export function setVehicleType(type: VehicleType): void {
+    if (!carModeState) return;
+
+    vehicleManager.setVehicle(type);
+    carModeState.currentVehicle = type;
+
+    if (carModeState.convertibleMode) {
+        carModeState.convertibleMode.setVehicleType(type as import('./variants').VehicleType);
+    }
+}
+
+/**
+ * Get current vehicle type.
+ */
+export function getCurrentVehicleType(): VehicleType {
+    return carModeState?.currentVehicle ?? vehicleManager.getCurrentVehicle();
+}
+
+/**
+ * Toggle convertible roof (only works in convertible mode).
+ * @returns true if roof is now open, false if closed
+ */
+export function toggleConvertibleRoof(): boolean {
+    if (!carModeState?.convertibleMode) return false;
+    return carModeState.convertibleMode.toggleRoof();
+}
+
+/**
+ * Toggle wind deflector (only works in convertible mode with roof open).
+ * @returns true if deflector is now deployed
+ */
+export function toggleWindDeflector(): boolean {
+    if (!carModeState?.convertibleMode) return false;
+    return carModeState.convertibleMode.toggleWindDeflector();
+}
+
+/**
+ * Set wind speed for convertible mode effects.
+ * @param speed - Wind speed (0-100)
+ */
+export function setWindSpeed(speed: number): void {
+    if (!carModeState?.convertibleMode) return;
+    carModeState.convertibleMode.setWindSpeed(speed);
+}
+
+/**
+ * Set wind turbulence for convertible mode.
+ * @param turbulence - Turbulence level (0-1)
+ */
+export function setWindTurbulence(turbulence: number): void {
+    if (!carModeState?.convertibleMode) return;
+    carModeState.convertibleMode.setTurbulence(turbulence);
+}
+
+/**
+ * Check if currently in convertible mode with open roof.
+ */
+export function isConvertibleOpen(): boolean {
+    return carModeState?.convertibleMode?.isConvertibleOpen() ?? false;
+}
+
+/**
  * Dispose of all car mode resources.
  */
 export function disposeCarMode(): void {
     if (!carModeState) return;
 
+    carModeState.convertibleMode?.dispose();
     carModeState.interior.dispose();
     carModeState.mirror.dispose();
     carModeState.postProcessing.dispose();

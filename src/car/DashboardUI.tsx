@@ -16,8 +16,10 @@ interface DashboardUIProps {
     onTimeOfDay: (value: string) => void;
     onToggleRoof: () => void;
     onToggleWipers?: () => void;
+    onToggleVehicle?: () => void;
     isRoofOpen: boolean;
     wipersEnabled?: boolean;
+    currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
     rainIntensity: number;
     snowIntensity?: number;
     wind?: number;
@@ -36,8 +38,10 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     onTimeOfDay,
     onToggleRoof,
     onToggleWipers,
+    onToggleVehicle,
     isRoofOpen,
     wipersEnabled = false,
+    currentVehicle = 'sedan',
     rainIntensity,
     snowIntensity = 0,
     wind = 0,
@@ -169,6 +173,21 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                 >
                     🗺️ GPS
                 </button>
+
+                {/* Vehicle type toggle */}
+                {onToggleVehicle && (
+                    <button
+                        onClick={onToggleVehicle}
+                        style={{
+                            ...buttonStyle,
+                            backgroundColor: currentVehicle === 'convertible' ? 'rgba(255, 87, 34, 0.3)' : buttonStyle.backgroundColor,
+                            borderColor: currentVehicle === 'convertible' ? '#FF5722' : buttonStyle.borderColor,
+                        }}
+                        title={`Current: ${currentVehicle}. Click to toggle`}
+                    >
+                        {currentVehicle === 'convertible' ? '🏎️ SPORT' : '🚗 SEDAN'}
+                    </button>
+                )}
 
                 <button
                     onClick={onToggleRadio}
