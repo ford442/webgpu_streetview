@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 import { VehicleType, VehicleConfig, getVehicleConfig } from './VehicleManager';
+import { 
+  setupVehicleInteriorLOD, 
+  VehicleLODConfig, 
+  FrustumCuller, 
+  optimizeTextures,
+  GPU_PROFILES,
+  applyPerformanceProfile,
+  detectGPUProfile
+} from '../utils/performance';
+import { getMemoryProfiler, MemoryProfiler } from '../utils/memoryProfiler';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -43,10 +53,28 @@ export class CarInterior {
     private mirrorMaterial!: THREE.MeshStandardMaterial;
     private accentMaterial!: THREE.MeshStandardMaterial;
 
+    // Performance optimization
+    private lodUpdateFn?: () => void;
+    private frustumCuller: FrustumCuller;
+    private lodConfig: VehicleLODConfig;
+    private detailMeshes: THREE.Mesh[] = [];
+    private lastRenderTime: number = 0;
+    private renderInterval: number = 16.67; // Target 60fps
+    private quality: 'high' | 'medium' | 'low' = 'high';
+    private gpuProfile = detectGPUProfile();
+
     constructor(container: HTMLElement, vehicleType: VehicleType = 'sedan') {
         this.scene = new THREE.Scene();
         this.vehicleType = vehicleType;
         this.vehicleConfig = getVehicleConfig(vehicleType);
+
+        // Initialize performance utilities
+        this.frustumCuller = new FrustumCuller();
+        this.lodConfig = {
+            dashboardLOD: true,
+            seatLOD: true,
+            interiorDetails: true
+        };
 
         // Camera at driver seat eye level (~1.2m), slightly angled toward center console
         const { x, y, z } = this.vehicleConfig.cameraPosition;
@@ -55,12 +83,21 @@ export class CarInterior {
         this.camera.rotation.order = 'YXZ';
         this.camera.rotation.set(0, 0, 0);
 
-        // Renderer with alpha for transparency
-        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        // Renderer with alpha for transparency - apply performance profile
+        const useAntialias = this.gpuProfile.antialias;
+        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: useAntialias });
         this.renderer.setSize(container.clientWidth, container.clientHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.gpuProfile.pixelRatio));
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.autoClear = false;
+        
+        // Apply performance optimizations
+        applyPerformanceProfile(this.renderer, this.gpuProfile);
+        optimizeTextures(this.renderer, {
+            maxTextureSize: this.gpuProfile.maxTextureSize,
+            anisotropy: this.gpuProfile.name === 'high' ? 4 : 2
+        });
+        
         this.canvas = this.renderer.domElement;
         this.canvas.style.position = 'absolute';
         this.canvas.style.top = '0';
@@ -79,6 +116,70 @@ export class CarInterior {
         this.createMaterials();
         this.createLighting();
         this.buildInterior();
+        
+        // Setup LOD after building interior
+        this.setupLOD();
+    }
+
+    /**
+     * Setup Level of Detail (LOD) system for the interior
+     */
+    private setupLOD(): void {
+        // Categorize meshes by detail level
+        this.interiorGroup.traverse((obj) => {
+            if (obj instanceof THREE.Mesh) {
+                // Tag detail meshes for LOD management
+                if (obj.geometry.type.includes('Torus') || 
+                    obj.geometry.type.includes('Circle') ||
+                    obj.name.includes('gauge') ||
+                    obj.name.includes('detail')) {
+                    this.detailMeshes.push(obj);
+                }
+            }
+        });
+        
+        // Setup LOD update function
+        this.lodUpdateFn = setupVehicleInteriorLOD(
+            this.interiorGroup, 
+            this.camera, 
+            this.lodConfig
+        );
+        
+        console.log('[CarInterior] LOD configured with', this.detailMeshes.length, 'detail meshes');
+    }
+
+    /**
+     * Set quality level for rendering
+     */
+    public setQuality(quality: 'high' | 'medium' | 'low'): void {
+        if (this.quality === quality) return;
+        this.quality = quality;
+        
+        const profile = GPU_PROFILES[quality];
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, profile.pixelRatio));
+        
+        // Update LOD config based on quality
+        this.lodConfig = {
+            dashboardLOD: quality !== 'low',
+            seatLOD: quality !== 'low',
+            interiorDetails: quality === 'high'
+        };
+        
+        // Re-setup LOD with new config
+        this.lodUpdateFn = setupVehicleInteriorLOD(
+            this.interiorGroup, 
+            this.camera, 
+            this.lodConfig
+        );
+        
+        console.log('[CarInterior] Quality set to:', quality);
+    }
+
+    /**
+     * Get current quality level
+     */
+    public getQuality(): 'high' | 'medium' | 'low' {
+        return this.quality;
     }
 
     private createMaterials(): void {
@@ -678,14 +779,18 @@ export class CarInterior {
 
     /**
      * Update loop - call each frame to animate roof, steering wheel, wipers, and gauges.
+     * Includes LOD updates and performance optimizations.
      */
     public update(deltaTime: number): void {
+        // Limit delta time to prevent large jumps (e.g., when tab is inactive)
+        const clampedDelta = Math.min(deltaTime, 0.1);
+        
         // Animate roof position (lerp)
         const currentY = this.roofGroup.position.y;
         const targetY = this.roofTargetY;
         const diff = targetY - currentY;
         if (Math.abs(diff) > 0.001) {
-            this.roofGroup.position.y += diff * Math.min(deltaTime * 3, 1);
+            this.roofGroup.position.y += diff * Math.min(clampedDelta * 3, 1);
         }
 
         // Smooth steering wheel rotation (lerp to target)
@@ -696,12 +801,12 @@ export class CarInterior {
             let shortestDiff = diff;
             if (shortestDiff > Math.PI) shortestDiff -= Math.PI * 2;
             if (shortestDiff < -Math.PI) shortestDiff += Math.PI * 2;
-            this.steeringWheelGroup.rotation.z += shortestDiff * Math.min(deltaTime * 5, 1);
+            this.steeringWheelGroup.rotation.z += shortestDiff * Math.min(clampedDelta * 5, 1);
         }
 
-        // Animate wipers
-        if (this.isWiperActive) {
-            this.wiperAnimationTime += deltaTime;
+        // Animate wipers (skip if low quality)
+        if (this.isWiperActive && this.quality !== 'low') {
+            this.wiperAnimationTime += clampedDelta;
             const wiperCycle = this.wiperAnimationTime % 1.0; // 1 second cycle
             const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4); // Sweep ±45°
             if (this.wiperLeft) {
@@ -712,8 +817,15 @@ export class CarInterior {
             }
         }
 
-        // Update gauge needles
-        this.updateGaugles();
+        // Update gauge needles (skip if low quality)
+        if (this.quality !== 'low') {
+            this.updateGaugles();
+        }
+        
+        // Update LOD based on camera distance
+        if (this.lodUpdateFn) {
+            this.lodUpdateFn();
+        }
     }
 
     /**
@@ -836,10 +948,31 @@ export class CarInterior {
 
     /**
      * Render the car interior scene.
+     * Includes frame rate limiting and frustum culling.
      */
     public render(): void {
+        // Frame rate limiting - skip render if too soon
+        const now = performance.now();
+        const elapsed = now - this.lastRenderTime;
+        if (elapsed < this.renderInterval) {
+            return; // Skip this frame
+        }
+        this.lastRenderTime = now;
+        
+        // Update frustum culling
+        this.frustumCuller.update(this.camera);
+        
+        // Render the scene
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * Set target frame rate for rendering
+     */
+    public setTargetFPS(fps: number): void {
+        this.renderInterval = 1000 / fps;
+        console.log('[CarInterior] Target FPS set to:', fps);
     }
 
     /**
@@ -853,22 +986,57 @@ export class CarInterior {
 
     /**
      * Clean up resources.
+     * Includes memory profiling and proper disposal.
      */
     public dispose(): void {
         cancelAnimationFrame(this.animationId);
+        
+        // Log memory stats before disposal
+        const memoryProfiler = getMemoryProfiler();
+        const stats = memoryProfiler.getStats();
+        console.log('[CarInterior] Disposing - memory stats:', {
+            geometries: stats.current.geometryCount,
+            textures: stats.current.textureCount,
+            memory: MemoryProfiler.formatBytes(stats.current.estimatedBytes)
+        });
+        
         this.renderer.dispose();
         this.scene.traverse((obj) => {
             if (obj instanceof THREE.Mesh) {
                 obj.geometry.dispose();
                 if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
+                    obj.material.forEach(m => {
+                        // Dispose textures first
+                        this.disposeMaterialTextures(m);
+                        m.dispose();
+                    });
                 } else {
+                    this.disposeMaterialTextures(obj.material);
                     obj.material.dispose();
                 }
             }
         });
+        
+        // Clear references
+        this.detailMeshes = [];
+        this.lodUpdateFn = undefined;
+        
         if (this.canvas.parentElement) {
             this.canvas.parentElement.removeChild(this.canvas);
         }
+    }
+    
+    /**
+     * Dispose textures from a material
+     */
+    private disposeMaterialTextures(material: THREE.Material): void {
+        const mat = material as any;
+        ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap']
+            .forEach(prop => {
+                if (mat[prop]) {
+                    mat[prop].dispose();
+                    mat[prop] = null;
+                }
+            });
     }
 }

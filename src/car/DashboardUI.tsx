@@ -142,6 +142,8 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     return (
         <div
             data-testid="dashboard-ui"
+            role="region"
+            aria-label="Car Dashboard Controls"
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
             onMouseMove={(e) => e.stopPropagation()}
@@ -165,13 +167,19 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             }}
         >
             {/* Top row: Main controls */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div 
+                role="group"
+                aria-label="Dashboard main controls"
+                style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}
+            >
                 <button
                     onClick={onToggleGPS}
                     style={buttonStyle}
-                    title="Toggle GPS Map"
+                    aria-label={isRadioPlaying ? "Turn off radio" : "Turn on radio"}
+                    aria-pressed={isRadioPlaying}
+                    title="Toggle GPS Map (G)"
                 >
-                    🗺️ GPS
+                    <span aria-hidden="true">🗺️ GPS</span>
                 </button>
 
                 {/* Vehicle type toggle */}
@@ -183,26 +191,33 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                             backgroundColor: currentVehicle === 'convertible' ? 'rgba(255, 87, 34, 0.3)' : buttonStyle.backgroundColor,
                             borderColor: currentVehicle === 'convertible' ? '#FF5722' : buttonStyle.borderColor,
                         }}
-                        title={`Current: ${currentVehicle}. Click to toggle`}
+                        aria-label={`Current vehicle: ${currentVehicle}. Click to toggle`}
+                        title="Toggle Vehicle Type (V)"
                     >
-                        {currentVehicle === 'convertible' ? '🏎️ SPORT' : '🚗 SEDAN'}
+                        <span aria-hidden="true">{currentVehicle === 'convertible' ? '🏎️ SPORT' : '🚗 SEDAN'}</span>
                     </button>
                 )}
 
                 <button
                     onClick={onToggleRadio}
                     style={isRadioPlaying ? activeButtonStyle : buttonStyle}
-                    title="Toggle Radio"
+                    aria-label={isRadioPlaying ? "Turn off radio" : "Turn on radio"}
+                    aria-pressed={isRadioPlaying}
+                    title="Toggle Radio (M)"
                 >
-                    📻 {isRadioPlaying ? 'ON' : 'OFF'}
+                    <span className="visually-hidden">Radio {isRadioPlaying ? 'On' : 'Off'}</span>
+                    <span aria-hidden="true">📻 {isRadioPlaying ? 'ON' : 'OFF'}</span>
                 </button>
 
                 <button
                     onClick={onToggleRoof}
                     style={isRoofOpen ? activeButtonStyle : buttonStyle}
-                    title="Toggle Convertible Roof"
+                    aria-label={isRoofOpen ? "Close convertible roof" : "Open convertible roof"}
+                    aria-pressed={isRoofOpen}
+                    title="Toggle Convertible Roof (O)"
                 >
-                    {isRoofOpen ? '☀️ OPEN' : '🏠 CLOSED'}
+                    <span className="visually-hidden">Roof {isRoofOpen ? 'Open' : 'Closed'}</span>
+                    <span aria-hidden="true">{isRoofOpen ? '☀️ OPEN' : '🏠 CLOSED'}</span>
                 </button>
 
                 {/* Wiper toggle - only show when raining */}
@@ -210,14 +225,19 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                     <button
                         onClick={onToggleWipers}
                         style={wipersEnabled ? activeButtonStyle : buttonStyle}
-                        title="Toggle Windshield Wipers"
+                        aria-label={wipersEnabled ? "Turn off windshield wipers" : "Turn on windshield wipers"}
+                        aria-pressed={wipersEnabled}
+                        title="Toggle Windshield Wipers (W)"
                     >
-                        🧹 {wipersEnabled ? 'ON' : 'OFF'}
+                        <span className="visually-hidden">Wipers {wipersEnabled ? 'On' : 'Off'}</span>
+                        <span aria-hidden="true">🧹 {wipersEnabled ? 'ON' : 'OFF'}</span>
                     </button>
                 )}
 
                 {/* Time of Day presets */}
+                <label className="visually-hidden" htmlFor="time-of-day">Time of Day</label>
                 <select
+                    id="time-of-day"
                     value={timeOfDay}
                     onChange={(e) => onTimeOfDay(e.target.value)}
                     style={{
@@ -226,7 +246,8 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                         paddingRight: '24px',
                         background: 'rgba(0, 0, 0, 0.7) url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%234CAF50%22%20d%3D%22M2%204l4%204%204-4z%22%2F%3E%3C%2Fsvg%3E") no-repeat right 8px center',
                     }}
-                    title="Time of Day"
+                    title="Time of Day (N)"
+                    aria-label="Select time of day"
                 >
                     <option value="day">☀️ Day</option>
                     <option value="sunset">🌅 Sunset</option>
@@ -235,11 +256,21 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
 
             {/* Bottom row: Sliders and visualizer */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div 
+                role="group"
+                aria-label="Weather and audio controls"
+                style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}
+            >
                 {/* Rain intensity slider */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: '#4CAF50', fontSize: '11px', fontFamily: 'monospace' }}>🌧️ Rain</span>
+                    <label 
+                        htmlFor="rain-slider"
+                        style={{ color: '#4CAF50', fontSize: '11px', fontFamily: 'monospace' }}
+                    >
+                        🌧️ Rain
+                    </label>
                     <input
+                        id="rain-slider"
                         type="range"
                         min="0"
                         max="100"
@@ -249,8 +280,15 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                             width: '60px',
                             accentColor: '#4CAF50',
                         }}
+                        aria-label={`Rain intensity ${rainIntensity} percent`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={rainIntensity}
                     />
-                    <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}>
+                    <span 
+                        style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}
+                        aria-hidden="true"
+                    >
                         {rainIntensity}%
                     </span>
                 </div>
@@ -258,8 +296,14 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                 {/* Snow intensity slider */}
                 {onSnowIntensity && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ color: '#E3F2FD', fontSize: '11px', fontFamily: 'monospace' }}>❄️ Snow</span>
+                        <label 
+                            htmlFor="snow-slider"
+                            style={{ color: '#E3F2FD', fontSize: '11px', fontFamily: 'monospace' }}
+                        >
+                            ❄️ Snow
+                        </label>
                         <input
+                            id="snow-slider"
                             type="range"
                             min="0"
                             max="100"
@@ -269,8 +313,15 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                                 width: '60px',
                                 accentColor: '#90CAF9',
                             }}
+                            aria-label={`Snow intensity ${snowIntensity} percent`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={snowIntensity}
                         />
-                        <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}>
+                        <span 
+                            style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '24px' }}
+                            aria-hidden="true"
+                        >
                             {snowIntensity}%
                         </span>
                     </div>
@@ -279,8 +330,14 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                 {/* Wind slider */}
                 {onWind && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ color: '#B3E5FC', fontSize: '11px', fontFamily: 'monospace' }}>💨 Wind</span>
+                        <label 
+                            htmlFor="wind-slider"
+                            style={{ color: '#B3E5FC', fontSize: '11px', fontFamily: 'monospace' }}
+                        >
+                            💨 Wind
+                        </label>
                         <input
+                            id="wind-slider"
                             type="range"
                             min="-100"
                             max="100"
@@ -290,24 +347,34 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                                 width: '60px',
                                 accentColor: '#4FC3F7',
                             }}
+                            aria-label={`Wind speed ${wind}`}
+                            aria-valuemin={-100}
+                            aria-valuemax={100}
+                            aria-valuenow={wind}
                         />
-                        <span style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '28px' }}>
+                        <span 
+                            style={{ color: '#888', fontSize: '10px', fontFamily: 'monospace', minWidth: '28px' }}
+                            aria-hidden="true"
+                        >
                             {wind > 0 ? '+' : ''}{wind}
                         </span>
                     </div>
                 )}
 
                 {/* Audio Visualizer */}
-                <canvas
-                    ref={visualizerRef}
-                    width={120}
-                    height={30}
-                    style={{
-                        borderRadius: '4px',
-                        border: '1px solid rgba(76, 175, 80, 0.3)',
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    }}
-                />
+                <div role="img" aria-label={isRadioPlaying ? "Audio visualizer active" : "Audio visualizer"}>
+                    <canvas
+                        ref={visualizerRef}
+                        width={120}
+                        height={30}
+                        style={{
+                            borderRadius: '4px',
+                            border: '1px solid rgba(76, 175, 80, 0.3)',
+                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        }}
+                        aria-hidden="true"
+                    />
+                </div>
             </div>
         </div>
     );

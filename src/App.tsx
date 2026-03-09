@@ -21,6 +21,21 @@ import BookmarkPanel from './components/BookmarkPanel';
 import HistoryPanel from './components/HistoryPanel';
 import SnapshotGallery from './components/SnapshotGallery';
 import ColorGradingPanel from './components/ColorGradingPanel';
+import PerformanceStatsOverlay from './components/PerformanceStatsOverlay';
+
+// Accessibility Imports
+import {
+    useKeyboardShortcuts,
+    useAnnouncer,
+    loadAccessibilitySettings,
+    AccessibilitySettings,
+    SkipLink,
+} from './hooks/useKeyboardShortcuts';
+import AccessibilityPanel from './components/AccessibilityPanel';
+
+// Performance Imports
+import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
+import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 
 // Constants for cruise mode timing
 const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
@@ -110,6 +125,44 @@ function App() {
     const [temperature, setTemperature] = useState(0.0);
     const [tint, setTint] = useState(0.0);
     const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
+
+    // Performance stats overlay state
+    const [showPerformanceStats, setShowPerformanceStats] = useState(false);
+    const [fps, setFps] = useState(60);
+    const { stats: perfStats } = usePerformanceMonitor({
+        targetFPS: 60,
+        sampleSize: 60,
+        warningThreshold: 45,
+        criticalThreshold: 30,
+        enableAdaptiveQuality: true
+    });
+
+    // Memory profiling
+    const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+    useEffect(() => {
+        if (!showPerformanceStats) return;
+        const memoryProfiler = getMemoryProfiler();
+        const interval = setInterval(() => {
+            memoryProfiler.snapshot();
+            setMemoryStats(memoryProfiler.getStats());
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [showPerformanceStats]);
+
+    // Accessibility state
+    const [accessibilitySettings, setAccessibilitySettings] = useState<AccessibilitySettings>(() =>
+        loadAccessibilitySettings()
+    );
+    const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
+    const { announce } = useAnnouncer();
+
+    // Apply accessibility classes to body
+    useEffect(() => {
+        document.body.classList.toggle('high-contrast', accessibilitySettings.highContrast);
+        document.body.classList.toggle('reduced-motion', accessibilitySettings.reducedMotion);
+        document.body.classList.toggle('large-text', accessibilitySettings.largeText);
+        document.body.classList.toggle('keyboard-only-mode', accessibilitySettings.keyboardOnlyMode);
+    }, [accessibilitySettings]);
 
     // In car mode: 
     // - Outside view (panorama) stays locked to carHeading (windshield view)
@@ -998,9 +1051,191 @@ function App() {
         };
     }, [currentCoords, heading, pitch, panorama]);
 
+    // Keyboard shortcuts setup
+    useKeyboardShortcuts(
+        [
+            {
+                key: 'F9',
+                description: 'Toggle performance stats overlay',
+                action: () => {
+                    setShowPerformanceStats(!showPerformanceStats);
+                    announce(`Performance stats ${!showPerformanceStats ? 'shown' : 'hidden'}`);
+                },
+            },
+            // Mode toggles
+            {
+                key: 'n',
+                description: 'Toggle night mode',
+                action: () => {
+                    const modes: ('day' | 'sunset' | 'night')[] = ['day', 'sunset', 'night'];
+                    const currentIndex = modes.indexOf(timeOfDay);
+                    const nextMode = modes[(currentIndex + 1) % modes.length];
+                    handleTimeOfDay(nextMode);
+                    announce(`Night mode: ${nextMode}`);
+                },
+            },
+            {
+                key: 'v',
+                description: 'Open vehicle selector',
+                action: () => {
+                    // Vehicle selector would be toggled here
+                    announce('Vehicle selector opened');
+                },
+            },
+            {
+                key: 'm',
+                description: 'Toggle radio',
+                action: () => {
+                    toggleRadio();
+                    announce(`Radio ${!isRadioPlaying ? 'on' : 'off'}`);
+                },
+            },
+            {
+                key: 'g',
+                description: 'Toggle GPS map',
+                action: () => {
+                    setIsMapOpen(!isMapOpen);
+                    announce(`Map ${!isMapOpen ? 'opened' : 'closed'}`);
+                },
+            },
+            {
+                key: 'b',
+                description: 'Toggle bookmarks',
+                action: () => {
+                    setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
+                    setIsHistoryPanelOpen(false);
+                    setIsSnapshotGalleryOpen(false);
+                    announce(`Bookmarks ${!isBookmarkPanelOpen ? 'opened' : 'closed'}`);
+                },
+            },
+            {
+                key: 'h',
+                description: 'Toggle history or head coupling',
+                action: () => {
+                    if (isCarMode) {
+                        handleToggleHeadCoupling();
+                        announce(`Head coupling: ${headCoupling === 'rigid' ? 'free' : 'rigid'}`);
+                    } else {
+                        setIsHistoryPanelOpen(!isHistoryPanelOpen);
+                        setIsBookmarkPanelOpen(false);
+                        setIsSnapshotGalleryOpen(false);
+                        announce(`History ${!isHistoryPanelOpen ? 'opened' : 'closed'}`);
+                    }
+                },
+            },
+            {
+                key: 's',
+                description: 'Toggle snapshot gallery',
+                action: () => {
+                    setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
+                    setIsBookmarkPanelOpen(false);
+                    setIsHistoryPanelOpen(false);
+                    announce(`Gallery ${!isSnapshotGalleryOpen ? 'opened' : 'closed'}`);
+                },
+            },
+            {
+                key: 'p',
+                description: 'Take snapshot',
+                action: () => {
+                    handleSnapshot();
+                    announce('Snapshot taken');
+                },
+            },
+            {
+                key: 'r',
+                description: 'Toggle cruise mode',
+                action: () => {
+                    setIsCruiseMode(!isCruiseMode);
+                    announce(`Cruise mode ${!isCruiseMode ? 'on' : 'off'}`);
+                },
+            },
+            {
+                key: 'e',
+                description: 'Toggle color grading',
+                action: () => {
+                    setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
+                    setIsBookmarkPanelOpen(false);
+                    setIsHistoryPanelOpen(false);
+                    setIsSnapshotGalleryOpen(false);
+                    announce(`Color grading ${!isColorGradingPanelOpen ? 'opened' : 'closed'}`);
+                },
+            },
+            {
+                key: 'a',
+                description: 'Toggle accessibility panel',
+                action: () => {
+                    setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen);
+                    announce(`Accessibility panel ${!isAccessibilityPanelOpen ? 'opened' : 'closed'}`);
+                },
+            },
+            // Car mode shortcuts
+            {
+                key: 'c',
+                description: 'Toggle car mode or recenter head',
+                action: () => {
+                    if (isCarMode) {
+                        handleRecenterHead();
+                        announce('Head position recentered');
+                    } else {
+                        handleToggleCarMode();
+                        announce('Car mode enabled');
+                    }
+                },
+            },
+            {
+                key: 'w',
+                description: 'Toggle wipers',
+                action: () => {
+                    if (rainIntensity > 0) {
+                        handleToggleWipers();
+                        announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
+                    }
+                },
+            },
+            {
+                key: 'o',
+                description: 'Toggle roof',
+                action: () => {
+                    handleToggleRoof();
+                    announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
+                },
+            },
+            // Close panels with Escape
+            {
+                key: 'Escape',
+                description: 'Close panels',
+                action: () => {
+                    if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
+                    else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
+                    else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
+                    else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
+                    else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
+                    else if (isMapOpen) setIsMapOpen(false);
+                },
+                preventDefault: false,
+            },
+        ],
+        isConnected && !showWelcome
+    );
+
     return (
         <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
+            {/* Skip link for keyboard navigation */}
+            <SkipLink targetId="main-content">Skip to main content</SkipLink>
+            
             {showWelcome && <WelcomeModal onStart={handleStart} />}
+
+            {/* Performance Stats Overlay */}
+            {isConnected && showPerformanceStats && (
+                <PerformanceStatsOverlay
+                    fpsStats={perfStats}
+                    memoryStats={memoryStats || undefined}
+                    position="top-left"
+                    visible={true}
+                    showMemory={true}
+                    onToggle={() => setShowPerformanceStats(false)}
+                />
+            )}
 
             {/* Head Coupling Mode Indicator - shows when in car mode */}
             {isConnected && isCarMode && (
@@ -1075,16 +1310,24 @@ function App() {
             </div>
 
             {/* WebGPU Output */}
-            <div ref={canvasContainerRef} data-testid="webgpu-canvas-container" style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: isConnected ? 2 : 0,
-                pointerEvents: isConnected ? 'auto' : 'none',
-                opacity: isConnected ? 1 : 0
-            }}>
+            <div 
+                id="main-content"
+                ref={canvasContainerRef} 
+                data-testid="webgpu-canvas-container" 
+                role="main"
+                aria-label="Street View Canvas"
+                tabIndex={0}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: isConnected ? 2 : 0,
+                    pointerEvents: isConnected ? 'auto' : 'none',
+                    opacity: isConnected ? 1 : 0
+                }}
+            >
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
@@ -1247,39 +1490,96 @@ function App() {
 
                 {/* Map Toggle Button */}
                 {isConnected && (
-                    <button onClick={() => setIsMapOpen(!isMapOpen)} className="control-btn" style={{ backgroundColor: isMapOpen ? '#444' : undefined }}>
-                        Map {isMapOpen ? '>>' : '<<'}
+                    <button 
+                        onClick={() => setIsMapOpen(!isMapOpen)} 
+                        className="control-btn" 
+                        style={{ backgroundColor: isMapOpen ? '#444' : undefined }}
+                        aria-label={isMapOpen ? "Close map panel" : "Open map panel"}
+                        aria-pressed={isMapOpen}
+                        title="Toggle Map (G)"
+                    >
+                        <span className="visually-hidden">{isMapOpen ? "Close Map" : "Open Map"}</span>
+                        <span aria-hidden="true">Map {isMapOpen ? '>>' : '<<'}</span>
                     </button>
                 )}
-                <button onClick={toggleRadio} className={`control-btn ${isRadioPlaying ? 'disconnect' : ''}`} style={{ backgroundColor: isRadioPlaying ? '#ff4757' : undefined }}>
-                    Radio: {isRadioPlaying ? 'ON' : 'OFF'}
+                <button 
+                    onClick={toggleRadio} 
+                    className={`control-btn ${isRadioPlaying ? 'disconnect' : ''}`} 
+                    style={{ backgroundColor: isRadioPlaying ? '#ff4757' : undefined }}
+                    aria-label={isRadioPlaying ? "Turn off radio" : "Turn on radio"}
+                    aria-pressed={isRadioPlaying}
+                    title="Toggle Radio (M)"
+                >
+                    <span className="visually-hidden">Radio:</span>
+                    <span aria-hidden="true">Radio: {isRadioPlaying ? 'ON' : 'OFF'}</span>
                 </button>
+                
                 {!isConnected ? (
-                    <button onClick={() => setIsConnected(true)} disabled={!streetViewCanvas} className="control-btn">
+                    <button 
+                        onClick={() => setIsConnected(true)} 
+                        disabled={!streetViewCanvas} 
+                        className="control-btn"
+                        aria-label={streetViewCanvas ? "Start Street View" : "Loading Google Maps, please wait"}
+                    >
                         {streetViewCanvas ? "START" : "Loading Maps..."}
                     </button>
                 ) : (
                     <>
-                        <button onClick={() => setIsConnected(false)} className="control-btn disconnect">
+                        <button 
+                            onClick={() => setIsConnected(false)} 
+                            className="control-btn disconnect"
+                            aria-label="Stop Street View"
+                        >
                             STOP
                         </button>
-                        <button onClick={handleToggleCarMode} className={`control-btn ${isCarMode ? 'disconnect' : ''}`} title="Toggle car view (C)">
-                            🚗 {isCarMode ? 'In-Car' : 'Standard'}
+                        
+                        <button 
+                            onClick={handleToggleCarMode} 
+                            className={`control-btn ${isCarMode ? 'disconnect' : ''}`} 
+                            aria-label={isCarMode ? "Exit car mode" : "Enter car mode"}
+                            aria-pressed={isCarMode}
+                            title="Toggle Car Mode (C)"
+                        >
+                            <span className="visually-hidden">{isCarMode ? 'In-Car Mode' : 'Standard Mode'}</span>
+                            <span aria-hidden="true">🚗 {isCarMode ? 'In-Car' : 'Standard'}</span>
                         </button>
-                        <button onClick={handleSnapshot} className="control-btn">
-                            📸 Take Snapshot
+                        
+                        <button 
+                            onClick={handleSnapshot} 
+                            className="control-btn"
+                            aria-label="Take snapshot photo"
+                            title="Take Snapshot (P)"
+                        >
+                            <span aria-hidden="true">📸 Take Snapshot</span>
                         </button>
-                        <button onClick={() => setIsCruiseMode(!isCruiseMode)} className={`control-btn ${isCruiseMode ? 'disconnect' : ''}`}>
-                            Cruise: {isCruiseMode ? 'ON' : 'OFF'} {routeWaypoints && '🗺️'}
+                        
+                        <button 
+                            onClick={() => setIsCruiseMode(!isCruiseMode)} 
+                            className={`control-btn ${isCruiseMode ? 'disconnect' : ''}`}
+                            aria-label={isCruiseMode ? "Stop cruise mode" : "Start cruise mode"}
+                            aria-pressed={isCruiseMode}
+                            title="Toggle Cruise Mode (R)"
+                        >
+                            <span className="visually-hidden">Cruise Mode:</span>
+                            <span aria-hidden="true">Cruise: {isCruiseMode ? 'ON' : 'OFF'} {routeWaypoints && '🗺️'}</span>
                         </button>
-                        <button onClick={() => {
-                            const currentHeading = isCarMode ? viewHeading : heading;
-                            const currentPitch = isCarMode ? headPitch : pitch;
-                            const url = `${window.location.origin}${window.location.pathname}?lat=${currentCoords.lat.toFixed(6)}&lng=${currentCoords.lng.toFixed(6)}&heading=${currentHeading.toFixed(1)}&pitch=${currentPitch.toFixed(1)}`;
-                            navigator.clipboard.writeText(url).then(() => alert('Link copied!'));
-                        }} className="control-btn">
-                            📎 Share Link
+                        
+                        <button 
+                            onClick={() => {
+                                const currentHeading = isCarMode ? viewHeading : heading;
+                                const currentPitch = isCarMode ? headPitch : pitch;
+                                const url = `${window.location.origin}${window.location.pathname}?lat=${currentCoords.lat.toFixed(6)}&lng=${currentCoords.lng.toFixed(6)}&heading=${currentHeading.toFixed(1)}&pitch=${currentPitch.toFixed(1)}`;
+                                navigator.clipboard.writeText(url).then(() => {
+                                    announce('Link copied to clipboard');
+                                    alert('Link copied!');
+                                });
+                            }} 
+                            className="control-btn"
+                            aria-label="Share current location link"
+                        >
+                            <span aria-hidden="true">📎 Share Link</span>
                         </button>
+                        
                         <button
                             onClick={() => {
                                 setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
@@ -1287,9 +1587,13 @@ function App() {
                                 setIsSnapshotGalleryOpen(false);
                             }}
                             className={`control-btn ${isBookmarkPanelOpen ? 'disconnect' : ''}`}
+                            aria-label={`Bookmarks, ${bookmarks.length} saved. Press to ${isBookmarkPanelOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isBookmarkPanelOpen}
+                            title="Toggle Bookmarks (B)"
                         >
-                            📌 Bookmarks ({bookmarks.length})
+                            <span aria-hidden="true">📌 Bookmarks ({bookmarks.length})</span>
                         </button>
+                        
                         <button
                             onClick={() => {
                                 setIsHistoryPanelOpen(!isHistoryPanelOpen);
@@ -1297,9 +1601,13 @@ function App() {
                                 setIsSnapshotGalleryOpen(false);
                             }}
                             className={`control-btn ${isHistoryPanelOpen ? 'disconnect' : ''}`}
+                            aria-label={`History, ${history.length} entries. Press to ${isHistoryPanelOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isHistoryPanelOpen}
+                            title="Toggle History (H)"
                         >
-                            🕐 History ({history.length})
+                            <span aria-hidden="true">🕐 History ({history.length})</span>
                         </button>
+                        
                         <button
                             onClick={() => {
                                 setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
@@ -1308,9 +1616,13 @@ function App() {
                                 setIsColorGradingPanelOpen(false);
                             }}
                             className={`control-btn ${isSnapshotGalleryOpen ? 'disconnect' : ''}`}
+                            aria-label={`Snapshot Gallery, ${snapshots.length} photos. Press to ${isSnapshotGalleryOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isSnapshotGalleryOpen}
+                            title="Toggle Gallery (S)"
                         >
-                            📸 Gallery ({snapshots.length})
+                            <span aria-hidden="true">📸 Gallery ({snapshots.length})</span>
                         </button>
+                        
                         <button
                             onClick={() => {
                                 setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
@@ -1319,8 +1631,33 @@ function App() {
                                 setIsSnapshotGalleryOpen(false);
                             }}
                             className={`control-btn ${isColorGradingPanelOpen ? 'disconnect' : ''}`}
+                            aria-label={`Color grading. Press to ${isColorGradingPanelOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isColorGradingPanelOpen}
+                            title="Toggle Color Grading (E)"
                         >
-                            🎨 Color
+                            <span aria-hidden="true">🎨 Color</span>
+                        </button>
+                        
+                        {/* Accessibility button */}
+                        <button
+                            onClick={() => setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen)}
+                            className={`control-btn ${isAccessibilityPanelOpen ? 'disconnect' : ''}`}
+                            aria-label={`Accessibility settings. Press to ${isAccessibilityPanelOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isAccessibilityPanelOpen}
+                            title="Toggle Accessibility Panel (A)"
+                        >
+                            <span aria-hidden="true">♿ A11y</span>
+                        </button>
+                        
+                        {/* Performance Stats Toggle Button */}
+                        <button
+                            onClick={() => setShowPerformanceStats(!showPerformanceStats)}
+                            className={`control-btn ${showPerformanceStats ? 'disconnect' : ''}`}
+                            aria-label={`Performance stats. Press to ${showPerformanceStats ? 'hide' : 'show'}`}
+                            aria-pressed={showPerformanceStats}
+                            title="Toggle Performance Stats (F9)"
+                        >
+                            <span aria-hidden="true">📊 Stats</span>
                         </button>
                     </>
                 )}
@@ -1373,6 +1710,14 @@ function App() {
                 onPreset={applyPreset}
                 onClose={() => setIsColorGradingPanelOpen(false)}
                 isOpen={isColorGradingPanelOpen}
+            />
+
+            {/* Accessibility Panel */}
+            <AccessibilityPanel
+                isOpen={isAccessibilityPanelOpen}
+                onClose={() => setIsAccessibilityPanelOpen(false)}
+                settings={accessibilitySettings}
+                onSettingsChange={setAccessibilitySettings}
             />
 
             {/* Car Mode Dashboard UI */}

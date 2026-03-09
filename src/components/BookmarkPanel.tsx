@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Bookmark } from '../hooks/useBookmarks';
+import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
 
 interface BookmarkPanelProps {
     bookmarks: Bookmark[];
@@ -22,6 +23,21 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
 }) => {
     const [newBookmarkName, setNewBookmarkName] = useState('');
     const [showAddForm, setShowAddForm] = useState(false);
+    const panelRef = useRef<HTMLDivElement>(null);
+
+    useFocusTrap(panelRef, isOpen);
+
+    // Handle escape key
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [isOpen, onClose]);
 
     if (!isOpen) return null;
 
@@ -40,6 +56,10 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
 
     return (
         <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bookmark-panel-title"
             onClick={(e) => e.stopPropagation()}
             style={{
                 position: 'absolute',
@@ -66,11 +86,15 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                 alignItems: 'center',
                 backgroundColor: 'rgba(0,0,0,0.3)',
             }}>
-                <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>
+                <h2 
+                    id="bookmark-panel-title"
+                    style={{ margin: 0, color: '#fff', fontSize: '16px' }}
+                >
                     📌 Bookmarks ({bookmarks.length})
-                </h3>
+                </h2>
                 <button
                     onClick={onClose}
+                    aria-label="Close bookmark panel"
                     style={{
                         background: 'none',
                         border: 'none',
@@ -100,18 +124,22 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                             fontSize: '14px',
                             fontWeight: 'bold',
                         }}
+                        aria-label="Save current location as bookmark"
                     >
                         + Save Current Location
                     </button>
                 ) : (
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <form 
+                        onSubmit={(e) => { e.preventDefault(); handleAdd(); }}
+                        style={{ display: 'flex', gap: '8px' }}
+                    >
                         <input
                             type="text"
                             placeholder="Bookmark name..."
                             value={newBookmarkName}
                             onChange={(e) => setNewBookmarkName(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
                             autoFocus
+                            aria-label="Bookmark name"
                             style={{
                                 flex: 1,
                                 padding: '8px 12px',
@@ -123,7 +151,8 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                             }}
                         />
                         <button
-                            onClick={handleAdd}
+                            type="submit"
+                            aria-label="Save bookmark"
                             style={{
                                 padding: '8px 16px',
                                 backgroundColor: '#4CAF50',
@@ -137,10 +166,12 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                             Save
                         </button>
                         <button
+                            type="button"
                             onClick={() => {
                                 setShowAddForm(false);
                                 setNewBookmarkName('');
                             }}
+                            aria-label="Cancel adding bookmark"
                             style={{
                                 padding: '8px 12px',
                                 backgroundColor: '#555',
@@ -153,16 +184,20 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                         >
                             Cancel
                         </button>
-                    </div>
+                    </form>
                 )}
             </div>
 
             {/* Bookmarks List */}
-            <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                maxHeight: '400px',
-            }}>
+            <div 
+                role="list"
+                aria-label="Saved bookmarks"
+                style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    maxHeight: '400px',
+                }}
+            >
                 {bookmarks.length === 0 ? (
                     <div style={{
                         padding: '30px',
@@ -174,9 +209,12 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                         Save your favorite locations!
                     </div>
                 ) : (
-                    bookmarks.map((bookmark) => (
+                    bookmarks.map((bookmark, index) => (
                         <div
                             key={bookmark.id}
+                            role="listitem"
+                            tabIndex={0}
+                            aria-label={`${bookmark.name}, location ${bookmark.lat.toFixed(4)}, ${bookmark.lng.toFixed(4)}`}
                             style={{
                                 padding: '12px 15px',
                                 borderBottom: '1px solid #333',
@@ -185,6 +223,17 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                 gap: '10px',
                                 transition: 'background-color 0.2s',
                                 cursor: 'pointer',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    onTeleport(bookmark.lat, bookmark.lng, bookmark.heading, bookmark.pitch);
+                                }
                             }}
                         >
                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -217,7 +266,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                             <div style={{ display: 'flex', gap: '5px' }}>
                                 <button
                                     onClick={() => onTeleport(bookmark.lat, bookmark.lng, bookmark.heading, bookmark.pitch)}
-                                    title="Go to location"
+                                    aria-label={`Go to ${bookmark.name}`}
                                     style={{
                                         padding: '6px 10px',
                                         backgroundColor: '#2196F3',
@@ -232,7 +281,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                 </button>
                                 <button
                                     onClick={() => onRemoveBookmark(bookmark.id)}
-                                    title="Delete bookmark"
+                                    aria-label={`Delete ${bookmark.name}`}
                                     style={{
                                         padding: '6px 10px',
                                         backgroundColor: '#d9534f',

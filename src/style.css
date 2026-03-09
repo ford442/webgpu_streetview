@@ -112,3 +112,362 @@ input[type="text"]:focus {
 .gm-style .gm-style-iw:active {
     cursor: grabbing !important;
 }
+
+/* Loading Overlay Animations */
+@keyframes loadingSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes loadingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes loadingPulse {
+    0% { transform: scale(0.8); opacity: 0.5; }
+    50% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.8); opacity: 0.5; }
+}
+
+@keyframes loadingBar {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
+}
+
+@keyframes loadingFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes loadingFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes loadingSlideUp {
+    from { 
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading Overlay Base Styles */
+.loading-overlay {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+}
+
+.loading-spinner {
+    animation: loadingSpin 0.8s linear infinite;
+}
+
+.loading-dots div {
+    animation: loadingBounce 0.6s ease-in-out infinite;
+}
+
+.loading-pulse {
+    animation: loadingPulse 1.5s ease-in-out infinite;
+}
+
+.loading-bars div {
+    animation: loadingBar 1s ease-in-out infinite;
+}
+
+/* Vehicle transition styles */
+.vehicle-transition-enter {
+    opacity: 0;
+    transform: scale(0.95);
+}
+
+.vehicle-transition-enter-active {
+    opacity: 1;
+    transform: scale(1);
+    transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+
+.vehicle-transition-exit {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.vehicle-transition-exit-active {
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 200ms ease-in, transform 200ms ease-in;
+}
+
+/* Camera recenter animation indicator */
+.camera-recenter-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(76, 175, 80, 0.3);
+    border-top-color: #4CAF50;
+    border-radius: 50%;
+    animation: loadingSpin 1s linear infinite;
+    pointer-events: none;
+    z-index: 100;
+}
+
+/* Street View loading state */
+.streetview-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.streetview-loading-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* Progress bar styles */
+.progress-bar-container {
+    width: 100%;
+    max-width: 280px;
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #4CAF50;
+    border-radius: 3px;
+    transition: width 0.15s ease-out;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.25);
+}
+
+/* Error display styles */
+.loading-error {
+    animation: loadingSlideUp 0.3s ease-out;
+}
+
+.loading-error-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background-color: rgba(244, 67, 54, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+/* Smooth transition helper classes */
+.fade-transition {
+    transition: opacity 0.3s ease-in-out;
+}
+
+.fade-in {
+    opacity: 1;
+}
+
+.fade-out {
+    opacity: 0;
+}
+
+.scale-transition {
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+.scale-in {
+    transform: scale(1);
+    opacity: 1;
+}
+
+.scale-out {
+    transform: scale(0.95);
+    opacity: 0;
+}
+
+/* ============================================
+   ACCESSIBILITY STYLES
+   ============================================ */
+
+/* Focus indicators for keyboard navigation */
+*:focus {
+    outline: 2px solid #4CAF50;
+    outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+    outline: none;
+}
+
+*:focus-visible {
+    outline: 2px solid #4CAF50;
+    outline-offset: 2px;
+}
+
+/* Visually hidden - accessible to screen readers but visually hidden */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Skip link for keyboard navigation */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #000;
+    color: #fff;
+    padding: 8px 16px;
+    z-index: 10000;
+    text-decoration: none;
+    transition: top 0.2s;
+    font-weight: bold;
+}
+
+.skip-link:focus {
+    top: 0;
+    outline: 3px solid #4CAF50;
+}
+
+/* High Contrast Mode */
+.high-contrast,
+.high-contrast * {
+    background-color: #000 !important;
+    color: #fff !important;
+    border-color: #fff !important;
+}
+
+.high-contrast .control-btn {
+    background-color: #000 !important;
+    color: #fff !important;
+    border: 2px solid #fff !important;
+    box-shadow: none !important;
+}
+
+.high-contrast .control-btn:hover,
+.high-contrast .control-btn:focus {
+    background-color: #fff !important;
+    color: #000 !important;
+    outline: 3px solid #ffff00 !important;
+}
+
+.high-contrast input[type="text"],
+.high-contrast input[type="range"] {
+    background-color: #000 !important;
+    color: #fff !important;
+    border: 2px solid #fff !important;
+}
+
+.high-contrast input:focus {
+    outline: 3px solid #ffff00 !important;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce),
+       .reduced-motion,
+       .reduced-motion * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+}
+
+.reduced-motion .control-btn {
+    transition: none !important;
+    transform: none !important;
+}
+
+/* Keyboard-only mode indicators */
+.keyboard-only-mode *:focus {
+    outline: 3px solid #ffff00 !important;
+    outline-offset: 3px !important;
+}
+
+.keyboard-only-mode .control-btn:focus {
+    background-color: rgba(255, 255, 0, 0.2) !important;
+}
+
+/* Screen reader only content */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* ARIA live region styles */
+[aria-live="polite"],
+[aria-live="assertive"] {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+/* Button focus states for accessibility */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #4CAF50;
+    outline-offset: 2px;
+}
+
+/* Ensure controls have proper hit areas */
+button,
+input,
+select {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* Large text mode */
+.large-text {
+    font-size: 120%;
+}
+
+.large-text .control-btn {
+    font-size: 16px;
+    padding: 12px 20px;
+}
+
+.large-text input[type="text"] {
+    font-size: 16px;
+    padding: 12px;
+}
+
+/* Color indicators for interactive elements */
+[role="button"]:focus,
+[role="link"]:focus,
+[tabindex]:focus {
+    outline: 2px solid #4CAF50;
+    outline-offset: 2px;
+}
