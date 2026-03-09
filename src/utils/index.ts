@@ -58,9 +58,5 @@ export {
 
 // Navigation utilities
 export {
-  getNextLocation,
-  getPreviousLocation,
-  getLocationByOffset,
-  calculateDistance,
-  calculateBearing,
+  findBestLink,
 } from './navigation';

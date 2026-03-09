@@ -453,7 +453,7 @@ export function useLoadingOverlay(type: LoadingType) {
         message: loadingState.message,
         progress: loadingState.progress,
         error: loadingState.error,
-        retryable: loadingState.retryable,
+        retryable: loadingState.retryable ?? false,
       });
     });
 
