@@ -385,26 +385,26 @@ export class ScienceLabInterior {
 
     private buildBenchSeating(): void {
         // Left side bench (for lab assistants)
-        const leftBenchGeo = THREE.BoxGeometry(0.4, 0.08, 1.8);
+        const leftBenchGeo = new THREE.BoxGeometry(0.4, 0.08, 1.8);
         const leftBench = new THREE.Mesh(leftBenchGeo, this.labBenchMaterial);
         leftBench.position.set(-0.8, 0.55, 0);
         this.labGroup.add(leftBench);
 
         // Left bench backrest
-        const leftBackGeo = THREE.BoxGeometry(0.08, 0.4, 1.8);
+        const leftBackGeo = new THREE.BoxGeometry(0.08, 0.4, 1.8);
         const leftBack = new THREE.Mesh(leftBackGeo, this.darkPlasticMaterial);
         leftBack.position.set(-0.95, 0.8, 0);
         leftBack.rotation.z = 0.1;
         this.labGroup.add(leftBack);
 
         // Right side bench (shorter due to equipment rack)
-        const rightBenchGeo = THREE.BoxGeometry(0.4, 0.08, 1.0);
+        const rightBenchGeo = new THREE.BoxGeometry(0.4, 0.08, 1.0);
         const rightBench = new THREE.Mesh(rightBenchGeo, this.labBenchMaterial);
         rightBench.position.set(0.9, 0.55, -0.4);
         this.labGroup.add(rightBench);
 
         // Right bench backrest
-        const rightBackGeo = THREE.BoxGeometry(0.08, 0.4, 1.0);
+        const rightBackGeo = new THREE.BoxGeometry(0.08, 0.4, 1.0);
         const rightBack = new THREE.Mesh(rightBackGeo, this.darkPlasticMaterial);
         rightBack.position.set(1.05, 0.8, -0.4);
         rightBack.rotation.z = -0.1;
@@ -412,7 +412,7 @@ export class ScienceLabInterior {
 
         // Cushions for benches
         for (let i = 0; i < 3; i++) {
-            const cushionGeo = THREE.BoxGeometry(0.35, 0.04, 0.4);
+            const cushionGeo = new THREE.BoxGeometry(0.35, 0.04, 0.4);
             const cushion = new THREE.Mesh(cushionGeo, this.darkPlasticMaterial);
             cushion.position.set(-0.8, 0.62, -0.6 + i * 0.6);
             this.labGroup.add(cushion);
@@ -421,7 +421,7 @@ export class ScienceLabInterior {
 
     private buildInstrumentDisplays(): void {
         // Main instrument panel (above equipment rack)
-        const panelGeo = THREE.BoxGeometry(0.7, 0.25, 0.05);
+        const panelGeo = new THREE.BoxGeometry(0.7, 0.25, 0.05);
         const panel = new THREE.Mesh(panelGeo, this.instrumentMaterial);
         panel.position.set(0.5, 1.3, -0.7);
         this.equipmentGroup.add(panel);
@@ -435,13 +435,13 @@ export class ScienceLabInterior {
 
         displayConfigs.forEach((config, index) => {
             // Display frame
-            const frameGeo = THREE.BoxGeometry(0.18, 0.15, 0.02);
+            const frameGeo = new THREE.BoxGeometry(0.18, 0.15, 0.02);
             const frame = new THREE.Mesh(frameGeo, this.darkPlasticMaterial);
             frame.position.set(config.pos[0], config.pos[1], config.pos[2]);
             this.equipmentGroup.add(frame);
 
             // Display screen
-            const screenGeo = THREE.PlaneGeometry(0.15, 0.12);
+            const screenGeo = new THREE.PlaneGeometry(0.15, 0.12);
             const screenMat = new THREE.MeshStandardMaterial({
                 color: 0x000000,
                 emissive: config.color,
@@ -454,7 +454,7 @@ export class ScienceLabInterior {
             this.instrumentDisplays.push(screen);
 
             // Status LED
-            const ledGeo = THREE.SphereGeometry(0.01, 8, 8);
+            const ledGeo = new THREE.SphereGeometry(0.01, 8, 8);
             const ledMat = new THREE.MeshStandardMaterial({
                 color: config.color,
                 emissive: config.color,
@@ -466,14 +466,14 @@ export class ScienceLabInterior {
         });
 
         // Secondary data panel (on left wall)
-        const sidePanelGeo = THREE.BoxGeometry(0.05, 0.4, 0.6);
+        const sidePanelGeo = new THREE.BoxGeometry(0.05, 0.4, 0.6);
         const sidePanel = new THREE.Mesh(sidePanelGeo, this.instrumentMaterial);
         sidePanel.position.set(-0.98, 1.1, 0);
         this.labGroup.add(sidePanel);
 
         // Side panel displays
         for (let i = 0; i < 2; i++) {
-            const sideDisplayGeo = THREE.PlaneGeometry(0.4, 0.15);
+            const sideDisplayGeo = new THREE.PlaneGeometry(0.4, 0.15);
             const sideDisplayMat = new THREE.MeshStandardMaterial({
                 color: 0x000000,
                 emissive: i === 0 ? 0xff0000 : 0xffff00,
@@ -495,24 +495,24 @@ export class ScienceLabInterior {
             this.sampleDrawers.push(drawerGroup);
 
             // Drawer housing
-            const housingGeo = THREE.BoxGeometry(0.5, 0.2, 0.3);
+            const housingGeo = new THREE.BoxGeometry(0.5, 0.2, 0.3);
             const housing = new THREE.Mesh(housingGeo, this.metalMaterial);
             drawerGroup.add(housing);
 
             // Drawer front
-            const frontGeo = THREE.BoxGeometry(0.5, 0.18, 0.02);
+            const frontGeo = new THREE.BoxGeometry(0.5, 0.18, 0.02);
             const front = new THREE.Mesh(frontGeo, this.whitePlasticMaterial);
             front.position.z = 0.16;
             drawerGroup.add(front);
 
             // Handle
-            const handleGeo = THREE.BoxGeometry(0.15, 0.02, 0.03);
+            const handleGeo = new THREE.BoxGeometry(0.15, 0.02, 0.03);
             const handle = new THREE.Mesh(handleGeo, this.metalMaterial);
             handle.position.set(0, 0, 0.18);
             drawerGroup.add(handle);
 
             // Label slot
-            const labelGeo = THREE.PlaneGeometry(0.2, 0.08);
+            const labelGeo = new THREE.PlaneGeometry(0.2, 0.08);
             const labelMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 roughness: 0.9,
@@ -523,25 +523,25 @@ export class ScienceLabInterior {
         }
 
         // Refrigerated sample box
-        const fridgeGeo = THREE.BoxGeometry(0.4, 0.35, 0.4);
+        const fridgeGeo = new THREE.BoxGeometry(0.4, 0.35, 0.4);
         const fridge = new THREE.Mesh(fridgeGeo, this.whitePlasticMaterial);
         fridge.position.set(0.9, 0.525, 0.4);
         this.labGroup.add(fridge);
 
         // Fridge door
-        const fridgeDoorGeo = THREE.BoxGeometry(0.4, 0.35, 0.03);
+        const fridgeDoorGeo = new THREE.BoxGeometry(0.4, 0.35, 0.03);
         const fridgeDoor = new THREE.Mesh(fridgeDoorGeo, this.labBenchMaterial);
         fridgeDoor.position.set(0.9, 0.525, 0.6);
         this.labGroup.add(fridgeDoor);
 
         // Handle
-        const fridgeHandleGeo = THREE.CylinderGeometry(0.01, 0.01, 0.15, 8);
+        const fridgeHandleGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.15, 8);
         const fridgeHandle = new THREE.Mesh(fridgeHandleGeo, this.metalMaterial);
         fridgeHandle.position.set(0.75, 0.525, 0.62);
         this.labGroup.add(fridgeHandle);
 
         // Temperature indicator
-        const tempIndicatorGeo = THREE.CircleGeometry(0.03, 16);
+        const tempIndicatorGeo = new THREE.CircleGeometry(0.03, 16);
         const tempIndicatorMat = new THREE.MeshStandardMaterial({
             color: 0x00ffff,
             emissive: 0x00ffff,
@@ -554,7 +554,7 @@ export class ScienceLabInterior {
 
     private buildRoof(): void {
         // Solid roof (no convertible for lab - need controlled environment)
-        const roofGeo = THREE.BoxGeometry(2.0, 0.08, 2.2);
+        const roofGeo = new THREE.BoxGeometry(2.0, 0.08, 2.2);
         const roofMat = new THREE.MeshStandardMaterial({
             color: 0xe0e0e0,
             roughness: 0.7,
@@ -565,21 +565,21 @@ export class ScienceLabInterior {
         this.labGroup.add(roof);
 
         // Roof-mounted equipment housing
-        const roofEquipGeo = THREE.BoxGeometry(0.8, 0.1, 0.6);
+        const roofEquipGeo = new THREE.BoxGeometry(0.8, 0.1, 0.6);
         const roofEquip = new THREE.Mesh(roofEquipGeo, this.metalMaterial);
         roofEquip.position.set(0.3, 1.75, 0);
         this.labGroup.add(roofEquip);
 
         // Antenna array
         for (let i = 0; i < 3; i++) {
-            const antennaGeo = THREE.CylinderGeometry(0.005, 0.005, 0.3, 8);
+            const antennaGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.3, 8);
             const antenna = new THREE.Mesh(antennaGeo, this.metalMaterial);
             antenna.position.set(0.1 + i * 0.2, 1.9, 0);
             this.labGroup.add(antenna);
         }
 
         // GPS dome
-        const gpsGeo = THREE.SphereGeometry(0.08, 16, 16);
+        const gpsGeo = new THREE.SphereGeometry(0.08, 16, 16);
         const gps = new THREE.Mesh(gpsGeo, this.whitePlasticMaterial);
         gps.position.set(-0.5, 1.75, 0.3);
         this.labGroup.add(gps);
@@ -587,25 +587,25 @@ export class ScienceLabInterior {
 
     private buildSidePanels(): void {
         // Left side panel with window
-        const leftPanelGeo = THREE.BoxGeometry(0.05, 1.2, 2.0);
+        const leftPanelGeo = new THREE.BoxGeometry(0.05, 1.2, 2.0);
         const leftPanel = new THREE.Mesh(leftPanelGeo, this.instrumentMaterial);
         leftPanel.position.set(-1.0, 1.0, 0);
         this.labGroup.add(leftPanel);
 
         // Right side panel
-        const rightPanelGeo = THREE.BoxGeometry(0.05, 1.2, 2.0);
+        const rightPanelGeo = new THREE.BoxGeometry(0.05, 1.2, 2.0);
         const rightPanel = new THREE.Mesh(rightPanelGeo, this.instrumentMaterial);
         rightPanel.position.set(1.0, 1.0, 0);
         this.labGroup.add(rightPanel);
 
         // Windshield frame
-        const windshieldGeo = THREE.BoxGeometry(1.9, 0.05, 0.05);
+        const windshieldGeo = new THREE.BoxGeometry(1.9, 0.05, 0.05);
         const windshield = new THREE.Mesh(windshieldGeo, this.metalMaterial);
         windshield.position.set(0, 1.6, -0.9);
         this.labGroup.add(windshield);
 
         // A-pillars
-        const pillarGeo = THREE.BoxGeometry(0.06, 0.8, 0.06);
+        const pillarGeo = new THREE.BoxGeometry(0.06, 0.8, 0.06);
         
         const leftPillar = new THREE.Mesh(pillarGeo, this.metalMaterial);
         leftPillar.position.set(-0.95, 1.3, -0.85);

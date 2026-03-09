@@ -45,9 +45,8 @@ import {
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
 export { SelectivePostProcessing } from './SelectivePostProcessing';
+export type { VehicleType, VehicleConfig } from './VehicleManager';
 export {
-    VehicleType,
-    VehicleConfig,
     VEHICLES,
     VEHICLE_LIST,
     DEFAULT_VEHICLE,
@@ -60,16 +59,14 @@ export {
 } from './VehicleManager';
 export {
     ConvertibleMode,
-    ConvertibleState,
     WindParticleSystem,
     SportDashboard,
     SportSeats,
     ConvertibleInterior,
 } from './variants';
+export type { ConvertibleState } from './variants';
 export {
     ScienceLabInterior,
-    LabState,
-    ScienceLabModeState,
     initScienceLabMode,
     initScienceLabModeSystem,
     toggleScienceLabMode,
@@ -79,12 +76,13 @@ export {
     getLabState,
     disposeScienceLabMode,
 } from './variants/ScienceLabMode';
+export type { LabState, ScienceLabModeState } from './variants/ScienceLabMode';
 export {
     LimousineMode,
-    LimoState,
     defaultLimoState,
     initLimousineMode,
 } from './variants/LimousineMode';
+export type { LimoState } from './variants/LimousineMode';
 
 /**
  * CarMode state container holding all car view subsystems.
@@ -129,7 +127,7 @@ export function initCarMode(container: HTMLElement, initialVehicle: VehicleType 
     );
 
     // Set initial vehicle type
-    convertibleMode.setVehicleType(initialVehicle as import('./variants').VehicleType);
+    convertibleMode.setVehicleType(initialVehicle as any);
 
     carModeState = {
         interior,
@@ -148,7 +146,7 @@ export function initCarMode(container: HTMLElement, initialVehicle: VehicleType 
     // Listen for vehicle changes from manager
     vehicleManager.onChange((vehicle) => {
         if (carModeState?.convertibleMode) {
-            carModeState.convertibleMode.setVehicleType(vehicle as import('./variants').VehicleType);
+            carModeState.convertibleMode.setVehicleType(vehicle as any);
             carModeState.currentVehicle = vehicle;
         }
     });
@@ -309,7 +307,7 @@ export function toggleVehicleType(): VehicleType {
     carModeState.currentVehicle = newType;
 
     if (carModeState.convertibleMode) {
-        carModeState.convertibleMode.setVehicleType(newType as import('./variants').VehicleType);
+        carModeState.convertibleMode.setVehicleType(newType as any);
     }
 
     return newType;
@@ -326,7 +324,7 @@ export function setVehicleType(type: VehicleType): void {
     carModeState.currentVehicle = type;
 
     if (carModeState.convertibleMode) {
-        carModeState.convertibleMode.setVehicleType(type as import('./variants').VehicleType);
+        carModeState.convertibleMode.setVehicleType(type as any);
     }
 }
 

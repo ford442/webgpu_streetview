@@ -450,10 +450,7 @@ const moveButtonStyle = (size: number, col: number, row: number): React.CSSPrope
   alignItems: 'center',
   justifyContent: 'center',
   cursor: 'pointer',
-  active: {
-    background: 'rgba(255,255,255,0.3)',
-  } as any,
-});
+} as React.CSSProperties);
 
 // Settings Modal
 interface SettingsModalProps {

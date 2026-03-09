@@ -1,31 +1,6 @@
 /** @fileoverview Memory profiling and optimization utilities for Three.js/WebGPU */
 import * as THREE from 'three';
 
-// Type declarations for WebGPU
-declare global {
-  interface GPUDevice {
-    createBuffer(descriptor: any): GPUBuffer;
-    createTexture(descriptor: any): GPUTexture;
-    queue: GPUQueue;
-  }
-  
-  interface GPUBuffer {
-    destroy(): void;
-    size: number;
-  }
-  
-  interface GPUTexture {
-    destroy(): void;
-    width: number;
-    height: number;
-    format: string;
-  }
-  
-  interface GPUQueue {
-    writeBuffer(buffer: GPUBuffer, offset: number, data: ArrayBufferView): void;
-  }
-}
-
 // ============================================================
 // Memory Tracking Types
 // ============================================================

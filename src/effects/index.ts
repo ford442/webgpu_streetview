@@ -4,11 +4,11 @@
 
 export {
   WindAudio,
-  WindAudioConfig,
   getWindAudio,
   initWindAudio,
   disposeWindAudio,
 } from './WindAudio';
+export type { WindAudioConfig } from './WindAudio';
 
 export {
   UVLightEffect,

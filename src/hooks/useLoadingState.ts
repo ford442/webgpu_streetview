@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LoadingType, loadingStateManager } from '../store/loadingState';
 
-interface UseLoadingStateReturn {
+export interface UseLoadingStateReturn {
   isLoading: boolean;
   message: string;
   progress?: number;
@@ -43,7 +43,7 @@ export function useLoadingState(type: LoadingType): UseLoadingStateReturn {
         message: loadingState.message,
         progress: loadingState.progress,
         error: loadingState.error,
-        retryable: loadingState.retryable,
+        retryable: loadingState.retryable ?? false,
       });
     });
 

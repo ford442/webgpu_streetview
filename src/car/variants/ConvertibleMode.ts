@@ -392,15 +392,14 @@ export class SportSeats {
 
 /**
  * VehicleType - Enum for vehicle types
- */
-/**
  * Local vehicle type enum for convertible internal use
- * Note: This is distinct from the global VehicleType in VehicleManager
+ * Note: This is distinct from the global VehicleType type alias in VehicleManager
  */
-enum LocalVehicleType {
+enum VehicleType {
   SEDAN = 'sedan',
   CONVERTIBLE = 'convertible',
 }
+type LocalVehicleType = VehicleType;
 
 /**
  * ConvertibleMode - Main class for managing convertible vehicle mode
@@ -569,6 +568,4 @@ export class ConvertibleMode {
   }
 }
 
-// Convenience exports
-export { WindParticleSystem, ConvertibleInterior, SportDashboard, SportSeats };
 export default ConvertibleMode;
