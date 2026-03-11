@@ -9,16 +9,14 @@ interface InputHandlerProps {
     onToggleCarMode?: () => void; // Toggle car view with 'C' key
     onSteer?: (direction: 'left' | 'right', deltaTime: number) => void; // Steering for car mode (A/D keys)
     onRecenterHead?: () => void; // Recenter head look in car mode ('C' key when already in car mode)
-    onMouseSteer?: (deltaX: number) => void; // Legacy callback; mouse drag should not rotate the car body
     onToggleHeadCoupling?: () => void; // Toggle between rigid/free head coupling with 'H' key
     /** Hit-test function: returns true when the given screen point is over the steering wheel.
-     *  NOTE: Steering wheel steering now requires Shift key to prevent accidental steering during free look */
+     *  Clicks there are ignored for click-to-move so dragging the in-car UI does not move forward. */
     isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
 
     // State from the parent to control behavior
     isEnabled: boolean; // Controls whether the handler is active
     isCarMode?: boolean; // Whether car mode is active (affects A/D behavior)
-    headCoupling?: 'rigid' | 'free'; // Current head coupling mode
     
     // Target element for scoped mouse events
     targetRef: React.RefObject<HTMLElement | null>;
@@ -32,12 +30,10 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     onToggleCarMode,
     onSteer,
     onRecenterHead,
-    onMouseSteer,
     onToggleHeadCoupling,
     isSteeringWheelAtPoint,
     isEnabled,
     isCarMode = false,
-    headCoupling = 'rigid', // Default to rigid (head turns with car)
     targetRef 
 }) => {
     const isMouseDownRef = useRef(false);
@@ -46,8 +42,6 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const CLICK_DRAG_THRESHOLD = 5;
     // Track if the current drag operation started on the target element
     const dragStartedOnTargetRef = useRef(false);
-    // Track if Shift was held when the current drag started so Shift+click doesn't trigger forward movement
-    const isShiftDragRef = useRef(false);
     // Track if the drag started on the steering wheel so clicks there don't trigger forward movement
     const isSteeringWheelDragRef = useRef(false);
     // Track middle mouse button for dedicated free look
@@ -61,10 +55,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const onToggleCarModeRef = useRef(onToggleCarMode);
     const onSteerRef = useRef(onSteer);
     const onRecenterHeadRef = useRef(onRecenterHead);
-    const onMouseSteerRef = useRef(onMouseSteer);
     const onToggleHeadCouplingRef = useRef(onToggleHeadCoupling);
     const isCarModeRef = useRef(isCarMode);
-    const headCouplingRef = useRef(headCoupling);
     const isSteeringWheelAtPointRef = useRef(isSteeringWheelAtPoint);
 
     // Track keys pressed for continuous steering
@@ -80,10 +72,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         onToggleCarModeRef.current = onToggleCarMode;
         onSteerRef.current = onSteer;
         onRecenterHeadRef.current = onRecenterHead;
-        onMouseSteerRef.current = onMouseSteer;
         onToggleHeadCouplingRef.current = onToggleHeadCoupling;
         isCarModeRef.current = isCarMode;
-        headCouplingRef.current = headCoupling;
         isSteeringWheelAtPointRef.current = isSteeringWheelAtPoint;
     });
 
@@ -100,8 +90,6 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 isMouseDownRef.current = true;
                 dragStartedOnTargetRef.current = true;
                 dragDistanceRef.current = 0;
-                // Capture shift key state at drag start so Shift+click doesn't move forward
-                isShiftDragRef.current = e.shiftKey;
                 // Detect steering wheel clicks so they can be ignored for click-to-move.
                 // Mouse drag in car mode is reserved for head look only.
                 isSteeringWheelDragRef.current = isCarModeRef.current
@@ -113,7 +101,6 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 dragDistanceRef.current = 0;
                 isMiddleMouseRef.current = true;
                 isSteeringWheelDragRef.current = false;
-                isShiftDragRef.current = false;
                 e.preventDefault(); // Prevent scroll behavior
             }
         };
@@ -135,19 +122,17 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             if (e.button === 0 || e.button === 1) { // Left or middle mouse button
                 // Capture flags before resetting them
                 const wasSteeringWheelDrag = isSteeringWheelDragRef.current;
-                const wasShiftDrag = isShiftDragRef.current;
                 const wasMiddleMouse = isMiddleMouseRef.current;
 
                 isMouseDownRef.current = false;
                 isSteeringWheelDragRef.current = false;
-                isShiftDragRef.current = false;
                 isMiddleMouseRef.current = false;
                 // Restore cursor
                 if (target) (target as HTMLElement).style.cursor = '';
                 
                 // Only trigger click-to-move on left click (not middle)
                 if (dragStartedOnTargetRef.current && dragDistanceRef.current < CLICK_DRAG_THRESHOLD
-                        && !wasSteeringWheelDrag && !wasShiftDrag && !wasMiddleMouse) {
+                        && !wasSteeringWheelDrag && !wasMiddleMouse) {
                     onMoveRef.current('forward');
                 }
                 

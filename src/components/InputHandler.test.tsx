@@ -15,7 +15,6 @@ function renderInputHandler(overrides: Partial<React.ComponentProps<typeof Input
   const onZoom = jest.fn();
   const onMove = jest.fn();
   const onRightClickMove = jest.fn();
-  const onMouseSteer = jest.fn();
 
   function TestHarness() {
     const targetRef = React.useRef<HTMLDivElement>(null);
@@ -29,7 +28,6 @@ function renderInputHandler(overrides: Partial<React.ComponentProps<typeof Input
           onZoom={onZoom}
           onMove={onMove}
           onRightClickMove={onRightClickMove}
-          onMouseSteer={onMouseSteer}
           {...overrides}
         />
       </div>
@@ -44,7 +42,6 @@ function renderInputHandler(overrides: Partial<React.ComponentProps<typeof Input
     onZoom,
     onMove,
     onRightClickMove,
-    onMouseSteer,
   };
 }
 
@@ -59,7 +56,7 @@ describe('InputHandler car-mode mouse drag behavior', () => {
   });
 
   it('uses drag for head look instead of steering when Shift is held in car mode', () => {
-    const { target, onPan, onMouseSteer } = renderInputHandler({
+    const { target, onPan } = renderInputHandler({
       isCarMode: true,
       isSteeringWheelAtPoint: () => false,
     });
@@ -68,11 +65,10 @@ describe('InputHandler car-mode mouse drag behavior', () => {
     dispatchMouseMove(12, -6, 52, 34);
 
     expect(onPan).toHaveBeenCalledWith(12, -6);
-    expect(onMouseSteer).not.toHaveBeenCalled();
   });
 
   it('keeps steering-wheel drags in head-look mode so the car body does not rotate', () => {
-    const { target, onPan, onMouseSteer } = renderInputHandler({
+    const { target, onPan } = renderInputHandler({
       isCarMode: true,
       isSteeringWheelAtPoint: () => true,
     });
@@ -81,6 +77,5 @@ describe('InputHandler car-mode mouse drag behavior', () => {
     dispatchMouseMove(-9, 5, 91, 105);
 
     expect(onPan).toHaveBeenCalledWith(-9, 5);
-    expect(onMouseSteer).not.toHaveBeenCalled();
   });
 });
