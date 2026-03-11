@@ -22,6 +22,9 @@ import HistoryPanel from './components/HistoryPanel';
 import SnapshotGallery from './components/SnapshotGallery';
 import ColorGradingPanel from './components/ColorGradingPanel';
 import PerformanceStatsOverlay from './components/PerformanceStatsOverlay';
+import WeatherPanel from './components/WeatherPanel';
+import GlobeView, { GlobePOI } from './components/GlobeView';
+import { useGlobeMode } from './hooks/useGlobeMode';
 
 // Accessibility Imports
 import {
@@ -125,6 +128,12 @@ function App() {
     const [temperature, setTemperature] = useState(0.0);
     const [tint, setTint] = useState(0.0);
     const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
+
+    // Weather panel state
+    const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
+
+    // Globe mode state (handler wired after teleportToCoords is defined)
+    const globeMode = useGlobeMode();
 
     // Performance stats overlay state
     const [showPerformanceStats, setShowPerformanceStats] = useState(false);
@@ -900,6 +909,12 @@ function App() {
         setIsSnapshotGalleryOpen(false);
     };
 
+    // Globe teleport: called when user double-clicks the globe
+    const handleGlobeTeleport = useCallback((lat: number, lng: number) => {
+        teleportToCoords(lat, lng);
+        globeMode.deactivate();
+    }, [teleportToCoords, globeMode.deactivate]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Bookmark helper functions
     const handleAddBookmark = (name: string) => {
         const currentHeading = isCarMode ? viewHeading : heading;
@@ -1194,11 +1209,23 @@ function App() {
                     announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
                 },
             },
+            // Globe mode toggle (Shift+G)
+            {
+                key: 'G',
+                modifier: 'shift',
+                description: 'Toggle Globe Mode',
+                action: () => {
+                    globeMode.toggle();
+                    announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
+                },
+            },
             // Close panels with Escape
             {
                 key: 'Escape',
                 description: 'Close panels',
                 action: () => {
+                    if (globeMode.isActive) { globeMode.deactivate(); return; }
+                    if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
                     if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
                     else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
                     else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
@@ -1323,7 +1350,7 @@ function App() {
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
-                    source={isConnected && !isTransitioning ? streetViewCanvas : null}
+                    source={isConnected ? streetViewCanvas : null}
                     zoom={zoom}
                     // In car mode: WebGPU shows carHeading (windshield view)
                     // Head movement doesn't affect outside view
@@ -1621,6 +1648,7 @@ function App() {
                                 setIsBookmarkPanelOpen(false);
                                 setIsHistoryPanelOpen(false);
                                 setIsSnapshotGalleryOpen(false);
+                                setIsWeatherPanelOpen(false);
                             }}
                             className={`control-btn ${isColorGradingPanelOpen ? 'disconnect' : ''}`}
                             aria-label={`Color grading. Press to ${isColorGradingPanelOpen ? 'close' : 'open'} panel`}
@@ -1628,6 +1656,37 @@ function App() {
                             title="Toggle Color Grading (E)"
                         >
                             <span aria-hidden="true">🎨 Color</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setIsWeatherPanelOpen(!isWeatherPanelOpen);
+                                setIsColorGradingPanelOpen(false);
+                                setIsBookmarkPanelOpen(false);
+                                setIsHistoryPanelOpen(false);
+                                setIsSnapshotGalleryOpen(false);
+                            }}
+                            className={`control-btn ${isWeatherPanelOpen ? 'disconnect' : ''}`}
+                            aria-label={`Weather effects. Press to ${isWeatherPanelOpen ? 'close' : 'open'} panel`}
+                            aria-pressed={isWeatherPanelOpen}
+                            title="Toggle Weather Panel"
+                        >
+                            <span aria-hidden="true">🌧️ Weather</span>
+                        </button>
+
+                        <button
+                            onClick={() => globeMode.toggle()}
+                            className={`control-btn ${globeMode.isVisible ? 'disconnect' : ''}`}
+                            aria-label={`Globe mode. Press to ${globeMode.isActive ? 'exit' : 'enter'} globe view`}
+                            aria-pressed={globeMode.isActive}
+                            title="Toggle Globe Mode (Shift+G)"
+                            disabled={globeMode.transition === 'loading' || globeMode.transition === 'entering' || globeMode.transition === 'exiting'}
+                        >
+                            <span aria-hidden="true">
+                                {globeMode.transition === 'loading' ? '🌍 Loading…'
+                                    : globeMode.isVisible ? '🌍 Globe ×'
+                                    : '🌍 Globe'}
+                            </span>
                         </button>
                         
                         {/* Accessibility button */}
@@ -1703,6 +1762,40 @@ function App() {
                 onClose={() => setIsColorGradingPanelOpen(false)}
                 isOpen={isColorGradingPanelOpen}
             />
+
+            {/* Weather Panel */}
+            <WeatherPanel
+                rainIntensity={rainIntensity}
+                snowIntensity={snowIntensity}
+                wind={wind}
+                wipersEnabled={wipersEnabled}
+                timeOfDay={timeOfDay}
+                onRainIntensity={handleRainIntensity}
+                onSnowIntensity={handleSnowIntensity}
+                onWind={handleWind}
+                onToggleWipers={handleToggleWipers}
+                onTimeOfDay={handleTimeOfDay}
+                onClose={() => setIsWeatherPanelOpen(false)}
+                isOpen={isWeatherPanelOpen}
+            />
+
+            {/* Globe Mode Overlay */}
+            {globeMode.isVisible || globeMode.transition === 'loading' ? (
+                <GlobeView
+                    transition={globeMode.transition}
+                    currentLat={currentCoords.lat}
+                    currentLng={currentCoords.lng}
+                    currentHeading={isCarMode ? carHeading : heading}
+                    pois={history.slice(0, 30).map((entry): GlobePOI => ({
+                        lat: entry.lat,
+                        lng: entry.lng,
+                        label: entry.locationName || `${entry.lat.toFixed(3)}, ${entry.lng.toFixed(3)}`,
+                    }))}
+                    onTeleportRequest={handleGlobeTeleport}
+                    onEnterComplete={globeMode.onEnterComplete}
+                    onExitComplete={globeMode.onExitComplete}
+                />
+            ) : null}
 
             {/* Accessibility Panel */}
             <AccessibilityPanel
