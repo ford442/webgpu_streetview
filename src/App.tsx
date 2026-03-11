@@ -257,12 +257,6 @@ function App() {
         setCarSteering(steeringInputRef.current);
     }, [isCarMode, headCoupling]);
 
-    // Mouse-based car steering: Shift+drag horizontal controls car heading (Option 2)
-    const handleMouseSteer = useCallback((deltaX: number) => {
-        if (!isCarMode) return;
-        setCarHeading(prev => ((prev + deltaX * 0.1) % 360 + 360) % 360);
-    }, [isCarMode]);
-
     const handleZoom = useCallback((deltaZ: number) => {
         // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
         setZoom(prev => Math.max(1.0, Math.min(3.0, prev - deltaZ * 0.001)));
@@ -1278,10 +1272,8 @@ function App() {
                 onToggleCarMode={handleToggleCarMode}
                 onSteer={handleSteer}
                 onRecenterHead={handleRecenterHead}
-                onMouseSteer={handleMouseSteer}
                 onToggleHeadCoupling={handleToggleHeadCoupling}
                 isCarMode={isCarMode}
-                headCoupling={headCoupling}
                 isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
             />
 
@@ -1765,7 +1757,6 @@ function App() {
                     <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>↑↓←→</span> = Move car &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
-                    <span style={{ opacity: 0.85 }}>Shift+Drag</span> = Mouse steer &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>C</span> = Recenter
                 </div>
             )}
