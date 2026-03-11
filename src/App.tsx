@@ -1765,7 +1765,6 @@ function App() {
                     <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>↑↓←→</span> = Move car &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
-                    <span style={{ opacity: 0.85 }}>Shift+Drag</span> = Mouse steer &nbsp;|&nbsp;
                     <span style={{ opacity: 0.85 }}>C</span> = Recenter
                 </div>
             )}
