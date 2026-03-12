@@ -348,10 +348,14 @@ export interface FrustumCullConfig {
 export class FrustumCuller {
   private frustum: THREE.Frustum;
   private projScreenMatrix: THREE.Matrix4;
+  private _workingBox: THREE.Box3;
+  private _workingVector: THREE.Vector3;
   
   constructor() {
     this.frustum = new THREE.Frustum();
     this.projScreenMatrix = new THREE.Matrix4();
+    this._workingBox = new THREE.Box3();
+    this._workingVector = new THREE.Vector3();
   }
   
   /**
@@ -384,11 +388,11 @@ export class FrustumCuller {
    * Skybox is always visible, but this can be used for additional objects
    */
   isObjectVisible(object: THREE.Object3D, margin: number = 0.1): boolean {
-    const box = new THREE.Box3().setFromObject(object);
+    const box = this._workingBox.setFromObject(object);
     
     // Expand box by margin
     if (margin > 0) {
-      const size = new THREE.Vector3();
+      const size = this._workingVector;
       box.getSize(size);
       const expand = size.multiplyScalar(margin);
       box.expandByVector(expand);
