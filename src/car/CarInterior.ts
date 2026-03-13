@@ -113,6 +113,11 @@ export class CarInterior {
         this.scene.add(this.interiorGroup);
         this.scene.add(this.roofGroup);
 
+        // Parent camera to interiorGroup so it rotates with the car body.
+        // Without this, setCarOrientation() spins the interior around the camera,
+        // creating an orbit effect instead of a cockpit view.
+        this.interiorGroup.add(this.camera);
+
         this.createMaterials();
         this.createLighting();
         this.buildInterior();
