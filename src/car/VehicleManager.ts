@@ -3,6 +3,11 @@
  * Defines vehicle types, their configurations, and manages vehicle switching
  */
 
+/**
+ * Vehicle type definitions
+ * Future additions: 'streetcar' | 'trolley' - for urban transit-style interiors
+ * with exterior viewport (vs. enclosed car models)
+ */
 export type VehicleType = 'sedan' | 'convertible' | 'science-lab' | 'limousine';
 
 export interface VehicleConfig {

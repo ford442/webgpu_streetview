@@ -142,6 +142,7 @@ Car mode layers a Three.js scene over the WebGPU canvas.
 
 **Entry**: `src/car/index.ts` exports `initCarMode`, `toggleCarMode`, `updateCarMode`, `disposeCarMode`.
 **Vehicles**: `sedan | convertible | science-lab | limousine` — configs in `VehicleManager.ts`.
+  - **Future**: `streetcar | trolley` could be added as open-air transit models with exterior-facing viewports
 **Dashboard**: `src/car/DashboardUI.tsx` (React). Buttons trigger car module functions directly.
 **Animations**: Steering wheel (A/D), wipers (toggle), gauges updated via `updateCarGauges()`.
 
