@@ -393,18 +393,17 @@ function App() {
     }, []);
 
     // Effect to update the panorama POV when view heading or pitch changes
-    // In car mode: panorama stays locked to carHeading (windshield view)
-    //   - Head can look around freely inside car without affecting outside view
-    // In free mode: uses heading and pitch directly
+    // In car mode: panorama follows combined car heading + head yaw so the
+    //   Street View background matches exactly where the Three.js camera looks.
+    // In free mode: uses heading and pitch directly.
     useEffect(() => {
         if (panorama) {
-            // In car mode: outside view stays locked to car direction
-            // Head movement doesn't affect what you see through windshield
-            const povHeading = isCarMode ? carHeading : heading;
-            const povPitch = isCarMode ? 0 : pitch;
+            // viewHeading already combines carHeading + headYawOffset in car mode.
+            const povHeading = isCarMode ? viewHeading : heading;
+            const povPitch = isCarMode ? headPitch : pitch;
             panorama.setPov({ heading: povHeading, pitch: povPitch });
         }
-    }, [heading, pitch, carHeading, isCarMode, panorama]);
+    }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
 
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
