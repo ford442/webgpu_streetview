@@ -62,6 +62,8 @@ export interface PotentialLeak {
 // Memory Profiler Class
 // ============================================================
 
+export const MATERIAL_TEXTURE_PROPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'] as const;
+
 export class MemoryProfiler {
   private snapshots: MemorySnapshot[] = [];
   private maxHistorySize = 60; // Keep last 60 snapshots
@@ -145,10 +147,9 @@ export class MemoryProfiler {
       const matAny = mat as any;
       
       // Count common texture properties
-      ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap']
-        .forEach(prop => {
-          if (matAny[prop]) textureCount++;
-        });
+      MATERIAL_TEXTURE_PROPS.forEach(prop => {
+        if (matAny[prop]) textureCount++;
+      });
       
       return {
         name: name || mat.name || 'unnamed',
@@ -175,13 +176,12 @@ export class MemoryProfiler {
               
               // Extract textures from material
               const matAny = mat as any;
-              ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap']
-                .forEach(prop => {
-                  if (matAny[prop] && !trackedTextures.has(matAny[prop])) {
-                    trackedTextures.add(matAny[prop]);
-                    details.textures.push(getTextureInfo(matAny[prop], prop));
-                  }
-                });
+              MATERIAL_TEXTURE_PROPS.forEach(prop => {
+                if (matAny[prop] && !trackedTextures.has(matAny[prop])) {
+                  trackedTextures.add(matAny[prop]);
+                  details.textures.push(getTextureInfo(matAny[prop], prop));
+                }
+              });
             }
           });
         }
@@ -370,12 +370,11 @@ export function deepDispose(object: THREE.Object3D): void {
         if (mat) {
           // Dispose textures
           const matAny = mat as any;
-          ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']
-            .forEach(prop => {
-              if (matAny[prop]) {
-                matAny[prop].dispose();
-              }
-            });
+          MATERIAL_TEXTURE_PROPS.forEach(prop => {
+            if (matAny[prop]) {
+              matAny[prop].dispose();
+            }
+          });
           mat.dispose();
         }
       });
