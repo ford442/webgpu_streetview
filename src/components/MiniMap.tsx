@@ -233,29 +233,50 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
 
     }, [breadcrumbs, map, panorama]); // Re-render when breadcrumbs change
 
-    // Render Route Path
+    // Render Route Path with optimization to reuse the Polyline object
     useEffect(() => {
         if (!map) return;
 
-        // Remove existing line
-        if (routeLineRef.current) {
-            routeLineRef.current.setMap(null);
-            routeLineRef.current = null;
-        }
-
         if (routePath && routePath.length > 0) {
-            const line = new google.maps.Polyline({
-                path: routePath,
-                geodesic: true,
-                strokeColor: "#FF0000", // Red for visibility
-                strokeOpacity: 0.8,
-                strokeWeight: 4,
-                map: map,
-                zIndex: 1, // Ensure it's above the map tiles but below markers
-            });
-            routeLineRef.current = line;
+            if (routeLineRef.current) {
+                // OPTIMIZATION: Instead of re-instantiating, just update the path
+                // This reduces GC pressure and improves performance during active routing
+                routeLineRef.current.setPath(routePath);
+
+                // Ensure it's attached to the current map instance
+                if (routeLineRef.current.getMap() !== map) {
+                    routeLineRef.current.setMap(map);
+                }
+            } else {
+                // Create new polyline only if it doesn't exist yet
+                routeLineRef.current = new google.maps.Polyline({
+                    path: routePath,
+                    geodesic: true,
+                    strokeColor: "#FF0000", // Red for visibility
+                    strokeOpacity: 0.8,
+                    strokeWeight: 4,
+                    map: map,
+                    zIndex: 1, // Ensure it's above the map tiles but below markers
+                });
+            }
+        } else {
+            // Remove existing line if path is cleared
+            if (routeLineRef.current) {
+                routeLineRef.current.setMap(null);
+                routeLineRef.current = null;
+            }
         }
     }, [routePath, map]);
+
+    // Cleanup: Ensure the polyline is removed when the component unmounts
+    useEffect(() => {
+        return () => {
+            if (routeLineRef.current) {
+                routeLineRef.current.setMap(null);
+                routeLineRef.current = null;
+            }
+        };
+    }, []);
 
     return (
         <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
