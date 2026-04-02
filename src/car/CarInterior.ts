@@ -876,12 +876,12 @@ export class CarInterior {
      * Set the head/camera orientation for looking around inside the car.
      * This only affects the camera rotation, not the car body.
      * The camera rotates independently while staying at the driver's position.
-     * @param headYaw - Yaw angle in degrees (-110 to +110) relative to car heading
+     * @param headYaw - Yaw angle in degrees (full 360° range) relative to car heading
      * @param headPitch - Pitch angle in degrees (-45 to +65)
      */
     public setHeadOrientation(headYaw: number, headPitch: number): void {
-        // Clamp to realistic head movement ranges
-        const clampedYaw = Math.max(-110, Math.min(110, headYaw));
+        // Full 360° yaw for free look, pitch still clamped to realistic range
+        const clampedYaw = headYaw;
         const clampedPitch = Math.max(-45, Math.min(65, headPitch));
 
         // Camera is a child of driverSeatGroup which is a child of interiorGroup.

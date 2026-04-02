@@ -52,6 +52,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const isSteeringWheelDragRef = useRef(false);
     // Track middle mouse button for dedicated free look
     const isMiddleMouseRef = useRef(false);
+    // Track right mouse button for steering in cab mode
+    const isRightMouseRef = useRef(false);
     // Track if we're currently in a drag (for preventing click-to-move)
     const isDraggingRef = useRef(false);
 
@@ -115,8 +117,17 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 dragDistanceRef.current = 0;
                 isDraggingRef.current = false;
                 isMiddleMouseRef.current = true;
+                isRightMouseRef.current = false;
                 isSteeringWheelDragRef.current = false;
                 e.preventDefault(); // Prevent scroll behavior
+            } else if (e.button === 2) { // Right mouse button - STEERING in cab mode
+                isMouseDownRef.current = true;
+                dragStartedOnTargetRef.current = true;
+                dragDistanceRef.current = 0;
+                isDraggingRef.current = false;
+                isRightMouseRef.current = true;
+                isMiddleMouseRef.current = false;
+                isSteeringWheelDragRef.current = false;
             }
         };
 
@@ -127,6 +138,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
 
         const handleContextMenu = (e: MouseEvent) => {
             e.preventDefault();
+            // In car cab mode, right-click is used for steering drag — skip move action
+            if (isCarModeRef.current && carControlModeRef.current === 'cab') return;
             onRightClickMoveRef.current();
         };
 
@@ -134,25 +147,27 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         // These are kept global so dragging continues smoothly even if cursor leaves element
         
         const handleMouseUp = (e: MouseEvent) => {
-            if (e.button === 0 || e.button === 1) { // Left or middle mouse button
+            if (e.button === 0 || e.button === 1 || e.button === 2) {
                 // Capture flags before resetting them
                 const wasSteeringWheelDrag = isSteeringWheelDragRef.current;
                 const wasMiddleMouse = isMiddleMouseRef.current;
+                const wasRightMouse = isRightMouseRef.current;
                 const wasDragging = isDraggingRef.current;
 
                 isMouseDownRef.current = false;
                 isSteeringWheelDragRef.current = false;
                 isMiddleMouseRef.current = false;
+                isRightMouseRef.current = false;
                 isDraggingRef.current = false;
                 // Restore cursor
                 if (target) (target as HTMLElement).style.cursor = '';
-                
-                // Only trigger click-to-move on left click (not middle) and if we weren't dragging significantly
-                if (dragStartedOnTargetRef.current && !wasDragging
-                        && !wasSteeringWheelDrag && !wasMiddleMouse) {
+
+                // Only trigger click-to-move on left click (not middle/right) and if we weren't dragging significantly
+                if (e.button === 0 && dragStartedOnTargetRef.current && !wasDragging
+                        && !wasSteeringWheelDrag && !wasMiddleMouse && !wasRightMouse) {
                     onMoveRef.current('forward');
                 }
-                
+
                 dragStartedOnTargetRef.current = false;
             }
         };
@@ -172,20 +187,26 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             }
 
             // --- FREE LOOK LOGIC ---
-            // In car mode (cab mode), mouse ALWAYS controls head look, even without clicking
-            // This gives true free look without holding left-click
+            // In car mode (cab mode), mouse ALWAYS controls head look, even without clicking.
+            // Steering is done via: steering wheel grab, Shift+mouse, or right-click drag.
             if (isCarModeRef.current && carControlModeRef.current === 'cab') {
-                // In cab mode, mouse movement always controls head look
-                // Unless we're in drive mode, or dragging the steering wheel
                 const isSteeringDrag = isMouseDownRef.current && isSteeringWheelDragRef.current;
-                
+                const isRightDrag = isMouseDownRef.current && isRightMouseRef.current;
+
                 if (isSteeringDrag && onSteerDragRef.current) {
                     // Steering wheel grab mode - drag controls steering
                     onSteerDragRef.current(movementX);
-                    // Vertical movement still controls pitch
+                    onPanRef.current(0, movementY);
+                } else if (isRightDrag && onSteerDragRef.current) {
+                    // Right-click drag = steering
+                    onSteerDragRef.current(movementX);
+                    onPanRef.current(0, movementY);
+                } else if (e.shiftKey && onSteerDragRef.current) {
+                    // Shift + mouse movement = steering
+                    onSteerDragRef.current(movementX);
                     onPanRef.current(0, movementY);
                 } else {
-                    // Normal head look - always active
+                    // Normal head look - always active (full 360° free look)
                     onPanRef.current(movementX, movementY);
                 }
                 return;
