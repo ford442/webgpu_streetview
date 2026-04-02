@@ -145,6 +145,14 @@ input[type="text"]:focus {
     to { opacity: 0; }
 }
 
+/* Car mode hint animation */
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+    10% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+}
+
 @keyframes loadingSlideUp {
     from { 
         opacity: 0;

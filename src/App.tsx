@@ -105,10 +105,21 @@ function App() {
     // Car mode state
     const [isCarMode, setIsCarMode] = useState(false);
 
+    // Car control mode - determines how mouse input controls the car
+    // 'cab': Mouse controls head look freely, A/D steers car (default)
+    // 'drive': Mouse X steers car, mouse Y controls pitch (rigid head to car)
+    const [carControlMode, setCarControlMode] = useState<'cab' | 'drive'>('cab');
+
     // Head coupling mode state - determines how head/camera behaves when car steers
     // 'rigid': Head turns with car (traditional cockpit feel, head stays fixed relative to car)
     // 'free': Head stays looking at same world direction (like looking out side window while turning)
-    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
+    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('free');
+
+    // Steering angle for overlay display
+    const [steeringAngle, setSteeringAngle] = useState(0);
+
+    // Show control hint when entering car mode
+    const [showCarModeHint, setShowCarModeHint] = useState(false);
 
     // Feature: Bookmarks, History, Snapshots hooks
     const {
@@ -231,50 +242,62 @@ function App() {
     const rendererRef = useRef<Renderer | null>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null); // Ref for input handling scope
 
+    // Steering helper function - handles all steering updates
+    const applySteering = useCallback((steerDelta: number) => {
+        setCarHeading(prev => (prev + steerDelta + 360) % 360);
+        const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
+        steeringInputRef.current = newSteering;
+        setSteeringAngle(newSteering);
+        if (headCoupling === 'free') {
+            setHeadYawOffset(prev => prev - steerDelta);
+        }
+        setCarSteering(newSteering);
+    }, [headCoupling]);
+
     // --- INPUT HANDLER ACTIONS ---
     const handlePan = useCallback((deltaX: number, deltaY: number) => {
-        console.log('[handlePan] called', { deltaX, deltaY, isCarMode });
-        if (isCarMode) {
-            // In car mode: mouse only moves HEAD inside the car (car stays locked to street)
-            setHeadYawOffset(prev => {
-                const newVal = Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY));
-                console.log('[handlePan] setHeadYawOffset', prev, '->', newVal);
-                return newVal;
-            });
-            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
-        } else {
+        if (!isCarMode) {
             // Free mode: normal look
             setHeading(prev => (prev + deltaX * 0.1) % 360);
             setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
+            return;
         }
-    }, [isCarMode]);
+
+        if (carControlMode === 'drive') {
+            // Drive mode: mouse X steers, mouse Y controls pitch
+            // Scale down the steering rate for mouse (more precise than keyboard)
+            const steerRate = deltaX * 0.3;
+            applySteering(steerRate);
+            // Pitch is controlled by mouse Y in both modes
+            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
+        } else {
+            // Cab mode: mouse controls head look freely
+            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
+            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
+        }
+    }, [isCarMode, carControlMode, applySteering]);
 
     // Keyboard steering for car mode (A/D keys only)
-    // When steering, the car turns and HEAD TURNS WITH IT (rigid cockpit)
-    // In 'free' coupling mode, the head stays looking at the same world direction
     const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
         if (!isCarMode) return;
         const turnRate = KEYBOARD_STEER_RATE * deltaTime;
-        if (direction === 'left') {
-            setCarHeading(prev => (prev - turnRate + 360) % 360);
-            steeringInputRef.current = Math.max(-90, steeringInputRef.current - turnRate * 0.5);
-            
-            // In free coupling mode, compensate head to stay looking same world direction
-            if (headCoupling === 'free') {
-                setHeadYawOffset(prev => prev + turnRate); // Compensate for car turn
-            }
-        } else {
-            setCarHeading(prev => (prev + turnRate) % 360);
-            steeringInputRef.current = Math.min(90, steeringInputRef.current + turnRate * 0.5);
-            
-            // In free coupling mode, compensate head to stay looking same world direction
-            if (headCoupling === 'free') {
-                setHeadYawOffset(prev => prev - turnRate); // Compensate for car turn
-            }
-        }
-        // Update steering wheel animation
-        setCarSteering(steeringInputRef.current);
-    }, [isCarMode, headCoupling]);
+        applySteering(direction === 'left' ? -turnRate : turnRate);
+    }, [isCarMode, applySteering]);
+
+    // Mouse drag steering for drive mode or steering wheel grab
+    const handleSteerDrag = useCallback((deltaX: number) => {
+        if (!isCarMode) return;
+        // Mouse steering is more direct than keyboard
+        const steerRate = deltaX * 0.3;
+        applySteering(steerRate);
+    }, [isCarMode, applySteering]);
+
+    // Snap turn (Q/E keys for 45° turns)
+    const handleSnapTurn = useCallback((direction: 'left' | 'right') => {
+        if (!isCarMode) return;
+        const snapAngle = direction === 'left' ? -45 : 45;
+        applySteering(snapAngle);
+    }, [isCarMode, applySteering]);
 
     const handleZoom = useCallback((deltaZ: number) => {
         // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
@@ -644,14 +667,27 @@ function App() {
         }
     }, [isCarMode]);
 
-    // Toggle head coupling mode between 'rigid' and 'free' (press 'H' while in car mode)
-    const handleToggleHeadCoupling = useCallback(() => {
+    // Toggle car control mode between 'cab' and 'drive' (press 'H' while in car mode)
+    const handleToggleCarControlMode = useCallback(() => {
         if (!isCarMode) return;
-        setHeadCoupling(prev => {
-            const next = prev === 'rigid' ? 'free' : 'rigid';
-            console.log(`Head coupling: ${next}`);
+        setCarControlMode(prev => {
+            const next = prev === 'cab' ? 'drive' : 'cab';
+            // Auto-set head coupling based on mode for better UX
+            if (next === 'drive') {
+                setHeadCoupling('rigid');
+            } else {
+                setHeadCoupling('free');
+            }
             return next;
         });
+    }, [isCarMode]);
+
+    // Recenter head look (press 'C' while in car mode)
+    const handleRecenterHead = useCallback(() => {
+        if (isCarMode) {
+            setHeadYawOffset(0);
+            setHeadPitch(0);
+        }
     }, [isCarMode]);
 
     // Initialize/teardown car mode when toggled
@@ -703,22 +739,23 @@ function App() {
             const pitchChanged = headPitch !== lastHeadPitch;
             const hasChanges = headingChanged || pitchChanged;
 
+            // Always render car interior (for animations like wipers)
+            // Only skip if truly idle for many frames and no wipers
+            const shouldRender = hasChanges || 
+                                 idleFrames < MAX_IDLE_FRAMES || 
+                                 carModeRef.current?.wipersEnabled;
+
+            if (shouldRender) {
+                updateCarMode(carHeading, headYawOffset, headPitch);
+            }
+
             if (hasChanges) {
                 idleFrames = 0;
                 lastCarHeading = carHeading;
                 lastViewHeading = viewHeading;
                 lastHeadPitch = headPitch;
-
-                // Car interior rotates with carHeading (follows road)
-                updateCarMode(carHeading, headYawOffset, headPitch);
             } else {
                 idleFrames++;
-            }
-
-            // Always render car interior even when idle (for animations like wipers)
-            if (idleFrames < MAX_IDLE_FRAMES || carModeRef.current?.wipersEnabled) {
-                updateCarMode(carHeading, headYawOffset, headPitch);
-                idleFrames = 0;
             }
 
             // Gradually center steering when no input
@@ -1128,11 +1165,11 @@ function App() {
             },
             {
                 key: 'h',
-                description: 'Toggle history or head coupling',
+                description: 'Toggle car control mode or history',
                 action: () => {
                     if (isCarMode) {
-                        handleToggleHeadCoupling();
-                        announce(`Head coupling: ${headCoupling === 'rigid' ? 'free' : 'rigid'}`);
+                        handleToggleCarControlMode();
+                        announce(`${carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}`);
                     } else {
                         setIsHistoryPanelOpen(!isHistoryPanelOpen);
                         setIsBookmarkPanelOpen(false);
@@ -1267,7 +1304,7 @@ function App() {
                 />
             )}
 
-            {/* Head Coupling Mode Indicator - shows when in car mode */}
+            {/* Car Control Mode Indicator - shows when in car mode */}
             {isConnected && isCarMode && (
                 <div style={{ 
                     position: 'absolute', 
@@ -1284,15 +1321,86 @@ function App() {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
                 }}>
                     <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                        {headCoupling === 'rigid' ? '🚗 Rigid' : '👀 Free Look'}
+                        {carControlMode === 'cab' ? '👀 Cab Mode' : '🎮 Drive Mode'}
                     </div>
                     <div style={{ fontSize: '11px', opacity: 0.8, lineHeight: '1.4' }}>
-                        {headCoupling === 'rigid' 
-                            ? 'Head turns with car (A/D steers)' 
-                            : 'Head stays fixed (A/D steers car only)'}
+                        {carControlMode === 'cab' 
+                            ? 'Mouse to look • A/D to steer • Drag wheel to turn' 
+                            : 'Mouse to steer • A/D to steer • Q/E snap turn'}
                     </div>
                     <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }}>
-                        Press [H] to toggle | Middle mouse = Free look
+                        Press [H] to toggle | [C] Recenter | [Q/E] Snap 45°
+                    </div>
+                </div>
+            )}
+
+            {/* Steering Wheel Overlay - shows when steering */}
+            {isConnected && isCarMode && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '80px',
+                    left: '50%',
+                    transform: `translateX(-50%) rotate(${-steeringAngle}deg)`,
+                    width: '120px',
+                    height: '120px',
+                    pointerEvents: 'none',
+                    zIndex: 90,
+                    opacity: Math.abs(steeringAngle) > 5 ? 0.7 : 0.3,
+                    transition: 'opacity 0.2s ease',
+                }}>
+                    {/* Simple SVG steering wheel */}
+                    <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#444" strokeWidth="8" />
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#666" strokeWidth="2" opacity="0.5" />
+                        {/* Center hub */}
+                        <circle cx="50" cy="50" r="10" fill="#333" stroke="#555" strokeWidth="2" />
+                        {/* Spokes */}
+                        <line x1="50" y1="50" x2="50" y2="10" stroke="#555" strokeWidth="4" />
+                        <line x1="50" y1="50" x2="85" y2="65" stroke="#555" strokeWidth="4" />
+                        <line x1="50" y1="50" x2="15" y2="65" stroke="#555" strokeWidth="4" />
+                    </svg>
+                </div>
+            )}
+
+            {/* Car Mode Control Hint - fades in when entering car mode */}
+            {isConnected && isCarMode && showCarModeHint && (
+                <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    background: 'rgba(0,0,0,0.8)',
+                    color: '#fff',
+                    padding: '20px 30px',
+                    borderRadius: '12px',
+                    fontSize: '16px',
+                    zIndex: 200,
+                    fontFamily: 'system-ui, sans-serif',
+                    textAlign: 'center',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                    animation: 'fadeInOut 4s ease forwards',
+                }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '12px', fontSize: '18px' }}>
+                        🚗 Car Mode Active
+                    </div>
+                    <div style={{ opacity: 0.9, lineHeight: '1.6' }}>
+                        {carControlMode === 'cab' ? (
+                            <>
+                                <div>👀 Mouse to look around the cabin</div>
+                                <div>🔄 A/D to steer the car</div>
+                                <div>🖱️ Drag steering wheel to turn</div>
+                            </>
+                        ) : (
+                            <>
+                                <div>🎮 Mouse to steer</div>
+                                <div>⬆️⬇️ A/D or arrow keys to steer</div>
+                                <div>↩️ Q/E for 45° snap turns</div>
+                            </>
+                        )}
+                    </div>
+                    <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '12px' }}>
+                        Press [H] to toggle mode • [C] to recenter
                     </div>
                 </div>
             )}
@@ -1307,9 +1415,12 @@ function App() {
                 onRightClickMove={handleRightClickMove}
                 onToggleCarMode={handleToggleCarMode}
                 onSteer={handleSteer}
+                onSteerDrag={handleSteerDrag}
                 onRecenterHead={handleRecenterHead}
-                onToggleHeadCoupling={handleToggleHeadCoupling}
+                onToggleCarControlMode={handleToggleCarControlMode}
+                onSnapTurn={handleSnapTurn}
                 isCarMode={isCarMode}
+                carControlMode={carControlMode}
                 isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
             />
 
@@ -1861,11 +1972,22 @@ function App() {
                     border: '1px solid rgba(255,255,255,0.2)',
                     fontFamily: 'system-ui, sans-serif'
                 }}>
-                    🚗 <strong>Car Mode</strong>&nbsp;&nbsp;
-                    <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
-                    <span style={{ opacity: 0.85 }}>↑↓←→</span> = Move car &nbsp;|&nbsp;
-                    <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
-                    <span style={{ opacity: 0.85 }}>C</span> = Recenter
+                    🚗 <strong>{carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}</strong>&nbsp;&nbsp;
+                    {carControlMode === 'cab' ? (
+                        <>
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Q/E</span> = Snap
+                        </>
+                    ) : (
+                        <>
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Steer &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Q/E</span> = Snap
+                        </>
+                    )}
+                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>C</span> = Recenter
+                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>H</span> = Toggle
                 </div>
             )}
         </div>

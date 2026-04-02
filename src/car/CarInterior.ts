@@ -879,8 +879,10 @@ export class CarInterior {
         const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
         
         // Apply rotation to camera (looking up = negative pitch in Three.js)
-        // Yaw is rotation around Y axis, pitch is rotation around X axis
-        this.camera.rotation.set(-pitchRad, yawRad, 0);
+        // Yaw is rotation around Y axis. Negative yawRad because:
+        // positive headYaw means looking to the right, which is a negative Y rotation
+        // in Three.js (where +Y rotation is counter-clockwise / left).
+        this.camera.rotation.set(-pitchRad, -yawRad, 0);
     }
 
     /**
