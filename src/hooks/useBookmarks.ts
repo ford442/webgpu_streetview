@@ -188,22 +188,41 @@ export function useBookmarks() {
         setSyncError(null);
         try {
             const localBookmarks = bookmarks.filter(b => !b.cloudId);
-            for (const bookmark of localBookmarks) {
-                const payload: SaveLocationRequest = {
-                    name: bookmark.name,
-                    lat: bookmark.lat,
-                    lng: bookmark.lng,
-                    heading: bookmark.heading,
-                    pitch: bookmark.pitch,
-                    zoom: 1.0,
-                    description: '',
-                    tags: ['streetview', 'bookmark'],
-                };
-                const result = await saveLocationToCloud(payload);
-                setBookmarks(prev => prev.map(b =>
-                    b.id === bookmark.id ? { ...b, cloudId: result.location.id } : b
-                ));
+            const results = await Promise.allSettled(
+                localBookmarks.map(async (bookmark) => {
+                    const payload: SaveLocationRequest = {
+                        name: bookmark.name,
+                        lat: bookmark.lat,
+                        lng: bookmark.lng,
+                        heading: bookmark.heading,
+                        pitch: bookmark.pitch,
+                        zoom: 1.0,
+                        description: '',
+                        tags: ['streetview', 'bookmark'],
+                    };
+                    const result = await saveLocationToCloud(payload);
+                    return { id: bookmark.id, cloudId: result.location.id };
+                })
+            );
+
+            const successfulResults = results
+                .filter((r): r is PromiseFulfilledResult<{ id: string; cloudId: string }> => r.status === 'fulfilled')
+                .map(r => r.value);
+
+            const failedCount = results.filter(r => r.status === 'rejected').length;
+            if (failedCount > 0) {
+                setSyncError(`Failed to sync ${failedCount} bookmarks to cloud`);
             }
+
+            setBookmarks(prev => {
+                const resultsMap = new Map(successfulResults.map(r => [r.id, r.cloudId]));
+                return prev.map(b => {
+                    if (resultsMap.has(b.id)) {
+                        return { ...b, cloudId: resultsMap.get(b.id) };
+                    }
+                    return b;
+                });
+            });
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to sync to cloud';
             setSyncError(message);
