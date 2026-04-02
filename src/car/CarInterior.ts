@@ -894,11 +894,24 @@ export class CarInterior {
         const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
         const carYawRad = -THREE.MathUtils.degToRad(this.currentCarHeading);
         
-        // Camera rotation = car heading + head look offset
-        // This ensures head look is relative to the car's direction.
-        // The car heading aligns the camera with the car's forward direction.
-        // The head look offset allows looking around from that orientation.
-        this.camera.rotation.set(-pitchRad, carYawRad - yawRad, 0);
+        // Camera rotation is completely independent from car/interior rotation.
+        // We only rotate the camera, NEVER the interiorGroup.
+        // 
+        // In Cab Mode:
+        // - carHeading rotates interiorGroup (Y axis only)
+        // - headYaw/headPitch rotate camera (X/Y axes only, no Z roll)
+        // - Camera position follows car but rotation is free
+        //
+        // Yaw rotation: car heading + head look offset
+        // Looking right (positive headYaw) = clockwise rotation = negative Y in Three.js
+        const totalYaw = carYawRad - yawRad;
+        
+        // Pitch rotation: look up (positive headPitch) = negative X rotation in Three.js
+        // (negative because Three.js positive X rotation looks down)
+        const totalPitch = -pitchRad;
+        
+        // Set rotation directly - only X (pitch) and Y (yaw), Z (roll) is always 0
+        this.camera.rotation.set(totalPitch, totalYaw, 0);
     }
 
     /**
