@@ -23,6 +23,8 @@ export class CarInterior {
     public canvas: HTMLCanvasElement;
     public interiorGroup: THREE.Group;
     public roofGroup: THREE.Group;
+    /** Anchored at the driver's eye position inside the car; child of interiorGroup */
+    private driverSeatGroup: THREE.Group;
     private steeringWheelGroup!: THREE.Group;
     private leftMirrorPlane!: THREE.Mesh;
     private rightMirrorPlane!: THREE.Mesh;
@@ -79,7 +81,8 @@ export class CarInterior {
         // Camera at driver seat eye level (~1.2m), slightly angled toward center console
         const { x, y, z } = this.vehicleConfig.cameraPosition;
         this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.01, 100);
-        this.camera.position.set(x, y, z);
+        // Camera starts at origin of driverSeatGroup (position set via driverSeatGroup below)
+        this.camera.position.set(0, 0, 0);
         this.camera.rotation.order = 'YXZ';
         this.camera.rotation.set(0, 0, 0);
 
@@ -113,10 +116,13 @@ export class CarInterior {
         this.scene.add(this.interiorGroup);
         this.scene.add(this.roofGroup);
 
-        // Camera is kept separate from interiorGroup to allow independent head look.
-        // The interiorGroup rotates with the car body (carHeading).
-        // The camera rotates independently for head look (headYaw/headPitch).
-        this.scene.add(this.camera);
+        // driverSeatGroup anchors the camera at the driver's eye position.
+        // It is a child of interiorGroup so it rotates with the car body automatically.
+        // The camera is a child of driverSeatGroup for clean local-space head look.
+        this.driverSeatGroup = new THREE.Group();
+        this.driverSeatGroup.position.set(x, y, z);
+        this.interiorGroup.add(this.driverSeatGroup);
+        this.driverSeatGroup.add(this.camera);
 
         this.createMaterials();
         this.createLighting();
@@ -748,9 +754,9 @@ export class CarInterior {
         this.interiorGroup.clear();
         this.roofGroup.clear();
         
-        // Update camera position
+        // Update camera anchor position for the new vehicle
         const { x, y, z } = this.vehicleConfig.cameraPosition;
-        this.camera.position.set(x, y, z);
+        this.driverSeatGroup.position.set(x, y, z);
         
         // Recreate materials and rebuild
         this.createMaterials();
@@ -852,9 +858,6 @@ export class CarInterior {
         }
     }
 
-    // Store current car heading for camera positioning
-    private currentCarHeading: number = 0;
-
     /**
      * Set the car body orientation (carHeading).
      * The interior stays level with the ground while the head can look freely.
@@ -865,17 +868,8 @@ export class CarInterior {
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
         this.interiorGroup.rotation.set(0, yawRad, 0);
-        this.currentCarHeading = carHeading;
-        
-        // Update camera position to follow the car's rotation
-        // Camera stays at driver seat position relative to car
-        const { x, y, z } = this.vehicleConfig.cameraPosition;
-        // Rotate the camera position around the car's center based on car heading
-        const cosYaw = Math.cos(yawRad);
-        const sinYaw = Math.sin(yawRad);
-        const rotatedX = x * cosYaw - z * sinYaw;
-        const rotatedZ = x * sinYaw + z * cosYaw;
-        this.camera.position.set(rotatedX, y, rotatedZ);
+        // Camera position is inherited automatically through the scene graph:
+        //   interiorGroup (rotates) → driverSeatGroup (fixed offset) → camera
     }
 
     /**
@@ -889,29 +883,18 @@ export class CarInterior {
         // Clamp to realistic head movement ranges
         const clampedYaw = Math.max(-110, Math.min(110, headYaw));
         const clampedPitch = Math.max(-45, Math.min(65, headPitch));
-        
-        const yawRad = THREE.MathUtils.degToRad(clampedYaw);
-        const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
-        const carYawRad = -THREE.MathUtils.degToRad(this.currentCarHeading);
-        
-        // Camera rotation is completely independent from car/interior rotation.
-        // We only rotate the camera, NEVER the interiorGroup.
-        // 
-        // In Cab Mode:
-        // - carHeading rotates interiorGroup (Y axis only)
-        // - headYaw/headPitch rotate camera (X/Y axes only, no Z roll)
-        // - Camera position follows car but rotation is free
+
+        // Camera is a child of driverSeatGroup which is a child of interiorGroup.
+        // interiorGroup already carries the car heading rotation in world space,
+        // so here we only need the local head-look offset.
         //
-        // Yaw rotation: car heading + head look offset
-        // Looking right (positive headYaw) = clockwise rotation = negative Y in Three.js
-        const totalYaw = carYawRad - yawRad;
-        
-        // Pitch rotation: look up (positive headPitch) = negative X rotation in Three.js
-        // (negative because Three.js positive X rotation looks down)
-        const totalPitch = -pitchRad;
-        
+        // Looking right (positive headYaw) → clockwise → negative local Y rotation.
+        // Looking up (positive headPitch) → negative local X rotation in Three.js.
+        const localYaw   = -THREE.MathUtils.degToRad(clampedYaw);
+        const localPitch = -THREE.MathUtils.degToRad(clampedPitch);
+
         // Set rotation directly - only X (pitch) and Y (yaw), Z (roll) is always 0
-        this.camera.rotation.set(totalPitch, totalYaw, 0);
+        this.camera.rotation.set(localPitch, localYaw, 0);
     }
 
     /**
@@ -1018,6 +1001,16 @@ export class CarInterior {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
+    }
+
+    /**
+     * Sync the Three.js camera field-of-view with the WebGPU shader zoom level
+     * so that the car interior window openings stay aligned with the magnified panorama.
+     * @param zoom - Current WebGPU zoom level (1.0 = no zoom, 3.0 = maximum)
+     */
+    public setZoomFOV(zoom: number): void {
+        this.camera.fov = 75 / Math.max(1, zoom);
+        this.camera.updateProjectionMatrix();
     }
 
     /**

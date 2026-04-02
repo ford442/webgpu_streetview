@@ -715,6 +715,14 @@ function App() {
         }
     }, [isCarMode, streetViewCanvas]);
 
+    // Keep Three.js camera FOV in sync with the WebGPU shader zoom so that
+    // the car interior window openings stay aligned with the magnified panorama.
+    useEffect(() => {
+        if (isCarMode && carModeRef.current) {
+            carModeRef.current.interior.setZoomFOV(zoom);
+        }
+    }, [isCarMode, zoom]);
+
     // Performance: Optimized car mode rendering
     // Only runs animation when there's actual movement or changes
     useEffect(() => {
@@ -1471,10 +1479,10 @@ function App() {
                     mode={mode}
                     source={isConnected ? streetViewCanvas : null}
                     zoom={zoom}
-                    // In car mode: WebGPU shows carHeading (windshield view)
-                    // Head movement doesn't affect outside view
-                    panX={panoramaHeading / 360}
-                    panY={((isCarMode ? 0 : pitch) + 90) / 180}
+                    // Use viewHeading (carHeading + headYawOffset) so the WebGPU zoom
+                    // centres on the direction the player is actually looking.
+                    panX={viewHeading / 360}
+                    panY={((isCarMode ? headPitch : pitch) + 90) / 180}
                 />
 
                 {/* Compass Overlay - shows which direction the head is looking */}
