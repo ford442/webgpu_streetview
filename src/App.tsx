@@ -682,14 +682,6 @@ function App() {
         });
     }, [isCarMode]);
 
-    // Recenter head look (press 'C' while in car mode)
-    const handleRecenterHead = useCallback(() => {
-        if (isCarMode) {
-            setHeadYawOffset(0);
-            setHeadPitch(0);
-        }
-    }, [isCarMode]);
-
     // Initialize/teardown car mode when toggled
     useEffect(() => {
         if (isCarMode && canvasContainerRef.current) {
