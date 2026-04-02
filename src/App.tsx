@@ -50,7 +50,7 @@ const INITIAL_HEADING = 34;
 // car body, but the driver can freely look around inside the cabin.
 // - headYawOffset: left/right head look relative to car heading (-110° to +110°)
 // - headPitch: up/down head look (-45° to +65°)
-const MAX_HEAD_YAW = 110;
+const MAX_HEAD_YAW = 180; // Full 360° look (±180°)
 const MAX_HEAD_PITCH_UP = 45;
 const MAX_HEAD_PITCH_DOWN = 65;
 const HEAD_LOOK_SENSITIVITY = 0.18;  // Mouse sensitivity for head look inside car
@@ -229,6 +229,17 @@ function App() {
     const carSpeedRef = useRef<number>(0); // 0-100 km/h (simulated)
     const carRPMRef = useRef<number>(0); // 0-8000 RPM (simulated)
 
+    // Refs to mirror state for use inside RAF loop (avoids stale closures & ensures
+    // panorama.setPov and Three.js camera update happen in the exact same frame)
+    const headYawOffsetRef = useRef(headYawOffset);
+    const headPitchRef = useRef(headPitch);
+    const carHeadingRef = useRef(carHeading);
+    const panoramaRef = useRef(panorama);
+    headYawOffsetRef.current = headYawOffset;
+    headPitchRef.current = headPitch;
+    carHeadingRef.current = carHeading;
+    panoramaRef.current = panorama;
+
     useEffect(() => {
         if (!audioRef.current) {
             audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
@@ -277,8 +288,14 @@ function App() {
             // Pitch is controlled by mouse Y in both modes
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         } else {
-            // Cab mode: mouse controls head look freely
-            setHeadYawOffset(prev => Math.max(-MAX_HEAD_YAW, Math.min(MAX_HEAD_YAW, prev + deltaX * HEAD_LOOK_SENSITIVITY)));
+            // Cab mode: mouse controls head look freely (full 360°)
+            setHeadYawOffset(prev => {
+                let next = prev + deltaX * HEAD_LOOK_SENSITIVITY;
+                // Wrap around for full 360° look
+                if (next > 180) next -= 360;
+                if (next < -180) next += 360;
+                return next;
+            });
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         }
     }, [isCarMode, carControlMode, applySteering]);
@@ -431,18 +448,15 @@ function App() {
         }
     }, []);
 
-    // Effect to update the panorama POV when view heading or pitch changes
-    // In car mode: panorama follows combined car heading + head yaw so the
-    //   Street View background matches exactly where the Three.js camera looks.
+    // Effect to update the panorama POV when view heading or pitch changes.
+    // In car mode: panorama setPov is handled in the RAF animation loop (below)
+    //   to stay synchronized with the Three.js camera update on the same frame.
     // In free mode: uses heading and pitch directly.
     useEffect(() => {
-        if (panorama) {
-            // viewHeading already combines carHeading + headYawOffset in car mode.
-            const povHeading = isCarMode ? viewHeading : heading;
-            const povPitch = isCarMode ? headPitch : pitch;
-            panorama.setPov({ heading: povHeading, pitch: povPitch });
+        if (panorama && !isCarMode) {
+            panorama.setPov({ heading, pitch });
         }
-    }, [heading, pitch, viewHeading, headPitch, isCarMode, panorama]);
+    }, [heading, pitch, isCarMode, panorama]);
 
     // Effect to update the panorama zoom when our zoom state changes
     useEffect(() => {
@@ -744,6 +758,13 @@ function App() {
                                  carModeRef.current?.wipersEnabled;
 
             if (shouldRender) {
+                // Update panorama POV and Three.js car in the SAME frame
+                // to prevent the "car wheeling around" desync effect.
+                const pano = panoramaRef.current;
+                if (pano) {
+                    const viewH = (carHeadingRef.current + headYawOffsetRef.current + 360) % 360;
+                    pano.setPov({ heading: viewH, pitch: headPitchRef.current });
+                }
                 updateCarMode(carHeading, headYawOffset, headPitch);
             }
 
@@ -1323,7 +1344,7 @@ function App() {
                     </div>
                     <div style={{ fontSize: '11px', opacity: 0.8, lineHeight: '1.4' }}>
                         {carControlMode === 'cab' 
-                            ? '🖱️ Free look (no click needed) • A/D to steer • Click to move' 
+                            ? '🖱️ Free look 360° • Shift+Mouse / Right-drag / A/D = Steer'
                             : '🎮 Mouse to steer • A/D to steer • Q/E snap turn'}
                     </div>
                     <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }}>
@@ -1385,9 +1406,10 @@ function App() {
                     <div style={{ opacity: 0.9, lineHeight: '1.6' }}>
                         {carControlMode === 'cab' ? (
                             <>
-                                <div>👀 Mouse moves head (no click needed!)</div>
+                                <div>👀 Mouse = Free look (360°)</div>
                                 <div>🖱️ Click to drive forward</div>
-                                <div>🔄 A/D keys to steer car</div>
+                                <div>🔄 Shift+Mouse / Right-drag / A/D = Steer</div>
+                                <div>🎡 Grab steering wheel to steer</div>
                                 <div>↩️ Q/E for quick 45° turns</div>
                             </>
                         ) : (
@@ -1974,9 +1996,9 @@ function App() {
                     🚗 <strong>{carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}</strong>&nbsp;&nbsp;
                     {carControlMode === 'cab' ? (
                         <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Free Look &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Click</span> = Move &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Free Look 360° &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Shift+Mouse / Right-drag / A/D</span> = Steer &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Click</span> = Move
                         </>
                     ) : (
                         <>
