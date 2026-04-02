@@ -83,31 +83,55 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
         };
     }, []);
 
+    // Device lost reinit counter
+    const [reinitCounter, setReinitCounter] = useState(0);
+
+    // Use refs for callbacks to avoid reinit when they change
+    const onWebGPUStatusRef = useRef(onWebGPUStatus);
+    const startMonitoringRef = useRef(startMonitoring);
+    const stopMonitoringRef = useRef(stopMonitoring);
+    useEffect(() => { onWebGPUStatusRef.current = onWebGPUStatus; }, [onWebGPUStatus]);
+    useEffect(() => { startMonitoringRef.current = startMonitoring; }, [startMonitoring]);
+    useEffect(() => { stopMonitoringRef.current = stopMonitoring; }, [stopMonitoring]);
+
     useEffect(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const renderer = new Renderer(canvas);
 
+        let isActive = true;
+
         (async () => {
-            const success = await renderer.init();
+            const success = await renderer.init({
+                onLost: (info) => {
+                    console.warn('[WebGPU] Device lost:', info);
+                    if (isActive) {
+                        setReinitCounter(c => c + 1);
+                    }
+                }
+            });
+            if (!isActive) return;
             if (success) {
                 if (rendererRef) {
                     (rendererRef as React.MutableRefObject<Renderer | null>).current = renderer;
                 }
-                onWebGPUStatus?.(true);
-                startMonitoring();
+                onWebGPUStatusRef.current?.(true);
+                startMonitoringRef.current();
             } else {
-                // Handle WebGPU failure (e.g., show an error or fallback)
                 console.warn("WebGPU initialization failed. Please check your browser compatibility.");
-                onWebGPUStatus?.(false);
+                onWebGPUStatusRef.current?.(false);
             }
         })();
 
         return () => {
-            cancelAnimationFrame(animationFrameId.current);
-            stopMonitoring();
+            isActive = false;
+            if (rendererRef) {
+                (rendererRef as React.MutableRefObject<Renderer | null>).current = null;
+            }
+            stopMonitoringRef.current();
+            renderer.destroy();
         };
-    }, [rendererRef, onWebGPUStatus, startMonitoring, stopMonitoring]);
+    }, [rendererRef, reinitCounter]);
 
     useEffect(() => {
         // Performance: Track source changes
@@ -116,6 +140,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
             lastSourceRef.current = source;
         }
     }, [source]);
+
+    // Resize renderer when canvas size changes
+    useEffect(() => {
+        if (currentRendererRef.current) {
+            currentRendererRef.current.resize(size.width, size.height);
+        }
+    }, [size.width, size.height]);
 
     useEffect(() => {
         let active = true;

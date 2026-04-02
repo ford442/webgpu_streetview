@@ -111,7 +111,17 @@ function App() {
     const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('rigid');
 
     // Feature: Bookmarks, History, Snapshots hooks
-    const { bookmarks, addBookmark, removeBookmark } = useBookmarks();
+    const {
+        bookmarks,
+        addBookmark,
+        removeBookmark,
+        isSyncing: isBookmarkSyncing,
+        syncError: bookmarkSyncError,
+        loadCloudBookmarks,
+        saveBookmarkToCloud,
+        removeCloudBookmark,
+        syncAllToCloud,
+    } = useBookmarks();
     const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
     const { snapshots, addSnapshot, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
 
@@ -1722,6 +1732,12 @@ function App() {
                 onRemoveBookmark={removeBookmark}
                 onClose={() => setIsBookmarkPanelOpen(false)}
                 isOpen={isBookmarkPanelOpen}
+                isSyncing={isBookmarkSyncing}
+                syncError={bookmarkSyncError}
+                onLoadCloudBookmarks={loadCloudBookmarks}
+                onSaveBookmarkToCloud={saveBookmarkToCloud}
+                onRemoveCloudBookmark={removeCloudBookmark}
+                onSyncAllToCloud={syncAllToCloud}
             />
 
             <HistoryPanel

@@ -1,4 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+    fetchCloudLocations,
+    saveLocationToCloud,
+    deleteLocationFromCloud,
+    updateLocationInCloud,
+    CloudLocation,
+    SaveLocationRequest,
+} from '../services/storageApi';
 
 export interface Bookmark {
     id: string;
@@ -8,6 +16,8 @@ export interface Bookmark {
     heading: number;
     pitch: number;
     timestamp: string;
+    cloudId?: string;
+    isCloudSyncing?: boolean;
 }
 
 const STORAGE_KEY = 'webgpu_streetview_bookmarks';
@@ -15,6 +25,8 @@ const STORAGE_KEY = 'webgpu_streetview_bookmarks';
 export function useBookmarks() {
     const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
 
     // Load bookmarks from localStorage on mount
     useEffect(() => {
@@ -69,12 +81,150 @@ export function useBookmarks() {
         }
     }, []);
 
+    // Cloud sync: load all cloud locations and merge with local bookmarks
+    const loadCloudBookmarks = useCallback(async () => {
+        setIsSyncing(true);
+        setSyncError(null);
+        try {
+            const cloudLocations = await fetchCloudLocations();
+            const cloudBookmarks: Bookmark[] = cloudLocations.map(loc => ({
+                id: `cloud-${loc.id}`,
+                cloudId: loc.id,
+                name: loc.name,
+                lat: loc.lat,
+                lng: loc.lng,
+                heading: loc.heading,
+                pitch: loc.pitch,
+                timestamp: loc.date || new Date().toISOString(),
+            }));
+
+            setBookmarks(prev => {
+                // Remove old cloud bookmarks to avoid duplicates
+                const localOnly = prev.filter(b => !b.cloudId);
+                // Merge: local first, then cloud bookmarks that aren't already present
+                const localIds = new Set(localOnly.map(b => `${b.lat.toFixed(6)},${b.lng.toFixed(6)}`));
+                const newCloud = cloudBookmarks.filter(
+                    cb => !localIds.has(`${cb.lat.toFixed(6)},${cb.lng.toFixed(6)}`)
+                );
+                return [...localOnly, ...newCloud];
+            });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to load cloud bookmarks';
+            setSyncError(message);
+            console.error('Failed to load cloud bookmarks:', err);
+        } finally {
+            setIsSyncing(false);
+        }
+    }, []);
+
+    // Cloud sync: save a single bookmark to the cloud
+    const saveBookmarkToCloud = useCallback(async (bookmarkId: string) => {
+        const bookmark = bookmarks.find(b => b.id === bookmarkId);
+        if (!bookmark) return;
+
+        setBookmarks(prev => prev.map(b => b.id === bookmarkId ? { ...b, isCloudSyncing: true } : b));
+        setSyncError(null);
+
+        try {
+            const payload: SaveLocationRequest = {
+                name: bookmark.name,
+                lat: bookmark.lat,
+                lng: bookmark.lng,
+                heading: bookmark.heading,
+                pitch: bookmark.pitch,
+                zoom: 1.0,
+                description: '',
+                tags: ['streetview', 'bookmark'],
+            };
+
+            if (bookmark.cloudId) {
+                // Already in cloud: update
+                const updateResult = await updateLocationInCloud(bookmark.cloudId, payload);
+                setBookmarks(prev => prev.map(b =>
+                    b.id === bookmarkId
+                        ? { ...b, cloudId: updateResult.location.id, isCloudSyncing: false }
+                        : b
+                ));
+            } else {
+                const result = await saveLocationToCloud(payload);
+                setBookmarks(prev => prev.map(b =>
+                    b.id === bookmarkId
+                        ? { ...b, cloudId: result.location.id, isCloudSyncing: false }
+                        : b
+                ));
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to save to cloud';
+            setSyncError(message);
+            setBookmarks(prev => prev.map(b => b.id === bookmarkId ? { ...b, isCloudSyncing: false } : b));
+            console.error('Failed to save bookmark to cloud:', err);
+        }
+    }, [bookmarks]);
+
+    // Cloud sync: remove a bookmark from the cloud (but keep local)
+    const removeCloudBookmark = useCallback(async (bookmarkId: string) => {
+        const bookmark = bookmarks.find(b => b.id === bookmarkId);
+        if (!bookmark || !bookmark.cloudId) return;
+
+        setBookmarks(prev => prev.map(b => b.id === bookmarkId ? { ...b, isCloudSyncing: true } : b));
+        setSyncError(null);
+
+        try {
+            await deleteLocationFromCloud(bookmark.cloudId);
+            setBookmarks(prev => prev.map(b =>
+                b.id === bookmarkId ? { ...b, cloudId: undefined, isCloudSyncing: false } : b
+            ));
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to remove from cloud';
+            setSyncError(message);
+            setBookmarks(prev => prev.map(b => b.id === bookmarkId ? { ...b, isCloudSyncing: false } : b));
+            console.error('Failed to remove cloud bookmark:', err);
+        }
+    }, [bookmarks]);
+
+    // Cloud sync: save all local bookmarks to cloud
+    const syncAllToCloud = useCallback(async () => {
+        setIsSyncing(true);
+        setSyncError(null);
+        try {
+            const localBookmarks = bookmarks.filter(b => !b.cloudId);
+            for (const bookmark of localBookmarks) {
+                const payload: SaveLocationRequest = {
+                    name: bookmark.name,
+                    lat: bookmark.lat,
+                    lng: bookmark.lng,
+                    heading: bookmark.heading,
+                    pitch: bookmark.pitch,
+                    zoom: 1.0,
+                    description: '',
+                    tags: ['streetview', 'bookmark'],
+                };
+                const result = await saveLocationToCloud(payload);
+                setBookmarks(prev => prev.map(b =>
+                    b.id === bookmark.id ? { ...b, cloudId: result.location.id } : b
+                ));
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to sync to cloud';
+            setSyncError(message);
+            console.error('Failed to sync all bookmarks to cloud:', err);
+        } finally {
+            setIsSyncing(false);
+        }
+    }, [bookmarks]);
+
     return {
         bookmarks,
         isLoaded,
+        isSyncing,
+        syncError,
         addBookmark,
         removeBookmark,
         updateBookmark,
         clearAllBookmarks,
+        loadCloudBookmarks,
+        saveBookmarkToCloud,
+        removeCloudBookmark,
+        syncAllToCloud,
     };
 }

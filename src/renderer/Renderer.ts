@@ -36,11 +36,15 @@ export class Renderer {
     // Weather state
     private weatherParams: Float32Array = new Float32Array(16); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, ...]
 
+    private onLostCallback?: (info: GPUDeviceLostInfo) => void;
+    private isDestroyed: boolean = false;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
     }
 
-    public async init(): Promise<boolean> {
+    public async init(options?: { onLost?: (info: GPUDeviceLostInfo) => void }): Promise<boolean> {
+        this.onLostCallback = options?.onLost;
         if (!navigator.gpu) {
             console.warn('WebGPU not supported. Using StreetView fallback.');
             return false;
@@ -60,6 +64,13 @@ export class Renderer {
             }
 
             this.device = await adapter.requestDevice({ requiredFeatures });
+
+            // Handle device loss for recovery
+            this.device.lost.then((info) => {
+                console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
+                this.dispose();
+                this.onLostCallback?.(info);
+            });
             
             const context = this.canvas.getContext('webgpu');
             if (!context) {
@@ -69,11 +80,7 @@ export class Renderer {
 
             this.context = context;
             this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-            this.context.configure({
-                device: this.device,
-                format: this.presentationFormat,
-                alphaMode: 'opaque',
-            });
+            this.configureContext();
 
             this.sampler = this.device.createSampler({
                 magFilter: 'linear',
@@ -311,6 +318,51 @@ export class Renderer {
         this.updateWeatherBindGroup();
     }
 
+    private configureContext() {
+        if (!this.context || !this.device) return;
+        this.context.configure({
+            device: this.device,
+            format: this.presentationFormat,
+            alphaMode: 'opaque',
+        });
+    }
+
+    public resize(width: number, height: number) {
+        if (this.isDestroyed) return;
+        // Canvas size is driven by React props; just reconfigure the context
+        // so the swap chain matches the new canvas size.
+        this.configureContext();
+    }
+
+    public destroy() {
+        this.isDestroyed = true;
+        this.dispose();
+    }
+
+    private dispose() {
+        try {
+            if (this.texture) this.texture.destroy();
+            if (this.videoTexture) this.videoTexture.destroy();
+            if (this.intermediateTexture) this.intermediateTexture.destroy();
+            if (this.uniformBuffer) this.uniformBuffer.destroy();
+            if (this.effectsBuffer) this.effectsBuffer.destroy();
+            if (this.weatherParamsBuffer) this.weatherParamsBuffer.destroy();
+            this.device?.destroy();
+        } catch (e) {
+            // ignore cleanup errors
+        }
+        this.texture = undefined as any;
+        this.videoTexture = undefined as any;
+        this.intermediateTexture = undefined as any;
+        this.uniformBuffer = undefined as any;
+        this.effectsBuffer = undefined as any;
+        this.weatherParamsBuffer = undefined as any;
+        this.pipeline = undefined as any;
+        this.weatherPipeline = undefined as any;
+        this.bindGroup = undefined as any;
+        this.weatherBindGroup = undefined as any;
+    }
+
     public setCarMode(active: boolean): void {
         this.carModeActive = active;
     }
@@ -357,7 +409,7 @@ export class Renderer {
         pitch?: number, 
         zoom?: number
     ): void {
-        if (!this.device || !this.pipeline || !this.weatherPipeline) return;
+        if (this.isDestroyed || !this.device || !this.pipeline || !this.weatherPipeline) return;
 
         let srcWidth = 0;
         let srcHeight = 0;

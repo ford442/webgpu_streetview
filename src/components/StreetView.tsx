@@ -104,7 +104,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
 
                 observer.observe(panoRef.current, {
                     childList: true,
-                    subtree: false
+                    subtree: true
                 });
 
                 return () => {

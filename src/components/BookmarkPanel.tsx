@@ -10,6 +10,12 @@ interface BookmarkPanelProps {
     onRemoveBookmark: (id: string) => void;
     onClose: () => void;
     isOpen: boolean;
+    isSyncing?: boolean;
+    syncError?: string | null;
+    onLoadCloudBookmarks?: () => void;
+    onSaveBookmarkToCloud?: (id: string) => void;
+    onRemoveCloudBookmark?: (id: string) => void;
+    onSyncAllToCloud?: () => void;
 }
 
 const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
@@ -20,6 +26,12 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
     onRemoveBookmark,
     onClose,
     isOpen,
+    isSyncing = false,
+    syncError = null,
+    onLoadCloudBookmarks,
+    onSaveBookmarkToCloud,
+    onRemoveCloudBookmark,
+    onSyncAllToCloud,
 }) => {
     const [newBookmarkName, setNewBookmarkName] = useState('');
     const [showAddForm, setShowAddForm] = useState(false);
@@ -65,7 +77,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                 position: 'absolute',
                 top: '80px',
                 right: '20px',
-                width: '320px',
+                width: '360px',
                 maxHeight: 'calc(100vh - 120px)',
                 backgroundColor: 'rgba(30, 30, 30, 0.95)',
                 borderRadius: '12px',
@@ -106,6 +118,67 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                 >
                     ×
                 </button>
+            </div>
+
+            {/* Cloud Sync Controls */}
+            <div style={{ padding: '12px 15px', borderBottom: '1px solid #444', backgroundColor: 'rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => onLoadCloudBookmarks?.()}
+                        disabled={isSyncing}
+                        style={{
+                            flex: 1,
+                            minWidth: '110px',
+                            padding: '8px 10px',
+                            backgroundColor: isSyncing ? '#555' : '#2196F3',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: isSyncing ? 'wait' : 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            opacity: isSyncing ? 0.7 : 1,
+                        }}
+                        aria-label="Load bookmarks from cloud"
+                        title="Load saved places from storage.noahcohn.com"
+                    >
+                        {isSyncing ? '⏳ Syncing…' : '☁️ Load Cloud'}
+                    </button>
+                    <button
+                        onClick={() => onSyncAllToCloud?.()}
+                        disabled={isSyncing || bookmarks.filter(b => !b.cloudId).length === 0}
+                        style={{
+                            flex: 1,
+                            minWidth: '110px',
+                            padding: '8px 10px',
+                            backgroundColor: (isSyncing || bookmarks.filter(b => !b.cloudId).length === 0) ? '#555' : '#4CAF50',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: (isSyncing || bookmarks.filter(b => !b.cloudId).length === 0) ? 'not-allowed' : 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            opacity: (isSyncing || bookmarks.filter(b => !b.cloudId).length === 0) ? 0.7 : 1,
+                        }}
+                        aria-label="Save all bookmarks to cloud"
+                        title="Save all local bookmarks to storage.noahcohn.com"
+                    >
+                        💾 Save All
+                    </button>
+                </div>
+                {syncError && (
+                    <div style={{
+                        marginTop: '8px',
+                        padding: '8px',
+                        backgroundColor: 'rgba(217, 83, 79, 0.2)',
+                        border: '1px solid rgba(217, 83, 79, 0.5)',
+                        borderRadius: '4px',
+                        color: '#ff8a8a',
+                        fontSize: '12px',
+                    }}>
+                        ⚠️ {syncError}
+                    </div>
+                )}
             </div>
 
             {/* Add New Bookmark */}
@@ -209,7 +282,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                         Save your favorite locations!
                     </div>
                 ) : (
-                    bookmarks.map((bookmark, index) => (
+                    bookmarks.map((bookmark) => (
                         <div
                             key={bookmark.id}
                             role="listitem"
@@ -245,8 +318,38 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     marginBottom: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
                                 }}>
                                     {bookmark.name}
+                                    {bookmark.cloudId && (
+                                        <span
+                                            style={{
+                                                fontSize: '11px',
+                                                color: '#4CAF50',
+                                                backgroundColor: 'rgba(76, 175, 80, 0.15)',
+                                                padding: '1px 6px',
+                                                borderRadius: '10px',
+                                                border: '1px solid rgba(76, 175, 80, 0.3)',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                            title="Saved to cloud"
+                                        >
+                                            ☁️ Cloud
+                                        </span>
+                                    )}
+                                    {bookmark.isCloudSyncing && (
+                                        <span
+                                            style={{
+                                                fontSize: '11px',
+                                                color: '#aaa',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            ⏳
+                                        </span>
+                                    )}
                                 </div>
                                 <div style={{
                                     color: '#888',
@@ -263,7 +366,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                     {formatDate(bookmark.timestamp)}
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '5px' }}>
+                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                 <button
                                     onClick={() => onTeleport(bookmark.lat, bookmark.lng, bookmark.heading, bookmark.pitch)}
                                     aria-label={`Go to ${bookmark.name}`}
@@ -279,6 +382,43 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                                 >
                                     Go
                                 </button>
+                                {!bookmark.cloudId ? (
+                                    <button
+                                        onClick={() => onSaveBookmarkToCloud?.(bookmark.id)}
+                                        disabled={bookmark.isCloudSyncing}
+                                        aria-label={`Save ${bookmark.name} to cloud`}
+                                        style={{
+                                            padding: '6px 10px',
+                                            backgroundColor: bookmark.isCloudSyncing ? '#555' : '#4CAF50',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: bookmark.isCloudSyncing ? 'wait' : 'pointer',
+                                            fontSize: '12px',
+                                        }}
+                                        title="Save to cloud"
+                                    >
+                                        ☁️
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => onRemoveCloudBookmark?.(bookmark.id)}
+                                        disabled={bookmark.isCloudSyncing}
+                                        aria-label={`Remove ${bookmark.name} from cloud`}
+                                        style={{
+                                            padding: '6px 10px',
+                                            backgroundColor: bookmark.isCloudSyncing ? '#555' : '#f0ad4e',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: bookmark.isCloudSyncing ? 'wait' : 'pointer',
+                                            fontSize: '12px',
+                                        }}
+                                        title="Remove from cloud"
+                                    >
+                                        🗑️☁️
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => onRemoveBookmark(bookmark.id)}
                                     aria-label={`Delete ${bookmark.name}`}
