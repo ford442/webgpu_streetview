@@ -895,9 +895,9 @@ export class CarInterior {
         const carYawRad = -THREE.MathUtils.degToRad(this.currentCarHeading);
         
         // Camera rotation = car heading + head look offset
-        // This ensures head look is relative to the car's direction
-        // The car heading aligns the camera with the car's forward direction
-        // The head look offset allows looking around from that orientation
+        // This ensures head look is relative to the car's direction.
+        // The car heading aligns the camera with the car's forward direction.
+        // The head look offset allows looking around from that orientation.
         this.camera.rotation.set(-pitchRad, carYawRad - yawRad, 0);
     }
 

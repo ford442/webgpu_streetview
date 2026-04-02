@@ -87,7 +87,13 @@ function App() {
 
     // Cruise mode state: track if panorama is transitioning
     const [isTransitioning, setIsTransitioning] = useState(false);
+    const isTransitioningRef = useRef(isTransitioning);
     const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Keep ref in sync with state for interval callback access
+    useEffect(() => {
+        isTransitioningRef.current = isTransitioning;
+    }, [isTransitioning]);
 
     // Route planning state
     const [routeDestination, setRouteDestination] = useState<string>('');
@@ -305,7 +311,7 @@ function App() {
     }, []);
 
     const handleMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
-        if (!panorama) return;
+        if (!panorama || isTransitioning) return;
 
         const links = panorama.getLinks();
         if (!links) return;
@@ -332,7 +338,7 @@ function App() {
                 });
             }
         }
-    }, [panorama, heading, isCarMode, carHeading]);
+    }, [panorama, heading, isCarMode, carHeading, isTransitioning]);
 
     const handleRightClickMove = useCallback(() => {
         handleMove('forward');
@@ -547,8 +553,8 @@ function App() {
         }
 
         const performCruiseHop = () => {
-            // Only hop if not currently transitioning
-            if (isTransitioning) return;
+            // Only hop if not currently transitioning (use ref for latest value)
+            if (isTransitioningRef.current) return;
 
             const links = panorama.getLinks();
             if (!links) return;
