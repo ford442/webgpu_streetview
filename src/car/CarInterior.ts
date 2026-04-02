@@ -113,10 +113,10 @@ export class CarInterior {
         this.scene.add(this.interiorGroup);
         this.scene.add(this.roofGroup);
 
-        // Parent camera to interiorGroup so it rotates with the car body.
-        // Without this, setCarOrientation() spins the interior around the camera,
-        // creating an orbit effect instead of a cockpit view.
-        this.interiorGroup.add(this.camera);
+        // Camera is kept separate from interiorGroup to allow independent head look.
+        // The interiorGroup rotates with the car body (carHeading).
+        // The camera rotates independently for head look (headYaw/headPitch).
+        this.scene.add(this.camera);
 
         this.createMaterials();
         this.createLighting();
@@ -852,6 +852,9 @@ export class CarInterior {
         }
     }
 
+    // Store current car heading for camera positioning
+    private currentCarHeading: number = 0;
+
     /**
      * Set the car body orientation (carHeading).
      * The interior stays level with the ground while the head can look freely.
@@ -862,12 +865,24 @@ export class CarInterior {
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
         this.interiorGroup.rotation.set(0, yawRad, 0);
+        this.currentCarHeading = carHeading;
+        
+        // Update camera position to follow the car's rotation
+        // Camera stays at driver seat position relative to car
+        const { x, y, z } = this.vehicleConfig.cameraPosition;
+        // Rotate the camera position around the car's center based on car heading
+        const cosYaw = Math.cos(yawRad);
+        const sinYaw = Math.sin(yawRad);
+        const rotatedX = x * cosYaw - z * sinYaw;
+        const rotatedZ = x * sinYaw + z * cosYaw;
+        this.camera.position.set(rotatedX, y, rotatedZ);
     }
 
     /**
      * Set the head/camera orientation for looking around inside the car.
-     * This only affects the camera, not the car body.
-     * @param headYaw - Yaw angle in degrees (-110 to +110)
+     * This only affects the camera rotation, not the car body.
+     * The camera rotates independently while staying at the driver's position.
+     * @param headYaw - Yaw angle in degrees (-110 to +110) relative to car heading
      * @param headPitch - Pitch angle in degrees (-45 to +65)
      */
     public setHeadOrientation(headYaw: number, headPitch: number): void {
@@ -877,12 +892,12 @@ export class CarInterior {
         
         const yawRad = THREE.MathUtils.degToRad(clampedYaw);
         const pitchRad = THREE.MathUtils.degToRad(clampedPitch);
+        const carYawRad = -THREE.MathUtils.degToRad(this.currentCarHeading);
         
-        // Apply rotation to camera (looking up = negative pitch in Three.js)
-        // Yaw is rotation around Y axis. Negative yawRad because:
-        // positive headYaw means looking to the right, which is a negative Y rotation
-        // in Three.js (where +Y rotation is counter-clockwise / left).
-        this.camera.rotation.set(-pitchRad, -yawRad, 0);
+        // Camera rotation = car heading + head look offset
+        // This ensures head look is relative to the car's direction
+        // Negative yawRad because: positive headYaw = look right = negative Y rotation
+        this.camera.rotation.set(-pitchRad, carYawRad - yawRad, 0);
     }
 
     /**

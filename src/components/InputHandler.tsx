@@ -52,6 +52,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
     const isSteeringWheelDragRef = useRef(false);
     // Track middle mouse button for dedicated free look
     const isMiddleMouseRef = useRef(false);
+    // Track if we're currently in a drag (for preventing click-to-move)
+    const isDraggingRef = useRef(false);
 
     // Refs to store the latest versions of callbacks to prevent useEffect thrashing
     const onPanRef = useRef(onPan);
@@ -102,6 +104,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 isMouseDownRef.current = true;
                 dragStartedOnTargetRef.current = true;
                 dragDistanceRef.current = 0;
+                isDraggingRef.current = false;
                 // Detect steering wheel clicks so they can be ignored for click-to-move.
                 isSteeringWheelDragRef.current = isCarModeRef.current
                     && !!isSteeringWheelAtPointRef.current?.(e.clientX, e.clientY);
@@ -110,6 +113,7 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 isMouseDownRef.current = true;
                 dragStartedOnTargetRef.current = true;
                 dragDistanceRef.current = 0;
+                isDraggingRef.current = false;
                 isMiddleMouseRef.current = true;
                 isSteeringWheelDragRef.current = false;
                 e.preventDefault(); // Prevent scroll behavior
@@ -134,15 +138,17 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                 // Capture flags before resetting them
                 const wasSteeringWheelDrag = isSteeringWheelDragRef.current;
                 const wasMiddleMouse = isMiddleMouseRef.current;
+                const wasDragging = isDraggingRef.current;
 
                 isMouseDownRef.current = false;
                 isSteeringWheelDragRef.current = false;
                 isMiddleMouseRef.current = false;
+                isDraggingRef.current = false;
                 // Restore cursor
                 if (target) (target as HTMLElement).style.cursor = '';
                 
-                // Only trigger click-to-move on left click (not middle)
-                if (dragStartedOnTargetRef.current && dragDistanceRef.current < CLICK_DRAG_THRESHOLD
+                // Only trigger click-to-move on left click (not middle) and if we weren't dragging significantly
+                if (dragStartedOnTargetRef.current && !wasDragging
                         && !wasSteeringWheelDrag && !wasMiddleMouse) {
                     onMoveRef.current('forward');
                 }
@@ -152,28 +158,56 @@ const InputHandler: React.FC<InputHandlerProps> = ({
         };
 
         const handleMouseMove = (e: MouseEvent) => {
-            // Only process pan if a drag operation actually started on the target
-            if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
-                const dist = Math.hypot(e.movementX, e.movementY);
-                dragDistanceRef.current += dist;
+            const movementX = e.movementX;
+            const movementY = e.movementY;
 
+            // Track drag distance when mouse is down
+            if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
+                const dist = Math.hypot(movementX, movementY);
+                dragDistanceRef.current += dist;
+                // Mark as dragging if we've moved enough
+                if (dragDistanceRef.current > CLICK_DRAG_THRESHOLD) {
+                    isDraggingRef.current = true;
+                }
+            }
+
+            // --- FREE LOOK LOGIC ---
+            // In car mode (cab mode), mouse ALWAYS controls head look, even without clicking
+            // This gives true free look without holding left-click
+            if (isCarModeRef.current && carControlModeRef.current === 'cab') {
+                // In cab mode, mouse movement always controls head look
+                // Unless we're in drive mode, or dragging the steering wheel
+                const isSteeringDrag = isMouseDownRef.current && isSteeringWheelDragRef.current;
+                
+                if (isSteeringDrag && onSteerDragRef.current) {
+                    // Steering wheel grab mode - drag controls steering
+                    onSteerDragRef.current(movementX);
+                    // Vertical movement still controls pitch
+                    onPanRef.current(0, movementY);
+                } else {
+                    // Normal head look - always active
+                    onPanRef.current(movementX, movementY);
+                }
+                return;
+            }
+
+            // --- DRIVE MODE or NON-CAR MODE ---
+            // Mouse movement only affects view when dragging (holding mouse down)
+            if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
                 // MIDDLE MOUSE = Free look only (always)
                 if (isMiddleMouseRef.current) {
-                    onPanRef.current(e.movementX, e.movementY);
+                    onPanRef.current(movementX, movementY);
                     return;
                 }
 
-                // In drive mode or when grabbing the steering wheel, horizontal drag steers
-                const isSteeringDrag = isCarModeRef.current && (
-                    carControlModeRef.current === 'drive' || isSteeringWheelDragRef.current
-                );
-
-                if (isSteeringDrag && onSteerDragRef.current) {
-                    onSteerDragRef.current(e.movementX);
-                    // Vertical drag still controls pitch (passed as pan Y)
-                    onPanRef.current(0, e.movementY);
+                // In drive mode, horizontal drag steers
+                if (isCarModeRef.current && carControlModeRef.current === 'drive' && onSteerDragRef.current) {
+                    onSteerDragRef.current(movementX);
+                    // Vertical drag controls pitch
+                    onPanRef.current(0, movementY);
                 } else {
-                    onPanRef.current(e.movementX, e.movementY);
+                    // Free mode: normal look
+                    onPanRef.current(movementX, movementY);
                 }
             }
         };

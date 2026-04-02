@@ -1317,8 +1317,8 @@ function App() {
                     </div>
                     <div style={{ fontSize: '11px', opacity: 0.8, lineHeight: '1.4' }}>
                         {carControlMode === 'cab' 
-                            ? 'Mouse to look • A/D to steer • Drag wheel to turn' 
-                            : 'Mouse to steer • A/D to steer • Q/E snap turn'}
+                            ? '🖱️ Free look (no click needed) • A/D to steer • Click to move' 
+                            : '🎮 Mouse to steer • A/D to steer • Q/E snap turn'}
                     </div>
                     <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }}>
                         Press [H] to toggle | [C] Recenter | [Q/E] Snap 45°
@@ -1379,9 +1379,10 @@ function App() {
                     <div style={{ opacity: 0.9, lineHeight: '1.6' }}>
                         {carControlMode === 'cab' ? (
                             <>
-                                <div>👀 Mouse to look around the cabin</div>
-                                <div>🔄 A/D to steer the car</div>
-                                <div>🖱️ Drag steering wheel to turn</div>
+                                <div>👀 Mouse moves head (no click needed!)</div>
+                                <div>🖱️ Click to drive forward</div>
+                                <div>🔄 A/D keys to steer car</div>
+                                <div>↩️ Q/E for quick 45° turns</div>
                             </>
                         ) : (
                             <>
@@ -1967,9 +1968,9 @@ function App() {
                     🚗 <strong>{carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}</strong>&nbsp;&nbsp;
                     {carControlMode === 'cab' ? (
                         <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Look &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Q/E</span> = Snap
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Free Look &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Click</span> = Move &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
                         </>
                     ) : (
                         <>
