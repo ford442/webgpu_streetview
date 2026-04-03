@@ -206,7 +206,7 @@ function App() {
     // In free mode: heading/pitch are used directly
     const viewHeading = React.useMemo(() => {
         return isCarMode
-            ? ((carHeading + headYawOffset + 360) % 360)  // Head direction (for car interior)
+            ? (((carHeading + headYawOffset) % 360) + 360) % 360  // Head direction (handles any offset range)
             : heading;
     }, [isCarMode, carHeading, headYawOffset, heading]);
     
@@ -266,7 +266,14 @@ function App() {
         steeringInputRef.current = newSteering;
         setSteeringAngle(newSteering);
         if (headCoupling === 'free') {
-            setHeadYawOffset(prev => prev - steerDelta);
+            // Compensate head yaw so the driver keeps looking at the same world direction.
+            // Wrap to ±180° so continuous steering doesn't push the offset unbounded.
+            setHeadYawOffset(prev => {
+                let next = prev - steerDelta;
+                if (next > 180) next -= 360;
+                if (next < -180) next += 360;
+                return next;
+            });
         }
         setCarSteering(newSteering);
     }, [headCoupling]);
@@ -770,7 +777,7 @@ function App() {
                 // to prevent the "car wheeling around" desync effect.
                 const pano = panoramaRef.current;
                 if (pano) {
-                    const viewH = (carHeadingRef.current + headYawOffsetRef.current + 360) % 360;
+                    const viewH = (((carHeadingRef.current + headYawOffsetRef.current) % 360) + 360) % 360;
                     pano.setPov({ heading: viewH, pitch: headPitchRef.current });
                 }
                 updateCarMode(carHeading, headYawOffset, headPitch);
@@ -1501,9 +1508,10 @@ function App() {
                     mode={mode}
                     source={isConnected ? streetViewCanvas : null}
                     zoom={zoom}
-                    // Use viewHeading (carHeading + headYawOffset) so the WebGPU zoom
-                    // centres on the direction the player is actually looking.
-                    panX={viewHeading / 360}
+                    // panX/panY control zoom centering in the shader (no effect at zoom=1).
+                    // In car mode: panorama.setPov follows viewHeading (car+head) via RAF loop,
+                    // so pass viewHeading here too for correct zoom centering.
+                    panX={(isCarMode ? viewHeading : heading) / 360}
                     panY={((isCarMode ? headPitch : pitch) + 90) / 180}
                 />
 
