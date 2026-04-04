@@ -24,19 +24,29 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = uniforms.y;
-    let panX = uniforms.z;
-    let panY = uniforms.w;
-    
-    // Apply zoom and pan for navigation
-    let center = vec2<f32>(panX, panY);
-    let uv = (input.uv - center) / zoom + center;
-    
+    let panX = uniforms.z;  // 0.5 = centered; offset encodes head look in car mode
+    let panY = uniforms.w;  // 0.5 = centered; offset encodes head pitch in car mode
+
+    // Apply head look offset as UV shift (works at all zoom levels).
+    // In car mode: panX/panY encode head yaw/pitch offset from 0.5 center.
+    // In free mode: panX=panY=0.5, so shiftX=shiftY=0 (no effect).
+    let shiftX = panX - 0.5;
+    let shiftY = panY - 0.5;
+
+    var uv = input.uv;
+    uv.x = uv.x - shiftX;
+    uv.y = uv.y - shiftY;
+
+    // Apply zoom centered on the shifted view
+    let center = vec2<f32>(0.5, 0.5);
+    uv = (uv - center) / zoom + center;
+
     // Clamp or wrap UVs for panoramic effect
     let wrappedUV = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 1.0));
-    
+
     // Sample the panorama texture
     var color = textureSample(tex, texSampler, wrappedUV).rgb;
-    
+
     // Output to HDR intermediate (color grading and weather applied in post-process)
     return vec4<f32>(color, 1.0);
 }

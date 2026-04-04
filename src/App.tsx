@@ -773,12 +773,13 @@ function App() {
                                  carModeRef.current?.wipersEnabled;
 
             if (shouldRender) {
-                // Update panorama POV and Three.js car in the SAME frame
-                // to prevent the "car wheeling around" desync effect.
+                // Lock panorama to car heading ONLY (not head look).
+                // Head look offset is applied synchronously in the WebGPU shader
+                // via UV shifting, eliminating the async Google Maps tile-rendering
+                // lag that caused the "bobbing" effect.
                 const pano = panoramaRef.current;
                 if (pano) {
-                    const viewH = (((carHeadingRef.current + headYawOffsetRef.current) % 360) + 360) % 360;
-                    pano.setPov({ heading: viewH, pitch: headPitchRef.current });
+                    pano.setPov({ heading: carHeadingRef.current, pitch: 0 });
                 }
                 updateCarMode(carHeading, headYawOffset, headPitch);
             }
@@ -1508,11 +1509,13 @@ function App() {
                     mode={mode}
                     source={isConnected ? streetViewCanvas : null}
                     zoom={zoom}
-                    // panX/panY control zoom centering in the shader (no effect at zoom=1).
-                    // In car mode: panorama.setPov follows viewHeading (car+head) via RAF loop,
-                    // so pass viewHeading here too for correct zoom centering.
-                    panX={(isCarMode ? viewHeading : heading) / 360}
-                    panY={((isCarMode ? headPitch : pitch) + 90) / 180}
+                    // panX/panY: 0.5 = centered (no shift).
+                    // Car mode: head look offset mapped to UV space. Google Maps renders
+                    // at carHeading; the shader shifts UVs synchronously for head look.
+                    // ~90° horizontal FOV maps to full UV width, so ±45° → ±0.5 UV.
+                    // Free mode: 0.5 (no shift; Google Maps handles heading via setPov).
+                    panX={isCarMode ? 0.5 - (headYawOffset / 90) * 0.5 : 0.5}
+                    panY={isCarMode ? 0.5 + (headPitch / 90) * 0.5 : 0.5}
                 />
 
                 {/* Compass Overlay - shows which direction the head is looking */}
