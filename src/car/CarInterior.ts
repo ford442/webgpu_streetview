@@ -78,9 +78,12 @@ export class CarInterior {
             interiorDetails: true
         };
 
-        // Camera at driver seat eye level (~1.2m), slightly angled toward center console
+        // Camera at driver seat eye level (~1.2m), slightly angled toward center console.
+        // FOV is set to 60° vertical which corresponds to ~88° horizontal at 16:9 aspect —
+        // this matches Google Maps Street View zoom=1 (~90° horizontal FOV) so the 3D car
+        // interior window openings stay aligned with the background panorama.
         const { x, y, z } = this.vehicleConfig.cameraPosition;
-        this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.01, 100);
+        this.camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 100);
         // Camera starts at origin of driverSeatGroup (position set via driverSeatGroup below)
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.order = 'YXZ';
@@ -1009,7 +1012,9 @@ export class CarInterior {
      * @param zoom - Current WebGPU zoom level (1.0 = no zoom, 3.0 = maximum)
      */
     public setZoomFOV(zoom: number): void {
-        this.camera.fov = 75 / Math.max(1, zoom);
+        // Base FOV 60° matches Google Maps Street View zoom=1 (~90° horizontal at 16:9).
+        // Dividing by zoom mirrors the same narrowing applied by the WebGPU panorama shader.
+        this.camera.fov = 60 / Math.max(1, zoom);
         this.camera.updateProjectionMatrix();
     }
 

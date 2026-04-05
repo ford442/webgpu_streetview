@@ -116,6 +116,9 @@ function App() {
     // 'drive': Mouse X steers car, mouse Y controls pitch (rigid head to car)
     const [carControlMode, setCarControlMode] = useState<'cab' | 'drive'>('cab');
 
+    // Whether the car control panel (cruise, weather, radio) is expanded in the mode selector
+    const [showCarControlPanel, setShowCarControlPanel] = useState(false);
+
     // Head coupling mode state - determines how head/camera behaves when car steers
     // 'rigid': Head turns with car (traditional cockpit feel, head stays fixed relative to car)
     // 'free': Head stays looking at same world direction (like looking out side window while turning)
@@ -235,10 +238,16 @@ function App() {
     const headPitchRef = useRef(headPitch);
     const carHeadingRef = useRef(carHeading);
     const panoramaRef = useRef(panorama);
+    // headingRef: used by cruise interval to avoid stale closure without restarting timer on every look
+    const headingRef = useRef(heading);
+    // isCarModeRef: used by cruise interval to avoid timer restart on car mode toggle
+    const isCarModeRef = useRef(isCarMode);
     headYawOffsetRef.current = headYawOffset;
     headPitchRef.current = headPitch;
     carHeadingRef.current = carHeading;
     panoramaRef.current = panorama;
+    headingRef.current = heading;
+    isCarModeRef.current = isCarMode;
 
     useEffect(() => {
         if (!audioRef.current) {
@@ -580,7 +589,11 @@ function App() {
             const links = panorama.getLinks();
             if (!links) return;
 
-            let targetHeading = isCarMode ? carHeading : heading;
+            // Use refs for frequently-changing values so the interval is not restarted
+            // on every steering input or head-look movement.
+            // carHeadingRef = car body direction; headingRef = free-mode look direction.
+            // Cruise always follows the car body heading (not the head-look direction).
+            let targetHeading = isCarModeRef.current ? carHeadingRef.current : headingRef.current;
 
             // If we have a route with waypoints, navigate towards the next waypoint
             if (routeWaypoints && routeWaypoints.length > 0 && currentWaypointIndex < routeWaypoints.length) {
@@ -630,8 +643,9 @@ function App() {
 
             if (bestLink && bestLink.pano) {
                 panorama.setPano(bestLink.pano);
-                // In car mode: smoothly snap to road direction (street locking)
-                if (isCarMode) {
+                // In car mode: smoothly snap car heading to road direction (street locking).
+                // Cruise always drives in the car body direction, not the head-look direction.
+                if (isCarModeRef.current) {
                     setCarHeading(prev => {
                         // Handle angle wrapping for shortest path
                         let diff = targetHeading - prev;
@@ -653,7 +667,10 @@ function App() {
                 cruiseIntervalRef.current = null;
             }
         };
-    }, [isCruiseMode, panorama, heading, carHeading, isCarMode, isTransitioning, routeWaypoints, currentWaypointIndex]);
+        // heading, carHeading, isCarMode, and isTransitioning are accessed via refs inside
+        // performCruiseHop so the interval is not restarted on every steering/look change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isCruiseMode, panorama, routeWaypoints, currentWaypointIndex]);
 
     // --- UI ACTIONS ---
     const handleStart = () => {
@@ -1204,7 +1221,8 @@ function App() {
                 action: () => {
                     if (isCarMode) {
                         handleToggleCarControlMode();
-                        announce(`${carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}`);
+                        // Announce the NEW mode (opposite of current, since toggle happens synchronously)
+                        announce(`${carControlMode === 'cab' ? 'Steering Mode' : 'Free Look Mode'}`);
                     } else {
                         setIsHistoryPanelOpen(!isHistoryPanelOpen);
                         setIsBookmarkPanelOpen(false);
@@ -1339,33 +1357,156 @@ function App() {
                 />
             )}
 
-            {/* Car Control Mode Indicator - shows when in car mode */}
+            {/* Car Mode Selector Panel - Control Panel / Free Look / Steering */}
             {isConnected && isCarMode && (
-                <div style={{ 
-                    position: 'absolute', 
-                    top: 10, 
-                    left: 10, 
-                    background: 'rgba(0,0,0,0.7)',
-                    padding: '10px 14px',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    fontSize: '13px',
-                    zIndex: 100,
-                    fontFamily: 'system-ui, sans-serif',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-                }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                        {carControlMode === 'cab' ? '👀 Cab Mode' : '🎮 Drive Mode'}
+                <div
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onMouseUp={(e) => e.stopPropagation()}
+                    onMouseMove={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ 
+                        position: 'absolute', 
+                        top: 10, 
+                        left: 10, 
+                        background: 'rgba(0,0,0,0.75)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        zIndex: 100,
+                        fontFamily: 'system-ui, sans-serif',
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+                        userSelect: 'none',
+                        minWidth: '220px',
+                    }}>
+                    {/* Mode selector buttons */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                        {/* Control Panel button */}
+                        <button
+                            onClick={() => setShowCarControlPanel(v => !v)}
+                            title="Toggle car control panel"
+                            style={{
+                                flex: 1,
+                                padding: '8px 4px',
+                                background: showCarControlPanel ? 'rgba(33,150,243,0.35)' : 'transparent',
+                                border: 'none',
+                                borderRight: '1px solid rgba(255,255,255,0.12)',
+                                color: showCarControlPanel ? '#90CAF9' : 'rgba(255,255,255,0.7)',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'system-ui, sans-serif',
+                                fontWeight: showCarControlPanel ? 'bold' : 'normal',
+                                borderRadius: '8px 0 0 0',
+                                transition: 'background 0.15s',
+                            }}
+                        >
+                            📋 Controls
+                        </button>
+                        {/* Free Look button */}
+                        <button
+                            onClick={() => { setCarControlMode('cab'); setHeadCoupling('free'); }}
+                            title="Free look – mouse controls camera (360°)"
+                            style={{
+                                flex: 1,
+                                padding: '8px 4px',
+                                background: carControlMode === 'cab' ? 'rgba(76,175,80,0.35)' : 'transparent',
+                                border: 'none',
+                                borderRight: '1px solid rgba(255,255,255,0.12)',
+                                color: carControlMode === 'cab' ? '#A5D6A7' : 'rgba(255,255,255,0.7)',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'system-ui, sans-serif',
+                                fontWeight: carControlMode === 'cab' ? 'bold' : 'normal',
+                                transition: 'background 0.15s',
+                            }}
+                        >
+                            👀 Free Look
+                        </button>
+                        {/* Steering button */}
+                        <button
+                            onClick={() => { setCarControlMode('drive'); setHeadCoupling('rigid'); }}
+                            title="Steering – mouse steers the car"
+                            style={{
+                                flex: 1,
+                                padding: '8px 4px',
+                                background: carControlMode === 'drive' ? 'rgba(255,152,0,0.35)' : 'transparent',
+                                border: 'none',
+                                color: carControlMode === 'drive' ? '#FFCC80' : 'rgba(255,255,255,0.7)',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'system-ui, sans-serif',
+                                fontWeight: carControlMode === 'drive' ? 'bold' : 'normal',
+                                borderRadius: '0 8px 0 0',
+                                transition: 'background 0.15s',
+                            }}
+                        >
+                            🎮 Steering
+                        </button>
                     </div>
-                    <div style={{ fontSize: '11px', opacity: 0.8, lineHeight: '1.4' }}>
-                        {carControlMode === 'cab' 
-                            ? '🖱️ Free look 360° • Shift+Mouse / Right-drag / A/D = Steer'
-                            : '🎮 Mouse to steer • A/D to steer • Q/E snap turn'}
+
+                    {/* Mode description row */}
+                    <div style={{ padding: '6px 10px', fontSize: '11px', opacity: 0.75, lineHeight: '1.4' }}>
+                        {carControlMode === 'cab'
+                            ? '🖱️ Mouse = Free look 360° • A/D or Shift+drag = Steer'
+                            : '🎮 Mouse X = Steer • A/D = Steer • Q/E = Snap 45°'}
                     </div>
-                    <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }}>
-                        Press [H] to toggle | [C] Recenter | [Q/E] Snap 45°
-                    </div>
+
+                    {/* Expanded car control panel */}
+                    {showCarControlPanel && (
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', padding: '8px 10px' }}>
+                            <div style={{ fontSize: '11px', opacity: 0.6, marginBottom: '6px', fontWeight: 'bold', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                Car Controls
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {/* Cruise toggle */}
+                                <button
+                                    onClick={() => setIsCruiseMode(v => !v)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        background: isCruiseMode ? 'rgba(76,175,80,0.3)' : 'rgba(255,255,255,0.07)',
+                                        border: '1px solid rgba(255,255,255,0.15)',
+                                        borderRadius: '4px', color: '#fff', cursor: 'pointer',
+                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    <span>{isCruiseMode ? '🟢' : '⚫'}</span>
+                                    <span>{isCruiseMode ? 'Cruise ON' : 'Cruise OFF'}</span>
+                                </button>
+                                {/* Recenter head */}
+                                <button
+                                    onClick={handleRecenterHead}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        background: 'rgba(255,255,255,0.07)',
+                                        border: '1px solid rgba(255,255,255,0.15)',
+                                        borderRadius: '4px', color: '#fff', cursor: 'pointer',
+                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    <span>↩️</span><span>Recenter Look [C]</span>
+                                </button>
+                                {/* Exit car mode */}
+                                <button
+                                    onClick={handleToggleCarMode}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        background: 'rgba(244,67,54,0.2)',
+                                        border: '1px solid rgba(244,67,54,0.4)',
+                                        borderRadius: '4px', color: '#EF9A9A', cursor: 'pointer',
+                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    <span>🚗</span><span>Exit Car Mode</span>
+                                </button>
+                            </div>
+                            <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '6px' }}>
+                                [H] Toggle mode • [Q/E] Snap 45°
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1437,7 +1578,7 @@ function App() {
                         )}
                     </div>
                     <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '12px' }}>
-                        Press [H] to toggle mode • [C] to recenter
+                        Use the Controls, Free Look, or Steering panel (top-left) to switch modes
                     </div>
                 </div>
             )}
@@ -1507,7 +1648,7 @@ function App() {
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
-                    source={isConnected ? streetViewCanvas : null}
+                    source={isConnected && !(isCruiseMode && isTransitioning) ? streetViewCanvas : null}
                     zoom={zoom}
                     // panX/panY: 0.5 = centered (no shift).
                     // Car mode: head look offset mapped to UV space. Google Maps renders
@@ -2012,7 +2153,7 @@ function App() {
                     border: '1px solid rgba(255,255,255,0.2)',
                     fontFamily: 'system-ui, sans-serif'
                 }}>
-                    🚗 <strong>{carControlMode === 'cab' ? 'Cab Mode' : 'Drive Mode'}</strong>&nbsp;&nbsp;
+                    🚗 <strong>{carControlMode === 'cab' ? '👀 Free Look' : '🎮 Steering'}</strong>&nbsp;&nbsp;
                     {carControlMode === 'cab' ? (
                         <>
                             <span style={{ opacity: 0.85 }}>Mouse</span> = Free Look 360° &nbsp;|&nbsp;
@@ -2027,7 +2168,7 @@ function App() {
                         </>
                     )}
                     &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>C</span> = Recenter
-                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>H</span> = Toggle
+                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>Controls panel: top-left</span>
                 </div>
             )}
         </div>
