@@ -1719,6 +1719,7 @@ function App() {
                             placeholder="Search address or coords..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
                             onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                             style={{ flex: 1, padding: '10px', border: '1px solid #555', borderRadius: '4px', backgroundColor: '#333', color: '#fff', fontSize: '14px' }}
                         />
@@ -1737,6 +1738,7 @@ function App() {
                             placeholder="Enter destination (e.g., 'Eiffel Tower')..."
                             value={routeDestination}
                             onChange={(e) => setRouteDestination(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
                             onKeyPress={(e) => e.key === 'Enter' && plotRoute()}
                             style={{
                                 flex: 1,
@@ -2117,6 +2119,7 @@ function App() {
                 <DashboardUI
                     isVisible={isCarMode}
                     isRadioPlaying={isRadioPlaying}
+                    isMapOpen={isMapOpen}
                     onToggleGPS={() => setIsMapOpen(!isMapOpen)}
                     onToggleRadio={toggleRadio}
                     onRainIntensity={handleRainIntensity}

@@ -8,6 +8,7 @@ import React, { useRef, useEffect } from 'react';
 interface DashboardUIProps {
     isVisible: boolean;
     isRadioPlaying: boolean;
+    isMapOpen?: boolean;
     onToggleGPS: () => void;
     onToggleRadio: () => void;
     onRainIntensity: (value: number) => void;
@@ -30,6 +31,7 @@ interface DashboardUIProps {
 const DashboardUI: React.FC<DashboardUIProps> = ({
     isVisible,
     isRadioPlaying,
+    isMapOpen = false,
     onToggleGPS,
     onToggleRadio,
     onRainIntensity,
@@ -175,8 +177,8 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                 <button
                     onClick={onToggleGPS}
                     style={buttonStyle}
-                    aria-label={isRadioPlaying ? "Turn off radio" : "Turn on radio"}
-                    aria-pressed={isRadioPlaying}
+                    aria-label={isMapOpen ? "Close GPS map" : "Open GPS map"}
+                    aria-pressed={isMapOpen}
                     title="Toggle GPS Map (G)"
                 >
                     <span aria-hidden="true">🗺️ GPS</span>

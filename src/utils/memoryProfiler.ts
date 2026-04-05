@@ -193,9 +193,12 @@ export class MemoryProfiler {
     const textureCount = trackedTextures.size;
     const materialCount = trackedMaterials.size;
     
+    // Include Three.js scene assets + tracked WebGPU resources
+    const gpuMemory = this.getGPUMemoryUsage();
     const estimatedBytes = 
       details.geometries.reduce((sum, g) => sum + g.estimatedBytes, 0) +
-      details.textures.reduce((sum, t) => sum + t.estimatedBytes, 0);
+      details.textures.reduce((sum, t) => sum + t.estimatedBytes, 0) +
+      gpuMemory.total;
     
     const snapshot: MemorySnapshot = {
       timestamp,
@@ -319,6 +322,20 @@ export class MemoryProfiler {
    */
   untrackGPUBuffer(id: string): void {
     this.gpuBuffers.delete(id);
+  }
+  
+  /**
+   * Track a GPU texture allocation
+   */
+  trackGPUTexture(id: string, size: number): void {
+    this.gpuTextures.set(id, size);
+  }
+  
+  /**
+   * Untrack a GPU texture
+   */
+  untrackGPUTexture(id: string): void {
+    this.gpuTextures.delete(id);
   }
   
   /**
