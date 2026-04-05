@@ -1221,7 +1221,8 @@ function App() {
                 action: () => {
                     if (isCarMode) {
                         handleToggleCarControlMode();
-                        announce(`${carControlMode === 'cab' ? 'Free Look Mode' : 'Steering Mode'}`);
+                        // Announce the NEW mode (opposite of current, since toggle happens synchronously)
+                        announce(`${carControlMode === 'cab' ? 'Steering Mode' : 'Free Look Mode'}`);
                     } else {
                         setIsHistoryPanelOpen(!isHistoryPanelOpen);
                         setIsBookmarkPanelOpen(false);
@@ -1577,7 +1578,7 @@ function App() {
                         )}
                     </div>
                     <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '12px' }}>
-                        Use [📋 Controls / 👀 Free Look / 🎮 Steering] panel to switch modes
+                        Use the Controls, Free Look, or Steering panel (top-left) to switch modes
                     </div>
                 </div>
             )}
@@ -2167,7 +2168,7 @@ function App() {
                         </>
                     )}
                     &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>C</span> = Recenter
-                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>📋 Controls panel: top-left</span>
+                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>Controls panel: top-left</span>
                 </div>
             )}
         </div>
