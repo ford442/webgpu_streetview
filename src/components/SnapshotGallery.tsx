@@ -261,6 +261,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                                 type="text"
                                                 value={editName}
                                                 onChange={(e) => setEditName(e.target.value)}
+                                                onKeyDown={(e) => e.stopPropagation()}
                                                 onKeyPress={(e) => e.key === 'Enter' && saveEdit()}
                                                 onBlur={saveEdit}
                                                 autoFocus

@@ -211,6 +211,7 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                             placeholder="Bookmark name..."
                             value={newBookmarkName}
                             onChange={(e) => setNewBookmarkName(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
                             autoFocus
                             aria-label="Bookmark name"
                             style={{

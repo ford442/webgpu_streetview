@@ -134,7 +134,7 @@ fn wiperMask(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> f32 {
     
     // Distance from the wiper's current position
     let distFromWiper = abs(uvAngle - angle);
-    if (distFromWiper > 3.14159 {
+    if (distFromWiper > 3.14159) {
         distFromWiper = 6.28318 - distFromWiper;
     }
     

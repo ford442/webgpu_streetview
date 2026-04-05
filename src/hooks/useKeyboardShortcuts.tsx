@@ -84,6 +84,13 @@ export function useKeyboardShortcuts(
         (event: KeyboardEvent) => {
             if (!enabled) return;
 
+            // Don't trigger shortcuts when typing in input fields
+            if (document.activeElement instanceof HTMLInputElement ||
+                document.activeElement instanceof HTMLTextAreaElement ||
+                document.activeElement instanceof HTMLSelectElement) {
+                return;
+            }
+
             for (const shortcut of shortcuts) {
                 const keyMatches = event.key.toLowerCase() === shortcut.key.toLowerCase();
                 const modifierMatches = shortcut.modifier
