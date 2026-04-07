@@ -102,7 +102,7 @@ function App() {
     const [transitionState, setTransitionState] = useState<'idle' | 'zooming_out' | 'crossfading' | 'zooming_in'>('idle');
     const [transitionProgress, setTransitionProgress] = useState(0);
     const transitionZoomRef = useRef(1.0);
-    const [prevStreetViewCanvas, setPrevStreetViewCanvas] = useState<HTMLCanvasElement | null>(null);
+    const [prevStreetViewCanvas, setPrevStreetViewCanvas] = useState<ImageBitmap | null>(null);
     const skipCountRef = useRef(0); // Track how many locations we've skipped
 
     // Keep ref in sync with state for interval callback access
