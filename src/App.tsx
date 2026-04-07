@@ -45,6 +45,13 @@ const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load aft
 const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
 const INITIAL_HEADING = 34;
 
+// Transition mode: 'freeze' = hold last frame, 'zoom' = zoom transition with smart skip
+type TransitionMode = 'freeze' | 'zoom';
+const TRANSITION_ZOOM_DURATION_MS = 800; // Duration for zoom in/out phases
+const TRANSITION_CROSSFADE_MS = 200;     // Duration for crossfade at max zoom
+const SMART_SKIP_DISTANCE_M = 15;        // Skip locations closer than this (meters)
+const SMART_SKIP_ANGLE_THRESHOLD = 30;   // Skip if heading change is less than this (degrees)
+
 // Head/Car Steering Separation Constants
 // This implements a realistic car interior where the dashboard stays level with the
 // car body, but the driver can freely look around inside the cabin.
@@ -90,6 +97,14 @@ function App() {
     const isTransitioningRef = useRef(isTransitioning);
     const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Transition mode and zoom transition state
+    const [transitionMode, setTransitionMode] = useState<TransitionMode>('freeze');
+    const [transitionState, setTransitionState] = useState<'idle' | 'zooming_out' | 'crossfading' | 'zooming_in'>('idle');
+    const [transitionProgress, setTransitionProgress] = useState(0);
+    const transitionZoomRef = useRef(1.0);
+    const [prevStreetViewCanvas, setPrevStreetViewCanvas] = useState<HTMLCanvasElement | null>(null);
+    const skipCountRef = useRef(0); // Track how many locations we've skipped
+
     // Keep ref in sync with state for interval callback access
     useEffect(() => {
         isTransitioningRef.current = isTransitioning;
@@ -111,10 +126,15 @@ function App() {
     // Car mode state
     const [isCarMode, setIsCarMode] = useState(false);
 
-    // Car control mode - determines how mouse input controls the car
-    // 'cab': Mouse controls head look freely, A/D steers car (default)
-    // 'drive': Mouse X steers car, mouse Y controls pitch (rigid head to car)
-    const [carControlMode, setCarControlMode] = useState<'cab' | 'drive'>('cab');
+    // Control mode - determines how mouse input controls the view
+    // 'freeLook': Mouse always looks, click+drag on wheel steers (cruise-friendly)
+    // 'uiMouse': Normal cursor, no view control (for menus/interaction)
+    // 'carSteer': Mouse X steers car, Y controls pitch (steering-focused)
+    const [controlMode, setControlMode] = useState<'freeLook' | 'uiMouse' | 'carSteer'>('freeLook');
+    
+    // Track previous mode for temporary switching (e.g., clicking steering wheel)
+    const previousControlModeRef = useRef<'freeLook' | 'uiMouse' | 'carSteer'>('freeLook');
+    const isTempModeSwitchRef = useRef(false);
 
     // Whether the car control panel (cruise, weather, radio) is expanded in the mode selector
     const [showCarControlPanel, setShowCarControlPanel] = useState(false);
@@ -122,6 +142,7 @@ function App() {
     // Head coupling mode state - determines how head/camera behaves when car steers
     // 'rigid': Head turns with car (traditional cockpit feel, head stays fixed relative to car)
     // 'free': Head stays looking at same world direction (like looking out side window while turning)
+    // Auto-set based on controlMode: freeLook=free, carSteer=rigid, uiMouse=free
     const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('free');
 
     // Steering angle for overlay display
@@ -296,15 +317,15 @@ function App() {
             return;
         }
 
-        if (carControlMode === 'drive') {
-            // Drive mode: mouse X steers, mouse Y controls pitch
+        if (controlMode === 'carSteer') {
+            // Car Steer mode: mouse X steers, mouse Y controls pitch
             // Scale down the steering rate for mouse (more precise than keyboard)
             const steerRate = deltaX * 0.3;
             applySteering(steerRate);
-            // Pitch is controlled by mouse Y in both modes
+            // Pitch is controlled by mouse Y
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
-        } else {
-            // Cab mode: mouse controls head look freely (full 360°)
+        } else if (controlMode === 'freeLook') {
+            // Free Look mode: mouse controls head look freely (full 360°)
             setHeadYawOffset(prev => {
                 let next = prev + deltaX * HEAD_LOOK_SENSITIVITY;
                 // Wrap around for full 360° look
@@ -314,7 +335,8 @@ function App() {
             });
             setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
         }
-    }, [isCarMode, carControlMode, applySteering]);
+        // uiMouse mode: no view control from mouse movement
+    }, [isCarMode, controlMode, applySteering]);
 
     // Keyboard steering for car mode (A/D keys only)
     const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
@@ -344,7 +366,13 @@ function App() {
     }, []);
 
     const handleMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
-        if (!panorama || isTransitioning) return;
+        if (!panorama) return;
+        
+        // In freeze mode, block moves during transition
+        if (transitionMode === 'freeze' && isTransitioning) return;
+        
+        // In zoom mode, block moves during active zoom transition
+        if (transitionMode === 'zoom' && transitionState !== 'idle') return;
 
         const links = panorama.getLinks();
         if (!links) return;
@@ -357,7 +385,15 @@ function App() {
             direction
         );
         if (bestLink && bestLink.pano) {
+            // Start transition before changing pano
+            if (transitionMode === 'freeze') {
+                setIsTransitioning(true);
+            } else if (transitionMode === 'zoom') {
+                startZoomTransition();
+            }
+            
             panorama.setPano(bestLink.pano);
+            
             // In car mode: after moving, smoothly snap car to the actual road direction
             if (isCarMode && typeof bestLink.heading === 'number') {
                 // Smooth lerp to road direction - car follows street
@@ -371,11 +407,110 @@ function App() {
                 });
             }
         }
-    }, [panorama, heading, isCarMode, carHeading, isTransitioning]);
+    }, [panorama, heading, isCarMode, carHeading, isTransitioning, transitionMode, transitionState]);
 
     const handleRightClickMove = useCallback(() => {
         handleMove('forward');
     }, [handleMove]);
+
+    // Capture canvas as ImageBitmap for transition
+    const captureCanvas = useCallback(async (canvas: HTMLCanvasElement): Promise<ImageBitmap> => {
+        return await createImageBitmap(canvas);
+    }, []);
+
+    // Zoom transition functions
+    const startZoomTransition = useCallback(async () => {
+        if (!streetViewCanvas) return;
+        
+        // Capture current canvas content BEFORE it changes
+        // This preserves the image data while the StreetView canvas updates
+        try {
+            const captured = await captureCanvas(streetViewCanvas);
+            setPrevStreetViewCanvas(captured);
+        } catch (e) {
+            console.warn('[Zoom Transition] Failed to capture canvas:', e);
+        }
+        
+        setTransitionState('zooming_out');
+        setTransitionProgress(0);
+        
+        // Animate zoom out (1.0 → 3.0)
+        const startTime = Date.now();
+        const animateZoomOut = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / TRANSITION_ZOOM_DURATION_MS, 1);
+            const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+            
+            setTransitionProgress(progress);
+            transitionZoomRef.current = 1.0 + (2.0 * eased); // 1.0 → 3.0
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateZoomOut);
+            } else {
+                // Start crossfade
+                setTransitionState('crossfading');
+                setTimeout(() => {
+                    setTransitionState('zooming_in');
+                    animateZoomIn();
+                }, TRANSITION_CROSSFADE_MS);
+            }
+        };
+        
+        const animateZoomIn = () => {
+            const startTime = Date.now();
+            const animate = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / TRANSITION_ZOOM_DURATION_MS, 1);
+                const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+                
+                setTransitionProgress(1 - progress);
+                transitionZoomRef.current = 3.0 - (2.0 * eased); // 3.0 → 1.0
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Transition complete
+                    setTransitionState('idle');
+                    setTransitionProgress(0);
+                    transitionZoomRef.current = 1.0;
+                    setPrevStreetViewCanvas(null);
+                }
+            };
+            requestAnimationFrame(animate);
+        };
+        
+        requestAnimationFrame(animateZoomOut);
+    }, [streetViewCanvas, captureCanvas]);
+    
+    // Smart skip check for cruise mode
+    const shouldSkipLocation = useCallback((link: google.maps.StreetViewLink): boolean => {
+        if (transitionMode !== 'zoom') return false;
+        
+        const currentPos = panorama?.getPosition();
+        if (!currentPos || !link.pano) return false;
+        
+        // Get link position (if available) - for now we estimate
+        // In practice, you'd need to load the pano to get its position
+        // This is a simplified check based on heading similarity
+        
+        const currentHeading = isCarMode ? carHeading : heading;
+        const linkHeading = typeof link.heading === 'number' ? link.heading : currentHeading;
+        
+        // Calculate heading difference
+        let headingDiff = linkHeading - currentHeading;
+        while (headingDiff > 180) headingDiff -= 360;
+        while (headingDiff < -180) headingDiff += 360;
+        
+        // Skip if heading is similar (straight-ish road)
+        const shouldSkip = Math.abs(headingDiff) < SMART_SKIP_ANGLE_THRESHOLD;
+        
+        if (shouldSkip) {
+            skipCountRef.current++;
+            console.log(`[Smart Skip] Skipping location #${skipCountRef.current}, heading diff: ${headingDiff.toFixed(1)}°`);
+        }
+        
+        return shouldSkip;
+    }, [panorama, isCarMode, carHeading, heading, transitionMode]);
 
     // Color grading handlers
     const handleVibranceChange = useCallback((value: number) => {
@@ -530,10 +665,14 @@ function App() {
                 });
             }
 
-            setIsTransitioning(true);
-            setTimeout(() => {
-                setIsTransitioning(false);
-            }, TRANSITION_DELAY_MS);
+            // Handle transition end based on mode
+            if (transitionMode === 'freeze') {
+                setIsTransitioning(true);
+                setTimeout(() => {
+                    setIsTransitioning(false);
+                }, TRANSITION_DELAY_MS);
+            }
+            // In zoom mode, the transition animation handles the timing
         };
 
         const listener = panorama.addListener('pano_changed', handlePanoChanged);
@@ -711,13 +850,13 @@ function App() {
         }
     }, [isCarMode]);
 
-    // Toggle car control mode between 'cab' and 'drive' (press 'H' while in car mode)
-    const handleToggleCarControlMode = useCallback(() => {
+    // Toggle control mode between freeLook → uiMouse → carSteer → freeLook (press 'H' while in car mode)
+    const handleToggleControlMode = useCallback(() => {
         if (!isCarMode) return;
-        setCarControlMode(prev => {
-            const next = prev === 'cab' ? 'drive' : 'cab';
+        setControlMode(prev => {
+            const next = prev === 'freeLook' ? 'uiMouse' : prev === 'uiMouse' ? 'carSteer' : 'freeLook';
             // Auto-set head coupling based on mode for better UX
-            if (next === 'drive') {
+            if (next === 'carSteer') {
                 setHeadCoupling('rigid');
             } else {
                 setHeadCoupling('free');
@@ -725,6 +864,41 @@ function App() {
             return next;
         });
     }, [isCarMode]);
+    
+    // Set control mode explicitly (for button clicks)
+    const handleSetControlMode = useCallback((mode: 'freeLook' | 'uiMouse' | 'carSteer') => {
+        if (!isCarMode) return;
+        setControlMode(mode);
+        // Auto-set head coupling based on mode
+        if (mode === 'carSteer') {
+            setHeadCoupling('rigid');
+        } else {
+            setHeadCoupling('free');
+        }
+    }, [isCarMode]);
+    
+    // Handle steering wheel click - temporarily enter carSteer mode
+    const handleSteeringWheelClick = useCallback((isDown: boolean) => {
+        if (!isCarMode) return;
+        
+        if (isDown) {
+            // Clicking down on wheel - save current mode and switch to carSteer
+            if (controlMode !== 'carSteer') {
+                previousControlModeRef.current = controlMode;
+                isTempModeSwitchRef.current = true;
+                setControlMode('carSteer');
+                setHeadCoupling('rigid');
+            }
+        } else {
+            // Releasing click - return to previous mode if this was a temp switch
+            if (isTempModeSwitchRef.current) {
+                const prevMode = previousControlModeRef.current;
+                setControlMode(prevMode);
+                setHeadCoupling(prevMode === 'carSteer' ? 'rigid' : 'free');
+                isTempModeSwitchRef.current = false;
+            }
+        }
+    }, [isCarMode, controlMode]);
 
     // Initialize/teardown car mode when toggled
     useEffect(() => {
@@ -1217,12 +1391,14 @@ function App() {
             },
             {
                 key: 'h',
-                description: 'Toggle car control mode or history',
+                description: 'Toggle control mode or history',
                 action: () => {
                     if (isCarMode) {
-                        handleToggleCarControlMode();
-                        // Announce the NEW mode (opposite of current, since toggle happens synchronously)
-                        announce(`${carControlMode === 'cab' ? 'Steering Mode' : 'Free Look Mode'}`);
+                        handleToggleControlMode();
+                        // Announce the NEW mode
+                        const modeNames = { freeLook: 'Free Look Mode', uiMouse: 'UI Mouse Mode', carSteer: 'Car Steer Mode' };
+                        const nextMode = controlMode === 'freeLook' ? 'uiMouse' : controlMode === 'uiMouse' ? 'carSteer' : 'freeLook';
+                        announce(modeNames[nextMode]);
                     } else {
                         setIsHistoryPanelOpen(!isHistoryPanelOpen);
                         setIsBookmarkPanelOpen(false);
@@ -1404,51 +1580,73 @@ function App() {
                         </button>
                         {/* Free Look button */}
                         <button
-                            onClick={() => { setCarControlMode('cab'); setHeadCoupling('free'); }}
-                            title="Free look – mouse controls camera (360°)"
+                            onClick={() => handleSetControlMode('freeLook')}
+                            title="Free Look – mouse always looks, click wheel to temporarily steer"
                             style={{
                                 flex: 1,
                                 padding: '8px 4px',
-                                background: carControlMode === 'cab' ? 'rgba(76,175,80,0.35)' : 'transparent',
+                                background: controlMode === 'freeLook' ? 'rgba(76,175,80,0.35)' : 'transparent',
                                 border: 'none',
                                 borderRight: '1px solid rgba(255,255,255,0.12)',
-                                color: carControlMode === 'cab' ? '#A5D6A7' : 'rgba(255,255,255,0.7)',
+                                color: controlMode === 'freeLook' ? '#A5D6A7' : 'rgba(255,255,255,0.7)',
                                 cursor: 'pointer',
                                 fontSize: '12px',
                                 fontFamily: 'system-ui, sans-serif',
-                                fontWeight: carControlMode === 'cab' ? 'bold' : 'normal',
+                                fontWeight: controlMode === 'freeLook' ? 'bold' : 'normal',
                                 transition: 'background 0.15s',
                             }}
                         >
                             👀 Free Look
                         </button>
-                        {/* Steering button */}
+                        {/* UI Mouse button */}
                         <button
-                            onClick={() => { setCarControlMode('drive'); setHeadCoupling('rigid'); }}
-                            title="Steering – mouse steers the car"
+                            onClick={() => handleSetControlMode('uiMouse')}
+                            title="UI Mouse – normal cursor, use menus without affecting view"
                             style={{
                                 flex: 1,
                                 padding: '8px 4px',
-                                background: carControlMode === 'drive' ? 'rgba(255,152,0,0.35)' : 'transparent',
+                                background: controlMode === 'uiMouse' ? 'rgba(33,150,243,0.35)' : 'transparent',
                                 border: 'none',
-                                color: carControlMode === 'drive' ? '#FFCC80' : 'rgba(255,255,255,0.7)',
+                                borderRight: '1px solid rgba(255,255,255,0.12)',
+                                color: controlMode === 'uiMouse' ? '#90CAF9' : 'rgba(255,255,255,0.7)',
                                 cursor: 'pointer',
                                 fontSize: '12px',
                                 fontFamily: 'system-ui, sans-serif',
-                                fontWeight: carControlMode === 'drive' ? 'bold' : 'normal',
+                                fontWeight: controlMode === 'uiMouse' ? 'bold' : 'normal',
+                                transition: 'background 0.15s',
+                            }}
+                        >
+                            🖱️ UI Mouse
+                        </button>
+                        {/* Car Steer button */}
+                        <button
+                            onClick={() => handleSetControlMode('carSteer')}
+                            title="Car Steer – mouse steers the car (click+drag or move)"
+                            style={{
+                                flex: 1,
+                                padding: '8px 4px',
+                                background: controlMode === 'carSteer' ? 'rgba(255,152,0,0.35)' : 'transparent',
+                                border: 'none',
+                                color: controlMode === 'carSteer' ? '#FFCC80' : 'rgba(255,255,255,0.7)',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'system-ui, sans-serif',
+                                fontWeight: controlMode === 'carSteer' ? 'bold' : 'normal',
                                 borderRadius: '0 8px 0 0',
                                 transition: 'background 0.15s',
                             }}
                         >
-                            🎮 Steering
+                            🚗 Car Steer
                         </button>
                     </div>
 
                     {/* Mode description row */}
                     <div style={{ padding: '6px 10px', fontSize: '11px', opacity: 0.75, lineHeight: '1.4' }}>
-                        {carControlMode === 'cab'
-                            ? '🖱️ Mouse = Free look 360° • A/D or Shift+drag = Steer'
-                            : '🎮 Mouse X = Steer • A/D = Steer • Q/E = Snap 45°'}
+                        {controlMode === 'freeLook'
+                            ? '🖱️ Mouse = Look 360° • Click wheel = Temp steer • A/D = Steer'
+                            : controlMode === 'uiMouse'
+                            ? '🖱️ Normal cursor • Use menus • Cruise continues'
+                            : '🎮 Mouse X = Steer • Mouse Y = Pitch • A/D = Steer'}
                     </div>
 
                     {/* Expanded car control panel */}
@@ -1561,24 +1759,34 @@ function App() {
                         🚗 Car Mode Active
                     </div>
                     <div style={{ opacity: 0.9, lineHeight: '1.6' }}>
-                        {carControlMode === 'cab' ? (
+                        {controlMode === 'freeLook' ? (
                             <>
                                 <div>👀 Mouse = Free look (360°)</div>
-                                <div>🖱️ Click to drive forward</div>
+                                <div>🎡 Grab steering wheel to temporarily steer</div>
                                 <div>🔄 Shift+Mouse / Right-drag / A/D = Steer</div>
-                                <div>🎡 Grab steering wheel to steer</div>
+                                <div>🖱️ Click ground to drive forward</div>
+                                <div>↩️ Q/E for quick 45° turns</div>
+                            </>
+                        ) : controlMode === 'uiMouse' ? (
+                            <>
+                                <div>🖱️ Normal mouse cursor</div>
+                                <div>📋 Click menus and controls freely</div>
+                                <div>🚗 Cruise mode continues driving</div>
+                                <div>⌨️ A/D or arrow keys to steer</div>
                                 <div>↩️ Q/E for quick 45° turns</div>
                             </>
                         ) : (
                             <>
-                                <div>🎮 Mouse to steer</div>
-                                <div>⬆️⬇️ A/D or arrow keys to steer</div>
+                                <div>🚗 Mouse X = Steer car</div>
+                                <div>👆 Mouse Y = Control pitch</div>
+                                <div>🎡 Grab steering wheel to steer</div>
+                                <div>⌨️ A/D or arrow keys to steer</div>
                                 <div>↩️ Q/E for 45° snap turns</div>
                             </>
                         )}
                     </div>
                     <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '12px' }}>
-                        Use the Controls, Free Look, or Steering panel (top-left) to switch modes
+                        Press [H] to cycle modes or use the panel (top-left)
                     </div>
                 </div>
             )}
@@ -1595,10 +1803,11 @@ function App() {
                 onSteer={handleSteer}
                 onSteerDrag={handleSteerDrag}
                 onRecenterHead={handleRecenterHead}
-                onToggleCarControlMode={handleToggleCarControlMode}
+                onToggleControlMode={handleToggleControlMode}
                 onSnapTurn={handleSnapTurn}
+                onSteeringWheelClick={handleSteeringWheelClick}
                 isCarMode={isCarMode}
-                carControlMode={carControlMode}
+                controlMode={controlMode}
                 isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
             />
 
@@ -1648,8 +1857,11 @@ function App() {
                 <WebGPUCanvas
                     rendererRef={rendererRef}
                     mode={mode}
-                    source={isConnected && !(isCruiseMode && isTransitioning) ? streetViewCanvas : null}
-                    zoom={zoom}
+                    source={isConnected && !isTransitioning ? streetViewCanvas : null}
+                    prevSource={transitionMode === 'zoom' ? prevStreetViewCanvas : null}
+                    zoom={transitionMode === 'zoom' && transitionState !== 'idle' ? transitionZoomRef.current : zoom}
+                    transitionState={transitionMode === 'zoom' ? transitionState : 'idle'}
+                    transitionProgress={transitionMode === 'zoom' ? transitionProgress : 0}
                     // panX/panY: 0.5 = centered (no shift).
                     // Car mode: head look offset mapped to UV space. Google Maps renders
                     // at carHeading; the shader shifts UVs synchronously for head look.
@@ -2013,6 +2225,19 @@ function App() {
                         >
                             <span aria-hidden="true">📊 Stats</span>
                         </button>
+                        
+                        {/* Transition Mode Toggle Button */}
+                        <button
+                            onClick={() => setTransitionMode(prev => prev === 'freeze' ? 'zoom' : 'freeze')}
+                            className={`control-btn ${transitionMode === 'zoom' ? 'disconnect' : ''}`}
+                            aria-label={`Transition mode: ${transitionMode === 'freeze' ? 'freeze frame' : 'zoom transition'}. Press to switch`}
+                            title="Toggle Transition Mode (Freeze/Zoom)"
+                        >
+                            <span aria-hidden="true">
+                                {transitionMode === 'freeze' ? '⏸️ Freeze' : '🔍 Zoom'}
+                                {skipCountRef.current > 0 && ` (${skipCountRef.current} skipped)`}
+                            </span>
+                        </button>
                     </>
                 )}
             </div>
@@ -2156,12 +2381,18 @@ function App() {
                     border: '1px solid rgba(255,255,255,0.2)',
                     fontFamily: 'system-ui, sans-serif'
                 }}>
-                    🚗 <strong>{carControlMode === 'cab' ? '👀 Free Look' : '🎮 Steering'}</strong>&nbsp;&nbsp;
-                    {carControlMode === 'cab' ? (
+                    🚗 <strong>{controlMode === 'freeLook' ? '👀 Free Look' : controlMode === 'uiMouse' ? '🖱️ UI Mouse' : '🚗 Car Steer'}</strong>&nbsp;&nbsp;
+                    {controlMode === 'freeLook' ? (
                         <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Free Look 360° &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Shift+Mouse / Right-drag / A/D</span> = Steer &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Click</span> = Move
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Look 360° &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Wheel-click</span> = Temp Steer &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
+                        </>
+                    ) : controlMode === 'uiMouse' ? (
+                        <>
+                            <span style={{ opacity: 0.85 }}>Mouse</span> = Normal cursor &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>Click</span> = Use menus &nbsp;|&nbsp;
+                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
                         </>
                     ) : (
                         <>
@@ -2171,7 +2402,7 @@ function App() {
                         </>
                     )}
                     &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>C</span> = Recenter
-                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>Controls panel: top-left</span>
+                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>[H]</span> = Switch Mode
                 </div>
             )}
         </div>

@@ -7,6 +7,7 @@ import { getMemoryProfiler } from '../utils/memoryProfiler';
 interface WebGPUCanvasProps {
     mode: RenderMode;
     source?: CanvasImageSource | null;
+    prevSource?: CanvasImageSource | null;
     zoom?: number;
     panX?: number;
     panY?: number;
@@ -18,9 +19,28 @@ interface WebGPUCanvasProps {
     rendererRef?: React.RefObject<Renderer | null>;
     onWebGPUStatus?: (available: boolean) => void;
     onFPSUpdate?: (fps: number) => void;
+    // Transition props
+    transitionState?: 'idle' | 'zooming_out' | 'crossfading' | 'zooming_in';
+    transitionProgress?: number;
 }
 
-const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, panY, mousePosition, setMousePosition, isMouseDown, setIsMouseDown, rendererRef, onWebGPUStatus, onFPSUpdate }) => {
+const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ 
+    mode, 
+    source, 
+    prevSource,
+    zoom = 1.0, 
+    panX, 
+    panY, 
+    mousePosition, 
+    setMousePosition, 
+    isMouseDown, 
+    setIsMouseDown, 
+    rendererRef, 
+    onWebGPUStatus, 
+    onFPSUpdate,
+    transitionState = 'idle',
+    transitionProgress = 0
+}) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
@@ -155,12 +175,35 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
 
             // Performance: Adaptive frame skipping based on quality
             const skipFrame = shouldSkipFrame();
-            const shouldRender = !skipFrame && (sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0));
+            
+            // During transition, always render for smooth animation
+            const isTransitioning = transitionState !== 'idle';
+            const shouldRender = !skipFrame && (isTransitioning || sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0));
 
-            if (shouldRender && currentRendererRef.current && source) {
-                const heading = (panX || 0.5) * 360;
-                const pitch = (panY || 0.5) * 180 - 90;
-                currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
+            if (shouldRender && currentRendererRef.current) {
+                // Handle transition rendering
+                if (transitionState !== 'idle' && prevSource && source) {
+                    // Dual-source transition rendering
+                    const heading = (panX || 0.5) * 360;
+                    const pitch = (panY || 0.5) * 180 - 90;
+                    
+                    // Render with transition blend
+                    currentRendererRef.current.renderStreetViewTransition(
+                        mode,
+                        prevSource,
+                        source,
+                        heading,
+                        pitch,
+                        zoom,
+                        transitionState,
+                        transitionProgress
+                    );
+                } else if (source) {
+                    // Normal rendering
+                    const heading = (panX || 0.5) * 360;
+                    const pitch = (panY || 0.5) * 180 - 90;
+                    currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
+                }
                 sourceChangeFlagRef.current = false;
             }
 
@@ -173,7 +216,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ mode, source, zoom, panX, p
             cancelAnimationFrame(animationFrameId.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, source, zoom, panX, panY, shouldSkipFrame]);
+    }, [mode, source, prevSource, zoom, panX, panY, shouldSkipFrame, transitionState, transitionProgress]);
 
     return (
         <canvas

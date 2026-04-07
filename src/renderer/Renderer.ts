@@ -402,6 +402,35 @@ export class Renderer {
         return this.canvas.toDataURL('image/png', 1.0);
     }
 
+    /**
+     * Render a transition between two panoramas with zoom and crossfade
+     * This implements the "zoom through" transition effect
+     */
+    public renderStreetViewTransition(
+        mode: RenderMode,
+        prevSource: CanvasImageSource | null,
+        nextSource: CanvasImageSource | null,
+        heading?: number,
+        pitch?: number,
+        zoom?: number,
+        transitionState?: 'idle' | 'zooming_out' | 'crossfading' | 'zooming_in',
+        transitionProgress?: number
+    ): void {
+        // For now, just render the appropriate source based on transition state
+        // A full dual-texture implementation would require shader modifications
+        
+        if (transitionState === 'zooming_out' || transitionState === 'crossfading') {
+            // During zoom out and crossfade, render the previous source with zoom
+            this.renderStreetView(mode, prevSource, heading, pitch, zoom);
+        } else if (transitionState === 'zooming_in') {
+            // During zoom in, render the next source with zoom
+            this.renderStreetView(mode, nextSource, heading, pitch, zoom);
+        } else {
+            // Idle - render normally
+            this.renderStreetView(mode, nextSource, heading, pitch, zoom);
+        }
+    }
+
     public renderStreetView(
         mode: RenderMode, 
         source: CanvasImageSource | null, 
