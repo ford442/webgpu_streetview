@@ -220,8 +220,8 @@ const InputHandler: React.FC<InputHandlerProps> = ({
             const currentMode = isTempSteerModeRef.current ? 'carSteer' : controlModeRef.current;
 
             if (currentMode === 'freeLook') {
-                // Free Look: mouse always controls head look
-                // Steering is done via: wheel grab, Shift+mouse, right-drag, or A/D keys
+                // Free Look: mouse drag controls head look
+                // Steering is done via: wheel grab, Shift+drag, right-drag, or A/D keys
                 const isSteeringDrag = isMouseDownRef.current && (isSteeringWheelDragRef.current || isRightMouseRef.current);
                 
                 if (isSteeringDrag && onSteerDragRef.current) {
@@ -229,12 +229,12 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                     onSteerDragRef.current(movementX);
                     // Vertical movement still affects head pitch
                     onPanRef.current(0, movementY);
-                } else if (e.shiftKey && onSteerDragRef.current) {
-                    // Shift + mouse = steering
+                } else if (isMouseDownRef.current && e.shiftKey && onSteerDragRef.current) {
+                    // Shift+drag = steering
                     onSteerDragRef.current(movementX);
                     onPanRef.current(0, movementY);
-                } else {
-                    // Normal head look - always active
+                } else if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
+                    // Normal head look - requires drag (button held)
                     onPanRef.current(movementX, movementY);
                 }
             } else if (currentMode === 'uiMouse') {
@@ -245,11 +245,13 @@ const InputHandler: React.FC<InputHandlerProps> = ({
                     onSteerDragRef.current(movementX);
                 }
             } else if (currentMode === 'carSteer') {
-                // Car Steer: mouse X steers, Y controls pitch
-                if (onSteerDragRef.current) {
-                    onSteerDragRef.current(movementX);
+                // Car Steer: mouse drag X steers, Y controls pitch
+                if (isMouseDownRef.current && dragStartedOnTargetRef.current) {
+                    if (onSteerDragRef.current) {
+                        onSteerDragRef.current(movementX);
+                    }
+                    onPanRef.current(0, movementY);
                 }
-                onPanRef.current(0, movementY);
             }
         };
 
