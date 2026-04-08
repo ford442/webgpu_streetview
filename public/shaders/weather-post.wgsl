@@ -240,8 +240,10 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = applyTemperatureTint(col, p.temperature, p.tint);
     col = applyExposure(col, p.exposure);
 
-    // === Nighttime mode ===
+    // === Time & environmental effects ===
     let t = p.time * p.speed;
+
+    // === Nighttime mode ===
     col = applyNight(col, p.nightIntensity, uv, t);
 
     // === Headlights ===

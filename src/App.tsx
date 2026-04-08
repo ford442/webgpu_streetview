@@ -1505,7 +1505,7 @@ function App() {
                 description: 'Toggle headlights',
                 action: () => {
                     setHeadlightsOn(v => !v);
-                    announce(`Headlights ${!headlightsOn ? 'on' : 'off'}`);
+                    announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
                 },
             },
             {
