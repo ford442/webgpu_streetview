@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    private weatherParams: Float32Array = new Float32Array(16); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, ...]
+    private weatherParams: Float32Array = new Float32Array(20); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, ...]
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -108,9 +108,9 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (16 floats for HDR weather system)
+            // Weather params buffer (20 floats for HDR weather + nighttime + headlights)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 64, // 16 floats × 4 bytes
+                size: 80, // 20 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -127,7 +127,12 @@ export class Renderer {
                 0.0,  // snowIntensity
                 0.0,  // wind
                 1.0,  // speed
-                0.0, 0.0, 0.0, 0.0, 0.0  // padding
+                0.0,  // nightIntensity
+                0.0,  // headlightsOn
+                0.0,  // highBeam
+                0.5,  // headlightHeading (center)
+                0.5,  // headlightPitch (center)
+                0.0, 0.0, 0.0, 0.0  // padding
             ]);
 
             await this.createPipeline();
@@ -378,6 +383,7 @@ export class Renderer {
      * @param params - Float32Array of weather params:
      *   [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
      *   [6-10]: time, rainIntensity, snowIntensity, wind, speed
+     *   [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
      */
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {

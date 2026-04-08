@@ -18,8 +18,12 @@ interface DashboardUIProps {
     onToggleRoof: () => void;
     onToggleWipers?: () => void;
     onToggleVehicle?: () => void;
+    onToggleHeadlights?: () => void;
+    onToggleHighBeam?: () => void;
     isRoofOpen: boolean;
     wipersEnabled?: boolean;
+    headlightsOn?: boolean;
+    highBeam?: boolean;
     currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
     rainIntensity: number;
     snowIntensity?: number;
@@ -41,8 +45,12 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     onToggleRoof,
     onToggleWipers,
     onToggleVehicle,
+    onToggleHeadlights,
+    onToggleHighBeam,
     isRoofOpen,
     wipersEnabled = false,
+    headlightsOn = false,
+    highBeam = false,
     currentVehicle = 'sedan',
     rainIntensity,
     snowIntensity = 0,
@@ -233,6 +241,42 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                     >
                         <span className="visually-hidden">Wipers {wipersEnabled ? 'On' : 'Off'}</span>
                         <span aria-hidden="true">🧹 {wipersEnabled ? 'ON' : 'OFF'}</span>
+                    </button>
+                )}
+
+                {/* Headlights toggle */}
+                {onToggleHeadlights && (
+                    <button
+                        onClick={onToggleHeadlights}
+                        style={{
+                            ...buttonStyle,
+                            backgroundColor: headlightsOn ? 'rgba(255, 193, 7, 0.3)' : buttonStyle.backgroundColor,
+                            borderColor: headlightsOn ? '#FFC107' : buttonStyle.borderColor,
+                            color: headlightsOn ? '#FFC107' : buttonStyle.color,
+                        }}
+                        aria-label={headlightsOn ? "Turn off headlights" : "Turn on headlights"}
+                        aria-pressed={headlightsOn}
+                        title="Toggle Headlights (L)"
+                    >
+                        <span aria-hidden="true">💡 {headlightsOn ? 'ON' : 'OFF'}</span>
+                    </button>
+                )}
+
+                {/* High beam toggle - only when headlights are on */}
+                {headlightsOn && onToggleHighBeam && (
+                    <button
+                        onClick={onToggleHighBeam}
+                        style={{
+                            ...buttonStyle,
+                            backgroundColor: highBeam ? 'rgba(66, 165, 245, 0.3)' : buttonStyle.backgroundColor,
+                            borderColor: highBeam ? '#42A5F5' : buttonStyle.borderColor,
+                            color: highBeam ? '#42A5F5' : buttonStyle.color,
+                        }}
+                        aria-label={highBeam ? "Switch to low beam" : "Switch to high beam"}
+                        aria-pressed={highBeam}
+                        title="Toggle High Beam"
+                    >
+                        <span aria-hidden="true">{highBeam ? '🔆 HIGH' : '🔅 LOW'}</span>
                     </button>
                 )}
 
