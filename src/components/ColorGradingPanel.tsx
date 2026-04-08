@@ -7,12 +7,18 @@ interface ColorGradingPanelProps {
     exposure: number;
     temperature: number;
     tint: number;
+    nightIntensity: number;
+    headlightsOn: boolean;
+    highBeam: boolean;
     onVibranceChange: (value: number) => void;
     onSaturationChange: (value: number) => void;
     onContrastChange: (value: number) => void;
     onExposureChange: (value: number) => void;
     onTemperatureChange: (value: number) => void;
     onTintChange: (value: number) => void;
+    onNightIntensityChange: (value: number) => void;
+    onToggleHeadlights: () => void;
+    onToggleHighBeam: () => void;
     onPreset: (preset: string) => void;
     onClose: () => void;
     isOpen: boolean;
@@ -25,12 +31,18 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
     exposure,
     temperature,
     tint,
+    nightIntensity,
+    headlightsOn,
+    highBeam,
     onVibranceChange,
     onSaturationChange,
     onContrastChange,
     onExposureChange,
     onTemperatureChange,
     onTintChange,
+    onNightIntensityChange,
+    onToggleHeadlights,
+    onToggleHighBeam,
     onPreset,
     onClose,
     isOpen,
@@ -222,6 +234,67 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
                         onChange={(e) => onTintChange(parseFloat(e.target.value))}
                         style={sliderStyle}
                     />
+                </div>
+
+                {/* Nighttime & Headlights Section */}
+                <div style={{ borderTop: '1px solid #444', paddingTop: '12px', marginTop: '4px' }}>
+                    <div style={{ ...labelStyle, fontSize: '13px', marginBottom: '10px', color: '#90CAF9' }}>
+                        🌙 Night & Headlights
+                    </div>
+
+                    <div style={{ marginBottom: '15px' }}>
+                        <label style={labelStyle}>
+                            Night Intensity <span style={valueStyle}>{nightIntensity.toFixed(2)}</span>
+                        </label>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={nightIntensity}
+                            onChange={(e) => onNightIntensityChange(parseFloat(e.target.value))}
+                            style={{ ...sliderStyle, accentColor: '#5C6BC0' }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <button
+                            onClick={onToggleHeadlights}
+                            style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                border: `1px solid ${headlightsOn ? '#FFC107' : '#555'}`,
+                                borderRadius: '6px',
+                                backgroundColor: headlightsOn ? 'rgba(255, 193, 7, 0.25)' : 'rgba(0,0,0,0.5)',
+                                color: headlightsOn ? '#FFC107' : '#aaa',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'monospace',
+                                fontWeight: 'bold',
+                            }}
+                        >
+                            {headlightsOn ? '💡 Headlights ON' : '🔦 Headlights OFF'}
+                        </button>
+                        <button
+                            onClick={onToggleHighBeam}
+                            style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                border: `1px solid ${highBeam ? '#42A5F5' : '#555'}`,
+                                borderRadius: '6px',
+                                backgroundColor: highBeam ? 'rgba(66, 165, 245, 0.25)' : 'rgba(0,0,0,0.5)',
+                                color: highBeam ? '#42A5F5' : '#aaa',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontFamily: 'monospace',
+                                fontWeight: 'bold',
+                                opacity: headlightsOn ? 1 : 0.4,
+                                pointerEvents: headlightsOn ? 'auto' : 'none',
+                            }}
+                        >
+                            {highBeam ? '🔆 High Beam' : '🔅 Low Beam'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

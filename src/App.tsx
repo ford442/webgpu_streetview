@@ -245,6 +245,11 @@ function App() {
     const [wind, setWind] = useState(0);
     const [wipersEnabled, setWipersEnabled] = useState(false);
     const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
+
+    // Nighttime + Headlights state
+    const [nightIntensity, setNightIntensity] = useState(0.0);
+    const [headlightsOn, setHeadlightsOn] = useState(false);
+    const [highBeam, setHighBeam] = useState(false);
     const carModeRef = useRef<CarModeState | null>(null);
     const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
 
@@ -547,6 +552,7 @@ function App() {
                 setExposure(0.0);
                 setTemperature(0.0);
                 setTint(0.0);
+                setNightIntensity(0.0);
                 break;
             case 'golden':
                 setVibrance(1.2);
@@ -587,6 +593,8 @@ function App() {
                 setExposure(-0.5);
                 setTemperature(-0.4);
                 setTint(0.3);
+                setNightIntensity(1.0);
+                setHeadlightsOn(true);
                 break;
             case 'snow':
                 setVibrance(1.1);
@@ -623,7 +631,8 @@ function App() {
     // Update weather params in renderer when they change
     useEffect(() => {
         if (rendererRef.current) {
-            // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, ...]
+            // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
+            //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, padding...]
             const weatherParams = new Float32Array([
                 vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
                 0,                           // time (updated in render loop)
@@ -631,11 +640,16 @@ function App() {
                 snowIntensity / 50,          // snowIntensity (0-2, scaled from 0-100)
                 wind / 100,                  // wind (-1.0 to 1.0, scaled from -100 to 100)
                 1.0,                         // speed (animation speed multiplier)
-                0, 0, 0, 0, 0                // padding
+                nightIntensity,              // nightIntensity (0.0-1.0)
+                headlightsOn ? 1.0 : 0.0,    // headlightsOn
+                highBeam ? 1.0 : 0.0,        // highBeam
+                0.5,                         // headlightHeading (center of view)
+                0.55,                        // headlightPitch (slightly below center = road)
+                0, 0, 0, 0                   // padding
             ]);
             rendererRef.current.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
@@ -1042,6 +1056,16 @@ function App() {
     const handleTimeOfDay = useCallback((value: string) => {
         if (value === 'day' || value === 'sunset' || value === 'night') {
             setTimeOfDay(value);
+            // Sync nightIntensity with time-of-day preset
+            if (value === 'day') {
+                setNightIntensity(0.0);
+            } else if (value === 'sunset') {
+                setNightIntensity(0.3);
+            } else if (value === 'night') {
+                setNightIntensity(1.0);
+                // Auto-enable headlights at night
+                setHeadlightsOn(true);
+            }
         }
     }, []);
 
@@ -1474,6 +1498,14 @@ function App() {
                         handleToggleWipers();
                         announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
                     }
+                },
+            },
+            {
+                key: 'l',
+                description: 'Toggle headlights',
+                action: () => {
+                    setHeadlightsOn(v => !v);
+                    announce(`Headlights ${!headlightsOn ? 'on' : 'off'}`);
                 },
             },
             {
@@ -2286,12 +2318,18 @@ function App() {
                 exposure={exposure}
                 temperature={temperature}
                 tint={tint}
+                nightIntensity={nightIntensity}
+                headlightsOn={headlightsOn}
+                highBeam={highBeam}
                 onVibranceChange={handleVibranceChange}
                 onSaturationChange={handleSaturationChange}
                 onContrastChange={handleContrastChange}
                 onExposureChange={handleExposureChange}
                 onTemperatureChange={handleTemperatureChange}
                 onTintChange={handleTintChange}
+                onNightIntensityChange={setNightIntensity}
+                onToggleHeadlights={() => setHeadlightsOn(v => !v)}
+                onToggleHighBeam={() => setHighBeam(v => !v)}
                 onPreset={applyPreset}
                 onClose={() => setIsColorGradingPanelOpen(false)}
                 isOpen={isColorGradingPanelOpen}
@@ -2353,8 +2391,12 @@ function App() {
                     onTimeOfDay={handleTimeOfDay}
                     onToggleRoof={handleToggleRoof}
                     onToggleWipers={handleToggleWipers}
+                    onToggleHeadlights={() => setHeadlightsOn(v => !v)}
+                    onToggleHighBeam={() => setHighBeam(v => !v)}
                     isRoofOpen={isRoofOpen}
                     wipersEnabled={wipersEnabled}
+                    headlightsOn={headlightsOn}
+                    highBeam={highBeam}
                     rainIntensity={rainIntensity}
                     snowIntensity={snowIntensity}
                     wind={wind}
@@ -2363,23 +2405,24 @@ function App() {
                 />
             )}
 
-            {/* Car Mode Control Hints Overlay */}
+            {/* Car Mode Control Hints Overlay - moved to top to avoid blocking dashboard controls */}
             {isConnected && isCarMode && (
                 <div style={{
                     position: 'fixed',
-                    bottom: 20,
+                    top: 10,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    background: 'rgba(0,0,0,0.75)',
+                    background: 'rgba(0,0,0,0.6)',
                     color: '#fff',
-                    padding: '10px 18px',
-                    borderRadius: 8,
-                    fontSize: 13,
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontSize: 11,
                     pointerEvents: 'none',
                     zIndex: 1000,
                     whiteSpace: 'nowrap',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    fontFamily: 'system-ui, sans-serif'
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    fontFamily: 'system-ui, sans-serif',
+                    opacity: 0.75,
                 }}>
                     🚗 <strong>{controlMode === 'freeLook' ? '👀 Free Look' : controlMode === 'uiMouse' ? '🖱️ UI Mouse' : '🚗 Car Steer'}</strong>&nbsp;&nbsp;
                     {controlMode === 'freeLook' ? (
