@@ -24,16 +24,12 @@ export function findBestLink(
     }
 
     let bestLink: google.maps.StreetViewLink | null = null;
-    let smallestAngleDiff = Infinity;
+    let smallestAngleDiff = 45; // Only return a link if it's reasonably close to the target direction
 
     for (const link of links) {
         if (link.heading == null) continue;
-        const linkHeading = link.heading;
 
-        let angleDiff = Math.abs(targetHeading - linkHeading);
-        if (angleDiff > 180) {
-            angleDiff = 360 - angleDiff;
-        }
+        const angleDiff = absoluteAngleDiff(targetHeading, link.heading);
 
         if (angleDiff < smallestAngleDiff) {
             smallestAngleDiff = angleDiff;
@@ -41,13 +37,7 @@ export function findBestLink(
         }
     }
 
-    // Only return a link if it's reasonably close to the target direction
-    // to avoid moving in a completely wrong direction.
-    if (smallestAngleDiff < 45) {
-        return bestLink;
-    }
-
-    return null;
+    return bestLink;
 }
 
 /**
