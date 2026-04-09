@@ -13,19 +13,28 @@ function loadCesiumSDK(): Promise<void> {
             return;
         }
 
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css';
-        document.head.appendChild(link);
+        // Wait for document to be ready before appending scripts
+        const loadScripts = () => {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = 'https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css';
+            document.head.appendChild(link);
 
-        const script = document.createElement('script');
-        script.src = 'https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js';
-        script.onload = () => resolve();
-        script.onerror = () => {
-            cesiumLoadPromise = null; // allow retry
-            reject(new Error('[GlobeMode] Failed to load Cesium SDK'));
+            const script = document.createElement('script');
+            script.src = 'https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js';
+            script.onload = () => resolve();
+            script.onerror = () => {
+                cesiumLoadPromise = null; // allow retry
+                reject(new Error('[GlobeMode] Failed to load Cesium SDK'));
+            };
+            document.body.appendChild(script);
         };
-        document.body.appendChild(script);
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadScripts);
+        } else {
+            loadScripts();
+        }
     });
     return cesiumLoadPromise;
 }
