@@ -4,6 +4,7 @@ import { useViewMode, ControlMode } from '../hooks/useViewMode';
 import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
 import WebGPUCanvas from '../components/WebGPUCanvas';
 import CarInputHandler from '../components/CarInputHandler';
+import { AudioAnalyzer } from '../audio/AudioAnalyzer';
 import {
   initCarMode,
   toggleCarMode,
@@ -73,6 +74,10 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
+  
+  // Audio analyzer ref
+  const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null);
   
   // GPS/Map state
   const [isMapOpen, setIsMapOpen] = useState(false);
@@ -197,16 +202,43 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
     setIsMapOpen(prev => !prev);
   }, []);
   
-  const handleToggleRadio = useCallback(() => {
-    setIsRadioPlaying(prev => !prev);
-    // Initialize audio element if not exists
-    if (!audioElement) {
-      const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
-      // Note: In production, set actual stream URL
-      setAudioElement(audio);
+  const handleToggleRadio = useCallback(async () => {
+    const newState = !isRadioPlaying;
+    setIsRadioPlaying(newState);
+    
+    if (newState) {
+      // Start radio - initialize audio if needed
+      if (!audioAnalyzerRef.current) {
+        audioAnalyzerRef.current = new AudioAnalyzer();
+      }
+      
+      // Initialize with a stream URL if not already done
+      if (!audioElement) {
+        const streamUrl = 'https://stream.zeno.fm/ywcmn7hpha0uv'; // Default radio stream
+        const initialized = await audioAnalyzerRef.current.init(streamUrl);
+        if (initialized) {
+          await audioAnalyzerRef.current.start();
+          setAudioElement(audioAnalyzerRef.current.getAudioElement()); // Get audio element for DashboardUI
+          setAnalyserNode(audioAnalyzerRef.current.getAnalyser()); // Get analyser for visualizer
+        }
+      } else {
+        // Already initialized, just start playing
+        await audioAnalyzerRef.current.start();
+        setAnalyserNode(audioAnalyzerRef.current.getAnalyser());
+      }
+    } else {
+      // Stop radio
+      audioAnalyzerRef.current?.stop();
     }
-  }, [audioElement]);
+  }, [isRadioPlaying, audioElement]);
+  
+  // Cleanup audio analyzer on unmount
+  useEffect(() => {
+    return () => {
+      audioAnalyzerRef.current?.dispose();
+      audioAnalyzerRef.current = null;
+    };
+  }, []);
   
   const handleToggleVehicle = useCallback(() => {
     // Toggle between sedan and convertible
@@ -294,6 +326,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
         wind={wind}
         timeOfDay={timeOfDay}
         audioElement={audioElement}
+        analyser={analyserNode}
       />
       
       {/* Control Mode Indicator (small overlay) */}

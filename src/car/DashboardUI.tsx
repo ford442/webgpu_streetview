@@ -73,6 +73,7 @@ export interface DashboardUIProps {
     wind?: number;
     timeOfDay: string;
     audioElement?: HTMLAudioElement | null;
+    analyser?: AnalyserNode | null;
 }
 
 // ============================================================================
@@ -106,10 +107,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     wind = 0,
     timeOfDay,
     audioElement,
+    analyser,
 }) => {
-    // Audio analyser reference for visualizer
-    const analyserRef = useRef<AnalyserNode | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
 
     // Gauge simulation state
     const [simulatedSpeed, setSimulatedSpeed] = useState(45);
@@ -121,37 +120,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
         injectSliderStyles();
     }, []);
 
-    // Set up audio analyser when audio element changes
-    useEffect(() => {
-        if (audioElement && !analyserRef.current) {
-            try {
-                // Create audio context if needed
-                if (!audioContextRef.current) {
-                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-                }
-                
-                const audioContext = audioContextRef.current;
-                
-                // Create analyser node
-                const analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                analyser.smoothingTimeConstant = 0.8;
-                
-                // Connect audio element to analyser
-                const source = audioContext.createMediaElementSource(audioElement);
-                source.connect(analyser);
-                analyser.connect(audioContext.destination);
-                
-                analyserRef.current = analyser;
-            } catch (error) {
-                console.warn('Failed to create audio analyser:', error);
-            }
-        }
-
-        return () => {
-            // Note: We don't close the audio context here as it may be shared
-        };
-    }, [audioElement]);
+    // Audio visualizer now uses the analyser passed from parent (CarModeView)
+    // This ensures the visualizer is synced with the actual audio playback
 
     // Simulate realistic gauge values
     useEffect(() => {
@@ -276,7 +246,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                                 ariaLabel="Toggle Radio" 
                             />
                             <AudioVisualizer 
-                                analyser={analyserRef.current} 
+                                analyser={analyser} 
                                 isActive={isRadioPlaying} 
                                 width={180} 
                                 height={32} 

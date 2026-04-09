@@ -21,6 +21,15 @@ export class AudioAnalyzer {
   private dataArray: Uint8Array | null = null;
   private isRunning: boolean = false;
   private audioElement: HTMLAudioElement | null = null;
+  
+  // Public getters for accessing audio nodes
+  public getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
+  
+  public getAudioElement(): HTMLAudioElement | null {
+    return this.audioElement;
+  }
 
   /**
    * Initialize audio capture from a stream URL (CORS-enabled remote stream or local audio)

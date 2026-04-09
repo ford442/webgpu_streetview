@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    // WeatherParams struct in WGSL: 34 floats (136 bytes)
+    // WeatherParams struct in WGSL: 36 floats (144 bytes)
     // [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
     // [6-10]: time, rainIntensity, snowIntensity, wind, speed
     // [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
@@ -42,8 +42,10 @@ export class Renderer {
     // [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
     // [22-31]: fogIntensity, fogDensity, fogHeight, fogColorIndex, lightShaftsIntensity, heatShimmerIntensity, lensFlareIntensity, chromaticAberration, dustIntensity, humidityHaze
     // [32]: shaderEffectsEnabled
-    // [33]: padding
-    private weatherParams: Float32Array = new Float32Array(34);
+    // [33]: cameraHeading (for world-space effects)
+    // [34]: cameraPitch (for world-space effects)
+    // [35]: padding
+    private weatherParams: Float32Array = new Float32Array(36);
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -123,7 +125,7 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Initialize default weather params
+            // Initialize default weather params (36 floats to match 144 byte buffer)
             this.weatherParams.set([
                 0.0,  // [0] vibrance
                 0.0,  // [1] saturation
@@ -158,7 +160,9 @@ export class Renderer {
                 0.0,  // [30] dustIntensity
                 0.0,  // [31] humidityHaze
                 1.0,  // [32] shaderEffectsEnabled (default ON)
-                0.0   // [33] padding
+                0.0,  // [33] cameraHeading
+                0.0,  // [34] cameraPitch
+                0.0   // [35] padding
             ]);
 
             await this.createPipeline();
