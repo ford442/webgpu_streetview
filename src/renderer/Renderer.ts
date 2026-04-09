@@ -256,7 +256,7 @@ export class Renderer {
     }
 
     private async createPipeline(): Promise<void> {
-        const shaderCode = await fetch('./shaders/streetview.wgsl').then(r => r.text());
+        const shaderCode = await fetch(`${process.env.PUBLIC_URL}/shaders/streetview.wgsl`).then(r => r.text());
 
         const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
@@ -332,7 +332,7 @@ export class Renderer {
     }
 
     private async createWeatherPipeline(): Promise<void> {
-        const shaderCode = await fetch('./shaders/weather-post.wgsl').then(r => r.text());
+        const shaderCode = await fetch(`${process.env.PUBLIC_URL}/shaders/weather-post.wgsl`).then(r => r.text());
 
         const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
