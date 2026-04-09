@@ -533,7 +533,19 @@ function InnerApp() {
       </div>
 
       {/* Main View - switches between FreeLookView and CarModeView */}
-      <div id="main-content" role="main" aria-label="Street View Canvas">
+      <div 
+        id="main-content" 
+        role="main" 
+        aria-label="Street View Canvas"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 1
+        }}
+      >
         {isConnected && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
       </div>
     </div>
