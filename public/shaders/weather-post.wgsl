@@ -79,7 +79,7 @@ fn hash3(p: vec3<f32>) -> f32 {
 
 fn noise2D(p: vec2<f32>) -> f32 {
     let i = floor(p);
-    let f = fract(p);
+    var f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
     
     let a = hash(i);
@@ -92,7 +92,7 @@ fn noise2D(p: vec2<f32>) -> f32 {
 
 fn noise3D(p: vec3<f32>) -> f32 {
     let i = floor(p);
-    let f = fract(p);
+    var f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
     
     let a = hash3(i);

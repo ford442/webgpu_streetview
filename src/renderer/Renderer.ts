@@ -34,7 +34,16 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    private weatherParams: Float32Array = new Float32Array(32); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad, latitude, cityDensity, season, cloudCover, _pad0, _pad1, _pad2]
+    // WeatherParams struct in WGSL: 34 floats (136 bytes)
+    // [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
+    // [6-10]: time, rainIntensity, snowIntensity, wind, speed
+    // [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
+    // [16-17]: domeLightOn, domeLightIntensity
+    // [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
+    // [22-31]: fogIntensity, fogDensity, fogHeight, fogColorIndex, lightShaftsIntensity, heatShimmerIntensity, lensFlareIntensity, chromaticAberration, dustIntensity, humidityHaze
+    // [32]: shaderEffectsEnabled
+    // [33]: padding
+    private weatherParams: Float32Array = new Float32Array(34);
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -108,38 +117,48 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (32 floats for HDR weather + nighttime + headlights + dome + astronomy + enhanced effects)
+            // Weather params buffer (34 floats for HDR weather + nighttime + headlights + dome + astronomy + atmospheric effects)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 128, // 32 floats × 4 bytes
+                size: 136, // 34 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
             // Initialize default weather params
             this.weatherParams.set([
-                0.0,  // vibrance
-                0.0,  // saturation
-                0.0,  // contrast
-                0.0,  // exposure
-                0.0,  // temperature
-                0.0,  // tint
-                0.0,  // time
-                0.0,  // rainIntensity
-                0.0,  // snowIntensity
-                0.0,  // wind
-                1.0,  // speed
-                0.0,  // nightIntensity
-                0.0,  // headlightsOn
-                0.0,  // highBeam
-                0.5,  // headlightHeading (center)
-                0.5,  // headlightPitch (center)
-                0.0,  // domeLightOn [16]
-                0.0,  // domeLightIntensity [17]
-                0.0,  // sunAzimuth [18]
-                0.0,  // sunAltitude [19]
-                0.0,  // moonAzimuth [20]
-                0.0,  // moonAltitude [21]
-                0.0,  // moonIntensity [22]
-                0.0   // padding [23]
+                0.0,  // [0] vibrance
+                0.0,  // [1] saturation
+                0.0,  // [2] contrast
+                0.0,  // [3] exposure
+                0.0,  // [4] temperature
+                0.0,  // [5] tint
+                0.0,  // [6] time
+                0.0,  // [7] rainIntensity
+                0.0,  // [8] snowIntensity
+                0.0,  // [9] wind
+                1.0,  // [10] speed
+                0.0,  // [11] nightIntensity
+                0.0,  // [12] headlightsOn
+                0.0,  // [13] highBeam
+                0.5,  // [14] headlightHeading (center)
+                0.5,  // [15] headlightPitch (center)
+                0.0,  // [16] domeLightOn
+                0.0,  // [17] domeLightIntensity
+                0.0,  // [18] sunAzimuth
+                0.0,  // [19] sunAltitude
+                0.0,  // [20] moonAzimuth
+                0.0,  // [21] moonAltitude
+                0.0,  // [22] fogIntensity
+                0.0,  // [23] fogDensity
+                0.0,  // [24] fogHeight
+                0.0,  // [25] fogColorIndex
+                0.0,  // [26] lightShaftsIntensity
+                0.0,  // [27] heatShimmerIntensity
+                0.0,  // [28] lensFlareIntensity
+                0.0,  // [29] chromaticAberration
+                0.0,  // [30] dustIntensity
+                0.0,  // [31] humidityHaze
+                1.0,  // [32] shaderEffectsEnabled (default ON)
+                0.0   // [33] padding
             ]);
 
             await this.createPipeline();
