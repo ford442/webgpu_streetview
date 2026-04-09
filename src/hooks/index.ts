@@ -2,6 +2,11 @@
  * Hooks index - Export all custom hooks
  */
 
+// Core context hooks
+export { useStreetView, StreetViewProvider } from './useStreetView';
+export { useViewMode, ViewModeProvider, type ViewMode, type ControlMode, type HeadCoupling } from './useViewMode';
+export { useEnvironmentSettings, EnvironmentSettingsProvider, type TimeOfDay } from './useEnvironmentSettings';
+
 export { useBookmarks } from './useBookmarks';
 export { useLocationHistory } from './useLocationHistory';
 export { useSnapshots } from './useSnapshots';
