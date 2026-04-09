@@ -98,7 +98,14 @@ export class CarInterior {
 
         // Renderer with alpha for transparency - apply performance profile
         const useAntialias = this.gpuProfile.antialias;
-        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: useAntialias });
+        try {
+            this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: useAntialias });
+        } catch (err) {
+            throw new Error(
+                `Car mode requires WebGL, which is not available in this environment. ` +
+                `(${err instanceof Error ? err.message : String(err)})`
+            );
+        }
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.gpuProfile.pixelRatio));
         this.renderer.setClearColor(0x000000, 0);

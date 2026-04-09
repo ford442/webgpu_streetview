@@ -948,9 +948,16 @@ function App() {
     useEffect(() => {
         if (isCarMode && canvasContainerRef.current) {
             if (!carModeRef.current) {
-                const state = initCarMode(canvasContainerRef.current);
-                carModeRef.current = state;
-                postProcessingRef.current = state.postProcessing;
+                try {
+                    const state = initCarMode(canvasContainerRef.current);
+                    carModeRef.current = state;
+                    postProcessingRef.current = state.postProcessing;
+                } catch (err) {
+                    console.error('[App] Car mode initialization failed:', err);
+                    setIsCarMode(false);
+                    alert('Car mode is unavailable: WebGL could not be initialized.\n\nYour browser or environment may have WebGL disabled.');
+                    return;
+                }
             }
             toggleCarMode(true);
             if (rendererRef.current) {
