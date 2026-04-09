@@ -180,6 +180,7 @@ function App() {
     const [temperature, setTemperature] = useState(0.0);
     const [tint, setTint] = useState(0.0);
     const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
+    const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(true);
 
     // Weather panel state
     const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
@@ -197,6 +198,10 @@ function App() {
         criticalThreshold: 30,
         enableAdaptiveQuality: true
     });
+
+    // Map view mode state (map vs globe)
+    const [viewMode, setViewMode] = useState<'map' | 'globe'>('map');
+    const [showCryptoMarkers, setShowCryptoMarkers] = useState(false);
 
     // Memory profiling
     const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
@@ -656,36 +661,51 @@ function App() {
             // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
             //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch,
             //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad,
-            //                  latitude, cityDensity, season, cloudCover, pad0, pad1, pad2]
+            // Layout matches weather-post.wgsl WeatherParams struct:
+            // [0-5] color grading, [6-10] weather, [11-15] night/headlights,
+            // [16-17] dome light, [18-21] sun/moon, [22-31] atmospheric, [32] toggle, [33] pad
             const weatherParams = new Float32Array([
-                vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
-                0,                           // time (updated in render loop) [6]
-                rainIntensity / 50,          // rainIntensity (0-2) [7]
-                snowIntensity / 50,          // snowIntensity (0-2) [8]
-                wind / 100,                  // wind (-1.0 to 1.0) [9]
-                1.0,                         // speed (animation speed) [10]
-                nightIntensity,              // nightIntensity (0.0-1.0) [11]
-                headlightsOn ? 1.0 : 0.0,    // headlightsOn [12]
-                highBeam ? 1.0 : 0.0,        // highBeam [13]
-                0.5,                         // headlightHeading (center) [14]
-                0.55,                        // headlightPitch (road) [15]
-                domeLightOn ? 1.0 : 0.0,     // domeLightOn [16]
-                domeLightOn ? 1.0 : 0.0,     // domeLightIntensity [17]
-                sunAzimuth,                  // sunAzimuth (radians) [18]
-                sunAltitude,                 // sunAltitude (radians) [19]
-                moonAzimuth,                 // moonAzimuth (radians) [20]
-                moonAltitude,                // moonAltitude (radians) [21]
-                moonIntensity,               // moonIntensity (0-1.5) [22]
-                0,                           // padding [23]
-                currentCoords.lat,           // latitude (for aurora) [24]
-                0.5,                         // cityDensity (0-1, light pollution) [25]
-                0.25,                        // season (0=spring, 0.25=summer, 0.5=fall, 0.75=winter) [26]
-                0.3,                         // cloudCover (0-1) [27]
-                0, 0, 0                      // padding [28-30]
+                // 0-5: color grading
+                vibrance, saturation, contrast, exposure, temperature, tint,
+                // 6-10: weather params
+                0,                           // time (updated in render loop)
+                rainIntensity / 50,          // rainIntensity (0-2)
+                snowIntensity / 50,          // snowIntensity (0-2)
+                wind / 100,                  // wind (-1.0 to 1.0)
+                1.0,                         // speed (animation speed)
+                // 11-15: nighttime + headlights
+                nightIntensity,              // nightIntensity (0.0-1.0)
+                headlightsOn ? 1.0 : 0.0,    // headlightsOn
+                highBeam ? 1.0 : 0.0,        // highBeam
+                0.5,                         // headlightHeading (center)
+                0.55,                        // headlightPitch (road)
+                // 16-17: dome light
+                domeLightOn ? 1.0 : 0.0,     // domeLightOn
+                domeLightOn ? 1.0 : 0.0,     // domeLightIntensity
+                // 18-21: sun/moon positions
+                sunAzimuth,                  // sunAzimuth (radians)
+                sunAltitude,                 // sunAltitude (radians)
+                moonAzimuth,                 // moonAzimuth (radians)
+                moonAltitude,                // moonAltitude (radians)
+                // 22-31: atmospheric effects
+                0.0,                         // fogIntensity
+                0.0,                         // fogDensity
+                0.0,                         // fogHeight
+                0.0,                         // fogColorIndex
+                0.0,                         // lightShaftsIntensity
+                0.0,                         // heatShimmerIntensity
+                0.0,                         // lensFlareIntensity
+                0.0,                         // chromaticAberration
+                0.0,                         // dustIntensity
+                0.0,                         // humidityHaze
+                // 32-33: toggle + padding
+                shaderEffectsEnabled ? 1.0 : 0.0, // shaderEffectsEnabled
+                0.0,                         // padding
             ]);
-            rendererRef.current.updateWeatherParams(weatherParams);
+            rendererRef.current?.setShaderEffects(shaderEffectsEnabled);
+            rendererRef.current?.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat, shaderEffectsEnabled]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
@@ -2120,6 +2140,8 @@ function App() {
                             // MiniMap shows car direction, not head direction
                             heading={panoramaHeading}
                             routePath={routePath}
+                            viewMode={viewMode}
+                            showCryptoMarkers={showCryptoMarkers}
                         />
                     )}
                 </div>
@@ -2144,6 +2166,33 @@ function App() {
                     >
                         <span className="visually-hidden">{isMapOpen ? "Close Map" : "Open Map"}</span>
                         <span aria-hidden="true">Map {isMapOpen ? '>>' : '<<'}</span>
+                    </button>
+                )}
+
+                {/* View Mode Toggle Button */}
+                {isConnected && isMapOpen && (
+                    <button
+                        onClick={() => setViewMode(viewMode === 'map' ? 'globe' : 'map')}
+                        className="control-btn"
+                        style={{ backgroundColor: viewMode === 'globe' ? '#4CAF50' : undefined }}
+                        aria-label={`Switch to ${viewMode === 'map' ? 'globe' : 'map'} view`}
+                        title={`Toggle View Mode (${viewMode === 'map' ? 'Globe' : 'Map'})`}
+                    >
+                        <span aria-hidden="true">{viewMode === 'map' ? '🌍 Globe' : '🗺️ Map'}</span>
+                    </button>
+                )}
+
+                {/* Crypto Markers Toggle Button */}
+                {isConnected && isMapOpen && (
+                    <button
+                        onClick={() => setShowCryptoMarkers(!showCryptoMarkers)}
+                        className="control-btn"
+                        style={{ backgroundColor: showCryptoMarkers ? '#FFD700' : undefined }}
+                        aria-label={showCryptoMarkers ? "Hide crypto company markers" : "Show crypto company markers"}
+                        aria-pressed={showCryptoMarkers}
+                        title="Toggle Crypto Company Markers (₿)"
+                    >
+                        <span aria-hidden="true">₿ Crypto {showCryptoMarkers ? 'ON' : 'OFF'}</span>
                     </button>
                 )}
                 <button 
@@ -2399,6 +2448,7 @@ function App() {
                 nightIntensity={nightIntensity}
                 headlightsOn={headlightsOn}
                 highBeam={highBeam}
+                shaderEffectsEnabled={shaderEffectsEnabled}
                 onVibranceChange={handleVibranceChange}
                 onSaturationChange={handleSaturationChange}
                 onContrastChange={handleContrastChange}
@@ -2408,6 +2458,11 @@ function App() {
                 onNightIntensityChange={setNightIntensity}
                 onToggleHeadlights={() => setHeadlightsOn(v => !v)}
                 onToggleHighBeam={() => setHighBeam(v => !v)}
+                onToggleShaderEffects={() => {
+                    const newValue = !shaderEffectsEnabled;
+                    setShaderEffectsEnabled(newValue);
+                    rendererRef.current?.setShaderEffects(newValue);
+                }}
                 onPreset={applyPreset}
                 onClose={() => setIsColorGradingPanelOpen(false)}
                 isOpen={isColorGradingPanelOpen}

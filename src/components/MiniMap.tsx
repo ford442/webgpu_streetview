@@ -1,19 +1,36 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import * as Cesium from 'cesium';
+import 'cesium/Build/Cesium/Widgets/widgets.css';
+
+// Import crypto companies config
+import { CRYPTO_COMPANIES, CryptoCompany } from '../config/cryptoCompanies';
 
 interface MiniMapProps {
     apiKey: string;
     panorama: google.maps.StreetViewPanorama;
     heading: number;
     routePath?: google.maps.LatLng[] | null;
+    viewMode?: 'map' | 'globe';
+    showCryptoMarkers?: boolean;
 }
 
-const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath }) => {
+const MiniMap: React.FC<MiniMapProps> = ({
+    apiKey,
+    panorama,
+    heading,
+    routePath,
+    viewMode = 'map',
+    showCryptoMarkers = false
+}) => {
     const mapRef = useRef<HTMLDivElement>(null);
+    const cesiumRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
+    const [cesiumViewer, setCesiumViewer] = useState<Cesium.Viewer | null>(null);
     const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
+    const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | Cesium.Entity)[]>([]);
 
     // Helper to create custom marker content
     const createMarkerContent = (rotation: number): HTMLElement => {
@@ -57,60 +74,73 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
     }, [map, panorama, addBreadcrumb]);
 
 
-    // Initialize Map
+    // Initialize Cesium Globe
     useEffect(() => {
-        if (!mapRef.current || map) return;
+        const initCesium = async () => {
+            if (viewMode !== 'globe' || !cesiumRef.current || cesiumViewer) return;
 
-        const initMap = () => {
-            const position = panorama.getPosition();
-            if (!position) return;
+            // Set Cesium Ion access token (you'll need to get this from cesium.com)
+            Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || 'your-cesium-ion-token-here'; // TODO: Add to env vars
 
-            const newMap = new google.maps.Map(mapRef.current!, {
-                center: position,
-                zoom: 16,
-                mapId: 'DEMO_MAP_ID',  // Required for AdvancedMarker
-                streetViewControl: false,
-                mapTypeControl: false,
-                fullscreenControl: false,
-                disableDefaultUI: true,
-                clickableIcons: false, // Prevent clicking on POIs from hijacking
-                // NOTE: Custom styles are managed via Cloud Console when mapId is present
-                // Removing inline styles to avoid conflict with mapId
+            const viewer = new Cesium.Viewer(cesiumRef.current, {
+                terrainProvider: await Cesium.createWorldTerrainAsync(),
+                baseLayerPicker: false,
+                geocoder: false,
+                homeButton: false,
+                sceneModePicker: false,
+                navigationHelpButton: false,
+                animation: false,
+                timeline: false,
+                fullscreenButton: false,
+                vrButton: false,
+                infoBox: false,
+                selectionIndicator: false,
             });
 
-            // Enable Street View Coverage Layer
-            const coverageLayer = new google.maps.StreetViewCoverageLayer();
-            coverageLayer.setMap(newMap);
+            // Configure the camera for top-down view
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(0, 0, 20000000), // High altitude for globe view
+            });
 
-            // Add marker - guard against AdvancedMarkerElement not being available
-            let newMarker: google.maps.marker.AdvancedMarkerElement | null = null;
-            if (window.google?.maps?.marker?.AdvancedMarkerElement) {
-                newMarker = new google.maps.marker.AdvancedMarkerElement({
-                    map: newMap,
-                    position: position,
-                    title: "Drag to move (You are here) 🖱️",
-                    gmpDraggable: true,  // Enables drag (AdvancedMarker prop)
-                    content: createMarkerContent(heading),  // Custom arrow/glow via content
-                });
-            } else {
-                console.warn('[MiniMap] AdvancedMarkerElement not available, using standard marker');
-                // Fallback to standard marker if AdvancedMarkerElement not available
-                newMarker = new google.maps.Marker({
-                    map: newMap,
-                    position: position,
-                    title: "Drag to move (You are here) 🖱️",
-                    draggable: true,
-                }) as any;
-            }
-
-            setMap(newMap);
-            setMarker(newMarker);
+            setCesiumViewer(viewer);
         };
 
-        if (window.google && window.google.maps) {
-            initMap();
-        }
-    }, [panorama, map, heading]); // Dependencies
+        initCesium();
+
+        return () => {
+            if (cesiumViewer && !cesiumViewer.isDestroyed()) {
+                cesiumViewer.destroy();
+            }
+            setCesiumViewer(null);
+        };
+    }, [viewMode, cesiumViewer]);
+
+    // Sync Cesium camera with panorama position
+    useEffect(() => {
+        if (viewMode !== 'globe' || !cesiumViewer || !panorama) return;
+
+        const updateCesiumView = () => {
+            const position = panorama.getPosition();
+            if (position) {
+                // Fly to current location
+                cesiumViewer.camera.flyTo({
+                    destination: Cesium.Cartesian3.fromDegrees(
+                        position.lng(),
+                        position.lat(),
+                        100000 // Altitude in meters
+                    ),
+                    duration: 2.0
+                });
+            }
+        };
+
+        const listener = panorama.addListener('position_changed', updateCesiumView);
+        updateCesiumView(); // Initial sync
+
+        return () => {
+            google.maps.event.removeListener(listener);
+        };
+    }, [viewMode, cesiumViewer, panorama]);
 
     // Sync Map with Panorama Position (and Handle Drag End)
     useEffect(() => {
@@ -268,18 +298,93 @@ const MiniMap: React.FC<MiniMapProps> = ({ apiKey, panorama, heading, routePath 
         }
     }, [routePath, map]);
 
-    // Cleanup: Ensure the polyline is removed when the component unmounts
+    // Add/Remove Crypto Company Markers
     useEffect(() => {
-        return () => {
-            if (routeLineRef.current) {
-                routeLineRef.current.setMap(null);
-                routeLineRef.current = null;
+        // Clear existing crypto markers
+        cryptoMarkersRef.current.forEach(marker => {
+            if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
+                marker.map = null;
+            } else if (cesiumViewer && marker instanceof Cesium.Entity) {
+                cesiumViewer.entities.remove(marker);
             }
-        };
-    }, []);
+        });
+        cryptoMarkersRef.current = [];
+
+        if (!showCryptoMarkers) return;
+
+        if (viewMode === 'map' && map) {
+            // Add Google Maps markers
+            CRYPTO_COMPANIES.forEach((company) => {
+                const content = document.createElement('div');
+                content.style.cssText = `
+                    width: 20px; height: 20px; background: #FFD700; border-radius: 50%;
+                    border: 2px solid #000; display: flex; align-items: center; justify-content: center;
+                    font-size: 10px; color: #000; font-weight: bold; cursor: pointer;
+                `;
+                content.textContent = '₿'; // Bitcoin symbol
+                content.title = `${company.name}: ${company.description}`;
+
+                if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+                    const marker = new google.maps.marker.AdvancedMarkerElement({
+                        map: map,
+                        position: { lat: company.lat, lng: company.lng },
+                        title: `${company.name}: ${company.description}`,
+                        content,
+                    });
+
+                    marker.addListener('click', () => {
+                        // Teleport to crypto company location
+                        const latLng = new google.maps.LatLng(company.lat, company.lng);
+                        teleportTo(latLng);
+                    });
+
+                    cryptoMarkersRef.current.push(marker);
+                }
+            });
+        } else if (viewMode === 'globe' && cesiumViewer) {
+            // Add Cesium entities
+            CRYPTO_COMPANIES.forEach((company) => {
+                const entity = cesiumViewer.entities.add({
+                    position: Cesium.Cartesian3.fromDegrees(company.lng, company.lat),
+                    billboard: {
+                        image: 'data:image/svg+xml;base64,' + btoa(`
+                            <svg width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="12" cy="12" r="10" fill="#FFD700" stroke="#000" stroke-width="2"/>
+                                <text x="12" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#000">₿</text>
+                            </svg>
+                        `),
+                        scale: 0.5,
+                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    },
+                    label: {
+                        text: company.name,
+                        font: '12pt sans-serif',
+                        fillColor: Cesium.Color.WHITE,
+                        outlineColor: Cesium.Color.BLACK,
+                        outlineWidth: 2,
+                        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                        pixelOffset: new Cesium.Cartesian2(0, -32),
+                    },
+                });
+
+                // Add click handler for teleportation
+                entity.description = new Cesium.ConstantProperty(company.description);
+
+                cryptoMarkersRef.current.push(entity);
+            });
+        }
+    }, [showCryptoMarkers, viewMode, map, cesiumViewer, teleportTo]);
 
     return (
-        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            {viewMode === 'map' && (
+                <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+            )}
+            {viewMode === 'globe' && (
+                <div ref={cesiumRef} style={{ width: '100%', height: '100%' }} />
+            )}
+        </div>
     );
 };
 

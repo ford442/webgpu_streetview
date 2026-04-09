@@ -102,9 +102,9 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Effects buffer for car mode
+            // Effects buffer for car mode (3 vec4s = 48 bytes)
             this.effectsBuffer = this.device.createBuffer({
-                size: 32,
+                size: 48,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -283,6 +283,25 @@ export class Renderer {
         this.updateBindGroup();
     }
 
+    private shaderEffectsEnabled: boolean = true;
+
+    /**
+     * Toggle shader effects on/off
+     * When disabled, renders raw Street View without post-processing
+     */
+    public setShaderEffects(enabled: boolean): void {
+        this.shaderEffectsEnabled = enabled;
+        // Update the uniform immediately
+        if (this.weatherParamsBuffer && this.device) {
+            this.weatherParams[32] = enabled ? 1.0 : 0.0;
+            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+        }
+    }
+
+    public getShaderEffectsEnabled(): boolean {
+        return this.shaderEffectsEnabled;
+    }
+
     private async createWeatherPipeline(): Promise<void> {
         const shaderCode = await fetch('./shaders/weather-post.wgsl').then(r => r.text());
 
@@ -381,7 +400,14 @@ export class Renderer {
 
     public updateEffects(effectsData: Float32Array): void {
         if (this.effectsBuffer && this.device) {
-            this.device.queue.writeBuffer(this.effectsBuffer, 0, effectsData);
+            // Ensure shaderEffectsEnabled is passed through
+            const fullEffects = new Float32Array(12); // 3 vec4s
+            fullEffects.set(effectsData);
+            // Set shaderEffectsEnabled at index 8 (start of third vec4)
+            if (fullEffects[8] === 0) {
+                fullEffects[8] = this.shaderEffectsEnabled ? 1.0 : 0.0;
+            }
+            this.device.queue.writeBuffer(this.effectsBuffer, 0, fullEffects);
         }
     }
 

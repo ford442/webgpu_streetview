@@ -345,12 +345,14 @@ export class CarInterior {
         this.buildDoorPanels();
         this.buildSeats();
         this.buildFloor();
+        this.buildFloorMats();
         
         if (this.vehicleConfig.hasRoof) {
             this.buildRoof();
         }
         
         this.buildWindshieldFrame();
+        this.buildRearWindow();
         
         if (this.vehicleConfig.hasSideMirrors) {
             this.buildSideMirrors();
@@ -541,6 +543,124 @@ export class CarInterior {
         const display = new THREE.Mesh(displayGeo, displayMat);
         display.position.set(0.15, 0.95, -0.74);
         this.interiorGroup.add(display);
+
+        // Add dashboard details (skip in low quality)
+        if (this.quality !== 'low') {
+            this.buildDashboardDetails();
+        }
+    }
+
+    /**
+     * Build dashboard details: air vents, HVAC controls, buttons
+     */
+    private buildDashboardDetails(): void {
+        // Chrome/metallic material for accents
+        const chromeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xdddddd,
+            roughness: 0.15,
+            metalness: 0.9,
+        });
+
+        // Air vents (left and right)
+        const ventGeo = new THREE.BoxGeometry(0.12, 0.08, 0.03);
+        const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+        
+        // Left vent
+        const leftVent = new THREE.Mesh(ventGeo, ventMat);
+        leftVent.position.set(-0.7, 0.95, -0.74);
+        this.interiorGroup.add(leftVent);
+        
+        // Left vent chrome surround
+        const ventSurroundGeo = new THREE.BoxGeometry(0.14, 0.1, 0.02);
+        const leftVentSurround = new THREE.Mesh(ventSurroundGeo, chromeMaterial);
+        leftVentSurround.position.set(-0.7, 0.95, -0.735);
+        this.interiorGroup.add(leftVentSurround);
+
+        // Right vent
+        const rightVent = new THREE.Mesh(ventGeo, ventMat);
+        rightVent.position.set(0.7, 0.95, -0.74);
+        this.interiorGroup.add(rightVent);
+        
+        const rightVentSurround = new THREE.Mesh(ventSurroundGeo, chromeMaterial);
+        rightVentSurround.position.set(0.7, 0.95, -0.735);
+        this.interiorGroup.add(rightVentSurround);
+
+        // Center vent
+        const centerVentGeo = new THREE.BoxGeometry(0.15, 0.06, 0.03);
+        const centerVent = new THREE.Mesh(centerVentGeo, ventMat);
+        centerVent.position.set(0.55, 0.95, -0.74);
+        this.interiorGroup.add(centerVent);
+
+        // HVAC Control Knobs (3 knobs)
+        const knobGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.015, 16);
+        const knobMat = new THREE.MeshStandardMaterial({
+            color: 0x333333,
+            roughness: 0.4,
+            metalness: 0.3,
+        });
+        
+        for (let i = 0; i < 3; i++) {
+            const knob = new THREE.Mesh(knobGeo, knobMat);
+            knob.position.set(0.45 + i * 0.06, 0.85, -0.72);
+            this.interiorGroup.add(knob);
+            
+            // Knob indicator line
+            const indicatorGeo = new THREE.BoxGeometry(0.015, 0.002, 0.008);
+            const indicator = new THREE.Mesh(indicatorGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+            indicator.position.set(0.45 + i * 0.06, 0.85, -0.715);
+            this.interiorGroup.add(indicator);
+        }
+
+        // Hazard light button (center, red, prominent)
+        const hazardGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.008, 16);
+        const hazardMat = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0x330000,
+            emissiveIntensity: 0.3,
+            roughness: 0.3,
+        });
+        const hazardBtn = new THREE.Mesh(hazardGeo, hazardMat);
+        hazardBtn.position.set(0.35, 0.85, -0.72);
+        this.interiorGroup.add(hazardBtn);
+
+        // Hazard symbol (triangle)
+        const hazardSymbolGeo = new THREE.ConeGeometry(0.008, 0.012, 3);
+        const hazardSymbolMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const hazardSymbol = new THREE.Mesh(hazardSymbolGeo, hazardSymbolMat);
+        hazardSymbol.rotation.x = Math.PI;
+        hazardSymbol.position.set(0.35, 0.85, -0.715);
+        this.interiorGroup.add(hazardSymbol);
+
+        // Dashboard buttons array (below display)
+        const btnGeo = new THREE.BoxGeometry(0.03, 0.015, 0.005);
+        const btnMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.6 });
+        
+        for (let row = 0; row < 2; row++) {
+            for (let col = 0; col < 4; col++) {
+                const btn = new THREE.Mesh(btnGeo, btnMat);
+                btn.position.set(0.05 + col * 0.035, 0.82 - row * 0.02, -0.72);
+                this.interiorGroup.add(btn);
+            }
+        }
+
+        // Start/Stop button (driver side, prominent)
+        const startBtnGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.01, 16);
+        const startBtnMat = new THREE.MeshStandardMaterial({
+            color: 0xcc0000,
+            emissive: 0x220000,
+            emissiveIntensity: 0.2,
+            roughness: 0.3,
+            metalness: 0.4,
+        });
+        const startBtn = new THREE.Mesh(startBtnGeo, startBtnMat);
+        startBtn.position.set(-0.15, 0.88, -0.72);
+        this.interiorGroup.add(startBtn);
+
+        // Start button chrome ring
+        const startRingGeo = new THREE.TorusGeometry(0.02, 0.003, 8, 24);
+        const startRing = new THREE.Mesh(startRingGeo, chromeMaterial);
+        startRing.position.set(-0.15, 0.88, -0.715);
+        this.interiorGroup.add(startRing);
     }
 
     private buildSteeringWheel(): void {
@@ -609,6 +729,132 @@ export class CarInterior {
         const consoleMesh = new THREE.Mesh(consoleGeo, this.dashboardMaterial);
         consoleMesh.position.set(0.0, 0.55, 0.3);
         this.interiorGroup.add(consoleMesh);
+
+        // Add door details (skip in low quality)
+        if (this.quality !== 'low') {
+            this.buildDoorPanelDetails();
+        }
+    }
+
+    /**
+     * Build door panel details: speaker grilles, handles, window controls
+     */
+    private buildDoorPanelDetails(): void {
+        // Chrome material for handles
+        const chromeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xdddddd,
+            roughness: 0.15,
+            metalness: 0.9,
+        });
+
+        // Soft-touch plastic for door inserts
+        const softTouchMat = new THREE.MeshStandardMaterial({
+            color: 0x2a2a2a,
+            roughness: 0.7,
+            metalness: 0.0,
+        });
+
+        // Speaker grille material
+        const grilleMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            roughness: 0.9,
+        });
+
+        // Left door speaker grille (lower front)
+        const speakerGeo = new THREE.CircleGeometry(0.08, 32);
+        const leftSpeaker = new THREE.Mesh(speakerGeo, grilleMat);
+        leftSpeaker.position.set(-0.96, 0.55, 0.6);
+        leftSpeaker.rotation.y = Math.PI / 2;
+        this.interiorGroup.add(leftSpeaker);
+
+        // Left door speaker pattern (concentric rings)
+        for (let i = 1; i <= 3; i++) {
+            const ringGeo = new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32);
+            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ 
+                color: 0x333333,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide,
+            }));
+            ring.position.set(-0.955, 0.55, 0.6);
+            ring.rotation.y = Math.PI / 2;
+            this.interiorGroup.add(ring);
+        }
+
+        // Right door speaker grille
+        const rightSpeaker = new THREE.Mesh(speakerGeo, grilleMat);
+        rightSpeaker.position.set(0.96, 0.55, 0.6);
+        rightSpeaker.rotation.y = -Math.PI / 2;
+        this.interiorGroup.add(rightSpeaker);
+
+        for (let i = 1; i <= 3; i++) {
+            const ringGeo = new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32);
+            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ 
+                color: 0x333333,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide,
+            }));
+            ring.position.set(0.955, 0.55, 0.6);
+            ring.rotation.y = -Math.PI / 2;
+            this.interiorGroup.add(ring);
+        }
+
+        // Left door handle (pull handle)
+        const handleGeo = new THREE.BoxGeometry(0.04, 0.015, 0.08);
+        const leftHandle = new THREE.Mesh(handleGeo, chromeMaterial);
+        leftHandle.position.set(-0.96, 0.92, -0.4);
+        this.interiorGroup.add(leftHandle);
+
+        // Left door handle recess
+        const handleRecessGeo = new THREE.BoxGeometry(0.03, 0.04, 0.1);
+        const leftHandleRecess = new THREE.Mesh(handleRecessGeo, softTouchMat);
+        leftHandleRecess.position.set(-0.96, 0.9, -0.4);
+        this.interiorGroup.add(leftHandleRecess);
+
+        // Right door handle
+        const rightHandle = new THREE.Mesh(handleGeo, chromeMaterial);
+        rightHandle.position.set(0.96, 0.92, -0.4);
+        this.interiorGroup.add(rightHandle);
+
+        const rightHandleRecess = new THREE.Mesh(handleRecessGeo, softTouchMat);
+        rightHandleRecess.position.set(0.96, 0.9, -0.4);
+        this.interiorGroup.add(rightHandleRecess);
+
+        // Window control switches (driver side)
+        const switchPanelGeo = new THREE.BoxGeometry(0.03, 0.08, 0.15);
+        const switchPanelMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const leftSwitchPanel = new THREE.Mesh(switchPanelGeo, switchPanelMat);
+        leftSwitchPanel.position.set(-0.96, 0.85, -0.2);
+        this.interiorGroup.add(leftSwitchPanel);
+
+        // Window switches (4 small buttons)
+        const switchBtnGeo = new THREE.BoxGeometry(0.008, 0.015, 0.02);
+        const switchBtnMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+        for (let i = 0; i < 4; i++) {
+            const switchBtn = new THREE.Mesh(switchBtnGeo, switchBtnMat);
+            switchBtn.position.set(-0.945, 0.87 - i * 0.018, -0.2);
+            this.interiorGroup.add(switchBtn);
+        }
+
+        // Passenger side window switch (single switch)
+        const rightSwitchPanel = new THREE.Mesh(switchPanelGeo, switchPanelMat);
+        rightSwitchPanel.position.set(0.96, 0.85, -0.2);
+        this.interiorGroup.add(rightSwitchPanel);
+
+        const rightSwitchBtn = new THREE.Mesh(switchBtnGeo, switchBtnMat);
+        rightSwitchBtn.position.set(0.945, 0.87, -0.2);
+        this.interiorGroup.add(rightSwitchBtn);
+
+        // Door panel soft-touch inserts (upper section)
+        const insertGeo = new THREE.BoxGeometry(0.04, 0.25, 0.6);
+        const leftInsert = new THREE.Mesh(insertGeo, softTouchMat);
+        leftInsert.position.set(-0.96, 0.95, 0.2);
+        this.interiorGroup.add(leftInsert);
+
+        const rightInsert = new THREE.Mesh(insertGeo, softTouchMat);
+        rightInsert.position.set(0.96, 0.95, 0.2);
+        this.interiorGroup.add(rightInsert);
     }
 
     private buildSeats(): void {
@@ -649,6 +895,127 @@ export class CarInterior {
         const headrestPass = new THREE.Mesh(headrestPassGeo, this.leatherMaterial);
         headrestPass.position.set(0.45, 1.35, 0.5);
         this.interiorGroup.add(headrestPass);
+
+        // Add seat stitching and side bolsters (skip in low quality)
+        if (this.quality !== 'low') {
+            this.buildSeatDetails();
+        }
+    }
+
+    /**
+     * Build seat details: diamond stitching patterns and side bolsters
+     * Adds premium leather seat appearance
+     */
+    private buildSeatDetails(): void {
+        // Create diamond quilted pattern for center seat panels
+        const stitchMaterial = new THREE.MeshStandardMaterial({
+            color: 0x9B5523, // Slightly lighter leather
+            roughness: 0.6,
+            metalness: 0.0,
+        });
+
+        // Driver seat center panel with diamond stitching
+        const driverCenterGeo = new THREE.PlaneGeometry(0.22, 0.45, 5, 9);
+        const pos = driverCenterGeo.attributes.position;
+        // Create diamond pattern by raising vertices
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            // Diamond pattern: every other vertex raised
+            const diamond = (Math.floor((x + 0.11) / 0.044) + Math.floor((y + 0.225) / 0.05)) % 2 === 0;
+            if (diamond) {
+                pos.setZ(i, 0.008);
+            }
+        }
+        driverCenterGeo.computeVertexNormals();
+
+        const driverCenter = new THREE.Mesh(driverCenterGeo, stitchMaterial);
+        driverCenter.position.set(-0.35, 0.9, 0.565);
+        driverCenter.rotation.set(-0.15, 0, 0);
+        this.interiorGroup.add(driverCenter);
+
+        // Driver seat bottom center panel
+        const driverBottomCenterGeo = new THREE.PlaneGeometry(0.22, 0.35, 5, 7);
+        const posB = driverBottomCenterGeo.attributes.position;
+        for (let i = 0; i < posB.count; i++) {
+            const x = posB.getX(i);
+            const y = posB.getY(i);
+            const diamond = (Math.floor((x + 0.11) / 0.044) + Math.floor((y + 0.175) / 0.05)) % 2 === 0;
+            if (diamond) {
+                posB.setZ(i, 0.008);
+            }
+        }
+        driverBottomCenterGeo.computeVertexNormals();
+
+        const driverBottomCenter = new THREE.Mesh(driverBottomCenterGeo, stitchMaterial);
+        driverBottomCenter.position.set(-0.35, 0.56, 0.23);
+        driverBottomCenter.rotation.x = -Math.PI / 2;
+        this.interiorGroup.add(driverBottomCenter);
+
+        // Passenger seat center panels (mirrored)
+        const passCenterGeo = new THREE.PlaneGeometry(0.22, 0.45, 5, 9);
+        const posP = passCenterGeo.attributes.position;
+        for (let i = 0; i < posP.count; i++) {
+            const x = posP.getX(i);
+            const y = posP.getY(i);
+            const diamond = (Math.floor((x + 0.11) / 0.044) + Math.floor((y + 0.225) / 0.05)) % 2 === 0;
+            if (diamond) {
+                posP.setZ(i, 0.008);
+            }
+        }
+        passCenterGeo.computeVertexNormals();
+
+        const passCenter = new THREE.Mesh(passCenterGeo, stitchMaterial);
+        passCenter.position.set(0.45, 0.9, 0.565);
+        passCenter.rotation.set(-0.15, 0, 0);
+        this.interiorGroup.add(passCenter);
+
+        const passBottomCenterGeo = new THREE.PlaneGeometry(0.22, 0.35, 5, 7);
+        const posPB = passBottomCenterGeo.attributes.position;
+        for (let i = 0; i < posPB.count; i++) {
+            const x = posPB.getX(i);
+            const y = posPB.getY(i);
+            const diamond = (Math.floor((x + 0.11) / 0.044) + Math.floor((y + 0.175) / 0.05)) % 2 === 0;
+            if (diamond) {
+                posPB.setZ(i, 0.008);
+            }
+        }
+        passBottomCenterGeo.computeVertexNormals();
+
+        const passBottomCenter = new THREE.Mesh(passBottomCenterGeo, stitchMaterial);
+        passBottomCenter.position.set(0.45, 0.56, 0.23);
+        passBottomCenter.rotation.x = -Math.PI / 2;
+        this.interiorGroup.add(passBottomCenter);
+
+        // Side bolsters for sportier look
+        const bolsterMaterial = new THREE.MeshStandardMaterial({
+            color: 0x7B4513,
+            roughness: 0.65,
+        });
+
+        // Driver side bolsters
+        const leftBolsterGeo = new THREE.BoxGeometry(0.08, 0.5, 0.08);
+        const leftBolster = new THREE.Mesh(leftBolsterGeo, bolsterMaterial);
+        leftBolster.position.set(-0.58, 0.9, 0.52);
+        leftBolster.rotation.set(-0.15, 0.1, 0);
+        this.interiorGroup.add(leftBolster);
+
+        const rightBolsterGeo = new THREE.BoxGeometry(0.08, 0.5, 0.08);
+        const rightBolster = new THREE.Mesh(rightBolsterGeo, bolsterMaterial);
+        rightBolster.position.set(-0.12, 0.9, 0.52);
+        rightBolster.rotation.set(-0.15, -0.1, 0);
+        this.interiorGroup.add(rightBolster);
+
+        // Passenger side bolsters
+        const leftBolsterP = new THREE.Mesh(leftBolsterGeo, bolsterMaterial);
+        leftBolsterP.position.set(0.22, 0.9, 0.52);
+        leftBolsterP.rotation.set(-0.15, 0.1, 0);
+        this.interiorGroup.add(leftBolsterP);
+
+        const rightBolsterP = new THREE.Mesh(rightBolsterGeo, bolsterMaterial);
+        rightBolsterP.position.set(0.68, 0.9, 0.52);
+        rightBolsterP.rotation.set(-0.15, -0.1, 0);
+        this.interiorGroup.add(rightBolsterP);
     }
 
     private buildFloor(): void {
@@ -662,6 +1029,65 @@ export class CarInterior {
         floor.rotation.set(-Math.PI / 2, 0, 0);
         floor.position.set(0, 0.35, 0);
         this.interiorGroup.add(floor);
+    }
+
+    /**
+     * Build floor mats for driver and passenger
+     * Adds rubber/carpet mats with raised edges
+     */
+    private buildFloorMats(): void {
+        // Skip floor mats in low quality mode
+        if (this.quality === 'low') return;
+
+        const matMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1f1f1f,
+            roughness: 0.85,
+            metalness: 0.0,
+        });
+
+        // Driver floor mat - curved shape using Shape/Extrude
+        const driverMatShape = new THREE.Shape();
+        driverMatShape.moveTo(-0.42, 0.05);
+        driverMatShape.lineTo(0.08, 0.05);
+        driverMatShape.lineTo(0.12, 0.55);
+        driverMatShape.quadraticCurveTo(0.1, 0.7, -0.1, 0.72);
+        driverMatShape.lineTo(-0.38, 0.72);
+        driverMatShape.quadraticCurveTo(-0.45, 0.4, -0.42, 0.05);
+
+        const driverMatGeo = new THREE.ExtrudeGeometry(driverMatShape, {
+            depth: 0.008,
+            bevelEnabled: true,
+            bevelThickness: 0.004,
+            bevelSize: 0.004,
+            bevelSegments: 2,
+        });
+
+        const driverMat = new THREE.Mesh(driverMatGeo, matMaterial);
+        driverMat.rotation.x = -Math.PI / 2;
+        driverMat.position.set(-0.35, 0.355, 0.15);
+        this.interiorGroup.add(driverMat);
+
+        // Passenger floor mat
+        const passMatShape = new THREE.Shape();
+        passMatShape.moveTo(0.42, 0.05);
+        passMatShape.lineTo(-0.08, 0.05);
+        passMatShape.lineTo(-0.12, 0.55);
+        passMatShape.quadraticCurveTo(-0.1, 0.7, 0.1, 0.72);
+        passMatShape.lineTo(0.38, 0.72);
+        passMatShape.quadraticCurveTo(0.45, 0.4, 0.42, 0.05);
+
+        const passMatGeo = new THREE.ExtrudeGeometry(passMatShape, {
+            depth: 0.008,
+            bevelEnabled: true,
+            bevelThickness: 0.004,
+            bevelSize: 0.004,
+            bevelSegments: 2,
+        });
+
+        const passMat = new THREE.Mesh(passMatGeo, matMaterial);
+        passMat.rotation.x = -Math.PI / 2;
+        passMat.position.set(0.35, 0.355, 0.15);
+        this.interiorGroup.add(passMat);
     }
 
     private buildRoof(): void {
@@ -704,6 +1130,76 @@ export class CarInterior {
         const mirrorMount = new THREE.Mesh(mirrorMountGeo, this.metalMaterial);
         mirrorMount.position.set(0, 1.5, -0.85);
         this.interiorGroup.add(mirrorMount);
+    }
+
+    /**
+     * Build rear window frame and glass
+     * Creates C-pillars and rear glass to complete the interior shell
+     */
+    private buildRearWindow(): void {
+        // Rear window top frame (connecting C-pillars)
+        const rearTopBarGeo = new THREE.BoxGeometry(1.9, 0.05, 0.05);
+        const rearTopBar = new THREE.Mesh(rearTopBarGeo, this.frameMaterial);
+        rearTopBar.position.set(0, 1.58, 0.6);
+        this.interiorGroup.add(rearTopBar);
+
+        // C-pillars (rear window sides) - angled inward
+        const cPillarGeo = new THREE.BoxGeometry(0.06, 0.5, 0.05);
+        
+        // Left C-pillar
+        const leftCPillar = new THREE.Mesh(cPillarGeo, this.frameMaterial);
+        leftCPillar.position.set(-0.92, 1.33, 0.6);
+        leftCPillar.rotation.z = -0.12;
+        this.interiorGroup.add(leftCPillar);
+        
+        // Right C-pillar
+        const rightCPillar = new THREE.Mesh(cPillarGeo, this.frameMaterial);
+        rightCPillar.position.set(0.92, 1.33, 0.6);
+        rightCPillar.rotation.z = 0.12;
+        this.interiorGroup.add(rightCPillar);
+
+        // Rear window bottom frame (parcel shelf edge)
+        const rearBottomBarGeo = new THREE.BoxGeometry(1.85, 0.04, 0.04);
+        const rearBottomBar = new THREE.Mesh(rearBottomBarGeo, this.frameMaterial);
+        rearBottomBar.position.set(0, 1.1, 0.62);
+        this.interiorGroup.add(rearBottomBar);
+
+        // Rear glass plane (transparent)
+        const rearGlassGeo = new THREE.PlaneGeometry(1.8, 0.48);
+        const rearGlassMat = new THREE.MeshPhysicalMaterial({
+            color: 0x88aabb,
+            metalness: 0.1,
+            roughness: 0.05,
+            transmission: 0.3,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.DoubleSide,
+        });
+        const rearGlass = new THREE.Mesh(rearGlassGeo, rearGlassMat);
+        rearGlass.position.set(0, 1.34, 0.64);
+        this.interiorGroup.add(rearGlass);
+
+        // Defroster lines (subtle horizontal lines on rear glass)
+        for (let i = 0; i < 4; i++) {
+            const defrosterGeo = new THREE.BoxGeometry(1.7, 0.002, 0.001);
+            const defroster = new THREE.Mesh(defrosterGeo, new THREE.MeshBasicMaterial({
+                color: 0x333333,
+                transparent: true,
+                opacity: 0.3,
+            }));
+            defroster.position.set(0, 1.2 + i * 0.08, 0.641);
+            this.interiorGroup.add(defroster);
+        }
+
+        // Parcel shelf (below rear window)
+        const parcelShelfGeo = new THREE.BoxGeometry(1.8, 0.05, 0.5);
+        const parcelShelfMat = new THREE.MeshStandardMaterial({
+            color: 0x2a2a2a,
+            roughness: 0.9,
+        });
+        const parcelShelf = new THREE.Mesh(parcelShelfGeo, parcelShelfMat);
+        parcelShelf.position.set(0, 1.08, 0.4);
+        this.interiorGroup.add(parcelShelf);
     }
 
     private buildSideMirrors(): void {

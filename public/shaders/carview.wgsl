@@ -20,13 +20,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> uniforms: vec4<f32>; // [time, zoom, panX, panY]
-@group(0) @binding(3) var<uniform> effects: array<vec4<f32>, 2>;
+@group(0) @binding(3) var<uniform> effects: array<vec4<f32>, 3>;
 // effects[0] = [rainIntensity, vignetteStrength, brightness, contrast]
 // effects[1] = [tintR, tintG, tintB, nightMode]
-
-// Wiper uniforms passed through effects array (reusing unused slots)
-// effects[0].w = wiperEnabled (1.0 or 0.0)
-// effects[1].w = wiperPhase (0.0 to 1.0, calculated from time and speed)
+// effects[2] = [shaderEffectsEnabled, 0.0, 0.0, 0.0] - shader bypass toggle
 
 // ============================================
 // ENHANCED RAIN & WINDSHIELD EFFECTS SYSTEM
@@ -475,6 +472,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = uniforms.y;
     let panX = uniforms.z;
     let panY = uniforms.w;
+    
+    // Check for shader bypass mode
+    let shaderEffectsEnabled = effects[2].x;
+    if (shaderEffectsEnabled < 0.5) {
+        // Render raw Street View without any effects
+        let center = vec2<f32>(panX, panY);
+        let uv = (input.uv - center) / zoom + center;
+        let wrappedUV = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+        return textureSample(tex, texSampler, wrappedUV);
+    }
     
     // Apply zoom and pan for navigation
     let center = vec2<f32>(panX, panY);

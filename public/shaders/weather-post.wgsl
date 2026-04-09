@@ -42,6 +42,10 @@ struct WeatherParams {
     chromaticAberration  : f32, // 0.0-1.0 RGB split at edges
     dustIntensity     : f32,  // 0.0-1.0 floating particles
     humidityHaze      : f32,  // 0.0-1.0 distance softening
+    // 32: Shader toggle
+    shaderEffectsEnabled : f32, // 1.0 = effects on, 0.0 = raw Street View
+    // 33: padding
+    _pad0             : f32,
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -507,21 +511,48 @@ fn nightSky(uv: vec2<f32>, t: f32) -> vec3<f32> {
     return stars * starColor * skyMask;
 }
 
+// === REALISTIC DARK NIGHT ===
+// Simulates true night vision - very dark with only minimal ambient light
 fn applyNight(col: vec3<f32>, night: f32, uv: vec2<f32>, t: f32) -> vec3<f32> {
     if (night < 0.001) { return col; }
     var c = col;
-    c = c * mix(1.0, 0.25, night);
-    let gray = dot(c, vec3<f32>(0.299, 0.587, 0.114));
-    c = mix(c, vec3<f32>(gray), night * 0.55);
-    let moonTint = vec3<f32>(0.12, 0.18, 0.32);
-    c = c + moonTint * night * 0.15;
-    let skyDarken = smoothstep(0.5, 0.1, uv.y);
-    c = c * mix(1.0, 0.15, skyDarken * night);
-    let lum = dot(col, vec3<f32>(0.299, 0.587, 0.114));
-    let bloomMask = smoothstep(0.45, 0.85, lum);
-    c = c + col * bloomMask * night * 0.35;
-    c = c + nightSky(uv, t) * night * 1.2;
-    return c;
+    
+    // Much darker base - real night is ~0.5-1% of daylight (was 25%)
+    let darkeningCurve = night * night * (3.0 - 2.0 * night); // Smoothstep curve
+    c = c * mix(1.0, 0.03, darkeningCurve);
+    
+    // Enhanced desaturation for moonlight appearance
+    let gray = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    c = mix(c, vec3<f32>(gray), night * 0.7);
+    
+    // Cool blue moonlight tint
+    let moonTint = vec3<f32>(0.08, 0.12, 0.28);
+    c = c + moonTint * night * 0.08;
+    
+    // Aggressive sky darkening - upper hemisphere goes nearly black
+    let skyDarken = smoothstep(0.55, 0.05, uv.y);
+    c = c * mix(1.0, 0.02, skyDarken * night);
+    
+    // Preserve only bright lights (streetlights, windows)
+    let lum = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let lightMask = smoothstep(0.35, 0.9, lum);
+    // Bloom around bright lights at night
+    c = c + col * lightMask * night * 0.5;
+    
+    // Add stars - more visible with darker sky
+    let starBrightness = night * 2.0; // Stars brighter against dark sky
+    c = c + nightSky(uv, t) * starBrightness;
+    
+    // Subtle vignette for night vision effect
+    let centerDist = length((uv - vec2<f32>(0.5)) * vec2<f32>(1.3, 1.0));
+    let nightVignette = 1.0 - smoothstep(0.3, 1.0, centerDist) * night * 0.4;
+    c = c * nightVignette;
+    
+    // Slight blue noise for night vision grain
+    let noise = hash(uv * 500.0 + t * 0.1);
+    c = c + (noise - 0.5) * 0.01 * night;
+    
+    return max(c, vec3<f32>(0.001)); // Prevent pure black
 }
 
 fn headlightCone(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32) -> vec3<f32> {
@@ -639,6 +670,12 @@ fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32
 fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     let texSize = vec2<f32>(textureDimensions(sceneTex));
     let uv = fragCoord.xy / texSize;
+    
+    // === SHADER BYPASS MODE ===
+    // When shaderEffectsEnabled is 0, render raw Street View without effects
+    if (p.shaderEffectsEnabled < 0.5) {
+        return vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0);
+    }
     
     let t = p.time * p.speed;
     

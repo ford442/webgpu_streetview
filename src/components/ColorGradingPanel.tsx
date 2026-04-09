@@ -10,6 +10,7 @@ interface ColorGradingPanelProps {
     nightIntensity: number;
     headlightsOn: boolean;
     highBeam: boolean;
+    shaderEffectsEnabled: boolean;
     onVibranceChange: (value: number) => void;
     onSaturationChange: (value: number) => void;
     onContrastChange: (value: number) => void;
@@ -19,6 +20,7 @@ interface ColorGradingPanelProps {
     onNightIntensityChange: (value: number) => void;
     onToggleHeadlights: () => void;
     onToggleHighBeam: () => void;
+    onToggleShaderEffects: () => void;
     onPreset: (preset: string) => void;
     onClose: () => void;
     isOpen: boolean;
@@ -34,6 +36,7 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
     nightIntensity,
     headlightsOn,
     highBeam,
+    shaderEffectsEnabled,
     onVibranceChange,
     onSaturationChange,
     onContrastChange,
@@ -43,6 +46,7 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
     onNightIntensityChange,
     onToggleHeadlights,
     onToggleHighBeam,
+    onToggleShaderEffects,
     onPreset,
     onClose,
     isOpen,
@@ -128,8 +132,39 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
                 </button>
             </div>
 
+            {/* Shader Effects Toggle */}
+            <div style={{ padding: '12px 15px', borderBottom: '1px solid #444', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                <button
+                    onClick={onToggleShaderEffects}
+                    style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: `2px solid ${shaderEffectsEnabled ? '#4CAF50' : '#f44336'}`,
+                        borderRadius: '6px',
+                        backgroundColor: shaderEffectsEnabled ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.15)',
+                        color: shaderEffectsEnabled ? '#4CAF50' : '#f44336',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                    }}
+                >
+                    <span>{shaderEffectsEnabled ? '✨' : '👁️'}</span>
+                    {shaderEffectsEnabled ? 'Shader Effects: ON' : 'Shader Effects: OFF (Raw View)'}
+                </button>
+                <div style={{ fontSize: '10px', color: '#888', marginTop: '6px', textAlign: 'center' }}>
+                    {shaderEffectsEnabled 
+                        ? 'Rain, snow, night, sunset effects active' 
+                        : 'Showing unprocessed Street View output'}
+                </div>
+            </div>
+
             {/* Presets */}
-            <div style={{ padding: '15px', borderBottom: '1px solid #444' }}>
+            <div style={{ padding: '15px', borderBottom: '1px solid #444', opacity: shaderEffectsEnabled ? 1 : 0.4, pointerEvents: shaderEffectsEnabled ? 'auto' : 'none' }}>
                 <div style={{ ...labelStyle, marginBottom: '8px' }}>Presets:</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {['daylight', 'golden', 'sunset', 'overcast', 'rain', 'night', 'snow'].map(preset => (
