@@ -1088,14 +1088,30 @@ function App() {
             setAutoNightMode(false);  // Manual override disables auto night
             setTimeOfDay(value);
             // Sync nightIntensity with time-of-day preset
+            // Also set synthetic sun/moon positions for shader effects
             if (value === 'day') {
                 setNightIntensity(0.0);
+                // Sun high in sky for bright daylight, moon below horizon
+                setSunAltitude(0.785);  // +45° altitude
+                setSunAzimuth(0);       // South (0 in SunCalc)
+                setMoonAltitude(-0.5);  // Below horizon (invisible)
             } else if (value === 'sunset') {
                 setNightIntensity(0.3);
+                // Sun just below horizon for golden hour glow effect
+                // Shader's GOLDEN_HOUR_RANGE is ±0.105 rad (±6°)
+                setSunAltitude(-0.052); // -3° (within golden hour range)
+                setSunAzimuth(-1.57);   // West (-π/2 in SunCalc = west)
+                setMoonAltitude(0.2);   // Low in sky
+                setMoonAzimuth(1.57);   // East
             } else if (value === 'night') {
                 setNightIntensity(1.0);
                 // Auto-enable headlights at night
                 setHeadlightsOn(true);
+                // Sun well below horizon, moon visible
+                setSunAltitude(-1.047); // -60° (well below horizon)
+                setSunAzimuth(0);       // Doesn't matter, sun is below horizon
+                setMoonAltitude(0.5);   // High in sky for visibility
+                setMoonAzimuth(0.785);  // Southwest
             }
         }
     }, []);
