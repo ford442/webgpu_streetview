@@ -33,6 +33,13 @@ export class CarInterior {
     private speedometerNeedle!: THREE.Mesh;
     private tachometerNeedle!: THREE.Mesh;
     private headlightsLight!: THREE.SpotLight;
+    private domeLightSource!: THREE.PointLight;
+    private domeLightFixtureMesh!: THREE.Mesh;
+    private domeSwitchMesh!: THREE.Mesh;
+    private interiorBounceLight!: THREE.PointLight;
+    private instrumentClusterMat!: THREE.MeshStandardMaterial;
+    private centerDisplayMat!: THREE.MeshStandardMaterial;
+    private isDomeLightOn: boolean = false;
 
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
@@ -306,6 +313,16 @@ export class CarInterior {
         this.scene.add(this.headlightsLight);
         this.scene.add(this.headlightsLight.target);
         this.headlightsLight.intensity = 0; // Off by default
+
+        // Interior bounce light — warm, activated by headlights at night
+        this.interiorBounceLight = new THREE.PointLight(0xFF9933, 0, 1.5);
+        this.interiorBounceLight.position.set(0, 0.5, -0.8);
+        this.scene.add(this.interiorBounceLight);
+
+        // Dome light — ceiling warm white
+        this.domeLightSource = new THREE.PointLight(0xFFE8B0, 0, 3.0);
+        this.domeLightSource.position.set(0, 1.8, 0.3);
+        this.scene.add(this.domeLightSource);
     }
 
     private buildInterior(): void {
@@ -342,6 +359,9 @@ export class CarInterior {
 
         // Build vehicle-specific features
         this.buildVehicleSpecificFeatures();
+
+        // Dome light fixture (ceiling mount + clickable switch)
+        this.buildDomeLightFixture();
     }
 
     /**
@@ -362,6 +382,30 @@ export class CarInterior {
                 // Sedan uses default layout
                 break;
         }
+    }
+
+    private buildDomeLightFixture(): void {
+        // Check if roofGroup is available (convertible may not have it)
+        const mountGroup = this.roofGroup ?? this.interiorGroup;
+
+        const fixtureGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.015, 12);
+        const fixtureMat = new THREE.MeshStandardMaterial({
+            color: 0xddddcc, emissive: 0xFFE8B0, emissiveIntensity: 0,
+            roughness: 0.4, metalness: 0.3,
+        });
+        this.domeLightFixtureMesh = new THREE.Mesh(fixtureGeo, fixtureMat);
+        this.domeLightFixtureMesh.position.set(0, 1.59, 0.3);
+        mountGroup.add(this.domeLightFixtureMesh);
+
+        const switchGeo = new THREE.BoxGeometry(0.04, 0.008, 0.04);
+        const switchMat = new THREE.MeshStandardMaterial({
+            color: 0x333333, roughness: 0.7, metalness: 0.1,
+            emissive: 0x111100, emissiveIntensity: 0,
+        });
+        this.domeSwitchMesh = new THREE.Mesh(switchGeo, switchMat);
+        this.domeSwitchMesh.name = 'domeSwitch';
+        this.domeSwitchMesh.position.set(-0.15, 1.55, -0.1);
+        this.interiorGroup.add(this.domeSwitchMesh);
     }
 
     /**
@@ -478,6 +522,7 @@ export class CarInterior {
         // Instrument cluster recess
         const clusterGeo = new THREE.BoxGeometry(0.6, 0.25, 0.05);
         const clusterMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x001100, emissiveIntensity: 0.5 });
+        this.instrumentClusterMat = clusterMat;
         const cluster = new THREE.Mesh(clusterGeo, clusterMat);
         cluster.position.set(-0.3, 0.95, -0.74);
         this.interiorGroup.add(cluster);
@@ -485,6 +530,7 @@ export class CarInterior {
         // Center console display
         const displayGeo = new THREE.BoxGeometry(0.3, 0.2, 0.02);
         const displayMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x002200, emissiveIntensity: 0.3 });
+        this.centerDisplayMat = displayMat;
         const display = new THREE.Mesh(displayGeo, displayMat);
         display.position.set(0.15, 0.95, -0.74);
         this.interiorGroup.add(display);
@@ -946,6 +992,72 @@ export class CarInterior {
      */
     public getHeadlightsState(): boolean {
         return this.headlightsLight ? this.headlightsLight.intensity > 0 : false;
+    }
+
+    /** Toggle the dome light on/off. Returns the new state. */
+    public toggleDomeLight(): boolean {
+        this.isDomeLightOn = !this.isDomeLightOn;
+        return this.isDomeLightOn;
+    }
+
+    /** Get current dome light state. */
+    public getDomeLightState(): boolean {
+        return this.isDomeLightOn;
+    }
+
+    /**
+     * Update interior lighting each frame based on headlights + night + dome state.
+     * Call this once per animation frame.
+     */
+    public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
+        // Interior bounce (warm glow on dashboard from headlights at night)
+        const bounceTarget = headlightsOn ? nightIntensity * 0.35 : 0;
+        this.interiorBounceLight.intensity +=
+            (bounceTarget - this.interiorBounceLight.intensity) * 0.08;
+
+        // Instrument cluster emissive
+        if (this.instrumentClusterMat) {
+            const target = headlightsOn ? 0.5 + nightIntensity * 0.8 : 0.5;
+            this.instrumentClusterMat.emissiveIntensity +=
+                (target - this.instrumentClusterMat.emissiveIntensity) * 0.08;
+        }
+        // Center display emissive
+        if (this.centerDisplayMat) {
+            const target = headlightsOn ? 0.3 + nightIntensity * 0.6 : 0.3;
+            this.centerDisplayMat.emissiveIntensity +=
+                (target - this.centerDisplayMat.emissiveIntensity) * 0.08;
+        }
+
+        // Dome light intensity (smooth lerp toward target)
+        const domeTarget = domeLightOn ? 1.2 : 0;
+        this.domeLightSource.intensity +=
+            (domeTarget - this.domeLightSource.intensity) * 0.08;
+
+        // Dome fixture emissive glow
+        if (this.domeLightFixtureMesh) {
+            const fixMat = this.domeLightFixtureMesh.material as THREE.MeshStandardMaterial;
+            fixMat.emissiveIntensity +=
+                ((domeLightOn ? 1.0 : 0) - fixMat.emissiveIntensity) * 0.08;
+        }
+        // Switch indicator
+        if (this.domeSwitchMesh) {
+            const swMat = this.domeSwitchMesh.material as THREE.MeshStandardMaterial;
+            swMat.emissiveIntensity = domeLightOn ? 0.6 : 0;
+        }
+    }
+
+    /**
+     * Test whether screen coordinates hit the dome light switch mesh.
+     */
+    public isDomeSwitchHit(clientX: number, clientY: number): boolean {
+        if (!this.domeSwitchMesh) return false;
+        const rect = this.canvas.getBoundingClientRect();
+        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+        this.domeSwitchMesh.updateWorldMatrix(true, true);
+        return raycaster.intersectObject(this.domeSwitchMesh, false).length > 0;
     }
 
     /**

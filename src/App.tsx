@@ -9,7 +9,7 @@ import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
 import Compass from './components/Compass';
 import DashboardUI from './car/DashboardUI';
-import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, CarModeState, setCarSteering, setCarWipers, updateCarGauges, isCarSteeringWheelHit } from './car';
+import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, CarModeState, setCarSteering, setCarWipers, updateCarGauges, isCarSteeringWheelHit, toggleCarDomeLight, isCarDomeSwitchHit } from './car';
 import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
 
@@ -34,6 +34,7 @@ import {
     AccessibilitySettings,
     SkipLink,
 } from './hooks/useKeyboardShortcuts';
+import { useAutoNight } from './hooks/useAutoNight';
 import AccessibilityPanel from './components/AccessibilityPanel';
 
 // Performance Imports
@@ -250,6 +251,25 @@ function App() {
     const [nightIntensity, setNightIntensity] = useState(0.0);
     const [headlightsOn, setHeadlightsOn] = useState(false);
     const [highBeam, setHighBeam] = useState(false);
+    // Dome light + auto night mode + astronomical positions
+    const [domeLightOn, setDomeLightOn] = useState(false);
+    const [autoNightMode, setAutoNightMode] = useState(true);
+    const [sunAzimuth,   setSunAzimuth]   = useState(0.0);
+    const [sunAltitude,  setSunAltitude]  = useState(0.2);   // default: daytime
+    const [moonAzimuth,  setMoonAzimuth]  = useState(0.0);
+    const [moonAltitude, setMoonAltitude] = useState(-0.5);  // default: below horizon
+
+    // Auto night mode: hook wiring (after all state declarations so setters are in scope)
+    const handleSunMoon = useCallback(
+        (sunAz: number, sunAlt: number, moonAz: number, moonAlt: number) => {
+            setSunAzimuth(sunAz);
+            setSunAltitude(sunAlt);
+            setMoonAzimuth(moonAz);
+            setMoonAltitude(moonAlt);
+        },
+        []
+    );
+    useAutoNight(currentCoords, autoNightMode, setNightIntensity, handleSunMoon);
     const carModeRef = useRef<CarModeState | null>(null);
     const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
 
@@ -632,24 +652,31 @@ function App() {
     useEffect(() => {
         if (rendererRef.current) {
             // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
-            //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, padding...]
+            //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch,
+            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, pad, pad]
             const weatherParams = new Float32Array([
                 vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
-                0,                           // time (updated in render loop)
-                rainIntensity / 50,          // rainIntensity (0-2, scaled from 0-100)
-                snowIntensity / 50,          // snowIntensity (0-2, scaled from 0-100)
-                wind / 100,                  // wind (-1.0 to 1.0, scaled from -100 to 100)
-                1.0,                         // speed (animation speed multiplier)
-                nightIntensity,              // nightIntensity (0.0-1.0)
-                headlightsOn ? 1.0 : 0.0,    // headlightsOn
-                highBeam ? 1.0 : 0.0,        // highBeam
-                0.5,                         // headlightHeading (center of view)
-                0.55,                        // headlightPitch (slightly below center = road)
-                0, 0, 0, 0                   // padding
+                0,                           // time (updated in render loop) [6]
+                rainIntensity / 50,          // rainIntensity (0-2) [7]
+                snowIntensity / 50,          // snowIntensity (0-2) [8]
+                wind / 100,                  // wind (-1.0 to 1.0) [9]
+                1.0,                         // speed (animation speed) [10]
+                nightIntensity,              // nightIntensity (0.0-1.0) [11]
+                headlightsOn ? 1.0 : 0.0,    // headlightsOn [12]
+                highBeam ? 1.0 : 0.0,        // highBeam [13]
+                0.5,                         // headlightHeading (center) [14]
+                0.55,                        // headlightPitch (road) [15]
+                domeLightOn ? 1.0 : 0.0,     // domeLightOn [16]
+                domeLightOn ? 1.0 : 0.0,     // domeLightIntensity [17]
+                sunAzimuth,                  // sunAzimuth (radians) [18]
+                sunAltitude,                 // sunAltitude (radians) [19]
+                moonAzimuth,                 // moonAzimuth (radians) [20]
+                moonAltitude,                // moonAltitude (radians) [21]
+                0, 0                         // padding [22-23]
             ]);
             rendererRef.current.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
@@ -986,7 +1013,7 @@ function App() {
                 if (pano) {
                     pano.setPov({ heading: carHeadingRef.current, pitch: 0 });
                 }
-                updateCarMode(carHeading, headYawOffset, headPitch);
+                updateCarMode(carHeading, headYawOffset, headPitch, carSpeedRef.current, nightIntensity, headlightsOn, domeLightOn);
             }
 
             if (hasChanges) {
@@ -1027,7 +1054,7 @@ function App() {
             active = false;
             cancelAnimationFrame(rafId);
         };
-    }, [isCarMode, carHeading, viewHeading, headPitch, headYawOffset]);
+    }, [isCarMode, carHeading, viewHeading, headPitch, headYawOffset, nightIntensity, headlightsOn, domeLightOn]);
 
     // Cleanup car mode on unmount
     useEffect(() => {
@@ -1055,6 +1082,7 @@ function App() {
 
     const handleTimeOfDay = useCallback((value: string) => {
         if (value === 'day' || value === 'sunset' || value === 'night') {
+            setAutoNightMode(false);  // Manual override disables auto night
             setTimeOfDay(value);
             // Sync nightIntensity with time-of-day preset
             if (value === 'day') {
@@ -1073,6 +1101,11 @@ function App() {
         const newState = toggleWipers();
         setWipersEnabled(newState);
         setCarWipers(newState);
+    }, []);
+
+    const handleToggleDomeLight = useCallback(() => {
+        const newState = toggleCarDomeLight();
+        setDomeLightOn(newState);
     }, []);
 
     // [ENHANCED] Snapshot handler with gallery save and JSON sidecar metadata
@@ -1502,10 +1535,15 @@ function App() {
             },
             {
                 key: 'l',
-                description: 'Toggle headlights',
+                description: 'Toggle dome light (car mode) / headlights',
                 action: () => {
-                    setHeadlightsOn(v => !v);
-                    announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
+                    if (isCarMode) {
+                        handleToggleDomeLight();
+                        announce(`Dome light ${domeLightOn ? 'off' : 'on'}`);
+                    } else {
+                        setHeadlightsOn(v => !v);
+                        announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
+                    }
                 },
             },
             {
@@ -1875,6 +1913,13 @@ function App() {
                 role="main"
                 aria-label="Street View Canvas"
                 tabIndex={0}
+                onClick={(e) => {
+                    // Check for dome switch click before InputHandler processes it
+                    if (isCarMode && isCarDomeSwitchHit(e.clientX, e.clientY)) {
+                        handleToggleDomeLight();
+                        e.stopPropagation();
+                    }
+                }}
                 style={{
                     position: 'absolute',
                     top: 0,
@@ -1901,6 +1946,7 @@ function App() {
                     // Free mode: 0.5 (no shift; Google Maps handles heading via setPov).
                     panX={isCarMode ? 0.5 - (headYawOffset / 90) * 0.5 : 0.5}
                     panY={isCarMode ? 0.5 + (headPitch / 90) * 0.5 : 0.5}
+                    isCarMode={isCarMode}
                 />
 
                 {/* Compass Overlay - shows which direction the head is looking */}
@@ -2347,6 +2393,8 @@ function App() {
                 onWind={handleWind}
                 onToggleWipers={handleToggleWipers}
                 onTimeOfDay={handleTimeOfDay}
+                autoNightMode={autoNightMode}
+                onToggleAutoNight={() => setAutoNightMode(prev => !prev)}
                 onClose={() => setIsWeatherPanelOpen(false)}
                 isOpen={isWeatherPanelOpen}
             />
@@ -2393,10 +2441,12 @@ function App() {
                     onToggleWipers={handleToggleWipers}
                     onToggleHeadlights={() => setHeadlightsOn(v => !v)}
                     onToggleHighBeam={() => setHighBeam(v => !v)}
+                    onToggleDomeLight={handleToggleDomeLight}
                     isRoofOpen={isRoofOpen}
                     wipersEnabled={wipersEnabled}
                     headlightsOn={headlightsOn}
                     highBeam={highBeam}
+                    domeLightOn={domeLightOn}
                     rainIntensity={rainIntensity}
                     snowIntensity={snowIntensity}
                     wind={wind}

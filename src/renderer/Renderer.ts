@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    private weatherParams: Float32Array = new Float32Array(20); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, ...]
+    private weatherParams: Float32Array = new Float32Array(24); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, pad, pad]
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -108,9 +108,9 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (20 floats for HDR weather + nighttime + headlights)
+            // Weather params buffer (24 floats for HDR weather + nighttime + headlights + dome + astronomy)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 80, // 20 floats × 4 bytes
+                size: 96, // 24 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -132,7 +132,13 @@ export class Renderer {
                 0.0,  // highBeam
                 0.5,  // headlightHeading (center)
                 0.5,  // headlightPitch (center)
-                0.0, 0.0, 0.0, 0.0  // padding
+                0.0,  // domeLightOn [16]
+                0.0,  // domeLightIntensity [17]
+                0.0,  // sunAzimuth [18]
+                0.0,  // sunAltitude [19]
+                0.0,  // moonAzimuth [20]
+                0.0,  // moonAltitude [21]
+                0.0, 0.0  // padding [22-23]
             ]);
 
             await this.createPipeline();

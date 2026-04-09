@@ -71,6 +71,7 @@ export const KEYBOARD_SHORTCUTS = {
     STEER_RIGHT: { key: 'd', description: 'Steer right' },
     TOGGLE_WIPERS: { key: 'w', description: 'Toggle windshield wipers' },
     TOGGLE_ROOF: { key: 'o', description: 'Toggle convertible roof' },
+    TOGGLE_DOME_LIGHT: { key: 'l', description: 'Toggle dome light (car mode) / headlights' },
     CLOSE_PANEL: { key: 'Escape', description: 'Close current panel' },
     FOCUS_NEXT: { key: 'Tab', description: 'Move to next control' },
     ACTIVATE: { key: 'Enter', description: 'Activate selected control' },

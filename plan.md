@@ -90,6 +90,14 @@ This document outlines potential features and enhancements for the WebGPU Street
 - ⬜ **Keyboard-only navigation** - Full functionality without mouse
 - ⬜ **High contrast mode** - For users with vision difficulties
 
+## Active Development
+
+### Car Mode Interior Lighting
+- ⬜ **Reactive interior lighting** - Drive dashboard/interior lighting from environment
+  - Add `nightIntensity` and `headlightsOn` optional params to `updateCarMode()`
+  - Update call sites in `App.tsx` to pass lighting state
+  - Implement interior material brightness modulation based on time of day
+
 ## Technical Improvements
 
 ### Performance

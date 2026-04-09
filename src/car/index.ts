@@ -216,7 +216,7 @@ export function getWiperState(): { enabled: boolean; speed: number } {
  * @param headPitch - Current head pitch in degrees (up/down look)
  * @param carSpeed - Current car speed for wind effects in convertible mode (km/h)
  */
-export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0): void {
+export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0, nightIntensity: number = 0, headlightsOn: boolean = false, domeLightOn: boolean = false): void {
     if (!carModeState || !carModeState.isActive) return;
 
     const now = performance.now();
@@ -242,6 +242,9 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     // Update mirror with the rear view (180° behind car heading)
     // The mirror shows what's actually behind the car based on Street View
     carModeState.mirror.update(carHeading, true); // skipFrame = true for performance
+
+    // Update interior lighting based on headlights, night intensity, and dome light
+    carModeState.interior.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
 
     // Render the car interior
     carModeState.interior.render();
@@ -282,6 +285,31 @@ export function toggleCarHeadlights(): boolean {
     if (!carModeState) return false;
     carModeState.interior.toggleHeadlights();
     return carModeState.interior.getHeadlightsState();
+}
+
+/**
+ * Toggle the car's dome (interior cabin) light.
+ * Returns the new dome light state.
+ */
+export function toggleCarDomeLight(): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.toggleDomeLight();
+}
+
+/**
+ * Get the current dome light state.
+ */
+export function getCarDomeLightState(): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.getDomeLightState();
+}
+
+/**
+ * Test whether screen coordinates hit the dome switch mesh.
+ */
+export function isCarDomeSwitchHit(clientX: number, clientY: number): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.isDomeSwitchHit(clientX, clientY);
 }
 
 /**

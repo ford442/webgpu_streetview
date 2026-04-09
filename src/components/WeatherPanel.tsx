@@ -13,6 +13,8 @@ interface WeatherPanelProps {
     onTimeOfDay: (value: string) => void;
     onClose: () => void;
     isOpen: boolean;
+    autoNightMode?: boolean;
+    onToggleAutoNight?: () => void;
 }
 
 const WeatherPanel: React.FC<WeatherPanelProps> = ({
@@ -28,6 +30,8 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
     onTimeOfDay,
     onClose,
     isOpen,
+    autoNightMode = false,
+    onToggleAutoNight,
 }) => {
     if (!isOpen) return null;
 
@@ -121,16 +125,21 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                 {/* Time of Day */}
                 <div style={{ marginBottom: '18px' }}>
                     <div style={{ ...labelStyle, marginBottom: '8px' }}>Time of Day:</div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         {(['day', 'sunset', 'night'] as const).map(tod => (
                             <button
                                 key={tod}
                                 onClick={() => onTimeOfDay(tod)}
-                                style={todBtnStyle(timeOfDay === tod)}
+                                style={todBtnStyle(timeOfDay === tod && !autoNightMode)}
                             >
                                 {tod === 'day' ? '☀️ Day' : tod === 'sunset' ? '🌅 Sunset' : '🌙 Night'}
                             </button>
                         ))}
+                        {onToggleAutoNight && (
+                            <button onClick={onToggleAutoNight} style={todBtnStyle(autoNightMode)}>
+                                🌙 Auto
+                            </button>
+                        )}
                     </div>
                 </div>
 

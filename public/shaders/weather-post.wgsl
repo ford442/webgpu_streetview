@@ -22,6 +22,17 @@ struct WeatherParams {
     highBeam         : f32,   // 0.0 = low beam, 1.0 = high beam
     headlightHeading : f32,   // normalized heading (0–1, same as panX)
     headlightPitch   : f32,   // normalized pitch (0–1, same as panY)
+    // 16-17: dome light
+    domeLightOn       : f32,  // 0.0 = off, 1.0 = on
+    domeLightIntensity: f32,  // 0.0–1.0 smoothed brightness
+    // 18-21: astronomical sun/moon positions (SunCalc radians: 0=S, π/2=W, π=N, -π/2=E)
+    sunAzimuth        : f32,  // sun azimuth (radians)
+    sunAltitude       : f32,  // sun altitude above horizon (radians, negative = below)
+    moonAzimuth       : f32,  // moon azimuth (radians)
+    moonAltitude      : f32,  // moon altitude above horizon (radians)
+    // 22-23: padding
+    _pad0             : f32,
+    _pad1             : f32,
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -227,6 +238,83 @@ fn headlightBeams(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32, t:
     return beam * n * mix(0.12, 0.25, highBeam);
 }
 
+// Warm amber dashboard glow rising from bottom frame (headlight bounce inside cabin)
+fn headlightInteriorBounce(uv: vec2<f32>, hlOn: f32, night: f32) -> vec3<f32> {
+    if (hlOn < 0.5 || night < 0.01) { return vec3<f32>(0.0); }
+    let bottomGrad = smoothstep(0.30, 0.0, uv.y);
+    return vec3<f32>(1.0, 0.58, 0.18) * bottomGrad * night * 0.12;
+}
+
+// Soft warm oval at top frame (dome light cast on windshield/headliner)
+fn domeLightCabinGlow(uv: vec2<f32>, domeOn: f32, domeIntensity: f32) -> vec3<f32> {
+    if (domeOn < 0.5 || domeIntensity < 0.01) { return vec3<f32>(0.0); }
+    let topGrad = smoothstep(0.25, 0.0, 1.0 - uv.y);
+    let cx = uv.x - 0.5;
+    let hFade = exp(-cx * cx * 8.0);
+    return vec3<f32>(1.0, 0.91, 0.71) * topGrad * hFade * domeIntensity * 0.06;
+}
+
+// Golden hour / sunset horizon glow with directional sun bias.
+// SunCalc azimuth convention: 0=S, π/2=W, π=N, -π/2=E.
+fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3<f32> {
+    // Active only when sun is near horizon (−0.1 to +0.35 rad)
+    let altFactor = 1.0 - clamp(abs(sunAlt) / 0.35, 0.0, 1.0);
+    let nightFade = 1.0 - clamp(night / 0.85, 0.0, 1.0);
+    let strength  = altFactor * nightFade;
+    if (strength < 0.002) { return vec3<f32>(0.0); }
+
+    // Normalize azimuth to UV.x (0=N, 0.25=E, 0.5=S, 0.75=W)
+    let sunNormX = fract((sunAz + 3.14159265) / (2.0 * 3.14159265));
+    var dSunX = uv.x - sunNormX;
+    if (dSunX >  0.5) { dSunX -= 1.0; }
+    if (dSunX < -0.5) { dSunX += 1.0; }
+    // Broad horizontal spread (±one-third of panorama)
+    let hFade = smoothstep(0.33, 0.0, abs(dSunX));
+
+    // Warm vertical band around horizon (lower frame)
+    let vertGrad = smoothstep(0.80, 0.30, uv.y);
+
+    // Golden to reddish gradient by height
+    let goldenColor  = vec3<f32>(1.0, 0.62, 0.12);
+    let reddishColor = vec3<f32>(0.9, 0.25, 0.08);
+    let sunsetColor  = mix(goldenColor, reddishColor, smoothstep(0.40, 0.60, uv.y));
+
+    let glow = sunsetColor * vertGrad * hFade * strength;
+    // Multiplicative warmth + subtle additive bloom
+    return glow * (1.0 + glow * 0.5) + glow * 0.2;
+}
+
+// Directional moonlight — cool silvery tint + specular highlight in moon direction.
+fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32, night: f32) -> vec3<f32> {
+    // Only visible when moon is above horizon and sky is dark enough
+    let moonAbove = clamp(moonAlt / 0.8, 0.0, 1.0);
+    let strength  = moonAbove * clamp((night - 0.4) / 0.6, 0.0, 1.0);
+    if (strength < 0.002) { return col; }
+
+    let moonColor = vec3<f32>(0.72, 0.82, 1.0);  // silvery cool blue-white
+
+    // Moon's approximate UV position (same azimuth convention as sun)
+    let moonNormX = fract((moonAz + 3.14159265) / (2.0 * 3.14159265));
+    var dMoonX = uv.x - moonNormX;
+    if (dMoonX >  0.5) { dMoonX -= 1.0; }
+    if (dMoonX < -0.5) { dMoonX += 1.0; }
+    let moonUvY = 1.0 - clamp(moonAlt / 1.5708, 0.0, 1.0);
+
+    // Tight specular highlight at moon's position
+    let moonDist = length(vec2<f32>(dMoonX * 2.5, uv.y - moonUvY));
+    let specular  = exp(-moonDist * moonDist * 35.0) * 0.15 * strength;
+
+    // Broad ambient cool tint on upper sky
+    let skyGrad = smoothstep(0.55, 0.15, uv.y);
+    let ambient = moonColor * skyGrad * strength * 0.04;
+
+    // Luminance-weighted cool highlight on existing bright surfaces
+    let lum = dot(col, vec3<f32>(0.299, 0.587, 0.114));
+    let lumTint = moonColor * smoothstep(0.3, 0.85, lum) * strength * 0.06;
+
+    return col + ambient + moonColor * specular + lumTint;
+}
+
 @fragment
 fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     let texSize = vec2<f32>(textureDimensions(sceneTex));
@@ -268,6 +356,14 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
         let flare = exp(-flareDist * flareDist * 120.0) * 0.15 * nightMul;
         col = col + vec3<f32>(1.0, 0.97, 0.88) * flare;
     }
+
+    // === Interior cabin lighting ===
+    col = col + headlightInteriorBounce(uv, p.headlightsOn, p.nightIntensity);
+    col = col + domeLightCabinGlow(uv, p.domeLightOn, p.domeLightIntensity);
+
+    // === Astronomical lighting ===
+    col = col + sunsetHorizonGlow(uv, p.sunAzimuth, p.sunAltitude, p.nightIntensity);
+    col = directionalMoonlight(col, uv, p.moonAzimuth, p.moonAltitude, p.nightIntensity);
 
     // === Weather effects ===
     if (p.rainIntensity > 0.001) {

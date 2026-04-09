@@ -22,6 +22,8 @@ interface WebGPUCanvasProps {
     // Transition props
     transitionState?: 'idle' | 'zooming_out' | 'crossfading' | 'zooming_in';
     transitionProgress?: number;
+    // Car mode: when true, panX/panY are UV offsets (0.5 = center), not angles
+    isCarMode?: boolean;
 }
 
 const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ 
@@ -39,7 +41,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
     onWebGPUStatus, 
     onFPSUpdate,
     transitionState = 'idle',
-    transitionProgress = 0
+    transitionProgress = 0,
+    isCarMode = false
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
@@ -183,9 +186,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
             if (shouldRender && currentRendererRef.current) {
                 // Handle transition rendering
                 if (transitionState !== 'idle' && prevSource && source) {
-                    // Dual-source transition rendering
-                    const heading = (panX || 0.5) * 360;
-                    const pitch = (panY || 0.5) * 180 - 90;
+                    // In car mode: panX/panY are already UV offsets (0.5 = center, no shift)
+                    // In free mode: panX/panY are normalized angles (0.5 = center)
+                    // Renderer.renderStreetViewTransition expects heading (0-360) and pitch (-90 to +90)
+                    // Shader computes: shiftX = panX - 0.5, shiftY = panY - 0.5
+                    const heading = isCarMode 
+                        ? ((panX || 0.5) * 360)  // Convert UV offset back to pseudo-heading
+                        : ((panX || 0.5) * 360); // Free mode: panX is heading/360
+                    const pitch = isCarMode
+                        ? ((panY || 0.5) * 180 - 90)  // Convert UV offset back to pseudo-pitch
+                        : ((panY || 0.5) * 180 - 90); // Free mode: panY is (pitch+90)/180
                     
                     // Render with transition blend
                     currentRendererRef.current.renderStreetViewTransition(
@@ -200,8 +210,15 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
                     );
                 } else if (source) {
                     // Normal rendering
-                    const heading = (panX || 0.5) * 360;
-                    const pitch = (panY || 0.5) * 180 - 90;
+                    // In car mode: panX/panY are UV offsets (0.5 = center, no shift)
+                    // The shader interprets panX/panY as: shift = panX - 0.5
+                    // So we need to pass values that result in correct shifts after the -0.5
+                    const heading = isCarMode 
+                        ? ((panX || 0.5) * 360)  // panX=0.5 -> 180, shader: 180/360 - 0.5 = 0 (no shift)
+                        : ((panX || 0.5) * 360); // Free mode: panX is heading/360
+                    const pitch = isCarMode
+                        ? ((panY || 0.5) * 180 - 90)  // panY=0.5 -> 0, shader: (0+90)/180 - 0.5 = 0 (no shift)
+                        : ((panY || 0.5) * 180 - 90); // Free mode: panY is (pitch+90)/180
                     currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
                 }
                 sourceChangeFlagRef.current = false;

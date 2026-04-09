@@ -20,10 +20,12 @@ interface DashboardUIProps {
     onToggleVehicle?: () => void;
     onToggleHeadlights?: () => void;
     onToggleHighBeam?: () => void;
+    onToggleDomeLight?: () => void;
     isRoofOpen: boolean;
     wipersEnabled?: boolean;
     headlightsOn?: boolean;
     highBeam?: boolean;
+    domeLightOn?: boolean;
     currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
     rainIntensity: number;
     snowIntensity?: number;
@@ -47,10 +49,12 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     onToggleVehicle,
     onToggleHeadlights,
     onToggleHighBeam,
+    onToggleDomeLight,
     isRoofOpen,
     wipersEnabled = false,
     headlightsOn = false,
     highBeam = false,
+    domeLightOn = false,
     currentVehicle = 'sedan',
     rainIntensity,
     snowIntensity = 0,
@@ -277,6 +281,24 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                         title="Toggle High Beam"
                     >
                         <span aria-hidden="true">{highBeam ? '🔆 HIGH' : '🔅 LOW'}</span>
+                    </button>
+                )}
+
+                {/* Dome light toggle */}
+                {onToggleDomeLight && (
+                    <button
+                        onClick={onToggleDomeLight}
+                        style={{
+                            ...buttonStyle,
+                            backgroundColor: domeLightOn ? 'rgba(255,232,176,0.3)' : buttonStyle.backgroundColor,
+                            borderColor: domeLightOn ? '#FFE8B0' : (buttonStyle.borderColor as string),
+                            color: domeLightOn ? '#FFE8B0' : (buttonStyle.color as string),
+                        }}
+                        aria-label={domeLightOn ? 'Turn off dome light' : 'Turn on dome light'}
+                        aria-pressed={domeLightOn}
+                        title="Toggle Dome Light (L)"
+                    >
+                        <span aria-hidden="true">🔆 {domeLightOn ? 'DOME ON' : 'DOME'}</span>
                     </button>
                 )}
 
