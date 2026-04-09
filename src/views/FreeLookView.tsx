@@ -7,6 +7,7 @@ import FreeLookInputHandler from '../components/FreeLookInputHandler';
 
 interface FreeLookViewProps {
   mapsApiKey: string;
+  onWebGPUStatus?: (available: boolean) => void;
 }
 
 /**
@@ -20,7 +21,7 @@ interface FreeLookViewProps {
  * - 'C' key to toggle to car mode
  * - Compass and MiniMap overlays
  */
-const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey }) => {
+const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey, onWebGPUStatus }) => {
   const { canvas, heading, pitch, zoom, panorama } = useStreetView();
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -45,6 +46,7 @@ const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey }) => {
         panX={0.5}
         panY={0.5}
         isCarMode={false}
+        onWebGPUStatus={onWebGPUStatus}
       />
       
       {/* Compass overlay */}

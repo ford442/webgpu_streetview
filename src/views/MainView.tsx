@@ -5,6 +5,7 @@ import CarModeView from './CarModeView';
 
 interface MainViewProps {
   mapsApiKey: string;
+  onWebGPUStatus?: (available: boolean) => void;
 }
 
 /**
@@ -13,13 +14,13 @@ interface MainViewProps {
  * This is the main content component that renders the appropriate view based on
  * the user's selected mode from useViewMode context.
  */
-const MainView: React.FC<MainViewProps> = ({ mapsApiKey }) => {
+const MainView: React.FC<MainViewProps> = ({ mapsApiKey, onWebGPUStatus }) => {
   const { viewMode } = useViewMode();
   
   return (
     <>
-      {viewMode === 'freelook' && <FreeLookView mapsApiKey={mapsApiKey} />}
-      {viewMode === 'car' && <CarModeView mapsApiKey={mapsApiKey} />}
+      {viewMode === 'freelook' && <FreeLookView mapsApiKey={mapsApiKey} onWebGPUStatus={onWebGPUStatus} />}
+      {viewMode === 'car' && <CarModeView mapsApiKey={mapsApiKey} onWebGPUStatus={onWebGPUStatus} />}
     </>
   );
 };

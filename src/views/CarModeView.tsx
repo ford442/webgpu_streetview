@@ -20,6 +20,7 @@ import { DashboardUI } from '../car/DashboardUI';
 
 interface CarModeViewProps {
   mapsApiKey: string;
+  onWebGPUStatus?: (available: boolean) => void;
 }
 
 /**
@@ -32,7 +33,7 @@ interface CarModeViewProps {
  * - Dashboard UI with gauges, wipers, lights controls
  * - Head look independent of car steering
  */
-const CarModeView: React.FC<CarModeViewProps> = () => {
+const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
   const { canvas, heading, pitch, panorama } = useStreetView();
   const {
     viewMode,
@@ -262,6 +263,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         panX={0.5}
         panY={0.5}
         isCarMode={true}
+        onWebGPUStatus={onWebGPUStatus}
       />
       
       {/* Premium Car Dashboard */}

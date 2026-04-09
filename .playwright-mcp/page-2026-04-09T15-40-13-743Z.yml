@@ -1,0 +1,35 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e26]:
+    - button "Keyboard shortcuts" [ref=e27] [cursor=pointer]
+    - region "Map" [ref=e28]:
+      - generic [ref=e29]:
+        - region "Street View" [ref=e32]
+        - generic:
+          - img
+    - iframe [ref=e35]:
+      
+    - link "Open this area in Google Maps (opens a new window)" [ref=e37] [cursor=pointer]:
+      - /url: https://maps.google.com/maps/@39.257598,-121.021791,0a,73.7y,34h,100t/data=!3m4!1e1!3m2!1sJ1girqW1DQmXJgMrUoc4BQ!2e0?source=apiv3
+      - img "Google" [ref=e39]
+    - generic [ref=e40]:
+      - button "Keyboard shortcuts" [ref=e46] [cursor=pointer]
+      - generic [ref=e51]: © 2026 Google
+      - link "Terms (opens in new tab)" [ref=e56] [cursor=pointer]:
+        - /url: https://www.google.com/intl/en-US_US/help/terms_maps.html
+        - text: Terms
+      - link "Report a problem" [ref=e61] [cursor=pointer]:
+        - /url: https://www.google.com/local/imagery/report/?cb_client=apiv3&image_key=!1e2!2sJ1girqW1DQmXJgMrUoc4BQ&cbp=1,34,,0,-10&hl=en-US
+  - main "Street View Canvas" [ref=e25]:
+    - generic [ref=e62]:
+      - generic:
+        - generic:
+          - img:
+            - generic: "N"
+            - generic: S
+            - generic: E
+            - generic: W
+          - generic:
+            - img
+        - generic: 34°

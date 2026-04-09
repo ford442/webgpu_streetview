@@ -87,6 +87,7 @@ function InnerApp() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [webGPUAvailable, setWebGPUAvailable] = useState(true); // Track WebGPU availability
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   
@@ -170,6 +171,11 @@ function InnerApp() {
     setShowWelcome(false);
     setIsConnected(true);
   };
+  
+  // Handle WebGPU status changes from MainView
+  const handleWebGPUStatus = useCallback((available: boolean) => {
+    setWebGPUAvailable(available);
+  }, []);
   
   const toggleRadio = () => {
     if (!audioRef.current) return;
@@ -506,15 +512,18 @@ function InnerApp() {
       )}
 
       {/* Hidden StreetView - kept in DOM for canvas scraping */}
+      {/* When WebGPU fails, show this as fallback (zIndex: 2, opacity: 1) */}
+      {/* Use opacity: 0.01 instead of 0 to ensure browser still renders to canvas for texture upload */}
       <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         width: '100%',
         height: '100%',
-        zIndex: isConnected ? 0 : 2,
-        opacity: isConnected ? 0 : 1,
-        transition: 'opacity 0.5s ease-in-out'
+        zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
+        opacity: (isConnected && webGPUAvailable) ? 0.01 : 1,
+        transition: 'opacity 0.5s ease-in-out',
+        pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
       }}>
         <StreetView
           apiKey={GOOGLE_MAPS_KEY}
@@ -546,7 +555,7 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+        {isConnected && <MainView mapsApiKey={GOOGLE_MAPS_KEY} onWebGPUStatus={handleWebGPUStatus} />}
       </div>
     </div>
   );
