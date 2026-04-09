@@ -208,7 +208,7 @@ export class Renderer {
 
         this.texture = this.device.createTexture({
             size: [width, height],
-            format: 'rgba8unorm',
+            format: 'rgba8unorm-srgb',
             usage: GPUTextureUsage.TEXTURE_BINDING |
                 GPUTextureUsage.COPY_DST |
                 GPUTextureUsage.RENDER_ATTACHMENT,
@@ -224,7 +224,7 @@ export class Renderer {
 
         this.videoTexture = this.device.createTexture({
             size: [width, height],
-            format: 'rgba8unorm',
+            format: 'rgba8unorm-srgb',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
         });
         this.videoTextureWidth = width;
