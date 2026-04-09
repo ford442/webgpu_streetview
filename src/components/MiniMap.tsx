@@ -80,7 +80,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
             if (viewMode !== 'globe' || !cesiumRef.current || cesiumViewer) return;
 
             // Set Cesium Ion access token (you'll need to get this from cesium.com)
-            Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || 'your-cesium-ion-token-here'; // TODO: Add to env vars
+            Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || '';
 
             const viewer = new Cesium.Viewer(cesiumRef.current, {
                 terrainProvider: await Cesium.createWorldTerrainAsync(),
