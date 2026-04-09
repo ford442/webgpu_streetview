@@ -258,14 +258,16 @@ function App() {
     const [sunAltitude,  setSunAltitude]  = useState(0.2);   // default: daytime
     const [moonAzimuth,  setMoonAzimuth]  = useState(0.0);
     const [moonAltitude, setMoonAltitude] = useState(-0.5);  // default: below horizon
+    const [moonIntensity, setMoonIntensity] = useState(0.0);  // moon light intensity (0-1.5)
 
     // Auto night mode: hook wiring (after all state declarations so setters are in scope)
     const handleSunMoon = useCallback(
-        (sunAz: number, sunAlt: number, moonAz: number, moonAlt: number) => {
+        (sunAz: number, sunAlt: number, moonAz: number, moonAlt: number, moonInt: number) => {
             setSunAzimuth(sunAz);
             setSunAltitude(sunAlt);
             setMoonAzimuth(moonAz);
             setMoonAltitude(moonAlt);
+            setMoonIntensity(moonInt);
         },
         []
     );
@@ -653,7 +655,7 @@ function App() {
         if (rendererRef.current) {
             // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
             //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch,
-            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, pad, pad]
+            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad]
             const weatherParams = new Float32Array([
                 vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
                 0,                           // time (updated in render loop) [6]
@@ -672,11 +674,12 @@ function App() {
                 sunAltitude,                 // sunAltitude (radians) [19]
                 moonAzimuth,                 // moonAzimuth (radians) [20]
                 moonAltitude,                // moonAltitude (radians) [21]
-                0, 0                         // padding [22-23]
+                moonIntensity,               // moonIntensity (0-1.5) [22]
+                0                            // padding [23]
             ]);
             rendererRef.current.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {

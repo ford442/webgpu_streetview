@@ -42,7 +42,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     uv = (uv - center) / zoom + center;
 
     // Clamp or wrap UVs for panoramic effect
-    let wrappedUV = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+    // Note: In car mode, we clamp horizontally to avoid repeating the limited FOV
+    // Google Maps canvas only renders ~90° FOV, so wrapping creates artifacts
+    // In free mode, panX/panY are 0.5 (no shift) so clamp vs wrap doesn't matter
+    let uClamped = clamp(uv.x, 0.0, 1.0);
+    let uWrapped = fract(uv.x);
+    
+    // Use clamping when there's a significant UV shift (car mode), wrapping otherwise
+    // Detect car mode by checking if panX or panY deviates from 0.5
+    let isCarMode = abs(panX - 0.5) > 0.001 || abs(panY - 0.5) > 0.001;
+    let finalU = select(uWrapped, uClamped, isCarMode);
+    
+    let wrappedUV = vec2<f32>(finalU, clamp(uv.y, 0.0, 1.0));
 
     // Sample the panorama texture
     var color = textureSample(tex, texSampler, wrappedUV).rgb;

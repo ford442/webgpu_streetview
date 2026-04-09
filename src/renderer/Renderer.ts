@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    private weatherParams: Float32Array = new Float32Array(24); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, pad, pad]
+    private weatherParams: Float32Array = new Float32Array(24); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad]
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -138,7 +138,8 @@ export class Renderer {
                 0.0,  // sunAltitude [19]
                 0.0,  // moonAzimuth [20]
                 0.0,  // moonAltitude [21]
-                0.0, 0.0  // padding [22-23]
+                0.0,  // moonIntensity [22]
+                0.0   // padding [23]
             ]);
 
             await this.createPipeline();
@@ -390,6 +391,9 @@ export class Renderer {
      *   [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
      *   [6-10]: time, rainIntensity, snowIntensity, wind, speed
      *   [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
+     *   [16-17]: domeLightOn, domeLightIntensity
+     *   [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
+     *   [22]: moonIntensity (0-1.5, accounts for phase, altitude, opposition surge)
      */
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
