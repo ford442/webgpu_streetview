@@ -322,7 +322,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setDomeLight,
     isRoofOpen,
     toggleRoof: toggleRoofCallback,
-    setRoofOpen,
+    setRoofOpen: setIsRoofOpen,
     
     // Color grading
     vibrance,

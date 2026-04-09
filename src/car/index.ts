@@ -84,6 +84,39 @@ export {
 } from './variants/LimousineMode';
 export type { LimoState } from './variants/LimousineMode';
 
+// Dashboard UI Components
+export { DashboardUI } from './DashboardUI';
+export type { DashboardUIProps } from './DashboardUI';
+export { 
+    DashboardContainer, 
+    ZoneLeft, 
+    ZoneCenter, 
+    ZoneRight, 
+    COLORS 
+} from './DashboardLayout';
+export { 
+    SpeedGauge, 
+    RpmGauge, 
+    GearIndicator 
+} from './Gauges';
+export { 
+    IconButton, 
+    Slider, 
+    AudioVisualizer, 
+    injectSliderStyles,
+    GPS_ICON,
+    RADIO_ICON,
+    ROOF_ICON,
+    WIPER_ICON,
+    HEADLIGHT_ICON,
+    HIGHBEAM_ICON,
+    DOME_ICON,
+    SNOW_ICON,
+    RAIN_ICON,
+    WIND_ICON,
+    VEHICLE_ICON
+} from './Controls';
+
 /**
  * CarMode state container holding all car view subsystems.
  */

@@ -1,2619 +1,558 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import WebGPUCanvas from './components/WebGPUCanvas';
 import StreetView from './components/StreetView';
-import InputHandler from './components/InputHandler';
-import { Renderer } from './renderer/Renderer';
-import { RenderMode } from './renderer/types';
-import { findBestLink } from './utils/navigation';
-import MiniMap from './components/MiniMap';
 import WelcomeModal from './components/WelcomeModal';
-import Compass from './components/Compass';
-import DashboardUI from './car/DashboardUI';
-import { initCarMode, toggleCarMode, updateCarMode, disposeCarMode, setMirrorStreetViewCanvas, toggleWipers, CarModeState, setCarSteering, setCarWipers, updateCarGauges, isCarSteeringWheelHit, toggleCarDomeLight, isCarDomeSwitchHit } from './car';
-import { SelectivePostProcessing } from './car/SelectivePostProcessing';
 import './style.css';
 
-// New Feature Imports
+// Providers
+import {
+  StreetViewProvider,
+  ViewModeProvider,
+  EnvironmentSettingsProvider,
+  useStreetView,
+  useViewMode,
+  useEnvironmentSettings
+} from './hooks';
+
+// Views
+import { MainView } from './views';
+
+// Components
+import {
+  BookmarkPanel,
+  HistoryPanel,
+  SnapshotGallery,
+  ColorGradingPanel,
+  WeatherPanel,
+  AccessibilityPanel,
+  GlobeView,
+  PerformanceStatsOverlay,
+} from './components';
+
+// Hooks
 import { useBookmarks } from './hooks/useBookmarks';
 import { useLocationHistory } from './hooks/useLocationHistory';
 import { useSnapshots } from './hooks/useSnapshots';
-import BookmarkPanel from './components/BookmarkPanel';
-import HistoryPanel from './components/HistoryPanel';
-import SnapshotGallery from './components/SnapshotGallery';
-import ColorGradingPanel from './components/ColorGradingPanel';
-import PerformanceStatsOverlay from './components/PerformanceStatsOverlay';
-import WeatherPanel from './components/WeatherPanel';
-import GlobeView, { GlobePOI } from './components/GlobeView';
 import { useGlobeMode } from './hooks/useGlobeMode';
-
-// Accessibility Imports
 import {
-    useKeyboardShortcuts,
-    useAnnouncer,
-    loadAccessibilitySettings,
-    AccessibilitySettings,
-    SkipLink,
+  useKeyboardShortcuts,
+  useAnnouncer,
+  loadAccessibilitySettings,
+  AccessibilitySettings,
+  SkipLink,
 } from './hooks/useKeyboardShortcuts';
-import { useAutoNight } from './hooks/useAutoNight';
-import AccessibilityPanel from './components/AccessibilityPanel';
-
-// Performance Imports
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 
-// Constants for cruise mode timing
-const TRANSITION_DELAY_MS = 1500; // Time to wait for panorama tiles to load after a position change
-const CRUISE_INTERVAL_MS = 3000;  // Time between automatic hops in cruise mode
-const INITIAL_HEADING = 34;
+// Google Maps API Key
+const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
 
-// Transition mode: 'freeze' = hold last frame, 'zoom' = zoom transition with smart skip
-type TransitionMode = 'freeze' | 'zoom';
-const TRANSITION_ZOOM_DURATION_MS = 800; // Duration for zoom in/out phases
-const TRANSITION_CROSSFADE_MS = 200;     // Duration for crossfade at max zoom
-const SMART_SKIP_DISTANCE_M = 15;        // Skip locations closer than this (meters)
-const SMART_SKIP_ANGLE_THRESHOLD = 30;   // Skip if heading change is less than this (degrees)
+/**
+ * InnerApp - The actual app content that uses the providers.
+ * This is separated so it can access the contexts.
+ */
+function InnerApp() {
+  // Connect to contexts
+  const { setCanvas, setPanorama, panorama, heading, pitch, canvas } = useStreetView();
+  const { viewMode, toggleViewMode } = useViewMode();
+  const {
+    rainIntensity,
+    wipersEnabled,
+    toggleWipers,
+    headlightsOn,
+    toggleHeadlights,
+    domeLightOn,
+    toggleDomeLight,
+    isRoofOpen,
+    toggleRoof,
+    timeOfDay,
+    applyTimeOfDayPreset,
+    vibrance,
+    setVibrance,
+    saturation,
+    setSaturation,
+    contrast,
+    setContrast,
+    exposure,
+    setExposure,
+    temperature,
+    setTemperature,
+    tint,
+    setTint,
+    shaderEffectsEnabled,
+    setShaderEffectsEnabled,
+    applyColorGradingPreset,
+  } = useEnvironmentSettings();
 
-// Head/Car Steering Separation Constants
-// This implements a realistic car interior where the dashboard stays level with the
-// car body, but the driver can freely look around inside the cabin.
-// - headYawOffset: left/right head look relative to car heading (-110° to +110°)
-// - headPitch: up/down head look (-45° to +65°)
-const MAX_HEAD_YAW = 180; // Full 360° look (±180°)
-const MAX_HEAD_PITCH_UP = 45;
-const MAX_HEAD_PITCH_DOWN = 65;
-const HEAD_LOOK_SENSITIVITY = 0.18;  // Mouse sensitivity for head look inside car
-const KEYBOARD_STEER_RATE = 60; // degrees per second
-const STREET_LOCK_LERP = 0.12;  // How fast car snaps to road direction (0-1)
-
-function App() {
-    const [mode] = useState<RenderMode>('streetview');
-    const [zoom, setZoom] = useState(1.0);
-
-    // Welcome Modal state
-    const [showWelcome, setShowWelcome] = useState(true);
-
-    // POV state
-    const [heading, setHeading] = useState(INITIAL_HEADING);  // Free mode heading
-    const [pitch, setPitch] = useState(10);                   // Free mode pitch
-    const [carHeading, setCarHeading] = useState(INITIAL_HEADING);  // Car body direction (stays level with ground)
-    const [headYawOffset, setHeadYawOffset] = useState(0);    // Head look left/right relative to car (-110° to +110°)
-    const [headPitch, setHeadPitch] = useState(0);            // Head look up/down (-45° to +65°)
-
-    // Map UI state
-    const [isMapOpen, setIsMapOpen] = useState(false);
-    const [locationName, setLocationName] = useState<string>('');
-
-    // Location state
-    const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number }>({ lat: 39.2575004, lng: -121.021821 });
-    const [searchQuery, setSearchQuery] = useState('');
-
-    // Street View state
-    const [streetViewCanvas, setStreetViewCanvas] = useState<HTMLCanvasElement | null>(null);
-    const [isConnected, setIsConnected] = useState(false);
-    const [panorama, setPanorama] = useState<google.maps.StreetViewPanorama | null>(null);
-    const [isCruiseMode, setIsCruiseMode] = useState(false);
-
-    // Cruise mode state: track if panorama is transitioning
-    const [isTransitioning, setIsTransitioning] = useState(false);
-    const isTransitioningRef = useRef(isTransitioning);
-    const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Transition mode and zoom transition state
-    const [transitionMode, setTransitionMode] = useState<TransitionMode>('freeze');
-    const [transitionState, setTransitionState] = useState<'idle' | 'zooming_out' | 'crossfading' | 'zooming_in'>('idle');
-    const [transitionProgress, setTransitionProgress] = useState(0);
-    const transitionZoomRef = useRef(1.0);
-    const [prevStreetViewCanvas, setPrevStreetViewCanvas] = useState<ImageBitmap | null>(null);
-    const skipCountRef = useRef(0); // Track how many locations we've skipped
-
-    // Keep ref in sync with state for interval callback access
-    useEffect(() => {
-        isTransitioningRef.current = isTransitioning;
-    }, [isTransitioning]);
-
-    // Route planning state
-    const [routeDestination, setRouteDestination] = useState<string>('');
-    const [routePath, setRoutePath] = useState<google.maps.LatLng[] | null>(null);
-    const [routeWaypoints, setRouteWaypoints] = useState<google.maps.DirectionsStep[] | null>(null);
-    const [currentWaypointIndex, setCurrentWaypointIndex] = useState(0);
-    const [isRoutePlanning, setIsRoutePlanning] = useState(false);
-    const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-    const geocoderRef = useRef<google.maps.Geocoder | null>(null);
-
-    // Radio state
-    const [isRadioPlaying, setIsRadioPlaying] = useState(false);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-
-    // Car mode state
-    const [isCarMode, setIsCarMode] = useState(false);
-
-    // Control mode - determines how mouse input controls the view
-    // 'freeLook': Mouse always looks, click+drag on wheel steers (cruise-friendly)
-    // 'uiMouse': Normal cursor, no view control (for menus/interaction)
-    // 'carSteer': Mouse X steers car, Y controls pitch (steering-focused)
-    const [controlMode, setControlMode] = useState<'freeLook' | 'uiMouse' | 'carSteer'>('freeLook');
+  // Local UI state
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isRadioPlaying, setIsRadioPlaying] = useState(false);
+  const [isCruiseMode, setIsCruiseMode] = useState(false);
+  
+  // Panel visibility
+  const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [isSnapshotGalleryOpen, setIsSnapshotGalleryOpen] = useState(false);
+  const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
+  const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
+  const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
+  const [showPerformanceStats, setShowPerformanceStats] = useState(false);
+  
+  // Accessibility
+  const [accessibilitySettings, setAccessibilitySettings] = useState<AccessibilitySettings>(() =>
+    loadAccessibilitySettings()
+  );
+  const { announce } = useAnnouncer();
+  
+  // Performance
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  const { stats: perfStats } = usePerformanceMonitor({
+    targetFPS: 60,
+    sampleSize: 60,
+    warningThreshold: 45,
+    criticalThreshold: 30,
+    enableAdaptiveQuality: true
+  });
+  
+  // Feature hooks
+  const {
+    bookmarks,
+    addBookmark,
+    removeBookmark,
+    isSyncing: isBookmarkSyncing,
+    syncError: bookmarkSyncError,
+    loadCloudBookmarks,
+    saveBookmarkToCloud,
+    removeCloudBookmark,
+    syncAllToCloud,
+  } = useBookmarks();
+  const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
+  const { snapshots, addSnapshot, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
+  const globeMode = useGlobeMode();
+  
+  // Audio ref for radio
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Directions service
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  
+  // Initialize audio
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
+      audioRef.current.crossOrigin = "anonymous";
+    }
+  }, []);
+  
+  // Apply accessibility classes
+  useEffect(() => {
+    document.body.classList.toggle('high-contrast', accessibilitySettings.highContrast);
+    document.body.classList.toggle('reduced-motion', accessibilitySettings.reducedMotion);
+    document.body.classList.toggle('large-text', accessibilitySettings.largeText);
+    document.body.classList.toggle('keyboard-only-mode', accessibilitySettings.keyboardOnlyMode);
+  }, [accessibilitySettings]);
+  
+  // Memory profiling
+  useEffect(() => {
+    if (!showPerformanceStats) return;
+    const memoryProfiler = getMemoryProfiler();
+    const interval = setInterval(() => {
+      memoryProfiler.snapshot();
+      setMemoryStats(memoryProfiler.getStats());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showPerformanceStats]);
+  
+  // Handlers
+  const handleStart = () => {
+    setShowWelcome(false);
+    setIsConnected(true);
+  };
+  
+  const toggleRadio = () => {
+    if (!audioRef.current) return;
+    if (isRadioPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(e => console.error("Audio play failed:", e));
+    }
+    setIsRadioPlaying(!isRadioPlaying);
+  };
+  
+  const handleAddBookmark = (name: string) => {
+    if (!panorama) return;
+    const position = panorama.getPosition();
+    if (!position) return;
     
-    // Track previous mode for temporary switching (e.g., clicking steering wheel)
-    const previousControlModeRef = useRef<'freeLook' | 'uiMouse' | 'carSteer'>('freeLook');
-    const isTempModeSwitchRef = useRef(false);
-
-    // Whether the car control panel (cruise, weather, radio) is expanded in the mode selector
-    const [showCarControlPanel, setShowCarControlPanel] = useState(false);
-
-    // Head coupling mode state - determines how head/camera behaves when car steers
-    // 'rigid': Head turns with car (traditional cockpit feel, head stays fixed relative to car)
-    // 'free': Head stays looking at same world direction (like looking out side window while turning)
-    // Auto-set based on controlMode: freeLook=free, carSteer=rigid, uiMouse=free
-    const [headCoupling, setHeadCoupling] = useState<'rigid' | 'free'>('free');
-
-    // Steering angle for overlay display
-    const [steeringAngle, setSteeringAngle] = useState(0);
-
-    // Show control hint when entering car mode
-    const [showCarModeHint, setShowCarModeHint] = useState(false);
-
-    // Feature: Bookmarks, History, Snapshots hooks
-    const {
-        bookmarks,
-        addBookmark,
-        removeBookmark,
-        isSyncing: isBookmarkSyncing,
-        syncError: bookmarkSyncError,
-        loadCloudBookmarks,
-        saveBookmarkToCloud,
-        removeCloudBookmark,
-        syncAllToCloud,
-    } = useBookmarks();
-    const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
-    const { snapshots, addSnapshot, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
-
-    // Panel visibility state
-    const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
-    const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
-    const [isSnapshotGalleryOpen, setIsSnapshotGalleryOpen] = useState(false);
-
-    // Color grading state
-    const [vibrance, setVibrance] = useState(1.0);
-    const [saturation, setSaturation] = useState(1.0);
-    const [contrast, setContrast] = useState(1.0);
-    const [exposure, setExposure] = useState(0.0);
-    const [temperature, setTemperature] = useState(0.0);
-    const [tint, setTint] = useState(0.0);
-    const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
-    const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(true);
-
-    // Weather panel state
-    const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
-
-    // Globe mode state (handler wired after teleportToCoords is defined)
-    const globeMode = useGlobeMode();
-
-    // Performance stats overlay state
-    const [showPerformanceStats, setShowPerformanceStats] = useState(false);
-    const [fps, setFps] = useState(60);
-    const { stats: perfStats } = usePerformanceMonitor({
-        targetFPS: 60,
-        sampleSize: 60,
-        warningThreshold: 45,
-        criticalThreshold: 30,
-        enableAdaptiveQuality: true
+    addBookmark({
+      name,
+      lat: position.lat(),
+      lng: position.lng(),
+      heading,
+      pitch,
     });
-
-    // Map view mode state (map vs globe)
-    const [viewMode, setViewMode] = useState<'map' | 'globe'>('map');
-    const [showCryptoMarkers, setShowCryptoMarkers] = useState(false);
-
-    // Memory profiling
-    const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
-    useEffect(() => {
-        if (!showPerformanceStats) return;
-        const memoryProfiler = getMemoryProfiler();
-        const interval = setInterval(() => {
-            memoryProfiler.snapshot();
-            setMemoryStats(memoryProfiler.getStats());
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [showPerformanceStats]);
-
-    // Accessibility state
-    const [accessibilitySettings, setAccessibilitySettings] = useState<AccessibilitySettings>(() =>
-        loadAccessibilitySettings()
-    );
-    const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
-    const { announce } = useAnnouncer();
-
-    // Apply accessibility classes to body
-    useEffect(() => {
-        document.body.classList.toggle('high-contrast', accessibilitySettings.highContrast);
-        document.body.classList.toggle('reduced-motion', accessibilitySettings.reducedMotion);
-        document.body.classList.toggle('large-text', accessibilitySettings.largeText);
-        document.body.classList.toggle('keyboard-only-mode', accessibilitySettings.keyboardOnlyMode);
-    }, [accessibilitySettings]);
-
-    // In car mode: 
-    // - Outside view (panorama) stays locked to carHeading (windshield view)
-    // - Head can look around freely inside car (headYawOffset, headPitch)
-    // In free mode: heading/pitch are used directly
-    const viewHeading = React.useMemo(() => {
-        return isCarMode
-            ? (((carHeading + headYawOffset) % 360) + 360) % 360  // Head direction (handles any offset range)
-            : heading;
-    }, [isCarMode, carHeading, headYawOffset, heading]);
-    
-    // Panorama/WebGPU heading - always car direction in car mode (windshield view)
-    const panoramaHeading = React.useMemo(() => {
-        return isCarMode ? carHeading : heading;
-    }, [isCarMode, carHeading, heading]);
-
-    const [isRoofOpen, setIsRoofOpen] = useState(false);
-    const [rainIntensity, setRainIntensity] = useState(0);
-    const [snowIntensity, setSnowIntensity] = useState(0);
-    const [wind, setWind] = useState(0);
-    const [wipersEnabled, setWipersEnabled] = useState(false);
-    const [timeOfDay, setTimeOfDay] = useState<'day' | 'sunset' | 'night'>('day');
-
-    // Nighttime + Headlights state
-    const [nightIntensity, setNightIntensity] = useState(0.0);
-    const [headlightsOn, setHeadlightsOn] = useState(false);
-    const [highBeam, setHighBeam] = useState(false);
-    // Dome light + auto night mode + astronomical positions
-    const [domeLightOn, setDomeLightOn] = useState(false);
-    const [autoNightMode, setAutoNightMode] = useState(true);
-    const [sunAzimuth,   setSunAzimuth]   = useState(0.0);
-    const [sunAltitude,  setSunAltitude]  = useState(0.2);   // default: daytime
-    const [moonAzimuth,  setMoonAzimuth]  = useState(0.0);
-    const [moonAltitude, setMoonAltitude] = useState(-0.5);  // default: below horizon
-    const [moonIntensity, setMoonIntensity] = useState(0.0);  // moon light intensity (0-1.5)
-
-    // Auto night mode: hook wiring (after all state declarations so setters are in scope)
-    const handleSunMoon = useCallback(
-        (sunAz: number, sunAlt: number, moonAz: number, moonAlt: number, moonInt: number) => {
-            setSunAzimuth(sunAz);
-            setSunAltitude(sunAlt);
-            setMoonAzimuth(moonAz);
-            setMoonAltitude(moonAlt);
-            setMoonIntensity(moonInt);
+  };
+  
+  // Keyboard shortcuts
+  useKeyboardShortcuts(
+    [
+      {
+        key: 'F9',
+        description: 'Toggle performance stats overlay',
+        action: () => {
+          setShowPerformanceStats(!showPerformanceStats);
+          announce(`Performance stats ${!showPerformanceStats ? 'shown' : 'hidden'}`);
         },
-        []
-    );
-    useAutoNight(currentCoords, autoNightMode, setNightIntensity, handleSunMoon);
-    const carModeRef = useRef<CarModeState | null>(null);
-    const postProcessingRef = useRef<SelectivePostProcessing | null>(null);
-
-    // Car steering and simulation
-    const steeringInputRef = useRef<number>(0); // -90 to 90 degrees
-    const carSpeedRef = useRef<number>(0); // 0-100 km/h (simulated)
-    const carRPMRef = useRef<number>(0); // 0-8000 RPM (simulated)
-
-    // Refs to mirror state for use inside RAF loop (avoids stale closures & ensures
-    // panorama.setPov and Three.js camera update happen in the exact same frame)
-    const headYawOffsetRef = useRef(headYawOffset);
-    const headPitchRef = useRef(headPitch);
-    const carHeadingRef = useRef(carHeading);
-    const panoramaRef = useRef(panorama);
-    // headingRef: used by cruise interval to avoid stale closure without restarting timer on every look
-    const headingRef = useRef(heading);
-    // isCarModeRef: used by cruise interval to avoid timer restart on car mode toggle
-    const isCarModeRef = useRef(isCarMode);
-    headYawOffsetRef.current = headYawOffset;
-    headPitchRef.current = headPitch;
-    carHeadingRef.current = carHeading;
-    panoramaRef.current = panorama;
-    headingRef.current = heading;
-    isCarModeRef.current = isCarMode;
-
-    useEffect(() => {
-        if (!audioRef.current) {
-            audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
-            audioRef.current.crossOrigin = "anonymous";
-        }
-
-    }, []);
-
-    // Initialize Directions Service when API is ready
-    useEffect(() => {
-        if (window.google && window.google.maps && !directionsServiceRef.current) {
-            directionsServiceRef.current = new google.maps.DirectionsService();
-        }
-    }, [panorama]);
-
-    const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
-    const rendererRef = useRef<Renderer | null>(null);
-    const canvasContainerRef = useRef<HTMLDivElement>(null); // Ref for input handling scope
-
-    // Steering helper function - handles all steering updates
-    const applySteering = useCallback((steerDelta: number) => {
-        setCarHeading(prev => (prev + steerDelta + 360) % 360);
-        const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
-        steeringInputRef.current = newSteering;
-        setSteeringAngle(newSteering);
-        if (headCoupling === 'free') {
-            // Compensate head yaw so the driver keeps looking at the same world direction.
-            // Wrap to ±180° so continuous steering doesn't push the offset unbounded.
-            setHeadYawOffset(prev => {
-                let next = prev - steerDelta;
-                if (next > 180) next -= 360;
-                if (next < -180) next += 360;
-                return next;
-            });
-        }
-        setCarSteering(newSteering);
-    }, [headCoupling]);
-
-    // --- INPUT HANDLER ACTIONS ---
-    const handlePan = useCallback((deltaX: number, deltaY: number) => {
-        if (!isCarMode) {
-            // Free mode: normal look
-            setHeading(prev => (prev + deltaX * 0.1) % 360);
-            setPitch(prev => Math.max(-90, Math.min(90, prev - deltaY * 0.1)));
-            return;
-        }
-
-        if (controlMode === 'carSteer') {
-            // Car Steer mode: mouse X steers, mouse Y controls pitch
-            // Scale down the steering rate for mouse (more precise than keyboard)
-            const steerRate = deltaX * 0.3;
-            applySteering(steerRate);
-            // Pitch is controlled by mouse Y
-            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
-        } else if (controlMode === 'freeLook') {
-            // Free Look mode: mouse controls head look freely (full 360°)
-            setHeadYawOffset(prev => {
-                let next = prev + deltaX * HEAD_LOOK_SENSITIVITY;
-                // Wrap around for full 360° look
-                if (next > 180) next -= 360;
-                if (next < -180) next += 360;
-                return next;
-            });
-            setHeadPitch(prev => Math.max(-MAX_HEAD_PITCH_UP, Math.min(MAX_HEAD_PITCH_DOWN, prev - deltaY * HEAD_LOOK_SENSITIVITY)));
-        }
-        // uiMouse mode: no view control from mouse movement
-    }, [isCarMode, controlMode, applySteering]);
-
-    // Keyboard steering for car mode (A/D keys only)
-    const handleSteer = useCallback((direction: 'left' | 'right', deltaTime: number) => {
-        if (!isCarMode) return;
-        const turnRate = KEYBOARD_STEER_RATE * deltaTime;
-        applySteering(direction === 'left' ? -turnRate : turnRate);
-    }, [isCarMode, applySteering]);
-
-    // Mouse drag steering for drive mode or steering wheel grab
-    const handleSteerDrag = useCallback((deltaX: number) => {
-        if (!isCarMode) return;
-        // Mouse steering is more direct than keyboard
-        const steerRate = deltaX * 0.3;
-        applySteering(steerRate);
-    }, [isCarMode, applySteering]);
-
-    // Snap turn (Q/E keys for 45° turns)
-    const handleSnapTurn = useCallback((direction: 'left' | 'right') => {
-        if (!isCarMode) return;
-        const snapAngle = direction === 'left' ? -45 : 45;
-        applySteering(snapAngle);
-    }, [isCarMode, applySteering]);
-
-    const handleZoom = useCallback((deltaZ: number) => {
-        // REVERSED: Subtraction now creates the expected behavior (Scroll Up = Zoom In, Down = Zoom Out)
-        setZoom(prev => Math.max(1.0, Math.min(3.0, prev - deltaZ * 0.001)));
-    }, []);
-
-    const handleMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
-        if (!panorama) return;
-        
-        // In freeze mode, block moves during transition
-        if (transitionMode === 'freeze' && isTransitioning) return;
-        
-        // In zoom mode, block moves during active zoom transition
-        if (transitionMode === 'zoom' && transitionState !== 'idle') return;
-
-        const links = panorama.getLinks();
-        if (!links) return;
-
-        const movementHeading = isCarMode ? carHeading : heading;
-
-        const bestLink = findBestLink(
-            links.filter((link): link is google.maps.StreetViewLink => link !== null),
-            movementHeading,
-            direction
-        );
-        if (bestLink && bestLink.pano) {
-            // Start transition before changing pano
-            if (transitionMode === 'freeze') {
-                setIsTransitioning(true);
-            } else if (transitionMode === 'zoom') {
-                startZoomTransition();
-            }
-            
-            panorama.setPano(bestLink.pano);
-            
-            // In car mode: after moving, smoothly snap car to the actual road direction
-            if (isCarMode && typeof bestLink.heading === 'number') {
-                // Smooth lerp to road direction - car follows street
-                setCarHeading(prev => {
-                    const target = bestLink.heading as number;
-                    // Handle angle wrapping for shortest path
-                    let diff = target - prev;
-                    while (diff > 180) diff -= 360;
-                    while (diff < -180) diff += 360;
-                    return prev + diff * STREET_LOCK_LERP;
-                });
-            }
-        }
-    }, [panorama, heading, isCarMode, carHeading, isTransitioning, transitionMode, transitionState]);
-
-    const handleRightClickMove = useCallback(() => {
-        handleMove('forward');
-    }, [handleMove]);
-
-    // Capture canvas as ImageBitmap for transition
-    const captureCanvas = useCallback(async (canvas: HTMLCanvasElement): Promise<ImageBitmap> => {
-        return await createImageBitmap(canvas);
-    }, []);
-
-    // Zoom transition functions
-    const startZoomTransition = useCallback(async () => {
-        if (!streetViewCanvas) return;
-        
-        // Capture current canvas content BEFORE it changes
-        // This preserves the image data while the StreetView canvas updates
-        try {
-            const captured = await captureCanvas(streetViewCanvas);
-            setPrevStreetViewCanvas(captured);
-        } catch (e) {
-            console.warn('[Zoom Transition] Failed to capture canvas:', e);
-        }
-        
-        setTransitionState('zooming_out');
-        setTransitionProgress(0);
-        
-        // Animate zoom out (1.0 → 3.0)
-        const startTime = Date.now();
-        const animateZoomOut = () => {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / TRANSITION_ZOOM_DURATION_MS, 1);
-            const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-            
-            setTransitionProgress(progress);
-            transitionZoomRef.current = 1.0 + (2.0 * eased); // 1.0 → 3.0
-            
-            if (progress < 1) {
-                requestAnimationFrame(animateZoomOut);
-            } else {
-                // Start crossfade
-                setTransitionState('crossfading');
-                setTimeout(() => {
-                    setTransitionState('zooming_in');
-                    animateZoomIn();
-                }, TRANSITION_CROSSFADE_MS);
-            }
-        };
-        
-        const animateZoomIn = () => {
-            const startTime = Date.now();
-            const animate = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / TRANSITION_ZOOM_DURATION_MS, 1);
-                const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-                
-                setTransitionProgress(1 - progress);
-                transitionZoomRef.current = 3.0 - (2.0 * eased); // 3.0 → 1.0
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    // Transition complete
-                    setTransitionState('idle');
-                    setTransitionProgress(0);
-                    transitionZoomRef.current = 1.0;
-                    setPrevStreetViewCanvas(null);
-                }
-            };
-            requestAnimationFrame(animate);
-        };
-        
-        requestAnimationFrame(animateZoomOut);
-    }, [streetViewCanvas, captureCanvas]);
-    
-    // Smart skip check for cruise mode
-    const shouldSkipLocation = useCallback((link: google.maps.StreetViewLink): boolean => {
-        if (transitionMode !== 'zoom') return false;
-        
-        const currentPos = panorama?.getPosition();
-        if (!currentPos || !link.pano) return false;
-        
-        // Get link position (if available) - for now we estimate
-        // In practice, you'd need to load the pano to get its position
-        // This is a simplified check based on heading similarity
-        
-        const currentHeading = isCarMode ? carHeading : heading;
-        const linkHeading = typeof link.heading === 'number' ? link.heading : currentHeading;
-        
-        // Calculate heading difference
-        let headingDiff = linkHeading - currentHeading;
-        while (headingDiff > 180) headingDiff -= 360;
-        while (headingDiff < -180) headingDiff += 360;
-        
-        // Skip if heading is similar (straight-ish road)
-        const shouldSkip = Math.abs(headingDiff) < SMART_SKIP_ANGLE_THRESHOLD;
-        
-        if (shouldSkip) {
-            skipCountRef.current++;
-            console.log(`[Smart Skip] Skipping location #${skipCountRef.current}, heading diff: ${headingDiff.toFixed(1)}°`);
-        }
-        
-        return shouldSkip;
-    }, [panorama, isCarMode, carHeading, heading, transitionMode]);
-
-    // Color grading handlers
-    const handleVibranceChange = useCallback((value: number) => {
-        setVibrance(value);
-    }, []);
-
-    const handleSaturationChange = useCallback((value: number) => {
-        setSaturation(value);
-    }, []);
-
-    const handleContrastChange = useCallback((value: number) => {
-        setContrast(value);
-    }, []);
-
-    const handleExposureChange = useCallback((value: number) => {
-        setExposure(value);
-    }, []);
-
-    const handleTemperatureChange = useCallback((value: number) => {
-        setTemperature(value);
-    }, []);
-
-    const handleTintChange = useCallback((value: number) => {
-        setTint(value);
-    }, []);
-
-    // Preset handlers
-    const applyPreset = useCallback((preset: string) => {
-        switch (preset) {
-            case 'none':
-                // Disable all shader effects - show raw Street View
-                setShaderEffectsEnabled(false);
-                break;
-            case 'daylight':
-                // Ensure shader effects are enabled for all other presets
-                setShaderEffectsEnabled(true);
-                setVibrance(1.0);
-                setSaturation(1.0);
-                setContrast(1.0);
-                setExposure(0.0);
-                setTemperature(0.0);
-                setTint(0.0);
-                setNightIntensity(0.0);
-                break;
-            case 'golden':
-                setVibrance(1.2);
-                setSaturation(1.1);
-                setContrast(1.1);
-                setExposure(0.1);
-                setTemperature(0.3);
-                setTint(-0.1);
-                break;
-            case 'sunset':
-                setVibrance(1.3);
-                setSaturation(1.2);
-                setContrast(1.2);
-                setExposure(0.2);
-                setTemperature(0.5);
-                setTint(-0.2);
-                break;
-            case 'overcast':
-                setVibrance(0.8);
-                setSaturation(0.9);
-                setContrast(1.1);
-                setExposure(-0.1);
-                setTemperature(-0.2);
-                setTint(0.1);
-                break;
-            case 'rain':
-                setVibrance(0.7);
-                setSaturation(0.8);
-                setContrast(1.3);
-                setExposure(-0.2);
-                setTemperature(-0.3);
-                setTint(0.2);
-                break;
-            case 'night':
-                setVibrance(0.6);
-                setSaturation(0.7);
-                setContrast(1.4);
-                setExposure(-0.5);
-                setTemperature(-0.4);
-                setTint(0.3);
-                setNightIntensity(1.0);
-                setHeadlightsOn(true);
-                break;
-            case 'snow':
-                setVibrance(1.1);
-                setSaturation(0.9);
-                setContrast(1.2);
-                setExposure(0.3);
-                setTemperature(-0.1);
-                setTint(0.0);
-                break;
-        }
-    }, []);
-
-    // Effect to update the panorama POV when view heading or pitch changes.
-    // In car mode: panorama setPov is handled in the RAF animation loop (below)
-    //   to stay synchronized with the Three.js camera update on the same frame.
-    // In free mode: uses heading and pitch directly.
-    useEffect(() => {
-        if (panorama && !isCarMode) {
-            panorama.setPov({ heading, pitch });
-        }
-    }, [heading, pitch, isCarMode, panorama]);
-
-    // Effect to update the panorama zoom when our zoom state changes
-    useEffect(() => {
-        if (panorama) {
-            const panoZoom = Math.floor(zoom);
-            if (panoZoom !== panorama.getZoom()) {
-                panorama.setZoom(panoZoom);
-            }
-        }
-    }, [zoom, panorama]);
-
-
-    // Calculate camera heading and pitch in normalized coordinates for the shader
-    // These values represent where the camera is looking, for world-space weather effects
-    const cameraHeadingNorm = React.useMemo(() => {
-        // Convert view heading (degrees, 0-360) to normalized (0-1, 0.5 = center)
-        // In free mode: heading is the view direction
-        // In car mode: viewHeading = carHeading + headYawOffset
-        const h = isCarMode ? viewHeading : heading;
-        return ((h % 360) / 360);
-    }, [isCarMode, viewHeading, heading]);
-
-    const cameraPitchNorm = React.useMemo(() => {
-        // Convert pitch (degrees, -90 to 90) to normalized (0-1, 0.5 = center)
-        const p = isCarMode ? headPitch : pitch;
-        return (p + 90) / 180;
-    }, [isCarMode, headPitch, pitch]);
-
-    // Update weather params in renderer when they change
-    useEffect(() => {
-        if (rendererRef.current) {
-            // Layout matches weather-post.wgsl WeatherParams struct:
-            // [0-5] color grading, [6-10] weather, [11-15] night/headlights,
-            // [16-17] dome light, [18-21] sun/moon, [22-31] atmospheric, 
-            // [32] toggle, [33-34] cameraHeading/cameraPitch, [35] padding
-            const weatherParams = new Float32Array([
-                // 0-5: color grading
-                vibrance, saturation, contrast, exposure, temperature, tint,
-                // 6-10: weather params
-                0,                           // time (updated in render loop)
-                rainIntensity / 50,          // rainIntensity (0-2)
-                snowIntensity / 50,          // snowIntensity (0-2)
-                wind / 100,                  // wind (-1.0 to 1.0)
-                1.0,                         // speed (animation speed)
-                // 11-15: nighttime + headlights
-                nightIntensity,              // nightIntensity (0.0-1.0)
-                headlightsOn ? 1.0 : 0.0,    // headlightsOn
-                highBeam ? 1.0 : 0.0,        // highBeam
-                0.5,                         // headlightHeading (center)
-                0.55,                        // headlightPitch (road)
-                // 16-17: dome light
-                domeLightOn ? 1.0 : 0.0,     // domeLightOn
-                domeLightOn ? 1.0 : 0.0,     // domeLightIntensity
-                // 18-21: sun/moon positions
-                sunAzimuth,                  // sunAzimuth (radians)
-                sunAltitude,                 // sunAltitude (radians)
-                moonAzimuth,                 // moonAzimuth (radians)
-                moonAltitude,                // moonAltitude (radians)
-                // 22-31: atmospheric effects
-                0.0,                         // fogIntensity
-                0.0,                         // fogDensity
-                0.0,                         // fogHeight
-                0.0,                         // fogColorIndex
-                0.0,                         // lightShaftsIntensity
-                0.0,                         // heatShimmerIntensity
-                0.0,                         // lensFlareIntensity
-                0.0,                         // chromaticAberration
-                0.0,                         // dustIntensity
-                0.0,                         // humidityHaze
-                // 32: shader toggle
-                shaderEffectsEnabled ? 1.0 : 0.0, // shaderEffectsEnabled
-                // 33-34: camera parameters (NEW - for world-space weather effects)
-                cameraHeadingNorm,           // cameraHeading (0-1, normalized)
-                cameraPitchNorm,             // cameraPitch (0-1, normalized)
-                // 35: padding
-                0.0,                         // padding
-            ]);
-            rendererRef.current?.setShaderEffects(shaderEffectsEnabled);
-            rendererRef.current?.updateWeatherParams(weatherParams);
-        }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat, shaderEffectsEnabled, cameraHeadingNorm, cameraPitchNorm]);
-
-    // Effect to detect panorama transitions via pano_changed event
-    useEffect(() => {
-        if (!panorama) return;
-
-        const handlePanoChanged = () => {
-            const loc = panorama.getLocation();
-            const locationDesc = loc?.description || loc?.shortDescription || "Unknown Location";
-            if (loc) {
-                setLocationName(locationDesc);
-            }
-
-            const position = panorama.getPosition();
-            if (position) {
-                const newCoords = { lat: position.lat(), lng: position.lng() };
-                setCurrentCoords(newCoords);
-
-                // Add to location history
-                const currentHeading = isCarMode ? viewHeading : heading;
-                const currentPitch = isCarMode ? headPitch : pitch;
-                addToHistory({
-                    lat: newCoords.lat,
-                    lng: newCoords.lng,
-                    heading: currentHeading,
-                    pitch: currentPitch,
-                    locationName: locationDesc,
-                });
-            }
-
-            // Handle transition end based on mode
-            if (transitionMode === 'freeze') {
-                setIsTransitioning(true);
-                setTimeout(() => {
-                    setIsTransitioning(false);
-                }, TRANSITION_DELAY_MS);
-            }
-            // In zoom mode, the transition animation handles the timing
-        };
-
-        const listener = panorama.addListener('pano_changed', handlePanoChanged);
-
-        return () => {
-            google.maps.event.removeListener(listener);
-        };
-    }, [panorama, isCarMode, viewHeading, heading, headPitch, pitch, addToHistory]);
-
-    // Parse URL params on mount
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const lat = parseFloat(params.get('lat') || '');
-        const lng = parseFloat(params.get('lng') || '');
-        const h = parseFloat(params.get('heading') || '');
-        const p = parseFloat(params.get('pitch') || '');
-        if (!isNaN(lat) && !isNaN(lng) && panorama) {
-            panorama.setPosition({ lat, lng });
-            if (!isNaN(h)) {
-                if (isCarMode) {
-                    // In car mode: set car heading, center head
-                    setCarHeading(h);
-                    setHeadYawOffset(0);
-                } else {
-                    setHeading(h);
-                }
-            }
-            if (!isNaN(p)) {
-                if (isCarMode) {
-                    setHeadPitch(0); // Center head pitch in car mode
-                } else {
-                    setPitch(p);
-                }
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [panorama]); // isCarMode is intentionally omitted - we only care about initial param parsing
-
-    // Effect to handle cruise mode auto-movement
-    useEffect(() => {
-        if (!isCruiseMode || !panorama) {
-            if (cruiseIntervalRef.current) {
-                clearInterval(cruiseIntervalRef.current);
-                cruiseIntervalRef.current = null;
-            }
-            return;
-        }
-
-        const performCruiseHop = () => {
-            // Only hop if not currently transitioning (use ref for latest value)
-            if (isTransitioningRef.current) return;
-
-            const links = panorama.getLinks();
-            if (!links) return;
-
-            // Use refs for frequently-changing values so the interval is not restarted
-            // on every steering input or head-look movement.
-            // carHeadingRef = car body direction; headingRef = free-mode look direction.
-            // Cruise always follows the car body heading (not the head-look direction).
-            let targetHeading = isCarModeRef.current ? carHeadingRef.current : headingRef.current;
-
-            // If we have a route with waypoints, navigate towards the next waypoint
-            if (routeWaypoints && routeWaypoints.length > 0 && currentWaypointIndex < routeWaypoints.length) {
-                const currentPos = panorama.getPosition();
-                if (currentPos) {
-                    const targetWaypoint = routeWaypoints[currentWaypointIndex];
-                    const targetLat = targetWaypoint.end_location.lat();
-                    const targetLng = targetWaypoint.end_location.lng();
-
-                    // Calculate heading to the target waypoint
-                    targetHeading = calculateHeading(
-                        currentPos.lat(),
-                        currentPos.lng(),
-                        targetLat,
-                        targetLng
-                    );
-
-                    // Check if we're close enough to the current waypoint to move to the next one
-                    const distanceToWaypoint = calculateDistance(
-                        currentPos.lat(),
-                        currentPos.lng(),
-                        targetLat,
-                        targetLng
-                    );
-
-                    // If within ~50 meters, advance to next waypoint
-                    if (distanceToWaypoint < 0.05) { // ~50 meters in km
-                        setCurrentWaypointIndex(prev => {
-                            const nextIndex = prev + 1;
-                            if (nextIndex >= routeWaypoints.length) {
-                                // Route completed!
-                                setIsCruiseMode(false);
-                            }
-                            return nextIndex;
-                        });
-                        return;
-                    }
-                }
-            }
-
-            // Find the best link based on target heading
-            const bestLink = findBestLink(
-                links.filter((link): link is google.maps.StreetViewLink => link !== null),
-                targetHeading,
-                'forward'
-            );
-
-            if (bestLink && bestLink.pano) {
-                panorama.setPano(bestLink.pano);
-                // In car mode: smoothly snap car heading to road direction (street locking).
-                // Cruise always drives in the car body direction, not the head-look direction.
-                if (isCarModeRef.current) {
-                    setCarHeading(prev => {
-                        // Handle angle wrapping for shortest path
-                        let diff = targetHeading - prev;
-                        while (diff > 180) diff -= 360;
-                        while (diff < -180) diff += 360;
-                        return prev + diff * STREET_LOCK_LERP;
-                    });
-                } else {
-                    setHeading(targetHeading);
-                }
-            }
-        };
-
-        cruiseIntervalRef.current = setInterval(performCruiseHop, CRUISE_INTERVAL_MS);
-
-        return () => {
-            if (cruiseIntervalRef.current) {
-                clearInterval(cruiseIntervalRef.current);
-                cruiseIntervalRef.current = null;
-            }
-        };
-        // heading, carHeading, isCarMode, and isTransitioning are accessed via refs inside
-        // performCruiseHop so the interval is not restarted on every steering/look change.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isCruiseMode, panorama, routeWaypoints, currentWaypointIndex]);
-
-    // --- UI ACTIONS ---
-    const handleStart = () => {
-        setShowWelcome(false);
-        setIsConnected(true);
-    };
-
-    const toggleRadio = () => {
-        if (!audioRef.current) return;
-
-        if (isRadioPlaying) {
-            audioRef.current.pause();
-        } else {
-            audioRef.current.play().catch(e => console.error("Audio play failed:", e));
-        }
-        setIsRadioPlaying(!isRadioPlaying);
-    };
-
-    // --- CAR MODE ---
-    const handleToggleCarMode = useCallback(() => {
-        setIsCarMode(prev => {
-            const next = !prev;
-            if (next) {
-                // Entering car mode: sync car to current world direction, reset head to center
-                setCarHeading(heading);
-                setHeadYawOffset(0);
-                setHeadPitch(0);
-            }
-            return next;
-        });
-    }, [heading]);
-
-    // Recenter head look (press 'C' while in car mode)
-    const handleRecenterHead = useCallback(() => {
-        if (isCarMode) {
-            setHeadYawOffset(0);
-            setHeadPitch(0);
-        }
-    }, [isCarMode]);
-
-    // Toggle control mode between freeLook → uiMouse → carSteer → freeLook (press 'H' while in car mode)
-    const handleToggleControlMode = useCallback(() => {
-        if (!isCarMode) return;
-        setControlMode(prev => {
-            const next = prev === 'freeLook' ? 'uiMouse' : prev === 'uiMouse' ? 'carSteer' : 'freeLook';
-            // Auto-set head coupling based on mode for better UX
-            if (next === 'carSteer') {
-                setHeadCoupling('rigid');
-            } else {
-                setHeadCoupling('free');
-            }
-            return next;
-        });
-    }, [isCarMode]);
-    
-    // Set control mode explicitly (for button clicks)
-    const handleSetControlMode = useCallback((mode: 'freeLook' | 'uiMouse' | 'carSteer') => {
-        if (!isCarMode) return;
-        setControlMode(mode);
-        // Auto-set head coupling based on mode
-        if (mode === 'carSteer') {
-            setHeadCoupling('rigid');
-        } else {
-            setHeadCoupling('free');
-        }
-    }, [isCarMode]);
-    
-    // Handle steering wheel click - temporarily enter carSteer mode
-    const handleSteeringWheelClick = useCallback((isDown: boolean) => {
-        if (!isCarMode) return;
-        
-        if (isDown) {
-            // Clicking down on wheel - save current mode and switch to carSteer
-            if (controlMode !== 'carSteer') {
-                previousControlModeRef.current = controlMode;
-                isTempModeSwitchRef.current = true;
-                setControlMode('carSteer');
-                setHeadCoupling('rigid');
-            }
-        } else {
-            // Releasing click - return to previous mode if this was a temp switch
-            if (isTempModeSwitchRef.current) {
-                const prevMode = previousControlModeRef.current;
-                setControlMode(prevMode);
-                setHeadCoupling(prevMode === 'carSteer' ? 'rigid' : 'free');
-                isTempModeSwitchRef.current = false;
-            }
-        }
-    }, [isCarMode, controlMode]);
-
-    // Initialize/teardown car mode when toggled
-    useEffect(() => {
-        if (isCarMode && canvasContainerRef.current) {
-            if (!carModeRef.current) {
-                try {
-                    const state = initCarMode(canvasContainerRef.current);
-                    carModeRef.current = state;
-                    postProcessingRef.current = state.postProcessing;
-                } catch (err) {
-                    console.error('[App] Car mode initialization failed:', err);
-                    setIsCarMode(false);
-                    alert('Car mode is unavailable: WebGL could not be initialized.\n\nYour browser or environment may have WebGL disabled.');
-                    return;
-                }
-            }
-            toggleCarMode(true);
-            if (rendererRef.current) {
-                rendererRef.current.setCarMode(true);
-            }
-        } else {
-            toggleCarMode(false);
-            if (rendererRef.current) {
-                rendererRef.current.setCarMode(false);
-            }
-        }
-    }, [isCarMode]);
-
-    // Update rearview mirror with Street View canvas
-    useEffect(() => {
-        if (isCarMode && streetViewCanvas) {
-            setMirrorStreetViewCanvas(streetViewCanvas);
-        }
-    }, [isCarMode, streetViewCanvas]);
-
-    // Keep Three.js camera FOV in sync with the WebGPU shader zoom so that
-    // the car interior window openings stay aligned with the magnified panorama.
-    useEffect(() => {
-        if (isCarMode && carModeRef.current) {
-            carModeRef.current.interior.setZoomFOV(zoom);
-        }
-    }, [isCarMode, zoom]);
-
-    // Performance: Optimized car mode rendering
-    // Only runs animation when there's actual movement or changes
-    useEffect(() => {
-        if (!isCarMode || !carModeRef.current) return;
-
-        let active = true;
-        let lastCarHeading = carHeading;
-        let lastViewHeading = viewHeading;
-        let lastHeadPitch = headPitch;
-        let idleFrames = 0;
-        const MAX_IDLE_FRAMES = 30; // Stop RAF after 0.5s of no changes
-
-        let rafId: number;
-        
-        const animate = () => {
-            if (!active) return;
-
-            // Check if anything changed
-            const headingChanged = carHeading !== lastCarHeading || viewHeading !== lastViewHeading;
-            const pitchChanged = headPitch !== lastHeadPitch;
-            const hasChanges = headingChanged || pitchChanged;
-
-            // Always render car interior (for animations like wipers)
-            // Only skip if truly idle for many frames and no wipers
-            const shouldRender = hasChanges || 
-                                 idleFrames < MAX_IDLE_FRAMES || 
-                                 carModeRef.current?.wipersEnabled;
-
-            if (shouldRender) {
-                // Panorama follows the actual view direction (car + head look).
-                // This eliminates the cut-off view issue because the Street View
-                // canvas always renders centered on where the user is looking.
-                // The Three.js car interior rotates opposite to head look to maintain
-                // the illusion that the car stays level while the head moves.
-                const pano = panoramaRef.current;
-                if (pano) {
-                    const viewHeading = (carHeadingRef.current + headYawOffsetRef.current + 360.0) % 360.0;
-                    const viewPitch = headPitchRef.current;
-                    pano.setPov({ heading: viewHeading, pitch: viewPitch });
-                }
-                updateCarMode(carHeading, headYawOffset, headPitch, carSpeedRef.current, nightIntensity, headlightsOn, domeLightOn);
-            }
-
-            if (hasChanges) {
-                idleFrames = 0;
-                lastCarHeading = carHeading;
-                lastViewHeading = viewHeading;
-                lastHeadPitch = headPitch;
-            } else {
-                idleFrames++;
-            }
-
-            // Gradually center steering when no input
-            if (steeringInputRef.current !== 0) {
-                steeringInputRef.current *= 0.92; // Decay
-                if (Math.abs(steeringInputRef.current) < 0.1) {
-                    steeringInputRef.current = 0;
-                }
-                setCarSteering(steeringInputRef.current);
-            }
-
-            // Simulate gradual speed increase based on forward movement
-            if (carSpeedRef.current > 0) {
-                carSpeedRef.current = Math.max(0, carSpeedRef.current - 5); // Decay
-            }
-
-            // RPM correlates with steering input and speed
-            carRPMRef.current = Math.abs(steeringInputRef.current) * 100 + carSpeedRef.current * 50;
-            updateCarGauges(carSpeedRef.current, carRPMRef.current);
-            
-            // Continue animation loop
-            rafId = requestAnimationFrame(animate);
-        };
-        
-        // Start animation loop
-        rafId = requestAnimationFrame(animate);
-
-        return () => {
-            active = false;
-            cancelAnimationFrame(rafId);
-        };
-    }, [isCarMode, carHeading, viewHeading, headPitch, headYawOffset, nightIntensity, headlightsOn, domeLightOn]);
-
-    // Cleanup car mode on unmount
-    useEffect(() => {
-        return () => {
-            disposeCarMode();
-        };
-    }, []);
-
-    const handleToggleRoof = useCallback(() => {
-        setIsRoofOpen(prev => !prev);
-        carModeRef.current?.interior.toggleRoof();
-    }, []);
-
-    const handleRainIntensity = useCallback((value: number) => {
-        setRainIntensity(value);
-    }, []);
-
-    const handleSnowIntensity = useCallback((value: number) => {
-        setSnowIntensity(value);
-    }, []);
-
-    const handleWind = useCallback((value: number) => {
-        setWind(value);
-    }, []);
-
-    const handleTimeOfDay = useCallback((value: string) => {
-        if (value === 'day' || value === 'sunset' || value === 'night') {
-            setAutoNightMode(false);  // Manual override disables auto night
-            setTimeOfDay(value);
-            // Sync nightIntensity with time-of-day preset
-            // Also set synthetic sun/moon positions for shader effects
-            if (value === 'day') {
-                setNightIntensity(0.0);
-                // Sun high in sky for bright daylight, moon below horizon
-                setSunAltitude(0.785);  // +45° altitude
-                setSunAzimuth(0);       // South (0 in SunCalc)
-                setMoonAltitude(-0.5);  // Below horizon (invisible)
-            } else if (value === 'sunset') {
-                setNightIntensity(0.3);
-                // Sun just below horizon for golden hour glow effect
-                // Shader's GOLDEN_HOUR_RANGE is ±0.105 rad (±6°)
-                setSunAltitude(-0.052); // -3° (within golden hour range)
-                setSunAzimuth(-1.57);   // West (-π/2 in SunCalc = west)
-                setMoonAltitude(0.2);   // Low in sky
-                setMoonAzimuth(1.57);   // East
-            } else if (value === 'night') {
-                setNightIntensity(1.0);
-                // Auto-enable headlights at night
-                setHeadlightsOn(true);
-                // Sun well below horizon, moon visible
-                setSunAltitude(-1.047); // -60° (well below horizon)
-                setSunAzimuth(0);       // Doesn't matter, sun is below horizon
-                setMoonAltitude(0.5);   // High in sky for visibility
-                setMoonAzimuth(0.785);  // Southwest
-            }
-        }
-    }, []);
-
-    const handleToggleWipers = useCallback(() => {
-        const newState = toggleWipers();
-        setWipersEnabled(newState);
-        setCarWipers(newState);
-    }, []);
-
-    const handleToggleDomeLight = useCallback(() => {
-        const newState = toggleCarDomeLight();
-        setDomeLightOn(newState);
-    }, []);
-
-    // [ENHANCED] Snapshot handler with gallery save and JSON sidecar metadata
-    const handleSnapshot = useCallback(() => {
-        if (!rendererRef.current || !panorama) return;
-
-        // 1. Capture Image
-        let dataUrl = '';
-        try {
-            dataUrl = rendererRef.current.getCanvasDataURL();
-        } catch (e) {
-            console.error("Failed to capture canvas:", e);
-            alert("Could not take snapshot. See console.");
-            return;
-        }
-
-        // 2. Gather Metadata
-        const position = panorama.getPosition();
-        const timestamp = new Date().toISOString();
-        const filenameBase = `streetview_${timestamp.replace(/[:.]/g, '-')}`;
-        const currentHeading = isCarMode ? viewHeading : heading;
-        const currentPitch = isCarMode ? headPitch : pitch;
-
-        const metadata = {
-            version: "1.0",
-            timestamp: timestamp,
-            panoId: panorama.getPano(),
-            location: {
-                lat: position?.lat(),
-                lng: position?.lng(),
-                description: locationName || "Unknown Location"
-            },
-            pov: {
-                heading: currentHeading,
-                pitch: currentPitch,
-                zoom
-            },
-            renderSettings: {
-                mode,
-                effectiveZoom: zoom
-            }
-        };
-
-        // 3. Save to Gallery (localStorage)
-        addSnapshot({
-            name: filenameBase,
-            dataUrl: dataUrl,
-            lat: position?.lat() || 0,
-            lng: position?.lng() || 0,
-            heading: currentHeading,
-            pitch: currentPitch,
-            zoom: zoom,
-            locationName: locationName || "Unknown Location",
-        });
-
-        // 4. Download Image
-        const imgLink = document.createElement('a');
-        imgLink.download = `${filenameBase}.png`;
-        imgLink.href = dataUrl;
-        document.body.appendChild(imgLink);
-        imgLink.click();
-        document.body.removeChild(imgLink);
-
-        // 5. Download Metadata (Sidecar JSON)
-        const metaBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
-        const metaLink = document.createElement('a');
-        metaLink.download = `${filenameBase}.json`;
-        metaLink.href = URL.createObjectURL(metaBlob);
-        document.body.appendChild(metaLink);
-        metaLink.click();
-        document.body.removeChild(metaLink);
-
-        console.log('Snapshot saved to gallery and downloaded:', filenameBase);
-    }, [panorama, heading, pitch, zoom, mode, locationName, isCarMode, viewHeading, headPitch, addSnapshot]);
-
-    // Helper function to calculate heading between two points
-    const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-        const dLng = (lng2 - lng1) * Math.PI / 180;
-        const lat1Rad = lat1 * Math.PI / 180;
-        const lat2Rad = lat2 * Math.PI / 180;
-
-        const y = Math.sin(dLng) * Math.cos(lat2Rad);
-        const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
-            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
-
-        let heading = Math.atan2(y, x) * 180 / Math.PI;
-        heading = (heading + 360) % 360;
-        return heading;
-    };
-
-    // Helper function to calculate distance between two points (Haversine formula)
-    const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-        const R = 6371; // Earth's radius in km
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLng = (lng2 - lng1) * Math.PI / 180;
-
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // Distance in km
-    };
-
-    // Teleport function with optional heading and pitch
-    const teleportToCoords = (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => {
-        if (!panorama) return;
-        panorama.setPosition({ lat, lng });
-
-        // Set heading and pitch if provided
-        if (targetHeading !== undefined) {
-            if (isCarMode) {
-                setCarHeading(targetHeading);
-                setHeadYawOffset(0);
-            } else {
-                setHeading(targetHeading);
-            }
-        }
-        if (targetPitch !== undefined) {
-            if (isCarMode) {
-                setHeadPitch(targetPitch);
-            } else {
-                setPitch(targetPitch);
-            }
-        }
-
-        // Close panels after teleport
-        setIsBookmarkPanelOpen(false);
-        setIsHistoryPanelOpen(false);
-        setIsSnapshotGalleryOpen(false);
-    };
-
-    // Globe teleport: called when user double-clicks the globe
-    const handleGlobeTeleport = useCallback((lat: number, lng: number) => {
-        teleportToCoords(lat, lng);
-        globeMode.deactivate();
-    }, [teleportToCoords, globeMode.deactivate]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Bookmark helper functions
-    const handleAddBookmark = (name: string) => {
-        const currentHeading = isCarMode ? viewHeading : heading;
-        const currentPitch = isCarMode ? headPitch : pitch;
-        addBookmark({
-            name,
-            lat: currentCoords.lat,
-            lng: currentCoords.lng,
-            heading: currentHeading,
-            pitch: currentPitch,
-        });
-    };
-
-    // Search handler
-    const handleSearch = () => {
-        if (!searchQuery.trim() || !geocoderRef.current) return;
-        geocoderRef.current.geocode({ address: searchQuery }, (results, status) => {
-            if (status === 'OK' && results?.[0]?.geometry?.location) {
-                const loc = results[0].geometry.location!;
-                setCurrentCoords({ lat: loc.lat(), lng: loc.lng() });
-                teleportToCoords(loc.lat(), loc.lng());
-                setSearchQuery('');
-            } else {
-                alert('Location not found');
-            }
-        });
-    };
-
-    // Function to plot a route using Google Directions API
-    const plotRoute = () => {
-        if (!panorama || !routeDestination.trim() || !directionsServiceRef.current) {
-            console.error('Missing required data for route planning');
-            return;
-        }
-
-        setIsRoutePlanning(true);
-
-        const currentPos = panorama.getPosition();
-        if (!currentPos) {
-            setIsRoutePlanning(false);
-            return;
-        }
-
-        try {
-            const request: google.maps.DirectionsRequest = {
-                origin: new google.maps.LatLng(currentPos.lat(), currentPos.lng()),
-                destination: routeDestination,
-                travelMode: google.maps.TravelMode.WALKING,
-            };
-
-            directionsServiceRef.current.route(request, (result, status) => {
-                setIsRoutePlanning(false);
-
-                if (status === google.maps.DirectionsStatus.OK && result) {
-                    const route = result.routes[0];
-                    const path: google.maps.LatLng[] = [];
-                    const steps: google.maps.DirectionsStep[] = [];
-
-                    // Extract path and steps from the route
-                    route.legs.forEach(leg => {
-                        leg.steps.forEach(step => {
-                            steps.push(step);
-                            if (step.path) {
-                                step.path.forEach(point => {
-                                    path.push(point);
-                                });
-                            }
-                        });
-                    });
-
-                    // Validate that we have valid route data
-                    if (path.length === 0 || steps.length === 0) {
-                        console.error('Route has no valid path data');
-                        alert('Route calculated but has no valid path. Please try a different destination.');
-                        return;
-                    }
-
-                    setRoutePath(path);
-                    setRouteWaypoints(steps);
-                    setCurrentWaypointIndex(0);
-
-                    console.log(`Route calculated: ${steps.length} steps, ${path.length} points`);
-                } else {
-                    console.error('Directions request failed:', status);
-                    alert(`Could not calculate route: ${status}`);
-                }
-            });
-        } catch (error) {
-            setIsRoutePlanning(false);
-            console.error('Error plotting route:', error);
-            alert('Error plotting route. Please try again.');
-        }
-    };
-
-    // Function to clear the current route
-    const clearRoute = () => {
-        setRoutePath(null);
-        setRouteWaypoints(null);
-        setCurrentWaypointIndex(0);
-        setRouteDestination('');
-    };
-
-    // Performance: Throttled URL update to prevent excessive history operations
-    const urlUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const pendingUrlUpdateRef = useRef<(() => void) | null>(null);
-
-    useEffect(() => {
-        if (!panorama) return;
-
-        // Store the update function for later execution
-        pendingUrlUpdateRef.current = () => {
-            const params = new URLSearchParams({
-                lat: currentCoords.lat.toFixed(6),
-                lng: currentCoords.lng.toFixed(6),
-                heading: heading.toFixed(1),
-                pitch: pitch.toFixed(1)
-            });
-            window.history.replaceState({}, '', `?${params.toString()}`);
-        };
-
-        // Clear existing timeout
-        if (urlUpdateTimeoutRef.current) {
-            clearTimeout(urlUpdateTimeoutRef.current);
-        }
-
-        // Execute immediately on first call, then throttle subsequent calls
-        if (!urlUpdateTimeoutRef.current) {
-            pendingUrlUpdateRef.current();
-        }
-
-        // Set timeout for throttling (200ms)
-        urlUpdateTimeoutRef.current = setTimeout(() => {
-            if (pendingUrlUpdateRef.current) {
-                pendingUrlUpdateRef.current();
-            }
-            urlUpdateTimeoutRef.current = null;
-        }, 200);
-
-        return () => {
-            if (urlUpdateTimeoutRef.current) {
-                clearTimeout(urlUpdateTimeoutRef.current);
-            }
-        };
-    }, [currentCoords, heading, pitch, panorama]);
-
-    // Keyboard shortcuts setup
-    useKeyboardShortcuts(
-        [
-            {
-                key: 'F9',
-                description: 'Toggle performance stats overlay',
-                action: () => {
-                    setShowPerformanceStats(!showPerformanceStats);
-                    announce(`Performance stats ${!showPerformanceStats ? 'shown' : 'hidden'}`);
-                },
-            },
-            // Mode toggles
-            {
-                key: 'n',
-                description: 'Toggle night mode',
-                action: () => {
-                    const modes: ('day' | 'sunset' | 'night')[] = ['day', 'sunset', 'night'];
-                    const currentIndex = modes.indexOf(timeOfDay);
-                    const nextMode = modes[(currentIndex + 1) % modes.length];
-                    handleTimeOfDay(nextMode);
-                    announce(`Night mode: ${nextMode}`);
-                },
-            },
-            {
-                key: 'v',
-                description: 'Open vehicle selector',
-                action: () => {
-                    // Vehicle selector would be toggled here
-                    announce('Vehicle selector opened');
-                },
-            },
-            {
-                key: 'm',
-                description: 'Toggle radio',
-                action: () => {
-                    toggleRadio();
-                    announce(`Radio ${!isRadioPlaying ? 'on' : 'off'}`);
-                },
-            },
-            {
-                key: 'g',
-                description: 'Toggle GPS map',
-                action: () => {
-                    setIsMapOpen(!isMapOpen);
-                    announce(`Map ${!isMapOpen ? 'opened' : 'closed'}`);
-                },
-            },
-            {
-                key: 'b',
-                description: 'Toggle bookmarks',
-                action: () => {
-                    setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
-                    setIsHistoryPanelOpen(false);
-                    setIsSnapshotGalleryOpen(false);
-                    announce(`Bookmarks ${!isBookmarkPanelOpen ? 'opened' : 'closed'}`);
-                },
-            },
-            {
-                key: 'h',
-                description: 'Toggle control mode or history',
-                action: () => {
-                    if (isCarMode) {
-                        handleToggleControlMode();
-                        // Announce the NEW mode
-                        const modeNames = { freeLook: 'Free Look Mode', uiMouse: 'UI Mouse Mode', carSteer: 'Car Steer Mode' };
-                        const nextMode = controlMode === 'freeLook' ? 'uiMouse' : controlMode === 'uiMouse' ? 'carSteer' : 'freeLook';
-                        announce(modeNames[nextMode]);
-                    } else {
-                        setIsHistoryPanelOpen(!isHistoryPanelOpen);
-                        setIsBookmarkPanelOpen(false);
-                        setIsSnapshotGalleryOpen(false);
-                        announce(`History ${!isHistoryPanelOpen ? 'opened' : 'closed'}`);
-                    }
-                },
-            },
-            {
-                key: 's',
-                description: 'Toggle snapshot gallery',
-                action: () => {
-                    setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
-                    setIsBookmarkPanelOpen(false);
-                    setIsHistoryPanelOpen(false);
-                    announce(`Gallery ${!isSnapshotGalleryOpen ? 'opened' : 'closed'}`);
-                },
-            },
-            {
-                key: 'p',
-                description: 'Take snapshot',
-                action: () => {
-                    handleSnapshot();
-                    announce('Snapshot taken');
-                },
-            },
-            {
-                key: 'r',
-                description: 'Toggle cruise mode',
-                action: () => {
-                    setIsCruiseMode(!isCruiseMode);
-                    announce(`Cruise mode ${!isCruiseMode ? 'on' : 'off'}`);
-                },
-            },
-            {
-                key: 'e',
-                description: 'Toggle color grading',
-                action: () => {
-                    setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
-                    setIsBookmarkPanelOpen(false);
-                    setIsHistoryPanelOpen(false);
-                    setIsSnapshotGalleryOpen(false);
-                    announce(`Color grading ${!isColorGradingPanelOpen ? 'opened' : 'closed'}`);
-                },
-            },
-            {
-                key: 'a',
-                description: 'Toggle accessibility panel',
-                action: () => {
-                    setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen);
-                    announce(`Accessibility panel ${!isAccessibilityPanelOpen ? 'opened' : 'closed'}`);
-                },
-            },
-            // Car mode shortcuts
-            {
-                key: 'c',
-                description: 'Toggle car mode or recenter head',
-                action: () => {
-                    if (isCarMode) {
-                        handleRecenterHead();
-                        announce('Head position recentered');
-                    } else {
-                        handleToggleCarMode();
-                        announce('Car mode enabled');
-                    }
-                },
-            },
-            {
-                key: 'w',
-                description: 'Toggle wipers',
-                action: () => {
-                    if (rainIntensity > 0) {
-                        handleToggleWipers();
-                        announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
-                    }
-                },
-            },
-            {
-                key: 'l',
-                description: 'Toggle dome light (car mode) / headlights',
-                action: () => {
-                    if (isCarMode) {
-                        handleToggleDomeLight();
-                        announce(`Dome light ${domeLightOn ? 'off' : 'on'}`);
-                    } else {
-                        setHeadlightsOn(v => !v);
-                        announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
-                    }
-                },
-            },
-            {
-                key: 'o',
-                description: 'Toggle roof',
-                action: () => {
-                    handleToggleRoof();
-                    announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
-                },
-            },
-            // Globe mode toggle (Shift+G)
-            {
-                key: 'G',
-                modifier: 'shift',
-                description: 'Toggle Globe Mode',
-                action: () => {
-                    globeMode.toggle();
-                    announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
-                },
-            },
-            // Close panels with Escape
-            {
-                key: 'Escape',
-                description: 'Close panels',
-                action: () => {
-                    if (globeMode.isActive) { globeMode.deactivate(); return; }
-                    if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
-                    if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
-                    else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
-                    else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
-                    else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
-                    else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
-                    else if (isMapOpen) setIsMapOpen(false);
-                },
-                preventDefault: false,
-            },
-        ],
-        isConnected && !showWelcome
-    );
-
-    return (
-        <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
-            {/* Skip link for keyboard navigation */}
-            <SkipLink targetId="main-content">Skip to main content</SkipLink>
-            
-            {showWelcome && <WelcomeModal onStart={handleStart} />}
-
-            {/* Performance Stats Overlay */}
-            {isConnected && showPerformanceStats && (
-                <PerformanceStatsOverlay
-                    fpsStats={perfStats}
-                    memoryStats={memoryStats || undefined}
-                    position="top-left"
-                    visible={true}
-                    showMemory={true}
-                    onToggle={() => setShowPerformanceStats(false)}
-                />
-            )}
-
-            {/* Car Mode Selector Panel - Control Panel / Free Look / Steering */}
-            {isConnected && isCarMode && (
-                <div
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onMouseUp={(e) => e.stopPropagation()}
-                    onMouseMove={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ 
-                        position: 'absolute', 
-                        top: 10, 
-                        left: 10, 
-                        background: 'rgba(0,0,0,0.75)',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        fontSize: '13px',
-                        zIndex: 100,
-                        fontFamily: 'system-ui, sans-serif',
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-                        userSelect: 'none',
-                        minWidth: '220px',
-                    }}>
-                    {/* Mode selector buttons */}
-                    <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
-                        {/* Control Panel button */}
-                        <button
-                            onClick={() => setShowCarControlPanel(v => !v)}
-                            title="Toggle car control panel"
-                            style={{
-                                flex: 1,
-                                padding: '8px 4px',
-                                background: showCarControlPanel ? 'rgba(33,150,243,0.35)' : 'transparent',
-                                border: 'none',
-                                borderRight: '1px solid rgba(255,255,255,0.12)',
-                                color: showCarControlPanel ? '#90CAF9' : 'rgba(255,255,255,0.7)',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontFamily: 'system-ui, sans-serif',
-                                fontWeight: showCarControlPanel ? 'bold' : 'normal',
-                                borderRadius: '8px 0 0 0',
-                                transition: 'background 0.15s',
-                            }}
-                        >
-                            📋 Controls
-                        </button>
-                        {/* Free Look button */}
-                        <button
-                            onClick={() => handleSetControlMode('freeLook')}
-                            title="Free Look – mouse always looks, click wheel to temporarily steer"
-                            style={{
-                                flex: 1,
-                                padding: '8px 4px',
-                                background: controlMode === 'freeLook' ? 'rgba(76,175,80,0.35)' : 'transparent',
-                                border: 'none',
-                                borderRight: '1px solid rgba(255,255,255,0.12)',
-                                color: controlMode === 'freeLook' ? '#A5D6A7' : 'rgba(255,255,255,0.7)',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontFamily: 'system-ui, sans-serif',
-                                fontWeight: controlMode === 'freeLook' ? 'bold' : 'normal',
-                                transition: 'background 0.15s',
-                            }}
-                        >
-                            👀 Free Look
-                        </button>
-                        {/* UI Mouse button */}
-                        <button
-                            onClick={() => handleSetControlMode('uiMouse')}
-                            title="UI Mouse – normal cursor, use menus without affecting view"
-                            style={{
-                                flex: 1,
-                                padding: '8px 4px',
-                                background: controlMode === 'uiMouse' ? 'rgba(33,150,243,0.35)' : 'transparent',
-                                border: 'none',
-                                borderRight: '1px solid rgba(255,255,255,0.12)',
-                                color: controlMode === 'uiMouse' ? '#90CAF9' : 'rgba(255,255,255,0.7)',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontFamily: 'system-ui, sans-serif',
-                                fontWeight: controlMode === 'uiMouse' ? 'bold' : 'normal',
-                                transition: 'background 0.15s',
-                            }}
-                        >
-                            🖱️ UI Mouse
-                        </button>
-                        {/* Car Steer button */}
-                        <button
-                            onClick={() => handleSetControlMode('carSteer')}
-                            title="Car Steer – mouse steers the car (click+drag or move)"
-                            style={{
-                                flex: 1,
-                                padding: '8px 4px',
-                                background: controlMode === 'carSteer' ? 'rgba(255,152,0,0.35)' : 'transparent',
-                                border: 'none',
-                                color: controlMode === 'carSteer' ? '#FFCC80' : 'rgba(255,255,255,0.7)',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontFamily: 'system-ui, sans-serif',
-                                fontWeight: controlMode === 'carSteer' ? 'bold' : 'normal',
-                                borderRadius: '0 8px 0 0',
-                                transition: 'background 0.15s',
-                            }}
-                        >
-                            🚗 Car Steer
-                        </button>
-                    </div>
-
-                    {/* Mode description row */}
-                    <div style={{ padding: '6px 10px', fontSize: '11px', opacity: 0.75, lineHeight: '1.4' }}>
-                        {controlMode === 'freeLook'
-                            ? '🖱️ Mouse = Look 360° • Click wheel = Temp steer • A/D = Steer'
-                            : controlMode === 'uiMouse'
-                            ? '🖱️ Normal cursor • Use menus • Cruise continues'
-                            : '🎮 Mouse X = Steer • Mouse Y = Pitch • A/D = Steer'}
-                    </div>
-
-                    {/* Expanded car control panel */}
-                    {showCarControlPanel && (
-                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', padding: '8px 10px' }}>
-                            <div style={{ fontSize: '11px', opacity: 0.6, marginBottom: '6px', fontWeight: 'bold', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                                Car Controls
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {/* Cruise toggle */}
-                                <button
-                                    onClick={() => setIsCruiseMode(v => !v)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: '6px',
-                                        background: isCruiseMode ? 'rgba(76,175,80,0.3)' : 'rgba(255,255,255,0.07)',
-                                        border: '1px solid rgba(255,255,255,0.15)',
-                                        borderRadius: '4px', color: '#fff', cursor: 'pointer',
-                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
-                                        textAlign: 'left',
-                                    }}
-                                >
-                                    <span>{isCruiseMode ? '🟢' : '⚫'}</span>
-                                    <span>{isCruiseMode ? 'Cruise ON' : 'Cruise OFF'}</span>
-                                </button>
-                                {/* Recenter head */}
-                                <button
-                                    onClick={handleRecenterHead}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: '6px',
-                                        background: 'rgba(255,255,255,0.07)',
-                                        border: '1px solid rgba(255,255,255,0.15)',
-                                        borderRadius: '4px', color: '#fff', cursor: 'pointer',
-                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
-                                        textAlign: 'left',
-                                    }}
-                                >
-                                    <span>↩️</span><span>Recenter Look [C]</span>
-                                </button>
-                                {/* Exit car mode */}
-                                <button
-                                    onClick={handleToggleCarMode}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: '6px',
-                                        background: 'rgba(244,67,54,0.2)',
-                                        border: '1px solid rgba(244,67,54,0.4)',
-                                        borderRadius: '4px', color: '#EF9A9A', cursor: 'pointer',
-                                        padding: '5px 8px', fontSize: '12px', fontFamily: 'system-ui, sans-serif',
-                                        textAlign: 'left',
-                                    }}
-                                >
-                                    <span>🚗</span><span>Exit Car Mode</span>
-                                </button>
-                            </div>
-                            <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '6px' }}>
-                                [H] Toggle mode • [Q/E] Snap 45°
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Steering Wheel Overlay - shows when steering */}
-            {isConnected && isCarMode && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '80px',
-                    left: '50%',
-                    transform: `translateX(-50%) rotate(${-steeringAngle}deg)`,
-                    width: '120px',
-                    height: '120px',
-                    pointerEvents: 'none',
-                    zIndex: 90,
-                    opacity: Math.abs(steeringAngle) > 5 ? 0.7 : 0.3,
-                    transition: 'opacity 0.2s ease',
-                }}>
-                    {/* Simple SVG steering wheel */}
-                    <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
-                        <circle cx="50" cy="50" r="45" fill="none" stroke="#444" strokeWidth="8" />
-                        <circle cx="50" cy="50" r="45" fill="none" stroke="#666" strokeWidth="2" opacity="0.5" />
-                        {/* Center hub */}
-                        <circle cx="50" cy="50" r="10" fill="#333" stroke="#555" strokeWidth="2" />
-                        {/* Spokes */}
-                        <line x1="50" y1="50" x2="50" y2="10" stroke="#555" strokeWidth="4" />
-                        <line x1="50" y1="50" x2="85" y2="65" stroke="#555" strokeWidth="4" />
-                        <line x1="50" y1="50" x2="15" y2="65" stroke="#555" strokeWidth="4" />
-                    </svg>
-                </div>
-            )}
-
-            {/* Car Mode Control Hint - fades in when entering car mode */}
-            {isConnected && isCarMode && showCarModeHint && (
-                <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    background: 'rgba(0,0,0,0.8)',
-                    color: '#fff',
-                    padding: '20px 30px',
-                    borderRadius: '12px',
-                    fontSize: '16px',
-                    zIndex: 200,
-                    fontFamily: 'system-ui, sans-serif',
-                    textAlign: 'center',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-                    animation: 'fadeInOut 4s ease forwards',
-                }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '12px', fontSize: '18px' }}>
-                        🚗 Car Mode Active
-                    </div>
-                    <div style={{ opacity: 0.9, lineHeight: '1.6' }}>
-                        {controlMode === 'freeLook' ? (
-                            <>
-                                <div>👀 Mouse = Free look (360°)</div>
-                                <div>🎡 Grab steering wheel to temporarily steer</div>
-                                <div>🔄 Shift+Mouse / Right-drag / A/D = Steer</div>
-                                <div>🖱️ Click ground to drive forward</div>
-                                <div>↩️ Q/E for quick 45° turns</div>
-                            </>
-                        ) : controlMode === 'uiMouse' ? (
-                            <>
-                                <div>🖱️ Normal mouse cursor</div>
-                                <div>📋 Click menus and controls freely</div>
-                                <div>🚗 Cruise mode continues driving</div>
-                                <div>⌨️ A/D or arrow keys to steer</div>
-                                <div>↩️ Q/E for quick 45° turns</div>
-                            </>
-                        ) : (
-                            <>
-                                <div>🚗 Mouse X = Steer car</div>
-                                <div>👆 Mouse Y = Control pitch</div>
-                                <div>🎡 Grab steering wheel to steer</div>
-                                <div>⌨️ A/D or arrow keys to steer</div>
-                                <div>↩️ Q/E for 45° snap turns</div>
-                            </>
-                        )}
-                    </div>
-                    <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '12px' }}>
-                        Press [H] to cycle modes or use the panel (top-left)
-                    </div>
-                </div>
-            )}
-
-            {/* Input Handler - scoped to canvas container */}
-            <InputHandler
-                isEnabled={isConnected && !showWelcome}
-                targetRef={canvasContainerRef}
-                onPan={handlePan}
-                onZoom={handleZoom}
-                onMove={handleMove}
-                onRightClickMove={handleRightClickMove}
-                onToggleCarMode={handleToggleCarMode}
-                onSteer={handleSteer}
-                onSteerDrag={handleSteerDrag}
-                onRecenterHead={handleRecenterHead}
-                onToggleControlMode={handleToggleControlMode}
-                onSnapTurn={handleSnapTurn}
-                onSteeringWheelClick={handleSteeringWheelClick}
-                isCarMode={isCarMode}
-                controlMode={controlMode}
-                isSteeringWheelAtPoint={isCarMode ? isCarSteeringWheelHit : undefined}
-            />
-
-            {/* Original StreetView: Hidden via opacity when connected, but kept in DOM for scraping */}
-            <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: isConnected ? 0 : 2,
-                opacity: isConnected ? 0 : 1,
-                transition: 'opacity 0.5s ease-in-out'
-            }}>
-                <StreetView
-                    apiKey={GOOGLE_MAPS_KEY}
-                    initialPosition={currentCoords}
-                    onCanvasReady={setStreetViewCanvas}
-                    onPanoramaReady={(pano) => {
-                        setPanorama(pano);
-                        if (directionsServiceRef.current) return; // Avoid duplicate
-                        directionsServiceRef.current = new google.maps.DirectionsService();
-                        geocoderRef.current = new google.maps.Geocoder(); // Init geocoder
-                    }}
-                />
-            </div>
-
-            {/* WebGPU Output */}
-            <div 
-                id="main-content"
-                ref={canvasContainerRef} 
-                data-testid="webgpu-canvas-container" 
-                role="main"
-                aria-label="Street View Canvas"
-                tabIndex={0}
-                onClick={(e) => {
-                    // Check for dome switch click before InputHandler processes it
-                    if (isCarMode && isCarDomeSwitchHit(e.clientX, e.clientY)) {
-                        handleToggleDomeLight();
-                        e.stopPropagation();
-                    }
-                }}
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    zIndex: isConnected ? 2 : 0,
-                    pointerEvents: isConnected ? 'auto' : 'none',
-                    opacity: isConnected ? 1 : 0
-                }}
-            >
-                <WebGPUCanvas
-                    rendererRef={rendererRef}
-                    mode={mode}
-                    source={isConnected && !isTransitioning ? streetViewCanvas : null}
-                    prevSource={transitionMode === 'zoom' ? prevStreetViewCanvas : null}
-                    zoom={transitionMode === 'zoom' && transitionState !== 'idle' ? transitionZoomRef.current : zoom}
-                    transitionState={transitionMode === 'zoom' ? transitionState : 'idle'}
-                    transitionProgress={transitionMode === 'zoom' ? transitionProgress : 0}
-                    // panX/panY: 0.5 = centered (no shift).
-                    // Car mode: head look offset mapped to UV space. Google Maps renders
-                    // at carHeading; the shader shifts UVs synchronously for head look.
-                    // ~90° horizontal FOV maps to full UV width, so ±45° → ±0.5 UV.
-                    // Free mode: 0.5 (no shift; Google Maps handles heading via setPov).
-                    panX={isCarMode ? 0.5 - (headYawOffset / 90) * 0.5 : 0.5}
-                    panY={isCarMode ? 0.5 + (headPitch / 90) * 0.5 : 0.5}
-                    isCarMode={isCarMode}
-                />
-
-                {/* Compass Overlay - shows which direction the head is looking */}
-                {isConnected && <Compass heading={viewHeading} />}
-            </div>
-
-            {/* Slide-out Map Container (Expanded to 50%) */}
-            <div
-                onMouseDown={(e) => e.stopPropagation()}
-                onMouseUp={(e) => e.stopPropagation()}
-                onMouseMove={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onContextMenu={(e) => e.stopPropagation()}
-                onWheel={(e) => e.stopPropagation()}
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0, // Pinned to right
-                    transform: isMapOpen ? 'translateX(0)' : 'translateX(100%)', // Slide effect using transform
-                    width: '50vw', // 50% of Viewport Width
-                    minWidth: '400px', // Minimum width for mobile/small screens
-                    maxWidth: '100vw', // Ensure it doesn't overflow horizontally on tiny screens
-                    height: '100%',
-                    backgroundColor: '#222',
-                    zIndex: 20, // Above controls
-                    transition: 'transform 0.3s ease-in-out', // Animate the transform
-                    boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}
-            >
-                <div style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444', backgroundColor: '#1f1f1f' }}>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {locationName || "Map View"}
-                    </h3>
-                    <button
-                        onClick={() => setIsMapOpen(false)}
-                        style={{
-                            background: 'rgba(255,255,255,0.1)',
-                            border: '1px solid #555',
-                            color: '#fff',
-                            padding: '6px 12px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold'
-                        }}
-                    >
-                        Close Map ✕
-                    </button>
-                </div>
-
-                {/* Search Section */}
-                <div style={{ padding: '15px', borderBottom: '1px solid #444', backgroundColor: '#2a2a2a' }}>
-                    <label style={{ display: 'block', color: '#ccc', fontSize: '13px', marginBottom: '8px', fontWeight: 'bold' }}>Search/Teleport</label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <input
-                            type="text"
-                            placeholder="Search address or coords..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                            style={{ flex: 1, padding: '10px', border: '1px solid #555', borderRadius: '4px', backgroundColor: '#333', color: '#fff', fontSize: '14px' }}
-                        />
-                        <button onClick={handleSearch} style={{ padding: '10px 16px', border: 'none', borderRadius: '4px', backgroundColor: '#2196F3', color: '#fff', cursor: 'pointer', fontSize: '14px' }}>
-                            Go
-                        </button>
-                    </div>
-                </div>
-
-                {/* Route Planning Section */}
-                <div style={{ padding: '15px', borderBottom: '1px solid #444', backgroundColor: '#2a2a2a' }}>
-                    <label style={{ display: 'block', color: '#ccc', fontSize: '13px', marginBottom: '8px', fontWeight: 'bold' }}>Plan Route (Cruise Mode)</label>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                        <input
-                            type="text"
-                            placeholder="Enter destination (e.g., 'Eiffel Tower')..."
-                            value={routeDestination}
-                            onChange={(e) => setRouteDestination(e.target.value)}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            onKeyPress={(e) => e.key === 'Enter' && plotRoute()}
-                            style={{
-                                flex: 1,
-                                padding: '10px',
-                                border: '1px solid #555',
-                                borderRadius: '4px',
-                                backgroundColor: '#333',
-                                color: '#fff',
-                                fontSize: '14px'
-                            }}
-                        />
-                        <button
-                            onClick={plotRoute}
-                            disabled={!routeDestination.trim() || isRoutePlanning}
-                            style={{
-                                padding: '10px 20px',
-                                border: 'none',
-                                borderRadius: '4px',
-                                backgroundColor: isRoutePlanning ? '#555' : '#4CAF50',
-                                color: '#fff',
-                                cursor: isRoutePlanning ? 'wait' : 'pointer',
-                                fontSize: '14px',
-                                fontWeight: 'bold'
-                            }}
-                        >
-                            {isRoutePlanning ? '...' : 'Go'}
-                        </button>
-                    </div>
-                    {routeWaypoints && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#aaa', backgroundColor: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>
-                            <div style={{ flex: 1 }}>
-                                <strong>Active Route:</strong> {routeWaypoints.length} steps • Waypoint {currentWaypointIndex + 1}/{routeWaypoints.length}
-                            </div>
-                            <button
-                                onClick={clearRoute}
-                                style={{
-                                    padding: '4px 10px',
-                                    border: 'none',
-                                    borderRadius: '3px',
-                                    backgroundColor: '#d9534f',
-                                    color: '#fff',
-                                    cursor: 'pointer',
-                                    fontSize: '12px'
-                                }}
-                            >
-                                Clear Route
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ flex: 1, position: 'relative' }}>
-                    {isConnected && panorama && (
-                        <MiniMap
-                            apiKey={GOOGLE_MAPS_KEY}
-                            panorama={panorama}
-                            // MiniMap shows car direction, not head direction
-                            heading={panoramaHeading}
-                            routePath={routePath}
-                            viewMode={viewMode}
-                            showCryptoMarkers={showCryptoMarkers}
-                        />
-                    )}
-                </div>
-            </div>
-
-            <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-                {/* Coordinates Display */}
-                <div style={{ background: 'rgba(0,0,0,0.7)', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                    📍 {currentCoords.lat.toFixed(6)}, {currentCoords.lng.toFixed(6)} | {(isCarMode ? viewHeading : heading).toFixed(0)}° | {(isCarMode ? headPitch : pitch).toFixed(0)}°
-                    {isCarMode && <span style={{ color: '#4CAF50', marginLeft: '8px' }}>🚗 {carHeading.toFixed(0)}°</span>}
-                </div>
-
-                {/* Map Toggle Button */}
-                {isConnected && (
-                    <button 
-                        onClick={() => setIsMapOpen(!isMapOpen)} 
-                        className="control-btn" 
-                        style={{ backgroundColor: isMapOpen ? '#444' : undefined }}
-                        aria-label={isMapOpen ? "Close map panel" : "Open map panel"}
-                        aria-pressed={isMapOpen}
-                        title="Toggle Map (G)"
-                    >
-                        <span className="visually-hidden">{isMapOpen ? "Close Map" : "Open Map"}</span>
-                        <span aria-hidden="true">Map {isMapOpen ? '>>' : '<<'}</span>
-                    </button>
-                )}
-
-                {/* View Mode Toggle Button */}
-                {isConnected && isMapOpen && (
-                    <button
-                        onClick={() => setViewMode(viewMode === 'map' ? 'globe' : 'map')}
-                        className="control-btn"
-                        style={{ backgroundColor: viewMode === 'globe' ? '#4CAF50' : undefined }}
-                        aria-label={`Switch to ${viewMode === 'map' ? 'globe' : 'map'} view`}
-                        title={`Toggle View Mode (${viewMode === 'map' ? 'Globe' : 'Map'})`}
-                    >
-                        <span aria-hidden="true">{viewMode === 'map' ? '🌍 Globe' : '🗺️ Map'}</span>
-                    </button>
-                )}
-
-                {/* Crypto Markers Toggle Button */}
-                {isConnected && isMapOpen && (
-                    <button
-                        onClick={() => setShowCryptoMarkers(!showCryptoMarkers)}
-                        className="control-btn"
-                        style={{ backgroundColor: showCryptoMarkers ? '#FFD700' : undefined }}
-                        aria-label={showCryptoMarkers ? "Hide crypto company markers" : "Show crypto company markers"}
-                        aria-pressed={showCryptoMarkers}
-                        title="Toggle Crypto Company Markers (₿)"
-                    >
-                        <span aria-hidden="true">₿ Crypto {showCryptoMarkers ? 'ON' : 'OFF'}</span>
-                    </button>
-                )}
-                <button 
-                    onClick={toggleRadio} 
-                    className={`control-btn ${isRadioPlaying ? 'disconnect' : ''}`} 
-                    style={{ backgroundColor: isRadioPlaying ? '#ff4757' : undefined }}
-                    aria-label={isRadioPlaying ? "Turn off radio" : "Turn on radio"}
-                    aria-pressed={isRadioPlaying}
-                    title="Toggle Radio (M)"
-                >
-                    <span className="visually-hidden">Radio:</span>
-                    <span aria-hidden="true">Radio: {isRadioPlaying ? 'ON' : 'OFF'}</span>
-                </button>
-                
-                {!isConnected ? (
-                    <button 
-                        onClick={() => setIsConnected(true)} 
-                        disabled={!streetViewCanvas} 
-                        className="control-btn"
-                        aria-label={streetViewCanvas ? "Start Street View" : "Loading Google Maps, please wait"}
-                    >
-                        {streetViewCanvas ? "START" : "Loading Maps..."}
-                    </button>
-                ) : (
-                    <>
-                        <button 
-                            onClick={() => setIsConnected(false)} 
-                            className="control-btn disconnect"
-                            aria-label="Stop Street View"
-                        >
-                            STOP
-                        </button>
-                        
-                        <button 
-                            onClick={handleToggleCarMode} 
-                            className={`control-btn ${isCarMode ? 'disconnect' : ''}`} 
-                            aria-label={isCarMode ? "Exit car mode" : "Enter car mode"}
-                            aria-pressed={isCarMode}
-                            title="Toggle Car Mode (C)"
-                        >
-                            <span className="visually-hidden">{isCarMode ? 'In-Car Mode' : 'Standard Mode'}</span>
-                            <span aria-hidden="true">🚗 {isCarMode ? 'In-Car' : 'Standard'}</span>
-                        </button>
-                        
-                        <button 
-                            onClick={handleSnapshot} 
-                            className="control-btn"
-                            aria-label="Take snapshot photo"
-                            title="Take Snapshot (P)"
-                        >
-                            <span aria-hidden="true">📸 Take Snapshot</span>
-                        </button>
-                        
-                        <button 
-                            onClick={() => setIsCruiseMode(!isCruiseMode)} 
-                            className={`control-btn ${isCruiseMode ? 'disconnect' : ''}`}
-                            aria-label={isCruiseMode ? "Stop cruise mode" : "Start cruise mode"}
-                            aria-pressed={isCruiseMode}
-                            title="Toggle Cruise Mode (R)"
-                        >
-                            <span className="visually-hidden">Cruise Mode:</span>
-                            <span aria-hidden="true">Cruise: {isCruiseMode ? 'ON' : 'OFF'} {routeWaypoints && '🗺️'}</span>
-                        </button>
-                        
-                        <button 
-                            onClick={() => {
-                                const currentHeading = isCarMode ? viewHeading : heading;
-                                const currentPitch = isCarMode ? headPitch : pitch;
-                                const url = `${window.location.origin}${window.location.pathname}?lat=${currentCoords.lat.toFixed(6)}&lng=${currentCoords.lng.toFixed(6)}&heading=${currentHeading.toFixed(1)}&pitch=${currentPitch.toFixed(1)}`;
-                                navigator.clipboard.writeText(url).then(() => {
-                                    announce('Link copied to clipboard');
-                                    alert('Link copied!');
-                                });
-                            }} 
-                            className="control-btn"
-                            aria-label="Share current location link"
-                        >
-                            <span aria-hidden="true">📎 Share Link</span>
-                        </button>
-                        
-                        <button
-                            onClick={() => {
-                                setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
-                                setIsHistoryPanelOpen(false);
-                                setIsSnapshotGalleryOpen(false);
-                            }}
-                            className={`control-btn ${isBookmarkPanelOpen ? 'disconnect' : ''}`}
-                            aria-label={`Bookmarks, ${bookmarks.length} saved. Press to ${isBookmarkPanelOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isBookmarkPanelOpen}
-                            title="Toggle Bookmarks (B)"
-                        >
-                            <span aria-hidden="true">📌 Bookmarks ({bookmarks.length})</span>
-                        </button>
-                        
-                        <button
-                            onClick={() => {
-                                setIsHistoryPanelOpen(!isHistoryPanelOpen);
-                                setIsBookmarkPanelOpen(false);
-                                setIsSnapshotGalleryOpen(false);
-                            }}
-                            className={`control-btn ${isHistoryPanelOpen ? 'disconnect' : ''}`}
-                            aria-label={`History, ${history.length} entries. Press to ${isHistoryPanelOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isHistoryPanelOpen}
-                            title="Toggle History (H)"
-                        >
-                            <span aria-hidden="true">🕐 History ({history.length})</span>
-                        </button>
-                        
-                        <button
-                            onClick={() => {
-                                setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
-                                setIsBookmarkPanelOpen(false);
-                                setIsHistoryPanelOpen(false);
-                                setIsColorGradingPanelOpen(false);
-                            }}
-                            className={`control-btn ${isSnapshotGalleryOpen ? 'disconnect' : ''}`}
-                            aria-label={`Snapshot Gallery, ${snapshots.length} photos. Press to ${isSnapshotGalleryOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isSnapshotGalleryOpen}
-                            title="Toggle Gallery (S)"
-                        >
-                            <span aria-hidden="true">📸 Gallery ({snapshots.length})</span>
-                        </button>
-                        
-                        <button
-                            onClick={() => {
-                                setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
-                                setIsBookmarkPanelOpen(false);
-                                setIsHistoryPanelOpen(false);
-                                setIsSnapshotGalleryOpen(false);
-                                setIsWeatherPanelOpen(false);
-                            }}
-                            className={`control-btn ${isColorGradingPanelOpen ? 'disconnect' : ''}`}
-                            aria-label={`Color grading. Press to ${isColorGradingPanelOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isColorGradingPanelOpen}
-                            title="Toggle Color Grading (E)"
-                        >
-                            <span aria-hidden="true">🎨 Color</span>
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setIsWeatherPanelOpen(!isWeatherPanelOpen);
-                                setIsColorGradingPanelOpen(false);
-                                setIsBookmarkPanelOpen(false);
-                                setIsHistoryPanelOpen(false);
-                                setIsSnapshotGalleryOpen(false);
-                            }}
-                            className={`control-btn ${isWeatherPanelOpen ? 'disconnect' : ''}`}
-                            aria-label={`Weather effects. Press to ${isWeatherPanelOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isWeatherPanelOpen}
-                            title="Toggle Weather Panel"
-                        >
-                            <span aria-hidden="true">🌧️ Weather</span>
-                        </button>
-
-                        <button
-                            onClick={() => globeMode.toggle()}
-                            className={`control-btn ${globeMode.isVisible ? 'disconnect' : ''}`}
-                            aria-label={`Globe mode. Press to ${globeMode.isActive ? 'exit' : 'enter'} globe view`}
-                            aria-pressed={globeMode.isActive}
-                            title="Toggle Globe Mode (Shift+G)"
-                            disabled={globeMode.transition === 'loading' || globeMode.transition === 'entering' || globeMode.transition === 'exiting'}
-                        >
-                            <span aria-hidden="true">
-                                {globeMode.transition === 'loading' ? '🌍 Loading…'
-                                    : globeMode.isVisible ? '🌍 Globe ×'
-                                    : '🌍 Globe'}
-                            </span>
-                        </button>
-                        
-                        {/* Accessibility button */}
-                        <button
-                            onClick={() => setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen)}
-                            className={`control-btn ${isAccessibilityPanelOpen ? 'disconnect' : ''}`}
-                            aria-label={`Accessibility settings. Press to ${isAccessibilityPanelOpen ? 'close' : 'open'} panel`}
-                            aria-pressed={isAccessibilityPanelOpen}
-                            title="Toggle Accessibility Panel (A)"
-                        >
-                            <span aria-hidden="true">♿ A11y</span>
-                        </button>
-                        
-                        {/* Performance Stats Toggle Button */}
-                        <button
-                            onClick={() => setShowPerformanceStats(!showPerformanceStats)}
-                            className={`control-btn ${showPerformanceStats ? 'disconnect' : ''}`}
-                            aria-label={`Performance stats. Press to ${showPerformanceStats ? 'hide' : 'show'}`}
-                            aria-pressed={showPerformanceStats}
-                            title="Toggle Performance Stats (F9)"
-                        >
-                            <span aria-hidden="true">📊 Stats</span>
-                        </button>
-                        
-                        {/* Transition Mode Toggle Button */}
-                        <button
-                            onClick={() => setTransitionMode(prev => prev === 'freeze' ? 'zoom' : 'freeze')}
-                            className={`control-btn ${transitionMode === 'zoom' ? 'disconnect' : ''}`}
-                            aria-label={`Transition mode: ${transitionMode === 'freeze' ? 'freeze frame' : 'zoom transition'}. Press to switch`}
-                            title="Toggle Transition Mode (Freeze/Zoom)"
-                        >
-                            <span aria-hidden="true">
-                                {transitionMode === 'freeze' ? '⏸️ Freeze' : '🔍 Zoom'}
-                                {skipCountRef.current > 0 && ` (${skipCountRef.current} skipped)`}
-                            </span>
-                        </button>
-                    </>
-                )}
-            </div>
-
-            {/* Feature Panels */}
+      },
+      {
+        key: 'n',
+        description: 'Toggle night mode',
+        action: () => {
+          const modes: ('day' | 'sunset' | 'night')[] = ['day', 'sunset', 'night'];
+          const currentIndex = modes.indexOf(timeOfDay);
+          const nextMode = modes[(currentIndex + 1) % modes.length];
+          applyTimeOfDayPreset(nextMode);
+          announce(`Night mode: ${nextMode}`);
+        },
+      },
+      {
+        key: 'm',
+        description: 'Toggle radio',
+        action: () => {
+          toggleRadio();
+          announce(`Radio ${!isRadioPlaying ? 'on' : 'off'}`);
+        },
+      },
+      {
+        key: 'g',
+        description: 'Toggle GPS map',
+        action: () => {
+          setIsMapOpen(!isMapOpen);
+          announce(`Map ${!isMapOpen ? 'opened' : 'closed'}`);
+        },
+      },
+      {
+        key: 'b',
+        description: 'Toggle bookmarks',
+        action: () => {
+          setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
+          setIsHistoryPanelOpen(false);
+          setIsSnapshotGalleryOpen(false);
+          announce(`Bookmarks ${!isBookmarkPanelOpen ? 'opened' : 'closed'}`);
+        },
+      },
+      {
+        key: 'h',
+        description: 'Toggle history (free look) or control mode (car)',
+        action: () => {
+          if (viewMode === 'car') {
+            // In car mode, H toggles control mode - handled by CarInputHandler
+            announce('Toggle control mode');
+          } else {
+            setIsHistoryPanelOpen(!isHistoryPanelOpen);
+            setIsBookmarkPanelOpen(false);
+            setIsSnapshotGalleryOpen(false);
+            announce(`History ${!isHistoryPanelOpen ? 'opened' : 'closed'}`);
+          }
+        },
+      },
+      {
+        key: 's',
+        description: 'Toggle snapshot gallery',
+        action: () => {
+          setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
+          setIsBookmarkPanelOpen(false);
+          setIsHistoryPanelOpen(false);
+          announce(`Gallery ${!isSnapshotGalleryOpen ? 'opened' : 'closed'}`);
+        },
+      },
+      {
+        key: 'e',
+        description: 'Toggle color grading',
+        action: () => {
+          setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
+          setIsBookmarkPanelOpen(false);
+          setIsHistoryPanelOpen(false);
+          setIsSnapshotGalleryOpen(false);
+          announce(`Color grading ${!isColorGradingPanelOpen ? 'opened' : 'closed'}`);
+        },
+      },
+      {
+        key: 'a',
+        description: 'Toggle accessibility panel',
+        action: () => {
+          setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen);
+          announce(`Accessibility panel ${!isAccessibilityPanelOpen ? 'opened' : 'closed'}`);
+        },
+      },
+      {
+        key: 'c',
+        description: 'Toggle car mode',
+        action: () => {
+          toggleViewMode();
+          announce(viewMode === 'car' ? 'Free look mode' : 'Car mode enabled');
+        },
+      },
+      {
+        key: 'w',
+        description: 'Toggle wipers',
+        action: () => {
+          if (rainIntensity > 0 || wipersEnabled) {
+            toggleWipers();
+            announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
+          }
+        },
+      },
+      {
+        key: 'l',
+        description: 'Toggle dome light (car) / headlights (free look)',
+        action: () => {
+          if (viewMode === 'car') {
+            toggleDomeLight();
+            announce(`Dome light ${domeLightOn ? 'off' : 'on'}`);
+          } else {
+            toggleHeadlights();
+            announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
+          }
+        },
+      },
+      {
+        key: 'o',
+        description: 'Toggle roof',
+        action: () => {
+          toggleRoof();
+          announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
+        },
+      },
+      {
+        key: 'r',
+        description: 'Toggle cruise mode',
+        action: () => {
+          setIsCruiseMode(!isCruiseMode);
+          announce(`Cruise mode ${!isCruiseMode ? 'on' : 'off'}`);
+        },
+      },
+      {
+        key: 'G',
+        modifier: 'shift',
+        description: 'Toggle Globe Mode',
+        action: () => {
+          globeMode.toggle();
+          announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
+        },
+      },
+      {
+        key: 'Escape',
+        description: 'Close panels',
+        action: () => {
+          if (globeMode.isActive) { globeMode.deactivate(); return; }
+          if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
+          if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
+          else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
+          else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
+          else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
+          else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
+          else if (isMapOpen) setIsMapOpen(false);
+        },
+        preventDefault: false,
+      },
+    ],
+    isConnected && !showWelcome
+  );
+  
+  return (
+    <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
+      {/* Skip link for keyboard navigation */}
+      <SkipLink targetId="main-content">Skip to main content</SkipLink>
+      
+      {showWelcome && <WelcomeModal onStart={handleStart} />}
+
+      {/* Performance Stats Overlay */}
+      {isConnected && showPerformanceStats && (
+        <PerformanceStatsOverlay
+          fpsStats={perfStats}
+          memoryStats={memoryStats || undefined}
+          position="top-left"
+          visible={true}
+          showMemory={true}
+          onToggle={() => setShowPerformanceStats(false)}
+        />
+      )}
+
+      {/* Global UI Panels */}
+      {isConnected && (
+        <>
+          {/* Bookmark Panel */}
+          {isBookmarkPanelOpen && panorama && (
             <BookmarkPanel
-                bookmarks={bookmarks}
-                currentCoords={currentCoords}
-                onTeleport={teleportToCoords}
-                onAddBookmark={handleAddBookmark}
-                onRemoveBookmark={removeBookmark}
-                onClose={() => setIsBookmarkPanelOpen(false)}
-                isOpen={isBookmarkPanelOpen}
-                isSyncing={isBookmarkSyncing}
-                syncError={bookmarkSyncError}
-                onLoadCloudBookmarks={loadCloudBookmarks}
-                onSaveBookmarkToCloud={saveBookmarkToCloud}
-                onRemoveCloudBookmark={removeCloudBookmark}
-                onSyncAllToCloud={syncAllToCloud}
+              bookmarks={bookmarks}
+              currentCoords={(() => {
+                const pos = panorama.getPosition();
+                return pos ? { lat: pos.lat(), lng: pos.lng() } : { lat: 0, lng: 0 };
+              })()}
+              onTeleport={(lat, lng, h, p) => {
+                // Teleport via StreetView context
+              }}
+              onAddBookmark={handleAddBookmark}
+              onRemoveBookmark={removeBookmark}
+              onClose={() => setIsBookmarkPanelOpen(false)}
+              isOpen={isBookmarkPanelOpen}
+              isSyncing={isBookmarkSyncing}
+              syncError={bookmarkSyncError}
+              onLoadCloudBookmarks={loadCloudBookmarks}
+              onSaveBookmarkToCloud={saveBookmarkToCloud}
+              onRemoveCloudBookmark={removeCloudBookmark}
+              onSyncAllToCloud={syncAllToCloud}
             />
-
+          )}
+          
+          {/* History Panel */}
+          {isHistoryPanelOpen && (
             <HistoryPanel
-                history={history}
-                onTeleport={teleportToCoords}
-                onRemoveEntry={removeFromHistory}
-                onClearHistory={clearHistory}
-                onClose={() => setIsHistoryPanelOpen(false)}
-                isOpen={isHistoryPanelOpen}
+              history={history}
+              onTeleport={(lat, lng, h, p) => {
+                console.log('Teleport to:', lat, lng, h, p);
+              }}
+              onRemoveEntry={removeFromHistory}
+              onClearHistory={clearHistory}
+              onClose={() => setIsHistoryPanelOpen(false)}
+              isOpen={isHistoryPanelOpen}
             />
-
+          )}
+          
+          {/* Snapshot Gallery */}
+          {isSnapshotGalleryOpen && (
             <SnapshotGallery
-                snapshots={snapshots}
-                onRemoveSnapshot={removeSnapshot}
-                onUpdateName={updateSnapshotName}
-                onDownload={downloadSnapshot}
-                onTeleport={teleportToCoords}
-                onClose={() => setIsSnapshotGalleryOpen(false)}
-                onClearAll={clearAllSnapshots}
-                isOpen={isSnapshotGalleryOpen}
+              snapshots={snapshots}
+              onRemoveSnapshot={removeSnapshot}
+              onUpdateName={updateSnapshotName}
+              onDownload={downloadSnapshot}
+              onTeleport={(lat, lng, h, p) => {
+                console.log('Teleport to:', lat, lng, h, p);
+              }}
+              onClose={() => setIsSnapshotGalleryOpen(false)}
+              onClearAll={clearAllSnapshots}
+              isOpen={isSnapshotGalleryOpen}
             />
-
+          )}
+          
+          {/* Color Grading Panel */}
+          {isColorGradingPanelOpen && (
             <ColorGradingPanel
-                vibrance={vibrance}
-                saturation={saturation}
-                contrast={contrast}
-                exposure={exposure}
-                temperature={temperature}
-                tint={tint}
-                nightIntensity={nightIntensity}
-                headlightsOn={headlightsOn}
-                highBeam={highBeam}
-                shaderEffectsEnabled={shaderEffectsEnabled}
-                onVibranceChange={handleVibranceChange}
-                onSaturationChange={handleSaturationChange}
-                onContrastChange={handleContrastChange}
-                onExposureChange={handleExposureChange}
-                onTemperatureChange={handleTemperatureChange}
-                onTintChange={handleTintChange}
-                onNightIntensityChange={setNightIntensity}
-                onToggleHeadlights={() => setHeadlightsOn(v => !v)}
-                onToggleHighBeam={() => setHighBeam(v => !v)}
-                onToggleShaderEffects={() => {
-                    const newValue = !shaderEffectsEnabled;
-                    setShaderEffectsEnabled(newValue);
-                    rendererRef.current?.setShaderEffects(newValue);
-                }}
-                onPreset={applyPreset}
-                onClose={() => setIsColorGradingPanelOpen(false)}
-                isOpen={isColorGradingPanelOpen}
+              vibrance={vibrance}
+              saturation={saturation}
+              contrast={contrast}
+              exposure={exposure}
+              temperature={temperature}
+              tint={tint}
+              nightIntensity={0}
+              headlightsOn={headlightsOn}
+              highBeam={false}
+              shaderEffectsEnabled={shaderEffectsEnabled}
+              onVibranceChange={setVibrance}
+              onSaturationChange={setSaturation}
+              onContrastChange={setContrast}
+              onExposureChange={setExposure}
+              onTemperatureChange={setTemperature}
+              onTintChange={setTint}
+              onNightIntensityChange={() => {}}
+              onToggleHeadlights={toggleHeadlights}
+              onToggleHighBeam={() => {}}
+              onToggleShaderEffects={() => setShaderEffectsEnabled(!shaderEffectsEnabled)}
+              onPreset={applyColorGradingPreset}
+              onClose={() => setIsColorGradingPanelOpen(false)}
+              isOpen={isColorGradingPanelOpen}
             />
-
-            {/* Weather Panel */}
+          )}
+          
+          {/* Weather Panel */}
+          {isWeatherPanelOpen && (
             <WeatherPanel
-                rainIntensity={rainIntensity}
-                snowIntensity={snowIntensity}
-                wind={wind}
-                wipersEnabled={wipersEnabled}
-                timeOfDay={timeOfDay}
-                onRainIntensity={handleRainIntensity}
-                onSnowIntensity={handleSnowIntensity}
-                onWind={handleWind}
-                onToggleWipers={handleToggleWipers}
-                onTimeOfDay={handleTimeOfDay}
-                autoNightMode={autoNightMode}
-                onToggleAutoNight={() => setAutoNightMode(prev => !prev)}
-                onClose={() => setIsWeatherPanelOpen(false)}
-                isOpen={isWeatherPanelOpen}
+              rainIntensity={rainIntensity}
+              snowIntensity={0}
+              wind={0}
+              wipersEnabled={wipersEnabled}
+              timeOfDay={timeOfDay}
+              onRainIntensity={() => {}}
+              onSnowIntensity={() => {}}
+              onWind={() => {}}
+              onToggleWipers={toggleWipers}
+              onTimeOfDay={(v) => applyTimeOfDayPreset(v as any)}
+              onClose={() => setIsWeatherPanelOpen(false)}
+              isOpen={isWeatherPanelOpen}
             />
-
-            {/* Globe Mode Overlay */}
-            {globeMode.isVisible || globeMode.transition === 'loading' ? (
-                <GlobeView
-                    transition={globeMode.transition}
-                    currentLat={currentCoords.lat}
-                    currentLng={currentCoords.lng}
-                    currentHeading={isCarMode ? carHeading : heading}
-                    pois={history.slice(0, 30).map((entry): GlobePOI => ({
-                        lat: entry.lat,
-                        lng: entry.lng,
-                        label: entry.locationName || `${entry.lat.toFixed(3)}, ${entry.lng.toFixed(3)}`,
-                    }))}
-                    onTeleportRequest={handleGlobeTeleport}
-                    onEnterComplete={globeMode.onEnterComplete}
-                    onExitComplete={globeMode.onExitComplete}
-                />
-            ) : null}
-
-            {/* Accessibility Panel */}
+          )}
+          
+          {/* Accessibility Panel */}
+          {isAccessibilityPanelOpen && (
             <AccessibilityPanel
-                isOpen={isAccessibilityPanelOpen}
-                onClose={() => setIsAccessibilityPanelOpen(false)}
-                settings={accessibilitySettings}
-                onSettingsChange={setAccessibilitySettings}
+              isOpen={isAccessibilityPanelOpen}
+              settings={accessibilitySettings}
+              onSettingsChange={setAccessibilitySettings}
+              onClose={() => setIsAccessibilityPanelOpen(false)}
             />
+          )}
+          
+          {/* Globe View - TODO: Add proper props */}
+          {globeMode.isActive && (
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000' }}>
+              <button onClick={globeMode.deactivate}>Close Globe</button>
+              <p>Globe view content</p>
+            </div>
+          )}
+        </>
+      )}
 
-            {/* Car Mode Dashboard UI */}
-            {isConnected && (
-                <DashboardUI
-                    isVisible={isCarMode}
-                    isRadioPlaying={isRadioPlaying}
-                    isMapOpen={isMapOpen}
-                    onToggleGPS={() => setIsMapOpen(!isMapOpen)}
-                    onToggleRadio={toggleRadio}
-                    onRainIntensity={handleRainIntensity}
-                    onSnowIntensity={handleSnowIntensity}
-                    onWind={handleWind}
-                    onTimeOfDay={handleTimeOfDay}
-                    onToggleRoof={handleToggleRoof}
-                    onToggleWipers={handleToggleWipers}
-                    onToggleHeadlights={() => setHeadlightsOn(v => !v)}
-                    onToggleHighBeam={() => setHighBeam(v => !v)}
-                    onToggleDomeLight={handleToggleDomeLight}
-                    isRoofOpen={isRoofOpen}
-                    wipersEnabled={wipersEnabled}
-                    headlightsOn={headlightsOn}
-                    highBeam={highBeam}
-                    domeLightOn={domeLightOn}
-                    rainIntensity={rainIntensity}
-                    snowIntensity={snowIntensity}
-                    wind={wind}
-                    timeOfDay={timeOfDay}
-                    audioElement={audioRef.current}
-                />
-            )}
+      {/* Hidden StreetView - kept in DOM for canvas scraping */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: isConnected ? 0 : 2,
+        opacity: isConnected ? 0 : 1,
+        transition: 'opacity 0.5s ease-in-out'
+      }}>
+        <StreetView
+          apiKey={GOOGLE_MAPS_KEY}
+          initialPosition={{ lat: 39.2575004, lng: -121.021821 }}
+          onCanvasReady={setCanvas}
+          onPanoramaReady={(pano) => {
+            setPanorama(pano);
+            if (!directionsServiceRef.current) {
+              directionsServiceRef.current = new google.maps.DirectionsService();
+            }
+            if (!geocoderRef.current) {
+              geocoderRef.current = new google.maps.Geocoder();
+            }
+          }}
+        />
+      </div>
 
-            {/* Car Mode Control Hints Overlay - moved to top to avoid blocking dashboard controls */}
-            {isConnected && isCarMode && (
-                <div style={{
-                    position: 'fixed',
-                    top: 10,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    background: 'rgba(0,0,0,0.6)',
-                    color: '#fff',
-                    padding: '6px 14px',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    pointerEvents: 'none',
-                    zIndex: 1000,
-                    whiteSpace: 'nowrap',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    fontFamily: 'system-ui, sans-serif',
-                    opacity: 0.75,
-                }}>
-                    🚗 <strong>{controlMode === 'freeLook' ? '👀 Free Look' : controlMode === 'uiMouse' ? '🖱️ UI Mouse' : '🚗 Car Steer'}</strong>&nbsp;&nbsp;
-                    {controlMode === 'freeLook' ? (
-                        <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Look 360° &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Wheel-click</span> = Temp Steer &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
-                        </>
-                    ) : controlMode === 'uiMouse' ? (
-                        <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Normal cursor &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Click</span> = Use menus &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer
-                        </>
-                    ) : (
-                        <>
-                            <span style={{ opacity: 0.85 }}>Mouse</span> = Steer &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>A/D</span> = Steer &nbsp;|&nbsp;
-                            <span style={{ opacity: 0.85 }}>Q/E</span> = Snap
-                        </>
-                    )}
-                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>C</span> = Recenter
-                    &nbsp;|&nbsp;<span style={{ opacity: 0.85 }}>[H]</span> = Switch Mode
-                </div>
-            )}
-        </div>
-    );
+      {/* Main View - switches between FreeLookView and CarModeView */}
+      <div id="main-content" role="main" aria-label="Street View Canvas">
+        {isConnected && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * App - Root component that wraps everything in providers.
+ */
+function App() {
+  return (
+    <StreetViewProvider>
+      <ViewModeProvider>
+        <EnvironmentSettingsProvider>
+          <InnerApp />
+        </EnvironmentSettingsProvider>
+      </ViewModeProvider>
+    </StreetViewProvider>
+  );
 }
 
 export default App;
