@@ -735,25 +735,27 @@ export class CarInterior {
     }
 
     private buildWipers(): void {
-        // Left wiper (group for animation)
+        // Wiper pivots sit at the bottom of the windshield frame (y≈1.0, just above
+        // the dashboard at y=0.8).  Blades extend *upward* (+y offset) so they sweep
+        // across the glass the correct way when viewed from the driver's seat.
         this.wiperLeft = new THREE.Group();
-        this.wiperLeft.position.set(-0.2, 1.4, -0.9);
+        this.wiperLeft.position.set(-0.2, 1.0, -0.9);
         this.interiorGroup.add(this.wiperLeft);
 
         const leftWiperBladGeo = new THREE.BoxGeometry(0.02, 0.3, 0.02);
         const leftWiperBlad = new THREE.Mesh(leftWiperBladGeo, this.metalMaterial);
-        leftWiperBlad.position.set(0, -0.15, 0);
+        leftWiperBlad.position.set(0, 0.15, 0);
         leftWiperBlad.rotation.set(0, 0, -Math.PI / 6);
         this.wiperLeft.add(leftWiperBlad);
 
         // Right wiper (group for animation)
         this.wiperRight = new THREE.Group();
-        this.wiperRight.position.set(0.2, 1.4, -0.9);
+        this.wiperRight.position.set(0.2, 1.0, -0.9);
         this.interiorGroup.add(this.wiperRight);
 
         const rightWiperBladGeo = new THREE.BoxGeometry(0.02, 0.3, 0.02);
         const rightWiperBlad = new THREE.Mesh(rightWiperBladGeo, this.metalMaterial);
-        rightWiperBlad.position.set(0, -0.15, 0);
+        rightWiperBlad.position.set(0, 0.15, 0);
         rightWiperBlad.rotation.set(0, 0, Math.PI / 6);
         this.wiperRight.add(rightWiperBlad);
     }
