@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    private weatherParams: Float32Array = new Float32Array(24); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad]
+    private weatherParams: Float32Array = new Float32Array(32); // [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed, nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch, domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad, latitude, cityDensity, season, cloudCover, _pad0, _pad1, _pad2]
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -108,9 +108,9 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (24 floats for HDR weather + nighttime + headlights + dome + astronomy)
+            // Weather params buffer (32 floats for HDR weather + nighttime + headlights + dome + astronomy + enhanced effects)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 96, // 24 floats × 4 bytes
+                size: 128, // 32 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -394,6 +394,9 @@ export class Renderer {
      *   [16-17]: domeLightOn, domeLightIntensity
      *   [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
      *   [22]: moonIntensity (0-1.5, accounts for phase, altitude, opposition surge)
+     *   [23]: padding
+     *   [24-27]: latitude, cityDensity, season, cloudCover
+     *   [28-31]: padding
      */
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
@@ -447,6 +450,78 @@ export class Renderer {
         }
     }
 
+    /**
+     * Update weather animation time without rendering a full frame.
+     * Call this continuously to keep rain/snow/wipers animating even when
+     * the panorama source is not available (during transitions/loading).
+     */
+    public updateWeatherAnimation(): void {
+        if (this.isDestroyed || !this.device || !this.weatherParamsBuffer) return;
+        
+        try {
+            // Update time in weather params for continuous animation
+            const time = Date.now() / 1000;
+            this.weatherParams[6] = time % 10000.0; // looped time
+            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+        } catch (e) {
+            // Ignore errors during weather-only updates
+        }
+    }
+
+    /**
+     * Render weather effects only (no panorama).
+     * Used during loading to show continuous rain/snow animation.
+     */
+    public renderWeatherOnly(): void {
+        if (this.isDestroyed || !this.device || !this.weatherPipeline) return;
+
+        try {
+            // Update time for animation
+            const time = Date.now() / 1000;
+            this.weatherParams[6] = time % 10000.0;
+            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+
+            // Ensure intermediate texture exists
+            const canvasWidth = this.canvas.width;
+            const canvasHeight = this.canvas.height;
+            this.ensureIntermediateTexture(canvasWidth, canvasHeight);
+
+            const commandEncoder = this.device.createCommandEncoder();
+
+            // Clear intermediate texture to black/transparent
+            const clearPass = commandEncoder.beginRenderPass({
+                colorAttachments: [{
+                    view: this.intermediateTextureView,
+                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                    loadOp: 'clear' as GPULoadOp,
+                    storeOp: 'store' as GPUStoreOp,
+                }],
+            });
+            clearPass.end();
+
+            // Render weather post-process directly to canvas
+            const finalTextureView = this.context.getCurrentTexture().createView();
+            
+            const postPass = commandEncoder.beginRenderPass({
+                colorAttachments: [{
+                    view: finalTextureView,
+                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                    loadOp: 'clear' as GPULoadOp,
+                    storeOp: 'store' as GPUStoreOp,
+                }],
+            });
+
+            postPass.setPipeline(this.weatherPipeline);
+            postPass.setBindGroup(0, this.weatherBindGroup);
+            postPass.draw(3, 1, 0, 0);
+            postPass.end();
+
+            this.device.queue.submit([commandEncoder.finish()]);
+        } catch (e) {
+            // Suppress errors during weather-only rendering
+        }
+    }
+
     public renderStreetView(
         mode: RenderMode, 
         source: CanvasImageSource | null, 
@@ -455,6 +530,12 @@ export class Renderer {
         zoom?: number
     ): void {
         if (this.isDestroyed || !this.device || !this.pipeline || !this.weatherPipeline) return;
+
+        // If no source but we want to keep weather animating, render weather only
+        if (!source) {
+            this.renderWeatherOnly();
+            return;
+        }
 
         let srcWidth = 0;
         let srcHeight = 0;

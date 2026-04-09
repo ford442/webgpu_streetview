@@ -81,24 +81,44 @@ float staticDroplet(vec2 uv, vec2 cell, float threshold) {
   return smoothstep(radius, radius * 0.2, d);
 }
 
-// Wiper clear zone
+// Wiper clear zone - dual wipers with wide sweep
 float wiperMask(vec2 uv) {
   if (!wiperActive) return 0.0;
 
-  vec2 pivot = vec2(0.5, 0.0);
-  vec2 dir = uv - pivot;
-  float angle = atan(dir.x, dir.y);
-  float dist = length(dir);
+  // Left wiper pivot (driver's side)
+  vec2 leftPivot = vec2(0.25, 0.0);
+  // Right wiper pivot (passenger side)
+  vec2 rightPivot = vec2(0.75, 0.0);
 
-  float sweepAngle = wiperAngle * 3.14159 / 180.0;
-  float sweep = sin(time * 2.0) * sweepAngle;
+  // Wide sweep: ~70 degrees for 3 o'clock to 9 o'clock coverage
+  float maxSweepAngle = 1.22;
+  float leftSweep = sin(time * 2.0) * maxSweepAngle;
+  float rightSweep = sin(time * 2.0 + 3.14159) * maxSweepAngle;
 
-  float arcWidth = 0.15;
-  float inArc = smoothstep(-arcWidth, 0.0, angle - sweep) *
-                smoothstep(0.0, -arcWidth, angle - sweep - 0.5);
-  float inRadius = smoothstep(0.2, 0.25, dist) * smoothstep(0.95, 0.9, dist);
+  // Check left wiper
+  vec2 leftDir = uv - leftPivot;
+  float leftAngle = atan(leftDir.x, leftDir.y);
+  float leftDist = length(leftDir);
+  float leftArcWidth = 0.12;
+  float leftInArc = smoothstep(-leftArcWidth, 0.0, leftAngle - leftSweep) *
+                    smoothstep(0.0, -leftArcWidth, leftAngle - leftSweep - 0.5);
+  // 20% longer reach
+  float leftInRadius = smoothstep(0.15, 0.2, leftDist) * smoothstep(0.95, 0.88, leftDist);
 
-  return inArc * inRadius;
+  // Check right wiper
+  vec2 rightDir = uv - rightPivot;
+  float rightAngle = atan(rightDir.x, rightDir.y);
+  float rightDist = length(rightDir);
+  float rightArcWidth = 0.12;
+  float rightInArc = smoothstep(-rightArcWidth, 0.0, rightAngle - rightSweep) *
+                     smoothstep(0.0, -rightArcWidth, rightAngle - rightSweep - 0.5);
+  // 20% longer reach
+  float rightInRadius = smoothstep(0.15, 0.2, rightDist) * smoothstep(0.95, 0.88, rightDist);
+
+  float leftWiper = leftInArc * leftInRadius;
+  float rightWiper = rightInArc * rightInRadius;
+
+  return max(leftWiper, rightWiper);
 }
 
 void main() {

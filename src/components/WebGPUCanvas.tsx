@@ -220,8 +220,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
                         ? ((panY || 0.5) * 180 - 90)  // panY=0.5 -> 0, shader: (0+90)/180 - 0.5 = 0 (no shift)
                         : ((panY || 0.5) * 180 - 90); // Free mode: panY is (pitch+90)/180
                     currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
+                } else {
+                    // No source available (loading next location) - keep weather animating
+                    // This ensures rain/snow/wipers continue moving during transitions
+                    currentRendererRef.current.renderWeatherOnly();
                 }
                 sourceChangeFlagRef.current = false;
+            } else if (currentRendererRef.current) {
+                // Even when skipping frames, update weather animation time
+                // to keep rain/snow/wipers in sync
+                currentRendererRef.current.updateWeatherAnimation();
             }
 
             frameCountRef.current++;

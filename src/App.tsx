@@ -655,7 +655,8 @@ function App() {
         if (rendererRef.current) {
             // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
             //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch,
-            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad]
+            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad,
+            //                  latitude, cityDensity, season, cloudCover, pad0, pad1, pad2]
             const weatherParams = new Float32Array([
                 vibrance, saturation, contrast, exposure, temperature, tint,  // color grading (0-5)
                 0,                           // time (updated in render loop) [6]
@@ -675,11 +676,16 @@ function App() {
                 moonAzimuth,                 // moonAzimuth (radians) [20]
                 moonAltitude,                // moonAltitude (radians) [21]
                 moonIntensity,               // moonIntensity (0-1.5) [22]
-                0                            // padding [23]
+                0,                           // padding [23]
+                currentCoords.lat,           // latitude (for aurora) [24]
+                0.5,                         // cityDensity (0-1, light pollution) [25]
+                0.25,                        // season (0=spring, 0.25=summer, 0.5=fall, 0.75=winter) [26]
+                0.3,                         // cloudCover (0-1) [27]
+                0, 0, 0                      // padding [28-30]
             ]);
             rendererRef.current.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
