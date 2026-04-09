@@ -31,7 +31,7 @@ struct WeatherParams {
     sunAltitude       : f32,  // sun altitude above horizon (radians, negative = below)
     moonAzimuth       : f32,  // moon azimuth (radians)
     moonAltitude      : f32,  // moon altitude above horizon (radians)
-    // 22-31: NEW atmospheric effects params
+    // 22-31: atmospheric effects params
     fogIntensity      : f32,  // 0.0-1.0 overall fog strength
     fogDensity        : f32,  // 0.0-2.0 fog thickness
     fogHeight         : f32,  // 0.0-1.0 height factor (0=ground level, 1=high altitude)
@@ -44,8 +44,10 @@ struct WeatherParams {
     humidityHaze      : f32,  // 0.0-1.0 distance softening
     // 32: Shader toggle
     shaderEffectsEnabled : f32, // 1.0 = effects on, 0.0 = raw Street View
-    // 33: padding
-    _pad0             : f32,
+    // 33-35: Camera view parameters (NEW - for world-space effects)
+    cameraHeading     : f32,  // normalized camera heading (0-1, same as panX)
+    cameraPitch       : f32,  // normalized camera pitch (0-1, same as panY)
+    _pad0             : f32,  // padding to maintain alignment
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -63,6 +65,30 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f
         default: {}
     }
     return vec4<f32>(pos, 0.0, 1.0);
+}
+
+// ============================================================================
+// CAMERA-AWARE COORDINATE TRANSFORMATION
+// ============================================================================
+
+// Convert world azimuth (radians, SunCalc: 0=S, π/2=W, π=N, -π/2=E) 
+// to screen-space X coordinate (0-1), accounting for camera heading.
+// This ensures sun/moon appear at correct on-screen positions when panning.
+fn worldAzimuthToScreenX(azimuth: f32, cameraHeadingNorm: f32) -> f32 {
+    // Normalize azimuth to 0-1 range (same as original sunNormX calculation)
+    let worldNormX = fract((azimuth + 3.14159265) / (2.0 * 3.14159265));
+    // Offset by camera heading to get screen position
+    var screenX = worldNormX - cameraHeadingNorm + 0.5;
+    // Wrap to 0-1 range
+    return fract(screenX);
+}
+
+// Get the shortest signed distance between two normalized coordinates (0-1)
+fn normalizedDistance(a: f32, b: f32) -> f32 {
+    var d = a - b;
+    if (d > 0.5) { d = d - 1.0; }
+    if (d < -0.5) { d = d + 1.0; }
+    return d;
 }
 
 // ============================================================================
@@ -191,14 +217,22 @@ fn applyTemperatureTint(col: vec3<f32>, temperature: f32, tint: f32) -> vec3<f32
 }
 
 // ============================================================================
-// WEATHER EFFECTS: RAIN AND SNOW
+// WEATHER EFFECTS: RAIN AND SNOW (World-Space with Camera Panning)
 // ============================================================================
 
-fn rain(uv: vec2<f32>, t: f32) -> vec3<f32> {
+// Improved rain with camera panning support for world-space effect
+fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     for (var i: i32 = 0; i < 4; i = i + 1) {
         let layer = f32(i);
         var st = uv * vec2<f32>(1.0, 3.0 + layer * 1.5);
+        
+        // Offset by camera pan to make rain feel like it's in world space
+        // Closer layers (lower i) move more than distant ones (parallax)
+        let parallaxFactor = 10.0 + layer * 5.0;
+        st.x = st.x + panX * parallaxFactor;
+        st.y = st.y + panY * parallaxFactor * 0.5; // Less vertical parallax
+        
         st.x = st.x + p.wind * (0.3 + layer * 0.2);
         st.y = st.y + t * (3.5 + layer * 2.2) * (0.8 + p.rainIntensity * 0.4);
 
@@ -212,11 +246,19 @@ fn rain(uv: vec2<f32>, t: f32) -> vec3<f32> {
     return c * 0.75;
 }
 
-fn snow(uv: vec2<f32>, t: f32) -> vec3<f32> {
+// Improved snow with camera panning support for world-space effect
+fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     for (var i: i32 = 0; i < 5; i = i + 1) {
         let layer = f32(i);
         var st = uv * (4.0 + layer * 3.2);
+        
+        // Offset by camera pan to make snow feel like it's in world space
+        // Each layer has different parallax depth for 3D feel
+        let parallaxFactor = 8.0 + layer * 4.0;
+        st.x = st.x + panX * parallaxFactor;
+        st.y = st.y + panY * parallaxFactor * 0.6;
+        
         st.x = st.x + p.wind * (0.5 + layer * 0.25);
         st.y = st.y + t * (0.6 + layer * 0.35);
         st.x = st.x + sin(t * 1.8 + layer * 3.0 + st.y * 2.0) * 0.15;
@@ -265,14 +307,13 @@ fn applyFog(col: vec3<f32>, uv: vec2<f32>, intensity: f32, density: f32, height:
     return mix(col, fogColor, clamp(fogAmount, 0.0, 0.95));
 }
 
-// === 2. VOLUMETRIC LIGHT SHAFTS ===
+// === 2. VOLUMETRIC LIGHT SHAFTS (Camera-Aware) ===
 fn applyVolumetricLightShafts(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> vec3<f32> {
     if (intensity < 0.001) { return col; }
     
-    let sunNormX = fract((p.sunAzimuth + 3.14159265) / (2.0 * 3.14159265));
-    var dSunX = uv.x - sunNormX;
-    if (dSunX >  0.5) { dSunX -= 1.0; }
-    if (dSunX < -0.5) { dSunX += 1.0; }
+    // Use camera-aware coordinate transformation
+    let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
     
     let sunUvY = 1.0 - clamp(p.sunAltitude / 1.5708, 0.0, 1.0);
     let dSunY = uv.y - sunUvY;
@@ -338,14 +379,13 @@ fn applyHeatShimmer(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> ve
     return mix(col, shimmerCol, blend);
 }
 
-// === 4. LENS EFFECTS ===
+// === 4. LENS EFFECTS (Camera-Aware) ===
 fn applyLensFlare(col: vec3<f32>, uv: vec2<f32>, intensity: f32) -> vec3<f32> {
     if (intensity < 0.001) { return col; }
     
-    let sunNormX = fract((p.sunAzimuth + 3.14159265) / (2.0 * 3.14159265));
-    var dSunX = uv.x - sunNormX;
-    if (dSunX >  0.5) { dSunX -= 1.0; }
-    if (dSunX < -0.5) { dSunX += 1.0; }
+    // Use camera-aware coordinate transformation
+    let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
     
     let sunUvY = 1.0 - clamp(p.sunAltitude / 1.5708, 0.0, 1.0);
     let dSunY = uv.y - sunUvY;
@@ -410,11 +450,19 @@ fn applyVignette(col: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     return col * vignette;
 }
 
-// === 5. DUST/POLLEN PARTICLES ===
+// === 5. DUST/POLLEN PARTICLES (Camera-Aware) ===
 fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> vec3<f32> {
     if (intensity < 0.001) { return col; }
     
     var dustAccum = vec3<f32>(0.0);
+    
+    // Pre-calculate sun screen position for sparkle effect
+    let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
+    let sunUvY = 1.0 - clamp(p.sunAltitude / 1.5708, 0.0, 1.0);
+    let sunDist = length(vec2<f32>(dSunX * 2.0, uv.y - sunUvY));
+    let sunVisible = smoothstep(0.0, 0.1, p.sunAltitude);
+    let towardSun = smoothstep(0.5, 0.0, sunDist);
     
     for (var i: i32 = 0; i < 3; i = i + 1) {
         let layer = f32(i);
@@ -431,16 +479,6 @@ fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> 
             let dist = length(pos);
             
             let particle = smoothstep(0.15, 0.0, dist) * (0.5 + rnd * 0.5);
-            
-            let sunNormX = fract((p.sunAzimuth + 3.14159265) / (2.0 * 3.14159265));
-            var dSunX = uv.x - sunNormX;
-            if (dSunX >  0.5) { dSunX -= 1.0; }
-            if (dSunX < -0.5) { dSunX += 1.0; }
-            
-            let sunUvY = 1.0 - clamp(p.sunAltitude / 1.5708, 0.0, 1.0);
-            let sunDist = length(vec2<f32>(dSunX * 2.0, uv.y - sunUvY));
-            let sunVisible = smoothstep(0.0, 0.1, p.sunAltitude);
-            let towardSun = smoothstep(0.5, 0.0, sunDist);
             
             let sparklePhase = t * (3.0 + rnd * 2.0) + layer * 5.0;
             let sparkle = pow(sin(sparklePhase) * 0.5 + 0.5, 10.0) * towardSun * sunVisible;
@@ -621,10 +659,9 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
     let strength  = altFactor * nightFade;
     if (strength < 0.002) { return vec3<f32>(0.0); }
 
-    let sunNormX = fract((sunAz + 3.14159265) / (2.0 * 3.14159265));
-    var dSunX = uv.x - sunNormX;
-    if (dSunX >  0.5) { dSunX -= 1.0; }
-    if (dSunX < -0.5) { dSunX += 1.0; }
+    // Use camera-aware coordinate transformation
+    let sunScreenX = worldAzimuthToScreenX(sunAz, p.cameraHeading);
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
     let hFade = smoothstep(0.33, 0.0, abs(dSunX));
 
     let vertGrad = smoothstep(0.80, 0.30, uv.y);
@@ -644,10 +681,9 @@ fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32
 
     let moonColor = vec3<f32>(0.72, 0.82, 1.0);
 
-    let moonNormX = fract((moonAz + 3.14159265) / (2.0 * 3.14159265));
-    var dMoonX = uv.x - moonNormX;
-    if (dMoonX >  0.5) { dMoonX -= 1.0; }
-    if (dMoonX < -0.5) { dMoonX += 1.0; }
+    // Use camera-aware coordinate transformation
+    let moonScreenX = worldAzimuthToScreenX(moonAz, p.cameraHeading);
+    let dMoonX = normalizedDistance(uv.x, moonScreenX);
     let moonUvY = 1.0 - clamp(moonAlt / 1.5708, 0.0, 1.0);
 
     let moonDist = length(vec2<f32>(dMoonX * 2.5, uv.y - moonUvY));
@@ -660,6 +696,27 @@ fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32
     let lumTint = moonColor * smoothstep(0.3, 0.85, lum) * strength * 0.06;
 
     return col + ambient + moonColor * specular + lumTint;
+}
+
+// ============================================================================
+// HDR TONEMAPPING
+// ============================================================================
+
+// ACES (Academy Color Encoding System) Filmic Tonemapping
+// Smoothly compresses high dynamic range values to displayable range
+// Prevents harsh clipping of bright highlights (sun flares, headlights, etc.)
+fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// Alternative: Reinhard tonemapping (simpler, less contrasty)
+fn reinhard_tonemap(color: vec3<f32>) -> vec3<f32> {
+    return color / (1.0 + color);
 }
 
 // ============================================================================
@@ -678,6 +735,11 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     }
     
     let t = p.time * p.speed;
+    
+    // Calculate camera pan offset for world-space weather effects
+    // Convert normalized camera heading/pitch to -0.5 to 0.5 range for UV offset
+    let panX = p.cameraHeading - 0.5;
+    let panY = p.cameraPitch - 0.5;
     
     // === CHROMATIC ABERRATION ===
     var col = applyChromaticAberration(uv, p.chromaticAberration);
@@ -722,7 +784,7 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = col + sunsetHorizonGlow(uv, p.sunAzimuth, p.sunAltitude, p.nightIntensity);
     col = directionalMoonlight(col, uv, p.moonAzimuth, p.moonAltitude, p.nightIntensity);
 
-    // === ATMOSPHERIC EFFECTS (NEW) ===
+    // === ATMOSPHERIC EFFECTS ===
     col = applyFog(col, uv, p.fogIntensity, p.fogDensity, p.fogHeight, p.fogColorIndex);
     col = applyVolumetricLightShafts(col, uv, p.lightShaftsIntensity, t);
     col = applyHumidityHaze(col, uv, p.humidityHaze, t);
@@ -730,17 +792,22 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = applyLensFlare(col, uv, p.lensFlareIntensity);
     col = applyVignette(col, uv);
 
-    // === WEATHER EFFECTS (RAIN/SNOW) ===
+    // === WEATHER EFFECTS (RAIN/SNOW with world-space camera offset) ===
     if (p.rainIntensity > 0.001) {
-        let r = rain(uv, t) * p.rainIntensity;
+        let r = rain(uv, t, panX, panY) * p.rainIntensity;
         col = col + r * vec3<f32>(0.78, 0.88, 1.15);
         col = col * (1.0 - p.rainIntensity * 0.22);
     }
     
     if (p.snowIntensity > 0.001) {
-        let s = snow(uv, t) * p.snowIntensity;
+        let s = snow(uv, t, panX, panY) * p.snowIntensity;
         col = col + s * vec3<f32>(1.15, 1.18, 1.22);
     }
+
+    // === HDR TONEMAPPING ===
+    // Apply ACES filmic curve to smoothly compress bright highlights
+    // This prevents harsh clipping when sun flare overlaps with headlights, etc.
+    col = aces_tonemap(col);
 
     // Final cheap dither to prevent banding
     let noise = fract(sin(dot(fragCoord.xy, vec2<f32>(12.9898, 78.233))) * 43758.5453);

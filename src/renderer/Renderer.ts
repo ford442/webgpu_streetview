@@ -107,7 +107,7 @@ export class Renderer {
             this.createTexture(1, 1);
 
             this.uniformBuffer = this.device.createBuffer({
-                size: 16, // 4 floats * 4 bytes
+                size: 16, // 4 floats * 4 bytes: [time, zoom, cameraHeadingNorm, cameraPitchNorm]
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -117,9 +117,9 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (34 floats for HDR weather + nighttime + headlights + dome + astronomy + atmospheric effects)
+            // Weather params buffer (36 floats for HDR weather + nighttime + headlights + dome + astronomy + atmospheric effects + camera params)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 136, // 34 floats × 4 bytes
+                size: 144, // 36 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -317,6 +317,16 @@ export class Renderer {
         }
     }
 
+    /**
+     * Get current camera parameters (for debugging)
+     */
+    public getCameraParams(): { heading: number; pitch: number } {
+        return {
+            heading: this.weatherParams[33],
+            pitch: this.weatherParams[34]
+        };
+    }
+
     public getShaderEffectsEnabled(): boolean {
         return this.shaderEffectsEnabled;
     }
@@ -438,14 +448,27 @@ export class Renderer {
      *   [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
      *   [16-17]: domeLightOn, domeLightIntensity
      *   [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
-     *   [22]: moonIntensity (0-1.5, accounts for phase, altitude, opposition surge)
-     *   [23]: padding
-     *   [24-27]: latitude, cityDensity, season, cloudCover
-     *   [28-31]: padding
+     *   [22-31]: fog, lightShafts, heatShimmer, lensFlare, chromaticAberration, dust, humidityHaze, fogDensity, fogHeight, fogColorIndex
+     *   [32]: shaderEffectsEnabled
+     *   [33-34]: cameraHeading, cameraPitch (NEW - for world-space effects)
+     *   [35]: padding
      */
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params);
+            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+        }
+    }
+
+    /**
+     * Update camera parameters for world-space weather effects
+     * @param heading - Camera heading in normalized coordinates (0-1, where 0.5 = center/north)
+     * @param pitch - Camera pitch in normalized coordinates (0-1, where 0.5 = center)
+     */
+    public updateCameraParams(heading: number, pitch: number): void {
+        if (this.weatherParamsBuffer && this.device) {
+            this.weatherParams[33] = heading; // cameraHeading
+            this.weatherParams[34] = pitch;   // cameraPitch
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         }
     }
@@ -629,6 +652,9 @@ export class Renderer {
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
 
             // Update panorama uniforms
+            // panX/panY are normalized camera directions (0-1, 0.5 = center)
+            // Used for world-space weather effects (rain direction, etc.)
+            // Note: UV shifting has been removed - panorama is always centered
             const z = zoom || 1;
             const panX = ((heading || 0) % 360) / 360;
             const panY = ((pitch || 0) + 90) / 180;

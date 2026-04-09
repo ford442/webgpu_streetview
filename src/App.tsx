@@ -661,15 +661,29 @@ function App() {
     }, [zoom, panorama]);
 
 
+    // Calculate camera heading and pitch in normalized coordinates for the shader
+    // These values represent where the camera is looking, for world-space weather effects
+    const cameraHeadingNorm = React.useMemo(() => {
+        // Convert view heading (degrees, 0-360) to normalized (0-1, 0.5 = center)
+        // In free mode: heading is the view direction
+        // In car mode: viewHeading = carHeading + headYawOffset
+        const h = isCarMode ? viewHeading : heading;
+        return ((h % 360) / 360);
+    }, [isCarMode, viewHeading, heading]);
+
+    const cameraPitchNorm = React.useMemo(() => {
+        // Convert pitch (degrees, -90 to 90) to normalized (0-1, 0.5 = center)
+        const p = isCarMode ? headPitch : pitch;
+        return (p + 90) / 180;
+    }, [isCarMode, headPitch, pitch]);
+
     // Update weather params in renderer when they change
     useEffect(() => {
         if (rendererRef.current) {
-            // Weather params: [vibrance, sat, contrast, exposure, temp, tint, time, rain, snow, wind, speed,
-            //                  nightIntensity, headlightsOn, highBeam, hlHeading, hlPitch,
-            //                  domeLightOn, domeLightIntensity, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, pad,
             // Layout matches weather-post.wgsl WeatherParams struct:
             // [0-5] color grading, [6-10] weather, [11-15] night/headlights,
-            // [16-17] dome light, [18-21] sun/moon, [22-31] atmospheric, [32] toggle, [33] pad
+            // [16-17] dome light, [18-21] sun/moon, [22-31] atmospheric, 
+            // [32] toggle, [33-34] cameraHeading/cameraPitch, [35] padding
             const weatherParams = new Float32Array([
                 // 0-5: color grading
                 vibrance, saturation, contrast, exposure, temperature, tint,
@@ -704,14 +718,18 @@ function App() {
                 0.0,                         // chromaticAberration
                 0.0,                         // dustIntensity
                 0.0,                         // humidityHaze
-                // 32-33: toggle + padding
+                // 32: shader toggle
                 shaderEffectsEnabled ? 1.0 : 0.0, // shaderEffectsEnabled
+                // 33-34: camera parameters (NEW - for world-space weather effects)
+                cameraHeadingNorm,           // cameraHeading (0-1, normalized)
+                cameraPitchNorm,             // cameraPitch (0-1, normalized)
+                // 35: padding
                 0.0,                         // padding
             ]);
             rendererRef.current?.setShaderEffects(shaderEffectsEnabled);
             rendererRef.current?.updateWeatherParams(weatherParams);
         }
-    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat, shaderEffectsEnabled]);
+    }, [vibrance, saturation, contrast, exposure, temperature, tint, rainIntensity, snowIntensity, wind, nightIntensity, headlightsOn, highBeam, domeLightOn, sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity, currentCoords.lat, shaderEffectsEnabled, cameraHeadingNorm, cameraPitchNorm]);
 
     // Effect to detect panorama transitions via pano_changed event
     useEffect(() => {
@@ -1047,13 +1065,16 @@ function App() {
                                  carModeRef.current?.wipersEnabled;
 
             if (shouldRender) {
-                // Lock panorama to car heading ONLY (not head look).
-                // Head look offset is applied synchronously in the WebGPU shader
-                // via UV shifting, eliminating the async Google Maps tile-rendering
-                // lag that caused the "bobbing" effect.
+                // Panorama follows the actual view direction (car + head look).
+                // This eliminates the cut-off view issue because the Street View
+                // canvas always renders centered on where the user is looking.
+                // The Three.js car interior rotates opposite to head look to maintain
+                // the illusion that the car stays level while the head moves.
                 const pano = panoramaRef.current;
                 if (pano) {
-                    pano.setPov({ heading: carHeadingRef.current, pitch: 0 });
+                    const viewHeading = (carHeadingRef.current + headYawOffsetRef.current + 360.0) % 360.0;
+                    const viewPitch = headPitchRef.current;
+                    pano.setPov({ heading: viewHeading, pitch: viewPitch });
                 }
                 updateCarMode(carHeading, headYawOffset, headPitch, carSpeedRef.current, nightIntensity, headlightsOn, domeLightOn);
             }
