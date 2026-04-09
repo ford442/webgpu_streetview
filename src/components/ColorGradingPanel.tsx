@@ -164,14 +164,33 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
             </div>
 
             {/* Presets */}
-            <div style={{ padding: '15px', borderBottom: '1px solid #444', opacity: shaderEffectsEnabled ? 1 : 0.4, pointerEvents: shaderEffectsEnabled ? 'auto' : 'none' }}>
+            <div style={{ padding: '15px', borderBottom: '1px solid #444' }}>
                 <div style={{ ...labelStyle, marginBottom: '8px' }}>Presets:</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {/* None/Regular mode - always clickable */}
+                    <button
+                        onClick={() => onPreset('none')}
+                        style={{
+                            ...presetButtonStyle,
+                            border: `2px solid ${!shaderEffectsEnabled ? '#f44336' : '#555'}`,
+                            backgroundColor: !shaderEffectsEnabled ? 'rgba(244, 67, 54, 0.2)' : 'rgba(0,0,0,0.5)',
+                            color: !shaderEffectsEnabled ? '#ff6b6b' : '#fff',
+                            fontWeight: !shaderEffectsEnabled ? 'bold' : 'normal',
+                        }}
+                        title="Disable all effects - show raw Street View"
+                    >
+                        👁️ None (Regular)
+                    </button>
                     {['daylight', 'golden', 'sunset', 'overcast', 'rain', 'night', 'snow'].map(preset => (
                         <button
                             key={preset}
                             onClick={() => onPreset(preset)}
-                            style={presetButtonStyle}
+                            style={{
+                                ...presetButtonStyle,
+                                opacity: shaderEffectsEnabled ? 1 : 0.4,
+                                pointerEvents: shaderEffectsEnabled ? 'auto' : 'none',
+                            }}
+                            disabled={!shaderEffectsEnabled}
                         >
                             {preset.charAt(0).toUpperCase() + preset.slice(1)}
                         </button>

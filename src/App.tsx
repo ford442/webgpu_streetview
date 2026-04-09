@@ -572,7 +572,13 @@ function App() {
     // Preset handlers
     const applyPreset = useCallback((preset: string) => {
         switch (preset) {
+            case 'none':
+                // Disable all shader effects - show raw Street View
+                setShaderEffectsEnabled(false);
+                break;
             case 'daylight':
+                // Ensure shader effects are enabled for all other presets
+                setShaderEffectsEnabled(true);
                 setVibrance(1.0);
                 setSaturation(1.0);
                 setContrast(1.0);

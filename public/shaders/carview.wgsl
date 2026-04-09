@@ -292,11 +292,13 @@ fn wiperMaskEnhanced(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> vec2
         return vec2<f32>(1.0, 0.0); // Full rain, no wiper angle
     }
     
-    let leftPivot = vec2<f32>(0.25, 0.0);
-    let rightPivot = vec2<f32>(0.75, 0.0);
+    // Wiper pivots farther apart near the edges of the windshield
+    let leftPivot = vec2<f32>(0.12, 0.0);
+    let rightPivot = vec2<f32>(0.88, 0.0);
     
     let cycle = time * speed;
-    let maxSweep = 1.22;
+    // Full 180 degree sweep (PI radians) - wipers go from pointing down to pointing up
+    let maxSweep = 3.14159;
     
     // Left wiper
     let leftAngle = sin(cycle) * maxSweep;
@@ -314,8 +316,8 @@ fn wiperMaskEnhanced(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> vec2
     var cleared = 0.0;
     var activeWiperAngle = 0.0;
     
-    // Left wiper area
-    if (leftDist < 0.75 && leftDist > 0.05 && uv.y < 0.8) {
+    // Left wiper area - extended reach for full sweep
+    if (leftDist < 0.9 && leftDist > 0.05 && uv.y < 0.95) {
         let angleDiff = abs(leftUVAngle - leftAngle);
         let wrappedDiff = select(angleDiff, 6.28318 - angleDiff, angleDiff > 3.14159);
         
@@ -334,8 +336,8 @@ fn wiperMaskEnhanced(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> vec2
         }
     }
     
-    // Right wiper area
-    if (rightDist < 0.75 && rightDist > 0.05 && uv.y < 0.8) {
+    // Right wiper area - extended reach for full sweep
+    if (rightDist < 0.9 && rightDist > 0.05 && uv.y < 0.95) {
         let angleDiff = abs(rightUVAngle - rightAngle);
         let wrappedDiff = select(angleDiff, 6.28318 - angleDiff, angleDiff > 3.14159);
         
@@ -361,9 +363,57 @@ fn wiperWaterPush(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> f32 {
         return 0.0;
     }
     
-    let leftPivot = vec2<f32>(0.25, 0.0);
+    // Farther apart pivots
+    let leftPivot = vec2<f32>(0.12, 0.0);
+    let rightPivot = vec2<f32>(0.88, 0.0);
     let cycle = time * speed;
-    let maxSweep = 1.22;
+    // Full 180 degree sweep
+    let maxSweep = 3.14159;
+    let leftAngle = sin(cycle) * maxSweep;
+    let rightAngle = sin(cycle + 3.14159) * maxSweep;
+    let angularVel = cos(cycle) * speed;
+    
+    // Calculate for both wipers
+    var totalPush = 0.0;
+    
+    // Left wiper push
+    let toLeft = uv - leftPivot;
+    let leftAngleUV = atan2(toLeft.y, toLeft.x);
+    let distLeft = length(toLeft);
+    
+    if (distLeft < 0.9 && distLeft > 0.05 && uv.y < 0.95) {
+        let angleDiff = leftAngleUV - leftAngle;
+        let wrappedDiff = select(angleDiff, angleDiff + 6.28318, angleDiff < -3.14159);
+        let wrappedDiff2 = select(wrappedDiff, wrappedDiff - 6.28318, wrappedDiff > 3.14159);
+        let pushZone = smoothstep(0.0, 0.15, wrappedDiff2) * smoothstep(0.25, 0.15, wrappedDiff2);
+        totalPush += pushZone * abs(angularVel) * 0.3;
+    }
+    
+    // Right wiper push
+    let toRight = uv - rightPivot;
+    let rightAngleUV = atan2(toRight.y, toRight.x);
+    let distRight = length(toRight);
+    
+    if (distRight < 0.9 && distRight > 0.05 && uv.y < 0.95) {
+        let angleDiff = rightAngleUV - rightAngle;
+        let wrappedDiff = select(angleDiff, angleDiff + 6.28318, angleDiff < -3.14159);
+        let wrappedDiff2 = select(wrappedDiff, wrappedDiff - 6.28318, wrappedDiff > 3.14159);
+        let pushZone = smoothstep(0.0, 0.15, wrappedDiff2) * smoothstep(0.25, 0.15, wrappedDiff2);
+        totalPush += pushZone * abs(angularVel) * 0.3;
+    }
+    
+    return totalPush;
+}
+
+// Legacy water push for single wiper (kept for compatibility)
+fn wiperWaterPushSingle(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> f32 {
+    if (enabled < 0.5) {
+        return 0.0;
+    }
+    
+    let leftPivot = vec2<f32>(0.12, 0.0);
+    let cycle = time * speed;
+    let maxSweep = 3.14159;
     let leftAngle = sin(cycle) * maxSweep;
     let angularVel = cos(cycle) * speed;
     
@@ -371,7 +421,7 @@ fn wiperWaterPush(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> f32 {
     let uvAngle = atan2(toUV.y, toUV.x);
     let distFromPivot = length(toUV);
     
-    if (distFromPivot > 0.75 || distFromPivot < 0.05 || uv.y > 0.8) {
+    if (distFromPivot > 0.9 || distFromPivot < 0.05 || uv.y > 0.95) {
         return 0.0;
     }
     
@@ -417,18 +467,18 @@ fn wiperBlade(uv: vec2<f32>, time: f32, enabled: f32, speed: f32) -> vec3<f32> {
     
     let cycle = time * speed;
     
-    // Left wiper pivot (driver's side)
-    let leftPivot = vec2<f32>(0.25, 0.0);
-    // Right wiper pivot (passenger side)
-    let rightPivot = vec2<f32>(0.75, 0.0);
+    // Left wiper pivot (driver's side) - farther apart
+    let leftPivot = vec2<f32>(0.12, 0.0);
+    // Right wiper pivot (passenger side) - farther apart
+    let rightPivot = vec2<f32>(0.88, 0.0);
     
-    // Wide sweep for 3 o'clock to 9 o'clock coverage
-    let maxSweepAngle = 1.22; // ~70 degrees
+    // Full 180 degree sweep (PI radians) - wipers go from pointing down to pointing up
+    let maxSweepAngle = 3.14159;
     let leftAngle = sin(cycle) * maxSweepAngle;
     let rightAngle = sin(cycle + 3.14159) * maxSweepAngle;
     
-    // Blade parameters - 20% longer
-    let bladeLength = 0.78;
+    // Blade parameters - extended reach for full sweep coverage
+    let bladeLength = 0.9;
     let bladeWidth = 0.008;
     
     var bladeColor = vec3<f32>(0.0);
