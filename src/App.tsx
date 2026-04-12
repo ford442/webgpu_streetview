@@ -92,6 +92,7 @@ function InnerApp() {
   const [webGPUAvailable, setWebGPUAvailable] = useState(true); // Track WebGPU availability
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
+  const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
   
   // Panel visibility
   const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
@@ -167,6 +168,14 @@ function InnerApp() {
     }, 1000);
     return () => clearInterval(interval);
   }, [showPerformanceStats]);
+  
+  // Track when Google Maps canvas is ready
+  useEffect(() => {
+    if (canvas && !isCanvasReady) {
+      setIsCanvasReady(true);
+      console.log('[App] Canvas is ready');
+    }
+  }, [canvas, isCanvasReady]);
   
   // Handlers
   const handleStart = () => {
@@ -649,7 +658,47 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && <MainView mapsApiKey={GOOGLE_MAPS_KEY} onWebGPUStatus={handleWebGPUStatus} />}
+        {isConnected && isCanvasReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} onWebGPUStatus={handleWebGPUStatus} />}
+        
+        {/* Show loading screen while waiting for canvas */}
+        {isConnected && !isCanvasReady && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#000',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1
+          }}>
+            <div style={{
+              color: '#4CAF50',
+              fontSize: '18px',
+              marginBottom: '20px',
+              fontFamily: 'sans-serif'
+            }}>
+              Loading Street View...
+            </div>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              border: '4px solid rgba(255, 255, 255, 0.1)',
+              borderTopColor: '#4CAF50',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+            <style>{`
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        )}
       </div>
     </div>
   );
