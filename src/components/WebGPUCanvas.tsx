@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Renderer } from '../renderer/Renderer';
 import { RenderMode } from '../renderer/types';
-import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
+import { usePerformanceMonitor, useEnvironmentSettings } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 
 interface WebGPUCanvasProps {
@@ -47,6 +47,15 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
+    
+    // Get environment settings from React context
+    const {
+        nightIntensity, rainIntensity, snowIntensity, wind,
+        vibrance, saturation, contrast, exposure, temperature, tint,
+        headlightsOn, highBeam, domeLightOn,
+        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
+        shaderEffectsEnabled
+    } = useEnvironmentSettings();
 
     // State to track window size for full-screen rendering
     const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -108,6 +117,75 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
 
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
+    
+    // Sync environment settings to renderer
+    useEffect(() => {
+        if (!currentRendererRef.current) return;
+        
+        // Build weather params array (36 floats)
+        const params = new Float32Array(36);
+        
+        // [0-5]: Color grading (vibrance, saturation, contrast, exposure, temperature, tint)
+        // These are stored as adjustments (-1 to 1 range in UI), convert to shader range
+        params[0] = vibrance - 1.0;        // vibrance offset
+        params[1] = saturation - 1.0;      // saturation offset  
+        params[2] = contrast - 1.0;        // contrast offset
+        params[3] = exposure;              // exposure (already in correct range)
+        params[4] = temperature;           // temperature (-1 to 1)
+        params[5] = tint;                  // tint (-1 to 1)
+        
+        // [6-10]: Animation time, rain, snow, wind, speed
+        params[6] = Date.now() / 1000;     // time (will be updated each frame)
+        params[7] = rainIntensity;         // rain intensity
+        params[8] = snowIntensity;         // snow intensity
+        params[9] = wind;                  // wind
+        params[10] = 1.0;                  // speed multiplier
+        
+        // [11-15]: Night mode and headlights
+        params[11] = nightIntensity;       // night intensity (0-1)
+        params[12] = headlightsOn ? 1.0 : 0.0;  // headlights on
+        params[13] = highBeam ? 1.0 : 0.0;      // high beam on
+        params[14] = 0.5;                  // headlight heading (center)
+        params[15] = 0.5;                  // headlight pitch (center)
+        
+        // [16-17]: Dome light
+        params[16] = domeLightOn ? 1.0 : 0.0;   // dome light on
+        params[17] = domeLightOn ? 0.5 : 0.0;   // dome light intensity (default 0.5 when on)
+        
+        // [18-21]: Astronomy (sun/moon position)
+        params[18] = sunAzimuth;           // sun azimuth
+        params[19] = sunAltitude;          // sun altitude
+        params[20] = moonAzimuth;          // moon azimuth
+        params[21] = moonAltitude;         // moon altitude
+        
+        // [22-31]: Atmospheric effects (default to 0 for now)
+        params[22] = 0.0;                  // fog intensity
+        params[23] = 0.0;                  // fog density
+        params[24] = 0.0;                  // fog height
+        params[25] = 0.0;                  // fog color index
+        params[26] = 0.0;                  // light shafts intensity
+        params[27] = 0.0;                  // heat shimmer intensity
+        params[28] = 0.0;                  // lens flare intensity
+        params[29] = 0.0;                  // chromatic aberration
+        params[30] = 0.0;                  // dust intensity
+        params[31] = 0.0;                  // humidity haze
+        
+        // [32]: Shader effects enabled flag
+        params[32] = shaderEffectsEnabled ? 1.0 : 0.0;
+        
+        // [33-35]: Camera params and padding (set by render loop, but initialize here)
+        params[33] = 0.0;                  // camera heading
+        params[34] = 0.0;                  // camera pitch
+        params[35] = 0.0;                  // padding
+        
+        currentRendererRef.current.updateWeatherParams(params);
+    }, [
+        nightIntensity, rainIntensity, snowIntensity, wind,
+        vibrance, saturation, contrast, exposure, temperature, tint,
+        headlightsOn, highBeam, domeLightOn,
+        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
+        shaderEffectsEnabled
+    ]);
 
     // Use refs for callbacks to avoid reinit when they change
     const onWebGPUStatusRef = useRef(onWebGPUStatus);
