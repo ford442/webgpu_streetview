@@ -473,6 +473,87 @@ function InnerApp() {
       {/* Global UI Panels */}
       {isConnected && (
         <>
+          {/* Floating Toolbar — top-right HUD */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: 8,
+              pointerEvents: 'auto',
+            }}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
+              style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
+            >
+              Cruise: {isCruiseMode ? 'ON' : 'OFF'}
+            </button>
+            <button
+              className={`control-btn${isRadioPlaying ? ' disconnect' : ''}`}
+              style={{ backgroundColor: isRadioPlaying ? 'rgba(255,71,87,0.85)' : undefined, minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); toggleRadio(); }}
+            >
+              Radio: {isRadioPlaying ? 'ON' : 'OFF'}
+            </button>
+            <button
+              className="control-btn"
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen); }}
+            >
+              📷 Gallery
+            </button>
+            <button
+              className={`control-btn${isBookmarkPanelOpen ? ' disconnect' : ''}`}
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsBookmarkPanelOpen(!isBookmarkPanelOpen); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+            >
+              🔖 Bookmarks
+            </button>
+            <button
+              className={`control-btn${isHistoryPanelOpen ? ' disconnect' : ''}`}
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsHistoryPanelOpen(!isHistoryPanelOpen); setIsBookmarkPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+            >
+              🕒 History
+            </button>
+            <button
+              className={`control-btn${isColorGradingPanelOpen ? ' disconnect' : ''}`}
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsColorGradingPanelOpen(!isColorGradingPanelOpen); setIsBookmarkPanelOpen(false); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+            >
+              🎨 Color
+            </button>
+            <button
+              className={`control-btn${isWeatherPanelOpen ? ' disconnect' : ''}`}
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
+            >
+              🌧 Weather
+            </button>
+            <button
+              className="control-btn"
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); toggleViewMode(); }}
+            >
+              {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
+            </button>
+            <button
+              className="control-btn"
+              style={{ minWidth: 110 }}
+              onClick={e => { e.stopPropagation(); globeMode.toggle(); }}
+            >
+              🌍 Globe
+            </button>
+          </div>
+
           {/* Bookmark Panel */}
           {isBookmarkPanelOpen && panorama && (
             <BookmarkPanel
