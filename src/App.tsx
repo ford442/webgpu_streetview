@@ -615,8 +615,9 @@ function InnerApp() {
       )}
 
       {/* Hidden StreetView - kept in DOM for canvas scraping */}
-      {/* When WebGPU fails, show this as fallback (zIndex: 2, opacity: 1) */}
-      {/* Use opacity: 0.01 instead of 0 to ensure browser still renders to canvas for texture upload */}
+      {/* When WebGPU is active, pushed behind the WebGPU canvas via zIndex (0 vs 1). */}
+      {/* opacity must stay at 1 — Google Maps stops updating its canvas at low opacity. */}
+      {/* When WebGPU fails, promoted to zIndex 2 as visible fallback. */}
       <div style={{
         position: 'absolute',
         top: 0,
@@ -624,8 +625,7 @@ function InnerApp() {
         width: '100%',
         height: '100%',
         zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
-        opacity: (isConnected && webGPUAvailable) ? 0.01 : 1,
-        transition: 'opacity 0.5s ease-in-out',
+        opacity: 1,
         pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
       }}>
         <StreetView
