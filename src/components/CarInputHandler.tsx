@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
 
@@ -41,6 +41,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     setHeadCoupling,
     startTempSteerMode,
     endTempSteerMode,
+    carHeading,
     setCarHeading,
   } = useViewMode();
   
@@ -61,25 +62,21 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const CLICK_DRAG_THRESHOLD = 5;
   
   // Steering helper
-  const applySteering = (steerDelta: number) => {
+  const applySteering = useCallback((steerDelta: number) => {
     // Update steering angle for the steering wheel visual
     const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
     steeringInputRef.current = newSteering;
 
-    // Move the car body heading (this drives the panorama direction)
+    // Move the car body heading
     setCarHeading(prev => ((prev + steerDelta + 360) % 360));
 
-    // In free head coupling, also move head-look so driver keeps facing the same
-    // world direction (i.e. head counter-rotates to cancel the body turn visually)
-    if (headCoupling === 'free') {
-      setHeading(prev => {
-        let next = prev - steerDelta;
-        if (next > 180) next -= 360;
-        if (next < -180) next += 360;
-        return next;
-      });
+    // Rigid coupling means the head turns with the car body
+    if (headCoupling === 'rigid') {
+      setHeading(prev => (prev + steerDelta + 360) % 360);
     }
-  };;
+    // In 'free' coupling, setHeading is NOT called, so the head stays
+    // fixed to its current world-absolute heading.
+  }, [headCoupling, setCarHeading, setHeading]);
   
   useEffect(() => {
     const target = targetRef.current;
@@ -132,50 +129,31 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     const handleMouseMove = (e: MouseEvent) => {
       const currentMode = getEffectiveControlMode();
       
-      // Track drag distance
-      if (isDraggingRef.current && dragStartedOnTargetRef.current) {
-        const dist = Math.hypot(e.movementX, e.movementY);
-        if (dist > CLICK_DRAG_THRESHOLD) {
-          // Mark as dragging
-        }
-      }
-      
       if (!isDraggingRef.current || !dragStartedOnTargetRef.current) return;
       
       const isSteeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current;
       
       if (currentMode === 'freeLook') {
-        // Free Look: mouse drag controls head look
-        // Steering is done via: wheel grab, Shift+drag, right-drag, or A/D keys
-        if (isSteeringDrag) {
-          // Steering via wheel grab or right-drag
-          applySteering(e.movementX * 0.3);
-          // Vertical movement still affects head pitch
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        } else if (e.shiftKey) {
-          // Shift+drag = steering
+        // Free Look: Mouse drag controls head look
+        // Steering only if modifiers (Shift, Right-click, Wheel-grab) are active
+        if (isSteeringDrag || e.shiftKey) {
           applySteering(e.movementX * 0.3);
           setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
         } else {
-          // Normal head look
-          setHeading(prev => {
-            let next = prev + e.movementX * HEAD_LOOK_SENSITIVITY;
-            if (next > 180) next -= 360;
-            if (next < -180) next += 360;
-            return next;
-          });
+          // Normal head look (viewer direction)
+          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
           setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
         }
+      } else if (currentMode === 'carSteer') {
+        // Car Steer Mode: All mouse drags steer the car body
+        applySteering(e.movementX * 0.3);
+        setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
       } else if (currentMode === 'uiMouse') {
-        // UI Mouse: no view control from mouse
-        // But if right-dragging, that still steers
+        // UI Mouse: Mouse drag is primarily for UI
+        // But Right-click drag still allows steering
         if (isRightMouseRef.current) {
           applySteering(e.movementX * 0.3);
         }
-      } else if (currentMode === 'carSteer') {
-        // Car Steer: mouse drag X steers, Y controls pitch
-        applySteering(e.movementX * 0.3);
-        setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
       }
     };
     
@@ -205,26 +183,26 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       
       switch (key) {
         case 'w':
-          advance('forward');
+          advance('forward', carHeading);
           break;
         case 's':
-          advance('backward');
+          advance('backward', carHeading);
           break;
         case 'arrowup':
           e.preventDefault();
-          advance('forward');
+          advance('forward', carHeading);
           break;
         case 'arrowdown':
           e.preventDefault();
-          advance('backward');
+          advance('backward', carHeading);
           break;
         case 'arrowleft':
           e.preventDefault();
-          advance('left');
+          advance('left', carHeading);
           break;
         case 'arrowright':
           e.preventDefault();
-          advance('right');
+          advance('right', carHeading);
           break;
         case 'a':
           // Steering left
@@ -245,8 +223,14 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           applySteering(45);
           break;
         case 'c':
-          // In car mode, C recenters head or exits if long press (simplified: just exit)
-          toggleViewMode();
+          // Recenter head look to car body if offset; otherwise toggle car mode
+          const headYawOffset = (heading - carHeading + 540) % 360 - 180;
+          if (Math.abs(headYawOffset) > 1 || Math.abs(pitch - 10) > 1) {
+            setHeading(carHeading);
+            setPitch(10); // Default pitch
+          } else {
+            toggleViewMode();
+          }
           break;
         case 'h':
           // Toggle control mode
@@ -286,6 +270,9 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     isSteeringWheelAtPoint,
     controlMode,
     headCoupling,
+    heading,
+    pitch,
+    carHeading,
     setHeading,
     setPitch,
     advance,
@@ -294,6 +281,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     startTempSteerMode,
     endTempSteerMode,
     setCarHeading,
+    applySteering,
   ]);
   
   // This component doesn't render anything
