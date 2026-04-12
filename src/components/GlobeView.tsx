@@ -110,6 +110,8 @@ function makeWaypointCanvas(): string {
     return c.toDataURL();
 }
 
+// Entity rendering limits — keeps Cesium performant with many entities.
+// Billboard rendering becomes sluggish above ~80 entities at typical zoom levels.
 const MAX_VISIBLE_BOOKMARKS = 50;
 const MAX_VISIBLE_POIS = 30;
 
@@ -362,10 +364,10 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             });
         }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
-        // Single-click → ScoutCard preview (or shift-click → waypoint)
+        // Single-click (unmodified) → ScoutCard preview.
+        // Shift+click is handled by a separate handler registered below with
+        // Cesium.KeyboardEventModifier.SHIFT, so it won't reach this handler.
         handler.setInputAction((event: { position: any }) => {
-            // Check if it's a shift-click (handled by SHIFT modifier below)
-            // This handles normal single-click → open ScoutCard
             const picked = viewer.scene.pick(event.position);
             if (Cesium.defined(picked) && picked.id && picked.id.properties) {
                 // Clicked on a bookmark or POI entity

@@ -23,19 +23,17 @@ export interface RadioStation {
 const API_BASE = 'https://de1.api.radio-browser.info/json';
 
 /**
- * Fetch radio stations near a lat/lng using the Radio Browser API's
- * geo-search capability (country code + state approximation).
- * Falls back to country-level search if state-level returns nothing.
+ * Fetch globally popular radio stations as a fallback when country code
+ * cannot be determined from coordinates. The lat/lng parameters are retained
+ * in the signature for API consistency with getTopStationForLocation but are
+ * not used for filtering (Radio Browser API has no direct geo-coordinate search).
  */
 export async function fetchNearbyStations(
-    lat: number,
-    lng: number,
+    _lat: number,
+    _lng: number,
     limit: number = 10
 ): Promise<RadioStation[]> {
     try {
-        // Use reverse geocoding approximation: search by geo coordinates
-        // Radio Browser doesn't have direct lat/lng search, so we use
-        // the countrycode endpoint and sort by votes for quality
         const response = await fetch(
             `${API_BASE}/stations/search?limit=${limit}&order=votes&reverse=true&has_extended_info=true&offset=0`,
             {
@@ -82,9 +80,13 @@ export async function fetchStationsByCountry(
 /**
  * Approximate country code from lat/lng using simple geographic bounds.
  * This is a rough approximation — does not require a geocoding API.
+ * 
+ * Limitations: Only covers major continental landmasses. Island territories
+ * (e.g. Hawaii, Caribbean), overlapping boundaries, and many smaller countries
+ * will return '' (empty), causing a fallback to global popular stations.
  */
 export function approximateCountryCode(lat: number, lng: number): string {
-    // Very rough geographic region mapping
+    // Very rough geographic region mapping — covers major landmasses only
     if (lat > 24 && lat < 50 && lng > -125 && lng < -66) return 'US';
     if (lat > 41 && lat < 56 && lng > -8 && lng < 2) return 'GB';
     if (lat > 42 && lat < 51 && lng > -5 && lng < 8) return 'FR';

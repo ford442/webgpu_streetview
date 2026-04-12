@@ -237,6 +237,8 @@ function InnerApp() {
   }, [panorama, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
 
   // Phase 5: Waypoint autopilot
+  // Interval chosen to allow Street View panorama to load between jumps.
+  // Shorter values risk showing loading spinners; longer values feel sluggish.
   const WAYPOINT_INTERVAL_MS = 5000;
   const autopilotRef = useRef<NodeJS.Timeout | null>(null);
   const handleStartJourney = useCallback((waypoints: { lat: number; lng: number }[]) => {
@@ -255,7 +257,11 @@ function InnerApp() {
           return;
         }
         if (panorama) {
-          panorama.setPosition({ lat: waypoints[idx].lat, lng: waypoints[idx].lng });
+          try {
+            panorama.setPosition({ lat: waypoints[idx].lat, lng: waypoints[idx].lng });
+          } catch (err) {
+            console.warn(`[Autopilot] Failed to set position for waypoint ${idx}:`, err);
+          }
         }
         idx++;
       }, WAYPOINT_INTERVAL_MS);
