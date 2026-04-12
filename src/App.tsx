@@ -42,6 +42,8 @@ import {
 } from './hooks/useKeyboardShortcuts';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
+import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
+import { getTopStationForLocation } from './services/radioBrowserService';
 
 // Google Maps API Key
 const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
@@ -201,6 +203,72 @@ function InnerApp() {
     });
   };
   
+  // Globe teleport with auto-lighting (Phase 4) and auto-radio (Phase 3)
+  const handleGlobeTeleport = useCallback((lat: number, lng: number) => {
+    // Teleport the Street View panorama
+    if (panorama) {
+      panorama.setPosition({ lat, lng });
+    }
+
+    // Phase 4: Auto-lighting based on destination's real-world time
+    try {
+      const timePreset = getTimeOfDayForLocation(lat, lng);
+      applyTimeOfDayPreset(timePreset);
+      const colorPreset = getColorPresetForTimeOfDay(timePreset);
+      applyColorGradingPreset(colorPreset);
+    } catch (err) {
+      console.warn('[GlobeTeleport] Auto-lighting failed:', err);
+    }
+
+    // Phase 3: Auto-tune radio to local station
+    getTopStationForLocation(lat, lng).then(station => {
+      if (station && audioRef.current) {
+        audioRef.current.src = station.urlResolved || station.url;
+        audioRef.current.play().catch(() => {});
+        setIsRadioPlaying(true);
+        console.log(`[GlobeTeleport] Tuned to: ${station.name} (${station.country})`);
+      }
+    }).catch(err => {
+      console.warn('[GlobeTeleport] Auto-radio failed:', err);
+    });
+
+    // Deactivate globe after teleport
+    globeMode.deactivate();
+  }, [panorama, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
+
+  // Phase 5: Waypoint autopilot
+  const WAYPOINT_INTERVAL_MS = 5000;
+  const autopilotRef = useRef<NodeJS.Timeout | null>(null);
+  const handleStartJourney = useCallback((waypoints: { lat: number; lng: number }[]) => {
+    if (waypoints.length === 0) return;
+
+    // Teleport to first waypoint and exit globe
+    handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
+
+    // Set up autopilot: advance through remaining waypoints
+    if (waypoints.length > 1) {
+      let idx = 1;
+      autopilotRef.current = setInterval(() => {
+        if (idx >= waypoints.length) {
+          if (autopilotRef.current) clearInterval(autopilotRef.current);
+          autopilotRef.current = null;
+          return;
+        }
+        if (panorama) {
+          panorama.setPosition({ lat: waypoints[idx].lat, lng: waypoints[idx].lng });
+        }
+        idx++;
+      }, WAYPOINT_INTERVAL_MS);
+    }
+  }, [handleGlobeTeleport, panorama]);
+
+  // Cleanup autopilot on unmount
+  useEffect(() => {
+    return () => {
+      if (autopilotRef.current) clearInterval(autopilotRef.current);
+    };
+  }, []);
+
   // Keyboard shortcuts
   useKeyboardShortcuts(
     [
@@ -501,12 +569,32 @@ function InnerApp() {
             />
           )}
           
-          {/* Globe View - TODO: Add proper props */}
-          {globeMode.isActive && (
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000' }}>
-              <button onClick={globeMode.deactivate}>Close Globe</button>
-              <p>Globe view content</p>
-            </div>
+          {/* Globe View — CesiumJS 3D globe overlay */}
+          {(globeMode.isVisible || globeMode.transition === 'loading') && (
+            <GlobeView
+              transition={globeMode.transition}
+              currentLat={panorama?.getPosition()?.lat() ?? 39.2575}
+              currentLng={panorama?.getPosition()?.lng() ?? -121.0218}
+              currentHeading={heading}
+              pois={history.slice(0, 30).map(h => ({
+                lat: h.lat,
+                lng: h.lng,
+                label: h.locationName || `${h.lat.toFixed(2)}, ${h.lng.toFixed(2)}`,
+              }))}
+              bookmarks={bookmarks.map(b => ({
+                id: b.id,
+                name: b.name,
+                lat: b.lat,
+                lng: b.lng,
+                heading: b.heading,
+                pitch: b.pitch,
+              }))}
+              mapsApiKey={GOOGLE_MAPS_KEY}
+              onTeleportRequest={handleGlobeTeleport}
+              onEnterComplete={globeMode.onEnterComplete}
+              onExitComplete={globeMode.onExitComplete}
+              onStartJourney={handleStartJourney}
+            />
           )}
         </>
       )}
