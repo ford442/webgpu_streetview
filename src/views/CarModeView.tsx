@@ -42,7 +42,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
     controlMode,
     setControlMode,
     headCoupling,
-    isTempSteerMode
+    isTempSteerMode,
+    carHeading,
   } = useViewMode();
   
   const {
@@ -82,10 +83,11 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
   // GPS/Map state
   const [isMapOpen, setIsMapOpen] = useState(false);
   
-  // Car state refs
-  const carHeadingRef = useRef(34); // Car body direction
-  const headYawOffsetRef = useRef(0); // Head look relative to car
-  const headPitchRef = useRef(0); // Head pitch
+  // Car state refs — carHeading comes from useViewMode context; only ancillary refs kept here
+  const carHeadingRef = useRef(carHeading); // kept in sync each frame
+  carHeadingRef.current = carHeading;
+  const headYawOffsetRef = useRef(0); // head look offset relative to car body
+  const headPitchRef = useRef(0); // head pitch
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
   const carRPMRef = useRef(0);

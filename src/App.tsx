@@ -44,6 +44,7 @@ import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
 import { getTopStationForLocation } from './services/radioBrowserService';
+import { findBestLink } from './utils/navigation';
 
 // Google Maps API Key
 const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
@@ -187,7 +188,37 @@ function InnerApp() {
   const handleWebGPUStatus = useCallback((available: boolean) => {
     setWebGPUAvailable(available);
   }, []);
-  
+
+  // Cruise mode auto-advance — use a ref for heading to avoid restarting the interval on every pan
+  const cruiseHeadingRef = useRef(heading);
+  cruiseHeadingRef.current = heading;
+  const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!isCruiseMode || !panorama) {
+      if (cruiseIntervalRef.current) {
+        clearInterval(cruiseIntervalRef.current);
+        cruiseIntervalRef.current = null;
+      }
+      return;
+    }
+    const hop = () => {
+      const links = panorama.getLinks();
+      if (!links) return;
+      const best = findBestLink(
+        links.filter((l): l is google.maps.StreetViewLink => l !== null),
+        cruiseHeadingRef.current,
+        'forward'
+      );
+      if (best?.pano) panorama.setPano(best.pano);
+    };
+    cruiseIntervalRef.current = setInterval(hop, 3000);
+    return () => {
+      if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
+      cruiseIntervalRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCruiseMode, panorama]);
+
   const toggleRadio = () => {
     if (!audioRef.current) return;
     if (isRadioPlaying) {
@@ -666,7 +697,25 @@ function InnerApp() {
           )}
           
           {/* Globe View — CesiumJS 3D globe overlay */}
-          {(globeMode.isVisible || globeMode.transition === 'loading') && (
+          {/* Show a loading screen while Cesium SDK downloads from CDN */}
+          {globeMode.transition === 'loading' && (
+            <div style={{
+              position: 'fixed', inset: 0, zIndex: 500,
+              background: 'rgba(0,0,0,0.85)', display: 'flex',
+              flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontFamily: 'system-ui, sans-serif',
+            }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: '50%',
+                border: '4px solid rgba(255,255,255,0.15)',
+                borderTopColor: '#4CAF50',
+                animation: 'spin 0.8s linear infinite', marginBottom: 20,
+              }} />
+              <div style={{ fontSize: 16, opacity: 0.85 }}>Loading Globe…</div>
+              <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
+          {globeMode.isVisible && (
             <GlobeView
               transition={globeMode.transition}
               currentLat={panorama?.getPosition()?.lat() ?? 39.2575}

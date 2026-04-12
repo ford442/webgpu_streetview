@@ -40,7 +40,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     headCoupling,
     setHeadCoupling,
     startTempSteerMode,
-    endTempSteerMode
+    endTempSteerMode,
+    setCarHeading,
   } = useViewMode();
   
   // Drag and input state
@@ -61,21 +62,24 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   
   // Steering helper
   const applySteering = (steerDelta: number) => {
-    // Update steering angle for UI
+    // Update steering angle for the steering wheel visual
     const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
     steeringInputRef.current = newSteering;
-    
-    // In free head coupling, compensate head yaw so driver keeps looking at same world direction
+
+    // Move the car body heading (this drives the panorama direction)
+    setCarHeading(prev => ((prev + steerDelta + 360) % 360));
+
+    // In free head coupling, also move head-look so driver keeps facing the same
+    // world direction (i.e. head counter-rotates to cancel the body turn visually)
     if (headCoupling === 'free') {
       setHeading(prev => {
         let next = prev - steerDelta;
-        // Wrap to ±180°
         if (next > 180) next -= 360;
         if (next < -180) next += 360;
         return next;
       });
     }
-  };
+  };;
   
   useEffect(() => {
     const target = targetRef.current;
@@ -288,7 +292,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     toggleViewMode,
     toggleControlMode,
     startTempSteerMode,
-    endTempSteerMode
+    endTempSteerMode,
+    setCarHeading,
   ]);
   
   // This component doesn't render anything

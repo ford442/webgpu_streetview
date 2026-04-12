@@ -26,6 +26,10 @@ export interface ViewModeState {
   startTempSteerMode: () => void;
   endTempSteerMode: () => void;
   
+  // Car body heading (separate from head-look heading in useStreetView)
+  carHeading: number;
+  setCarHeading: (heading: number | ((prev: number) => number)) => void;
+
   // Car mode state reference (for Three.js integration)
   carModeState: CarModeState | null;
   
@@ -65,7 +69,16 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   
   // Temporary steering mode (steering wheel click)
   const [isTempSteerMode, setIsTempSteerMode] = useState(false);
-  
+
+  // Car body heading (independent of head-look heading)
+  const [carHeading, setCarHeadingState] = useState(34);
+  const setCarHeading = useCallback((value: number | ((prev: number) => number)) => {
+    setCarHeadingState(prev => {
+      const next = typeof value === 'function' ? value(prev) : value;
+      return ((next % 360) + 360) % 360;
+    });
+  }, []);
+
   // Car mode state (Three.js)
   const carModeStateRef = useRef<CarModeState | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
@@ -180,6 +193,8 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     isTempSteerMode,
     startTempSteerMode,
     endTempSteerMode,
+    carHeading,
+    setCarHeading,
     carModeState: carModeStateRef.current,
     initCarModeForContainer,
   };
