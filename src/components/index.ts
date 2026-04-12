@@ -28,3 +28,4 @@ export { default as PerformanceStatsOverlay } from './PerformanceStatsOverlay';
 export { default as WeatherPanel } from './WeatherPanel';
 export { default as GlobeView } from './GlobeView';
 export { default as AccessibilityPanel } from './AccessibilityPanel';
+export { default as ScoutCard } from './ScoutCard';
