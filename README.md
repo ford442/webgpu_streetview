@@ -47,7 +47,7 @@ Composite Browser Output
 ### Car Mode
 - **Four vehicle types** — Executive Sedan, Sport Convertible, Mobile Science Lab, Stretch Limousine; each with unique dashboard layout, feature set, and accent color theme
 - **Three.js interior** — all geometry built procedurally; no external 3D asset files required
-- **Interactive steering wheel** — A/D keys rotate with smooth lerp and auto-centering; ±90° lock-to-lock range
+- **Interactive steering wheel** — A/D keys for steering; Mouse look for viewer direction
 - **Animated windshield wipers** — dual wiper sweep on sine curve; toggle via dashboard button
 - **Live dashboard gauges** — speedometer, tachometer, fuel level updated from cruise speed
 - **Rearview mirror** — reflective glass geometry above dashboard
@@ -126,10 +126,13 @@ python deploy.py       # SFTP upload to test.1ink.us (prompts for password)
 
 | Input | Action |
 |---|---|
-| A / D or arrow keys | Steer wheel (lerp animated, ±90°) |
-| W | Move forward |
-| Mouse drag | Head look, independent of steering |
-| Scroll | Zoom |
+| Mouse drag | Head look (independent viewer direction) |
+| A / D | Steer car body (rotate vehicle heading) |
+| Arrow Keys | Move car (forward / backward / left / right) |
+| W / S | Move car forward / backward |
+| Shift + Mouse Drag | Steer car via mouse |
+| Click Steering Wheel | Temporary mouse-based steering |
+| C | Recenter head look to car body (press again to exit car mode) |
 | Dashboard wiper button | Toggle wipers |
 | Dashboard lights button | Toggle headlights |
 
@@ -137,9 +140,9 @@ python deploy.py       # SFTP upload to test.1ink.us (prompts for password)
 
 | Key | Action |
 |---|---|
-| C | Toggle Car Mode |
+| C | Recenter Head / Toggle Car Mode |
 | B | Toggle Bookmark Panel |
-| H | Toggle History Panel |
+| H | Toggle History Panel / Control Mode |
 | P | Toggle Performance Stats |
 | Space | Take snapshot |
 | 1–5 | Quick view presets |

@@ -170,10 +170,10 @@ Handles Google Maps integration:
 - Sorts canvases by area to find the main view
 - Notifies parent when canvas is ready
 
-### InputHandler (`src/components/InputHandler.tsx`)
+### InputHandlers (FreeLookInputHandler & CarInputHandler)
 Captures global input events:
 - **Mouse**: Drag to pan, scroll to zoom, click to move forward
-- **Keyboard**: WASD for directional movement
+- **Keyboard**: WASD and Arrow keys for directional movement
 - **Right-click**: Move forward
 - Attaches listeners to `window` (requires event blocking for UI overlays)
 

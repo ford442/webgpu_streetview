@@ -83,11 +83,14 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
   // GPS/Map state
   const [isMapOpen, setIsMapOpen] = useState(false);
   
-  // Car state refs — carHeading comes from useViewMode context; only ancillary refs kept here
-  const carHeadingRef = useRef(carHeading); // kept in sync each frame
+  // Car state refs — carHeading, heading, pitch come from hooks; kept in sync for animate loop
+  const carHeadingRef = useRef(carHeading);
   carHeadingRef.current = carHeading;
-  const headYawOffsetRef = useRef(0); // head look offset relative to car body
-  const headPitchRef = useRef(0); // head pitch
+  const headingRef = useRef(heading);
+  headingRef.current = heading;
+  const pitchRef = useRef(pitch);
+  pitchRef.current = pitch;
+
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
   const carRPMRef = useRef(0);
@@ -141,22 +144,24 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
       
-      // Calculate view heading (car + head offset)
-      const viewHeading = (carHeadingRef.current + headYawOffsetRef.current + 360) % 360;
+      // Calculate relative head look offset for 3D interior
+      // headYawOffset is how much the head is turned relative to the car body
+      let headYawOffset = (headingRef.current - carHeadingRef.current + 540) % 360 - 180;
+      const headPitch = pitchRef.current;
       
-      // Update panorama to follow view direction
+      // Update panorama POV to follow viewer direction (world heading/pitch)
       if (panorama) {
         panorama.setPov({
-          heading: viewHeading,
-          pitch: headPitchRef.current
+          heading: headingRef.current,
+          pitch: pitchRef.current
         });
       }
-      
+
       // Update car interior
       updateCarMode(
         carHeadingRef.current,
-        headYawOffsetRef.current,
-        headPitchRef.current,
+        headYawOffset,
+        headPitch,
         carSpeedRef.current,
         nightIntensity,
         headlightsOn,
