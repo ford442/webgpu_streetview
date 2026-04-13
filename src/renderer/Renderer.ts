@@ -260,7 +260,18 @@ export class Renderer {
     }
 
     private async createPipeline(): Promise<void> {
-        const shaderCode = await fetch(`${process.env.PUBLIC_URL}/shaders/streetview.wgsl`).then(r => r.text());
+        const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/streetview.wgsl`;
+        let shaderCode: string;
+        try {
+            const response = await fetch(shaderUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to load streetview.wgsl: ${response.status} ${response.statusText}`);
+            }
+            shaderCode = await response.text();
+        } catch (error) {
+            console.error(`[Renderer] Failed to load streetview shader from ${shaderUrl}:`, error);
+            throw error;
+        }
 
         const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
@@ -336,7 +347,18 @@ export class Renderer {
     }
 
     private async createWeatherPipeline(): Promise<void> {
-        const shaderCode = await fetch(`${process.env.PUBLIC_URL}/shaders/weather-post.wgsl`).then(r => r.text());
+        const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/weather-post.wgsl`;
+        let shaderCode: string;
+        try {
+            const response = await fetch(shaderUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to load weather-post.wgsl: ${response.status} ${response.statusText}`);
+            }
+            shaderCode = await response.text();
+        } catch (error) {
+            console.error(`[Renderer] Failed to load weather-post shader from ${shaderUrl}:`, error);
+            throw error;
+        }
 
         const shaderModule = this.device.createShaderModule({ code: shaderCode });
 

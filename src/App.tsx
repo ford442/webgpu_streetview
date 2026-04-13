@@ -55,7 +55,7 @@ const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
  */
 function InnerApp() {
   // Connect to contexts
-  const { setCanvas, setPanorama, panorama, heading, pitch, canvas } = useStreetView();
+  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, advance, isTransitioning } = useStreetView();
   const { viewMode, toggleViewMode } = useViewMode();
   const {
     rainIntensity,
@@ -193,8 +193,11 @@ function InnerApp() {
   const cruiseHeadingRef = useRef(heading);
   cruiseHeadingRef.current = heading;
   const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const useTransitionRef = useRef(isTransitioning);
+  useTransitionRef.current = isTransitioning;
+  
   useEffect(() => {
-    if (!isCruiseMode || !panorama) {
+    if (!isCruiseMode || !panorama || !advance) {
       if (cruiseIntervalRef.current) {
         clearInterval(cruiseIntervalRef.current);
         cruiseIntervalRef.current = null;
@@ -202,14 +205,13 @@ function InnerApp() {
       return;
     }
     const hop = () => {
-      const links = panorama.getLinks();
-      if (!links) return;
-      const best = findBestLink(
-        links.filter((l): l is google.maps.StreetViewLink => l !== null),
-        cruiseHeadingRef.current,
-        'forward'
-      );
-      if (best?.pano) panorama.setPano(best.pano);
+      // Skip if currently transitioning between locations
+      if (useTransitionRef.current) {
+        console.log('[CruiseMode] Skipping hop - still transitioning');
+        return;
+      }
+      // Use the advance function which respects isTransitioning flag
+      advance('forward', cruiseHeadingRef.current);
     };
     cruiseIntervalRef.current = setInterval(hop, 3000);
     return () => {
@@ -217,7 +219,7 @@ function InnerApp() {
       cruiseIntervalRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama]);
+  }, [isCruiseMode, panorama, advance]);
 
   const toggleRadio = () => {
     if (!audioRef.current) return;
@@ -281,6 +283,9 @@ function InnerApp() {
   // Shorter values risk showing loading spinners; longer values feel sluggish.
   const WAYPOINT_INTERVAL_MS = 5000;
   const autopilotRef = useRef<NodeJS.Timeout | null>(null);
+  const autopilotTransitionRef = useRef(isTransitioning);
+  autopilotTransitionRef.current = isTransitioning;
+  
   const handleStartJourney = useCallback((waypoints: { lat: number; lng: number }[]) => {
     if (waypoints.length === 0) return;
 
@@ -294,6 +299,11 @@ function InnerApp() {
         if (idx >= waypoints.length) {
           if (autopilotRef.current) clearInterval(autopilotRef.current);
           autopilotRef.current = null;
+          return;
+        }
+        // Respect transition pause before moving to next waypoint
+        if (autopilotTransitionRef.current) {
+          console.log('[Autopilot] Waiting for transition pause before next waypoint');
           return;
         }
         if (panorama) {

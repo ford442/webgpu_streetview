@@ -176,6 +176,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (!pano) return;
     
     const handlePanoChanged = () => {
+      console.log('[StreetView] Panorama changed event fired');
       const loc = pano.getLocation();
       if (loc) {
         const desc = loc.description || loc.shortDescription || 'Unknown Location';
@@ -187,10 +188,14 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         setPositionState(pos);
       }
       
-      // End transition after delay
-      setTimeout(() => {
+      // Ensure transition pause - minimum 1200ms between location changes
+      // This allows Street View panorama to fully load before accepting next advance
+      const pauseTimer = setTimeout(() => {
+        console.log('[StreetView] Transition pause complete, ready for next advance');
         setIsTransitioning(false);
-      }, 1500);
+      }, 1200);
+      
+      return () => clearTimeout(pauseTimer);
     };
     
     const listener = pano.addListener('pano_changed', handlePanoChanged);
