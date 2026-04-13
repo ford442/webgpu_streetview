@@ -117,6 +117,11 @@ export class CarInterior {
             maxTextureSize: this.gpuProfile.maxTextureSize,
             anisotropy: this.gpuProfile.name === 'high' ? 4 : 2
         });
+
+        // Physically-based tone mapping for cinematic, realistic rendering
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.05;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         
         this.canvas = this.renderer.domElement;
         this.canvas.style.position = 'absolute';
@@ -211,24 +216,50 @@ export class CarInterior {
     }
 
     private createMaterials(): void {
-        // Generate procedural noise texture via canvas for leather roughness
+        // Generate procedural leather texture with multi-scale grain for realism
         const leatherCanvas = document.createElement('canvas');
-        leatherCanvas.width = 128;
-        leatherCanvas.height = 128;
+        leatherCanvas.width = 256;
+        leatherCanvas.height = 256;
         const ctx = leatherCanvas.getContext('2d')!;
-        const imageData = ctx.createImageData(128, 128);
+        const imageData = ctx.createImageData(256, 256);
         const data = imageData.data;
         for (let i = 0; i < data.length; i += 4) {
-            const v = Math.random() * 30 + 40;
-            data[i] = v;           // Red
-            data[i + 1] = v * 0.8; // Green
-            data[i + 2] = v * 0.6; // Blue
-            data[i + 3] = 255;     // Alpha
+            const px = (i / 4) % 256;
+            const py = Math.floor(i / 4 / 256);
+            // Multi-scale grain: fine random noise + coarse wave pattern for organic leather look
+            const fine = (Math.random() - 0.5) * 22;
+            const coarse = Math.sin(px * 0.18 + py * 0.1) * Math.cos(px * 0.1 - py * 0.15) * 10;
+            const micro = Math.sin(px * 0.9) * Math.cos(py * 0.7) * 3;
+            const base = 58;
+            const v = base + fine + coarse + micro;
+            data[i]     = Math.max(30, Math.min(115, v));           // Red
+            data[i + 1] = Math.max(18, Math.min(82,  v * 0.71));   // Green
+            data[i + 2] = Math.max(8,  Math.min(55,  v * 0.54));   // Blue
+            data[i + 3] = 255;
         }
         ctx.putImageData(imageData, 0, 0);
         const leatherTexture = new THREE.CanvasTexture(leatherCanvas);
         leatherTexture.wrapS = THREE.RepeatWrapping;
         leatherTexture.wrapT = THREE.RepeatWrapping;
+        leatherTexture.repeat.set(3, 3); // Tile for finer apparent grain detail
+
+        // Procedural dashboard soft-touch grain texture
+        const dashCanvas = document.createElement('canvas');
+        dashCanvas.width = 128;
+        dashCanvas.height = 128;
+        const dashCtx = dashCanvas.getContext('2d')!;
+        const dashImageData = dashCtx.createImageData(128, 128);
+        const dData = dashImageData.data;
+        for (let i = 0; i < dData.length; i += 4) {
+            const n = (Math.random() * 8) | 0; // subtle surface micro-texture
+            dData[i] = dData[i + 1] = dData[i + 2] = n;
+            dData[i + 3] = 255;
+        }
+        dashCtx.putImageData(dashImageData, 0, 0);
+        const dashTexture = new THREE.CanvasTexture(dashCanvas);
+        dashTexture.wrapS = THREE.RepeatWrapping;
+        dashTexture.wrapT = THREE.RepeatWrapping;
+        dashTexture.repeat.set(4, 4);
 
         // Dashboard material varies by theme
         const dashboardColors = {
@@ -241,77 +272,136 @@ export class CarInterior {
         
         this.dashboardMaterial = new THREE.MeshStandardMaterial({
             color: dashColor,
-            roughness: this.vehicleConfig.theme === 'clinical' ? 0.3 : 0.8,
-            metalness: this.vehicleConfig.theme === 'clinical' ? 0.1 : 0.1,
+            map: this.vehicleConfig.theme === 'clinical' ? null : dashTexture,
+            roughness: this.vehicleConfig.theme === 'clinical' ? 0.35 : 0.88,
+            metalness: this.vehicleConfig.theme === 'clinical' ? 0.15 : 0.04,
+            envMapIntensity: 0.4,
             side: THREE.DoubleSide,
         });
 
-        // Leather material for seats
+        // Leather material for seats — warm brown with multi-scale grain texture
         this.leatherMaterial = new THREE.MeshStandardMaterial({
             map: leatherTexture,
-            roughness: 0.7,
+            roughness: 0.78,
             metalness: 0.0,
+            envMapIntensity: 0.2,
             side: THREE.DoubleSide,
         });
 
-        // Metal material for steering column, trim
+        // Metal material for steering column, trim — brushed/polished chrome look
         this.metalMaterial = new THREE.MeshStandardMaterial({
-            color: this.vehicleConfig.theme === 'clinical' ? 0xcccccc : 0x888888,
-            roughness: 0.3,
-            metalness: 0.8,
+            color: this.vehicleConfig.theme === 'clinical' ? 0xd4d4d4 : 0x969696,
+            roughness: 0.22,
+            metalness: 0.88,
+            envMapIntensity: 1.0,
             side: THREE.DoubleSide,
         });
 
-        // Frame material for door panels, pillars
+        // Frame material for door panels, pillars — matte soft fabric/plastic
         this.frameMaterial = new THREE.MeshStandardMaterial({
-            color: this.vehicleConfig.theme === 'clinical' ? 0xeeeeee : 0x111111,
-            roughness: 0.9,
+            color: this.vehicleConfig.theme === 'clinical' ? 0xeeeeee : 0x131313,
+            roughness: 0.92,
             metalness: 0.0,
+            envMapIntensity: 0.15,
             side: THREE.DoubleSide,
         });
 
-        // Glass material for mirrors
+        // Glass material for mirrors — reflective tinted glass
         this.glassMaterial = new THREE.MeshStandardMaterial({
-            color: 0xcccccc,
-            roughness: 0.1,
-            metalness: 0.95,
+            color: 0x99b8cc,
+            roughness: 0.08,
+            metalness: 0.6,
+            transparent: true,
+            opacity: 0.45,
+            envMapIntensity: 1.2,
             side: THREE.FrontSide,
         });
 
-        // Mirror material (reflective)
+        // Mirror material (highly reflective chrome)
         this.mirrorMaterial = new THREE.MeshStandardMaterial({
-            color: 0xdddddd,
-            roughness: 0.05,
+            color: 0xe0e8ec,
+            roughness: 0.04,
             metalness: 1.0,
+            envMapIntensity: 1.5,
             side: THREE.FrontSide,
         });
 
         // Accent material for vehicle-specific colors
         this.accentMaterial = new THREE.MeshStandardMaterial({
             color: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
-            roughness: 0.4,
-            metalness: 0.6,
+            roughness: 0.35,
+            metalness: 0.65,
             emissive: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
             emissiveIntensity: 0.2,
+            envMapIntensity: 0.8,
             side: THREE.DoubleSide,
         });
     }
 
     private createLighting(): void {
-        // Theme-specific lighting
-        const ambientIntensity = this.vehicleConfig.theme === 'clinical' ? 0.6 : 0.4;
-        const ambient = new THREE.AmbientLight(0xffffff, ambientIntensity);
+        // Build a minimal lit-room environment map for image-based lighting (IBL).
+        // This gives realistic specular reflections on metal, glass, and leather without
+        // any external HDR file or additional imports.
+        const envScene = new THREE.Scene();
+        const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
+        const envBoxMats = [
+            new THREE.MeshBasicMaterial({ color: 0xfff5e0, side: THREE.BackSide }), // +X warm wall
+            new THREE.MeshBasicMaterial({ color: 0xe8e0d0, side: THREE.BackSide }), // -X
+            new THREE.MeshBasicMaterial({ color: 0xfafaf8, side: THREE.BackSide }), // +Y ceiling
+            new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }), // -Y floor
+            new THREE.MeshBasicMaterial({ color: 0xfff0e4, side: THREE.BackSide }), // +Z rear
+            new THREE.MeshBasicMaterial({ color: 0xe4dcd0, side: THREE.BackSide }), // -Z front
+        ];
+        const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
+        envScene.add(envBox);
+        const envLight = new THREE.PointLight(0xfff5e0, 2.5, 10);
+        envLight.position.set(0, 1.8, 0);
+        envScene.add(envLight);
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.scene.environment = pmrem.fromScene(envScene).texture;
+        pmrem.dispose();
+        envBoxGeo.dispose();
+        envBoxMats.forEach(m => m.dispose());
+
+        // Theme-specific ambient intensity
+        const ambientIntensity = this.vehicleConfig.theme === 'clinical' ? 0.65 : 0.45;
+
+        // HemisphereLight: warm sky from above, cool ground from below — much more
+        // naturalistic than a flat AmbientLight and adds visible depth to the interior.
+        const hemiLight = new THREE.HemisphereLight(
+            0xfff5e0, // Sky color — warm daylight white
+            0x1a1a28, // Ground color — cool dark
+            ambientIntensity * 0.85
+        );
+        this.scene.add(hemiLight);
+
+        // Small residual ambient to keep deep shadows from going fully black
+        const ambient = new THREE.AmbientLight(0xffffff, ambientIntensity * 0.25);
         this.scene.add(ambient);
 
-        // Dashboard light with accent color
+        // Dashboard accent glow — tinted by vehicle accent color
         const dashColor = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
-        const dashLight = new THREE.PointLight(dashColor, 0.3, 3);
+        const dashLight = new THREE.PointLight(dashColor, 0.35, 3.5);
         dashLight.position.set(0, 0.9, -0.8);
         this.scene.add(dashLight);
 
-        const overhead = new THREE.DirectionalLight(0xffffff, 0.6);
-        overhead.position.set(0, 3, 0);
+        // Overhead directional fill — angled slightly from the top-front to model a
+        // sun or bright overhead source.  Cast at 0.45 so it doesn't flatten the scene.
+        const overhead = new THREE.DirectionalLight(0xfff8f0, 0.55);
+        overhead.position.set(0.3, 3, -0.5);
         this.scene.add(overhead);
+
+        // Left window fill light (driver-side) — simulates ambient daylight streaming
+        // through the side window, giving the interior its characteristic warm glow.
+        const leftWindowLight = new THREE.PointLight(0xfff0dc, 0.28, 3.2);
+        leftWindowLight.position.set(-0.9, 1.05, -0.1);
+        this.scene.add(leftWindowLight);
+
+        // Right window fill (passenger side) — slightly dimmer to keep the asymmetry
+        // that makes a real interior look less artificially lit.
+        const rightWindowLight = new THREE.PointLight(0xfff0dc, 0.18, 3.2);
+        rightWindowLight.position.set(0.9, 1.05, -0.1);
+        this.scene.add(rightWindowLight);
 
         // Headlights (toggleable via toggleHeadlights())
         this.headlightsLight = new THREE.SpotLight(0xffffcc, 0.3, 50, 0.5, 1.0, 1.0);
@@ -669,9 +759,19 @@ export class CarInterior {
         this.steeringWheelGroup.position.set(-0.35, 0.95, -0.6);
         this.interiorGroup.add(this.steeringWheelGroup);
 
-        // Steering wheel rim (torus)
-        const wheelGeo = new THREE.TorusGeometry(0.18, 0.02, 8, 24);
-        const wheel = new THREE.Mesh(wheelGeo, this.frameMaterial);
+        // Dark leather material for the rim — more realistic than the generic frame plastic
+        const wheelRimMat = new THREE.MeshStandardMaterial({
+            color: 0x0e0a06,
+            roughness: 0.62,
+            metalness: 0.04,
+            envMapIntensity: 0.3,
+            side: THREE.DoubleSide,
+        });
+
+        // Steering wheel rim — more radial segments (12) and tube segments (32) for a
+        // smoother, rounder silhouette, and slightly thicker tube for a grippy hand-feel.
+        const wheelGeo = new THREE.TorusGeometry(0.18, 0.022, 12, 32);
+        const wheel = new THREE.Mesh(wheelGeo, wheelRimMat);
         wheel.rotation.set(Math.PI * 0.35, 0, 0);
         this.steeringWheelGroup.add(wheel);
 
@@ -907,11 +1007,13 @@ export class CarInterior {
      * Adds premium leather seat appearance
      */
     private buildSeatDetails(): void {
-        // Create diamond quilted pattern for center seat panels
+        // Create diamond quilted pattern for center seat panels — lighter leather with
+        // env map response for subtle specular on the raised diamonds.
         const stitchMaterial = new THREE.MeshStandardMaterial({
             color: 0x9B5523, // Slightly lighter leather
-            roughness: 0.6,
+            roughness: 0.58,
             metalness: 0.0,
+            envMapIntensity: 0.3,
         });
 
         // Driver seat center panel with diamond stitching
@@ -987,10 +1089,12 @@ export class CarInterior {
         passBottomCenter.rotation.x = -Math.PI / 2;
         this.interiorGroup.add(passBottomCenter);
 
-        // Side bolsters for sportier look
+        // Side bolsters for sportier look — use a richer leather material with env map
         const bolsterMaterial = new THREE.MeshStandardMaterial({
-            color: 0x7B4513,
-            roughness: 0.65,
+            color: 0x7B4010,
+            roughness: 0.70,
+            metalness: 0.0,
+            envMapIntensity: 0.25,
         });
 
         // Driver side bolsters
@@ -1020,9 +1124,12 @@ export class CarInterior {
 
     private buildFloor(): void {
         const floorGeo = new THREE.PlaneGeometry(2.0, 2.5);
+        // Dark carpet floor — high roughness, zero metalness, slight env response
         const floorMat = new THREE.MeshStandardMaterial({
-            color: 0x1a1a1a,
-            roughness: 0.95,
+            color: 0x141414,
+            roughness: 0.97,
+            metalness: 0.0,
+            envMapIntensity: 0.05,
             side: THREE.DoubleSide,
         });
         const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -1094,8 +1201,10 @@ export class CarInterior {
         // Convertible roof - can be toggled open/closed
         const roofGeo = new THREE.BoxGeometry(2.0, 0.05, 2.0);
         const roofMat = new THREE.MeshStandardMaterial({
-            color: 0x222222,
-            roughness: 0.9,
+            color: 0x1e1e1e,
+            roughness: 0.88,
+            metalness: 0.02,
+            envMapIntensity: 0.1,
             side: THREE.DoubleSide,
         });
         const roof = new THREE.Mesh(roofGeo, roofMat);
@@ -1164,15 +1273,18 @@ export class CarInterior {
         rearBottomBar.position.set(0, 1.1, 0.62);
         this.interiorGroup.add(rearBottomBar);
 
-        // Rear glass plane (transparent)
+        // Rear glass plane (transparent, tinted automotive glass)
         const rearGlassGeo = new THREE.PlaneGeometry(1.8, 0.48);
         const rearGlassMat = new THREE.MeshPhysicalMaterial({
-            color: 0x88aabb,
-            metalness: 0.1,
-            roughness: 0.05,
-            transmission: 0.3,
+            color: 0x6a9aae,
+            metalness: 0.05,
+            roughness: 0.03,
+            transmission: 0.55,
             transparent: true,
-            opacity: 0.4,
+            opacity: 0.35,
+            ior: 1.52,          // Standard automotive glass IOR
+            reflectivity: 0.45,
+            thickness: 0.006,   // Thin glass pane depth for transmission
             side: THREE.DoubleSide,
         });
         const rearGlass = new THREE.Mesh(rearGlassGeo, rearGlassMat);
