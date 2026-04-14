@@ -212,7 +212,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 timeline: false,
                 navigationHelpButton: false,
                 navigationInstructionsInitiallyVisible: false,
-                skyAtmosphere: true,
+                skyAtmosphere: new Cesium.SkyAtmosphere(),
                 terrainProvider: new Cesium.EllipsoidTerrainProvider(),
                 imageryProvider: new Cesium.UrlTemplateImageryProvider({
                     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
