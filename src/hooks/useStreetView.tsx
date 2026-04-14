@@ -58,6 +58,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
 }) => {
   // Core refs and state
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
+  const [panorama, setPanoramaState] = useState<google.maps.StreetViewPanorama | null>(null);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   
   // View state
@@ -99,6 +100,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   
   const setPanorama = useCallback((pano: google.maps.StreetViewPanorama | null) => {
     panoramaRef.current = pano;
+    setPanoramaState(pano);
   }, []);
   
   const setPosition = useCallback((pos: google.maps.LatLng | null, name?: string) => {
@@ -175,6 +177,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const pano = panoramaRef.current;
     if (!pano) return;
     
+    let pauseTimer: ReturnType<typeof setTimeout> | null = null;
+    
     const handlePanoChanged = () => {
       console.log('[StreetView] Panorama changed event fired');
       const loc = pano.getLocation();
@@ -190,23 +194,23 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       
       // Ensure transition pause - minimum 1200ms between location changes
       // This allows Street View panorama to fully load before accepting next advance
-      const pauseTimer = setTimeout(() => {
+      if (pauseTimer) clearTimeout(pauseTimer);
+      pauseTimer = setTimeout(() => {
         console.log('[StreetView] Transition pause complete, ready for next advance');
         setIsTransitioning(false);
       }, 1200);
-      
-      return () => clearTimeout(pauseTimer);
     };
     
     const listener = pano.addListener('pano_changed', handlePanoChanged);
     
     return () => {
       google.maps.event.removeListener(listener);
+      if (pauseTimer) clearTimeout(pauseTimer);
     };
-  }, []);
+  }, [panorama]);
   
   const value: StreetViewState = {
-    panorama: panoramaRef.current,
+    panorama,
     canvas,
     heading,
     pitch,
