@@ -1,13 +1,11 @@
 import React, { useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
-import WebGPUCanvas from '../components/WebGPUCanvas';
 import Compass from '../components/Compass';
 import MiniMap from '../components/MiniMap';
 import FreeLookInputHandler from '../components/FreeLookInputHandler';
 
 interface FreeLookViewProps {
   mapsApiKey: string;
-  onWebGPUStatus?: (available: boolean) => void;
 }
 
 /**
@@ -21,8 +19,8 @@ interface FreeLookViewProps {
  * - 'C' key to toggle to car mode
  * - Compass and MiniMap overlays
  */
-const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey, onWebGPUStatus }) => {
-  const { canvas, heading, pitch, zoom, panorama } = useStreetView();
+const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey }) => {
+  const { heading, panorama } = useStreetView();
   const containerRef = useRef<HTMLDivElement>(null);
   
   return (
@@ -33,21 +31,11 @@ const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey, onWebGPUStatus 
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
+        backgroundColor: 'transparent',
       }}
     >
       {/* Input handler - scoped to this container */}
       <FreeLookInputHandler targetRef={containerRef} />
-      
-      {/* Main WebGPU canvas */}
-      <WebGPUCanvas
-        mode="streetview"
-        source={canvas}
-        zoom={zoom}
-        panX={0.5}
-        panY={0.5}
-        isCarMode={false}
-        onWebGPUStatus={onWebGPUStatus}
-      />
       
       {/* Compass overlay */}
       <Compass heading={heading} />
@@ -62,6 +50,6 @@ const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey, onWebGPUStatus 
       )}
     </div>
   );
-};
+}
 
 export default FreeLookView;

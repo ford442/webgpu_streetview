@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Renderer } from '../renderer/Renderer';
-import { RenderMode } from '../renderer/types';
-import { usePerformanceMonitor, useEnvironmentSettings, useStreetView } from '../hooks';
+import { usePerformanceMonitor, useEnvironmentSettings, useStreetView, useViewMode } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 
 /**
@@ -14,46 +13,7 @@ import { getMemoryProfiler } from '../utils/memoryProfiler';
  *    the panorama is loading a new location.
  */
 
-interface WebGPUCanvasProps {
-    mode: RenderMode;
-    source?: CanvasImageSource | null;
-    prevSource?: CanvasImageSource | null;
-    zoom?: number;
-    panX?: number;
-    panY?: number;
-    farthestPoint?: { x: number, y: number };
-    mousePosition?: { x: number, y: number };
-    setMousePosition?: (pos: { x: number, y: number }) => void;
-    isMouseDown?: boolean;
-    setIsMouseDown?: (down: boolean) => void;
-    rendererRef?: React.RefObject<Renderer | null>;
-    onWebGPUStatus?: (available: boolean) => void;
-    onFPSUpdate?: (fps: number) => void;
-    // Transition props
-    transitionState?: 'idle' | 'zooming_out' | 'crossfading' | 'zooming_in';
-    transitionProgress?: number;
-    // Car mode: when true, panX/panY are UV offsets (0.5 = center), not angles
-    isCarMode?: boolean;
-}
-
-const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ 
-    mode, 
-    source, 
-    prevSource,
-    zoom = 1.0, 
-    panX, 
-    panY, 
-    mousePosition, 
-    setMousePosition, 
-    isMouseDown, 
-    setIsMouseDown, 
-    rendererRef, 
-    onWebGPUStatus, 
-    onFPSUpdate,
-    transitionState = 'idle',
-    transitionProgress = 0,
-    isCarMode = false
-}) => {
+const WebGPUCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
@@ -64,9 +24,14 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
         vibrance, saturation, contrast, exposure, temperature, tint,
         headlightsOn, highBeam, domeLightOn,
         sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled,
-        timeOfDay
+        shaderEffectsEnabled, timeOfDay
     } = useEnvironmentSettings();
+
+    // Get street view state
+    const { canvas: source, heading, zoom, isTransitioning: isStreetViewTransitioning } = useStreetView();
+
+    // Get view mode
+    const { viewMode, carHeading } = useViewMode();
 
     // State to track window size for full-screen rendering
     const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -80,24 +45,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
     // Performance: Debounced resize
     const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const currentRendererRef = rendererRef || internalRendererRef;
-
-    // Cruise pause: fade canvas during panorama transitions to hide tile tearing
-    const { isTransitioning: isStreetViewTransitioning } = useStreetView();
+    const currentRendererRef = internalRendererRef;
 
     // Performance monitoring
-    const { stats: perfStats, startMonitoring, stopMonitoring, shouldSkipFrame } = usePerformanceMonitor({
+    const { startMonitoring, stopMonitoring, shouldSkipFrame } = usePerformanceMonitor({
         targetFPS: 60,
         sampleSize: 60,
         warningThreshold: 45,
         criticalThreshold: 30,
         enableAdaptiveQuality: true
     });
-
-    // Track FPS changes and notify parent
-    useEffect(() => {
-        onFPSUpdate?.(perfStats.fps.current);
-    }, [perfStats.fps.current, onFPSUpdate]);
 
     // Memory profiling
     useEffect(() => {
@@ -157,10 +114,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
     ]);
 
     // Use refs for callbacks to avoid reinit when they change
-    const onWebGPUStatusRef = useRef(onWebGPUStatus);
     const startMonitoringRef = useRef(startMonitoring);
     const stopMonitoringRef = useRef(stopMonitoring);
-    useEffect(() => { onWebGPUStatusRef.current = onWebGPUStatus; }, [onWebGPUStatus]);
     useEffect(() => { startMonitoringRef.current = startMonitoring; }, [startMonitoring]);
     useEffect(() => { stopMonitoringRef.current = stopMonitoring; }, [stopMonitoring]);
 
@@ -182,26 +137,18 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
             });
             if (!isActive) return;
             if (success) {
-                if (rendererRef) {
-                    (rendererRef as React.MutableRefObject<Renderer | null>).current = renderer;
-                }
-                onWebGPUStatusRef.current?.(true);
                 startMonitoringRef.current();
             } else {
                 console.warn("WebGPU initialization failed. Please check your browser compatibility.");
-                onWebGPUStatusRef.current?.(false);
             }
         })();
 
         return () => {
             isActive = false;
-            if (rendererRef) {
-                (rendererRef as React.MutableRefObject<Renderer | null>).current = null;
-            }
             stopMonitoringRef.current();
             renderer.destroy();
         };
-    }, [rendererRef, reinitCounter]);
+    }, [reinitCounter]);
 
     useEffect(() => {
         // Performance: Track source changes
@@ -226,9 +173,15 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
             // Performance: Adaptive frame skipping based on quality
             const skipFrame = shouldSkipFrame();
             
-            // During transition, always render for smooth animation
-            const isTransitioning = transitionState !== 'idle';
-            const shouldRender = !skipFrame && (isTransitioning || sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0));
+            const shouldRender = !skipFrame && (sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0));
+
+            // Calculate camera params based on current view mode
+            const isCarMode = viewMode === 'car';
+            const headYawOffset = ((heading - carHeading + 540) % 360) - 180;
+            const currentPanX = isCarMode ? 0.5 - (headYawOffset / 90.0) * 0.5 : 0.5;
+            const currentPanY = 0.5;
+            const renderHeading = currentPanX * 360;
+            const renderPitch = currentPanY * 180 - 90;
 
             if (currentRendererRef.current) {
                 // Build and upload weather params every frame BEFORE rendering
@@ -283,8 +236,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
                 params[32] = e.shaderEffectsEnabled ? 1.0 : 0.0;
 
                 // [33-35]: Camera params and padding
-                params[33] = 0.0;
-                params[34] = 0.0;
+                params[33] = currentPanX;
+                params[34] = currentPanY;
                 params[35] = 0.0;
 
                 // [36]: Sunrise flag
@@ -296,27 +249,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
                 params[39] = 0.0;
 
                 currentRendererRef.current.updateWeatherParams(params);
+                currentRendererRef.current.updateCameraParams(currentPanX, currentPanY);
             }
 
             if (shouldRender && currentRendererRef.current) {
-                // Handle transition rendering
-                if (transitionState !== 'idle' && prevSource && source) {
-                    const heading = ((panX || 0.5) * 360);
-                    const pitch = ((panY || 0.5) * 180 - 90);
-                    currentRendererRef.current.renderStreetViewTransition(
-                        mode,
-                        prevSource,
-                        source,
-                        heading,
-                        pitch,
-                        zoom,
-                        transitionState,
-                        transitionProgress
-                    );
-                } else if (source) {
-                    const heading = ((panX || 0.5) * 360);
-                    const pitch = ((panY || 0.5) * 180 - 90);
-                    currentRendererRef.current.renderStreetView(mode, source, heading, pitch, zoom);
+                if (source) {
+                    currentRendererRef.current.renderStreetView('streetview', source, renderHeading, renderPitch, zoom);
                 } else {
                     currentRendererRef.current.renderWeatherOnly();
                 }
@@ -334,7 +272,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
             cancelAnimationFrame(animationFrameId.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, source, prevSource, zoom, panX, panY, shouldSkipFrame, transitionState, transitionProgress]);
+    }, [source, zoom, heading, carHeading, viewMode, shouldSkipFrame]);
 
     return (
         <canvas
@@ -342,10 +280,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({
             width={size.width}
             height={size.height}
             style={{
-                display: 'block',
+                position: 'absolute',
+                top: 0,
+                left: 0,
                 width: '100%',
                 height: '100%',
-                // Override styles from style.css that might add borders/margins
+                zIndex: 0,
+                display: 'block',
                 border: 'none',
                 marginTop: 0,
                 borderRadius: 0,

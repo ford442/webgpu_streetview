@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
 import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
-import WebGPUCanvas from '../components/WebGPUCanvas';
 import CarInputHandler from '../components/CarInputHandler';
 import { AudioAnalyzer } from '../audio/AudioAnalyzer';
 import {
@@ -21,7 +20,6 @@ import { DashboardUI } from '../car/DashboardUI';
 
 interface CarModeViewProps {
   mapsApiKey: string;
-  onWebGPUStatus?: (available: boolean) => void;
 }
 
 /**
@@ -34,7 +32,7 @@ interface CarModeViewProps {
  * - Dashboard UI with gauges, wipers, lights controls
  * - Head look independent of car steering
  */
-const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
+const CarModeView: React.FC<CarModeViewProps> = () => {
   const { canvas, heading, pitch, panorama } = useStreetView();
   const {
     viewMode,
@@ -286,23 +284,13 @@ const CarModeView: React.FC<CarModeViewProps> = ({ onWebGPUStatus }) => {
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
+        backgroundColor: 'transparent',
       }}
     >
       {/* Input handler */}
       <CarInputHandler
         targetRef={containerRef}
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
-      />
-      
-      {/* WebGPU canvas for Street View background */}
-      <WebGPUCanvas
-        mode="streetview"
-        source={canvas}
-        zoom={1.0}
-        panX={0.5}
-        panY={0.5}
-        isCarMode={true}
-        onWebGPUStatus={onWebGPUStatus}
       />
       
       {/* Premium Car Dashboard */}

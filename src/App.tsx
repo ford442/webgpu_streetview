@@ -27,6 +27,7 @@ import {
   AccessibilityPanel,
   GlobeView,
   PerformanceStatsOverlay,
+  WebGPUCanvas,
 } from './components';
 
 // Hooks
@@ -98,7 +99,9 @@ function InnerApp() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
-  const [webGPUAvailable, setWebGPUAvailable] = useState(true); // Track WebGPU availability
+  // WebGPU availability: the canvas is now hoisted and always present,
+  // so we assume it's available for fallback logic.
+  const webGPUAvailable = true;
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
@@ -192,10 +195,6 @@ function InnerApp() {
     setIsConnected(true);
   };
   
-  // Handle WebGPU status changes from MainView
-  const handleWebGPUStatus = useCallback((available: boolean) => {
-    setWebGPUAvailable(available);
-  }, []);
 
   // Cruise mode auto-advance — use a ref for heading to avoid restarting the interval on every pan
   const cruiseHeadingRef = useRef(heading);
@@ -794,6 +793,9 @@ function InnerApp() {
         />
       </div>
 
+      {/* Global WebGPU canvas - never unmounts, lives behind the views */}
+      {isConnected && isCanvasReady && <WebGPUCanvas />}
+
       {/* Main View - switches between FreeLookView and CarModeView */}
       <div 
         id="main-content" 
@@ -808,7 +810,7 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && isCanvasReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} onWebGPUStatus={handleWebGPUStatus} />}
+        {isConnected && isCanvasReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
         
         {/* Show loading screen while waiting for canvas */}
         {isConnected && !isCanvasReady && (
