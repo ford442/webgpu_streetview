@@ -17,11 +17,11 @@ function loadCesiumSDK(): Promise<void> {
         const loadScripts = () => {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
-            link.href = '/cesium/Widgets/widgets.css';
+            link.href = '/streetview/cesium/Widgets/widgets.css';
             document.head.appendChild(link);
 
             const script = document.createElement('script');
-            script.src = '/cesium/Cesium.js';
+            script.src = '/streetview/cesium/Cesium.js';
             script.onload = () => resolve();
             script.onerror = () => {
                 cesiumLoadPromise = null; // allow retry
