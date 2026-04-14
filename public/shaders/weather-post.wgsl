@@ -48,6 +48,12 @@ struct WeatherParams {
     cameraHeading     : f32,  // normalized camera heading (0-1, same as panX)
     cameraPitch       : f32,  // normalized camera pitch (0-1, same as panY)
     _pad0             : f32,  // padding to maintain alignment
+    // 36: sunrise
+    sunrise           : f32,  // 0.0 = no sunrise, 1.0 = full sunrise
+    // 37-39: padding to reach 40 floats (160 bytes total)
+    _pad1             : f32,
+    _pad2             : f32,
+    _pad3             : f32,
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -291,19 +297,27 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
     return grayFog;
 }
 
-fn applyFog(col: vec3<f32>, uv: vec2<f32>, intensity: f32, density: f32, height: f32, colorIdx: f32) -> vec3<f32> {
-    if (intensity < 0.001) { return col; }
+fn applyFog(col: vec3<f32>, uv: vec2<f32>, intensity: f32, density: f32, height: f32, colorIdx: f32, night: f32) -> vec3<f32> {
+    if (intensity < 0.001 && density < 0.001) { return col; }
     
-    let heightFactor = smoothstep(0.0, 0.5, uv.y) * (1.0 - height) + height * 0.5;
-    let groundProximity = smoothstep(0.7, 0.3, uv.y);
-    let distanceFactor = groundProximity * density;
+    let horizonDist = abs(uv.y - 0.5);
+    let groundProximity = smoothstep(0.35, 0.0, horizonDist);
     
-    var fogAmount = intensity * (0.3 + heightFactor * 0.7) * (0.2 + distanceFactor * 0.8);
+    var fogAmount = density * groundProximity;
+    fogAmount = fogAmount + intensity * (0.2 + groundProximity * 0.8);
     
     let noise = noise2D(uv * 8.0 + p.time * 0.1) * 0.1;
     fogAmount = fogAmount * (0.9 + noise);
     
-    let fogColor = getFogColor(colorIdx);
+    // Day fog: #b5c1c8, Night fog: dark blue
+    let dayFog = vec3<f32>(0.71, 0.76, 0.78);
+    let nightFog = vec3<f32>(0.08, 0.12, 0.22);
+    var fogColor = mix(dayFog, nightFog, clamp(night, 0.0, 1.0));
+    
+    // Override with indexed fog color if non-zero index
+    let indexedColor = getFogColor(colorIdx);
+    if (colorIdx > 0.5) { fogColor = indexedColor; }
+    
     return mix(col, fogColor, clamp(fogAmount, 0.0, 0.95));
 }
 
@@ -674,6 +688,25 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
     return glow * (1.0 + glow * 0.5) + glow * 0.2;
 }
 
+fn applySunrise(col: vec3<f32>, uv: vec2<f32>, sunrise: f32) -> vec3<f32> {
+    if (sunrise < 0.001) { return col; }
+    
+    let horizonGlow = smoothstep(0.5, 0.0, uv.y);
+    let warmHighlight = vec3<f32>(1.0, 0.65, 0.35) * horizonGlow * sunrise * 0.4;
+    
+    let shadowTint = mix(vec3<f32>(0.72, 0.58, 0.85), vec3<f32>(0.35, 0.45, 0.82), uv.y);
+    let shadowMask = (1.0 - horizonGlow) * sunrise * 0.18;
+    
+    var result = col + warmHighlight;
+    result = result + shadowTint * shadowMask;
+    
+    // Pink/gold color grading boost
+    let goldBoost = vec3<f32>(0.15, 0.05, -0.05) * horizonGlow * sunrise;
+    result = result + goldBoost;
+    
+    return result;
+}
+
 fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32, night: f32) -> vec3<f32> {
     let moonAbove = clamp(moonAlt / 0.8, 0.0, 1.0);
     let strength  = moonAbove * clamp((night - 0.4) / 0.6, 0.0, 1.0);
@@ -782,10 +815,11 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
 
     // === ASTRONOMICAL LIGHTING ===
     col = col + sunsetHorizonGlow(uv, p.sunAzimuth, p.sunAltitude, p.nightIntensity);
+    col = applySunrise(col, uv, p.sunrise);
     col = directionalMoonlight(col, uv, p.moonAzimuth, p.moonAltitude, p.nightIntensity);
 
     // === ATMOSPHERIC EFFECTS ===
-    col = applyFog(col, uv, p.fogIntensity, p.fogDensity, p.fogHeight, p.fogColorIndex);
+    col = applyFog(col, uv, p.fogIntensity, p.fogDensity, p.fogHeight, p.fogColorIndex, p.nightIntensity);
     col = applyVolumetricLightShafts(col, uv, p.lightShaftsIntensity, t);
     col = applyHumidityHaze(col, uv, p.humidityHaze, t);
     col = applyDustParticles(col, uv, p.dustIntensity, t);

@@ -8,7 +8,7 @@ import {
 } from '../car';
 
 // Types
-export type TimeOfDay = 'day' | 'sunset' | 'night';
+export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
 
 export interface EnvironmentSettingsState {
   // Weather settings
@@ -18,6 +18,8 @@ export interface EnvironmentSettingsState {
   setSnowIntensity: (value: number) => void;
   wind: number;
   setWind: (value: number) => void;
+  fogDensity: number;
+  setFogDensity: (value: number) => void;
   
   // Time of day
   timeOfDay: TimeOfDay;
@@ -102,6 +104,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const [rainIntensity, setRainIntensity] = useState(0);
   const [snowIntensity, setSnowIntensity] = useState(0);
   const [wind, setWind] = useState(0);
+  const [fogDensity, setFogDensity] = useState(0.0);
   
   // Time of day
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day');
@@ -184,6 +187,13 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setSunAltitude(0.785);
         setSunAzimuth(0);
         setMoonAltitude(-0.5);
+        break;
+      case 'sunrise':
+        setNightIntensity(0.1);
+        setSunAltitude(0.052);
+        setSunAzimuth(0);
+        setMoonAltitude(-0.5);
+        setMoonAzimuth(-1.57);
         break;
       case 'sunset':
         setNightIntensity(0.3);
@@ -286,6 +296,8 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setSnowIntensity,
     wind,
     setWind,
+    fogDensity,
+    setFogDensity,
     
     // Time
     timeOfDay,

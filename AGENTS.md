@@ -250,6 +250,21 @@ The Google Maps API key is hardcoded in `App.tsx`. In production, this should be
 - Restricted by HTTP referrer
 - Rotated regularly
 
+### Context-to-Renderer Integration (DO NOT BREAK)
+Two architectural splits are especially fragile and have broken before:
+
+1. **Weather / Shader Effects Panel → WebGPU Renderer**
+   - `App.tsx` renders `<WeatherPanel />` globally for free-look mode.
+   - The panel's `onRainIntensity`, `onSnowIntensity`, and `onWind` handlers **must** be wired to the actual setters from `useEnvironmentSettings()` (not no-ops).
+   - `WebGPUCanvas.tsx` reads `useEnvironmentSettings()` and forwards the full param array to `Renderer.updateWeatherParams()` via a dedicated `useEffect`.
+   - If either side of this chain is disconnected, the UI sliders will animate but the shaders will not react.
+
+2. **Cruise Mode / Node Advance → Rendering Pause**
+   - `useStreetView.tsx` maintains an `isTransitioning` flag that is set to `true` when `advance()` is called and cleared after the panorama loads.
+   - `WebGPUCanvas.tsx` consumes `useStreetView().isTransitioning` and applies an `opacity: 0` CSS transition on the `<canvas>` during transitions.
+   - This brief fade hides Google Maps tile-tearing while the new panorama loads.
+   - If `WebGPUCanvas.tsx` stops reading this flag, cruise mode will show torn/stuttering frames on every hop.
+
 ---
 
 ## Current Features (Implemented)

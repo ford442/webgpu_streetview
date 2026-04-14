@@ -10,7 +10,8 @@ import {
   EnvironmentSettingsProvider,
   useStreetView,
   useViewMode,
-  useEnvironmentSettings
+  useEnvironmentSettings,
+  type TimeOfDay,
 } from './hooks';
 
 // Views
@@ -59,6 +60,11 @@ function InnerApp() {
   const { viewMode, toggleViewMode } = useViewMode();
   const {
     rainIntensity,
+    setRainIntensity,
+    snowIntensity,
+    setSnowIntensity,
+    wind,
+    setWind,
     wipersEnabled,
     toggleWipers,
     headlightsOn,
@@ -69,6 +75,8 @@ function InnerApp() {
     toggleRoof,
     timeOfDay,
     applyTimeOfDayPreset,
+    fogDensity,
+    setFogDensity,
     vibrance,
     setVibrance,
     saturation,
@@ -340,7 +348,7 @@ function InnerApp() {
         key: 'n',
         description: 'Toggle night mode',
         action: () => {
-          const modes: ('day' | 'sunset' | 'night')[] = ['day', 'sunset', 'night'];
+          const modes: TimeOfDay[] = ['day', 'sunrise', 'sunset', 'night'];
           const currentIndex = modes.indexOf(timeOfDay);
           const nextMode = modes[(currentIndex + 1) % modes.length];
           applyTimeOfDayPreset(nextMode);
@@ -682,15 +690,17 @@ function InnerApp() {
           {isWeatherPanelOpen && (
             <WeatherPanel
               rainIntensity={rainIntensity}
-              snowIntensity={0}
-              wind={0}
+              snowIntensity={snowIntensity}
+              wind={wind}
+              fogDensity={fogDensity}
               wipersEnabled={wipersEnabled}
               timeOfDay={timeOfDay}
-              onRainIntensity={() => {}}
-              onSnowIntensity={() => {}}
-              onWind={() => {}}
+              onRainIntensity={setRainIntensity}
+              onSnowIntensity={setSnowIntensity}
+              onWind={setWind}
+              onFogDensity={setFogDensity}
               onToggleWipers={toggleWipers}
-              onTimeOfDay={(v) => applyTimeOfDayPreset(v as any)}
+              onTimeOfDay={(v) => applyTimeOfDayPreset(v as TimeOfDay)}
               onClose={() => setIsWeatherPanelOpen(false)}
               isOpen={isWeatherPanelOpen}
             />

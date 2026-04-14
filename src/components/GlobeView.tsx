@@ -411,9 +411,19 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         handlerRef.current = handler;
 
-        return () => { cleanupViewer(); };
+        // NOTE: We intentionally do NOT return a cleanup here.
+        // This effect depends on [transition]; if we destroyed the viewer
+        // in cleanup, transition changes (entering -> active) would wipe
+        // the globe. Cleanup is handled in a dedicated unmount effect.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [transition]);
+
+    // Dedicated unmount cleanup: only runs when GlobeView is removed from the tree
+    useEffect(() => {
+        return () => {
+            cleanupViewer();
+        };
+    }, []);
 
     // ---- Update waypoint visuals on globe ----
     useEffect(() => {
@@ -583,8 +593,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             <div
                 ref={containerRef}
                 style={{
-                    position: 'fixed',
-                    inset: 0,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
                     width: '100%',
                     height: '100%',
                     zIndex: 200,
@@ -602,7 +613,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                     lng={scoutTarget.lng}
                     label={scoutTarget.label}
                     mapsApiKey={mapsApiKey}
-                    onEngage={handleScoutEngage}
+                    onEngage={(lat, lng) => handleScoutEngage(lat, lng)}
                     onClose={() => setScoutTarget(null)}
                 />
             )}

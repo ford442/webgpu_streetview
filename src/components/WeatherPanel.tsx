@@ -4,11 +4,13 @@ interface WeatherPanelProps {
     rainIntensity: number;
     snowIntensity: number;
     wind: number;
+    fogDensity: number;
     wipersEnabled: boolean;
-    timeOfDay: 'day' | 'sunset' | 'night';
+    timeOfDay: 'day' | 'sunrise' | 'sunset' | 'night';
     onRainIntensity: (value: number) => void;
     onSnowIntensity: (value: number) => void;
     onWind: (value: number) => void;
+    onFogDensity: (value: number) => void;
     onToggleWipers: () => void;
     onTimeOfDay: (value: string) => void;
     onClose: () => void;
@@ -21,11 +23,13 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
     rainIntensity,
     snowIntensity,
     wind,
+    fogDensity,
     wipersEnabled,
     timeOfDay,
     onRainIntensity,
     onSnowIntensity,
     onWind,
+    onFogDensity,
     onToggleWipers,
     onTimeOfDay,
     onClose,
@@ -126,13 +130,13 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                 <div style={{ marginBottom: '18px' }}>
                     <div style={{ ...labelStyle, marginBottom: '8px' }}>Time of Day:</div>
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                        {(['day', 'sunset', 'night'] as const).map(tod => (
+                        {(['day', 'sunrise', 'sunset', 'night'] as const).map(tod => (
                             <button
                                 key={tod}
                                 onClick={() => onTimeOfDay(tod)}
                                 style={todBtnStyle(timeOfDay === tod && !autoNightMode)}
                             >
-                                {tod === 'day' ? '☀️ Day' : tod === 'sunset' ? '🌅 Sunset' : '🌙 Night'}
+                                {tod === 'day' ? '☀️ Day' : tod === 'sunrise' ? '🌅 Sunrise' : tod === 'sunset' ? '🌇 Sunset' : '🌙 Night'}
                             </button>
                         ))}
                         {onToggleAutoNight && (
@@ -191,6 +195,22 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                         value={wind}
                         onChange={(e) => onWind(parseInt(e.target.value))}
                         style={{ ...sliderStyle, accentColor: '#80CBC4' }}
+                    />
+                </div>
+
+                {/* Fog Density */}
+                <div style={{ marginBottom: '18px' }}>
+                    <label style={labelStyle}>
+                        🌫️ Fog Density <span style={valueStyle}>{fogDensity}</span>
+                    </label>
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={fogDensity}
+                        onChange={(e) => onFogDensity(parseInt(e.target.value))}
+                        style={{ ...sliderStyle, accentColor: '#B0BEC5' }}
                     />
                 </div>
 

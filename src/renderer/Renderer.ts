@@ -34,7 +34,7 @@ export class Renderer {
     private weatherSampler!: GPUSampler;
     
     // Weather state
-    // WeatherParams struct in WGSL: 36 floats (144 bytes)
+    // WeatherParams struct in WGSL: 40 floats (160 bytes) — multiple of 4 for 16-byte alignment
     // [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
     // [6-10]: time, rainIntensity, snowIntensity, wind, speed
     // [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
@@ -45,7 +45,9 @@ export class Renderer {
     // [33]: cameraHeading (for world-space effects)
     // [34]: cameraPitch (for world-space effects)
     // [35]: padding
-    private weatherParams: Float32Array = new Float32Array(36);
+    // [36]: sunrise
+    // [37-39]: padding
+    private weatherParams: Float32Array = new Float32Array(40);
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -119,13 +121,13 @@ export class Renderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Weather params buffer (36 floats for HDR weather + nighttime + headlights + dome + astronomy + atmospheric effects + camera params)
+            // Weather params buffer (40 floats = 160 bytes for 16-byte alignment)
             this.weatherParamsBuffer = this.device.createBuffer({
-                size: 144, // 36 floats × 4 bytes
+                size: 160, // 40 floats × 4 bytes
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // Initialize default weather params (36 floats to match 144 byte buffer)
+            // Initialize default weather params (40 floats to match 160 byte buffer)
             this.weatherParams.set([
                 0.0,  // [0] vibrance
                 0.0,  // [1] saturation
@@ -162,7 +164,11 @@ export class Renderer {
                 1.0,  // [32] shaderEffectsEnabled (default ON)
                 0.0,  // [33] cameraHeading
                 0.0,  // [34] cameraPitch
-                0.0   // [35] padding
+                0.0,  // [35] padding
+                0.0,  // [36] sunrise
+                0.0,  // [37] padding
+                0.0,  // [38] padding
+                0.0   // [39] padding
             ]);
 
             await this.createPipeline();
@@ -468,16 +474,18 @@ export class Renderer {
 
     /**
      * Update weather parameters for the HDR post-process pass
-     * @param params - Float32Array of weather params:
+     * @param params - Float32Array of 40 weather params:
      *   [0-5]: vibrance, saturation, contrast, exposure, temperature, tint
      *   [6-10]: time, rainIntensity, snowIntensity, wind, speed
      *   [11-15]: nightIntensity, headlightsOn, highBeam, headlightHeading, headlightPitch
      *   [16-17]: domeLightOn, domeLightIntensity
      *   [18-21]: sunAzimuth, sunAltitude, moonAzimuth, moonAltitude
-     *   [22-31]: fog, lightShafts, heatShimmer, lensFlare, chromaticAberration, dust, humidityHaze, fogDensity, fogHeight, fogColorIndex
+     *   [22-31]: fogIntensity, fogDensity, fogHeight, fogColorIndex, lightShafts, heatShimmer, lensFlare, chromaticAberration, dust, humidityHaze
      *   [32]: shaderEffectsEnabled
-     *   [33-34]: cameraHeading, cameraPitch (NEW - for world-space effects)
+     *   [33-34]: cameraHeading, cameraPitch
      *   [35]: padding
+     *   [36]: sunrise
+     *   [37-39]: padding
      */
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
