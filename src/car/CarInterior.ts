@@ -419,7 +419,7 @@ export class CarInterior {
         // Dome light — ceiling warm white
         this.domeLightSource = new THREE.PointLight(0xFFE8B0, 0, 3.0);
         this.domeLightSource.position.set(0, 1.8, 0.3);
-        this.scene.add(this.domeLightSource);
+        this.interiorGroup.add(this.domeLightSource);
     }
 
     private buildInterior(): void {
@@ -1610,6 +1610,15 @@ export class CarInterior {
         return this.headlightsLight ? this.headlightsLight.intensity > 0 : false;
     }
 
+    /**
+     * Set headlights to a specific state.
+     */
+    public setHeadlights(on: boolean): void {
+        if (this.headlightsLight) {
+            this.headlightsLight.intensity = on ? 0.5 : 0;
+        }
+    }
+
     /** Toggle the dome light on/off. Returns the new state. */
     public toggleDomeLight(): boolean {
         this.isDomeLightOn = !this.isDomeLightOn;
@@ -1619,6 +1628,13 @@ export class CarInterior {
     /** Get current dome light state. */
     public getDomeLightState(): boolean {
         return this.isDomeLightOn;
+    }
+
+    /**
+     * Set dome light to a specific state.
+     */
+    public setDomeLight(on: boolean): void {
+        this.isDomeLightOn = on;
     }
 
     /**

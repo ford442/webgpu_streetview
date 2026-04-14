@@ -166,7 +166,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     top: 0,
                     left: 0,
                     opacity: 1,
-                    pointerEvents: 'auto',
+                    pointerEvents: 'none',
                     backgroundColor: '#000',
                 }}
             />

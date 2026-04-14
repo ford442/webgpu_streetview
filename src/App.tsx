@@ -99,9 +99,7 @@ function InnerApp() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
-  // WebGPU availability: the canvas is now hoisted and always present,
-  // so we assume it's available for fallback logic.
-  const webGPUAvailable = true;
+  const [webGPUAvailable, setWebGPUAvailable] = useState(true);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
@@ -447,11 +445,11 @@ function InnerApp() {
         description: 'Toggle dome light (car) / headlights (free look)',
         action: () => {
           if (viewMode === 'car') {
-            toggleDomeLight();
-            announce(`Dome light ${domeLightOn ? 'off' : 'on'}`);
+            const newState = toggleDomeLight();
+            announce(`Dome light ${newState ? 'on' : 'off'}`);
           } else {
-            toggleHeadlights();
-            announce(`Headlights ${headlightsOn ? 'off' : 'on'}`);
+            const newState = toggleHeadlights();
+            announce(`Headlights ${newState ? 'on' : 'off'}`);
           }
         },
       },
@@ -793,8 +791,22 @@ function InnerApp() {
         />
       </div>
 
+      {/* Black backing during panorama transitions — hides raw StreetView tile-tearing */}
+      {isConnected && isTransitioning && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+          backgroundColor: '#000',
+          pointerEvents: 'none',
+        }} />
+      )}
+
       {/* Global WebGPU canvas - never unmounts, lives behind the views */}
-      {isConnected && isCanvasReady && <WebGPUCanvas />}
+      {isConnected && isCanvasReady && <WebGPUCanvas onWebGPUStatus={setWebGPUAvailable} />}
 
       {/* Main View - switches between FreeLookView and CarModeView */}
       <div 

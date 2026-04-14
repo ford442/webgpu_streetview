@@ -42,6 +42,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     headCoupling,
     isTempSteerMode,
     carHeading,
+    registerCarModeState,
   } = useViewMode();
   
   const {
@@ -63,7 +64,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     setWind,
     timeOfDay,
     setTimeOfDay,
-    nightIntensity
+    nightIntensity,
+    applyTimeOfDayPreset
   } = useEnvironmentSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -100,6 +102,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     // Initialize car interior
     try {
       carModeStateRef.current = initCarMode(containerRef.current);
+      registerCarModeState(carModeStateRef.current);
       toggleCarMode(true);
     } catch (err) {
       console.error('[CarModeView] Failed to initialize car mode:', err);
@@ -110,7 +113,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       disposeCarMode();
       carModeStateRef.current = null;
     };
-  }, []);
+  }, [registerCarModeState]);
   
   // Sync environment settings to car interior
   useEffect(() => {
@@ -252,8 +255,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   }, []);
   
   const handleTimeOfDayChange = useCallback((value: string) => {
-    setTimeOfDay(value as 'day' | 'sunset' | 'night');
-  }, [setTimeOfDay]);
+    applyTimeOfDayPreset(value as 'day' | 'sunrise' | 'sunset' | 'night');
+  }, [applyTimeOfDayPreset]);
   
   // Get control mode display name
   const getModeDisplayName = (mode: ControlMode): string => {

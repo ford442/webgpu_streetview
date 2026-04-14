@@ -4,6 +4,8 @@ import {
   setCarWipers,
   toggleCarHeadlights,
   toggleCarDomeLight,
+  setCarHeadlights,
+  setCarDomeLight,
   getCarDomeLightState,
 } from '../car';
 
@@ -47,7 +49,7 @@ export interface EnvironmentSettingsState {
   setWipers: (enabled: boolean) => void;
   
   headlightsOn: boolean;
-  toggleHeadlights: () => void;
+  toggleHeadlights: () => boolean;
   setHeadlights: (enabled: boolean) => void;
   
   highBeam: boolean;
@@ -55,7 +57,7 @@ export interface EnvironmentSettingsState {
   setHighBeam: (enabled: boolean) => void;
   
   domeLightOn: boolean;
-  toggleDomeLight: () => void;
+  toggleDomeLight: () => boolean;
   setDomeLight: (enabled: boolean) => void;
   
   isRoofOpen: boolean;
@@ -147,13 +149,15 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   }, []);
   
   // Headlights
-  const toggleHeadlights = useCallback(() => {
+  const toggleHeadlights = useCallback((): boolean => {
     const newState = toggleCarHeadlights();
     setHeadlightsOnState(newState);
+    return newState;
   }, []);
   
   const setHeadlights = useCallback((enabled: boolean) => {
     setHeadlightsOnState(enabled);
+    setCarHeadlights(enabled);
   }, []);
   
   // High beam
@@ -162,13 +166,15 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   }, []);
   
   // Dome light
-  const toggleDomeLightCallback = useCallback(() => {
+  const toggleDomeLightCallback = useCallback((): boolean => {
     const newState = toggleCarDomeLight();
     setDomeLightOnState(newState);
+    return newState;
   }, []);
   
   const setDomeLight = useCallback((enabled: boolean) => {
     setDomeLightOnState(enabled);
+    setCarDomeLight(enabled);
   }, []);
   
   // Roof

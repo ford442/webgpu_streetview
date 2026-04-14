@@ -13,7 +13,11 @@ import { getMemoryProfiler } from '../utils/memoryProfiler';
  *    the panorama is loading a new location.
  */
 
-const WebGPUCanvas: React.FC = () => {
+interface WebGPUCanvasProps {
+    onWebGPUStatus?: (available: boolean) => void;
+}
+
+const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<Renderer | null>(null);
     const animationFrameId = useRef<number>(0);
@@ -88,6 +92,7 @@ const WebGPUCanvas: React.FC = () => {
 
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
+    const [webgpuFailed, setWebgpuFailed] = useState(false);
     
     // Keep latest environment settings in a ref for the render loop
     const envRef = useRef({
@@ -114,8 +119,10 @@ const WebGPUCanvas: React.FC = () => {
     ]);
 
     // Use refs for callbacks to avoid reinit when they change
+    const onWebGPUStatusRef = useRef(onWebGPUStatus);
     const startMonitoringRef = useRef(startMonitoring);
     const stopMonitoringRef = useRef(stopMonitoring);
+    useEffect(() => { onWebGPUStatusRef.current = onWebGPUStatus; }, [onWebGPUStatus]);
     useEffect(() => { startMonitoringRef.current = startMonitoring; }, [startMonitoring]);
     useEffect(() => { stopMonitoringRef.current = stopMonitoring; }, [stopMonitoring]);
 
@@ -137,9 +144,14 @@ const WebGPUCanvas: React.FC = () => {
             });
             if (!isActive) return;
             if (success) {
+                internalRendererRef.current = renderer;
+                setWebgpuFailed(false);
+                onWebGPUStatusRef.current?.(true);
                 startMonitoringRef.current();
             } else {
                 console.warn("WebGPU initialization failed. Please check your browser compatibility.");
+                setWebgpuFailed(true);
+                onWebGPUStatusRef.current?.(false);
             }
         })();
 

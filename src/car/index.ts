@@ -330,6 +330,22 @@ export function toggleCarDomeLight(): boolean {
 }
 
 /**
+ * Set car headlights to a specific state.
+ */
+export function setCarHeadlights(on: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setHeadlights(on);
+}
+
+/**
+ * Set the car's dome (interior cabin) light to a specific state.
+ */
+export function setCarDomeLight(on: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setDomeLight(on);
+}
+
+/**
  * Get the current dome light state.
  */
 export function getCarDomeLightState(): boolean {

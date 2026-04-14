@@ -1,0 +1,58 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e26]:
+    - 'button "Cruise: OFF" [ref=e27] [cursor=pointer]'
+    - 'button "Radio: OFF" [ref=e28] [cursor=pointer]'
+    - button "📷 Gallery" [ref=e29] [cursor=pointer]
+    - button "🔖 Bookmarks" [ref=e30] [cursor=pointer]
+    - button "🕒 History" [ref=e31] [cursor=pointer]
+    - button "🎨 Color" [ref=e32] [cursor=pointer]
+    - button "🌧 Weather" [ref=e33] [cursor=pointer]
+    - button "🚗 Car Mode" [ref=e34] [cursor=pointer]
+    - button "🌍 Globe" [ref=e35] [cursor=pointer]
+  - generic [ref=e39]:
+    - generic [ref=e40]:
+      - heading "🌧️ Weather & Atmosphere" [level=3] [ref=e41]
+      - button "Close weather panel" [ref=e42] [cursor=pointer]: ×
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]: "Time of Day:"
+        - generic [ref=e46]:
+          - button "☀️ Day" [ref=e47] [cursor=pointer]
+          - button "🌅 Sunrise" [ref=e48] [cursor=pointer]
+          - button "🌇 Sunset" [ref=e49] [cursor=pointer]
+          - button "🌙 Night" [ref=e50] [cursor=pointer]
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - text: 🌧️ Rain
+          - generic [ref=e53]: "0"
+        - slider [ref=e54]: "100"
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - text: ❄️ Snow
+          - generic [ref=e57]: "0"
+        - slider [ref=e58]: "0"
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - text: 💨 Wind direction
+          - generic [ref=e61]: ↕ 0
+        - slider [ref=e62]: "0"
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - text: 🌫️ Fog Density
+          - generic [ref=e65]: "0"
+        - slider [ref=e66]: "0"
+      - generic [ref=e67]:
+        - generic [ref=e68]: 🚗 Windshield Wipers
+        - button "OFF" [ref=e69] [cursor=pointer]
+      - generic [ref=e70]:
+        - generic [ref=e71]: "Quick Presets:"
+        - generic [ref=e72]:
+          - button "☀️ Clear" [ref=e73] [cursor=pointer]
+          - button "🌧️ Rain" [ref=e74] [cursor=pointer]
+          - button "⛈️ Storm" [ref=e75] [cursor=pointer]
+          - button "❄️ Snow" [ref=e76] [cursor=pointer]
+          - button "🌨️ Blizzard" [ref=e77] [cursor=pointer]
+  - main "Street View Canvas" [ref=e25]:
+    - generic [ref=e37]: Loading Street View...

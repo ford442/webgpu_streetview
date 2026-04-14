@@ -1,0 +1,15 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e26]:
+    - 'button "Cruise: OFF" [ref=e27] [cursor=pointer]'
+    - 'button "Radio: OFF" [ref=e28] [cursor=pointer]'
+    - button "📷 Gallery" [ref=e29] [cursor=pointer]
+    - button "🔖 Bookmarks" [ref=e30] [cursor=pointer]
+    - button "🕒 History" [ref=e31] [cursor=pointer]
+    - button "🎨 Color" [ref=e32] [cursor=pointer]
+    - button "🌧 Weather" [ref=e33] [cursor=pointer]
+    - button "🚗 Car Mode" [ref=e34] [cursor=pointer]
+    - button "🌍 Globe" [ref=e35] [cursor=pointer]
+  - main "Street View Canvas" [ref=e25]:
+    - generic [ref=e37]: Loading Street View...

@@ -35,6 +35,7 @@ export interface ViewModeState {
   
   // Initialization
   initCarModeForContainer: (container: HTMLElement) => void;
+  registerCarModeState: (state: CarModeState) => void;
 }
 
 const ViewModeContext = createContext<ViewModeState | null>(null);
@@ -114,6 +115,12 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
         console.error('[ViewModeProvider] Failed to initialize car mode:', err);
       }
     }
+  }, []);
+
+  // Register an externally-created car mode state with the provider
+  const registerCarModeState = useCallback((state: CarModeState) => {
+    carModeStateRef.current = state;
+    containerRef.current = state.interior.canvas?.parentElement || null;
   }, []);
   
   // Handle mode switching side effects
@@ -197,6 +204,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     setCarHeading,
     carModeState: carModeStateRef.current,
     initCarModeForContainer,
+    registerCarModeState,
   };
   
   return (
