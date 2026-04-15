@@ -759,10 +759,12 @@ export class ScienceLabInterior {
     /**
      * Set the lab vehicle orientation
      */
-    public setCarOrientation(carHeading: number): void {
+    public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
-        this.labGroup.rotation.set(0, yawRad, 0);
-        this.equipmentGroup.rotation.set(0, yawRad, 0);
+        const pitchRad = THREE.MathUtils.degToRad(bodyPitch);
+        const rollRad = THREE.MathUtils.degToRad(bodyRoll);
+        this.labGroup.rotation.set(pitchRad, yawRad, rollRad);
+        this.equipmentGroup.rotation.set(pitchRad, yawRad, rollRad);
     }
 
     /**

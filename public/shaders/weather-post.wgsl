@@ -240,7 +240,7 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         st.y = st.y + panY * parallaxFactor * 0.5; // Less vertical parallax
         
         st.x = st.x + p.wind * (0.3 + layer * 0.2);
-        st.y = st.y + t * (3.5 + layer * 2.2) * (0.8 + p.rainIntensity * 0.4);
+        st.y = st.y - t * (3.5 + layer * 2.2) * (0.8 + p.rainIntensity * 0.4);
 
         let seed = hash(vec2<f32>(floor(st.x * 42.0 + layer * 11.0), floor(st.y)));
         st.x = fract(st.x * 42.0) - 0.5 + (seed - 0.5) * 0.8;
@@ -266,7 +266,7 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         st.y = st.y + panY * parallaxFactor * 0.6;
         
         st.x = st.x + p.wind * (0.5 + layer * 0.25);
-        st.y = st.y + t * (0.6 + layer * 0.35);
+        st.y = st.y - t * (0.6 + layer * 0.35);
         st.x = st.x + sin(t * 1.8 + layer * 3.0 + st.y * 2.0) * 0.15;
 
         let id = floor(st);

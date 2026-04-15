@@ -212,7 +212,7 @@ fn rainSystem(uv: vec2<f32>, time: f32, intensity: f32,
     // Phase 3: Heavy rain sheet flow (during intense rain)
     var sheetFlow = 0.0;
     if (intensity > 0.6) {
-        let sheetUV = vec2<f32>(uv.x * 5.0, uv.y * 3.0 + time * 0.5);
+        let sheetUV = vec2<f32>(uv.x * 5.0, uv.y * 3.0 - time * 0.5);
         let sheetNoise = fbm(sheetUV);
         sheetFlow = smoothstep(0.4, 0.6, sheetNoise) * (intensity - 0.6) * 0.4;
         

@@ -94,6 +94,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
   const carRPMRef = useRef(0);
+  const bodyPitchRef = useRef(0);
+  const bodyRollRef = useRef(0);
+  const pitchImpulseRef = useRef(0);
   
   // Initialize car mode
   useEffect(() => {
@@ -189,6 +192,35 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         carSpeedRef.current = Math.max(0, carSpeedRef.current - 5 * deltaTime);
       }
       
+      // Body tilt physics: only in carSteer mode and clamped
+      if (controlMode === 'carSteer') {
+        // Roll from steering input (lean into turns)
+        const targetRoll = steeringInputRef.current * 0.15;
+        bodyRollRef.current += (targetRoll - bodyRollRef.current) * Math.min(deltaTime * 6, 1);
+        
+        // Pitch from acceleration impulse + ongoing speed
+        const targetPitch = pitchImpulseRef.current + (carSpeedRef.current > 0 ? -1.5 : 0);
+        bodyPitchRef.current += (targetPitch - bodyPitchRef.current) * Math.min(deltaTime * 4, 1);
+        
+        // Decay impulse and clamp pitch
+        pitchImpulseRef.current *= 0.92;
+        bodyPitchRef.current = Math.max(-8, Math.min(8, bodyPitchRef.current));
+      } else {
+        // Return to level when not in steering mode
+        bodyRollRef.current += (0 - bodyRollRef.current) * Math.min(deltaTime * 6, 1);
+        bodyPitchRef.current += (0 - bodyPitchRef.current) * Math.min(deltaTime * 6, 1);
+        pitchImpulseRef.current = 0;
+      }
+      
+      // Apply body orientation with dynamic tilt
+      if (carModeStateRef.current) {
+        carModeStateRef.current.interior.setCarOrientation(
+          carHeadingRef.current,
+          bodyPitchRef.current,
+          bodyRollRef.current
+        );
+      }
+      
       rafId = requestAnimationFrame(animate);
     };
     
@@ -198,11 +230,17 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       active = false;
       cancelAnimationFrame(rafId);
     };
-  }, [panorama, nightIntensity, headlightsOn, domeLightOn]);
+  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode]);
   
   // Handle steering wheel hit test
   const isSteeringWheelAtPoint = useCallback((x: number, y: number): boolean => {
     return isCarSteeringWheelHit(x, y);
+  }, []);
+  
+  // Handle thrust from W/S keys for body pitch effect
+  const handleThrust = useCallback((direction: 'forward' | 'backward') => {
+    pitchImpulseRef.current = direction === 'forward' ? -5 : 3;
+    carSpeedRef.current = direction === 'forward' ? 25 : 12;
   }, []);
   
   // Dashboard toggle handlers
@@ -294,6 +332,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       <CarInputHandler
         targetRef={containerRef}
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
+        onThrust={handleThrust}
       />
       
       {/* Premium Car Dashboard */}

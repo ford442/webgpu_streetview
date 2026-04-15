@@ -1528,11 +1528,13 @@ export class CarInterior {
      * The interior stays level with the ground while the head can look freely.
      * @param carHeading - The car's travel direction in degrees
      */
-    public setCarOrientation(carHeading: number): void {
-        // Car body stays level with ground - no pitch or roll, just yaw
+    public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
+        // Car body yaw follows heading; optional pitch/roll for dynamic steering physics
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
-        this.interiorGroup.rotation.set(0, yawRad, 0);
+        const pitchRad = THREE.MathUtils.degToRad(bodyPitch);
+        const rollRad = THREE.MathUtils.degToRad(bodyRoll);
+        this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
         // Camera position is inherited automatically through the scene graph:
         //   interiorGroup (rotates) → driverSeatGroup (fixed offset) → camera
     }

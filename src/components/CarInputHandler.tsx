@@ -5,6 +5,7 @@ import { useViewMode, ControlMode } from '../hooks/useViewMode';
 interface CarInputHandlerProps {
   targetRef: React.RefObject<HTMLElement | null>;
   isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
+  onThrust?: (direction: 'forward' | 'backward') => void;
 }
 
 /**
@@ -22,7 +23,8 @@ interface CarInputHandlerProps {
  */
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
-  isSteeringWheelAtPoint
+  isSteeringWheelAtPoint,
+  onThrust
 }) => {
   const {
     heading,
@@ -184,17 +186,21 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       switch (key) {
         case 'w':
           advance('forward', carHeading);
+          onThrust?.('forward');
           break;
         case 's':
           advance('backward', carHeading);
+          onThrust?.('backward');
           break;
         case 'arrowup':
           e.preventDefault();
           advance('forward', carHeading);
+          onThrust?.('forward');
           break;
         case 'arrowdown':
           e.preventDefault();
           advance('backward', carHeading);
+          onThrust?.('backward');
           break;
         case 'arrowleft':
           e.preventDefault();

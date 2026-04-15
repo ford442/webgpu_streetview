@@ -1023,12 +1023,14 @@ export class LimousineMode {
     /**
      * Set car orientation (limo stays level with ground)
      */
-    public setCarOrientation(carHeading: number): void {
+    public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
-        this.interiorGroup.rotation.set(0, yawRad, 0);
-        this.partitionGroup.rotation.set(0, yawRad, 0);
-        this.barGroup.rotation.set(0, yawRad, 0);
-        this.screensGroup.rotation.set(0, yawRad, 0);
+        const pitchRad = THREE.MathUtils.degToRad(bodyPitch);
+        const rollRad = THREE.MathUtils.degToRad(bodyRoll);
+        this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
+        this.partitionGroup.rotation.set(pitchRad, yawRad, rollRad);
+        this.barGroup.rotation.set(pitchRad, yawRad, rollRad);
+        this.screensGroup.rotation.set(pitchRad, yawRad, rollRad);
     }
 
     /**
