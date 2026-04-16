@@ -76,11 +76,21 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 const checkForCanvas = () => {
                     if (!panoRef.current) return;
 
-                    const canvases = Array.from(panoRef.current.getElementsByTagName('canvas'));
-                    if (canvases.length === 0) return;
+                    const canvases = panoRef.current.getElementsByTagName('canvas');
+                    const len = canvases.length;
+                    if (len === 0) return;
 
-                    canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height));
-                    const bestCanvas = canvases[0];
+                    let bestCanvas = canvases[0];
+                    let maxArea = bestCanvas.width * bestCanvas.height;
+
+                    for (let i = 1; i < len; i++) {
+                        const canvas = canvases[i];
+                        const area = canvas.width * canvas.height;
+                        if (area > maxArea) {
+                            maxArea = area;
+                            bestCanvas = canvas;
+                        }
+                    }
 
                     if (bestCanvas.width < 256 || bestCanvas.height < 256) return;
 
