@@ -446,21 +446,64 @@ export function createLongTaskObserver(
   }
 }
 
+// Cache structure for navigation timing
+interface NavigationCache {
+  value: PerformanceNavigationTiming | null;
+  timestamp: number;
+  isResolved: boolean;
+}
+
+const NAVIGATION_RETRY_MS = 5000; // 5 seconds after page load
+
 // Internal cache for navigation timing (static after load)
-let navigationTimingCache: Partial<PerformanceNavigationTiming> | null = null;
+let navigationTimingCache: NavigationCache | null = null;
 
 /**
  * Get navigation timing information
+ * Optimized to cache both positive results and negative results (after a retry window).
  */
 export function getNavigationTiming(): Partial<PerformanceNavigationTiming> | null {
   if (typeof performance === 'undefined') return null;
   
-  if (navigationTimingCache) return navigationTimingCache;
-
-  const entries = performance.getEntriesByType('navigation');
-  if (entries.length > 0) {
-    navigationTimingCache = entries[0] as PerformanceNavigationTiming;
-    return navigationTimingCache;
+  let startMark = 0;
+  if (process.env.NODE_ENV === 'development') {
+    startMark = performance.now();
   }
-  return null;
+
+  // Fast path: fully resolved cache
+  if (navigationTimingCache?.isResolved) {
+    if (process.env.NODE_ENV === 'development') {
+      const duration = performance.now() - startMark;
+      console.log(`[usePerformanceMonitor] getNavigationTiming (cache hit) took ${duration.toFixed(4)}ms`);
+    }
+    return navigationTimingCache.value;
+  }
+
+  const currentNow = performance.now();
+  const entries = performance.getEntriesByType('navigation');
+
+  if (entries.length > 0) {
+    // We found the entry, cache it permanently
+    navigationTimingCache = {
+      value: entries[0] as PerformanceNavigationTiming,
+      timestamp: currentNow,
+      isResolved: true
+    };
+  } else if (currentNow > NAVIGATION_RETRY_MS) {
+    // No entry found and we are past the retry window, cache negative result permanently
+    navigationTimingCache = {
+      value: null,
+      timestamp: currentNow,
+      isResolved: true
+    };
+  }
+  // If we get empty but are still inside retry window, we do nothing and allow future calls
+
+  if (process.env.NODE_ENV === 'development') {
+    const duration = performance.now() - startMark;
+    const cacheStatus = navigationTimingCache?.isResolved ? 'resolved' : 'retrying';
+    console.log(`[usePerformanceMonitor] getNavigationTiming (API call, ${cacheStatus}) took ${duration.toFixed(4)}ms`);
+  }
+
+  return navigationTimingCache?.value || null;
 }
