@@ -46,6 +46,14 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     const sourceChangeFlagRef = useRef<boolean>(true);
     const FRAME_SKIP = 2; // Render every 2nd frame (30fps base) when source unchanged, 60fps when changed
 
+    // Transition animation state — updated on every render so the RAF loop always
+    // sees the latest React state without re-creating the animation closure.
+    const isTransitioningRef = useRef(isStreetViewTransitioning);
+    isTransitioningRef.current = isStreetViewTransitioning;
+    const prevTransitioningRef  = useRef(false);
+    const transitionActiveRef   = useRef(false);
+    const transitionStartRef    = useRef<number | null>(null);
+
     // Performance: Debounced resize
     const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -182,10 +190,40 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
         const animate = () => {
             if (!active) return;
 
+            // --- GPU Transition animation ---
+            const renderer = currentRendererRef.current;
+            const nowTransitioning = isTransitioningRef.current;
+
+            if (nowTransitioning && !prevTransitioningRef.current &&
+                !transitionActiveRef.current && renderer) {
+                // Leading edge: snapshot current frame and arm the transition
+                renderer.beginTransition('zoom');
+                transitionStartRef.current = performance.now();
+                transitionActiveRef.current = true;
+            }
+            prevTransitioningRef.current = nowTransitioning;
+
+            if (transitionActiveRef.current && transitionStartRef.current !== null && renderer) {
+                const elapsed  = performance.now() - transitionStartRef.current;
+                const duration = renderer.getTransitionDuration();
+                const progress = Math.min(1.0, elapsed / duration);
+                renderer.updateTransitionProgress(progress);
+                if (progress >= 1.0) {
+                    renderer.endTransition();
+                    transitionActiveRef.current = false;
+                    transitionStartRef.current  = null;
+                }
+            }
+
             // Performance: Adaptive frame skipping based on quality
             const skipFrame = shouldSkipFrame();
-            
-            const shouldRender = !skipFrame && (sourceChangeFlagRef.current || (frameCountRef.current % FRAME_SKIP === 0));
+
+            // Force full-fps while a GPU transition is animating
+            const shouldRender = !skipFrame && (
+                transitionActiveRef.current ||
+                sourceChangeFlagRef.current ||
+                (frameCountRef.current % FRAME_SKIP === 0)
+            );
 
             // Calculate camera params based on current view mode
             const isCarMode = viewMode === 'car';
@@ -305,9 +343,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 border: 'none',
                 marginTop: 0,
                 borderRadius: 0,
-                // Cruise pause: brief fade-to-black during panorama transitions
-                opacity: isStreetViewTransitioning ? 0 : 1,
-                transition: 'opacity 0.2s ease-in-out'
+                // GPU transition shader handles visual continuity — always opaque
+                opacity: 1
             }}
         />
     );
