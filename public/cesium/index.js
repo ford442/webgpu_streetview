@@ -179,7 +179,7 @@ const float czm_epsilon7 = 0.0000001;
  * @name czm_infinity
  * @glslConstant
  */
-const float czm_infinity = 5906376272000.0;  // Distance from the Sun to Pluto in meters.  TODO: What is best given lowp, mediump, and highp?
+const highp float czm_infinity = 5906376272000.0;  // Distance from the Sun to Pluto in meters.  TODO: What is best given lowp, mediump, and highp?
 `;var WM=`/**
  * A built-in GLSL floating-point constant for <code>1/pi</code>.
  *
