@@ -138,6 +138,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     const bookmarkEntitiesRef = useRef<any[]>([]);
     const waypointEntitiesRef = useRef<any[]>([]);
     const waypointPolylineRef = useRef<any>(null);
+    const svServiceRef = useRef<any>(null);
+    const toastTimerRef = useRef<number | null>(null);
 
     // Stable refs for callbacks
     const onEnterRef = useRef(onEnterComplete);
@@ -156,6 +158,14 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     // WebGL context failure state
     const [contextFailed, setContextFailed] = useState(false);
 
+    // Transient toast for "No Street View here"
+    const [toast, setToast] = useState<string | null>(null);
+    const showToast = useCallback((msg: string) => {
+        setToast(msg);
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => setToast(null), 2200) as unknown as number;
+    }, []);
+
     // Snapshot coords when entering
     const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });
 
@@ -163,24 +173,45 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     const handleScoutEngage = useCallback((lat: number, lng: number) => {
         setScoutTarget(null);
         const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed()) {
-            onTeleportRef.current(lat, lng);
+
+        const doFlyAndTeleport = (tLat: number, tLng: number) => {
+            if (!viewer || viewer.isDestroyed()) {
+                onTeleportRef.current(tLat, tLng);
+                return;
+            }
+            viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(tLng, tLat, 250),
+                orientation: {
+                    heading: Cesium.Math.toRadians(currentHeading),
+                    pitch: Cesium.Math.toRadians(-35),
+                    roll: 0,
+                },
+                duration: 2.5,
+                complete: () => {
+                    onTeleportRef.current(tLat, tLng);
+                },
+            });
+        };
+
+        const svc = svServiceRef.current;
+        if (!svc) {
+            doFlyAndTeleport(lat, lng);
             return;
         }
-        // Orbital Drop animation
-        viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(lng, lat, 250),
-            orientation: {
-                heading: Cesium.Math.toRadians(currentHeading),
-                pitch: Cesium.Math.toRadians(-35),
-                roll: 0,
-            },
-            duration: 2.5,
-            complete: () => {
-                onTeleportRef.current(lat, lng);
-            },
+
+        svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data: any, status: any) => {
+            if (
+                status === (window as any).google.maps.StreetViewStatus.OK &&
+                data?.location?.latLng
+            ) {
+                const snappedLat = data.location.latLng.lat();
+                const snappedLng = data.location.latLng.lng();
+                doFlyAndTeleport(snappedLat, snappedLng);
+            } else {
+                showToast('No Street View here');
+            }
         });
-    }, [currentHeading]);
+    }, [currentHeading, showToast]);
 
     // ---- initialise Cesium once when entering --------------------------------
     useEffect(() => {
@@ -228,6 +259,21 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         }
 
         viewerRef.current = viewer;
+
+        // Street View coverage tile overlay (blue lines)
+        const svCoverageLayer = viewer.imageryLayers.addImageryProvider(
+            new Cesium.UrlTemplateImageryProvider({
+                url: 'https://mts1.googleapis.com/vt?hl=en-US&lyrs=svv|cb_client:apiv3&x={x}&y={y}&z={z}',
+                credit: '\u00a9 Google',
+                maximumLevel: 19,
+            })
+        );
+        svCoverageLayer.alpha = 0.7;
+
+        // Lazy-init StreetViewService for pre-flight validation
+        if (!svServiceRef.current && (window as any).google?.maps) {
+            svServiceRef.current = new (window as any).google.maps.StreetViewService();
+        }
 
         // Start camera at street level
         viewer.camera.setView({
@@ -339,17 +385,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
-        // Double-click → Orbital Drop (immediate teleport)
-        handler.setInputAction((event: { position: any }) => {
-            const cartesian = viewer.camera.pickEllipsoid(
-                event.position,
-                viewer.scene.globe.ellipsoid,
-            );
-            if (!cartesian) return;
-            const carto = Cesium.Cartographic.fromCartesian(cartesian);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            const lng = Cesium.Math.toDegrees(carto.longitude);
-
+        // Double-click → validate via StreetViewService, then Orbital Drop
+        const flyToAndTeleport = (lat: number, lng: number) => {
             viewer.camera.flyTo({
                 destination: Cesium.Cartesian3.fromDegrees(lng, lat, 250),
                 orientation: {
@@ -361,6 +398,36 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 complete: () => {
                     onTeleportRef.current(lat, lng);
                 },
+            });
+        };
+
+        handler.setInputAction((event: { position: any }) => {
+            const cartesian = viewer.camera.pickEllipsoid(
+                event.position,
+                viewer.scene.globe.ellipsoid,
+            );
+            if (!cartesian) return;
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+
+            const svc = svServiceRef.current;
+            if (!svc) {
+                flyToAndTeleport(lat, lng);
+                return;
+            }
+
+            svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data: any, status: any) => {
+                if (
+                    status === (window as any).google.maps.StreetViewStatus.OK &&
+                    data?.location?.latLng
+                ) {
+                    const snappedLat = data.location.latLng.lat();
+                    const snappedLng = data.location.latLng.lng();
+                    flyToAndTeleport(snappedLat, snappedLng);
+                } else {
+                    showToast('No Street View here');
+                }
             });
         }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
@@ -522,12 +589,15 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         waypointEntitiesRef.current = [];
         waypointPolylineRef.current = null;
         locationEntityRef.current = null;
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
         const v = viewerRef.current;
         if (v && !v.isDestroyed()) v.destroy();
         viewerRef.current = null;
         setContextFailed(false);
         setScoutTarget(null);
         setWaypoints([]);
+        setToast(null);
     }
 
     const handleClearWaypoints = useCallback(() => {
@@ -710,6 +780,31 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                             ✕ Clear
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Toast notification */}
+            {toast && visible && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 80,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 203,
+                        backgroundColor: 'rgba(0,0,0,0.85)',
+                        color: '#FF6464',
+                        padding: '10px 20px',
+                        borderRadius: 12,
+                        fontSize: 14,
+                        fontFamily: 'system-ui, sans-serif',
+                        fontWeight: 600,
+                        border: '1px solid rgba(255,50,50,0.4)',
+                        pointerEvents: 'none',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {toast}
                 </div>
             )}
 
