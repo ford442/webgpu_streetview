@@ -446,15 +446,21 @@ export function createLongTaskObserver(
   }
 }
 
+// Internal cache for navigation timing (static after load)
+let navigationTimingCache: Partial<PerformanceNavigationTiming> | null = null;
+
 /**
  * Get navigation timing information
  */
 export function getNavigationTiming(): Partial<PerformanceNavigationTiming> | null {
   if (typeof performance === 'undefined') return null;
   
+  if (navigationTimingCache) return navigationTimingCache;
+
   const entries = performance.getEntriesByType('navigation');
   if (entries.length > 0) {
-    return entries[0] as PerformanceNavigationTiming;
+    navigationTimingCache = entries[0] as PerformanceNavigationTiming;
+    return navigationTimingCache;
   }
   return null;
 }
