@@ -35,6 +35,7 @@ export const QUALITY_PRESETS: Record<MaterialQuality, QualityPreset> = {
 export class VehiclePBRMaterials {
     private textures: THREE.Texture[] = [];
     private materials: THREE.Material[] = [];
+    private materialCache: Map<string, THREE.Material> = new Map();
     private defaultQuality: MaterialQuality;
     private effectOverrides: Partial<MaterialEffects> | null;
 
@@ -63,6 +64,13 @@ export class VehiclePBRMaterials {
     private trackTexture(texture: THREE.CanvasTexture): THREE.CanvasTexture {
         this.textures.push(texture);
         return texture;
+    }
+
+
+    private getCacheKey(type: string, color: number | string | undefined, quality?: MaterialQuality): string {
+        const qualityKey = quality ?? this.defaultQuality;
+        const overrides = this.effectOverrides ? JSON.stringify(this.effectOverrides) : 'default';
+        return `${type}_${color}_${qualityKey}_${overrides}`;
     }
 
     private trackMaterial<T extends THREE.Material>(material: T): T {
@@ -158,6 +166,11 @@ export class VehiclePBRMaterials {
     }
 
     createLeatherMaterial(color: number = 0x8B4513, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
+        const cacheKey = this.getCacheKey('leather', color, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size, effects } = this.getPreset(quality);
         const { r, g, b } = this.extractRGB(color);
 
@@ -232,10 +245,18 @@ export class VehiclePBRMaterials {
             params.roughnessMap = this.wrapTexture(rCanvas, 2, 2);
         }
 
-        return this.trackMaterial(new THREE.MeshPhysicalMaterial(params));
+
+        const material = new THREE.MeshPhysicalMaterial(params);
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     createBrushedMetalMaterial(color: number = 0xcccccc, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
+        const cacheKey = this.getCacheKey('metal', color, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size, effects } = this.getPreset(quality);
         const { r, g, b } = this.extractRGB(color);
 
@@ -302,7 +323,10 @@ export class VehiclePBRMaterials {
             params.roughnessMap = this.wrapTexture(rCanvas);
         }
 
-        return this.trackMaterial(new THREE.MeshPhysicalMaterial(params));
+
+        const material = new THREE.MeshPhysicalMaterial(params);
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     createGlassMaterial(tint: number = 0xffffff, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
@@ -340,6 +364,11 @@ export class VehiclePBRMaterials {
     }
 
     createCarbonFiberMaterial(quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
+        const cacheKey = this.getCacheKey('carbon', undefined, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size, effects } = this.getPreset(quality);
         const cellSize = Math.max(4, Math.floor(size / 16));
 
@@ -403,10 +432,18 @@ export class VehiclePBRMaterials {
             params.normalScale = new THREE.Vector2(1.0, 1.0);
         }
 
-        return this.trackMaterial(new THREE.MeshPhysicalMaterial(params));
+
+        const material = new THREE.MeshPhysicalMaterial(params);
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     createVelvetMaterial(color: number = 0x800020, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
+        const cacheKey = this.getCacheKey('velvet', color, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size, effects } = this.getPreset(quality);
         const { r, g, b } = this.extractRGB(color);
 
@@ -444,10 +481,18 @@ export class VehiclePBRMaterials {
             params.roughnessMap = this.wrapTexture(rCanvas, 3, 3);
         }
 
-        return this.trackMaterial(new THREE.MeshPhysicalMaterial(params));
+
+        const material = new THREE.MeshPhysicalMaterial(params);
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     createCarPaintMaterial(color: number = 0xcc0000, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
+        const cacheKey = this.getCacheKey('carpaint', color, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size, effects } = this.getPreset(quality);
 
         const params: THREE.MeshPhysicalMaterialParameters = {
@@ -492,10 +537,18 @@ export class VehiclePBRMaterials {
             params.roughnessMap = this.wrapTexture(rCanvas, 2, 2);
         }
 
-        return this.trackMaterial(new THREE.MeshPhysicalMaterial(params));
+
+        const material = new THREE.MeshPhysicalMaterial(params);
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     createDustOverlay(intensity: number = 0.3, quality?: MaterialQuality): THREE.MeshStandardMaterial {
+        const cacheKey = this.getCacheKey('dust', intensity, quality);
+        if (this.materialCache.has(cacheKey)) {
+            return this.materialCache.get(cacheKey) as any;
+        }
+
         const { textureSize: size } = this.getPreset(quality);
 
         const { canvas: alphaCanvas, ctx: alphaCtx } = this.makeCanvas(size);
@@ -530,17 +583,21 @@ export class VehiclePBRMaterials {
         }
         alphaCtx.putImageData(alphaImg, 0, 0);
 
-        return this.trackMaterial(new THREE.MeshStandardMaterial({
+
+        const material = new THREE.MeshStandardMaterial({
             color: 0xd4c8b8,
             alphaMap: this.wrapTexture(alphaCanvas, 3, 3),
             transparent: true,
             roughness: 1.0,
             metalness: 0.0,
             depthWrite: false,
-        }));
+        });
+        this.materialCache.set(cacheKey, material);
+        return this.trackMaterial(material);
     }
 
     dispose(): void {
+        this.materialCache.clear();
         const disposed = new Set<number>();
         for (const texture of this.textures) {
             texture.dispose();

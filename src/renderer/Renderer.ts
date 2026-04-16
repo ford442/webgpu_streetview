@@ -621,7 +621,7 @@ export class Renderer {
             this.transitionPipelines.set(name, pipeline);
         }
 
-        console.log('[Renderer] Transition pipelines ready:', [...this.transitionPipelines.keys()].join(', '));
+        console.log('[Renderer] Transition pipelines ready:', Array.from(this.transitionPipelines.keys()).join(', '));
     }
 
     /**
