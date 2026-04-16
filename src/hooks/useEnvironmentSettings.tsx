@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   toggleWipers,
   setCarWipers,
@@ -83,6 +83,10 @@ export interface EnvironmentSettingsState {
   // Presets
   applyTimeOfDayPreset: (preset: TimeOfDay) => void;
   applyColorGradingPreset: (preset: string) => void;
+
+  // Derived
+  /** CSS rgba string for the current ambient light color — used to tint dashboard glass panels. */
+  ambientLightColor: string;
 }
 
 const EnvironmentSettingsContext = createContext<EnvironmentSettingsState | null>(null);
@@ -294,6 +298,20 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     }
   }, []);
   
+  // Compute ambient light color for dashboard tinting based on time of day
+  const ambientLightColor = useMemo(() => {
+    switch (timeOfDay) {
+      case 'sunset':
+        return `rgba(255, 120, 40, ${(0.1 + nightIntensity * 0.1).toFixed(3)})`;
+      case 'sunrise':
+        return 'rgba(255, 160, 80, 0.08)';
+      case 'night':
+        return `rgba(20, 40, 100, ${(nightIntensity * 0.25).toFixed(3)})`;
+      default:
+        return 'rgba(255, 255, 255, 0.0)';
+    }
+  }, [timeOfDay, nightIntensity]);
+
   const value: EnvironmentSettingsState = {
     // Weather
     rainIntensity,
@@ -361,6 +379,9 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     // Presets
     applyTimeOfDayPreset,
     applyColorGradingPreset,
+
+    // Derived
+    ambientLightColor,
   };
   
   return (

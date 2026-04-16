@@ -65,7 +65,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     timeOfDay,
     setTimeOfDay,
     nightIntensity,
-    applyTimeOfDayPreset
+    applyTimeOfDayPreset,
+    ambientLightColor,
   } = useEnvironmentSettings();
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -364,6 +365,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         timeOfDay={timeOfDay}
         audioElement={audioElement}
         analyser={analyserNode}
+        nightIntensity={nightIntensity}
+        ambientLightColor={ambientLightColor}
       />
       
       {/* Control Mode Indicator (small overlay) */}

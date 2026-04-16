@@ -22,12 +22,19 @@ export interface CircularGaugeProps {
     useGradient?: boolean;
     /** Value at which color transitions to warning (for RPM redline) */
     warningThreshold?: number;
+    /** Spring stiffness (higher = faster, more overshoot). Default 150. */
+    stiffness?: number;
+    /** Spring damping (higher = less overshoot). Default 16. */
+    damping?: number;
+    /** Night glow intensity 0–1: scales the digital-readout bloom at night. */
+    nightGlow?: number;
 }
 
 export interface SpeedGaugeProps {
     value: number;
     size?: number;
     unit?: 'MPH' | 'KPH';
+    nightGlow?: number;
 }
 
 export interface RpmGaugeProps {
@@ -35,6 +42,7 @@ export interface RpmGaugeProps {
     size?: number;
     maxRpm?: number;
     redline?: number;
+    nightGlow?: number;
 }
 
 export interface GearIndicatorProps {
@@ -145,56 +153,64 @@ const interpolateColor = (
 };
 
 // ============================================================================
-// Hook for Animated Values
+// Hook for Spring-Physics Animated Values
 // ============================================================================
 
 /**
- * Hook for smooth number animation with easing
+ * Hook for spring-physics animation with overshoot and settle behaviour.
+ * Uses semi-implicit Euler integration: acceleration → velocity → position.
+ * The needle overshoots and bounces like a real physical instrument.
  */
-const useAnimatedValue = (
+const useSpringValue = (
     targetValue: number,
-    duration: number = 300
+    stiffness: number = 150,
+    damping: number = 16
 ): number => {
+    const posRef = useRef(targetValue);
+    const velRef = useRef(0);
     const [displayValue, setDisplayValue] = useState(targetValue);
-    const animationRef = useRef<number | null>(null);
-    const startValueRef = useRef(targetValue);
-    const startTimeRef = useRef<number>(0);
+    const rafRef = useRef<number | null>(null);
+    const lastTimeRef = useRef<number>(0);
 
     useEffect(() => {
-        // Cancel any existing animation
-        if (animationRef.current) {
-            cancelAnimationFrame(animationRef.current);
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
         }
+        lastTimeRef.current = performance.now();
 
-        startValueRef.current = displayValue;
-        startTimeRef.current = performance.now();
+        const step = (now: number) => {
+            const dt = Math.min((now - lastTimeRef.current) / 1000, 0.05); // cap at 50 ms
+            lastTimeRef.current = now;
 
-        const animate = (currentTime: number) => {
-            const elapsed = currentTime - startTimeRef.current;
-            const progress = Math.min(elapsed / duration, 1);
+            const acc =
+                -stiffness * (posRef.current - targetValue) -
+                damping * velRef.current;
+            velRef.current += acc * dt;
+            posRef.current += velRef.current * dt;
 
-            // Ease out cubic
-            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            setDisplayValue(posRef.current);
 
-            const currentValue =
-                startValueRef.current +
-                (targetValue - startValueRef.current) * easeProgress;
-
-            setDisplayValue(currentValue);
-
-            if (progress < 1) {
-                animationRef.current = requestAnimationFrame(animate);
+            if (
+                Math.abs(velRef.current) > 0.01 ||
+                Math.abs(posRef.current - targetValue) > 0.05
+            ) {
+                rafRef.current = requestAnimationFrame(step);
+            } else {
+                // Settled — snap to target to avoid floating-point drift
+                posRef.current = targetValue;
+                velRef.current = 0;
+                setDisplayValue(targetValue);
             }
         };
 
-        animationRef.current = requestAnimationFrame(animate);
+        rafRef.current = requestAnimationFrame(step);
 
         return () => {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
             }
         };
-    }, [targetValue, duration]);
+    }, [targetValue, stiffness, damping]);
 
     return displayValue;
 };
@@ -217,8 +233,11 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
     arcSweep = 240,
     useGradient = false,
     warningThreshold,
+    stiffness = 150,
+    damping = 16,
+    nightGlow = 0,
 }) => {
-    const animatedValue = useAnimatedValue(clamp(value, min, max), 200);
+    const animatedValue = useSpringValue(clamp(value, min, max), stiffness, damping);
 
     // Calculate derived values
     const center = 50;
@@ -380,7 +399,9 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
                         fontSize: size * 0.24,
                         fontWeight: 700,
                         color: '#ffffff',
-                        textShadow: '0 0 10px rgba(0, 212, 255, 0.5)',
+                        textShadow: nightGlow > 0.3
+                            ? `0 0 ${8 + nightGlow * 16}px rgba(0, 212, 255, ${Math.min(0.3 + nightGlow * 0.5, 0.9)})`
+                            : '0 0 10px rgba(0, 212, 255, 0.5)',
                         letterSpacing: '0.05em',
                         lineHeight: 1,
                     }}
@@ -429,6 +450,7 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({
     value,
     size = 200,
     unit = 'MPH',
+    nightGlow = 0,
 }) => {
     const maxSpeed = unit === 'MPH' ? 200 : 300;
 
@@ -446,6 +468,9 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({
             startAngle={120}
             arcSweep={240}
             useGradient={true}
+            stiffness={120}
+            damping={14}
+            nightGlow={nightGlow}
         />
     );
 };
@@ -459,6 +484,7 @@ export const RpmGauge: React.FC<RpmGaugeProps> = ({
     size = 200,
     maxRpm = 8000,
     redline = 6500,
+    nightGlow = 0,
 }) => {
     return (
         <CircularGauge
@@ -475,6 +501,9 @@ export const RpmGauge: React.FC<RpmGaugeProps> = ({
             arcSweep={240}
             useGradient={true}
             warningThreshold={redline}
+            stiffness={200}
+            damping={18}
+            nightGlow={nightGlow}
         />
     );
 };
