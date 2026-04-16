@@ -17384,11 +17384,10 @@ void getOctreeLeafSampleDatas(in OctreeNodeData data, in ivec4 octreeCoords, out
     float lerp = normU8x2_toFloat(leafData0.xy);
     sampleDatas[0].weight = 1.0 - lerp;
     sampleDatas[1].weight = lerp;
-    // TODO: this looks wrong? Should be comparing to OCTREE_FLAG_PACKED_LEAF_FROM_PARENT
-    sampleDatas[0].tileCoords = (normU8_toInt(leafData0.z) == 1)
+    sampleDatas[0].tileCoords = (normU8_toInt(leafData0.z) == OCTREE_FLAG_PACKED_LEAF_FROM_PARENT)
         ? ivec4(octreeCoords.xyz / 2, octreeCoords.w - 1)
         : octreeCoords;
-    sampleDatas[1].tileCoords = (normU8_toInt(leafData0.w) == 1)
+    sampleDatas[1].tileCoords = (normU8_toInt(leafData0.w) == OCTREE_FLAG_PACKED_LEAF_FROM_PARENT)
         ? ivec4(octreeCoords.xyz / 2, octreeCoords.w - 1)
         : octreeCoords;
 
