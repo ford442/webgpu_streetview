@@ -192,13 +192,13 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         setPositionState(pos);
       }
       
-      // Ensure transition pause - minimum 1200ms between location changes
-      // This allows Street View panorama to fully load before accepting next advance
+      // Transition pause: GPU animation completes in ~450ms; 700ms gives tiles
+      // time to load while remaining snappier than the old 1200ms black screen.
       if (pauseTimer) clearTimeout(pauseTimer);
       pauseTimer = setTimeout(() => {
         console.log('[StreetView] Transition pause complete, ready for next advance');
         setIsTransitioning(false);
-      }, 1200);
+      }, 700);
     };
     
     const listener = pano.addListener('pano_changed', handlePanoChanged);
