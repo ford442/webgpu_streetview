@@ -74,6 +74,10 @@ export interface DashboardUIProps {
     timeOfDay: string;
     audioElement?: HTMLAudioElement | null;
     analyser?: AnalyserNode | null;
+    /** 0–1 night intensity — drives gauge bloom and ambient panel tint. */
+    nightIntensity?: number;
+    /** CSS rgba string from useEnvironmentSettings for dashboard glass tinting. */
+    ambientLightColor?: string;
 }
 
 // ============================================================================
@@ -108,6 +112,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     timeOfDay,
     audioElement,
     analyser,
+    nightIntensity = 0,
+    ambientLightColor = 'rgba(255, 255, 255, 0.0)',
 }) => {
 
     // Gauge simulation state
@@ -206,22 +212,39 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
             role="region"
             aria-label="Car Dashboard Controls"
         >
-            <DashboardContainer>
+            <DashboardContainer style={{
+                boxShadow: `inset 0 0 60px ${ambientLightColor}`,
+            }}>
+                {/* Screen glare and subtle imperfection overlay — mimics LCD infotainment glass */}
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '16px',
+                    pointerEvents: 'none',
+                    zIndex: 1,
+                    background: `
+                        radial-gradient(ellipse 120% 40% at 30% 20%,
+                            rgba(255,255,255,0.04) 0%, transparent 70%),
+                        radial-gradient(ellipse 60% 80% at 70% 60%,
+                            rgba(255,255,255,0.015) 0%, transparent 60%)
+                    `,
+                }} />
+
                 {/* ============================================================================
                     ZONE LEFT - Driving HUD
                     Contains speedometer, gear indicator, and RPM gauge
                 ============================================================================ */}
                 <ZoneLeft>
-                    <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '8px', 
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
                         justifyContent: 'center',
                         height: '100%'
                     }}>
-                        <SpeedGauge value={Math.round(simulatedSpeed)} size={120} unit="MPH" />
+                        <SpeedGauge value={Math.round(simulatedSpeed)} size={120} unit="MPH" nightGlow={nightIntensity} />
                         <GearIndicator gear={gear} size={36} />
-                        <RpmGauge value={Math.round(simulatedRpm)} size={120} />
+                        <RpmGauge value={Math.round(simulatedRpm)} size={120} nightGlow={nightIntensity} />
                     </div>
                 </ZoneLeft>
 

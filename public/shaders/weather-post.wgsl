@@ -50,8 +50,9 @@ struct WeatherParams {
     _pad0             : f32,  // padding to maintain alignment
     // 36: sunrise
     sunrise           : f32,  // 0.0 = no sunrise, 1.0 = full sunrise
-    // 37-39: padding to reach 40 floats (160 bytes total)
-    _pad1             : f32,
+    // 37: anamorphic lens flare streak width (0 = off, 0.5 = moderate)
+    anamorphicStreak  : f32,
+    // 38-39: padding to reach 40 floats (160 bytes total)
     _pad2             : f32,
     _pad3             : f32,
 }
@@ -246,7 +247,12 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         st.x = fract(st.x * 42.0) - 0.5 + (seed - 0.5) * 0.8;
         st.y = fract(st.y);
 
-        let streak = smoothstep(0.96, 1.0, 1.0 - length(st * vec2<f32>(0.45, 3.2)));
+        // Rotate streak axis to match wind direction — aggressive slant at high wind
+        let tiltAngle = atan(p.wind * 1.2);
+        let cosT = cos(tiltAngle);
+        let sinT = sin(tiltAngle);
+        let stTilted = vec2<f32>(st.x * cosT - st.y * sinT, st.x * sinT + st.y * cosT);
+        let streak = smoothstep(0.96, 1.0, 1.0 - length(stTilted * vec2<f32>(0.45, 3.2)));
         c = c + streak * (0.7 + seed * 0.8);
     }
     return c * 0.75;
@@ -273,7 +279,12 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         let rnd = hash(id + vec2<f32>(layer));
         st = fract(st) - vec2<f32>(0.5);
 
-        let flake = smoothstep(0.18 + rnd * 0.07, 0.0, length(st));
+        // Gently tilt snowflake placement with wind — softer factor than rain
+        let snowTilt = atan(p.wind * 0.6);
+        let cosST = cos(snowTilt);
+        let sinST = sin(snowTilt);
+        let stTilted = vec2<f32>(st.x * cosST - st.y * sinST, st.x * sinST + st.y * cosST);
+        let flake = smoothstep(0.18 + rnd * 0.07, 0.0, length(stTilted));
         c = c + flake * (0.85 + rnd * 0.6);
     }
     return c * 1.35;
@@ -305,9 +316,14 @@ fn applyFog(col: vec3<f32>, uv: vec2<f32>, intensity: f32, density: f32, height:
     
     var fogAmount = density * groundProximity;
     fogAmount = fogAmount + intensity * (0.2 + groundProximity * 0.8);
-    
-    let noise = noise2D(uv * 8.0 + p.time * 0.1) * 0.1;
-    fogAmount = fogAmount * (0.9 + noise);
+
+    // Animated fractal fog: two fbm layers scrolling at different speeds/directions
+    // create a "rolling" volumetric appearance instead of a static wash
+    let t = p.time * p.speed;
+    let fogUV1 = vec3<f32>(uv * 4.0 + vec2<f32>(t * 0.07, t * 0.04), t * 0.05);
+    let fogUV2 = vec3<f32>(uv * 8.0 - vec2<f32>(t * 0.05, t * 0.03), t * 0.08);
+    let roll = fbm(fogUV1, 2) * 0.18 + fbm(fogUV2, 2) * 0.08;
+    fogAmount = fogAmount * (0.75 + roll);
     
     // Day fog: #b5c1c8, Night fog: dark blue
     let dayFog = vec3<f32>(0.71, 0.76, 0.78);
@@ -345,14 +361,19 @@ fn applyVolumetricLightShafts(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: 
     
     var rayMod = sin(rayAngle) * 0.5 + 0.5;
     rayMod = rayMod * rayMod * (3.0 - 2.0 * rayMod);
-    
+
+    // Near-horizon enhancement: second harmonic intensifies crepuscular rays at low sun angles
+    let altitudeFactor = 1.0 - clamp(p.sunAltitude / 0.3, 0.0, 1.0);
+    let rayMod2 = sin(rayAngle * 2.0 + t * 0.3) * 0.5 + 0.5;
+    let combinedRay = mix(rayMod, rayMod * rayMod2, altitudeFactor * 0.4);
+
     let rayFalloff = exp(-distFromSun * 3.0) * (1.0 - distFromSun * 0.5);
     
     let dustUV = uv * 30.0 + vec2<f32>(t * 0.2, t * 0.1);
     let dust = noise2D(dustUV) * noise2D(dustUV * 2.0 + 10.0);
     let dustParticle = pow(dust, 2.0) * 2.0;
     
-    let shaftIntensity = intensity * sunAbove * lookingAtSun * rayFalloff * (0.6 + rayMod * 0.4);
+    let shaftIntensity = intensity * sunAbove * lookingAtSun * rayFalloff * (0.6 + combinedRay * 0.4);
     let dustIntensity = intensity * sunAbove * lookingAtSun * rayFalloff * dustParticle * 0.3;
     
     let lightColor = vec3<f32>(1.0, 0.85, 0.6);
@@ -434,7 +455,15 @@ fn applyLensFlare(col: vec3<f32>, uv: vec2<f32>, intensity: f32) -> vec3<f32> {
     
     let streak = exp(-abs(dSunY) * 10.0) * exp(-dSunX * dSunX * 2.0) * 0.08;
     flare = flare + vec3<f32>(1.0, 0.9, 0.7) * streak;
-    
+
+    // Anamorphic horizontal streak — characteristic blue bar of cinema lenses
+    if (p.anamorphicStreak > 0.001) {
+        let anamorphicY = exp(-dSunY * dSunY * 800.0);    // extremely thin vertically
+        let anamorphicX = exp(-dSunX * dSunX * 0.3);       // wide horizontal spread
+        let anamorphicColor = vec3<f32>(0.3, 0.5, 1.0);    // blue-tinted anamorphic character
+        flare = flare + anamorphicColor * anamorphicY * anamorphicX * p.anamorphicStreak * sunVisible * 0.4;
+    }
+
     return col + flare * intensity * sunVisible;
 }
 
@@ -732,6 +761,57 @@ fn directionalMoonlight(col: vec3<f32>, uv: vec2<f32>, moonAz: f32, moonAlt: f32
 }
 
 // ============================================================================
+// REFRACTIVE LENS DROPLETS
+// ============================================================================
+
+// Simulates water droplets accumulated on the camera lens / windshield glass.
+// Each droplet acts as a tiny convex lens: it refracts (distorts) the background
+// behind it, creating a magnified and inverted patch of the scene.
+// Triggered by rainIntensity — no additional uniform required.
+fn applyLensDroplets(col: vec3<f32>, uv: vec2<f32>, t: f32, intensity: f32) -> vec3<f32> {
+    if (intensity < 0.05) { return col; }
+    var result = col;
+    let aspect = 16.0 / 9.0; // correct circular distortion for widescreen
+
+    for (var i: i32 = 0; i < 8; i = i + 1) {
+        let fi = f32(i);
+        // Stable unique seed per droplet
+        let seed  = hash(vec2<f32>(fi * 17.3, fi * 5.7 + 3.1));
+        let seed2 = hash(vec2<f32>(fi * 29.1, fi * 11.3));
+        let seed3 = hash(vec2<f32>(fi * 43.7, fi * 7.9 + 1.5));
+
+        // Horizontal position is fixed; vertical drifts downward slowly (gravity)
+        let cx = seed * 0.8 + 0.1;
+        let cy = fract(seed2 + t * (0.015 + seed3 * 0.01));
+        let dropPos = vec2<f32>(cx, cy);
+        let r = 0.03 + seed * 0.04; // radius: 3–7% of screen height
+
+        // Aspect-corrected distance so droplets appear circular
+        let dist = length((uv - dropPos) * vec2<f32>(aspect, 1.0));
+
+        if (dist < r) {
+            // Radial refraction: bend sample UVs outward from droplet centre
+            // The (1 - dist/r) makes distortion strongest at the centre
+            let refractDir = normalize((uv - dropPos) * vec2<f32>(aspect, 1.0));
+            let refractStr = (1.0 - dist / r) * 0.03 * intensity;
+            let lensUV = clamp(uv + refractDir * refractStr, vec2<f32>(0.001), vec2<f32>(0.999));
+
+            // textureSampleLevel with explicit LOD avoids derivative issues in loops
+            let refracted = textureSampleLevel(sceneTex, linearSampler, lensUV, 0.0).rgb;
+
+            // Smooth interior blend
+            let interior = smoothstep(r, r * 0.5, dist);
+            result = mix(result, refracted, interior * 0.65);
+
+            // Bright specular rim — light catches the droplet edge
+            let rim = smoothstep(r, r * 0.88, dist) - smoothstep(r * 0.88, r * 0.70, dist);
+            result = result + vec3<f32>(0.9, 0.95, 1.0) * rim * 0.35 * intensity;
+        }
+    }
+    return result;
+}
+
+// ============================================================================
 // HDR TONEMAPPING
 // ============================================================================
 
@@ -836,6 +916,12 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     if (p.snowIntensity > 0.001) {
         let s = snow(uv, t, panX, panY) * p.snowIntensity;
         col = col + s * vec3<f32>(1.15, 1.18, 1.22);
+    }
+
+    // === REFRACTIVE LENS DROPLETS ===
+    // Applied after rain streaks so droplets sit "on top" of streaks on the lens
+    if (p.rainIntensity > 0.05) {
+        col = applyLensDroplets(col, uv, t, clamp(p.rainIntensity * 0.8, 0.0, 1.0));
     }
 
     // === HDR TONEMAPPING ===

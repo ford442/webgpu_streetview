@@ -237,9 +237,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 params[23] = e.fogDensity / 100.0;        // fog density (0-1)
                 params[24] = 0.0;                         // fog height
                 params[25] = 0.0;                         // fog color index
-                params[26] = 0.0;                         // light shafts intensity
+                // Light shafts and lens flare activate when the sun is above the horizon
+                const sunVisible = e.sunAltitude > 0 ? Math.min(e.sunAltitude / 0.3, 1.0) : 0.0;
+                params[26] = sunVisible * 0.5;            // light shafts intensity
                 params[27] = 0.0;                         // heat shimmer intensity
-                params[28] = 0.0;                         // lens flare intensity
+                params[28] = sunVisible * 0.4;            // lens flare intensity
                 params[29] = 0.0;                         // chromatic aberration
                 params[30] = 0.0;                         // dust intensity
                 params[31] = 0.0;                         // humidity haze
@@ -255,8 +257,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 // [36]: Sunrise flag
                 params[36] = e.timeOfDay === 'sunrise' ? 1.0 : 0.0;
 
-                // [37-39]: padding
-                params[37] = 0.0;
+                // [37]: anamorphicStreak — activates with lens flare when sun is visible
+                params[37] = sunVisible * 0.5;
+                // [38-39]: padding
                 params[38] = 0.0;
                 params[39] = 0.0;
 
