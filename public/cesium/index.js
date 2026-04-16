@@ -12123,6 +12123,7 @@ void main()
 uniform vec3 u_oneOverEllipsoidRadiiSquared;
 
 in vec3 v_positionEC;
+in float v_radiiRatio;
 
 vec4 computeEllipsoidColor(czm_ray ray, float intersection, float side)
 {
@@ -12154,36 +12155,41 @@ vec4 computeEllipsoidColor(czm_ray ray, float intersection, float side)
 
 void main()
 {
-    // PERFORMANCE_TODO: When dynamic branching is available, compute ratio of maximum and minimum radii
-    // in the vertex shader. Only when it is larger than some constant, march along the ray.
+    // We compute the ratio of maximum and minimum radii in the vertex shader.
+    // Only when it is larger than 1.15 do we perform the ray march setup to handle oblate ellipsoids.
     // Otherwise perform one intersection test which will be the common case.
 
-    // Test if the ray intersects a sphere with the ellipsoid's maximum radius.
-    // For very oblate ellipsoids, using the ellipsoid's radii for an intersection test
-    // may cause false negatives. This will discard fragments before marching the ray forward.
-    float maxRadius = max(u_radii.x, max(u_radii.y, u_radii.z)) * 1.5;
     vec3 direction = normalize(v_positionEC);
     vec3 ellipsoidCenter = czm_modelView[3].xyz;
 
-    float t1 = -1.0;
-    float t2 = -1.0;
+    float t = 0.0;
 
-    float b = -2.0 * dot(direction, ellipsoidCenter);
-    float c = dot(ellipsoidCenter, ellipsoidCenter) - maxRadius * maxRadius;
+    if (v_radiiRatio > 1.15) {
+        // Test if the ray intersects a sphere with the ellipsoid's maximum radius.
+        // For very oblate ellipsoids, using the ellipsoid's radii for an intersection test
+        // may cause false negatives. This will discard fragments before marching the ray forward.
+        float maxRadius = max(u_radii.x, max(u_radii.y, u_radii.z)) * 1.5;
 
-    float discriminant = b * b - 4.0 * c;
-    if (discriminant >= 0.0) {
-        t1 = (-b - sqrt(discriminant)) * 0.5;
-        t2 = (-b + sqrt(discriminant)) * 0.5;
-    }
+        float t1 = -1.0;
+        float t2 = -1.0;
 
-    if (t1 < 0.0 && t2 < 0.0) {
-        discard;
-    }
+        float b = -2.0 * dot(direction, ellipsoidCenter);
+        float c = dot(ellipsoidCenter, ellipsoidCenter) - maxRadius * maxRadius;
 
-    float t = min(t1, t2);
-    if (t < 0.0) {
-        t = 0.0;
+        float discriminant = b * b - 4.0 * c;
+        if (discriminant >= 0.0) {
+            t1 = (-b - sqrt(discriminant)) * 0.5;
+            t2 = (-b + sqrt(discriminant)) * 0.5;
+        }
+
+        if (t1 < 0.0 && t2 < 0.0) {
+            discard;
+        }
+
+        t = min(t1, t2);
+        if (t < 0.0) {
+            t = 0.0;
+        }
     }
 
     // March ray forward to intersection with larger sphere and find
@@ -12228,9 +12234,14 @@ void main()
 uniform vec3 u_radii;
 
 out vec3 v_positionEC;
+out float v_radiiRatio;
 
 void main()
 {
+    float maxRadius = max(u_radii.x, max(u_radii.y, u_radii.z));
+    float minRadius = min(u_radii.x, min(u_radii.y, u_radii.z));
+    v_radiiRatio = maxRadius / minRadius;
+
     // In the vertex data, the cube goes from (-1.0, -1.0, -1.0) to (1.0, 1.0, 1.0) in model coordinates.
     // Scale to consider the radii.  We could also do this once on the CPU when using the BoxGeometry,
     // but doing it here allows us to change the radii without rewriting the vertex data, and
