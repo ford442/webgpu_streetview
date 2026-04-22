@@ -49,25 +49,9 @@ export class Renderer {
     // [37-39]: padding
     private weatherParams: Float32Array = new Float32Array(40);
 
-    // === TRANSITION SYSTEM ===
-    // Dual-texture post-process pass inserted before Pass 2 (weather).
-    // prevTexture holds a GPU snapshot of the departing panorama; videoTexture
-    // continues to receive live Google Maps canvas pixels as the new scene loads.
-    private transitionPipelines: Map<string, GPURenderPipeline> = new Map();
-    private transitionBindGroupLayout?: GPUBindGroupLayout;
-    private transitionUniformBuffer?: GPUBuffer;   // 16 bytes: [progress, param1, param2, pad]
-    private prevTexture?: GPUTexture;              // rgba8unorm-srgb snapshot of departing frame
-    private activeTransition: string | null = null;
-    private transitionProgress: number = 0.0;
-
-    // Default parameters per transition mode
-    // param1 = zoomAmount, param2 = blurStrength | aberrationStrength
-    public readonly transitionDefaults: Record<string, { duration: number; param1: number; param2: number }> = {
-        'fade':           { duration: 350, param1: 0.0, param2: 0.0 },
-        'zoom':           { duration: 450, param1: 2.4, param2: 0.0 },
-        'zoom-blur':      { duration: 500, param1: 2.5, param2: 1.1 },
-        'zoom-chromatic': { duration: 500, param1: 2.5, param2: 1.0 },
-    };
+    // Previous frame snapshot for seamless transitions
+    private prevTexture?: GPUTexture;  // rgba8unorm-srgb snapshot of departing frame
+    private currentTransitionProgress: number = 0.0;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -131,7 +115,7 @@ export class Renderer {
             this.createTexture(1, 1);
 
             this.uniformBuffer = this.device.createBuffer({
-                size: 16, // 4 floats * 4 bytes: [time, zoom, cameraHeadingNorm, cameraPitchNorm]
+                size: 32, // 8 floats * 4 bytes: [time, zoom, panX, panY, transitionProgress, pad×3]
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -194,12 +178,7 @@ export class Renderer {
             await this.createPipeline();
             await this.createWeatherPipeline();
 
-            // Non-fatal: transitions degrade gracefully if shaders fail to load
-            try {
-                await this.initTransitionPipelines();
-            } catch (e) {
-                console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
-            }
+            // Transition system is now inline in streetview.wgsl
 
             return true;
         } catch (e) {
@@ -268,6 +247,7 @@ export class Renderer {
         if (!this.pipeline || !this.texture || !this.sampler || !this.uniformBuffer) return;
 
         const textureView = (this.videoTexture ? this.videoTexture.createView() : this.texture.createView());
+        const prevTextureView = (this.prevTexture ? this.prevTexture.createView() : this.texture.createView());
 
         this.bindGroup = this.device.createBindGroup({
             layout: this.pipeline.getBindGroupLayout(0),
@@ -275,6 +255,7 @@ export class Renderer {
                 { binding: 0, resource: this.sampler },
                 { binding: 1, resource: textureView },
                 { binding: 2, resource: { buffer: this.uniformBuffer } },
+                { binding: 3, resource: prevTextureView },
             ],
         });
     }
@@ -324,6 +305,11 @@ export class Renderer {
                     binding: 2,
                     visibility: GPUShaderStage.FRAGMENT,
                     buffer: { type: 'uniform' as GPUBufferBindingType },
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    texture: { sampleType: 'float' as GPUTextureSampleType },
                 },
             ],
         });
@@ -467,8 +453,6 @@ export class Renderer {
             if (this.effectsBuffer) this.effectsBuffer.destroy();
             if (this.weatherParamsBuffer) this.weatherParamsBuffer.destroy();
             if (this.prevTexture) this.prevTexture.destroy();
-            if (this.transitionUniformBuffer) this.transitionUniformBuffer.destroy();
-            this.transitionPipelines.clear();
             this.device?.destroy();
         } catch (e) {
             // ignore cleanup errors
@@ -480,8 +464,6 @@ export class Renderer {
         this.effectsBuffer = undefined as any;
         this.weatherParamsBuffer = undefined as any;
         this.prevTexture = undefined;
-        this.transitionUniformBuffer = undefined;
-        this.activeTransition = null;
         this.pipeline = undefined as any;
         this.weatherPipeline = undefined as any;
         this.bindGroup = undefined as any;
@@ -561,79 +543,11 @@ export class Renderer {
     // =========================================================================
 
     /**
-     * Load all transition shaders and create their GPU pipelines.
-     * Called non-fatally at the end of init() — failure is logged and transitions
-     * degrade to the normal panorama render without affecting other features.
+     * Snapshot the current videoTexture into prevTexture.
+     * Call this before changing panoramas so the shader can blend from the old frame.
      */
-    private async initTransitionPipelines(): Promise<void> {
-        const baseUrl = process.env.PUBLIC_URL || '/';
-
-        // Shared bind group layout for all 4 transition shaders
-        this.transitionBindGroupLayout = this.device.createBindGroupLayout({
-            label: 'Transition Bind Group Layout',
-            entries: [
-                { binding: 0, visibility: GPUShaderStage.FRAGMENT,
-                  texture: { sampleType: 'float' as GPUTextureSampleType } },   // uTextureFrom
-                { binding: 1, visibility: GPUShaderStage.FRAGMENT,
-                  texture: { sampleType: 'float' as GPUTextureSampleType } },   // uTextureTo
-                { binding: 2, visibility: GPUShaderStage.FRAGMENT,
-                  sampler: { type: 'filtering' as GPUSamplerBindingType } },
-                { binding: 3, visibility: GPUShaderStage.FRAGMENT,
-                  buffer: { type: 'uniform' as GPUBufferBindingType } },
-            ],
-        });
-
-        // Shared 16-byte uniform buffer: [progress, param1, param2, pad]
-        this.transitionUniformBuffer = this.device.createBuffer({
-            label: 'Transition Uniforms',
-            size: 16,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-
-        const pipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [this.transitionBindGroupLayout],
-        });
-
-        const names = ['fade', 'zoom', 'zoom-blur', 'zoom-chromatic'] as const;
-        for (const name of names) {
-            const url = `${baseUrl}/shaders/transition-${name}.wgsl`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
-            const code = await response.text();
-
-            const shaderModule = this.device.createShaderModule({
-                label: `Transition ${name}`,
-                code,
-            });
-
-            const pipeline = this.device.createRenderPipeline({
-                label: `Transition Pipeline ${name}`,
-                layout: pipelineLayout,
-                vertex:   { module: shaderModule, entryPoint: 'vs_main' },
-                fragment: {
-                    module: shaderModule,
-                    entryPoint: 'fs_main',
-                    targets: [{ format: 'rgba16float' as GPUTextureFormat }],
-                },
-                primitive: { topology: 'triangle-list' },
-            });
-
-            this.transitionPipelines.set(name, pipeline);
-        }
-
-        console.log('[Renderer] Transition pipelines ready:', Array.from(this.transitionPipelines.keys()).join(', '));
-    }
-
-    /**
-     * Snapshot the current videoTexture into prevTexture and arm the transition.
-     * Must be called while videoTexture is valid (i.e. at least one frame has rendered).
-     */
-    public beginTransition(mode: string = 'zoom'): void {
+    public captureCurrentFrame(): void {
         if (!this.device || !this.videoTexture) return;
-        if (!this.transitionPipelines.has(mode)) {
-            console.warn(`[Renderer] Unknown transition mode "${mode}" — skipping`);
-            return;
-        }
 
         // Ensure prevTexture exists and matches videoTexture dimensions/format
         if (!this.prevTexture ||
@@ -646,83 +560,30 @@ export class Renderer {
                 format: this.videoTexture.format,
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
+            // Bind group must be rebuilt because prevTexture view changed
+            this.updateBindGroup();
         }
 
         // GPU → GPU copy: zero CPU cost, ordered by the WebGPU queue
         const encoder = this.device.createCommandEncoder({ label: 'Snapshot encoder' });
         encoder.copyTextureToTexture(
             { texture: this.videoTexture },
-            { texture: this.prevTexture  },
+            { texture: this.prevTexture },
             { width: this.videoTexture.width, height: this.videoTexture.height },
         );
         this.device.queue.submit([encoder.finish()]);
-
-        this.activeTransition  = mode;
-        this.transitionProgress = 0.0;
     }
 
     /**
-     * Update the transition blend each frame.
-     * progress: 0.0 = fully departing panorama, 1.0 = fully incoming panorama.
+     * Set the transition progress for the inline shader transition.
+     * 0.0 = fully old frame, 1.0 = fully new frame.
      */
-    public updateTransitionProgress(progress: number): void {
-        this.transitionProgress = Math.max(0.0, Math.min(1.0, progress));
-        if (!this.transitionUniformBuffer || !this.device || !this.activeTransition) return;
-
-        const defaults = this.transitionDefaults[this.activeTransition];
-        const data = new Float32Array([
-            this.transitionProgress,
-            defaults?.param1 ?? 0.0,
-            defaults?.param2 ?? 0.0,
-            0.0,
-        ]);
-        this.device.queue.writeBuffer(this.transitionUniformBuffer, 0, data);
-    }
-
-    /** Disarm the transition (called after progress reaches 1.0). */
-    public endTransition(): void {
-        this.activeTransition   = null;
-        this.transitionProgress = 0.0;
-    }
-
-    /** Returns true while a GPU transition is in progress. */
-    public isInTransition(): boolean {
-        return this.activeTransition !== null;
-    }
-
-    /** Duration (ms) for the given transition mode (or the active mode if omitted). */
-    public getTransitionDuration(mode?: string): number {
-        const key = mode ?? this.activeTransition ?? 'zoom';
-        return this.transitionDefaults[key]?.duration ?? 450;
-    }
-
-    /**
-     * Render a transition between two panoramas with zoom and crossfade
-     * This implements the "zoom through" transition effect
-     */
-    public renderStreetViewTransition(
-        mode: RenderMode,
-        prevSource: CanvasImageSource | null,
-        nextSource: CanvasImageSource | null,
-        heading?: number,
-        pitch?: number,
-        zoom?: number,
-        transitionState?: 'idle' | 'zooming_out' | 'crossfading' | 'zooming_in',
-        transitionProgress?: number
-    ): void {
-        // For now, just render the appropriate source based on transition state
-        // A full dual-texture implementation would require shader modifications
-        
-        if (transitionState === 'zooming_out' || transitionState === 'crossfading') {
-            // During zoom out and crossfade, render the previous source with zoom
-            this.renderStreetView(mode, prevSource, heading, pitch, zoom);
-        } else if (transitionState === 'zooming_in') {
-            // During zoom in, render the next source with zoom
-            this.renderStreetView(mode, nextSource, heading, pitch, zoom);
-        } else {
-            // Idle - render normally
-            this.renderStreetView(mode, nextSource, heading, pitch, zoom);
-        }
+    public setTransitionProgress(progress: number): void {
+        this.currentTransitionProgress = Math.max(0.0, Math.min(1.0, progress));
+        if (!this.uniformBuffer || !this.device) return;
+        // Write only the 5th float (offset 16 bytes)
+        const data = new Float32Array([this.currentTransitionProgress]);
+        this.device.queue.writeBuffer(this.uniformBuffer, 16, data);
     }
 
     /**
@@ -806,15 +667,10 @@ export class Renderer {
     ): void {
         if (this.isDestroyed || !this.device || !this.pipeline || !this.weatherPipeline) return;
 
-        // If no source: fall back to weather-only unless a GPU transition is active
-        // (during an active transition prevTexture + videoTexture carry the blend)
-        if (!source) {
-            if (this.activeTransition && this.prevTexture && this.videoTexture) {
-                // continue — transition pipeline will use cached GPU textures
-            } else {
-                this.renderWeatherOnly();
-                return;
-            }
+        // If no source and no transition snapshot available, fall back to weather-only
+        if (!source && !(this.currentTransitionProgress > 0.0 && this.prevTexture && this.videoTexture)) {
+            this.renderWeatherOnly();
+            return;
         }
 
         let srcWidth = 0;
@@ -870,7 +726,11 @@ export class Renderer {
             const z = zoom || 1;
             const panX = ((heading || 0) % 360) / 360;
             const panY = ((pitch || 0) + 90) / 180;
-            const uniforms = new Float32Array([time, z, panX, panY]);
+            const uniforms = new Float32Array([
+                time, z, panX, panY,
+                this.currentTransitionProgress,
+                0.0, 0.0, 0.0
+            ]);
             this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
             // Ensure intermediate texture is correct size
@@ -891,32 +751,9 @@ export class Renderer {
                 }],
             });
 
-            const transitionPipeline = this.activeTransition
-                ? this.transitionPipelines.get(this.activeTransition)
-                : undefined;
-
-            if (transitionPipeline && this.prevTexture && this.videoTexture &&
-                this.transitionBindGroupLayout && this.transitionUniformBuffer) {
-                // Rebuild bind group each frame (videoTexture pixels update live)
-                const tBindGroup = this.device.createBindGroup({
-                    label: 'Transition Bind Group',
-                    layout: this.transitionBindGroupLayout,
-                    entries: [
-                        { binding: 0, resource: this.prevTexture.createView() },
-                        { binding: 1, resource: this.videoTexture.createView() },
-                        { binding: 2, resource: this.sampler },
-                        { binding: 3, resource: { buffer: this.transitionUniformBuffer } },
-                    ],
-                });
-                mainPass.setPipeline(transitionPipeline);
-                mainPass.setBindGroup(0, tBindGroup);
-                mainPass.draw(3); // full-screen triangle
-            } else {
-                // Normal panorama pass
-                mainPass.setPipeline(this.pipeline);
-                mainPass.setBindGroup(0, this.bindGroup);
-                mainPass.draw(4, 1, 0, 0); // triangle strip
-            }
+            mainPass.setPipeline(this.pipeline);
+            mainPass.setBindGroup(0, this.bindGroup);
+            mainPass.draw(4, 1, 0, 0); // triangle strip
 
             mainPass.end();
 

@@ -17,13 +17,25 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
+struct PanoramaUniforms {
+    time: f32,
+    zoom: f32,
+    panX: f32,
+    panY: f32,
+    transitionProgress: f32,
+    _pad1: f32,
+    _pad2: f32,
+    _pad3: f32,
+};
+
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var tex: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> uniforms: vec4<f32>; // [time, zoom, cameraHeadingNorm, cameraPitchNorm]
+@group(0) @binding(2) var<uniform> uniforms: PanoramaUniforms;
+@group(0) @binding(3) var prevTex: texture_2d<f32>;
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let zoom = uniforms.y;
+    let zoom = uniforms.zoom;
     // cameraHeadingNorm and cameraPitchNorm are passed through for weather effects
     // but no longer used for UV panning (the panorama is always centered on the view)
 
@@ -36,6 +48,32 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample the panorama texture
     var color = textureSample(tex, texSampler, clampedUV).rgb;
+
+    // Seamless transition: blend from previous frame with zoom + blur
+    let t = uniforms.transitionProgress;
+    if (t > 0.0 && t < 1.0) {
+        let baseDist = length(input.uv - center);
+
+        // Radial push + zoom on the outgoing frame
+        let push = (input.uv - center) * baseDist * 0.15 * t;
+        let zoomOld = 1.0 + (2.4 - 1.0) * t;
+        let uvOld = (input.uv + push - center) / zoomOld + center;
+
+        // 3-tap diagonal blur for softness
+        let res = vec2<f32>(textureDimensions(prevTex));
+        let blur = t * (0.006 * 1280.0 / res.x);
+        var colorOld = textureSample(prevTex, texSampler, uvOld + vec2<f32>(-blur, -blur));
+            colorOld += textureSample(prevTex, texSampler, uvOld + vec2<f32>( blur, -blur));
+            colorOld += textureSample(prevTex, texSampler, uvOld);
+        colorOld *= 0.333333;
+
+        // Accelerated fade — fast start, smooth landing
+        let fade = pow(t, 1.35);
+        color = mix(colorOld.rgb, color, fade);
+
+        // Soft vignette during transition
+        color = color * (1.0 - baseDist * 0.5 * t);
+    }
 
     // Output to HDR intermediate (color grading and weather applied in post-process)
     return vec4<f32>(color, 1.0);

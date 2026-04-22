@@ -1,21 +1,22 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { findBestLink } from '../utils/navigation';
+import type { Renderer } from '../renderer/Renderer';
 
 // Types
 export interface StreetViewState {
   // Core panorama reference
   panorama: google.maps.StreetViewPanorama | null;
   canvas: HTMLCanvasElement | null;
-  
+
   // View state
   heading: number;
   pitch: number;
   zoom: number;
-  
+
   // Location
   position: google.maps.LatLng | null;
   locationName: string;
-  
+
   // Actions
   setPanorama: (panorama: google.maps.StreetViewPanorama | null) => void;
   setCanvas: (canvas: HTMLCanvasElement | null) => void;
@@ -23,14 +24,18 @@ export interface StreetViewState {
   setPitch: (pitch: number | ((prev: number) => number)) => void;
   setZoom: (zoom: number | ((prev: number) => number)) => void;
   setPosition: (position: google.maps.LatLng | null, locationName?: string) => void;
-  
+
   // Navigation
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;
   teleport: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => void;
-  
+
   // Transition state
   isTransitioning: boolean;
   setIsTransitioning: (transitioning: boolean) => void;
+
+  // Renderer bridge for GPU transitions
+  rendererRef: React.MutableRefObject<Renderer | null>;
+  setRenderer: (renderer: Renderer | null) => void;
 }
 
 const StreetViewContext = createContext<StreetViewState | null>(null);
@@ -72,7 +77,15 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
-  
+
+  // Renderer bridge for GPU snapshot + transition tween
+  const rendererRef = useRef<Renderer | null>(null);
+  const transitionRafRef = useRef<number | null>(null);
+
+  const setRenderer = useCallback((renderer: Renderer | null) => {
+    rendererRef.current = renderer;
+  }, []);
+
   // Wrap setters to handle both values and updater functions
   const setHeading = useCallback((value: number | ((prev: number) => number)) => {
     setHeadingState(prev => {
@@ -133,22 +146,50 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     currentHeading?: number
   ) => {
     const pano = panoramaRef.current;
+    const renderer = rendererRef.current;
     if (!pano || isTransitioning) return;
-    
+
     const links = pano.getLinks();
     if (!links) return;
-    
+
     const useHeading = currentHeading ?? heading;
-    
+
     const bestLink = findBestLink(
       links.filter((link): link is google.maps.StreetViewLink => link !== null),
       useHeading,
       direction
     );
-    
+
     if (bestLink && bestLink.pano) {
+      // 1. Snapshot current frame so the shader can blend from it
+      renderer?.captureCurrentFrame?.();
+
+      // 2. Trigger the panorama change
       setIsTransitioning(true);
       pano.setPano(bestLink.pano);
+
+      // 3. Tween transitionProgress 0 → 1 over 500ms via RAF
+      if (transitionRafRef.current) {
+        cancelAnimationFrame(transitionRafRef.current);
+      }
+
+      const duration = 500;
+      const startTime = performance.now();
+
+      const tick = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1.0, elapsed / duration);
+        renderer?.setTransitionProgress?.(progress);
+
+        if (progress < 1.0) {
+          transitionRafRef.current = requestAnimationFrame(tick);
+        } else {
+          // Transition complete — reset for next time
+          renderer?.setTransitionProgress?.(0.0);
+          transitionRafRef.current = null;
+        }
+      };
+      transitionRafRef.current = requestAnimationFrame(tick);
     }
   }, [heading, isTransitioning]);
   
@@ -227,6 +268,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     teleport,
     isTransitioning,
     setIsTransitioning,
+    rendererRef,
+    setRenderer,
   };
   
   return (
