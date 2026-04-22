@@ -86,25 +86,12 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   const sizeConfig = SIZE_MAP[size];
 
-  // Inject pulse keyframes once
-  useEffect(() => {
-    const styleId = 'icon-button-pulse-style';
-    if (document.getElementById(styleId)) return;
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      @keyframes iconButtonPulse {
-        0%, 100% { opacity: 0.8; transform: scale(1); }
-        50% { opacity: 1; transform: scale(1.02); }
-      }
-    `;
-    document.head.appendChild(style);
-  }, []);
-
   const buttonStyle: React.CSSProperties = {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: '4px',
     padding: sizeConfig.padding,
     background: active
       ? `${activeColor}26`
@@ -114,7 +101,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     boxShadow: active
-      ? `0 0 24px ${activeColor}80, inset 0 0 12px ${activeColor}40, 0 0 6px ${activeColor}60`
+      ? `0 0 20px ${activeColor}4D, inset 0 0 10px ${activeColor}1A`
       : 'none',
   };
 
@@ -143,44 +130,29 @@ export const IconButton: React.FC<IconButtonProps> = ({
       aria-pressed={active}
       style={buttonStyle}
     >
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '4px',
-          animation: active ? 'iconButtonPulse 2s ease-in-out infinite' : 'none',
-        }}
+      <svg
+        width={sizeConfig.iconSize}
+        height={sizeConfig.iconSize}
+        viewBox="0 0 24 24"
+        fill={active ? activeColor : 'rgba(255, 255, 255, 0.7)'}
+        style={{ transition: 'fill 0.2s ease' }}
       >
-        <svg
-          width={sizeConfig.iconSize}
-          height={sizeConfig.iconSize}
-          viewBox="0 0 24 24"
-          fill={active ? activeColor : 'rgba(255, 255, 255, 0.7)'}
+        <path d={icon} />
+      </svg>
+      {label && (
+        <span
           style={{
-            transition: 'fill 0.2s ease',
-            filter: active ? `drop-shadow(0 0 4px ${activeColor})` : 'none',
+            fontSize: size === 'sm' ? '10px' : '11px',
+            color: active ? activeColor : 'rgba(255, 255, 255, 0.7)',
+            fontWeight: 500,
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+            transition: 'color 0.2s ease',
           }}
         >
-          <path d={icon} />
-        </svg>
-        {label && (
-          <span
-            style={{
-              fontSize: size === 'sm' ? '10px' : '11px',
-              color: active ? activeColor : 'rgba(255, 255, 255, 0.7)',
-              fontWeight: 500,
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
-              transition: 'color 0.2s ease',
-              textShadow: active ? `0 0 8px ${activeColor}` : 'none',
-            }}
-          >
-            {label}
-          </span>
-        )}
-      </div>
+          {label}
+        </span>
+      )}
     </button>
   );
 };

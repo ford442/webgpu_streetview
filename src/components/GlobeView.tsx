@@ -226,26 +226,29 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         entryCoords.current = { lat: currentLat, lng: currentLng, heading: currentHeading };
 
-        // 1. Set the global access token FIRST
-        if (process.env.REACT_APP_CESIUM_ION_TOKEN) {
-            Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN;
-        } else {
-            console.warn("Missing REACT_APP_CESIUM_ION_TOKEN in .env file!");
-        }
+        // Suppress Ion token console noise — we use OSM which needs no Ion token
+        Cesium.Ion.defaultAccessToken = '';
 
         let viewer: any;
         try {
             viewer = new Cesium.Viewer(containerRef.current, {
                 animation: false,
+                baseLayerPicker: false,
+                fullscreenButton: false,
+                geocoder: false,
+                homeButton: false,
+                infoBox: false,
+                sceneModePicker: false,
+                selectionIndicator: false,
                 timeline: false,
                 navigationHelpButton: false,
-                baseLayerPicker: false, // We don't need the UI dropdown
-                geocoder: false,
-
-                // 3. Request the High-Res 3D World Terrain
-                terrainProvider: Cesium.createWorldTerrainAsync({
-                    requestWaterMask: true, // Optional: Makes oceans/lakes look like actual water
-                    requestVertexNormals: true // Optional: Better lighting on mountains
+                navigationInstructionsInitiallyVisible: false,
+                skyAtmosphere: new Cesium.SkyAtmosphere(),
+                terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+                imageryProvider: new Cesium.UrlTemplateImageryProvider({
+                    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    credit: '© OpenStreetMap contributors',
+                    maximumLevel: 19,
                 }),
             });
         } catch (err) {

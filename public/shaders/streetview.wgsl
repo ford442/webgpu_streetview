@@ -1,10 +1,25 @@
 // Streetview shader - panoramic image viewer
 // Outputs to HDR intermediate texture for post-processing
 // Note: Color grading and weather effects are applied in weather-post.wgsl
+//
+// Transition support: When transitionProgress is between 0.0 and 1.0,
+// the shader mixes between previousFrameTexture (old panorama) and
+// tex (current panorama) with a zoom effect on the outgoing frame.
 
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
+};
+
+struct PanoramaUniforms {
+    time: f32,
+    zoom: f32,
+    cameraHeadingNorm: f32,
+    cameraPitchNorm: f32,
+    transitionProgress: f32,
+    transitionZoomAmount: f32,
+    transitionBlurStrength: f32,
+    _pad: f32,
 };
 
 @vertex
@@ -17,21 +32,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
-struct PanoramaUniforms {
-    time: f32,
-    zoom: f32,
-    panX: f32,
-    panY: f32,
-    transitionProgress: f32,
-    _pad1: f32,
-    _pad2: f32,
-    _pad3: f32,
-};
-
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> uniforms: PanoramaUniforms;
-@group(0) @binding(3) var prevTex: texture_2d<f32>;
+@group(0) @binding(3) var previousFrameTexture: texture_2d<f32>;
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
@@ -49,30 +53,43 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the panorama texture
     var color = textureSample(tex, texSampler, clampedUV).rgb;
 
-    // Seamless transition: blend from previous frame with zoom + blur
+    // === TRANSITION: Mix with previous frame ===
     let t = uniforms.transitionProgress;
     if (t > 0.0 && t < 1.0) {
+        // Zoom the outgoing (previous) panorama toward the vanishing point
+        let transitionZoom = 1.0 + (uniforms.transitionZoomAmount - 1.0) * t;
+        let prevUV = (input.uv - center) / transitionZoom + center;
+        let prevClampedUV = clamp(prevUV, vec2<f32>(0.0), vec2<f32>(1.0));
+
+        // Sample the previous frame
+        var prevColor = textureSample(previousFrameTexture, texSampler, prevClampedUV).rgb;
+
+        // Optional: Apply a subtle blur to the previous frame during transition
+        // This creates a dreamy "departing" feel
+        if (uniforms.transitionBlurStrength > 0.0) {
+            let res = vec2<f32>(textureDimensions(previousFrameTexture));
+            let blur = uniforms.transitionBlurStrength * t * (0.008 * 1280.0 / res.x);
+
+            // 4-tap additional blur samples
+            var blurSample = textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>(-blur, -blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
+            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>( blur, -blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
+            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>(-blur,  blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
+            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>( blur,  blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
+            blurSample *= 0.25;
+
+            // Blend between sharp and blurred previous frame
+            prevColor = mix(prevColor, blurSample, t * 0.5);
+        }
+
+        // Smooth fade curve (slightly accelerated)
+        let fade = pow(t, 1.4);
+
+        // Mix previous (outgoing) and current (incoming) panoramas
+        color = mix(prevColor, color, fade);
+
+        // Subtle vignette during transition to focus attention on center
         let baseDist = length(input.uv - center);
-
-        // Radial push + zoom on the outgoing frame
-        let push = (input.uv - center) * baseDist * 0.15 * t;
-        let zoomOld = 1.0 + (2.4 - 1.0) * t;
-        let uvOld = (input.uv + push - center) / zoomOld + center;
-
-        // 3-tap diagonal blur for softness
-        let res = vec2<f32>(textureDimensions(prevTex));
-        let blur = t * (0.006 * 1280.0 / res.x);
-        var colorOld = textureSample(prevTex, texSampler, uvOld + vec2<f32>(-blur, -blur));
-            colorOld += textureSample(prevTex, texSampler, uvOld + vec2<f32>( blur, -blur));
-            colorOld += textureSample(prevTex, texSampler, uvOld);
-        colorOld *= 0.333333;
-
-        // Accelerated fade — fast start, smooth landing
-        let fade = pow(t, 1.35);
-        color = mix(colorOld.rgb, color, fade);
-
-        // Soft vignette during transition
-        color = color * (1.0 - baseDist * 0.5 * t);
+        color = color * (1.0 - baseDist * 0.55 * t);
     }
 
     // Output to HDR intermediate (color grading and weather applied in post-process)
