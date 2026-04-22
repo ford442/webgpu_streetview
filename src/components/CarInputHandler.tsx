@@ -12,9 +12,9 @@ interface CarInputHandlerProps {
  * CarInputHandler - Handles all input events for car mode.
  * 
  * Routes input based on controlMode:
- * - freeLook: Mouse drag = head look, wheel click = temp steer, A/D = steer
- * - uiMouse: Mouse = UI only, A/D = steer
- * - carSteer: Mouse X = steer, Mouse Y = pitch
+ * - freeLook: Mouse drag = head look, wheel click = temp steer, A/D = head rotate
+ * - uiMouse: Mouse = UI only, right-drag = steer
+ * - carSteer: Mouse X = steer, A/D = steer, Q/E = snap steer
  * 
  * Event handling strategy:
  * - mousedown/wheel/contextmenu: Scoped to target element
@@ -211,22 +211,26 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           advance('right', carHeading);
           break;
         case 'a':
-          // Steering left
-          applySteering(-KEYBOARD_STEER_RATE * 0.016); // Approx for one frame
+          if (controlMode === 'carSteer') {
+            applySteering(-KEYBOARD_STEER_RATE * 0.016);
+          }
           break;
         case 'd':
-          // Steering right
-          applySteering(KEYBOARD_STEER_RATE * 0.016);
+          if (controlMode === 'carSteer') {
+            applySteering(KEYBOARD_STEER_RATE * 0.016);
+          }
           break;
         case 'q':
           e.preventDefault();
-          // Snap turn left
-          applySteering(-45);
+          if (controlMode === 'carSteer') {
+            applySteering(-45);
+          }
           break;
         case 'e':
           e.preventDefault();
-          // Snap turn right
-          applySteering(45);
+          if (controlMode === 'carSteer') {
+            applySteering(45);
+          }
           break;
         case 'c':
           // Recenter head look to car body if offset; otherwise toggle car mode
