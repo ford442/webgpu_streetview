@@ -161,8 +161,13 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     );
 
     if (bestLink && bestLink.pano) {
-      // 1. Snapshot current frame so the shader can blend from it
-      renderer?.captureCurrentFrame?.();
+      // Normalize the link heading to the same 0-1 range used by panX uniforms
+      const movementHeading = bestLink.heading ?? useHeading;
+      const movementHeadingNorm = (((movementHeading % 360) + 360) % 360) / 360;
+
+      // 1. Snapshot raw panorama texture with movement direction so the shader
+      //    can shift the old frame's UVs as the user looks around during load
+      renderer?.capturePanorama?.(movementHeadingNorm);
 
       // 2. Trigger the panorama change
       setIsTransitioning(true);

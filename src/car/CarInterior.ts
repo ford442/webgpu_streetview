@@ -10,6 +10,7 @@ import {
   detectGPUProfile
 } from '../utils/performance';
 import { getMemoryProfiler, MemoryProfiler } from '../utils/memoryProfiler';
+import { createGlassMaterial } from '../materials/PBRMaterials';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -39,7 +40,10 @@ export class CarInterior {
     private interiorBounceLight!: THREE.PointLight;
     private instrumentClusterMat!: THREE.MeshStandardMaterial;
     private centerDisplayMat!: THREE.MeshStandardMaterial;
+    private windshieldGlassMesh!: THREE.Mesh;
+    private rearGlassMesh!: THREE.Mesh;
     private isDomeLightOn: boolean = false;
+    private isActive: boolean = true;
 
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
@@ -442,6 +446,7 @@ export class CarInterior {
         }
         
         this.buildWindshieldFrame();
+        this.buildWindshieldGlass();
         this.buildRearWindow();
         
         if (this.vehicleConfig.hasSideMirrors) {
@@ -1245,6 +1250,29 @@ export class CarInterior {
      * Build rear window frame and glass
      * Creates C-pillars and rear glass to complete the interior shell
      */
+    private buildWindshieldGlass(): void {
+        // Curved windshield plane with subdivision for smooth bending
+        const geometry = new THREE.PlaneGeometry(1.9, 0.75, 16, 8);
+        const pos = geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            // Slight outward bulge (parabolic curve across width)
+            const zOffset = -(x * x) * 0.15;
+            // Slight rake (top tilts back more than bottom)
+            const rake = (y - 0.375) * 0.12;
+            pos.setZ(i, zOffset + rake);
+        }
+        geometry.computeVertexNormals();
+
+        const glassMat = createGlassMaterial('#eef5f8', 0.1);
+        this.windshieldGlassMesh = new THREE.Mesh(geometry, glassMat);
+        this.windshieldGlassMesh.name = 'windshieldGlass';
+        this.windshieldGlassMesh.position.set(0, 1.3, -0.88);
+        this.windshieldGlassMesh.rotation.set(-0.15, 0, 0);
+        this.interiorGroup.add(this.windshieldGlassMesh);
+    }
+
     private buildRearWindow(): void {
         // Rear window top frame (connecting C-pillars)
         const rearTopBarGeo = new THREE.BoxGeometry(1.9, 0.05, 0.05);
@@ -1275,21 +1303,11 @@ export class CarInterior {
 
         // Rear glass plane (transparent, tinted automotive glass)
         const rearGlassGeo = new THREE.PlaneGeometry(1.8, 0.48);
-        const rearGlassMat = new THREE.MeshPhysicalMaterial({
-            color: 0x6a9aae,
-            metalness: 0.05,
-            roughness: 0.03,
-            transmission: 0.55,
-            transparent: true,
-            opacity: 0.35,
-            ior: 1.52,          // Standard automotive glass IOR
-            reflectivity: 0.45,
-            thickness: 0.006,   // Thin glass pane depth for transmission
-            side: THREE.DoubleSide,
-        });
-        const rearGlass = new THREE.Mesh(rearGlassGeo, rearGlassMat);
-        rearGlass.position.set(0, 1.34, 0.64);
-        this.interiorGroup.add(rearGlass);
+        const rearGlassMat = createGlassMaterial('#6a9aae', 0.15);
+        this.rearGlassMesh = new THREE.Mesh(rearGlassGeo, rearGlassMat);
+        this.rearGlassMesh.name = 'rearGlass';
+        this.rearGlassMesh.position.set(0, 1.34, 0.64);
+        this.interiorGroup.add(this.rearGlassMesh);
 
         // Defroster lines (subtle horizontal lines on rear glass)
         for (let i = 0; i < 4; i++) {
@@ -1524,16 +1542,28 @@ export class CarInterior {
     }
 
     /**
+     * Activate or deactivate the interior. When inactive, body pitch/roll
+     * physics are ignored so the chassis stays perfectly level.
+     */
+    public setActive(active: boolean): void {
+        this.isActive = active;
+    }
+
+    /**
      * Set the car body orientation (carHeading).
      * The interior stays level with the ground while the head can look freely.
+     * When inactive (e.g. freelook mode), pitch and roll are forced to 0.
      * @param carHeading - The car's travel direction in degrees
      */
     public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
         // Car body yaw follows heading; optional pitch/roll for dynamic steering physics
+        // When not active (freelook), force pitch/roll to 0 to keep chassis level
+        const safePitch = this.isActive ? bodyPitch : 0;
+        const safeRoll = this.isActive ? bodyRoll : 0;
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
-        const pitchRad = THREE.MathUtils.degToRad(bodyPitch);
-        const rollRad = THREE.MathUtils.degToRad(bodyRoll);
+        const pitchRad = THREE.MathUtils.degToRad(safePitch);
+        const rollRad = THREE.MathUtils.degToRad(safeRoll);
         this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
         // Camera position is inherited automatically through the scene graph:
         //   interiorGroup (rotates) → driverSeatGroup (fixed offset) → camera
@@ -1583,6 +1613,27 @@ export class CarInterior {
             this.wiperAnimationTime = 0;
             if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
             if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
+        }
+    }
+
+    /**
+     * Update window tint darkness dynamically.
+     * @param val - Tint value from 0.0 (clear) to 1.0 (dark)
+     */
+    public updateWindowTint(val: number): void {
+        const clamped = Math.max(0, Math.min(1, val));
+        const darkness = 0.1 + clamped * 0.7;
+        const transmission = 1.0 - clamped * 0.6;
+
+        if (this.windshieldGlassMesh?.material) {
+            const mat = this.windshieldGlassMesh.material as THREE.MeshPhysicalMaterial;
+            mat.color.set(new THREE.Color('#eef5f8')).multiplyScalar(1 - darkness * 0.5);
+            mat.transmission = transmission;
+        }
+        if (this.rearGlassMesh?.material) {
+            const mat = this.rearGlassMesh.material as THREE.MeshPhysicalMaterial;
+            mat.color.set(new THREE.Color('#6a9aae')).multiplyScalar(1 - darkness * 0.5);
+            mat.transmission = transmission;
         }
     }
 

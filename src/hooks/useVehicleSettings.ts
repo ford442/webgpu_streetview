@@ -9,6 +9,7 @@ import {
 } from '../car/VehicleManager';
 
 const STORAGE_KEY = 'webgpu_streetview_vehicle';
+const TINT_STORAGE_KEY = 'webgpu_streetview_window_tint';
 
 interface UseVehicleSettingsReturn {
     currentVehicle: VehicleType;
@@ -17,6 +18,8 @@ interface UseVehicleSettingsReturn {
     nextVehicle: () => void;
     previousVehicle: () => void;
     isTransitioning: boolean;
+    windowTint: number;
+    setWindowTint: (value: number) => void;
 }
 
 /**
@@ -37,6 +40,17 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
 
     const [isTransitioning, setIsTransitioning] = useState(false);
 
+    const [windowTint, setWindowTintState] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem(TINT_STORAGE_KEY);
+            if (stored) {
+                const parsed = parseFloat(stored);
+                if (!isNaN(parsed)) return Math.max(0, Math.min(1, parsed));
+            }
+        }
+        return 0.1;
+    });
+
     // Sync with vehicle manager
     useEffect(() => {
         const unsubscribe = vehicleManager.onChange((vehicle) => {
@@ -51,6 +65,16 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
             localStorage.setItem(STORAGE_KEY, currentVehicle);
         }
     }, [currentVehicle]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(TINT_STORAGE_KEY, String(windowTint));
+        }
+    }, [windowTint]);
+
+    const setWindowTint = useCallback((value: number) => {
+        setWindowTintState(Math.max(0, Math.min(1, value)));
+    }, []);
 
     const setVehicle = useCallback((type: VehicleType) => {
         if (type === currentVehicle) return;
@@ -89,6 +113,8 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
         nextVehicle,
         previousVehicle,
         isTransitioning,
+        windowTint,
+        setWindowTint,
     };
 }
 

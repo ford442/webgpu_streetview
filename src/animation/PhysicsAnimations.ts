@@ -133,7 +133,8 @@ const BRAKE_MAX = 1;
  * queried individually or as a combined state snapshot.
  */
 export class VehiclePhysicsAnimations {
-  private enabled: boolean = true;
+  /** Disabled by default — must be explicitly enabled (e.g. when entering car mode). */
+  private enabled: boolean = false;
   private suspensionConfig: SuspensionConfig;
 
   // Spring instances
