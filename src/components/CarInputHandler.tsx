@@ -12,7 +12,7 @@ interface CarInputHandlerProps {
  * CarInputHandler - Handles all input events for car mode.
  * 
  * Routes input based on controlMode:
- * - freeLook: Mouse drag = head look, wheel click = temp steer, A/D = head rotate
+ * - freeLook: All mouse drag = head look only (car body never steers), A/D = head rotate
  * - uiMouse: Mouse = UI only, right-drag = steer
  * - carSteer: Mouse X = steer, A/D = steer, Q/E = snap steer
  * 
@@ -136,16 +136,9 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       const isSteeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current;
       
       if (currentMode === 'freeLook') {
-        // Free Look: Mouse drag controls head look
-        // Steering only if modifiers (Shift, Right-click, Wheel-grab) are active
-        if (isSteeringDrag || e.shiftKey) {
-          applySteering(e.movementX * 0.3);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        } else {
-          // Normal head look (viewer direction)
-          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        }
+        // Free Look: all mouse drag controls head look only — car body never steers
+        setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
+        setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
       } else if (currentMode === 'carSteer') {
         // Car Steer Mode: All mouse drags steer the car body
         applySteering(e.movementX * 0.3);
