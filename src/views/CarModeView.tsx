@@ -262,6 +262,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     pitchImpulseRef.current = direction === 'forward' ? -5 : 3;
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
   }, []);
+
+  // Handle steering deltas from CarInputHandler for wheel visual + body tilt
+  const handleSteeringDelta = useCallback((delta: number) => {
+    steeringInputRef.current = Math.max(-90, Math.min(90, steeringInputRef.current + delta));
+  }, []);
   
   // Dashboard toggle handlers
   const handleToggleGPS = useCallback(() => {
@@ -370,6 +375,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         targetRef={containerRef}
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
         onThrust={handleThrust}
+        onSteeringDelta={handleSteeringDelta}
       />
       
       {/* Premium Car Dashboard */}

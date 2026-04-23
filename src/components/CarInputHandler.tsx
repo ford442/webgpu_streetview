@@ -6,6 +6,7 @@ interface CarInputHandlerProps {
   targetRef: React.RefObject<HTMLElement | null>;
   isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
   onThrust?: (direction: 'forward' | 'backward') => void;
+  onSteeringDelta?: (delta: number) => void;
 }
 
 /**
@@ -24,7 +25,8 @@ interface CarInputHandlerProps {
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
   isSteeringWheelAtPoint,
-  onThrust
+  onThrust,
+  onSteeringDelta
 }) => {
   const {
     heading,
@@ -53,22 +55,17 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const isRightMouseRef = useRef(false);
   const dragStartedOnTargetRef = useRef(false);
   
-  // Car steering state (to be passed to parent or context)
-  const steeringInputRef = useRef(0);
   const keysPressedRef = useRef<Set<string>>(new Set());
   const lastTimeRef = useRef<number>(0);
-  
+
   // Constants
   const HEAD_LOOK_SENSITIVITY = 0.18;
-  const KEYBOARD_STEER_RATE = 60; // degrees per second
+  const KEYBOARD_LOOK_RATE = 120; // degrees per second for head rotation
+  const KEYBOARD_STEER_RATE = 60; // degrees per second for car steering
   const CLICK_DRAG_THRESHOLD = 5;
   
   // Steering helper
   const applySteering = useCallback((steerDelta: number) => {
-    // Update steering angle for the steering wheel visual
-    const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
-    steeringInputRef.current = newSteering;
-
     // Move the car body heading
     setCarHeading(prev => ((prev + steerDelta + 360) % 360));
 
@@ -78,7 +75,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     }
     // In 'free' coupling, setHeading is NOT called, so the head stays
     // fixed to its current world-absolute heading.
-  }, [headCoupling, setCarHeading, setHeading]);
+
+    // Notify parent of steering delta for steering wheel visual / body tilt
+    onSteeringDelta?.(steerDelta * 0.5);
+  }, [headCoupling, setCarHeading, setHeading, onSteeringDelta]);
   
   useEffect(() => {
     const target = targetRef.current;
@@ -204,12 +204,16 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           advance('right', carHeading);
           break;
         case 'a':
-          if (controlMode === 'carSteer') {
+          if (controlMode === 'freeLook') {
+            setHeading(prev => (prev - KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
+          } else if (controlMode === 'carSteer') {
             applySteering(-KEYBOARD_STEER_RATE * 0.016);
           }
           break;
         case 'd':
-          if (controlMode === 'carSteer') {
+          if (controlMode === 'freeLook') {
+            setHeading(prev => (prev + KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
+          } else if (controlMode === 'carSteer') {
             applySteering(KEYBOARD_STEER_RATE * 0.016);
           }
           break;
@@ -285,6 +289,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     endTempSteerMode,
     setCarHeading,
     applySteering,
+    onSteeringDelta,
   ]);
   
   // This component doesn't render anything
