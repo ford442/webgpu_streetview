@@ -46,7 +46,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     const sourceChangeFlagRef = useRef<boolean>(true);
     const FRAME_SKIP = 2; // Render every 2nd frame (30fps base) when source unchanged, 60fps when changed
 
-    // Transition animation is now driven by useStreetView() via renderer.setTransitionProgress()
+    // Transition state ref — updated on every render so the RAF loop always
+    // sees the latest React state without re-creating the animation closure.
+    const isTransitioningRef = useRef(isStreetViewTransitioning);
+    isTransitioningRef.current = isStreetViewTransitioning;
 
     // Performance: Debounced resize
     const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -147,7 +150,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             if (!isActive) return;
             if (success) {
                 internalRendererRef.current = renderer;
-                setRenderer(renderer);
+                setRenderer(renderer);  // Register with StreetView context
                 setWebgpuFailed(false);
                 onWebGPUStatusRef.current?.(true);
                 startMonitoringRef.current();
@@ -160,7 +163,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
 
         return () => {
             isActive = false;
-            setRenderer(null);
+            setRenderer(null);  // Unregister from StreetView context
             stopMonitoringRef.current();
             renderer.destroy();
         };
@@ -189,7 +192,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             // Performance: Adaptive frame skipping based on quality
             const skipFrame = shouldSkipFrame();
 
+            // Force full-fps while a GPU transition is animating (isTransitioning = true)
             const shouldRender = !skipFrame && (
+                isTransitioningRef.current ||
                 sourceChangeFlagRef.current ||
                 (frameCountRef.current % FRAME_SKIP === 0)
             );

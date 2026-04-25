@@ -22,12 +22,10 @@ export interface CircularGaugeProps {
     useGradient?: boolean;
     /** Value at which color transitions to warning (for RPM redline) */
     warningThreshold?: number;
-    /** Spring tension (N/m — higher = faster, more overshoot). Default 180. */
-    tension?: number;
-    /** Spring friction (N·s/m — higher = less overshoot). Default 14. */
-    friction?: number;
-    /** Needle mass (kg — higher = more inertia). Default 1.0. */
-    mass?: number;
+    /** Spring stiffness (higher = faster, more overshoot). Default 150. */
+    stiffness?: number;
+    /** Spring damping (higher = less overshoot). Default 16. */
+    damping?: number;
     /** Night glow intensity 0–1: scales the digital-readout bloom at night. */
     nightGlow?: number;
 }
@@ -160,65 +158,42 @@ const interpolateColor = (
 
 /**
  * Hook for spring-physics animation with overshoot and settle behaviour.
- * Uses velocity Verlet integration for stability on oscillatory systems.
- * Models a real physical needle with mass, tension, and friction.
- * An impulse kick is applied when the target changes significantly,
- * mimicking a stepper motor receiving a new position command.
+ * Uses semi-implicit Euler integration: acceleration → velocity → position.
+ * The needle overshoots and bounces like a real physical instrument.
  */
 const useSpringValue = (
     targetValue: number,
-    tension: number = 180,
-    friction: number = 14,
-    mass: number = 1.0
+    stiffness: number = 150,
+    damping: number = 16
 ): number => {
     const posRef = useRef(targetValue);
     const velRef = useRef(0);
-    const prevTargetRef = useRef(targetValue);
     const [displayValue, setDisplayValue] = useState(targetValue);
     const rafRef = useRef<number | null>(null);
     const lastTimeRef = useRef<number>(0);
-
-    const computeAcc = useCallback(
-        (pos: number, vel: number, target: number): number => {
-            const force = -tension * (pos - target) - friction * vel;
-            return force / mass;
-        },
-        [tension, friction, mass]
-    );
 
     useEffect(() => {
         if (rafRef.current) {
             cancelAnimationFrame(rafRef.current);
         }
-
-        // Apply impulse kick on significant target change (stepper-motor feel)
-        const delta = targetValue - prevTargetRef.current;
-        if (Math.abs(delta) > 0.5) {
-            const kickStrength = Math.sqrt(tension / mass) * 0.5;
-            velRef.current += delta * kickStrength;
-        }
-        prevTargetRef.current = targetValue;
         lastTimeRef.current = performance.now();
 
         const step = (now: number) => {
             const dt = Math.min((now - lastTimeRef.current) / 1000, 0.05); // cap at 50 ms
             lastTimeRef.current = now;
 
-            const a0 = computeAcc(posRef.current, velRef.current, targetValue);
-            posRef.current += velRef.current * dt + 0.5 * a0 * dt * dt;
-
-            // Estimate velocity for the new acceleration (predictor step)
-            const vEst = velRef.current + a0 * dt;
-            const a1 = computeAcc(posRef.current, vEst, targetValue);
-            velRef.current += 0.5 * (a0 + a1) * dt;
+            const acc =
+                -stiffness * (posRef.current - targetValue) -
+                damping * velRef.current;
+            velRef.current += acc * dt;
+            posRef.current += velRef.current * dt;
 
             setDisplayValue(posRef.current);
 
-            const isMoving =
+            if (
                 Math.abs(velRef.current) > 0.01 ||
-                Math.abs(posRef.current - targetValue) > 0.05;
-
-            if (isMoving) {
+                Math.abs(posRef.current - targetValue) > 0.05
+            ) {
                 rafRef.current = requestAnimationFrame(step);
             } else {
                 // Settled — snap to target to avoid floating-point drift
@@ -235,7 +210,7 @@ const useSpringValue = (
                 cancelAnimationFrame(rafRef.current);
             }
         };
-    }, [targetValue, computeAcc]);
+    }, [targetValue, stiffness, damping]);
 
     return displayValue;
 };
@@ -258,12 +233,11 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
     arcSweep = 240,
     useGradient = false,
     warningThreshold,
-    tension = 180,
-    friction = 14,
-    mass = 1.0,
+    stiffness = 150,
+    damping = 16,
     nightGlow = 0,
 }) => {
-    const animatedValue = useSpringValue(clamp(value, min, max), tension, friction, mass);
+    const animatedValue = useSpringValue(clamp(value, min, max), stiffness, damping);
 
     // Calculate derived values
     const center = 50;
@@ -494,9 +468,8 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({
             startAngle={120}
             arcSweep={240}
             useGradient={true}
-            tension={180}
-            friction={12}
-            mass={0.8}
+            stiffness={120}
+            damping={14}
             nightGlow={nightGlow}
         />
     );
@@ -528,9 +501,8 @@ export const RpmGauge: React.FC<RpmGaugeProps> = ({
             arcSweep={240}
             useGradient={true}
             warningThreshold={redline}
-            tension={280}
-            friction={16}
-            mass={0.5}
+            stiffness={200}
+            damping={18}
             nightGlow={nightGlow}
         />
     );

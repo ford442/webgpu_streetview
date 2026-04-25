@@ -791,20 +791,6 @@ function InnerApp() {
         />
       </div>
 
-      {/* Black backing during panorama transitions — hides raw StreetView tile-tearing */}
-      {isConnected && isTransitioning && (
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 0,
-          backgroundColor: '#000',
-          pointerEvents: 'none',
-        }} />
-      )}
-
       {/* Global WebGPU canvas - never unmounts, lives behind the views */}
       {isConnected && isCanvasReady && <WebGPUCanvas onWebGPUStatus={setWebGPUAvailable} />}
 

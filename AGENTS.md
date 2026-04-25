@@ -82,7 +82,7 @@ webgpu_streetview/
 │       ├── weather-post.wgsl        # Pass 2: HDR + weather/color grading → screen
 │       ├── carview.wgsl             # Car windshield post-process
 │       ├── texture.wgsl             # Debug passthrough
-│       └── transition-*.wgsl        # (deprecated) kept for reference; transitions now inline in streetview.wgsl
+│       └── transition-*.wgsl        # GPU panorama transitions (fade, zoom, zoom-blur, zoom-chromatic)
 ├── src/
 │   ├── App.tsx                      # Central controller. Renders providers + InnerApp.
 │   ├── index.tsx                    # React entry point
@@ -113,7 +113,7 @@ webgpu_streetview/
 │   │   ├── ScoutCard.tsx            # Location scout UI
 │   │   └── MobileUI.tsx             # Touch-friendly fallback
 │   ├── renderer/
-│   │   ├── Renderer.ts              # WebGPU orchestrator: device, dual-pass pipeline, inline transitions
+│   │   ├── Renderer.ts              # WebGPU orchestrator: device, dual-pass pipeline, transitions
 │   │   └── types.ts                 # RenderMode type
 │   ├── car/                         # Three.js car interior system
 │   │   ├── index.ts                 # Public car mode API (init/toggle/update/dispose)
@@ -243,7 +243,7 @@ App.tsx
 - Vertex shader: fullscreen triangle-strip (no geometry buffer).
 - Fragment shader: samples texture with zoom + pan uniforms `[time, zoom, panX, panY]`.
 - Output target: `rgba16float` intermediate HDR texture (`intermediateTexture`).
-- During panorama transitions, `streetview.wgsl` blends `prevTexture` (snapshot of the departing panorama) with `videoTexture` (live incoming panorama) inline using a `transitionProgress` uniform. No separate transition pipeline is swapped.
+- During panorama transitions, a transition pipeline (fade/zoom/zoom-blur/zoom-chromatic) is swapped in, blending `prevTexture` (snapshot of the departing panorama) with `videoTexture` (live incoming panorama).
 
 **Pass 2** — `weather-post.wgsl`
 - Source: HDR intermediate texture.
@@ -254,7 +254,7 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 ### GPU Transition System
 
-When the panorama changes (e.g., cruise mode advancing), `useStreetView.tsx` calls `renderer.captureCurrentFrame()` to snapshot the current `videoTexture` into `prevTexture` via a GPU→GPU `copyTextureToTexture`. It then runs a 500ms `requestAnimationFrame` loop that calls `renderer.setTransitionProgress(progress)` (0.0 → 1.0). The main `streetview.wgsl` shader reads `transitionProgress` and mixes the zoomed/blurred previous frame with the live incoming frame. This masks Google Maps tile-tearing during loads.
+When the panorama changes (e.g., cruise mode advancing), `Renderer.beginTransition(mode)` snapshots the current `videoTexture` into `prevTexture` via a GPU→GPU `copyTextureToTexture`. Over the next ~350–500ms, `updateTransitionProgress(progress)` drives the transition shader to crossfade between the old and new panoramas. This masks Google Maps tile-tearing during loads.
 
 Supported modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
 
@@ -304,7 +304,7 @@ Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, da
 - Do not cache `GPUTextureView` across frames — the underlying texture may be recreated.
 
 ### 4. Transition / `isTransitioning` Coordination
-`StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. The provider itself now owns the GPU transition RAF loop (calling `captureCurrentFrame()` and `setTransitionProgress()`). `WebGPUCanvas.tsx` renders every frame normally; the shader handles the visual blend. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
+`StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and may fade the canvas during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
 
 ### 5. API Key Management
 The Google Maps API key has a fallback hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`), but the preferred source is `.env` (`REACT_APP_MAPS_API_KEY`). Cesium also uses `REACT_APP_CESIUM_ION_TOKEN` from `.env`. Do not commit new keys.

@@ -88,33 +88,6 @@ export interface DashboardUIProps {
 }
 
 // ============================================================================
-// Style Helpers
-// ============================================================================
-
-const getZoneStyle = (timeOfDay: string, nightIntensity: number): React.CSSProperties => {
-    switch (timeOfDay) {
-        case 'sunset':
-            return {
-                border: '1px solid rgba(255, 140, 40, 0.25)',
-                boxShadow: 'inset 0 0 30px rgba(255, 100, 20, 0.08), 0 0 20px rgba(255, 120, 30, 0.1)',
-            };
-        case 'night':
-            if (nightIntensity > 0.5) {
-                return {
-                    border: '1px solid rgba(0, 212, 255, 0.35)',
-                    boxShadow: 'inset 0 0 40px rgba(0, 212, 255, 0.1), 0 0 30px rgba(0, 212, 255, 0.15)',
-                };
-            }
-            return {
-                border: '1px solid rgba(0, 212, 255, 0.15)',
-                boxShadow: 'inset 0 0 20px rgba(0, 212, 255, 0.05), 0 0 10px rgba(0, 212, 255, 0.08)',
-            };
-        default:
-            return {};
-    }
-};
-
-// ============================================================================
 // Component Implementation
 // ============================================================================
 
@@ -252,11 +225,6 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
         >
             <DashboardContainer style={{
                 boxShadow: `inset 0 0 60px ${ambientLightColor}`,
-                background: timeOfDay === 'sunset'
-                    ? 'linear-gradient(180deg, rgba(255,100,30,0.05) 0%, rgba(15,20,25,0.6) 100%)'
-                    : timeOfDay === 'night'
-                    ? 'linear-gradient(180deg, rgba(0,40,80,0.1) 0%, rgba(15,20,25,0.6) 100%)'
-                    : undefined,
             }}>
                 {/* Screen glare and subtle imperfection overlay — mimics LCD infotainment glass */}
                 <div style={{
@@ -277,7 +245,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                     ZONE LEFT - Driving HUD
                     Contains speedometer, gear indicator, and RPM gauge
                 ============================================================================ */}
-                <ZoneLeft style={getZoneStyle(timeOfDay, nightIntensity)}>
+                <ZoneLeft>
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -295,7 +263,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                     ZONE CENTER - Media & Navigation
                     Contains radio controls, audio visualizer, and vehicle controls
                 ============================================================================ */}
-                <ZoneCenter style={getZoneStyle(timeOfDay, nightIntensity)}>
+                <ZoneCenter>
                     <div style={{ 
                         display: 'flex', 
                         flexDirection: 'column', 
@@ -396,7 +364,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                     ZONE RIGHT - Environment Controls
                     Contains light controls, weather sliders, and time selector
                 ============================================================================ */}
-                <ZoneRight style={getZoneStyle(timeOfDay, nightIntensity)}>
+                <ZoneRight>
                     {/* Light controls grid */}
                     <div style={{ 
                         display: 'grid', 
