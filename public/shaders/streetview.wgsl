@@ -40,17 +40,13 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = uniforms.zoom;
-    // cameraHeadingNorm and cameraPitchNorm are passed through for weather effects
-    // but no longer used for UV panning (the panorama is always centered on the view)
+    let center = vec2<f32>(0.5, 0.5);
 
     // Apply digital zoom centered on the image
-    let center = vec2<f32>(0.5, 0.5);
     var uv = (input.uv - center) / zoom + center;
-
-    // Clamp to prevent edge bleeding on zoom
     let clampedUV = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
 
-    // Sample the panorama texture
+    // Sample live feed — Google Maps renders at the current heading/pitch, no UV shift needed
     var color = textureSample(tex, texSampler, clampedUV).rgb;
 
     // === TRANSITION: Mix with previous frame ===
@@ -92,6 +88,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         color = color * (1.0 - baseDist * 0.55 * t);
     }
 
-    // Output to HDR intermediate (color grading and weather applied in post-process)
+    // Output to HDR intermediate (color grading and weather applied in weather-post.wgsl)
     return vec4<f32>(color, 1.0);
 }

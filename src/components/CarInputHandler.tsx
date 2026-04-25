@@ -6,15 +6,16 @@ interface CarInputHandlerProps {
   targetRef: React.RefObject<HTMLElement | null>;
   isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
   onThrust?: (direction: 'forward' | 'backward') => void;
+  onSteeringDelta?: (delta: number) => void;
 }
 
 /**
  * CarInputHandler - Handles all input events for car mode.
  * 
  * Routes input based on controlMode:
- * - freeLook: Mouse drag = head look, wheel click = temp steer, A/D = steer
- * - uiMouse: Mouse = UI only, A/D = steer
- * - carSteer: Mouse X = steer, Mouse Y = pitch
+ * - freeLook: All mouse drag = head look only (car body never steers), A/D = head rotate
+ * - uiMouse: Mouse = UI only, right-drag = steer
+ * - carSteer: Mouse X = steer, A/D = steer, Q/E = snap steer
  * 
  * Event handling strategy:
  * - mousedown/wheel/contextmenu: Scoped to target element
@@ -24,7 +25,8 @@ interface CarInputHandlerProps {
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
   isSteeringWheelAtPoint,
-  onThrust
+  onThrust,
+  onSteeringDelta
 }) => {
   const {
     heading,
@@ -53,22 +55,17 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const isRightMouseRef = useRef(false);
   const dragStartedOnTargetRef = useRef(false);
   
-  // Car steering state (to be passed to parent or context)
-  const steeringInputRef = useRef(0);
   const keysPressedRef = useRef<Set<string>>(new Set());
   const lastTimeRef = useRef<number>(0);
-  
+
   // Constants
   const HEAD_LOOK_SENSITIVITY = 0.18;
-  const KEYBOARD_STEER_RATE = 60; // degrees per second
+  const KEYBOARD_LOOK_RATE = 120; // degrees per second for head rotation
+  const KEYBOARD_STEER_RATE = 60; // degrees per second for car steering
   const CLICK_DRAG_THRESHOLD = 5;
   
   // Steering helper
   const applySteering = useCallback((steerDelta: number) => {
-    // Update steering angle for the steering wheel visual
-    const newSteering = Math.max(-90, Math.min(90, steeringInputRef.current + steerDelta * 0.5));
-    steeringInputRef.current = newSteering;
-
     // Move the car body heading
     setCarHeading(prev => ((prev + steerDelta + 360) % 360));
 
@@ -78,7 +75,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     }
     // In 'free' coupling, setHeading is NOT called, so the head stays
     // fixed to its current world-absolute heading.
-  }, [headCoupling, setCarHeading, setHeading]);
+
+    // Notify parent of steering delta for steering wheel visual / body tilt
+    onSteeringDelta?.(steerDelta * 0.5);
+  }, [headCoupling, setCarHeading, setHeading, onSteeringDelta]);
   
   useEffect(() => {
     const target = targetRef.current;
@@ -136,16 +136,9 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       const isSteeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current;
       
       if (currentMode === 'freeLook') {
-        // Free Look: Mouse drag controls head look
-        // Steering only if modifiers (Shift, Right-click, Wheel-grab) are active
-        if (isSteeringDrag || e.shiftKey) {
-          applySteering(e.movementX * 0.3);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        } else {
-          // Normal head look (viewer direction)
-          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        }
+        // Free Look: all mouse drag controls head look only — car body never steers
+        setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
+        setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
       } else if (currentMode === 'carSteer') {
         // Car Steer Mode: All mouse drags steer the car body
         applySteering(e.movementX * 0.3);
@@ -211,22 +204,30 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           advance('right', carHeading);
           break;
         case 'a':
-          // Steering left
-          applySteering(-KEYBOARD_STEER_RATE * 0.016); // Approx for one frame
+          if (controlMode === 'freeLook') {
+            setHeading(prev => (prev - KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
+          } else if (controlMode === 'carSteer') {
+            applySteering(-KEYBOARD_STEER_RATE * 0.016);
+          }
           break;
         case 'd':
-          // Steering right
-          applySteering(KEYBOARD_STEER_RATE * 0.016);
+          if (controlMode === 'freeLook') {
+            setHeading(prev => (prev + KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
+          } else if (controlMode === 'carSteer') {
+            applySteering(KEYBOARD_STEER_RATE * 0.016);
+          }
           break;
         case 'q':
           e.preventDefault();
-          // Snap turn left
-          applySteering(-45);
+          if (controlMode === 'carSteer') {
+            applySteering(-45);
+          }
           break;
         case 'e':
           e.preventDefault();
-          // Snap turn right
-          applySteering(45);
+          if (controlMode === 'carSteer') {
+            applySteering(45);
+          }
           break;
         case 'c':
           // Recenter head look to car body if offset; otherwise toggle car mode
@@ -288,6 +289,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     endTempSteerMode,
     setCarHeading,
     applySteering,
+    onSteeringDelta,
   ]);
   
   // This component doesn't render anything

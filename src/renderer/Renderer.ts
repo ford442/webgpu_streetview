@@ -76,6 +76,14 @@ export class Renderer {
         'zoom-chromatic': { duration: 500, param1: 2.5, param2: 1.0 },
     };
 
+    // World-space look-around: last rendered panX/Y (tracked every frame)
+    private lastPanX: number = 0.5;
+    private lastPanY: number = 0.5;
+    // Captured at snapshot time — sent to shader so it can compute the heading delta
+    private capturePanX: number = 0.5;
+    private capturePanY: number = 0.5;
+    private movementHeadingNorm: number = 0.5; // normalized 0-1 direction to next node
+
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
 
@@ -270,7 +278,7 @@ export class Renderer {
         this.videoTexture = this.device.createTexture({
             size: [width, height],
             format: 'rgba8unorm-srgb',
-            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
         });
         this.videoTextureWidth = width;
         this.videoTextureHeight = height;
@@ -649,11 +657,24 @@ export class Renderer {
      * Must be called while videoTexture is valid (i.e. at least one frame has rendered).
      */
     public beginTransition(mode: string = 'zoom'): void {
+     * Snapshot the current videoTexture into prevTexture for world-space transitions.
+     * Stores the movement heading and current pan state so the shader can simulate
+     * looking around the old panorama during the transition.
+     *
+     * @param movementHeading - Normalized heading (0-1) towards the next panorama node.
+     *   Computed as `((bestLink.heading % 360) + 360) % 360 / 360`.
+     */
+    public capturePanorama(movementHeading: number): void {
         if (!this.device || !this.videoTexture) return;
         if (!this.transitionPipelines.has(mode)) {
             console.warn(`[Renderer] Unknown transition mode "${mode}" — skipping`);
             return;
         }
+
+        this.movementHeadingNorm = Math.max(0.0, Math.min(1.0, movementHeading));
+        // Store the pan state at capture time — used by the shader to compute look-around delta
+        this.capturePanX = this.lastPanX;
+        this.capturePanY = this.lastPanY;
 
         // Ensure prevTexture exists and matches videoTexture dimensions/format
         if (!this.prevTexture ||
@@ -666,6 +687,7 @@ export class Renderer {
                 format: this.videoTexture.format,
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
+            this.updateBindGroup();
         }
 
         // GPU → GPU copy: zero CPU cost, ordered by the WebGPU queue
@@ -762,6 +784,16 @@ export class Renderer {
     /**
      * Set the inline transition progress (0.0 = fully old frame, 1.0 = fully new).
      * This drives the crossfade in the main streetview.wgsl shader.
+     * @deprecated Use capturePanorama(movementHeading) for world-space look-around transitions.
+     * Kept for backward compatibility; delegates with the last stored movement heading.
+     */
+    public captureCurrentFrame(): void {
+        this.capturePanorama(this.movementHeadingNorm);
+    }
+
+    /**
+     * Set the transition progress for the inline shader transition.
+     * 0.0 = fully old frame, 1.0 = fully new frame.
      */
     public setTransitionProgress(progress: number): void {
         this.inlineTransitionProgress = Math.max(0.0, Math.min(1.0, progress));
@@ -934,22 +966,23 @@ export class Renderer {
             this.weatherParams[6] = time % 10000.0; // looped time
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
 
-            // Update panorama uniforms
-            // panX/panY are normalized camera directions (0-1, 0.5 = center)
-            // Used for world-space weather effects (rain direction, etc.)
-            // Note: UV shifting has been removed - panorama is always centered
-            const z = zoom || 1;
-            const panX = ((heading || 0) % 360) / 360;
-            const panY = ((pitch || 0) + 90) / 180;
-            // 32 bytes: [time, zoom, panX, panY, transitionProgress, zoomAmount, blurStrength, pad]
-            const uniforms = new Float32Array([
-                time, z, panX, panY,
-                this.inlineTransitionProgress,
-                this.transitionDefaults['zoom'].param1,   // zoom amount (2.4)
-                this.transitionDefaults['zoom-blur'].param2, // blur strength (1.1)
-                0.0, // padding
-            ]);
-            this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+            // Update panorama uniforms — all 8 slots written every frame
+const z = zoom || 1;
+const panX = ((heading || 0) % 360) / 360;
+const panY = ((pitch || 0) + 90) / 180;
+
+this.lastPanX = panX;  // Retain for potential look-around delta support
+this.lastPanY = panY;
+
+const uniforms = new Float32Array([
+    time, z, panX, panY,
+    this.inlineTransitionProgress,
+    this.transitionDefaults['zoom'].param1,   // zoom amount (2.4)
+    this.transitionDefaults['zoom-blur'].param2, // blur strength (1.1)
+    0.0, // padding
+]);
+this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+
 
             // Ensure intermediate texture is correct size
             const canvasWidth = this.canvas.width;

@@ -18,6 +18,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GlobeTransition } from '../hooks/useGlobeMode';
+import { useBookmarks } from '../hooks/useBookmarks';
 import ScoutCard from './ScoutCard';
 
 // Cesium is loaded from CDN at runtime, not bundled.
@@ -169,6 +170,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     // Snapshot coords when entering
     const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });
 
+    const { bookmarks: liveBookmarks } = useBookmarks();
+
     // ---- Handle ScoutCard engage (Orbital Drop) ----
     const handleScoutEngage = useCallback((lat: number, lng: number) => {
         setScoutTarget(null);
@@ -212,6 +215,10 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             }
         });
     }, [currentHeading, showToast]);
+
+    // Stable ref for handleScoutEngage so input handlers always see latest version
+    const handleScoutEngageRef = useRef(handleScoutEngage);
+    handleScoutEngageRef.current = handleScoutEngage;
 
     // ---- initialise Cesium once when entering --------------------------------
     useEffect(() => {
@@ -348,39 +355,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             })
         );
 
-        // Bookmark beacons (green glowing markers)
-        const bookmarkImage = makeBookmarkCanvas();
-        bookmarkEntitiesRef.current = bookmarks.slice(0, MAX_VISIBLE_BOOKMARKS).map(bm =>
-            viewer.entities.add({
-                name: bm.name,
-                position: Cesium.Cartesian3.fromDegrees(bm.lng, bm.lat, 70),
-                billboard: {
-                    image: bookmarkImage,
-                    scale: 0.95,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                label: {
-                    text: `📌 ${bm.name}`,
-                    font: 'bold 12px sans-serif',
-                    fillColor: Cesium.Color.fromCssColorString('#00FF80'),
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    pixelOffset: new Cesium.Cartesian2(0, -40),
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.7)'),
-                    backgroundPadding: new Cesium.Cartesian2(6, 3),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                properties: {
-                    bookmarkId: bm.id,
-                    bookmarkLat: bm.lat,
-                    bookmarkLng: bm.lng,
-                    bookmarkName: bm.name,
-                },
-            })
-        );
-
         // --- Event handlers ---
 
         const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -432,19 +406,19 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
         // Single-click (unmodified) → ScoutCard preview.
+        // Clicking a bookmark entity triggers an immediate Orbital Drop.
         // Shift+click is handled by a separate handler registered below with
         // Cesium.KeyboardEventModifier.SHIFT, so it won't reach this handler.
         handler.setInputAction((event: { position: any }) => {
             const picked = viewer.scene.pick(event.position);
             if (Cesium.defined(picked) && picked.id && picked.id.properties) {
-                // Clicked on a bookmark or POI entity
+                // Clicked on a bookmark entity → Orbital Drop directly
                 try {
                     const props = picked.id.properties;
                     const bLat = props.bookmarkLat?.getValue();
                     const bLng = props.bookmarkLng?.getValue();
-                    const bName = props.bookmarkName?.getValue();
                     if (bLat !== undefined && bLng !== undefined) {
-                        setScoutTarget({ lat: bLat, lng: bLng, label: bName || undefined });
+                        handleScoutEngageRef.current(bLat, bLng);
                         return;
                     }
                 } catch { /* fall through to globe pick */ }
@@ -491,6 +465,54 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             cleanupViewer();
         };
     }, []);
+
+    // ---- Reactive bookmark entities (populates from useBookmarks hook) ----
+    useEffect(() => {
+        const viewer = viewerRef.current;
+        if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+
+        // Remove old bookmark entities
+        bookmarkEntitiesRef.current.forEach(e => {
+            try { viewer.entities.remove(e); } catch { /* noop */ }
+        });
+
+        if (liveBookmarks.length === 0) {
+            bookmarkEntitiesRef.current = [];
+            return;
+        }
+
+        const bookmarkImage = makeBookmarkCanvas();
+        bookmarkEntitiesRef.current = liveBookmarks.slice(0, MAX_VISIBLE_BOOKMARKS).map(bm =>
+            viewer.entities.add({
+                name: bm.name,
+                position: Cesium.Cartesian3.fromDegrees(bm.lng, bm.lat, 70),
+                billboard: {
+                    image: bookmarkImage,
+                    scale: 0.95,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+                label: {
+                    text: `📌 ${bm.name}`,
+                    font: 'bold 12px sans-serif',
+                    fillColor: Cesium.Color.fromCssColorString('#00FF80'),
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 2,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -40),
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.7)'),
+                    backgroundPadding: new Cesium.Cartesian2(6, 3),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+                properties: {
+                    bookmarkId: bm.id,
+                    bookmarkLat: bm.lat,
+                    bookmarkLng: bm.lng,
+                    bookmarkName: bm.name,
+                },
+            })
+        );
+    }, [liveBookmarks]);
 
     // ---- Update waypoint visuals on globe ----
     useEffect(() => {

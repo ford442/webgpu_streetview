@@ -2,8 +2,10 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
 import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
+import { useVehicleSettings } from '../hooks/useVehicleSettings';
 import CarInputHandler from '../components/CarInputHandler';
 import { AudioAnalyzer } from '../audio/AudioAnalyzer';
+import { getTopStationForLocation } from '../services/radioBrowserService';
 import {
   initCarMode,
   toggleCarMode,
@@ -14,6 +16,7 @@ import {
   updateCarGauges,
   isCarSteeringWheelHit,
   toggleWipers,
+  setWindowTint,
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
@@ -69,6 +72,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     ambientLightColor,
   } = useEnvironmentSettings();
   
+  const {
+    windowTint,
+    setWindowTint: setVehicleWindowTint,
+  } = useVehicleSettings();
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const carModeStateRef = useRef<CarModeState | null>(null);
   
@@ -77,6 +85,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
+  const [stationName, setStationName] = useState('');
+  const [stationTags, setStationTags] = useState('');
   
   // Audio analyzer ref
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null);
@@ -116,6 +126,10 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       toggleCarMode(false);
       disposeCarMode();
       carModeStateRef.current = null;
+      // Reset body physics so freelook starts perfectly level
+      bodyPitchRef.current = 0;
+      bodyRollRef.current = 0;
+      pitchImpulseRef.current = 0;
     };
   }, [registerCarModeState]);
   
@@ -133,6 +147,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       domeLightOn
     );
   }, [wipersEnabled, headlightsOn, domeLightOn, nightIntensity]);
+  
+  // Sync window tint to car interior
+  useEffect(() => {
+    setWindowTint(windowTint);
+  }, [windowTint]);
   
   // Animation loop for car mode
   useEffect(() => {
@@ -243,6 +262,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     pitchImpulseRef.current = direction === 'forward' ? -5 : 3;
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
   }, []);
+
+  // Handle steering deltas from CarInputHandler for wheel visual + body tilt
+  const handleSteeringDelta = useCallback((delta: number) => {
+    steeringInputRef.current = Math.max(-90, Math.min(90, steeringInputRef.current + delta));
+  }, []);
   
   // Dashboard toggle handlers
   const handleToggleGPS = useCallback(() => {
@@ -259,14 +283,31 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         audioAnalyzerRef.current = new AudioAnalyzer();
       }
       
+      // Try to fetch a local station based on current panorama position
+      const pos = panorama?.getPosition();
+      let streamUrl = 'https://stream.zeno.fm/ywcmn7hpha0uv';
+      let name = 'Radio Garden';
+      let tags = 'world, ambient';
+      
+      if (pos) {
+        const station = await getTopStationForLocation(pos.lat(), pos.lng());
+        if (station) {
+          streamUrl = station.urlResolved || station.url;
+          name = station.name;
+          tags = station.tags;
+        }
+      }
+      
       // Initialize with a stream URL if not already done
       if (!audioElement) {
-        const streamUrl = 'https://stream.zeno.fm/ywcmn7hpha0uv'; // Default radio stream
         const initialized = await audioAnalyzerRef.current.init(streamUrl);
         if (initialized) {
+          audioAnalyzerRef.current.setStationInfo(name, tags);
           await audioAnalyzerRef.current.start();
-          setAudioElement(audioAnalyzerRef.current.getAudioElement()); // Get audio element for DashboardUI
-          setAnalyserNode(audioAnalyzerRef.current.getAnalyser()); // Get analyser for visualizer
+          setAudioElement(audioAnalyzerRef.current.getAudioElement());
+          setAnalyserNode(audioAnalyzerRef.current.getAnalyser());
+          setStationName(name);
+          setStationTags(tags);
         }
       } else {
         // Already initialized, just start playing
@@ -277,7 +318,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       // Stop radio
       audioAnalyzerRef.current?.stop();
     }
-  }, [isRadioPlaying, audioElement]);
+  }, [isRadioPlaying, audioElement, panorama]);
   
   // Cleanup audio analyzer on unmount
   useEffect(() => {
@@ -334,6 +375,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         targetRef={containerRef}
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
         onThrust={handleThrust}
+        onSteeringDelta={handleSteeringDelta}
       />
       
       {/* Premium Car Dashboard */}
@@ -362,11 +404,15 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         rainIntensity={rainIntensity}
         snowIntensity={snowIntensity}
         wind={wind}
+        windowTint={windowTint}
+        onWindowTint={setVehicleWindowTint}
         timeOfDay={timeOfDay}
         audioElement={audioElement}
         analyser={analyserNode}
         nightIntensity={nightIntensity}
         ambientLightColor={ambientLightColor}
+        stationName={stationName}
+        stationTags={stationTags}
       />
       
       {/* Control Mode Indicator (small overlay) */}

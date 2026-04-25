@@ -198,6 +198,7 @@ export function toggleCarMode(enabled: boolean): void {
     if (!carModeState) return;
 
     carModeState.isActive = enabled;
+    carModeState.interior.setActive(enabled);
 
     // Show/hide the Three.js canvas
     if (carModeState.interior.canvas) {
@@ -437,6 +438,15 @@ export function toggleWindDeflector(): boolean {
 export function setWindSpeed(speed: number): void {
     if (!carModeState?.convertibleMode) return;
     carModeState.convertibleMode.setWindSpeed(speed);
+}
+
+/**
+ * Set window tint darkness for all glass surfaces.
+ * @param value - Tint level 0.0 (clear) to 1.0 (dark)
+ */
+export function setWindowTint(value: number): void {
+    if (!carModeState) return;
+    carModeState.interior.updateWindowTint(value);
 }
 
 /**

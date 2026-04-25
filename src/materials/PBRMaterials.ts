@@ -32,6 +32,24 @@ export const QUALITY_PRESETS: Record<MaterialQuality, QualityPreset> = {
     },
 };
 
+export function createGlassMaterial(tintColor: string, darkness: number): THREE.MeshPhysicalMaterial {
+    const color = new THREE.Color(tintColor).multiplyScalar(1 - darkness * 0.5);
+    return new THREE.MeshPhysicalMaterial({
+        color,
+        metalness: 0.0,
+        roughness: 0.05,
+        transmission: 1.0,
+        thickness: 0.02,
+        ior: 1.5,
+        transparent: true,
+        opacity: 1.0,
+        envMapIntensity: 1.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.1,
+        side: THREE.DoubleSide,
+    });
+}
+
 export class VehiclePBRMaterials {
     private textures: THREE.Texture[] = [];
     private materials: THREE.Material[] = [];

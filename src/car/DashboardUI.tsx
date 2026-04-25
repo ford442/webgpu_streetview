@@ -39,7 +39,8 @@ import {
   SNOW_ICON,
   RAIN_ICON,
   WIND_ICON,
-  VEHICLE_ICON
+  VEHICLE_ICON,
+  TINT_ICON
 } from './Controls';
 
 // ============================================================================
@@ -62,6 +63,7 @@ export interface DashboardUIProps {
     onToggleHeadlights?: () => void;
     onToggleHighBeam?: () => void;
     onToggleDomeLight?: () => void;
+    onWindowTint?: (value: number) => void;
     isRoofOpen: boolean;
     wipersEnabled?: boolean;
     headlightsOn?: boolean;
@@ -71,6 +73,7 @@ export interface DashboardUIProps {
     rainIntensity: number;
     snowIntensity?: number;
     wind?: number;
+    windowTint?: number;
     timeOfDay: string;
     audioElement?: HTMLAudioElement | null;
     analyser?: AnalyserNode | null;
@@ -78,6 +81,10 @@ export interface DashboardUIProps {
     nightIntensity?: number;
     /** CSS rgba string from useEnvironmentSettings for dashboard glass tinting. */
     ambientLightColor?: string;
+    /** Name of the currently tuned radio station */
+    stationName?: string;
+    /** Comma-separated genre tags for the current station */
+    stationTags?: string;
 }
 
 // ============================================================================
@@ -100,6 +107,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     onToggleHeadlights,
     onToggleHighBeam,
     onToggleDomeLight,
+    onWindowTint,
     isRoofOpen,
     wipersEnabled = false,
     headlightsOn = false,
@@ -109,11 +117,14 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     rainIntensity,
     snowIntensity = 0,
     wind = 0,
+    windowTint = 0.1,
     timeOfDay,
     audioElement,
     analyser,
     nightIntensity = 0,
     ambientLightColor = 'rgba(255, 255, 255, 0.0)',
+    stationName = '',
+    stationTags = '',
 }) => {
 
     // Gauge simulation state
@@ -259,6 +270,51 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                         alignItems: 'center', 
                         gap: '12px' 
                     }}>
+                        {/* Station metadata readout */}
+                        {stationName && (
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '2px',
+                                maxWidth: '220px',
+                                overflow: 'hidden',
+                            }}>
+                                <span style={{
+                                    fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace",
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: isRadioPlaying ? '#00D4FF' : 'rgba(255,255,255,0.5)',
+                                    textShadow: isRadioPlaying ? '0 0 8px rgba(0,212,255,0.6)' : 'none',
+                                    letterSpacing: '0.05em',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    width: '100%',
+                                    textAlign: 'center',
+                                }}>
+                                    {stationName}
+                                </span>
+                                {stationTags && (
+                                    <span style={{
+                                        fontFamily: "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                                        fontSize: '9px',
+                                        fontWeight: 500,
+                                        color: 'rgba(255,255,255,0.4)',
+                                        letterSpacing: '0.1em',
+                                        textTransform: 'uppercase',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        width: '100%',
+                                        textAlign: 'center',
+                                    }}>
+                                        {stationTags.split(',').slice(0, 3).join(' · ')}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
                         {/* Radio toggle button with visualizer */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <IconButton 
@@ -387,6 +443,15 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                                 max={100} 
                                 onChange={onWind} 
                                 color="#B3E5FC" 
+                            />
+                        )}
+                        {onWindowTint && (
+                            <Slider 
+                                label="Tint" 
+                                icon={TINT_ICON} 
+                                value={windowTint} 
+                                onChange={onWindowTint} 
+                                color="#81C784" 
                             />
                         )}
                     </div>

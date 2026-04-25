@@ -10,6 +10,7 @@ import {
   detectGPUProfile
 } from '../utils/performance';
 import { getMemoryProfiler, MemoryProfiler } from '../utils/memoryProfiler';
+import { createGlassMaterial } from '../materials/PBRMaterials';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -39,7 +40,17 @@ export class CarInterior {
     private interiorBounceLight!: THREE.PointLight;
     private instrumentClusterMat!: THREE.MeshStandardMaterial;
     private centerDisplayMat!: THREE.MeshStandardMaterial;
+    private windshieldGlassMesh!: THREE.Mesh;
+    private rearGlassMesh!: THREE.Mesh;
     private isDomeLightOn: boolean = false;
+
+    // Digital Clock
+    private digitalClockMesh!: THREE.Mesh;
+    private clockCanvas!: HTMLCanvasElement;
+    private clockCtx!: CanvasRenderingContext2D;
+    private clockUpdateInterval?: number;
+    private clockColonVisible: boolean = true;
+    private isActive: boolean = true;
 
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
@@ -442,6 +453,7 @@ export class CarInterior {
         }
         
         this.buildWindshieldFrame();
+        this.buildWindshieldGlass();
         this.buildRearWindow();
         
         if (this.vehicleConfig.hasSideMirrors) {
@@ -454,6 +466,11 @@ export class CarInterior {
         
         if (this.vehicleConfig.hasGauges) {
             this.buildGauges();
+        }
+
+        // Digital clock (medium + high quality only)
+        if (this.quality !== 'low') {
+            this.buildDigitalClock();
         }
 
         // Build vehicle-specific features
@@ -633,6 +650,41 @@ export class CarInterior {
         const display = new THREE.Mesh(displayGeo, displayMat);
         display.position.set(0.15, 0.95, -0.74);
         this.interiorGroup.add(display);
+
+        // Accent trim strip along top dashboard edge (vehicle theme color)
+        if (this.quality !== 'low') {
+            const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
+            const trimGeo = new THREE.BoxGeometry(1.96, 0.008, 0.012);
+            const trimMat = new THREE.MeshStandardMaterial({
+                color: accentHex,
+                roughness: 0.3,
+                metalness: 0.7,
+                emissive: new THREE.Color(accentHex),
+                emissiveIntensity: 0.15,
+            });
+            const trim = new THREE.Mesh(trimGeo, trimMat);
+            trim.position.set(0, 1.005, -0.86);
+            this.interiorGroup.add(trim);
+
+            // Subtle lower dash accent rail
+            const lowerTrimGeo = new THREE.BoxGeometry(1.96, 0.006, 0.01);
+            const lowerTrim = new THREE.Mesh(lowerTrimGeo, trimMat);
+            lowerTrim.position.set(0, 0.625, -0.99);
+            this.interiorGroup.add(lowerTrim);
+
+            // Cluster bezel ring (glowing ring around instrument cluster)
+            const bezelRingGeo = new THREE.TorusGeometry(0.155, 0.008, 8, 32);
+            const bezelRingMat = new THREE.MeshStandardMaterial({
+                color: accentHex,
+                roughness: 0.2,
+                metalness: 0.8,
+                emissive: new THREE.Color(accentHex),
+                emissiveIntensity: 0.4,
+            });
+            const bezelRing = new THREE.Mesh(bezelRingGeo, bezelRingMat);
+            bezelRing.position.set(-0.3, 0.95, -0.73);
+            this.interiorGroup.add(bezelRing);
+        }
 
         // Add dashboard details (skip in low quality)
         if (this.quality !== 'low') {
@@ -996,6 +1048,32 @@ export class CarInterior {
         headrestPass.position.set(0.45, 1.35, 0.5);
         this.interiorGroup.add(headrestPass);
 
+        // Headrest stalks (metal posts connecting headrests to seatbacks)
+        const stalkGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.14, 6);
+        for (const x of [-0.35, 0.45]) {
+            for (const offset of [-0.05, 0.05]) {
+                const stalk = new THREE.Mesh(stalkGeo, this.metalMaterial);
+                stalk.position.set(x + offset, 1.22, 0.52);
+                this.interiorGroup.add(stalk);
+            }
+        }
+
+        // Seatbelt shoulder anchors (B-pillar mount points)
+        const anchorGeo = new THREE.BoxGeometry(0.035, 0.05, 0.015);
+        const anchorMat = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            roughness: 0.35,
+            metalness: 0.85,
+        });
+        // Driver side
+        const driverAnchor = new THREE.Mesh(anchorGeo, anchorMat);
+        driverAnchor.position.set(-0.6, 1.25, 0.45);
+        this.interiorGroup.add(driverAnchor);
+        // Passenger side
+        const passAnchor = new THREE.Mesh(anchorGeo, anchorMat);
+        passAnchor.position.set(0.7, 1.25, 0.45);
+        this.interiorGroup.add(passAnchor);
+
         // Add seat stitching and side bolsters (skip in low quality)
         if (this.quality !== 'low') {
             this.buildSeatDetails();
@@ -1234,6 +1312,38 @@ export class CarInterior {
         topBar.position.set(0, 1.6, -0.9);
         this.interiorGroup.add(topBar);
 
+        // Rubber weather-strip seals along A-pillars (dark matte rubber)
+        if (this.quality !== 'low') {
+            const rubberMat = new THREE.MeshStandardMaterial({
+                color: 0x0a0a0a,
+                roughness: 0.98,
+                metalness: 0.0,
+            });
+            const sealGeo = new THREE.BoxGeometry(0.016, 0.78, 0.016);
+
+            const leftSeal = new THREE.Mesh(sealGeo, rubberMat);
+            leftSeal.position.set(-0.922, 1.3, -0.87);
+            leftSeal.rotation.set(-0.2, 0, -0.1);
+            this.interiorGroup.add(leftSeal);
+
+            const rightSeal = new THREE.Mesh(sealGeo, rubberMat);
+            rightSeal.position.set(0.922, 1.3, -0.87);
+            rightSeal.rotation.set(-0.2, 0, 0.1);
+            this.interiorGroup.add(rightSeal);
+
+            // Top bar seal strip
+            const topSealGeo = new THREE.BoxGeometry(1.93, 0.016, 0.016);
+            const topSeal = new THREE.Mesh(topSealGeo, rubberMat);
+            topSeal.position.set(0, 1.63, -0.91);
+            this.interiorGroup.add(topSeal);
+
+            // Bottom dash-top seal (where glass meets dashboard)
+            const bottomSealGeo = new THREE.BoxGeometry(1.93, 0.016, 0.016);
+            const bottomSeal = new THREE.Mesh(bottomSealGeo, rubberMat);
+            bottomSeal.position.set(0, 0.96, -0.86);
+            this.interiorGroup.add(bottomSeal);
+        }
+
         // Rearview mirror mount (small bar on windshield top)
         const mirrorMountGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.15, 6);
         const mirrorMount = new THREE.Mesh(mirrorMountGeo, this.metalMaterial);
@@ -1245,6 +1355,29 @@ export class CarInterior {
      * Build rear window frame and glass
      * Creates C-pillars and rear glass to complete the interior shell
      */
+    private buildWindshieldGlass(): void {
+        // Curved windshield plane with subdivision for smooth bending
+        const geometry = new THREE.PlaneGeometry(1.9, 0.75, 16, 8);
+        const pos = geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            // Slight outward bulge (parabolic curve across width)
+            const zOffset = -(x * x) * 0.15;
+            // Slight rake (top tilts back more than bottom)
+            const rake = (y - 0.375) * 0.12;
+            pos.setZ(i, zOffset + rake);
+        }
+        geometry.computeVertexNormals();
+
+        const glassMat = createGlassMaterial('#eef5f8', 0.1);
+        this.windshieldGlassMesh = new THREE.Mesh(geometry, glassMat);
+        this.windshieldGlassMesh.name = 'windshieldGlass';
+        this.windshieldGlassMesh.position.set(0, 1.3, -0.88);
+        this.windshieldGlassMesh.rotation.set(-0.15, 0, 0);
+        this.interiorGroup.add(this.windshieldGlassMesh);
+    }
+
     private buildRearWindow(): void {
         // Rear window top frame (connecting C-pillars)
         const rearTopBarGeo = new THREE.BoxGeometry(1.9, 0.05, 0.05);
@@ -1275,21 +1408,11 @@ export class CarInterior {
 
         // Rear glass plane (transparent, tinted automotive glass)
         const rearGlassGeo = new THREE.PlaneGeometry(1.8, 0.48);
-        const rearGlassMat = new THREE.MeshPhysicalMaterial({
-            color: 0x6a9aae,
-            metalness: 0.05,
-            roughness: 0.03,
-            transmission: 0.55,
-            transparent: true,
-            opacity: 0.35,
-            ior: 1.52,          // Standard automotive glass IOR
-            reflectivity: 0.45,
-            thickness: 0.006,   // Thin glass pane depth for transmission
-            side: THREE.DoubleSide,
-        });
-        const rearGlass = new THREE.Mesh(rearGlassGeo, rearGlassMat);
-        rearGlass.position.set(0, 1.34, 0.64);
-        this.interiorGroup.add(rearGlass);
+        const rearGlassMat = createGlassMaterial('#6a9aae', 0.15);
+        this.rearGlassMesh = new THREE.Mesh(rearGlassGeo, rearGlassMat);
+        this.rearGlassMesh.name = 'rearGlass';
+        this.rearGlassMesh.position.set(0, 1.34, 0.64);
+        this.interiorGroup.add(this.rearGlassMesh);
 
         // Defroster lines (subtle horizontal lines on rear glass)
         for (let i = 0; i < 4; i++) {
@@ -1368,14 +1491,93 @@ export class CarInterior {
     }
 
     private buildGauges(): void {
+        // --- Shared canvas dial builder ---
+        const buildDialCanvas = (size: number, emissiveColor: string, labelMax: number, unit: string): HTMLCanvasElement => {
+            const c = document.createElement('canvas');
+            c.width = size; c.height = size;
+            const ctx = c.getContext('2d')!;
+
+            // Background gradient
+            const bg = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            bg.addColorStop(0, '#222222');
+            bg.addColorStop(1, '#0d0d0d');
+            ctx.fillStyle = bg;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Outer ring
+            ctx.strokeStyle = emissiveColor;
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.45;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2 - 4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+
+            // Tick marks (major every 30°, minor every 10°)
+            const startAngle = -Math.PI * 0.75; // 225° start
+            const sweepAngle = Math.PI * 1.5;    // 270° sweep
+            const majorTicks = 6;
+            const minorTicks = 30;
+            for (let i = 0; i <= minorTicks; i++) {
+                const a = startAngle + (i / minorTicks) * sweepAngle;
+                const isMajor = i % (minorTicks / majorTicks) === 0;
+                const inner = isMajor ? size/2 - 18 : size/2 - 11;
+                const outer = size/2 - 6;
+                ctx.strokeStyle = isMajor ? emissiveColor : 'rgba(255,255,255,0.35)';
+                ctx.lineWidth = isMajor ? 2 : 1;
+                ctx.beginPath();
+                ctx.moveTo(size/2 + Math.cos(a) * inner, size/2 + Math.sin(a) * inner);
+                ctx.lineTo(size/2 + Math.cos(a) * outer, size/2 + Math.sin(a) * outer);
+                ctx.stroke();
+
+                // Major tick labels
+                if (isMajor) {
+                    const labelRadius = size/2 - 28;
+                    const val = Math.round((i / minorTicks) * labelMax);
+                    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+                    ctx.font = `bold ${Math.round(size * 0.10)}px "Arial Narrow", Arial, sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(String(val), size/2 + Math.cos(a) * labelRadius, size/2 + Math.sin(a) * labelRadius);
+                }
+            }
+
+            // Unit label at bottom
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = `${Math.round(size * 0.09)}px "Arial Narrow", Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(unit, size/2, size/2 + size * 0.28);
+
+            // Center hub fill
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = emissiveColor;
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size * 0.08, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+
+            return c;
+        };
+
         // Speedometer
-        const speedoGeo = new THREE.CircleGeometry(0.15, 32);
+        const speedDialCanvas = buildDialCanvas(256, '#00dd88', 300, 'km/h');
+        const speedTex = new THREE.CanvasTexture(speedDialCanvas);
         const speedoMat = new THREE.MeshStandardMaterial({
-            color: 0x222222,
-            roughness: 0.8,
-            emissive: 0x001a00,
-            emissiveIntensity: 0.2,
+            map: speedTex,
+            roughness: 0.7,
+            emissive: new THREE.Color(0x004422),
+            emissiveIntensity: 0.25,
+            emissiveMap: speedTex,
         });
+        const speedoGeo = new THREE.CircleGeometry(0.15, 32);
         const speedometer = new THREE.Mesh(speedoGeo, speedoMat);
         speedometer.position.set(-0.5, 0.95, -0.72);
         this.interiorGroup.add(speedometer);
@@ -1387,13 +1589,16 @@ export class CarInterior {
         this.interiorGroup.add(this.speedometerNeedle);
 
         // Tachometer
-        const tachoGeo = new THREE.CircleGeometry(0.15, 32);
+        const tachoDialCanvas = buildDialCanvas(256, '#dd2200', 8, 'x1000');
+        const tachoTex = new THREE.CanvasTexture(tachoDialCanvas);
         const tachoMat = new THREE.MeshStandardMaterial({
-            color: 0x1a0000,
-            roughness: 0.8,
-            emissive: 0x330000,
-            emissiveIntensity: 0.2,
+            map: tachoTex,
+            roughness: 0.7,
+            emissive: new THREE.Color(0x220000),
+            emissiveIntensity: 0.25,
+            emissiveMap: tachoTex,
         });
+        const tachoGeo = new THREE.CircleGeometry(0.15, 32);
         const tachometer = new THREE.Mesh(tachoGeo, tachoMat);
         tachometer.position.set(-0.15, 0.95, -0.72);
         this.interiorGroup.add(tachometer);
@@ -1403,6 +1608,125 @@ export class CarInterior {
         this.tachometerNeedle = new THREE.Mesh(tachoNeedleGeo, this.metalMaterial);
         this.tachometerNeedle.position.set(-0.15, 0.98, -0.71);
         this.interiorGroup.add(this.tachometerNeedle);
+    }
+
+    /**
+     * Build premium digital clock display on the dashboard.
+     * Positioned right of center display with a realistic dashboard angle.
+     * Only rendered at medium/high quality.
+     */
+    private buildDigitalClock(): void {
+        this.clockCanvas = document.createElement('canvas');
+        this.clockCanvas.width = 256;
+        this.clockCanvas.height = 80;
+        this.clockCtx = this.clockCanvas.getContext('2d', { alpha: true })!;
+
+        const clockTexture = new THREE.CanvasTexture(this.clockCanvas);
+        clockTexture.anisotropy = this.gpuProfile.name === 'high' ? 8 : 4;
+        clockTexture.generateMipmaps = true;
+
+        const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
+        const clockMaterial = new THREE.MeshStandardMaterial({
+            map: clockTexture,
+            emissive: new THREE.Color(accentHex),
+            emissiveIntensity: 0.75,
+            emissiveMap: clockTexture,
+            roughness: 0.25,
+            metalness: 0.15,
+            transparent: true,
+            opacity: 0.95,
+            side: THREE.DoubleSide,
+        });
+
+        const clockGeo = new THREE.PlaneGeometry(0.22, 0.072);
+        this.digitalClockMesh = new THREE.Mesh(clockGeo, clockMaterial);
+        // Right of center display, slight forward tilt to match dashboard angle
+        this.digitalClockMesh.position.set(0.42, 0.91, -0.732);
+        this.digitalClockMesh.rotation.set(-0.18, 0, 0);
+        this.interiorGroup.add(this.digitalClockMesh);
+
+        // Render first frame immediately, then start live updates every 500 ms.
+        // 500ms is intentional: the colon blinks on/off each tick for classic dash behavior.
+        this.updateDigitalClock();
+        this.clockUpdateInterval = window.setInterval(() => {
+            this.updateDigitalClock();
+        }, 500);
+    }
+
+    /**
+     * Update the digital clock canvas texture with current time and premium styling:
+     * carbon-hint background, bevel recess, blinking colon, outer chrome bezel,
+     * and controlled bloom-friendly glow.
+     */
+    private updateDigitalClock(): void {
+        if (!this.clockCtx || !this.digitalClockMesh) return;
+
+        const ctx = this.clockCtx;
+        const W = this.clockCanvas.width;
+        const H = this.clockCanvas.height;
+
+        // --- Background ---
+        ctx.fillStyle = '#0a0a12';
+        ctx.fillRect(0, 0, W, H);
+
+        // Subtle carbon-fiber grid hint
+        ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+        ctx.lineWidth = 1;
+        for (let x = 8; x < W; x += 6) {
+            ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, H - 6); ctx.stroke();
+        }
+        for (let y = 8; y < H; y += 6) {
+            ctx.beginPath(); ctx.moveTo(6, y); ctx.lineTo(W - 6, y); ctx.stroke();
+        }
+
+        // Inner bevel recess (depth illusion)
+        const bevel = ctx.createLinearGradient(0, 0, 0, H);
+        bevel.addColorStop(0,    'rgba(255,255,255,0.12)');
+        bevel.addColorStop(0.12, 'rgba(0,0,0,0.45)');
+        bevel.addColorStop(0.88, 'rgba(0,0,0,0.45)');
+        bevel.addColorStop(1,    'rgba(255,255,255,0.08)');
+        ctx.fillStyle = bevel;
+        ctx.fillRect(6, 6, W - 12, H - 12);
+
+        // --- Time ---
+        const now = new Date();
+        const hh = now.getHours().toString().padStart(2, '0');
+        const mm = now.getMinutes().toString().padStart(2, '0');
+        this.clockColonVisible = !this.clockColonVisible;
+        const timeString = this.clockColonVisible ? `${hh}:${mm}` : `${hh} ${mm}`;
+
+        const accentColor = this.vehicleConfig.accentColor || '#00ffcc';
+
+        // Glow pass
+        ctx.shadowColor = accentColor;
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = accentColor;
+        ctx.font = '700 46px "Courier New", "Consolas", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeString, W / 2 + 0.5, H / 2 + 1.5);
+
+        // Crisp foreground pass (reset shadow)
+        ctx.shadowBlur = 0;
+        ctx.fillText(timeString, W / 2, H / 2 + 1);
+
+        // --- Outer chrome bezel ---
+        ctx.strokeStyle = '#2a2a38';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(3, 3, W - 6, H - 6);
+
+        ctx.strokeStyle = '#555566';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(5, 5, W - 10, H - 10);
+
+        // Top highlight stripe
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(8, 8); ctx.lineTo(W - 8, 8); ctx.stroke();
+
+        // --- Refresh texture ---
+        const clockMat = this.digitalClockMesh.material as THREE.MeshStandardMaterial;
+        if (clockMat.map) clockMat.map.needsUpdate = true;
     }
 
     /**
@@ -1418,6 +1742,12 @@ export class CarInterior {
         // Clear existing interior
         this.interiorGroup.clear();
         this.roofGroup.clear();
+
+        // Stop the clock update loop before rebuilding (buildInterior will restart it)
+        if (this.clockUpdateInterval !== undefined) {
+            clearInterval(this.clockUpdateInterval);
+            this.clockUpdateInterval = undefined;
+        }
         
         // Update camera anchor position for the new vehicle
         const { x, y, z } = this.vehicleConfig.cameraPosition;
@@ -1524,16 +1854,28 @@ export class CarInterior {
     }
 
     /**
+     * Activate or deactivate the interior. When inactive, body pitch/roll
+     * physics are ignored so the chassis stays perfectly level.
+     */
+    public setActive(active: boolean): void {
+        this.isActive = active;
+    }
+
+    /**
      * Set the car body orientation (carHeading).
      * The interior stays level with the ground while the head can look freely.
+     * When inactive (e.g. freelook mode), pitch and roll are forced to 0.
      * @param carHeading - The car's travel direction in degrees
      */
     public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
         // Car body yaw follows heading; optional pitch/roll for dynamic steering physics
+        // When not active (freelook), force pitch/roll to 0 to keep chassis level
+        const safePitch = this.isActive ? bodyPitch : 0;
+        const safeRoll = this.isActive ? bodyRoll : 0;
         // Convert heading to radians (negative for Three.js coordinate system)
         const yawRad = -THREE.MathUtils.degToRad(carHeading);
-        const pitchRad = THREE.MathUtils.degToRad(bodyPitch);
-        const rollRad = THREE.MathUtils.degToRad(bodyRoll);
+        const pitchRad = THREE.MathUtils.degToRad(safePitch);
+        const rollRad = THREE.MathUtils.degToRad(safeRoll);
         this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
         // Camera position is inherited automatically through the scene graph:
         //   interiorGroup (rotates) → driverSeatGroup (fixed offset) → camera
@@ -1583,6 +1925,27 @@ export class CarInterior {
             this.wiperAnimationTime = 0;
             if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
             if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
+        }
+    }
+
+    /**
+     * Update window tint darkness dynamically.
+     * @param val - Tint value from 0.0 (clear) to 1.0 (dark)
+     */
+    public updateWindowTint(val: number): void {
+        const clamped = Math.max(0, Math.min(1, val));
+        const darkness = 0.1 + clamped * 0.7;
+        const transmission = 1.0 - clamped * 0.6;
+
+        if (this.windshieldGlassMesh?.material) {
+            const mat = this.windshieldGlassMesh.material as THREE.MeshPhysicalMaterial;
+            mat.color.set(new THREE.Color('#eef5f8')).multiplyScalar(1 - darkness * 0.5);
+            mat.transmission = transmission;
+        }
+        if (this.rearGlassMesh?.material) {
+            const mat = this.rearGlassMesh.material as THREE.MeshPhysicalMaterial;
+            mat.color.set(new THREE.Color('#6a9aae')).multiplyScalar(1 - darkness * 0.5);
+            mat.transmission = transmission;
         }
     }
 
@@ -1678,6 +2041,14 @@ export class CarInterior {
             const swMat = this.domeSwitchMesh.material as THREE.MeshStandardMaterial;
             swMat.emissiveIntensity = domeLightOn ? 0.6 : 0;
         }
+
+        // Digital clock emissive brightens when dome light is on or headlights at night
+        if (this.digitalClockMesh) {
+            const clockMat = this.digitalClockMesh.material as THREE.MeshStandardMaterial;
+            const clockTarget = domeLightOn ? 1.1 : 0.75 + nightIntensity * 0.4;
+            clockMat.emissiveIntensity +=
+                (clockTarget - clockMat.emissiveIntensity) * 0.08;
+        }
     }
 
     /**
@@ -1770,6 +2141,12 @@ export class CarInterior {
      */
     public dispose(): void {
         cancelAnimationFrame(this.animationId);
+
+        // Stop clock update loop
+        if (this.clockUpdateInterval !== undefined) {
+            clearInterval(this.clockUpdateInterval);
+            this.clockUpdateInterval = undefined;
+        }
         
         // Log memory stats before disposal
         const memoryProfiler = getMemoryProfiler();

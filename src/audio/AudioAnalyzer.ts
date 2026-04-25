@@ -21,6 +21,8 @@ export class AudioAnalyzer {
   private dataArray: Uint8Array | null = null;
   private isRunning: boolean = false;
   private audioElement: HTMLAudioElement | null = null;
+  private stationName: string = '';
+  private stationTags: string = '';
   
   // Public getters for accessing audio nodes
   public getAnalyser(): AnalyserNode | null {
@@ -29,6 +31,20 @@ export class AudioAnalyzer {
   
   public getAudioElement(): HTMLAudioElement | null {
     return this.audioElement;
+  }
+
+  /** Set station metadata for UI display */
+  public setStationInfo(name: string, tags: string = ''): void {
+    this.stationName = name;
+    this.stationTags = tags;
+  }
+
+  public getStationName(): string {
+    return this.stationName;
+  }
+
+  public getStationTags(): string {
+    return this.stationTags;
   }
 
   /**

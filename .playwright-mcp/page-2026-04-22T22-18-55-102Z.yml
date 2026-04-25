@@ -1,0 +1,63 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e26]:
+    - 'button "Cruise: OFF" [ref=e27]'
+    - 'button "Radio: OFF" [ref=e28]'
+    - button "📷 Gallery" [ref=e29]
+    - button "🔖 Bookmarks" [ref=e30]
+    - button "🕒 History" [ref=e31]
+    - button "🎨 Color" [ref=e32]
+    - button "🌧 Weather" [ref=e33]
+    - button "🚗 Car Mode" [ref=e34]
+    - button "🌍 Globe" [ref=e35]
+  - generic [ref=e23]:
+    - generic:
+      - generic:
+        - generic:
+          - button "Keyboard shortcuts"
+        - region "Map":
+          - generic:
+            - generic:
+              - generic:
+                - region "Street View"
+            - generic:
+              - img
+        - iframe [ref=e25]:
+          
+        - generic:
+          - generic:
+            - link "Open this area in Google Maps (opens a new window)":
+              - /url: https://maps.google.com/maps/@39.2575978,-121.0217914,0a,73.7y,34h,100t/data=!3m4!1e1!3m2!1sJ1girqW1DQmXJgMrUoc4BQ!2e0?source=apiv3
+              - generic:
+                - img "Google"
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - button "Keyboard shortcuts"
+            - generic:
+              - generic:
+                - generic: © 2026 Google
+            - generic:
+              - generic:
+                - link "Terms (opens in new tab)":
+                  - /url: https://www.google.com/intl/en-US_US/help/terms_maps.html
+                  - text: Terms
+            - generic:
+              - generic:
+                - link "Report a problem":
+                  - /url: https://www.google.com/local/imagery/report/?cb_client=apiv3&image_key=!1e2!2sJ1girqW1DQmXJgMrUoc4BQ&cbp=1,34,,0,-10&hl=en-US
+  - main "Street View Canvas" [ref=e24]:
+    - generic [ref=e37]:
+      - generic:
+        - generic:
+          - img:
+            - generic: "N"
+            - generic: S
+            - generic: E
+            - generic: W
+          - generic:
+            - img
+        - generic: 34°

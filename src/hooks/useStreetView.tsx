@@ -172,6 +172,15 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
       
       // 2. Start the transition state
+      // Normalize the link heading to the same 0-1 range used by panX uniforms
+      const movementHeading = bestLink.heading ?? useHeading;
+      const movementHeadingNorm = (((movementHeading % 360) + 360) % 360) / 360;
+
+      // 1. Snapshot raw panorama texture with movement direction so the shader
+      //    can shift the old frame's UVs as the user looks around during load
+      renderer?.capturePanorama?.(movementHeadingNorm);
+
+      // 2. Trigger the panorama change
       setIsTransitioning(true);
       
       // 3. Change to the new panorama
