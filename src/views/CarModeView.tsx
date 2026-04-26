@@ -259,9 +259,10 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   
   // Handle thrust from W/S keys for body pitch effect
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
+    if (controlMode === 'freeLook') return; // Car is locked when looking around
     pitchImpulseRef.current = direction === 'forward' ? -5 : 3;
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
-  }, []);
+  }, [controlMode]);
 
   // Handle steering deltas from CarInputHandler for wheel visual + body tilt
   const handleSteeringDelta = useCallback((delta: number) => {
@@ -320,6 +321,17 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     }
   }, [isRadioPlaying, audioElement, panorama]);
   
+  // Reset body physics when entering freeLook so no residual tilt remains
+  useEffect(() => {
+    if (controlMode === 'freeLook') {
+      carSpeedRef.current = 0;
+      pitchImpulseRef.current = 0;
+      steeringInputRef.current = 0;
+      bodyPitchRef.current = 0;
+      bodyRollRef.current = 0;
+    }
+  }, [controlMode]);
+
   // Cleanup audio analyzer on unmount
   useEffect(() => {
     return () => {

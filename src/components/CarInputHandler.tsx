@@ -178,29 +178,35 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       
       switch (key) {
         case 'w':
+          if (controlMode === 'freeLook') break;
           advance('forward', carHeading);
           onThrust?.('forward');
           break;
         case 's':
+          if (controlMode === 'freeLook') break;
           advance('backward', carHeading);
           onThrust?.('backward');
           break;
         case 'arrowup':
           e.preventDefault();
+          if (controlMode === 'freeLook') break;
           advance('forward', carHeading);
           onThrust?.('forward');
           break;
         case 'arrowdown':
           e.preventDefault();
+          if (controlMode === 'freeLook') break;
           advance('backward', carHeading);
           onThrust?.('backward');
           break;
         case 'arrowleft':
           e.preventDefault();
+          if (controlMode === 'freeLook') break;
           advance('left', carHeading);
           break;
         case 'arrowright':
           e.preventDefault();
+          if (controlMode === 'freeLook') break;
           advance('right', carHeading);
           break;
         case 'a':
