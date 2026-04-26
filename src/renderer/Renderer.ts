@@ -657,6 +657,16 @@ export class Renderer {
      * Must be called while videoTexture is valid (i.e. at least one frame has rendered).
      */
     public beginTransition(mode: string = 'zoom'): void {
+        if (!this.device || !this.videoTexture) return;
+        if (!this.transitionPipelines.has(mode)) {
+            console.warn(`[Renderer] Unknown transition mode "${mode}" — skipping`);
+            return;
+        }
+        this.activeTransition = mode;
+        this.transitionProgress = 0.0;
+    }
+
+    /**
      * Snapshot the current videoTexture into prevTexture for world-space transitions.
      * Stores the movement heading and current pan state so the shader can simulate
      * looking around the old panorama during the transition.
@@ -666,10 +676,6 @@ export class Renderer {
      */
     public capturePanorama(movementHeading: number): void {
         if (!this.device || !this.videoTexture) return;
-        if (!this.transitionPipelines.has(mode)) {
-            console.warn(`[Renderer] Unknown transition mode "${mode}" — skipping`);
-            return;
-        }
 
         this.movementHeadingNorm = Math.max(0.0, Math.min(1.0, movementHeading));
         // Store the pan state at capture time — used by the shader to compute look-around delta
@@ -698,9 +704,6 @@ export class Renderer {
             { width: this.videoTexture.width, height: this.videoTexture.height },
         );
         this.device.queue.submit([encoder.finish()]);
-
-        this.activeTransition  = mode;
-        this.transitionProgress = 0.0;
     }
 
     /**
@@ -779,16 +782,6 @@ export class Renderer {
 
         // Reset transition progress
         this.inlineTransitionProgress = 0.0;
-    }
-
-    /**
-     * Set the inline transition progress (0.0 = fully old frame, 1.0 = fully new).
-     * This drives the crossfade in the main streetview.wgsl shader.
-     * @deprecated Use capturePanorama(movementHeading) for world-space look-around transitions.
-     * Kept for backward compatibility; delegates with the last stored movement heading.
-     */
-    public captureCurrentFrame(): void {
-        this.capturePanorama(this.movementHeadingNorm);
     }
 
     /**
