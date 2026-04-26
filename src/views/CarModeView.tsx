@@ -182,15 +182,32 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       }
 
       // Update car interior
-      updateCarMode(
-        carHeadingRef.current,
-        headYawOffset,
-        headPitch,
-        carSpeedRef.current,
-        nightIntensity,
-        headlightsOn,
-        domeLightOn
-      );
+      if (controlMode === 'freeLook') {
+        // In freeLook mode, the interior yaws with the user's heading so the
+        // dashboard stays visually fixed on screen (like a parked cockpit).
+        // The camera stays at local yaw 0 — it rides with the interior.
+        // The mirror still shows the true rear of the car body.
+        updateCarMode(
+          headingRef.current,
+          0,
+          headPitch,
+          carSpeedRef.current,
+          nightIntensity,
+          headlightsOn,
+          domeLightOn,
+          carHeadingRef.current
+        );
+      } else {
+        updateCarMode(
+          carHeadingRef.current,
+          headYawOffset,
+          headPitch,
+          carSpeedRef.current,
+          nightIntensity,
+          headlightsOn,
+          domeLightOn
+        );
+      }
       
       // Update steering wheel
       setCarSteering(steeringInputRef.current);
@@ -234,8 +251,14 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       
       // Apply body orientation with dynamic tilt
       if (carModeStateRef.current) {
+        // In freeLook mode the interior visually follows the user's heading
+        // so the dashboard stays fixed on screen; in carSteer/uiMouse it
+        // follows the physical car heading.
+        const visualHeading = controlMode === 'freeLook'
+          ? headingRef.current
+          : carHeadingRef.current;
         carModeStateRef.current.interior.setCarOrientation(
-          carHeadingRef.current,
+          visualHeading,
           bodyPitchRef.current,
           bodyRollRef.current
         );

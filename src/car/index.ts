@@ -250,7 +250,7 @@ export function getWiperState(): { enabled: boolean; speed: number } {
  * @param headPitch - Current head pitch in degrees (up/down look)
  * @param carSpeed - Current car speed for wind effects in convertible mode (km/h)
  */
-export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0, nightIntensity: number = 0, headlightsOn: boolean = false, domeLightOn: boolean = false): void {
+export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0, nightIntensity: number = 0, headlightsOn: boolean = false, domeLightOn: boolean = false, mirrorHeading?: number): void {
     if (!carModeState || !carModeState.isActive) return;
 
     const now = performance.now();
@@ -275,7 +275,7 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
 
     // Update mirror with the rear view (180° behind car heading)
     // The mirror shows what's actually behind the car based on Street View
-    carModeState.mirror.update(carHeading, true); // skipFrame = true for performance
+    carModeState.mirror.update(mirrorHeading ?? carHeading, true); // skipFrame = true for performance
 
     // Update interior lighting based on headlights, night intensity, and dome light
     carModeState.interior.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
