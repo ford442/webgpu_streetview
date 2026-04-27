@@ -182,32 +182,18 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       }
 
       // Update car interior
-      if (controlMode === 'freeLook') {
-        // In freeLook mode, the interior yaws with the user's heading so the
-        // dashboard stays visually fixed on screen (like a parked cockpit).
-        // The camera stays at local yaw 0 — it rides with the interior.
-        // The mirror still shows the true rear of the car body.
-        updateCarMode(
-          headingRef.current,
-          0,
-          headPitch,
-          carSpeedRef.current,
-          nightIntensity,
-          headlightsOn,
-          domeLightOn,
-          carHeadingRef.current
-        );
-      } else {
-        updateCarMode(
-          carHeadingRef.current,
-          headYawOffset,
-          headPitch,
-          carSpeedRef.current,
-          nightIntensity,
-          headlightsOn,
-          domeLightOn
-        );
-      }
+      // In freeLook mode, the car body stays fixed to carHeading while the
+      // head/camera looks around independently. In steer modes, the head
+      // rotates with the car (rigid coupling) or freely (free coupling).
+      updateCarMode(
+        carHeadingRef.current,
+        headYawOffset,
+        headPitch,
+        carSpeedRef.current,
+        nightIntensity,
+        headlightsOn,
+        domeLightOn
+      );
       
       // Update steering wheel
       setCarSteering(steeringInputRef.current);
@@ -231,12 +217,12 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       
       // Body tilt physics: only in carSteer mode and clamped
       if (controlMode === 'carSteer') {
-        // Roll from steering input (lean into turns)
-        const targetRoll = steeringInputRef.current * 0.15;
+        // Roll from steering input (lean into turns) — dampened for comfort
+        const targetRoll = steeringInputRef.current * 0.04;
         bodyRollRef.current += (targetRoll - bodyRollRef.current) * Math.min(deltaTime * 6, 1);
         
-        // Pitch from acceleration impulse + ongoing speed
-        const targetPitch = pitchImpulseRef.current + (carSpeedRef.current > 0 ? -1.5 : 0);
+        // Pitch from acceleration impulse + ongoing speed — dampened for comfort
+        const targetPitch = pitchImpulseRef.current + (carSpeedRef.current > 0 ? -0.5 : 0);
         bodyPitchRef.current += (targetPitch - bodyPitchRef.current) * Math.min(deltaTime * 4, 1);
         
         // Decay impulse and clamp pitch
@@ -251,14 +237,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       
       // Apply body orientation with dynamic tilt
       if (carModeStateRef.current) {
-        // In freeLook mode the interior visually follows the user's heading
-        // so the dashboard stays fixed on screen; in carSteer/uiMouse it
-        // follows the physical car heading.
-        const visualHeading = controlMode === 'freeLook'
-          ? headingRef.current
-          : carHeadingRef.current;
+        // Car body yaw is ALWAYS driven by carHeading, never by camera heading.
+        // This keeps the dashboard, steering wheel, and A-pillars stationary
+        // while the head looks around independently in freeLook mode.
         carModeStateRef.current.interior.setCarOrientation(
-          visualHeading,
+          carHeadingRef.current,
           bodyPitchRef.current,
           bodyRollRef.current
         );
@@ -283,7 +266,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   // Handle thrust from W/S keys for body pitch effect
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
     if (controlMode === 'freeLook') return; // Car is locked when looking around
-    pitchImpulseRef.current = direction === 'forward' ? -5 : 3;
+    pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
   }, [controlMode]);
 

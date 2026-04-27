@@ -1,9 +1,8 @@
-<!-- From: /root/webgpu_streetview/AGENTS.md -->
 # WebGPU StreetView — AI Agent Documentation
 
 ## Project Overview
 
-**1ink.us Streetview** is a WebGPU-accelerated Google Maps Street View viewer that creates an immersive, interactive navigation experience. The application scrapes the Street View panorama from a hidden Google Maps canvas and renders it using a custom WebGPU shader pipeline, enabling HDR post-processing effects (color grading, rain, snow, transitions) that are impossible through the native Maps API alone. It also layers a fully procedural Three.js car interior on top for a virtual road-trip cockpit.
+**1ink.us Streetview** is a WebGPU-accelerated Google Maps Street View viewer that creates an immersive, interactive navigation experience. The application scrapes the Street View panorama from a hidden Google Maps canvas and renders it using a custom WebGPU shader pipeline, enabling HDR post-processing effects (color grading, rain, snow, fog, volumetric light shafts, lens flare, heat shimmer, chromatic aberration, dust particles, humidity haze) that are impossible through the native Maps API alone. It also layers a fully procedural Three.js car interior on top for a virtual road-trip cockpit.
 
 ### Core Purpose
 The application acts as a custom renderer wrapper around the Google Maps JavaScript API. By capturing the panoramic view from a hidden Google Maps canvas and rendering it onto a WebGPU canvas, the architecture allows for GPU-accelerated rendering, real-time weather effects, and a dual-pass HDR pipeline.
@@ -28,6 +27,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | State Management | React Context + Hooks | Provider pattern |
 | Testing | Jest + React Testing Library | CRA defaults |
 | Globe Integration | Cesium | 1.140.0 |
+| Additional | suncalc, @xenova/transformers, ajv, web-vitals | Various |
 
 ### Browser Support
 - **Production**: `>0.2%, not dead, not op_mini all`
@@ -77,6 +77,7 @@ webgpu_streetview/
 ├── public/                          # Static assets (not bundled by webpack)
 │   ├── index.html                   # HTML entry point
 │   ├── images/                      # Static images
+│   ├── cesium/                      # CesiumJS static assets (textures, workers, widgets)
 │   └── shaders/                     # WGSL shader files loaded at runtime via fetch()
 │       ├── streetview.wgsl          # Pass 1: panorama → HDR intermediate
 │       ├── weather-post.wgsl        # Pass 2: HDR + weather/color grading → screen
@@ -85,27 +86,27 @@ webgpu_streetview/
 │       └── transition-*.wgsl        # GPU panorama transitions (fade, zoom, zoom-blur, zoom-chromatic)
 ├── src/
 │   ├── App.tsx                      # Central controller. Renders providers + InnerApp.
-│   ├── index.tsx                    # React entry point
+│   ├── index.tsx                    # React 18+ createRoot entry point
 │   ├── style.css                    # Global styles
 │   ├── views/                       # Top-level view routing
-│   │   ├── MainView.tsx             # Switches FreeLookView ↔ CarModeView
+│   │   ├── MainView.tsx             # Switches FreeLookView ↔ CarModeView based on viewMode
 │   │   ├── FreeLookView.tsx         # Free-look street view mode
 │   │   └── CarModeView.tsx          # Car interior mode
 │   ├── components/                  # React components
 │   │   ├── StreetView.tsx           # Google Maps loader + MutationObserver canvas scraper
-│   │   ├── WebGPUCanvas.tsx         # Mounts renderer, drives render loop
+│   │   ├── WebGPUCanvas.tsx         # Mounts renderer, drives render loop, syncs weather params
 │   │   ├── FreeLookInputHandler.tsx # Window-level mouse/keyboard for free look
-│   │   ├── CarInputHandler.tsx      # Window-level input for car mode
+│   │   ├── CarInputHandler.tsx      # Window-level input for car mode (3 control modes)
 │   │   ├── MiniMap.tsx              # Secondary map with heading, route, teleport
 │   │   ├── Compass.tsx              # Cardinal direction overlay
 │   │   ├── Controls.tsx             # Legacy overlay controls
 │   │   ├── WelcomeModal.tsx         # Startup welcome modal
 │   │   ├── LoadingOverlay.tsx       # Granular loading states UI
-│   │   ├── BookmarkPanel.tsx        # Saved locations panel
+│   │   ├── BookmarkPanel.tsx        # Saved locations panel with cloud sync
 │   │   ├── HistoryPanel.tsx         # Breadcrumb location history
 │   │   ├── SnapshotGallery.tsx      # Canvas capture gallery
 │   │   ├── ColorGradingPanel.tsx    # HDR uniform sliders
-│   │   ├── WeatherPanel.tsx         # Rain/snow/wind controls
+│   │   ├── WeatherPanel.tsx         # Rain/snow/wind/fog/time-of-day controls
 │   │   ├── VehicleSelector.tsx      # Car type chooser
 │   │   ├── AccessibilityPanel.tsx   # A11y settings panel
 │   │   ├── PerformanceStatsOverlay.tsx # Live FPS / GPU stats
@@ -134,12 +135,12 @@ webgpu_streetview/
 │   │   ├── useStreetView.tsx        # StreetViewProvider: panorama, heading, pitch, zoom, advance, isTransitioning
 │   │   ├── useViewMode.tsx          # ViewModeProvider: viewMode (freelook/car), carHeading, controlMode
 │   │   ├── useEnvironmentSettings.tsx # EnvironmentSettingsProvider: weather, color grading, time of day
-│   │   ├── useKeyboardShortcuts.tsx # Global shortcuts + accessibility helpers
+│   │   ├── useKeyboardShortcuts.tsx # Global shortcuts + accessibility helpers (useAnnouncer, useFocusTrap, SkipLink)
 │   │   ├── useBookmarks.ts          # localStorage + cloud bookmark sync
 │   │   ├── useLocationHistory.ts    # Visited panorama trail
 │   │   ├── useSnapshots.ts          # Canvas snapshot management
 │   │   ├── useVehicleSettings.ts    # Vehicle preference persistence
-│   │   ├── usePerformanceMonitor.ts # FPS / frame time tracking
+│   │   ├── usePerformanceMonitor.ts # FPS / frame time tracking with adaptive quality
 │   │   ├── useLoadingState.ts       # Granular loading state machine
 │   │   ├── useLoadingIntegrations.ts # Loading orchestration helpers
 │   │   ├── useTransition.ts         # Animation / easing utilities
@@ -147,7 +148,7 @@ webgpu_streetview/
 │   │   ├── useDeviceDetection.ts    # Mobile / capability detection
 │   │   ├── useGlobeMode.ts          # Cesium globe state
 │   │   ├── useAutoNight.ts          # Automatic night mode
-│   │   └── __tests__/               # Hook tests
+│   │   └── __tests__/               # Hook tests (mobile.test.tsx)
 │   ├── effects/
 │   │   ├── PostProcessing.ts
 │   │   ├── LightingEffects.ts
@@ -169,7 +170,7 @@ webgpu_streetview/
 │   │   ├── astronomicalConstants.ts
 │   │   └── index.ts
 │   ├── store/
-│   │   └── loadingState.ts          # Loading state store
+│   │   └── loadingState.ts          # Loading state store singleton
 │   ├── services/
 │   │   ├── radioBrowserService.ts   # Radio station lookup
 │   │   └── storageApi.ts            # Cloud storage API client
@@ -201,18 +202,23 @@ State is no longer owned solely by `App.tsx`. Three React Context providers wrap
 
 1. **`StreetViewProvider`** (`src/hooks/useStreetView.tsx`)
    - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, heading, pitch, zoom, position, and `isTransitioning`.
-   - `advance(direction)` calls `findBestLink` and triggers `pano.setPano()`.
-   - `teleport(lat, lng)` moves the panorama.
+   - `advance(direction, currentHeading?)` calls `findBestLink` and triggers `pano.setPano()`.
+   - `teleport(lat, lng, targetHeading?, targetPitch?)` moves the panorama.
    - `isTransitioning` is set to `true` on advance and cleared ~700ms after the `pano_changed` event fires.
+   - Maintains a `renderer` ref for GPU transition coordination.
 
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
    - Owns `viewMode: 'freelook' | 'car'`.
    - Manages car body `carHeading` (independent of head-look heading).
    - Tracks `controlMode`: `freeLook` | `uiMouse` | `carSteer`.
+   - Tracks `headCoupling`: `rigid` (head turns with car) | `free` (head independent).
+   - Supports temporary steering mode (`startTempSteerMode` / `endTempSteerMode`) triggered by clicking the steering wheel.
    - Initializes / toggles the Three.js car mode via `initCarMode()` from `src/car/index.ts`.
 
 3. **`EnvironmentSettingsProvider`** (`src/hooks/useEnvironmentSettings.tsx`)
-   - Owns all weather and color-grading uniforms: `rainIntensity`, `snowIntensity`, `wind`, `vibrance`, `saturation`, `contrast`, `exposure`, `temperature`, `tint`, `timeOfDay`, `fogDensity`, etc.
+   - Owns all weather and color-grading uniforms: `rainIntensity`, `snowIntensity`, `wind`, `vibrance`, `saturation`, `contrast`, `exposure`, `temperature`, `tint`, `timeOfDay`, `fogDensity`, `nightIntensity`, `headlightsOn`, `domeLightOn`, `highBeam`, `isRoofOpen`, `shaderEffectsEnabled`, etc.
+   - Exposes `applyTimeOfDayPreset('day' | 'sunrise' | 'sunset' | 'night')` and `applyColorGradingPreset(string)`.
+   - Computes `ambientLightColor` CSS string for dashboard glass tinting.
    - Consumed by `WebGPUCanvas.tsx` and forwarded to `Renderer.updateWeatherParams()` every frame.
 
 ### View Routing
@@ -230,11 +236,13 @@ App.tsx
 
 ### Render Cycle: Canvas Scraping → WebGPU
 
-1. **Google Maps API** loads in `StreetView.tsx`.
+1. **Google Maps API** loads in `StreetView.tsx` via dynamically injected `<script>` tag with `callback=initGoogleMaps`.
 2. `MutationObserver` watches the panorama container, collects all `<canvas>` elements, sorts by pixel area, and selects the largest one ≥256×256 pixels.
 3. The canvas ref flows: `StreetView.tsx` → `StreetViewProvider` (via `setCanvas`) → `App.tsx` → `WebGPUCanvas.tsx` → `Renderer.ts`.
 4. `Renderer.ts` uploads the canvas every frame with `device.queue.copyExternalImageToTexture`.
 5. The dual-pass pipeline renders to screen.
+
+**Important**: The hidden Google Maps DOM element must maintain `opacity: 1`. Google Maps stops updating its internal canvas when opacity drops too low. The element is pushed behind the WebGPU canvas via `zIndex: 0` vs `zIndex: 1`.
 
 ### WebGPU Dual-Pass Pipeline (`src/renderer/Renderer.ts`)
 
@@ -247,7 +255,7 @@ App.tsx
 
 **Pass 2** — `weather-post.wgsl`
 - Source: HDR intermediate texture.
-- Fragment shader: color grading chain (vibrance → saturation → contrast → temperature/tint → exposure), then procedural rain + snow composited additively.
+- Fragment shader: color grading chain (vibrance → saturation → contrast → temperature/tint → exposure), then procedural rain + snow composited additively, plus atmospheric effects (fog, light shafts, heat shimmer, lens flare, chromatic aberration, dust, humidity haze), nighttime mode, headlights, dome light, astronomical lighting (sun/moon), ACES tonemapping.
 - Output target: swap-chain surface (screen).
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
@@ -257,6 +265,11 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 When the panorama changes (e.g., cruise mode advancing), `Renderer.beginTransition(mode)` snapshots the current `videoTexture` into `prevTexture` via a GPU→GPU `copyTextureToTexture`. Over the next ~350–500ms, `updateTransitionProgress(progress)` drives the transition shader to crossfade between the old and new panoramas. This masks Google Maps tile-tearing during loads.
 
 Supported modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
+
+Additionally, an **inline transition** system is used by `useStreetView.tsx`:
+- `captureCurrentFrame()` snapshots `videoTexture` into `previousFrameTexture`.
+- `setTransitionProgress(0→1)` is animated via `requestAnimationFrame` over 500ms.
+- The main `streetview.wgsl` uses `inlineTransitionProgress` to crossfade.
 
 ### Navigation Algorithm (`findBestLink`)
 
@@ -283,7 +296,47 @@ Browser Output (top to bottom)
 - **`CarInterior.ts`** builds all geometry procedurally using `THREE.BoxGeometry`, `THREE.CylinderGeometry`, and custom `THREE.Shape` extrusions — no external GLTF/OBJ files.
 - **`DashboardUI.tsx`** is a React overlay; its buttons call functions exported from `src/car/index.ts` directly (not through React state).
 - **`RearviewMirror.ts`** renders a 180° behind view into the mirror surface using the Street View canvas.
-- **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`.
+- **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
+
+### Input Handling
+
+**FreeLookInputHandler.tsx**:
+- Mouse drag on target → pan heading/pitch.
+- Scroll wheel → zoom.
+- Right-click → advance forward.
+- WASD / Arrow keys → advance in directions.
+- `c` key → toggle car mode.
+- Guards against input when `document.activeElement` is an input/textarea.
+
+**CarInputHandler.tsx**:
+- Three control modes: `freeLook` (head look only), `uiMouse` (UI interaction, right-drag to steer), `carSteer` (mouse X steers car, A/D steer).
+- Temporary steering mode: clicking the steering wheel in `freeLook` enters `carSteer` temporarily; releasing ends it.
+- `h` key → toggle control mode.
+- `c` key → recenter head to car body, or toggle view mode if already centered.
+- `q` / `e` → snap steer ±45° in `carSteer` mode.
+
+Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `keydown`. Every UI overlay (panels, modals, inputs, dashboard buttons) **must** call `e.stopPropagation()` on mouse and keyboard events, or the panorama will spin when users type or click buttons.
+
+### Accessibility System
+
+`src/hooks/useKeyboardShortcuts.tsx` provides:
+- `useKeyboardShortcuts(shortcuts, enabled)` — global key handler with modifier support.
+- `useAnnouncer()` — ARIA live-region announcements for screen readers.
+- `useFocusTrap(containerRef, isActive)` — traps Tab focus inside modals/panels.
+- `SkipLink` — keyboard-only skip-to-main-content link.
+- Accessibility settings persisted to `localStorage` under `webgpu_streetview_a11y_settings`.
+- Body CSS classes toggled: `high-contrast`, `reduced-motion`, `large-text`, `keyboard-only-mode`.
+
+### Performance & Adaptive Quality
+
+`WebGPUCanvas.tsx` implements:
+- **Adaptive frame skipping**: `shouldSkipFrame()` from `usePerformanceMonitor` can drop to 30fps.
+- **Source-change detection**: forces full 60fps when the scraped canvas changes.
+- **Transition boost**: forces full fps while `isTransitioning` is true.
+- **Debounced resize**: 150ms debounce on window resize.
+- **WebGPU device loss recovery**: reinitializes renderer on `device.lost`.
+
+`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps).
 
 ---
 
@@ -304,7 +357,7 @@ Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, da
 - Do not cache `GPUTextureView` across frames — the underlying texture may be recreated.
 
 ### 4. Transition / `isTransitioning` Coordination
-`StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and may fade the canvas during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
+`StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and forces full fps during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
 
 ### 5. API Key Management
 The Google Maps API key has a fallback hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`), but the preferred source is `.env` (`REACT_APP_MAPS_API_KEY`). Cesium also uses `REACT_APP_CESIUM_ION_TOKEN` from `.env`. Do not commit new keys.
@@ -322,9 +375,23 @@ The Google Maps API key has a fallback hardcoded in `src/App.tsx` (`GOOGLE_MAPS_
 [33-34] cameraHeading, cameraPitch
 [35]    padding
 [36]    sunrise
-[37-39] padding
+[37]    anamorphicStreak
+[38-39] padding
 ```
-Changing this layout without updating both `Renderer.ts` and the WGSL file will break rendering.
+
+The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
+```
+[0-3]   time, zoom, panX, panY
+[4]     inlineTransitionProgress
+[5]     transitionParam1 (zoom amount)
+[6]     transitionParam2 (blur strength)
+[7]     padding
+```
+
+Changing either layout without updating both `Renderer.ts`, `WebGPUCanvas.tsx`, and the WGSL files will break rendering.
+
+### 7. Google Maps Canvas Opacity Requirement
+The hidden Street View container must maintain `opacity: 1`. Google Maps stops updating its internal render canvas when opacity is low. Visibility is controlled via `zIndex` and `pointerEvents`, never `opacity`.
 
 ---
 
@@ -336,9 +403,9 @@ The project uses Create React App's default testing setup:
 - **Run**: `npm test` (watch mode) or `npm test -- --watchAll=false` (CI)
 
 ### Existing Tests
-- `src/utils/navigation.test.ts` — Unit tests for `findBestLink`, angle math, and `haversineDistance`.
-- `src/hooks/__tests__/mobile.test.tsx` — Mobile hook behavior tests.
-- `src/App.test.tsx` — Default CRA smoke test.
+- `src/utils/navigation.test.ts` — Unit tests for `findBestLink`, angle math (`normalizeAngle`, `signedAngleDiff`, `absoluteAngleDiff`), and `haversineDistance`.
+- `src/hooks/__tests__/mobile.test.tsx` — Mobile hook behavior tests (`useTouchControls` gesture state, `useDeviceDetection` quality settings, battery save mode).
+- `src/App.test.tsx` — Default CRA smoke test (renders without crashing, welcome modal visible).
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any changes to the following require manual browser verification:
@@ -347,6 +414,7 @@ WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any cha
 - `car/` Three.js scene
 - Input handlers and UI overlay interactions
 - Cruise mode navigation loops
+- GPU panorama transitions
 
 ---
 
@@ -371,6 +439,17 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 - **Cleanup** — always return a cleanup function from `useEffect` if you register timers, observers, or event listeners.
 - **Event propagation** — `e.stopPropagation()` on **all** mouse and keyboard events inside UI overlays.
 - **No raw strings** for magic numbers in shader uniforms — document layout changes in both TS and WGSL.
+- **Barrel exports** — `src/hooks/index.ts`, `src/components/index.ts`, `src/views/index.ts`, etc.
+
+---
+
+## Security Considerations
+
+1. **API Key Exposure**: A Google Maps API key is hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`). The `.env` file supports `REACT_APP_MAPS_API_KEY` but the fallback is visible in source. Never commit additional keys.
+2. **Deployment Credentials**: `deploy.py` contains a hardcoded SFTP password (`GoogleBez12!`). This should be moved to environment variables or replaced with SSH key auth immediately.
+3. **CORS Audio**: The radio stream uses `crossOrigin = "anonymous"` on the HTMLAudioElement.
+4. **Local Storage**: Accessibility settings, bookmarks, and snapshots are stored in `localStorage`. No encryption is applied.
+5. **Script Injection**: `StreetView.tsx` dynamically injects a `<script>` tag for the Google Maps API. The URL is constructed with a template literal containing the API key.
 
 ---
 
@@ -383,6 +462,7 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 5. **Offline**: No offline mode. Requires continuous internet for Map tiles and Street View imagery.
 6. **API Key Exposure**: Fallback key is visible in `App.tsx` source.
 7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
+8. **Build Tool Lock-in**: Create React App 5.0.1 is used; ejecting is irreversible.
 
 ---
 
@@ -395,4 +475,4 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
-*Last Updated: April 16, 2026*
+*Last Updated: April 27, 2026*
