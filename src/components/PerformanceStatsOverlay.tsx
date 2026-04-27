@@ -3,8 +3,7 @@ import React from 'react';
 import { 
   PerformanceMonitorState, 
   getPerformanceOverlayStyles, 
-  getFPSColor,
-  formatPerformanceStats 
+  getFPSColor
 } from '../hooks/usePerformanceMonitor';
 import { MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
 

@@ -46,7 +46,7 @@ import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
 import { getTopStationForLocation } from './services/radioBrowserService';
-import { findBestLink } from './utils/navigation';
+
 
 // Google Maps API Key
 const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
@@ -70,7 +70,6 @@ function InnerApp() {
     toggleWipers,
     headlightsOn,
     toggleHeadlights,
-    domeLightOn,
     toggleDomeLight,
     isRoofOpen,
     toggleRoof,
@@ -141,8 +140,8 @@ function InnerApp() {
     removeCloudBookmark,
     syncAllToCloud,
   } = useBookmarks();
-  const { history, addToHistory, removeFromHistory, clearHistory } = useLocationHistory();
-  const { snapshots, addSnapshot, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
+  const { history, removeFromHistory, clearHistory } = useLocationHistory();
+  const { snapshots, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
   const globeMode = useGlobeMode();
   
   // Audio ref for radio

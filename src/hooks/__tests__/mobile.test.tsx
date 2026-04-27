@@ -182,7 +182,6 @@ describe('useTouchControls', () => {
 
 describe('useDeviceDetection', () => {
   const originalNavigator = global.navigator;
-  const originalWindow = global.window;
 
   beforeEach(() => {
     // Mock window properties

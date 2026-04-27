@@ -57,9 +57,6 @@ function createSimplifiedLOD(model: THREE.Group, ratio: number): THREE.Group {
       const positions = geo.attributes.position?.array;
       if (!positions) return;
       
-      const vertexCount = positions.length / 3;
-      const targetCount = Math.floor(vertexCount * ratio);
-      
       // Use simplified geometry - reduce to basic box for now
       const box = new THREE.BoxGeometry(1, 1, 1);
       child.geometry = box;
@@ -570,10 +567,6 @@ export function detectGPUProfile(): GPUPerformanceProfile {
   const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
   const renderer = debugInfo 
     ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-    : 'unknown';
-  
-  const vendor = debugInfo
-    ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)
     : 'unknown';
   
   // Detect based on renderer string

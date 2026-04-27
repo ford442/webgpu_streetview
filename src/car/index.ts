@@ -3,44 +3,12 @@ import { RearviewMirror } from './RearviewMirror';
 import { SelectivePostProcessing } from './SelectivePostProcessing';
 import {
     VehicleType,
-    VehicleConfig,
-    VEHICLES,
-    VEHICLE_LIST,
     DEFAULT_VEHICLE,
-    VehicleManager,
     vehicleManager,
-    getVehicleConfig,
-    isValidVehicleType,
-    getNextVehicle,
-    getPreviousVehicle,
 } from './VehicleManager';
 import {
-    LimousineMode,
-    LimoState,
-    defaultLimoState,
-    initLimousineMode,
-} from './variants/LimousineMode';
-import {
     ConvertibleMode,
-    ConvertibleState,
-    WindParticleSystem,
-    SportDashboard,
-    SportSeats,
-    ConvertibleInterior,
 } from './variants';
-import {
-    ScienceLabInterior,
-    LabState,
-    ScienceLabModeState,
-    initScienceLabMode,
-    initScienceLabModeSystem,
-    toggleScienceLabMode,
-    updateScienceLabMode,
-    toggleUVLight,
-    toggleLabEquipment,
-    getLabState,
-    disposeScienceLabMode,
-} from './variants/ScienceLabMode';
 
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';

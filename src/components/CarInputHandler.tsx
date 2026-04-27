@@ -37,12 +37,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   } = useStreetView();
   
   const {
-    viewMode,
     toggleViewMode,
     controlMode,
     toggleControlMode,
     headCoupling,
-    setHeadCoupling,
     startTempSteerMode,
     endTempSteerMode,
     carHeading,
@@ -56,14 +54,12 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const dragStartedOnTargetRef = useRef(false);
   
   const keysPressedRef = useRef<Set<string>>(new Set());
-  const lastTimeRef = useRef<number>(0);
-
+  const onThrustRef = useRef(onThrust);
+  useEffect(() => { onThrustRef.current = onThrust; }, [onThrust]);
   // Constants
   const HEAD_LOOK_SENSITIVITY = 0.18;
   const KEYBOARD_LOOK_RATE = 120; // degrees per second for head rotation
   const KEYBOARD_STEER_RATE = 60; // degrees per second for car steering
-  const CLICK_DRAG_THRESHOLD = 5;
-  
   // Steering helper
   const applySteering = useCallback((steerDelta: number) => {
     // Move the car body heading
@@ -133,8 +129,6 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       
       if (!isDraggingRef.current || !dragStartedOnTargetRef.current) return;
       
-      const isSteeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current;
-      
       if (currentMode === 'freeLook') {
         // Free Look: all mouse drag controls head look only — car body never steers
         setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
@@ -180,24 +174,24 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
         case 'w':
           if (controlMode === 'freeLook') break;
           advance('forward', carHeading);
-          onThrust?.('forward');
+          onThrustRef.current?.('forward');
           break;
         case 's':
           if (controlMode === 'freeLook') break;
           advance('backward', carHeading);
-          onThrust?.('backward');
+          onThrustRef.current?.('backward');
           break;
         case 'arrowup':
           e.preventDefault();
           if (controlMode === 'freeLook') break;
           advance('forward', carHeading);
-          onThrust?.('forward');
+          onThrustRef.current?.('forward');
           break;
         case 'arrowdown':
           e.preventDefault();
           if (controlMode === 'freeLook') break;
           advance('backward', carHeading);
-          onThrust?.('backward');
+          onThrustRef.current?.('backward');
           break;
         case 'arrowleft':
           e.preventDefault();

@@ -4,7 +4,6 @@ import {
     saveLocationToCloud,
     deleteLocationFromCloud,
     updateLocationInCloud,
-    CloudLocation,
     SaveLocationRequest,
 } from '../services/storageApi';
 

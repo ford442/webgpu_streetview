@@ -309,7 +309,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   // Handle visibility changes with fade
   useEffect(() => {
     fadeTransition.toggle(displayState.isVisible);
-  }, [displayState.isVisible]);
+  }, [displayState.isVisible, fadeTransition]);
 
   // Don't render if not visible and fade is complete
   if (fadeTransition.opacity <= 0.01 && !displayState.isVisible) {

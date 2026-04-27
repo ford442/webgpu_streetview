@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, ReactElement } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 // ============================================================================
 // Type Definitions
@@ -118,9 +118,6 @@ const clamp = (value: number, min: number, max: number): number =>
 /**
  * Format number with leading zeros for display
  */
-const formatNumber = (value: number, digits: number = 3): string =>
-    Math.round(value).toString().padStart(digits, '0');
-
 /**
  * Interpolate between two colors
  */
@@ -305,11 +302,6 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
     };
 
     const progressColor = getProgressColor();
-    const strokeDashOffset = 2 * Math.PI * radius * (1 - normalizedValue);
-
-    // Scale factor for responsive sizing
-    const scale = size / 100;
-
     return (
         <div
             style={{
@@ -647,10 +639,11 @@ export const GaugeDashboard: React.FC<GaugeDashboardProps> = ({
 // Default Export
 // ============================================================================
 
-export default {
+const gauges = {
     CircularGauge,
     SpeedGauge,
     RpmGauge,
     GearIndicator,
     GaugeDashboard,
 };
+export default gauges;

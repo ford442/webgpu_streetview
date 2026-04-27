@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     AccessibilitySettings,
-    loadAccessibilitySettings,
     saveAccessibilitySettings,
     KEYBOARD_SHORTCUTS,
     useFocusTrap,
@@ -422,8 +421,6 @@ const ToggleSwitch: React.FC<{
  * Keyboard Shortcuts List
  */
 const ShortcutsList: React.FC<{ settings: AccessibilitySettings }> = ({ settings }) => {
-    const shortcuts = Object.entries(KEYBOARD_SHORTCUTS);
-
     // Group shortcuts by category
     const categories = {
         'Navigation': ['MOVE_FORWARD', 'MOVE_BACKWARD', 'MOVE_LEFT', 'MOVE_RIGHT'],

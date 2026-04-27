@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 // ============================================================================
 // ICON SVG PATHS (Automotive Interface Icons)
@@ -621,7 +621,7 @@ export const Divider: React.FC = () => {
 };
 
 // Default export for convenience
-export default {
+const controls = {
   IconButton,
   Slider,
   ToggleGroup,
@@ -631,3 +631,4 @@ export default {
   Divider,
   injectSliderStyles,
 };
+export default controls;

@@ -3,7 +3,7 @@ import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 // Import crypto companies config
-import { CRYPTO_COMPANIES, CryptoCompany } from '../config/cryptoCompanies';
+import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
 
 interface MiniMapProps {
     apiKey: string;
@@ -24,15 +24,16 @@ const MiniMap: React.FC<MiniMapProps> = ({
 }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
-    const [map, setMap] = useState<google.maps.Map | null>(null);
+    const [map] = useState<google.maps.Map | null>(null);
     const [cesiumViewer, setCesiumViewer] = useState<Cesium.Viewer | null>(null);
-    const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
+    const [marker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
     const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | Cesium.Entity)[]>([]);
 
-    // Helper to create custom marker content
+    // Helper to create custom marker content (preserved for future use)
+    /*
     const createMarkerContent = (rotation: number): HTMLElement => {
         const el = document.createElement('div');
         el.style.cssText = `
@@ -46,6 +47,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
         el.title = "Drag to move (You are here) 🖱️";
         return el;
     };
+    */
 
     // Helper to add a breadcrumb at the current panorama position
     const addBreadcrumb = useCallback(() => {

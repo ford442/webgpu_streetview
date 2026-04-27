@@ -97,7 +97,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
 
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
-    const [webgpuFailed, setWebgpuFailed] = useState(false);
     
     // Keep latest environment settings in a ref for the render loop
     const envRef = useRef({
@@ -151,12 +150,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             if (success) {
                 internalRendererRef.current = renderer;
                 setRenderer(renderer);  // Register with StreetView context
-                setWebgpuFailed(false);
                 onWebGPUStatusRef.current?.(true);
                 startMonitoringRef.current();
             } else {
                 console.warn("WebGPU initialization failed. Please check your browser compatibility.");
-                setWebgpuFailed(true);
                 onWebGPUStatusRef.current?.(false);
             }
         })();
@@ -167,7 +164,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             stopMonitoringRef.current();
             renderer.destroy();
         };
-    }, [reinitCounter]);
+    }, [reinitCounter, setRenderer]);
 
     useEffect(() => {
         // Performance: Track source changes
@@ -182,7 +179,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
         if (currentRendererRef.current) {
             currentRendererRef.current.resize(size.width, size.height);
         }
-    }, [size.width, size.height]);
+    }, [size.width, size.height, currentRendererRef]);
 
     useEffect(() => {
         let active = true;

@@ -15,7 +15,6 @@ import {
   setCarWipers,
   updateCarGauges,
   isCarSteeringWheelHit,
-  toggleWipers,
   setWindowTint,
   CarModeState
 } from '../car';
@@ -36,13 +35,10 @@ interface CarModeViewProps {
  * - Head look independent of car steering
  */
 const CarModeView: React.FC<CarModeViewProps> = () => {
-  const { canvas, heading, pitch, panorama } = useStreetView();
+  const { heading, pitch, panorama } = useStreetView();
   const {
-    viewMode,
-    toggleViewMode,
     controlMode,
     setControlMode,
-    headCoupling,
     isTempSteerMode,
     carHeading,
     registerCarModeState,
@@ -66,7 +62,6 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     wind,
     setWind,
     timeOfDay,
-    setTimeOfDay,
     nightIntensity,
     applyTimeOfDayPreset,
     ambientLightColor,
@@ -81,7 +76,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const carModeStateRef = useRef<CarModeState | null>(null);
   
   // Dashboard visibility state
-  const [isDashboardVisible, setIsDashboardVisible] = useState(true);
+  const [isDashboardVisible] = useState(true);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);

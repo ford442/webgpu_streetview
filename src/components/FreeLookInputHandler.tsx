@@ -15,7 +15,7 @@ interface FreeLookInputHandlerProps {
  * - keydown: Global with input element guard
  */
 const FreeLookInputHandler: React.FC<FreeLookInputHandlerProps> = ({ targetRef }) => {
-  const { heading, pitch, zoom, setHeading, setPitch, setZoom, advance } = useStreetView();
+  const { setHeading, setPitch, setZoom, advance } = useStreetView();
   const { toggleViewMode } = useViewMode();
   
   const isDraggingRef = useRef(false);

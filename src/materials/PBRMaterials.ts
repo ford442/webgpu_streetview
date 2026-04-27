@@ -212,7 +212,7 @@ export class VehiclePBRMaterials {
         };
 
         if (effects.normalMaps) {
-            const { canvas: hCanvas, ctx: hCtx } = this.makeCanvas(size);
+            const { ctx: hCtx } = this.makeCanvas(size);
             const hImg = hCtx.createImageData(size, size);
             for (let i = 0; i < hImg.data.length; i += 4) {
                 const v = Math.random() * 60 + 100;
@@ -302,7 +302,7 @@ export class VehiclePBRMaterials {
         };
 
         if (effects.normalMaps) {
-            const { canvas: hCanvas, ctx: hCtx } = this.makeCanvas(size);
+            const { ctx: hCtx } = this.makeCanvas(size);
             const hImg = hCtx.createImageData(size, size);
             for (let y = 0; y < size; y++) {
                 const baseH = 128 + Math.sin(y * 0.5) * 20 + Math.random() * 15;
@@ -422,7 +422,7 @@ export class VehiclePBRMaterials {
         };
 
         if (effects.normalMaps) {
-            const { canvas: hCanvas, ctx: hCtx } = this.makeCanvas(size);
+            const { ctx: hCtx } = this.makeCanvas(size);
             const hImg = hCtx.createImageData(size, size);
             for (let y = 0; y < size; y++) {
                 for (let x = 0; x < size; x++) {
@@ -523,7 +523,7 @@ export class VehiclePBRMaterials {
         };
 
         if (effects.normalMaps) {
-            const { canvas: hCanvas, ctx: hCtx } = this.makeCanvas(size);
+            const { ctx: hCtx } = this.makeCanvas(size);
             const hImg = hCtx.createImageData(size, size);
             for (let i = 0; i < hImg.data.length; i += 4) {
                 const v = 128 + Math.random() * 8 - 4;

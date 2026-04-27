@@ -474,7 +474,6 @@ export function getMemoryPressure(): 'low' | 'normal' | 'high' | 'critical' {
     const memory = (performance as any).memory;
     if (memory) {
       const used = memory.usedJSHeapSize;
-      const total = memory.totalJSHeapSize;
       const limit = memory.jsHeapSizeLimit;
       
       const ratio = used / limit;

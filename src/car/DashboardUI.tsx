@@ -5,15 +5,14 @@
  * Integrates DashboardLayout, Gauges, and Controls into a unified interface
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
 // Import layout components
 import { 
   DashboardContainer, 
   ZoneLeft, 
   ZoneCenter, 
-  ZoneRight, 
-  COLORS 
+  ZoneRight
 } from './DashboardLayout';
 
 // Import gauge components

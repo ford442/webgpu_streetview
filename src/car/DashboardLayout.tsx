@@ -536,7 +536,7 @@ export const Divider: React.FC<{ vertical?: boolean; style?: React.CSSProperties
 // Default Export
 // ============================================================================
 
-export default {
+const dashboardLayout = {
   DashboardContainer,
   ZoneLeft,
   ZoneCenter,
@@ -552,3 +552,4 @@ export default {
   glassmorphismBase,
   transitions,
 };
+export default dashboardLayout;

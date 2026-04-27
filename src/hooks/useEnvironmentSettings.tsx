@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import {
   toggleWipers,
   setCarWipers,
@@ -6,7 +6,6 @@ import {
   toggleCarDomeLight,
   setCarHeadlights,
   setCarDomeLight,
-  getCarDomeLightState,
 } from '../car';
 
 // Types

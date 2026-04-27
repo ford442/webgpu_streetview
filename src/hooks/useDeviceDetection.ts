@@ -101,7 +101,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
   
   // Calculate optimal quality settings based on device capabilities
   const calculateOptimalQuality = useCallback((caps: DeviceCapabilities): QualitySettings => {
-    const { isMobile, isTablet, pixelRatio, memory, cpuCores, supportsWebGPU } = caps;
+    const { isMobile, isTablet, memory, cpuCores } = caps;
     
     // Base settings for different device tiers
     if (isMobile) {
@@ -152,6 +152,25 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     calculateOptimalQuality(detectCapabilities())
   );
 
+  const setBatterySaveMode = useCallback((enabled: boolean) => {
+    setQuality((prev) => {
+      if (enabled) {
+        return {
+          ...prev,
+          batterySaveMode: true,
+          renderScale: Math.min(prev.renderScale, 0.6),
+          frameRate: Math.min(prev.frameRate, 24),
+          shadowQuality: 'off',
+          postProcessing: false,
+          antialiasing: false,
+        };
+      } else {
+        // Reset to device-optimal settings
+        return calculateOptimalQuality(device);
+      }
+    });
+  }, [calculateOptimalQuality, device]);
+
   // Update device info on resize
   useEffect(() => {
     const handleResize = () => {
@@ -199,26 +218,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     };
     
     setupBatteryMonitoring();
-  }, [quality.batterySaveMode]);
-
-  const setBatterySaveMode = useCallback((enabled: boolean) => {
-    setQuality((prev) => {
-      if (enabled) {
-        return {
-          ...prev,
-          batterySaveMode: true,
-          renderScale: Math.min(prev.renderScale, 0.6),
-          frameRate: Math.min(prev.frameRate, 24),
-          shadowQuality: 'off',
-          postProcessing: false,
-          antialiasing: false,
-        };
-      } else {
-        // Reset to device-optimal settings
-        return calculateOptimalQuality(device);
-      }
-    });
-  }, [calculateOptimalQuality, device]);
+  }, [quality.batterySaveMode, setBatterySaveMode]);
 
   const setCustomQuality = useCallback((settings: Partial<QualitySettings>) => {
     setQuality((prev) => ({
