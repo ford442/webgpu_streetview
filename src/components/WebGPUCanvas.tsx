@@ -32,7 +32,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     } = useEnvironmentSettings();
 
     // Get street view state
-    const { canvas: source, heading, zoom, isTransitioning: isStreetViewTransitioning, setRenderer } = useStreetView();
+    const { canvas: source, heading, zoom, isTransitioning: isStreetViewTransitioning, setRenderer, isPanoramaReady, transitionSource } = useStreetView();
 
     // Get view mode
     const { viewMode, carHeading } = useViewMode();
@@ -276,9 +276,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 currentRendererRef.current.updateCameraParams(currentPanX, currentPanY);
             }
 
+            // Gate the render source: while a transition is in progress and the
+            // new panorama is not yet confirmed stable, keep rendering the cached
+            // outgoing snapshot so the user doesn't see partial tiles.
+            const renderSource = (isStreetViewTransitioning && !isPanoramaReady)
+                ? transitionSource
+                : source;
+
             if (shouldRender && currentRendererRef.current) {
-                if (source) {
-                    currentRendererRef.current.renderStreetView('streetview', source, renderHeading, renderPitch, zoom);
+                if (renderSource) {
+                    currentRendererRef.current.renderStreetView('streetview', renderSource, renderHeading, renderPitch, zoom);
                 } else {
                     currentRendererRef.current.renderWeatherOnly();
                 }

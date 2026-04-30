@@ -36,6 +36,12 @@ export interface StreetViewState {
   // Transition state
   isTransitioning: boolean;
   setIsTransitioning: (transitioning: boolean) => void;
+  
+  // Panorama readiness — true when the new hidden canvas is stable and fully loaded
+  isPanoramaReady: boolean;
+  
+  // Cached snapshot of the outgoing panorama, used as render source while loading
+  transitionSource: HTMLCanvasElement | null;
 }
 
 const StreetViewContext = createContext<StreetViewState | null>(null);
@@ -55,6 +61,35 @@ interface StreetViewProviderProps {
   initialPitch?: number;
 }
 
+/** Lightweight pixel fingerprint to detect canvas stability */
+function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
+  const w = canvas.width;
+  const h = canvas.height;
+  if (w < 256 || h < 256) return '';
+  try {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = 4;
+    offscreen.height = 4;
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) return '';
+    const sx = Math.floor(w / 2 - 64);
+    const sy = Math.floor(h / 2 - 64);
+    ctx.drawImage(canvas, sx, sy, 128, 128, 0, 0, 4, 4);
+    const d = ctx.getImageData(0, 0, 4, 4).data;
+    let hash = 0;
+    let brightness = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      hash = ((hash << 5) - hash) + d[i] + d[i + 1] + d[i + 2];
+      brightness += d[i] + d[i + 1] + d[i + 2];
+    }
+    // Mostly black = probably still loading
+    if (brightness / ((d.length / 4) * 3) < 5) return '';
+    return `${w}x${h}-${hash}`;
+  } catch {
+    return '';
+  }
+}
+
 export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   children,
   initialPosition = { lat: 39.2575004, lng: -121.021821 },
@@ -65,6 +100,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [panorama, setPanoramaState] = useState<google.maps.StreetViewPanorama | null>(null);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Renderer reference for GPU transitions
   const [renderer, setRendererState] = useState<Renderer | null>(null);
@@ -81,9 +117,16 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isPanoramaReady, setIsPanoramaReady] = useState(true);
+  const isPanoramaReadyRef = useRef(true);
+  const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
   
   // Transition animation RAF ref
   const transitionRafRef = useRef<number | null>(null);
+  
+  // Keep refs in sync with state for listeners / RAF loops
+  useEffect(() => { canvasRef.current = canvas; }, [canvas]);
+  useEffect(() => { isPanoramaReadyRef.current = isPanoramaReady; }, [isPanoramaReady]);
   
   // Wrap setters to handle both values and updater functions
   const setHeading = useCallback((value: number | ((prev: number) => number)) => {
@@ -171,44 +214,70 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         renderer.captureCurrentFrame();
       }
       
-      // 2. Start the transition state
       // Normalize the link heading to the same 0-1 range used by panX uniforms
       const movementHeading = bestLink.heading ?? useHeading;
       const movementHeadingNorm = (((movementHeading % 360) + 360) % 360) / 360;
 
-      // 1. Snapshot raw panorama texture with movement direction so the shader
-      //    can shift the old frame's UVs as the user looks around during load
+      // Snapshot raw panorama texture with movement direction so the shader
+      // can shift the old frame's UVs as the user looks around during load
       renderer?.capturePanorama?.(movementHeadingNorm);
 
-      // 2. Trigger the panorama change
+      // 2. Create a CPU-side snapshot of the outgoing panorama so
+      //    WebGPUCanvas can keep rendering it while the new one loads.
+      const currentCanvas = canvasRef.current;
+      if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
+        try {
+          const snap = document.createElement('canvas');
+          snap.width = currentCanvas.width;
+          snap.height = currentCanvas.height;
+          const ctx = snap.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(currentCanvas, 0, 0);
+            setTransitionSource(snap);
+          }
+        } catch (e) {
+          console.warn('[StreetView] Failed to snapshot outgoing canvas:', e);
+        }
+      }
+
+      // 3. Start the transition state
+      setIsPanoramaReady(false);
       setIsTransitioning(true);
       
-      // 3. Change to the new panorama
+      // 4. Change to the new panorama
       pano.setPano(bestLink.pano);
       
-      // 4. Animate transition progress 0→1 over ~500ms
-      // Cancel any existing transition animation
+      // 5. Animate transition progress 0→1 with a load gate.
+      //    Progress is clamped while isPanoramaReady is false.
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
       }
       
-      const TRANSITION_DURATION = 500; // ms
+      const BASE_DURATION = 400; // ms
+      const MAX_TRANSITION_WAIT = 3000; // ms hard ceiling
       const startTime = performance.now();
       
       const animateTransition = () => {
         const elapsed = performance.now() - startTime;
-        const progress = Math.min(1.0, elapsed / TRANSITION_DURATION);
+        const rawProgress = elapsed / BASE_DURATION;
+        const maxProgress = isPanoramaReadyRef.current ? 1.0 : 0.85;
+        const progress = Math.min(maxProgress, rawProgress);
         
         // Push progress to the renderer
         if (rendererRef.current) {
           rendererRef.current.setTransitionProgress(progress);
         }
         
-        if (progress < 1.0) {
+        if (progress < 1.0 && elapsed < MAX_TRANSITION_WAIT) {
           transitionRafRef.current = requestAnimationFrame(animateTransition);
         } else {
-          // Transition complete
+          // Transition complete (or hard timeout)
           transitionRafRef.current = null;
+          if (rendererRef.current) {
+            rendererRef.current.setTransitionProgress(1.0);
+          }
+          setIsTransitioning(false);
+          setTransitionSource(null);
         }
       };
       
@@ -241,7 +310,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const pano = panoramaRef.current;
     if (!pano) return;
     
-    let pauseTimer: ReturnType<typeof setTimeout> | null = null;
+    let stabilityInterval: ReturnType<typeof setInterval> | null = null;
     
     const handlePanoChanged = () => {
       console.log('[StreetView] Panorama changed event fired');
@@ -256,20 +325,65 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         setPositionState(pos);
       }
       
-      // Transition pause: allow GPU animation to complete and tiles to load.
-      // The GPU transition runs for 500ms; 700ms total gives tiles time to load.
-      if (pauseTimer) clearTimeout(pauseTimer);
-      pauseTimer = setTimeout(() => {
-        console.log('[StreetView] Transition pause complete, ready for next advance');
-        setIsTransitioning(false);
-      }, 700);
+      // --- Canvas stability gate ---
+      // Replace the old fixed 700 ms timer with a real load/stability check.
+      if (stabilityInterval) {
+        clearInterval(stabilityInterval);
+        stabilityInterval = null;
+      }
+      
+      let stableCount = 0;
+      let lastFingerprint = '';
+      let tickCount = 0;
+      const REQUIRED_STABLE = 3; // 300 ms of stability
+      const MAX_TICKS = 15;      // 1.5 s fallback
+      
+      stabilityInterval = setInterval(() => {
+        const c = canvasRef.current;
+        tickCount++;
+        
+        if (!c || c.width < 256 || c.height < 256) {
+          stableCount = 0;
+          if (tickCount >= MAX_TICKS) {
+            clearInterval(stabilityInterval!);
+            stabilityInterval = null;
+            console.log('[StreetView] Stability fallback (no canvas)');
+            setIsPanoramaReady(true);
+          }
+          return;
+        }
+        
+        const fingerprint = getCanvasFingerprint(c);
+        if (fingerprint && fingerprint === lastFingerprint) {
+          stableCount++;
+          if (stableCount >= REQUIRED_STABLE) {
+            clearInterval(stabilityInterval!);
+            stabilityInterval = null;
+            console.log('[StreetView] Canvas stable, panorama ready');
+            setIsPanoramaReady(true);
+            return;
+          }
+        } else {
+          stableCount = 0;
+          lastFingerprint = fingerprint;
+        }
+        
+        if (tickCount >= MAX_TICKS) {
+          clearInterval(stabilityInterval!);
+          stabilityInterval = null;
+          console.log('[StreetView] Stability fallback (timeout)');
+          setIsPanoramaReady(true);
+        }
+      }, 100);
     };
     
     const listener = pano.addListener('pano_changed', handlePanoChanged);
     
     return () => {
       google.maps.event.removeListener(listener);
-      if (pauseTimer) clearTimeout(pauseTimer);
+      if (stabilityInterval) {
+        clearInterval(stabilityInterval);
+      }
     };
   }, [panorama]);
   
@@ -302,6 +416,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     teleport,
     isTransitioning,
     setIsTransitioning,
+    isPanoramaReady,
+    transitionSource,
   };
   
   return (
