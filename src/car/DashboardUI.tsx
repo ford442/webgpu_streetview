@@ -50,6 +50,7 @@ export interface DashboardUIProps {
     isVisible: boolean;
     isRadioPlaying: boolean;
     isMapOpen?: boolean;
+    onNavigate?: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
     onToggleGPS: () => void;
     onToggleRadio: () => void;
     onRainIntensity: (value: number) => void;
@@ -87,6 +88,96 @@ export interface DashboardUIProps {
 }
 
 // ============================================================================
+// DIRECTION PAD COMPONENT
+// ============================================================================
+
+interface DirectionPadProps {
+    onNavigate: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
+}
+
+const NAV_ARROW_FORWARD = 'M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z';
+const NAV_ARROW_BACK    = 'M12 4l1.41 1.41L7.83 11H20v2H7.83l5.58 5.59L12 20l-8-8 8-8z';
+const NAV_ARROW_LEFT    = 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z';
+const NAV_ARROW_RIGHT   = 'M4 11h12.17l-5.58-5.59L12 4l8 8-8 8-1.41-1.41L16.17 13H4v-2z';
+
+const DirectionPad: React.FC<DirectionPadProps> = ({ onNavigate }) => {
+    const btnBase: React.CSSProperties = {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '2px',
+        width: '60px',
+        height: '54px',
+        background: 'rgba(0, 180, 255, 0.08)',
+        border: '1px solid rgba(0, 212, 255, 0.25)',
+        borderRadius: '10px',
+        color: 'rgba(0, 212, 255, 0.85)',
+        cursor: 'pointer',
+        fontSize: '8px',
+        fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace",
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        transition: 'background 0.15s, box-shadow 0.15s, color 0.15s',
+        userSelect: 'none',
+    };
+
+    const makeHandlers = (dir: 'forward' | 'backward' | 'left' | 'right') => ({
+        onClick:      (e: React.MouseEvent)    => { e.stopPropagation(); onNavigate(dir); },
+        onMouseDown:  (e: React.MouseEvent)    => { e.stopPropagation(); (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,212,255,0.22)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(0,212,255,0.4)'; },
+        onMouseUp:    (e: React.MouseEvent)    => { e.stopPropagation(); (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,180,255,0.08)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; },
+        onMouseMove:  (e: React.MouseEvent)    => { e.stopPropagation(); },
+        onMouseEnter: (e: React.MouseEvent)    => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,212,255,0.15)'; (e.currentTarget as HTMLButtonElement).style.color = '#00D4FF'; },
+        onMouseLeave: (e: React.MouseEvent)    => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,180,255,0.08)'; (e.currentTarget as HTMLButtonElement).style.color = 'rgba(0,212,255,0.85)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; },
+        onKeyDown:    (e: React.KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === ' ') onNavigate(dir); },
+    });
+
+    const NavArrow: React.FC<{ path: string }> = ({ path }) => (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d={path} />
+        </svg>
+    );
+
+    return (
+        <div
+            style={{
+                display: 'grid',
+                gridTemplateColumns: '60px 60px 60px',
+                gridTemplateRows: '54px 54px',
+                gap: '4px',
+                marginTop: '6px',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseMove={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {/* Row 1: [empty] [Forward] [empty] */}
+            <div />
+            <button style={btnBase} aria-label="Move Forward" {...makeHandlers('forward')}>
+                <NavArrow path={NAV_ARROW_FORWARD} />
+                <span>Forward</span>
+            </button>
+            <div />
+
+            {/* Row 2: [Strafe Left] [Reverse] [Strafe Right] */}
+            <button style={{ ...btnBase, width: '60px' }} aria-label="Strafe Left" {...makeHandlers('left')}>
+                <NavArrow path={NAV_ARROW_LEFT} />
+                <span>Strafe</span>
+            </button>
+            <button style={btnBase} aria-label="Move Backward" {...makeHandlers('backward')}>
+                <NavArrow path={NAV_ARROW_BACK} />
+                <span>Reverse</span>
+            </button>
+            <button style={{ ...btnBase, width: '60px' }} aria-label="Strafe Right" {...makeHandlers('right')}>
+                <NavArrow path={NAV_ARROW_RIGHT} />
+                <span>Strafe</span>
+            </button>
+        </div>
+    );
+};
+
+// ============================================================================
 // Component Implementation
 // ============================================================================
 
@@ -94,6 +185,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     isVisible,
     isRadioPlaying,
     isMapOpen = false,
+    onNavigate,
     onToggleGPS,
     onToggleRadio,
     onRainIntensity,
@@ -356,6 +448,11 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                                 ariaLabel="Toggle Roof" 
                             />
                         </div>
+
+                        {/* Directional navigation pad */}
+                        {onNavigate && (
+                            <DirectionPad onNavigate={onNavigate} />
+                        )}
                     </div>
                 </ZoneCenter>
 
