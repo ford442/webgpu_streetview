@@ -35,7 +35,7 @@ interface CarModeViewProps {
  * - Head look independent of car steering
  */
 const CarModeView: React.FC<CarModeViewProps> = () => {
-  const { heading, pitch, panorama } = useStreetView();
+  const { heading, pitch, panorama, advance } = useStreetView();
   const {
     controlMode,
     setControlMode,
@@ -274,6 +274,10 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const handleToggleGPS = useCallback(() => {
     setIsMapOpen(prev => !prev);
   }, []);
+
+  const handleNavigate = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
+    advance(direction, carHeading);
+  }, [advance, carHeading]);
   
   const handleToggleRadio = useCallback(async () => {
     const newState = !isRadioPlaying;
@@ -396,6 +400,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         isVisible={isDashboardVisible}
         isRadioPlaying={isRadioPlaying}
         isMapOpen={isMapOpen}
+        onNavigate={handleNavigate}
         onToggleGPS={handleToggleGPS}
         onToggleRadio={handleToggleRadio}
         onRainIntensity={setRainIntensity}

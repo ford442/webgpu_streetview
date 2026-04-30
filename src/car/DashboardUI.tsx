@@ -50,6 +50,7 @@ export interface DashboardUIProps {
     isVisible: boolean;
     isRadioPlaying: boolean;
     isMapOpen?: boolean;
+    onNavigate?: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
     onToggleGPS: () => void;
     onToggleRadio: () => void;
     onRainIntensity: (value: number) => void;
@@ -87,6 +88,104 @@ export interface DashboardUIProps {
 }
 
 // ============================================================================
+// DIRECTION PAD COMPONENT
+// ============================================================================
+
+interface DirectionPadProps {
+    onNavigate: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
+}
+
+const NAV_ARROW_FORWARD = 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z';
+const NAV_ARROW_BACK    = 'M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.58L4 12l8 8 8-8z';
+const NAV_ARROW_LEFT    = 'M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z';
+const NAV_ARROW_RIGHT   = 'M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z';
+
+const DirectionPad: React.FC<DirectionPadProps> = ({ onNavigate }) => {
+    const [activeBtn, setActiveBtn] = useState<string | null>(null);
+    const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+
+    const getBtnStyle = (dir: string): React.CSSProperties => ({
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '2px',
+        width: '60px',
+        height: '54px',
+        background: activeBtn === dir
+            ? 'rgba(0,212,255,0.22)'
+            : hoveredBtn === dir
+                ? 'rgba(0,212,255,0.15)'
+                : 'rgba(0, 180, 255, 0.08)',
+        border: '1px solid rgba(0, 212, 255, 0.25)',
+        borderRadius: '10px',
+        color: hoveredBtn === dir ? '#00D4FF' : 'rgba(0, 212, 255, 0.85)',
+        boxShadow: activeBtn === dir ? '0 0 12px rgba(0,212,255,0.4)' : 'none',
+        cursor: 'pointer',
+        fontSize: '8px',
+        fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace",
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        transition: 'background 0.15s, box-shadow 0.15s, color 0.15s',
+        userSelect: 'none',
+    });
+
+    const makeHandlers = (dir: 'forward' | 'backward' | 'left' | 'right') => ({
+        onClick:      (e: React.MouseEvent)    => { e.stopPropagation(); onNavigate(dir); },
+        onMouseDown:  (e: React.MouseEvent)    => { e.stopPropagation(); setActiveBtn(dir); },
+        onMouseUp:    (e: React.MouseEvent)    => { e.stopPropagation(); setActiveBtn(null); },
+        onMouseMove:  (e: React.MouseEvent)    => { e.stopPropagation(); },
+        onMouseEnter: (_e: React.MouseEvent)   => { setHoveredBtn(dir); },
+        onMouseLeave: (e: React.MouseEvent)    => { e.stopPropagation(); setHoveredBtn(null); setActiveBtn(null); },
+        onKeyDown:    (e: React.KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === ' ') onNavigate(dir); },
+    });
+
+    const NavArrow: React.FC<{ path: string }> = ({ path }) => (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d={path} />
+        </svg>
+    );
+
+    return (
+        <div
+            style={{
+                display: 'grid',
+                gridTemplateColumns: '60px 60px 60px',
+                gridTemplateRows: '54px 54px',
+                gap: '4px',
+                marginTop: '6px',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseMove={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {/* Row 1: [empty] [Forward] [empty] */}
+            <div />
+            <button style={getBtnStyle('forward')} aria-label="Move Forward" {...makeHandlers('forward')}>
+                <NavArrow path={NAV_ARROW_FORWARD} />
+                <span>Forward</span>
+            </button>
+            <div />
+
+            {/* Row 2: [Strafe Left] [Reverse] [Strafe Right] */}
+            <button style={getBtnStyle('left')} aria-label="Strafe Left" {...makeHandlers('left')}>
+                <NavArrow path={NAV_ARROW_LEFT} />
+                <span>Strafe</span>
+            </button>
+            <button style={getBtnStyle('backward')} aria-label="Move Backward" {...makeHandlers('backward')}>
+                <NavArrow path={NAV_ARROW_BACK} />
+                <span>Reverse</span>
+            </button>
+            <button style={getBtnStyle('right')} aria-label="Strafe Right" {...makeHandlers('right')}>
+                <NavArrow path={NAV_ARROW_RIGHT} />
+                <span>Strafe</span>
+            </button>
+        </div>
+    );
+};
+
+// ============================================================================
 // Component Implementation
 // ============================================================================
 
@@ -94,6 +193,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     isVisible,
     isRadioPlaying,
     isMapOpen = false,
+    onNavigate,
     onToggleGPS,
     onToggleRadio,
     onRainIntensity,
@@ -356,6 +456,11 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                                 ariaLabel="Toggle Roof" 
                             />
                         </div>
+
+                        {/* Directional navigation pad */}
+                        {onNavigate && (
+                            <DirectionPad onNavigate={onNavigate} />
+                        )}
                     </div>
                 </ZoneCenter>
 
