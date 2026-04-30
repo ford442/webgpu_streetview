@@ -20,6 +20,12 @@ export class RearviewMirror {
     private streetViewTexture: THREE.CanvasTexture | null = null;
     private streetViewCanvas: HTMLCanvasElement | null = null;
 
+    // Persistent resources for the mirror scene (performance optimization)
+    private mirrorScreenScene: THREE.Scene;
+    private mirrorScreenMesh: THREE.Mesh;
+    private mirrorScreenGeo: THREE.PlaneGeometry;
+    private mirrorScreenMat: THREE.MeshBasicMaterial;
+
     // Mirror dimensions (0.5x resolution for performance)
     private static readonly MIRROR_WIDTH = 512;
     private static readonly MIRROR_HEIGHT = 256;
@@ -113,6 +119,15 @@ export class RearviewMirror {
 
         scene.add(frame);
         scene.add(this.mirrorPlane);
+
+        // Initialize persistent resources for the mirror scene
+        this.mirrorScreenScene = new THREE.Scene();
+        this.mirrorScreenGeo = new THREE.PlaneGeometry(2, 1);
+        this.mirrorScreenMat = new THREE.MeshBasicMaterial({
+            side: THREE.DoubleSide
+        });
+        this.mirrorScreenMesh = new THREE.Mesh(this.mirrorScreenGeo, this.mirrorScreenMat);
+        this.mirrorScreenScene.add(this.mirrorScreenMesh);
     }
 
     /**
@@ -130,6 +145,10 @@ export class RearviewMirror {
                 this.streetViewTexture = new THREE.CanvasTexture(canvas);
                 this.streetViewTexture.minFilter = THREE.LinearFilter;
                 this.streetViewTexture.magFilter = THREE.LinearFilter;
+                // Performance optimization: use texture transforms instead of manual UV modification
+                this.streetViewTexture.wrapS = THREE.RepeatWrapping;
+                this.streetViewTexture.repeat.set(-1, 1);
+                this.mirrorScreenMat.map = this.streetViewTexture;
             } else {
                 this.streetViewTexture.image = canvas;
                 this.streetViewTexture.needsUpdate = true;
@@ -164,42 +183,24 @@ export class RearviewMirror {
         // Update the texture from the Street View canvas
         this.streetViewTexture.needsUpdate = true;
 
-        // Create a temporary scene with a plane showing the Street View texture
-        // We need to offset the UVs to show the view 180° behind
-        const tempScene = new THREE.Scene();
-        
         // Calculate UV offset based on car heading to show what's behind
         // 180° = 0.5 in UV space (horizontal panoramic offset)
         const rearHeadingOffset = ((carHeading + 180) % 360) / 360;
         
-        const planeGeo = new THREE.PlaneGeometry(2, 1);
-        const planeMat = new THREE.MeshBasicMaterial({ 
-            map: this.streetViewTexture,
-            side: THREE.DoubleSide
-        });
-        
-        // Modify UVs to show the rear view (180° offset)
-        const uvs = planeGeo.attributes.uv;
-        for (let i = 0; i < uvs.count; i++) {
-            const u = uvs.getX(i);
-            // Offset by rear heading and mirror horizontally
-            uvs.setX(i, (1.0 - u) + rearHeadingOffset);
-        }
-        planeGeo.attributes.uv.needsUpdate = true;
-        
-        const plane = new THREE.Mesh(planeGeo, planeMat);
-        tempScene.add(plane);
+        // Performance optimization: use texture transforms (GPU-side) instead of manual UV modification
+        // Horizontal flip (1.0 - u) and offset are combined here:
+        // u_transformed = u * repeat + offset
+        // Since repeat.x = -1.0, u_transformed = -u + offset
+        // We want (1.0 - u) + rearHeadingOffset = -u + 1.0 + rearHeadingOffset
+        // So offset.x = 1.0 + rearHeadingOffset
+        this.streetViewTexture.offset.x = 1.0 + rearHeadingOffset;
 
         // Render to the mirror's render target
         const currentTarget = this.renderer.getRenderTarget();
         this.renderer.setRenderTarget(this.renderTarget);
         this.renderer.clear();
-        this.renderer.render(tempScene, this.mirrorCamera);
+        this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
         this.renderer.setRenderTarget(currentTarget);
-
-        // Clean up temp scene
-        planeGeo.dispose();
-        planeMat.dispose();
     }
 
     /**
@@ -224,6 +225,11 @@ export class RearviewMirror {
         this.renderTarget.dispose();
         this.mirrorMaterial.dispose();
         this.mirrorPlane.geometry.dispose();
+
+        // Dispose of persistent rendering resources
+        this.mirrorScreenGeo.dispose();
+        this.mirrorScreenMat.dispose();
+
         if (this.streetViewTexture) {
             this.streetViewTexture.dispose();
         }
