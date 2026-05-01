@@ -11,6 +11,7 @@ import {
   useStreetView,
   useViewMode,
   useEnvironmentSettings,
+  useAdvanceSafe,
   type TimeOfDay,
 } from './hooks';
 
@@ -57,7 +58,8 @@ const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
  */
 function InnerApp() {
   // Connect to contexts
-  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, advance, isTransitioning } = useStreetView();
+  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, advance, isTransitioning, isPanoramaReady } = useStreetView();
+  const { advanceSafe, teleportSafe, panoCache } = useAdvanceSafe();
   const { viewMode, toggleViewMode } = useViewMode();
   const {
     rainIntensity,
@@ -108,6 +110,7 @@ function InnerApp() {
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
+  const [navPending, setNavPending] = useState(false);
   
   // Panel visibility
   const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
@@ -214,14 +217,19 @@ function InnerApp() {
       }
       return;
     }
-    const hop = () => {
+    const hop = async () => {
       // Skip if currently transitioning between locations
       if (useTransitionRef.current) {
         console.log('[CruiseMode] Skipping hop - still transitioning');
         return;
       }
-      // Use the advance function which respects isTransitioning flag
-      advance('forward', cruiseHeadingRef.current);
+      // Safe advance — waits for current pano to be ready before moving
+      setNavPending(true);
+      try {
+        await advanceSafe('forward', undefined, cruiseHeadingRef.current);
+      } finally {
+        setNavPending(false);
+      }
     };
     cruiseIntervalRef.current = setInterval(hop, 3000);
     return () => {
@@ -229,7 +237,7 @@ function InnerApp() {
       cruiseIntervalRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama, advance]);
+  }, [isCruiseMode, panorama, advance, advanceSafe]);
 
   const toggleRadio = () => {
     if (!audioRef.current) return;
@@ -256,10 +264,13 @@ function InnerApp() {
   };
   
   // Globe teleport with auto-lighting (Phase 4) and auto-radio (Phase 3)
-  const handleGlobeTeleport = useCallback((lat: number, lng: number) => {
-    // Teleport the Street View panorama
-    if (panorama) {
-      panorama.setPosition({ lat, lng });
+  const handleGlobeTeleport = useCallback(async (lat: number, lng: number) => {
+    // Teleport the Street View panorama safely
+    setNavPending(true);
+    try {
+      await teleportSafe(lat, lng);
+    } finally {
+      setNavPending(false);
     }
 
     // Phase 4: Auto-lighting based on destination's real-world time
@@ -286,7 +297,7 @@ function InnerApp() {
 
     // Deactivate globe after teleport
     globeMode.deactivate();
-  }, [panorama, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
+  }, [teleportSafe, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
 
   // Phase 5: Waypoint autopilot
   // Interval chosen to allow Street View panorama to load between jumps.
@@ -296,16 +307,19 @@ function InnerApp() {
   const autopilotTransitionRef = useRef(isTransitioning);
   autopilotTransitionRef.current = isTransitioning;
   
-  const handleStartJourney = useCallback((waypoints: { lat: number; lng: number }[]) => {
+  const handleStartJourney = useCallback(async (waypoints: { lat: number; lng: number }[]) => {
     if (waypoints.length === 0) return;
 
-    // Teleport to first waypoint and exit globe
-    handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
+    // Pre-fetch all waypoints (fire-and-forget)
+    waypoints.forEach(wp => panoCache.fetch(wp.lat, wp.lng).catch(() => {}));
+
+    // Teleport to first waypoint with auto-lighting/radio effects
+    await handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
 
     // Set up autopilot: advance through remaining waypoints
     if (waypoints.length > 1) {
       let idx = 1;
-      autopilotRef.current = setInterval(() => {
+      autopilotRef.current = setInterval(async () => {
         if (idx >= waypoints.length) {
           if (autopilotRef.current) clearInterval(autopilotRef.current);
           autopilotRef.current = null;
@@ -316,17 +330,19 @@ function InnerApp() {
           console.log('[Autopilot] Waiting for transition pause before next waypoint');
           return;
         }
-        if (panorama) {
-          try {
-            panorama.setPosition({ lat: waypoints[idx].lat, lng: waypoints[idx].lng });
-          } catch (err) {
-            console.warn(`[Autopilot] Failed to set position for waypoint ${idx}:`, err);
-          }
+        const wp = waypoints[idx];
+        setNavPending(true);
+        try {
+          await teleportSafe(wp.lat, wp.lng);
+        } catch (err) {
+          console.warn(`[Autopilot] Failed to teleport to waypoint ${idx}:`, err);
+        } finally {
+          setNavPending(false);
         }
         idx++;
       }, WAYPOINT_INTERVAL_MS);
     }
-  }, [handleGlobeTeleport, panorama]);
+  }, [handleGlobeTeleport, panoCache, teleportSafe]);
 
   // Cleanup autopilot on unmount
   useEffect(() => {
@@ -521,6 +537,25 @@ function InnerApp() {
         />
       )}
 
+      {/* Navigation pending overlay */}
+      {isConnected && navPending && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999,
+          color: '#4CAF50',
+          fontSize: '1.2rem',
+          fontFamily: 'system-ui, sans-serif',
+          pointerEvents: 'none',
+        }}>
+          Loading next view…
+        </div>
+      )}
+
       {/* Global UI Panels */}
       {isConnected && (
         <>
@@ -542,7 +577,8 @@ function InnerApp() {
           >
             <button
               className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
-              style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110 }}
+              disabled={!isPanoramaReady}
+              style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110, opacity: isPanoramaReady ? 1 : 0.5 }}
               onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
             >
               Cruise: {isCruiseMode ? 'ON' : 'OFF'}

@@ -1,0 +1,110 @@
+/* ============================================================================
+   Gauges – CSS Module
+   Visual styles for the circular gauge suite.
+   Dynamic colours (ambient glow, night intensity) are passed via CSS custom
+   properties on the component root.
+   ============================================================================ */
+
+.gaugeWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  position: relative;
+}
+
+.gaugeSvg {
+  overflow: visible;
+}
+
+.digitalReadout {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.gaugeValue {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.gaugeUnit {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.1em;
+}
+
+.gaugeLabel {
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* --------------------------------------------------------------------------
+   Gear indicator
+   -------------------------------------------------------------------------- */
+.gearWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.gearBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  transition: all 0.2s ease-out;
+}
+
+.gearText {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-weight: 700;
+  transition: all 0.2s ease-out;
+}
+
+.gearLabel {
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+/* --------------------------------------------------------------------------
+   Gauge dashboard (combined view)
+   -------------------------------------------------------------------------- */
+.gaugeDashboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .gearBox,
+  .gearText {
+    transition: none;
+  }
+}

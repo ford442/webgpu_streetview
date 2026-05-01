@@ -1,0 +1,21 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--color-bg, rgba(20, 20, 30, 0.8));
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted, rgba(255, 255, 255, 0.5));
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+}

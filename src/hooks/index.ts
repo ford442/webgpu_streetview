@@ -35,6 +35,10 @@ export {
   type EasingFunction,
 } from './useTransition';
 
+// Safe navigation hooks
+export { usePanoramaCache } from './usePanoramaCache';
+export { useAdvanceSafe } from './useAdvanceSafe';
+
 // Loading integration helpers
 export {
   useStreetViewLoading,

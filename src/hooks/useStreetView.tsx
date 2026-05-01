@@ -39,6 +39,7 @@ export interface StreetViewState {
   
   // Panorama readiness — true when the new hidden canvas is stable and fully loaded
   isPanoramaReady: boolean;
+  readyPromise: () => Promise<void>;
   
   // Cached snapshot of the outgoing panorama, used as render source while loading
   transitionSource: HTMLCanvasElement | null;
@@ -119,6 +120,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isPanoramaReady, setIsPanoramaReady] = useState(true);
   const isPanoramaReadyRef = useRef(true);
+  const readyPromiseRef = useRef<Set<() => void>>(new Set());
   const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
   
   // Transition animation RAF ref
@@ -127,6 +129,14 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // Keep refs in sync with state for listeners / RAF loops
   useEffect(() => { canvasRef.current = canvas; }, [canvas]);
   useEffect(() => { isPanoramaReadyRef.current = isPanoramaReady; }, [isPanoramaReady]);
+  
+  // Resolve any pending ready promises when panorama becomes ready
+  useEffect(() => {
+    if (isPanoramaReady) {
+      readyPromiseRef.current.forEach(resolve => resolve());
+      readyPromiseRef.current.clear();
+    }
+  }, [isPanoramaReady]);
   
   // Wrap setters to handle both values and updater functions
   const setHeading = useCallback((value: number | ((prev: number) => number)) => {
@@ -166,6 +176,13 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const setRenderer = useCallback((r: Renderer | null) => {
     rendererRef.current = r;
     setRendererState(r);
+  }, []);
+  
+  const readyPromise = useCallback(() => {
+    if (isPanoramaReadyRef.current) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      readyPromiseRef.current.add(resolve);
+    });
   }, []);
   
   // Sync heading/pitch to Google Maps panorama
@@ -393,6 +410,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
       }
+      readyPromiseRef.current.clear();
     };
   }, []);
   
@@ -417,6 +435,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     isTransitioning,
     setIsTransitioning,
     isPanoramaReady,
+    readyPromise,
     transitionSource,
   };
   

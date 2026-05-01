@@ -11,6 +11,14 @@ import {
 } from '../utils/performance';
 import { getMemoryProfiler, MemoryProfiler } from '../utils/memoryProfiler';
 import { createGlassMaterial } from '../materials/PBRMaterials';
+import { InteractionHelper } from './interior/InteractionHelper';
+import { createMaterials } from './interior/MaterialFactory';
+import { GeometryFactory } from './interior/GeometryFactory';
+import { LODManager } from './interior/LODManager';
+import { PostProcessingManager } from './interior/PostProcessingManager';
+import { RainSystem } from './interior/RainSystem';
+import { buildInteriorLighting } from './interior/LightingBuilder';
+import { PerformanceProfiler } from './interior/PerformanceProfiler';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -38,6 +46,11 @@ export class CarInterior {
     private domeLightFixtureMesh!: THREE.Mesh;
     private domeSwitchMesh!: THREE.Mesh;
     private interiorBounceLight!: THREE.PointLight;
+    private ambientLight!: THREE.AmbientLight;
+    private hemisphereLight!: THREE.HemisphereLight;
+    private overheadLight!: THREE.DirectionalLight;
+    private leftWindowLight!: THREE.PointLight;
+    private rightWindowLight!: THREE.PointLight;
     private instrumentClusterMat!: THREE.MeshStandardMaterial;
     private centerDisplayMat!: THREE.MeshStandardMaterial;
     private windshieldGlassMesh!: THREE.Mesh;
@@ -60,6 +73,15 @@ export class CarInterior {
     private isWiperActive: boolean = false;
     private speedometer: number = 0; // 0-100 km/h
     private tachometer: number = 0; // 0-8000 RPM
+    private nightIntensity: number = 0;
+    private interaction: InteractionHelper;
+    private reducedMotion: boolean;
+    private geometryFactory: GeometryFactory;
+    private lodManager: LODManager;
+    private postProcessing?: PostProcessingManager;
+    private rainSystem?: RainSystem;
+    private postProcessingEnabled = true;
+    private profiler?: PerformanceProfiler;
 
     private vehicleType: VehicleType = 'sedan';
     private vehicleConfig: VehicleConfig;
@@ -157,8 +179,41 @@ export class CarInterior {
         this.interiorGroup.add(this.driverSeatGroup);
         this.driverSeatGroup.add(this.camera);
 
-        this.createMaterials();
-        this.createLighting();
+        this.reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.interaction = new InteractionHelper();
+        this.geometryFactory = new GeometryFactory();
+        this.lodManager = new LODManager(this.frustumCuller);
+        const mats = createMaterials(this.vehicleConfig, this.gpuProfile);
+
+        // Post-processing (bloom + SMAA) — disabled on low-end GPUs
+        if (this.gpuProfile.name !== 'low') {
+            this.postProcessing = new PostProcessingManager(
+                this.renderer, this.scene, this.camera, this.gpuProfile
+            );
+        }
+
+        // Rain droplet system
+        this.rainSystem = new RainSystem(200);
+        this.interiorGroup.add(this.rainSystem.getMesh());
+
+        // Performance profiler
+        this.profiler = new PerformanceProfiler(this.renderer);
+        this.dashboardMaterial = mats.dashboard;
+        this.leatherMaterial = mats.leather;
+        this.metalMaterial = mats.metal;
+        this.frameMaterial = mats.frame;
+        this.glassMaterial = mats.glass;
+        this.mirrorMaterial = mats.mirror;
+        this.accentMaterial = mats.accent;
+        const lights = buildInteriorLighting(this.scene, this.interiorGroup, this.renderer, this.vehicleConfig);
+        this.hemisphereLight = lights.hemisphereLight;
+        this.ambientLight = lights.ambientLight;
+        this.overheadLight = lights.overheadLight;
+        this.leftWindowLight = lights.leftWindowLight;
+        this.rightWindowLight = lights.rightWindowLight;
+        this.headlightsLight = lights.headlightsLight;
+        this.interiorBounceLight = lights.interiorBounceLight;
+        this.domeLightSource = lights.domeLightSource;
         this.buildInterior();
         
         // Setup LOD after building interior
@@ -224,213 +279,6 @@ export class CarInterior {
      */
     public getQuality(): 'high' | 'medium' | 'low' {
         return this.quality;
-    }
-
-    private createMaterials(): void {
-        // Generate procedural leather texture with multi-scale grain for realism
-        const leatherCanvas = document.createElement('canvas');
-        leatherCanvas.width = 256;
-        leatherCanvas.height = 256;
-        const ctx = leatherCanvas.getContext('2d')!;
-        const imageData = ctx.createImageData(256, 256);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            const px = (i / 4) % 256;
-            const py = Math.floor(i / 4 / 256);
-            // Multi-scale grain: fine random noise + coarse wave pattern for organic leather look
-            const fine = (Math.random() - 0.5) * 22;
-            const coarse = Math.sin(px * 0.18 + py * 0.1) * Math.cos(px * 0.1 - py * 0.15) * 10;
-            const micro = Math.sin(px * 0.9) * Math.cos(py * 0.7) * 3;
-            const base = 58;
-            const v = base + fine + coarse + micro;
-            data[i]     = Math.max(30, Math.min(115, v));           // Red
-            data[i + 1] = Math.max(18, Math.min(82,  v * 0.71));   // Green
-            data[i + 2] = Math.max(8,  Math.min(55,  v * 0.54));   // Blue
-            data[i + 3] = 255;
-        }
-        ctx.putImageData(imageData, 0, 0);
-        const leatherTexture = new THREE.CanvasTexture(leatherCanvas);
-        leatherTexture.wrapS = THREE.RepeatWrapping;
-        leatherTexture.wrapT = THREE.RepeatWrapping;
-        leatherTexture.repeat.set(3, 3); // Tile for finer apparent grain detail
-
-        // Procedural dashboard soft-touch grain texture
-        const dashCanvas = document.createElement('canvas');
-        dashCanvas.width = 128;
-        dashCanvas.height = 128;
-        const dashCtx = dashCanvas.getContext('2d')!;
-        const dashImageData = dashCtx.createImageData(128, 128);
-        const dData = dashImageData.data;
-        for (let i = 0; i < dData.length; i += 4) {
-            const n = (Math.random() * 8) | 0; // subtle surface micro-texture
-            dData[i] = dData[i + 1] = dData[i + 2] = n;
-            dData[i + 3] = 255;
-        }
-        dashCtx.putImageData(dashImageData, 0, 0);
-        const dashTexture = new THREE.CanvasTexture(dashCanvas);
-        dashTexture.wrapS = THREE.RepeatWrapping;
-        dashTexture.wrapT = THREE.RepeatWrapping;
-        dashTexture.repeat.set(4, 4);
-
-        // Dashboard material varies by theme
-        const dashboardColors = {
-            dark: 0x1a1a1a,
-            light: 0x2a2a2a,
-            neon: 0x0a0a1a,
-            clinical: 0xf0f0f0,
-        };
-        const dashColor = dashboardColors[this.vehicleConfig.theme] ?? 0x1a1a1a;
-        
-        this.dashboardMaterial = new THREE.MeshStandardMaterial({
-            color: dashColor,
-            map: this.vehicleConfig.theme === 'clinical' ? null : dashTexture,
-            roughness: this.vehicleConfig.theme === 'clinical' ? 0.35 : 0.88,
-            metalness: this.vehicleConfig.theme === 'clinical' ? 0.15 : 0.04,
-            envMapIntensity: 0.4,
-            side: THREE.DoubleSide,
-        });
-
-        // Leather material for seats — warm brown with multi-scale grain texture
-        this.leatherMaterial = new THREE.MeshStandardMaterial({
-            map: leatherTexture,
-            roughness: 0.78,
-            metalness: 0.0,
-            envMapIntensity: 0.2,
-            side: THREE.DoubleSide,
-        });
-
-        // Metal material for steering column, trim — brushed/polished chrome look
-        this.metalMaterial = new THREE.MeshStandardMaterial({
-            color: this.vehicleConfig.theme === 'clinical' ? 0xd4d4d4 : 0x969696,
-            roughness: 0.22,
-            metalness: 0.88,
-            envMapIntensity: 1.0,
-            side: THREE.DoubleSide,
-        });
-
-        // Frame material for door panels, pillars — matte soft fabric/plastic
-        this.frameMaterial = new THREE.MeshStandardMaterial({
-            color: this.vehicleConfig.theme === 'clinical' ? 0xeeeeee : 0x131313,
-            roughness: 0.92,
-            metalness: 0.0,
-            envMapIntensity: 0.15,
-            side: THREE.DoubleSide,
-        });
-
-        // Glass material for mirrors — reflective tinted glass
-        this.glassMaterial = new THREE.MeshStandardMaterial({
-            color: 0x99b8cc,
-            roughness: 0.08,
-            metalness: 0.6,
-            transparent: true,
-            opacity: 0.45,
-            envMapIntensity: 1.2,
-            side: THREE.FrontSide,
-        });
-
-        // Mirror material (highly reflective chrome)
-        this.mirrorMaterial = new THREE.MeshStandardMaterial({
-            color: 0xe0e8ec,
-            roughness: 0.04,
-            metalness: 1.0,
-            envMapIntensity: 1.5,
-            side: THREE.FrontSide,
-        });
-
-        // Accent material for vehicle-specific colors
-        this.accentMaterial = new THREE.MeshStandardMaterial({
-            color: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
-            roughness: 0.35,
-            metalness: 0.65,
-            emissive: parseInt(this.vehicleConfig.accentColor.replace('#', '0x')),
-            emissiveIntensity: 0.2,
-            envMapIntensity: 0.8,
-            side: THREE.DoubleSide,
-        });
-    }
-
-    private createLighting(): void {
-        // Build a minimal lit-room environment map for image-based lighting (IBL).
-        // This gives realistic specular reflections on metal, glass, and leather without
-        // any external HDR file or additional imports.
-        const envScene = new THREE.Scene();
-        const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
-        const envBoxMats = [
-            new THREE.MeshBasicMaterial({ color: 0xfff5e0, side: THREE.BackSide }), // +X warm wall
-            new THREE.MeshBasicMaterial({ color: 0xe8e0d0, side: THREE.BackSide }), // -X
-            new THREE.MeshBasicMaterial({ color: 0xfafaf8, side: THREE.BackSide }), // +Y ceiling
-            new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }), // -Y floor
-            new THREE.MeshBasicMaterial({ color: 0xfff0e4, side: THREE.BackSide }), // +Z rear
-            new THREE.MeshBasicMaterial({ color: 0xe4dcd0, side: THREE.BackSide }), // -Z front
-        ];
-        const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
-        envScene.add(envBox);
-        const envLight = new THREE.PointLight(0xfff5e0, 2.5, 10);
-        envLight.position.set(0, 1.8, 0);
-        envScene.add(envLight);
-        const pmrem = new THREE.PMREMGenerator(this.renderer);
-        this.scene.environment = pmrem.fromScene(envScene).texture;
-        pmrem.dispose();
-        envBoxGeo.dispose();
-        envBoxMats.forEach(m => m.dispose());
-
-        // Theme-specific ambient intensity
-        const ambientIntensity = this.vehicleConfig.theme === 'clinical' ? 0.65 : 0.45;
-
-        // HemisphereLight: warm sky from above, cool ground from below — much more
-        // naturalistic than a flat AmbientLight and adds visible depth to the interior.
-        const hemiLight = new THREE.HemisphereLight(
-            0xfff5e0, // Sky color — warm daylight white
-            0x1a1a28, // Ground color — cool dark
-            ambientIntensity * 0.85
-        );
-        this.scene.add(hemiLight);
-
-        // Small residual ambient to keep deep shadows from going fully black
-        const ambient = new THREE.AmbientLight(0xffffff, ambientIntensity * 0.25);
-        this.scene.add(ambient);
-
-        // Dashboard accent glow — tinted by vehicle accent color
-        const dashColor = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
-        const dashLight = new THREE.PointLight(dashColor, 0.35, 3.5);
-        dashLight.position.set(0, 0.9, -0.8);
-        this.scene.add(dashLight);
-
-        // Overhead directional fill — angled slightly from the top-front to model a
-        // sun or bright overhead source.  Cast at 0.45 so it doesn't flatten the scene.
-        const overhead = new THREE.DirectionalLight(0xfff8f0, 0.55);
-        overhead.position.set(0.3, 3, -0.5);
-        this.scene.add(overhead);
-
-        // Left window fill light (driver-side) — simulates ambient daylight streaming
-        // through the side window, giving the interior its characteristic warm glow.
-        const leftWindowLight = new THREE.PointLight(0xfff0dc, 0.28, 3.2);
-        leftWindowLight.position.set(-0.9, 1.05, -0.1);
-        this.scene.add(leftWindowLight);
-
-        // Right window fill (passenger side) — slightly dimmer to keep the asymmetry
-        // that makes a real interior look less artificially lit.
-        const rightWindowLight = new THREE.PointLight(0xfff0dc, 0.18, 3.2);
-        rightWindowLight.position.set(0.9, 1.05, -0.1);
-        this.scene.add(rightWindowLight);
-
-        // Headlights (toggleable via toggleHeadlights())
-        this.headlightsLight = new THREE.SpotLight(0xffffcc, 0.3, 50, 0.5, 1.0, 1.0);
-        this.headlightsLight.position.set(0, 0.8, -1.2);
-        this.headlightsLight.target.position.set(0, 0, 10);
-        this.scene.add(this.headlightsLight);
-        this.scene.add(this.headlightsLight.target);
-        this.headlightsLight.intensity = 0; // Off by default
-
-        // Interior bounce light — warm, activated by headlights at night
-        this.interiorBounceLight = new THREE.PointLight(0xFF9933, 0, 1.5);
-        this.interiorBounceLight.position.set(0, 0.5, -0.8);
-        this.scene.add(this.interiorBounceLight);
-
-        // Dome light — ceiling warm white
-        this.domeLightSource = new THREE.PointLight(0xFFE8B0, 0, 3.0);
-        this.domeLightSource.position.set(0, 1.8, 0.3);
-        this.interiorGroup.add(this.domeLightSource);
     }
 
     private buildInterior(): void {
@@ -696,6 +544,8 @@ export class CarInterior {
      * Build dashboard details: air vents, HVAC controls, buttons
      */
     private buildDashboardDetails(): void {
+        const gf = this.geometryFactory;
+
         // Chrome/metallic material for accents
         const chromeMaterial = new THREE.MeshStandardMaterial({
             color: 0xdddddd,
@@ -704,54 +554,58 @@ export class CarInterior {
         });
 
         // Air vents (left and right)
-        const ventGeo = new THREE.BoxGeometry(0.12, 0.08, 0.03);
+        const ventGeo = gf.getBox(0.12, 0.08, 0.03);
         const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-        
-        // Left vent
+
         const leftVent = new THREE.Mesh(ventGeo, ventMat);
         leftVent.position.set(-0.7, 0.95, -0.74);
         this.interiorGroup.add(leftVent);
-        
-        // Left vent chrome surround
-        const ventSurroundGeo = new THREE.BoxGeometry(0.14, 0.1, 0.02);
+
+        const ventSurroundGeo = gf.getBox(0.14, 0.1, 0.02);
         const leftVentSurround = new THREE.Mesh(ventSurroundGeo, chromeMaterial);
         leftVentSurround.position.set(-0.7, 0.95, -0.735);
         this.interiorGroup.add(leftVentSurround);
 
-        // Right vent
         const rightVent = new THREE.Mesh(ventGeo, ventMat);
         rightVent.position.set(0.7, 0.95, -0.74);
         this.interiorGroup.add(rightVent);
-        
+
         const rightVentSurround = new THREE.Mesh(ventSurroundGeo, chromeMaterial);
         rightVentSurround.position.set(0.7, 0.95, -0.735);
         this.interiorGroup.add(rightVentSurround);
 
-        // Center vent
-        const centerVentGeo = new THREE.BoxGeometry(0.15, 0.06, 0.03);
-        const centerVent = new THREE.Mesh(centerVentGeo, ventMat);
+        const centerVent = new THREE.Mesh(gf.getBox(0.15, 0.06, 0.03), ventMat);
         centerVent.position.set(0.55, 0.95, -0.74);
         this.interiorGroup.add(centerVent);
 
-        // HVAC Control Knobs (3 knobs)
-        const knobGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.015, 16);
+        // HVAC Control Knobs — batched via InstancedMesh for fewer draw calls
+        const knobGeo = gf.getCylinder(0.025, 0.025, 0.015, 16);
         const knobMat = new THREE.MeshStandardMaterial({
             color: 0x333333,
             roughness: 0.4,
             metalness: 0.3,
         });
-        
+        this.lodManager.registerBatch('knobs', knobGeo, knobMat, 3);
+        const knobBatch = this.lodManager.getBatch('knobs')!;
+        this.interiorGroup.add(knobBatch);
+
+        const indicatorGeo = gf.getBox(0.015, 0.002, 0.008);
+        const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        this.lodManager.registerBatch('indicators', indicatorGeo, indicatorMat, 3);
+        const indicatorBatch = this.lodManager.getBatch('indicators')!;
+        this.interiorGroup.add(indicatorBatch);
+
+        const dummy = new THREE.Object3D();
         for (let i = 0; i < 3; i++) {
-            const knob = new THREE.Mesh(knobGeo, knobMat);
-            knob.position.set(0.45 + i * 0.06, 0.85, -0.72);
-            this.interiorGroup.add(knob);
-            
-            // Knob indicator line
-            const indicatorGeo = new THREE.BoxGeometry(0.015, 0.002, 0.008);
-            const indicator = new THREE.Mesh(indicatorGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-            indicator.position.set(0.45 + i * 0.06, 0.85, -0.715);
-            this.interiorGroup.add(indicator);
+            dummy.position.set(0.45 + i * 0.06, 0.85, -0.72);
+            dummy.updateMatrix();
+            this.lodManager.addInstance('knobs', dummy.matrix);
+
+            dummy.position.set(0.45 + i * 0.06, 0.85, -0.715);
+            dummy.updateMatrix();
+            this.lodManager.addInstance('indicators', dummy.matrix);
         }
+        this.lodManager.finalize();
 
         // Hazard light button (center, red, prominent)
         const hazardGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.008, 16);
@@ -892,79 +746,70 @@ export class CarInterior {
      * Build door panel details: speaker grilles, handles, window controls
      */
     private buildDoorPanelDetails(): void {
-        // Chrome material for handles
+        const gf = this.geometryFactory;
+
         const chromeMaterial = new THREE.MeshStandardMaterial({
             color: 0xdddddd,
             roughness: 0.15,
             metalness: 0.9,
         });
 
-        // Soft-touch plastic for door inserts
         const softTouchMat = new THREE.MeshStandardMaterial({
             color: 0x2a2a2a,
             roughness: 0.7,
             metalness: 0.0,
         });
 
-        // Speaker grille material
         const grilleMat = new THREE.MeshStandardMaterial({
             color: 0x111111,
             roughness: 0.9,
         });
 
-        // Left door speaker grille (lower front)
-        const speakerGeo = new THREE.CircleGeometry(0.08, 32);
+        // Speakers — use shared geometry from factory
+        const speakerGeo = gf.getCircle(0.08, 32);
         const leftSpeaker = new THREE.Mesh(speakerGeo, grilleMat);
         leftSpeaker.position.set(-0.96, 0.55, 0.6);
         leftSpeaker.rotation.y = Math.PI / 2;
         this.interiorGroup.add(leftSpeaker);
 
-        // Left door speaker pattern (concentric rings)
         for (let i = 1; i <= 3; i++) {
-            const ringGeo = new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32);
-            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ 
-                color: 0x333333,
-                transparent: true,
-                opacity: 0.5,
-                side: THREE.DoubleSide,
-            }));
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32),
+                new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+            );
             ring.position.set(-0.955, 0.55, 0.6);
             ring.rotation.y = Math.PI / 2;
             this.interiorGroup.add(ring);
+            this.lodManager.registerDetail(ring as THREE.Mesh);
         }
 
-        // Right door speaker grille
         const rightSpeaker = new THREE.Mesh(speakerGeo, grilleMat);
         rightSpeaker.position.set(0.96, 0.55, 0.6);
         rightSpeaker.rotation.y = -Math.PI / 2;
         this.interiorGroup.add(rightSpeaker);
 
         for (let i = 1; i <= 3; i++) {
-            const ringGeo = new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32);
-            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ 
-                color: 0x333333,
-                transparent: true,
-                opacity: 0.5,
-                side: THREE.DoubleSide,
-            }));
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(0.015 * i, 0.015 * i + 0.005, 32),
+                new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+            );
             ring.position.set(0.955, 0.55, 0.6);
             ring.rotation.y = -Math.PI / 2;
             this.interiorGroup.add(ring);
+            this.lodManager.registerDetail(ring as THREE.Mesh);
         }
 
-        // Left door handle (pull handle)
-        const handleGeo = new THREE.BoxGeometry(0.04, 0.015, 0.08);
+        // Door handles
+        const handleGeo = gf.getBox(0.04, 0.015, 0.08);
         const leftHandle = new THREE.Mesh(handleGeo, chromeMaterial);
         leftHandle.position.set(-0.96, 0.92, -0.4);
         this.interiorGroup.add(leftHandle);
 
-        // Left door handle recess
-        const handleRecessGeo = new THREE.BoxGeometry(0.03, 0.04, 0.1);
+        const handleRecessGeo = gf.getBox(0.03, 0.04, 0.1);
         const leftHandleRecess = new THREE.Mesh(handleRecessGeo, softTouchMat);
         leftHandleRecess.position.set(-0.96, 0.9, -0.4);
         this.interiorGroup.add(leftHandleRecess);
 
-        // Right door handle
         const rightHandle = new THREE.Mesh(handleGeo, chromeMaterial);
         rightHandle.position.set(0.96, 0.92, -0.4);
         this.interiorGroup.add(rightHandle);
@@ -973,30 +818,35 @@ export class CarInterior {
         rightHandleRecess.position.set(0.96, 0.9, -0.4);
         this.interiorGroup.add(rightHandleRecess);
 
-        // Window control switches (driver side)
-        const switchPanelGeo = new THREE.BoxGeometry(0.03, 0.08, 0.15);
+        // Window switch panels
+        const switchPanelGeo = gf.getBox(0.03, 0.08, 0.15);
         const switchPanelMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
         const leftSwitchPanel = new THREE.Mesh(switchPanelGeo, switchPanelMat);
         leftSwitchPanel.position.set(-0.96, 0.85, -0.2);
         this.interiorGroup.add(leftSwitchPanel);
 
-        // Window switches (4 small buttons)
-        const switchBtnGeo = new THREE.BoxGeometry(0.008, 0.015, 0.02);
+        // Window switches — batched via InstancedMesh
+        const switchBtnGeo = gf.getBox(0.008, 0.015, 0.02);
         const switchBtnMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+        this.lodManager.registerBatch('windowSwitches', switchBtnGeo, switchBtnMat, 8);
+        const switchBatch = this.lodManager.getBatch('windowSwitches')!;
+        this.interiorGroup.add(switchBatch);
+
+        const dummy = new THREE.Object3D();
         for (let i = 0; i < 4; i++) {
-            const switchBtn = new THREE.Mesh(switchBtnGeo, switchBtnMat);
-            switchBtn.position.set(-0.945, 0.87 - i * 0.018, -0.2);
-            this.interiorGroup.add(switchBtn);
+            dummy.position.set(-0.945, 0.87 - i * 0.018, -0.2);
+            dummy.updateMatrix();
+            this.lodManager.addInstance('windowSwitches', dummy.matrix);
         }
 
-        // Passenger side window switch (single switch)
         const rightSwitchPanel = new THREE.Mesh(switchPanelGeo, switchPanelMat);
         rightSwitchPanel.position.set(0.96, 0.85, -0.2);
         this.interiorGroup.add(rightSwitchPanel);
 
-        const rightSwitchBtn = new THREE.Mesh(switchBtnGeo, switchBtnMat);
-        rightSwitchBtn.position.set(0.945, 0.87, -0.2);
-        this.interiorGroup.add(rightSwitchBtn);
+        dummy.position.set(0.945, 0.87, -0.2);
+        dummy.updateMatrix();
+        this.lodManager.addInstance('windowSwitches', dummy.matrix);
+        this.lodManager.finalize();
 
         // Door panel soft-touch inserts (upper section)
         const insertGeo = new THREE.BoxGeometry(0.04, 0.25, 0.6);
@@ -1010,41 +860,34 @@ export class CarInterior {
     }
 
     private buildSeats(): void {
-        // Driver seat back
-        const seatBackGeo = new THREE.BoxGeometry(0.5, 0.7, 0.12);
+        const gf = this.geometryFactory;
+        const seatBackGeo = gf.getBox(0.5, 0.7, 0.12);
+        const seatBottomGeo = gf.getBox(0.5, 0.1, 0.5);
+        const headrestGeo = gf.getBox(0.2, 0.2, 0.08);
+
         const seatBack = new THREE.Mesh(seatBackGeo, this.leatherMaterial);
         seatBack.position.set(-0.35, 0.9, 0.5);
         seatBack.rotation.set(-0.15, 0, 0);
         this.interiorGroup.add(seatBack);
 
-        // Driver seat bottom
-        const seatBottomGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
         const seatBottom = new THREE.Mesh(seatBottomGeo, this.leatherMaterial);
         seatBottom.position.set(-0.35, 0.5, 0.2);
         this.interiorGroup.add(seatBottom);
 
-        // Passenger seat back
-        const passSeatBackGeo = new THREE.BoxGeometry(0.5, 0.7, 0.12);
-        const passSeatBack = new THREE.Mesh(passSeatBackGeo, this.leatherMaterial);
+        const passSeatBack = new THREE.Mesh(seatBackGeo, this.leatherMaterial);
         passSeatBack.position.set(0.45, 0.9, 0.5);
         passSeatBack.rotation.set(-0.15, 0, 0);
         this.interiorGroup.add(passSeatBack);
 
-        // Passenger seat bottom
-        const passSeatBottomGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
-        const passSeatBottom = new THREE.Mesh(passSeatBottomGeo, this.leatherMaterial);
+        const passSeatBottom = new THREE.Mesh(seatBottomGeo, this.leatherMaterial);
         passSeatBottom.position.set(0.45, 0.5, 0.2);
         this.interiorGroup.add(passSeatBottom);
 
-        // Headrest driver
-        const headrestGeo = new THREE.BoxGeometry(0.2, 0.2, 0.08);
         const headrest = new THREE.Mesh(headrestGeo, this.leatherMaterial);
         headrest.position.set(-0.35, 1.35, 0.5);
         this.interiorGroup.add(headrest);
 
-        // Headrest passenger
-        const headrestPassGeo = new THREE.BoxGeometry(0.2, 0.2, 0.08);
-        const headrestPass = new THREE.Mesh(headrestPassGeo, this.leatherMaterial);
+        const headrestPass = new THREE.Mesh(headrestGeo, this.leatherMaterial);
         headrestPass.position.set(0.45, 1.35, 0.5);
         this.interiorGroup.add(headrestPass);
 
@@ -1754,7 +1597,14 @@ export class CarInterior {
         this.driverSeatGroup.position.set(x, y, z);
         
         // Recreate materials and rebuild
-        this.createMaterials();
+        const mats = createMaterials(this.vehicleConfig, this.gpuProfile);
+        this.dashboardMaterial = mats.dashboard;
+        this.leatherMaterial = mats.leather;
+        this.metalMaterial = mats.metal;
+        this.frameMaterial = mats.frame;
+        this.glassMaterial = mats.glass;
+        this.mirrorMaterial = mats.mirror;
+        this.accentMaterial = mats.accent;
         this.buildInterior();
         
         // Update roof state based on vehicle
@@ -1788,22 +1638,36 @@ export class CarInterior {
      * Includes LOD updates and performance optimizations.
      */
     public update(deltaTime: number): void {
+        // Reduced motion: snap directly to targets
+        if (this.reducedMotion) {
+            this.roofGroup.position.y = this.roofTargetY;
+            if (this.steeringWheelGroup) {
+                this.steeringWheelGroup.rotation.z = this.steeringAngle;
+            }
+            if (this.isWiperActive && this.quality !== 'low') {
+                // Still need some time for wipers to be useful, but skip complex sine
+                this.wiperLeft && (this.wiperLeft.rotation.z = -Math.PI / 6);
+                this.wiperRight && (this.wiperRight.rotation.z = Math.PI / 6);
+            }
+            if (this.quality !== 'low') this.updateGaugles();
+            if (this.lodUpdateFn) this.lodUpdateFn();
+            this.lodManager.updateLOD(this.camera);
+            return;
+        }
+
         // Limit delta time to prevent large jumps (e.g., when tab is inactive)
         const clampedDelta = Math.min(deltaTime, 0.1);
-        
+
         // Animate roof position (lerp)
         const currentY = this.roofGroup.position.y;
-        const targetY = this.roofTargetY;
-        const diff = targetY - currentY;
+        const diff = this.roofTargetY - currentY;
         if (Math.abs(diff) > 0.001) {
             this.roofGroup.position.y += diff * Math.min(clampedDelta * 3, 1);
         }
 
         // Smooth steering wheel rotation (lerp to target)
         if (this.steeringWheelGroup) {
-            const targetAngle = this.steeringAngle;
-            const diff = targetAngle - this.steeringWheelGroup.rotation.z;
-            // Handle angle wrapping
+            const diff = this.steeringAngle - this.steeringWheelGroup.rotation.z;
             let shortestDiff = diff;
             if (shortestDiff > Math.PI) shortestDiff -= Math.PI * 2;
             if (shortestDiff < -Math.PI) shortestDiff += Math.PI * 2;
@@ -1813,25 +1677,16 @@ export class CarInterior {
         // Animate wipers (skip if low quality)
         if (this.isWiperActive && this.quality !== 'low') {
             this.wiperAnimationTime += clampedDelta;
-            const wiperCycle = this.wiperAnimationTime % 1.0; // 1 second cycle
-            const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4); // Sweep ±45°
-            if (this.wiperLeft) {
-                this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
-            }
-            if (this.wiperRight) {
-                this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
-            }
+            const wiperCycle = this.wiperAnimationTime % 1.0;
+            const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4);
+            if (this.wiperLeft) this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
+            if (this.wiperRight) this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
         }
 
-        // Update gauge needles (skip if low quality)
-        if (this.quality !== 'low') {
-            this.updateGaugles();
-        }
-        
-        // Update LOD based on camera distance
-        if (this.lodUpdateFn) {
-            this.lodUpdateFn();
-        }
+        if (this.quality !== 'low') this.updateGaugles();
+        if (this.lodUpdateFn) this.lodUpdateFn();
+        this.lodManager.updateLOD(this.camera);
+        if (this.rainSystem) this.rainSystem.update(deltaTime);
     }
 
     /**
@@ -1920,8 +1775,8 @@ export class CarInterior {
      */
     public setWipersActive(active: boolean): void {
         this.isWiperActive = active;
+        if (this.rainSystem) this.rainSystem.setWipersActive(active);
         if (!active) {
-            // Reset wipers to rest position
             this.wiperAnimationTime = 0;
             if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
             if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
@@ -2007,6 +1862,41 @@ export class CarInterior {
      * Call this once per animation frame.
      */
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
+        // Scale ambient lights down at night, up during day
+        const dayFactor = 1 - nightIntensity;
+        if (this.hemisphereLight) {
+            const hemiTarget = 0.38 * dayFactor + 0.05;
+            this.hemisphereLight.intensity += (hemiTarget - this.hemisphereLight.intensity) * 0.05;
+        }
+        if (this.ambientLight) {
+            const ambTarget = 0.11 * dayFactor + 0.02;
+            this.ambientLight.intensity += (ambTarget - this.ambientLight.intensity) * 0.05;
+        }
+        if (this.overheadLight) {
+            const overTarget = 0.55 * dayFactor;
+            this.overheadLight.intensity += (overTarget - this.overheadLight.intensity) * 0.05;
+        }
+        if (this.leftWindowLight) {
+            const leftTarget = 0.28 * dayFactor + 0.03;
+            this.leftWindowLight.intensity += (leftTarget - this.leftWindowLight.intensity) * 0.05;
+        }
+        if (this.rightWindowLight) {
+            const rightTarget = 0.18 * dayFactor + 0.02;
+            this.rightWindowLight.intensity += (rightTarget - this.rightWindowLight.intensity) * 0.05;
+        }
+
+        // Modulate interior material brightness based on time of day
+        const matBrightness = 0.6 + dayFactor * 0.4; // 0.6 at night, 1.0 at day
+        if (this.dashboardMaterial) {
+            this.dashboardMaterial.color.setScalar(matBrightness);
+        }
+        if (this.leatherMaterial) {
+            this.leatherMaterial.color.setScalar(matBrightness);
+        }
+        if (this.frameMaterial) {
+            this.frameMaterial.color.setScalar(matBrightness);
+        }
+
         // Interior bounce (warm glow on dashboard from headlights at night)
         const bounceTarget = headlightsOn ? nightIntensity * 0.35 : 0;
         this.interiorBounceLight.intensity +=
@@ -2018,31 +1908,26 @@ export class CarInterior {
             this.instrumentClusterMat.emissiveIntensity +=
                 (target - this.instrumentClusterMat.emissiveIntensity) * 0.08;
         }
-        // Center display emissive
         if (this.centerDisplayMat) {
             const target = headlightsOn ? 0.3 + nightIntensity * 0.6 : 0.3;
             this.centerDisplayMat.emissiveIntensity +=
                 (target - this.centerDisplayMat.emissiveIntensity) * 0.08;
         }
 
-        // Dome light intensity (smooth lerp toward target)
+        // Dome light intensity
         const domeTarget = domeLightOn ? 1.2 : 0;
         this.domeLightSource.intensity +=
             (domeTarget - this.domeLightSource.intensity) * 0.08;
 
-        // Dome fixture emissive glow
         if (this.domeLightFixtureMesh) {
             const fixMat = this.domeLightFixtureMesh.material as THREE.MeshStandardMaterial;
             fixMat.emissiveIntensity +=
                 ((domeLightOn ? 1.0 : 0) - fixMat.emissiveIntensity) * 0.08;
         }
-        // Switch indicator
         if (this.domeSwitchMesh) {
             const swMat = this.domeSwitchMesh.material as THREE.MeshStandardMaterial;
             swMat.emissiveIntensity = domeLightOn ? 0.6 : 0;
         }
-
-        // Digital clock emissive brightens when dome light is on or headlights at night
         if (this.digitalClockMesh) {
             const clockMat = this.digitalClockMesh.material as THREE.MeshStandardMaterial;
             const clockTarget = domeLightOn ? 1.1 : 0.75 + nightIntensity * 0.4;
@@ -2056,33 +1941,59 @@ export class CarInterior {
      */
     public isDomeSwitchHit(clientX: number, clientY: number): boolean {
         if (!this.domeSwitchMesh) return false;
-        const rect = this.canvas.getBoundingClientRect();
-        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
-        this.domeSwitchMesh.updateWorldMatrix(true, true);
-        return raycaster.intersectObject(this.domeSwitchMesh, false).length > 0;
+        return this.interaction.hitTest(
+            clientX, clientY, this.canvas.getBoundingClientRect(),
+            this.camera, this.domeSwitchMesh, false
+        );
     }
 
     /**
      * Test whether the given screen coordinates intersect the steering wheel geometry.
-     * Used to detect when the user clicks on the steering wheel for car-steering drag.
-     * @param clientX - Mouse clientX from a DOM MouseEvent
-     * @param clientY - Mouse clientY from a DOM MouseEvent
-     * @returns true if the ray from the camera hits the steering wheel group
+     * Uses a cached Raycaster to avoid GC churn per click.
      */
     public isSteeringWheelHit(clientX: number, clientY: number): boolean {
         if (!this.steeringWheelGroup) return false;
-        const rect = this.canvas.getBoundingClientRect();
-        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
-        // Ensure world matrices are current before testing
-        this.steeringWheelGroup.updateWorldMatrix(true, true);
-        const intersects = raycaster.intersectObject(this.steeringWheelGroup, true);
-        return intersects.length > 0;
+        return this.interaction.hitTest(
+            clientX, clientY, this.canvas.getBoundingClientRect(),
+            this.camera, this.steeringWheelGroup, true
+        );
+    }
+
+    /** Set night intensity (0-1) for interior emissive glow scaling. */
+    public setNightIntensity(intensity: number): void {
+        this.nightIntensity = Math.max(0, Math.min(1, intensity));
+    }
+
+    /** Toggle rain droplets on the windshield. */
+    public setRainActive(active: boolean): void {
+        if (this.rainSystem) this.rainSystem.setActive(active);
+    }
+
+    /** Enable/disable post-processing (bloom + SMAA). */
+    public setPostProcessingEnabled(enabled: boolean): void {
+        this.postProcessingEnabled = enabled;
+        if (this.postProcessing) this.postProcessing.setEnabled(enabled);
+    }
+
+    /** Adjust bloom strength (0-1). */
+    public setBloomStrength(strength: number): void {
+        if (this.postProcessing) this.postProcessing.setBloomStrength(strength);
+    }
+
+    /** Dump memory stats to the console (dev-only). */
+    public logMemoryStats(): void {
+        const stats = getMemoryProfiler().getStats();
+        console.log('[CarInterior] Memory Stats:', stats);
+    }
+
+    /** Get current performance metrics (FPS, draw calls, etc.). */
+    public getPerformanceMetrics() {
+        return this.profiler?.getMetrics();
+    }
+
+    /** Get formatted performance string for debug overlay. */
+    public getPerformanceString(): string {
+        return this.profiler?.format() ?? '';
     }
 
     /**
@@ -2090,20 +2001,28 @@ export class CarInterior {
      * Includes frame rate limiting and frustum culling.
      */
     public render(): void {
-        // Frame rate limiting - skip render if too soon
         const now = performance.now();
         const elapsed = now - this.lastRenderTime;
-        if (elapsed < this.renderInterval) {
-            return; // Skip this frame
+        if (elapsed < this.renderInterval) return;
+
+        if (elapsed > this.renderInterval * 2.5 && this.renderInterval < 33) {
+            this.renderInterval = Math.min(33, this.renderInterval * 1.2);
+        } else if (elapsed < this.renderInterval * 0.8 && this.renderInterval > 16) {
+            this.renderInterval *= 0.98;
         }
         this.lastRenderTime = now;
-        
-        // Update frustum culling
+
         this.frustumCuller.update(this.camera);
-        
-        // Render the scene
-        this.renderer.clear();
-        this.renderer.render(this.scene, this.camera);
+        this.profiler?.beginFrame();
+
+        if (this.postProcessing && this.postProcessingEnabled) {
+            this.postProcessing.render();
+        } else {
+            this.renderer.clear();
+            this.renderer.render(this.scene, this.camera);
+        }
+
+        this.profiler?.endFrame();
     }
 
     /**
@@ -2121,6 +2040,7 @@ export class CarInterior {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
+        if (this.postProcessing) this.postProcessing.setSize(width, height);
     }
 
     /**
@@ -2177,6 +2097,10 @@ export class CarInterior {
         // Clear references
         this.detailMeshes = [];
         this.lodUpdateFn = undefined;
+        this.geometryFactory.dispose();
+        this.lodManager.dispose();
+        if (this.postProcessing) this.postProcessing.dispose();
+        if (this.rainSystem) this.rainSystem.dispose();
         
         if (this.canvas.parentElement) {
             this.canvas.parentElement.removeChild(this.canvas);

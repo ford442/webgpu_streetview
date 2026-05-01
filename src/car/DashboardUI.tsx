@@ -1,33 +1,36 @@
 /**
  * DashboardUI.tsx
- * 
- * Premium Car Dashboard - Main Integration Component
- * Integrates DashboardLayout, Gauges, and Controls into a unified interface
+ *
+ * Premium Car Dashboard – Main Integration Component
+ * Refactored to use CSS Modules + CSS custom properties for theming.
+ * Layout primitives are imported from DashboardLayout; this file contains
+ * only dashboard-specific composition, logic, and event handling.
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
+import styles from './DashboardUI.module.css';
+import { darkTheme, applyTheme } from './theme';
 
-// Import layout components
-import { 
-  DashboardContainer, 
-  ZoneLeft, 
-  ZoneCenter, 
-  ZoneRight
+// Layout primitives
+import {
+  DashboardContainer,
+  ZoneLeft,
+  ZoneCenter,
+  ZoneRight,
+  ControlButton,
+  SliderControl,
+  ButtonRow,
+  Label,
+  Value,
+  Unit,
 } from './DashboardLayout';
 
-// Import gauge components
-import { 
-  SpeedGauge, 
-  RpmGauge, 
-  GearIndicator 
-} from './Gauges';
+// Gauge components
+import { SpeedGauge, RpmGauge, GearIndicator } from './Gauges';
 
-// Import control components and icons
-import { 
-  IconButton, 
-  Slider, 
-  AudioVisualizer, 
-  injectSliderStyles,
+// Icons + audio visualizer
+import {
+  AudioVisualizer,
   GPS_ICON,
   RADIO_ICON,
   ROOF_ICON,
@@ -39,7 +42,7 @@ import {
   RAIN_ICON,
   WIND_ICON,
   VEHICLE_ICON,
-  TINT_ICON
+  TINT_ICON,
 } from './Controls';
 
 // ============================================================================
@@ -47,551 +50,429 @@ import {
 // ============================================================================
 
 export interface DashboardUIProps {
-    isVisible: boolean;
-    isRadioPlaying: boolean;
-    isMapOpen?: boolean;
-    onNavigate?: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
-    onToggleGPS: () => void;
-    onToggleRadio: () => void;
-    onRainIntensity: (value: number) => void;
-    onSnowIntensity?: (value: number) => void;
-    onWind?: (value: number) => void;
-    onTimeOfDay: (value: string) => void;
-    onToggleRoof: () => void;
-    onToggleWipers?: () => void;
-    onToggleVehicle?: () => void;
-    onToggleHeadlights?: () => void;
-    onToggleHighBeam?: () => void;
-    onToggleDomeLight?: () => void;
-    onWindowTint?: (value: number) => void;
-    isRoofOpen: boolean;
-    wipersEnabled?: boolean;
-    headlightsOn?: boolean;
-    highBeam?: boolean;
-    domeLightOn?: boolean;
-    currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
-    rainIntensity: number;
-    snowIntensity?: number;
-    wind?: number;
-    windowTint?: number;
-    timeOfDay: string;
-    audioElement?: HTMLAudioElement | null;
-    analyser?: AnalyserNode | null;
-    /** 0–1 night intensity — drives gauge bloom and ambient panel tint. */
-    nightIntensity?: number;
-    /** CSS rgba string from useEnvironmentSettings for dashboard glass tinting. */
-    ambientLightColor?: string;
-    /** Name of the currently tuned radio station */
-    stationName?: string;
-    /** Comma-separated genre tags for the current station */
-    stationTags?: string;
+  isVisible: boolean;
+  isRadioPlaying: boolean;
+  isMapOpen?: boolean;
+  onNavigate?: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
+  onToggleGPS: () => void;
+  onToggleRadio: () => void;
+  onRainIntensity: (value: number) => void;
+  onSnowIntensity?: (value: number) => void;
+  onWind?: (value: number) => void;
+  onTimeOfDay: (value: string) => void;
+  onToggleRoof: () => void;
+  onToggleWipers?: () => void;
+  onToggleVehicle?: () => void;
+  onToggleHeadlights?: () => void;
+  onToggleHighBeam?: () => void;
+  onToggleDomeLight?: () => void;
+  onWindowTint?: (value: number) => void;
+  isRoofOpen: boolean;
+  wipersEnabled?: boolean;
+  headlightsOn?: boolean;
+  highBeam?: boolean;
+  domeLightOn?: boolean;
+  currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
+  rainIntensity: number;
+  snowIntensity?: number;
+  wind?: number;
+  windowTint?: number;
+  timeOfDay: string;
+  audioElement?: HTMLAudioElement | null;
+  analyser?: AnalyserNode | null;
+  /** 0–1 night intensity — drives gauge bloom and ambient panel tint. */
+  nightIntensity?: number;
+  /** CSS rgba string from useEnvironmentSettings for dashboard glass tinting. */
+  ambientLightColor?: string;
+  /** Name of the currently tuned radio station */
+  stationName?: string;
+  /** Comma-separated genre tags for the current station */
+  stationTags?: string;
 }
 
 // ============================================================================
-// DIRECTION PAD COMPONENT
+// Icon helper
 // ============================================================================
 
-interface DirectionPadProps {
-    onNavigate: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
-}
+const IconSvg: React.FC<{
+  path: string;
+  size?: number;
+  fill?: string;
+}> = ({ path, size = 24, fill = 'currentColor' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} aria-hidden="true">
+    <path d={path} />
+  </svg>
+);
+
+// ============================================================================
+// Direction Pad
+// ============================================================================
 
 const NAV_ARROW_FORWARD = 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z';
-const NAV_ARROW_BACK    = 'M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.58L4 12l8 8 8-8z';
-const NAV_ARROW_LEFT    = 'M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z';
-const NAV_ARROW_RIGHT   = 'M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z';
+const NAV_ARROW_BACK = 'M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.58L4 12l8 8 8-8z';
+const NAV_ARROW_LEFT = 'M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z';
+const NAV_ARROW_RIGHT = 'M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z';
+
+type Dir = 'forward' | 'backward' | 'left' | 'right';
+
+interface DirectionPadProps {
+  onNavigate: (dir: Dir) => void;
+}
 
 const DirectionPad: React.FC<DirectionPadProps> = ({ onNavigate }) => {
-    const [activeBtn, setActiveBtn] = useState<string | null>(null);
-    const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+  const [active, setActive] = useState<Dir | null>(null);
+  const [hovered, setHovered] = useState<Dir | null>(null);
 
-    const getBtnStyle = (dir: string): React.CSSProperties => ({
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '2px',
-        width: '60px',
-        height: '54px',
-        background: activeBtn === dir
-            ? 'rgba(0,212,255,0.22)'
-            : hoveredBtn === dir
-                ? 'rgba(0,212,255,0.15)'
-                : 'rgba(0, 180, 255, 0.08)',
-        border: '1px solid rgba(0, 212, 255, 0.25)',
-        borderRadius: '10px',
-        color: hoveredBtn === dir ? '#00D4FF' : 'rgba(0, 212, 255, 0.85)',
-        boxShadow: activeBtn === dir ? '0 0 12px rgba(0,212,255,0.4)' : 'none',
-        cursor: 'pointer',
-        fontSize: '8px',
-        fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace",
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        transition: 'background 0.15s, box-shadow 0.15s, color 0.15s',
-        userSelect: 'none',
-    });
+  const makeHandlers = (dir: Dir) => ({
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onNavigate(dir);
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActive(dir);
+    },
+    onMouseUp: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActive(null);
+    },
+    onMouseEnter: () => setHovered(dir),
+    onMouseLeave: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActive(null);
+      setHovered(null);
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+        onNavigate(dir);
+      }
+    },
+    tabIndex: 0,
+    role: 'button' as const,
+    'aria-label': `Navigate ${dir}`,
+  });
 
-    const makeHandlers = (dir: 'forward' | 'backward' | 'left' | 'right') => ({
-        onClick:      (e: React.MouseEvent)    => { e.stopPropagation(); onNavigate(dir); },
-        onMouseDown:  (e: React.MouseEvent)    => { e.stopPropagation(); setActiveBtn(dir); },
-        onMouseUp:    (e: React.MouseEvent)    => { e.stopPropagation(); setActiveBtn(null); },
-        onMouseMove:  (e: React.MouseEvent)    => { e.stopPropagation(); },
-        onMouseEnter: (_e: React.MouseEvent)   => { setHoveredBtn(dir); },
-        onMouseLeave: (e: React.MouseEvent)    => { e.stopPropagation(); setHoveredBtn(null); setActiveBtn(null); },
-        onKeyDown:    (e: React.KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === ' ') onNavigate(dir); },
-    });
+  const btnClass = (dir: Dir) =>
+    active === dir ? styles.padBtnActive : hovered === dir ? styles.padBtnHover : styles.padBtn;
 
-    const NavArrow: React.FC<{ path: string }> = ({ path }) => (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-            <path d={path} />
-        </svg>
-    );
+  return (
+    <div
+      className={styles.padGrid}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseMove={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div />
+      <button className={btnClass('forward')} {...makeHandlers('forward')}>
+        <IconSvg path={NAV_ARROW_FORWARD} size={22} />
+        <span>Forward</span>
+      </button>
+      <div />
 
-    return (
-        <div
-            style={{
-                display: 'grid',
-                gridTemplateColumns: '60px 60px 60px',
-                gridTemplateRows: '54px 54px',
-                gap: '4px',
-                marginTop: '6px',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseMove={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-        >
-            {/* Row 1: [empty] [Forward] [empty] */}
-            <div />
-            <button style={getBtnStyle('forward')} aria-label="Move Forward" {...makeHandlers('forward')}>
-                <NavArrow path={NAV_ARROW_FORWARD} />
-                <span>Forward</span>
-            </button>
-            <div />
-
-            {/* Row 2: [Strafe Left] [Reverse] [Strafe Right] */}
-            <button style={getBtnStyle('left')} aria-label="Strafe Left" {...makeHandlers('left')}>
-                <NavArrow path={NAV_ARROW_LEFT} />
-                <span>Strafe</span>
-            </button>
-            <button style={getBtnStyle('backward')} aria-label="Move Backward" {...makeHandlers('backward')}>
-                <NavArrow path={NAV_ARROW_BACK} />
-                <span>Reverse</span>
-            </button>
-            <button style={getBtnStyle('right')} aria-label="Strafe Right" {...makeHandlers('right')}>
-                <NavArrow path={NAV_ARROW_RIGHT} />
-                <span>Strafe</span>
-            </button>
-        </div>
-    );
+      <button className={btnClass('left')} {...makeHandlers('left')}>
+        <IconSvg path={NAV_ARROW_LEFT} size={22} />
+        <span>Strafe</span>
+      </button>
+      <button className={btnClass('backward')} {...makeHandlers('backward')}>
+        <IconSvg path={NAV_ARROW_BACK} size={22} />
+        <span>Reverse</span>
+      </button>
+      <button className={btnClass('right')} {...makeHandlers('right')}>
+        <IconSvg path={NAV_ARROW_RIGHT} size={22} />
+        <span>Strafe</span>
+      </button>
+    </div>
+  );
 };
 
 // ============================================================================
-// Component Implementation
+// Main Dashboard UI
 // ============================================================================
 
 export const DashboardUI: React.FC<DashboardUIProps> = ({
-    isVisible,
-    isRadioPlaying,
-    isMapOpen = false,
-    onNavigate,
-    onToggleGPS,
-    onToggleRadio,
-    onRainIntensity,
-    onSnowIntensity,
-    onWind,
-    onTimeOfDay,
-    onToggleRoof,
-    onToggleWipers,
-    onToggleVehicle,
-    onToggleHeadlights,
-    onToggleHighBeam,
-    onToggleDomeLight,
-    onWindowTint,
-    isRoofOpen,
-    wipersEnabled = false,
-    headlightsOn = false,
-    highBeam = false,
-    domeLightOn = false,
-    currentVehicle = 'sedan',
-    rainIntensity,
-    snowIntensity = 0,
-    wind = 0,
-    windowTint = 0.1,
-    timeOfDay,
-    audioElement,
-    analyser,
-    nightIntensity = 0,
-    ambientLightColor = 'rgba(255, 255, 255, 0.0)',
-    stationName = '',
-    stationTags = '',
+  isVisible,
+  isRadioPlaying,
+  isMapOpen = false,
+  onNavigate,
+  onToggleGPS,
+  onToggleRadio,
+  onRainIntensity,
+  onSnowIntensity,
+  onWind,
+  onTimeOfDay,
+  onToggleRoof,
+  onToggleWipers,
+  onToggleVehicle,
+  onToggleHeadlights,
+  onToggleHighBeam,
+  onToggleDomeLight,
+  onWindowTint,
+  isRoofOpen,
+  wipersEnabled = false,
+  headlightsOn = false,
+  highBeam = false,
+  domeLightOn = false,
+  currentVehicle = 'sedan',
+  rainIntensity,
+  snowIntensity = 0,
+  wind = 0,
+  windowTint = 0.1,
+  timeOfDay,
+  analyser,
+  nightIntensity = 0,
+  ambientLightColor = 'rgba(255, 255, 255, 0.0)',
+  stationName = '',
+  stationTags = '',
 }) => {
+  // Gauge simulation state
+  const [simulatedSpeed, setSimulatedSpeed] = useState(45);
+  const [simulatedRpm, setSimulatedRpm] = useState(2500);
+  const [gear, setGear] = useState('D');
 
-    // Gauge simulation state
-    const [simulatedSpeed, setSimulatedSpeed] = useState(45);
-    const [simulatedRpm, setSimulatedRpm] = useState(2500);
-    const [gear, setGear] = useState('D');
+  // Simulate realistic gauge values
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const targetSpeed = Math.floor(Math.random() * 40) + 25;
+      setSimulatedSpeed((prev) => {
+        const diff = targetSpeed - prev;
+        return prev + diff * 0.3;
+      });
 
-    // Inject slider styles on mount
-    useEffect(() => {
-        injectSliderStyles();
-    }, []);
+      const targetRpm = 1500 + (targetSpeed / 65) * 2500;
+      setSimulatedRpm((prev) => {
+        const diff = targetRpm - prev;
+        return prev + diff * 0.3;
+      });
 
-    // Audio visualizer now uses the analyser passed from parent (CarModeView)
-    // This ensures the visualizer is synced with the actual audio playback
+      if (Math.random() > 0.9) {
+        setGear((prev) => (prev === 'D' ? (Math.random() > 0.5 ? '3' : 'D') : 'D'));
+      }
+    }, 2500);
 
-    // Simulate realistic gauge values
-    useEffect(() => {
-        const interval = setInterval(() => {
-            // Random speed between 25-65 MPH with smooth transitions
-            const targetSpeed = Math.floor(Math.random() * 40) + 25;
-            setSimulatedSpeed(prev => {
-                const diff = targetSpeed - prev;
-                return prev + diff * 0.3; // Smooth transition
-            });
+    return () => clearInterval(interval);
+  }, []);
 
-            // RPM correlated with speed (1500-4000 range)
-            const targetRpm = 1500 + (targetSpeed / 65) * 2500;
-            setSimulatedRpm(prev => {
-                const diff = targetRpm - prev;
-                return prev + diff * 0.3;
-            });
+  // Event handlers – prevent propagation to underlying canvas
+  const stopProp = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  }, []);
 
-            // Occasionally shift gears for realism
-            if (Math.random() > 0.9) {
-                setGear(prev => {
-                    if (prev === 'D') return Math.random() > 0.5 ? '3' : 'D';
-                    return 'D';
-                });
-            }
-        }, 2500);
+  if (!isVisible) return null;
 
-        return () => clearInterval(interval);
-    }, []);
-
-    // Handle events - prevent propagation to underlying canvas
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-    }, []);
-
-    const handleMouseUp = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-    }, []);
-
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-    }, []);
-
-    const handleClick = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-    }, []);
-
-    const handleWheel = useCallback((e: React.WheelEvent) => {
-        e.stopPropagation();
-    }, []);
-
-    // Don't render if not visible
-    if (!isVisible) {
-        return null;
+  const getVehicleLabel = () => {
+    switch (currentVehicle) {
+      case 'convertible':
+        return 'Sport';
+      case 'science-lab':
+        return 'Lab';
+      case 'limousine':
+        return 'Limo';
+      default:
+        return 'Sedan';
     }
+  };
 
-    // Get vehicle label
-    const getVehicleLabel = () => {
-        switch (currentVehicle) {
-            case 'convertible': return 'Sport';
-            case 'science-lab': return 'Lab';
-            case 'limousine': return 'Limo';
-            default: return 'Sedan';
-        }
-    };
+  const themeStyle = applyTheme(darkTheme, {
+    ambientLightColor,
+    nightIntensity,
+  });
 
-    return (
-        <div
-            onMouseDown={handleMouseDown}
-            onMouseUp={handleMouseUp}
-            onMouseMove={handleMouseMove}
-            onClick={handleClick}
-            onWheel={handleWheel}
-            style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                pointerEvents: 'auto',
-                zIndex: 100,
-            }}
-            role="region"
-            aria-label="Car Dashboard Controls"
-        >
-            <DashboardContainer style={{
-                boxShadow: `inset 0 0 60px ${ambientLightColor}`,
-            }}>
-                {/* Screen glare and subtle imperfection overlay — mimics LCD infotainment glass */}
-                <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '16px',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                    background: `
-                        radial-gradient(ellipse 120% 40% at 30% 20%,
-                            rgba(255,255,255,0.04) 0%, transparent 70%),
-                        radial-gradient(ellipse 60% 80% at 70% 60%,
-                            rgba(255,255,255,0.015) 0%, transparent 60%)
-                    `,
-                }} />
+  return (
+    <div
+      className={styles.wrapper}
+      onMouseDown={stopProp}
+      onMouseUp={stopProp}
+      onMouseMove={stopProp}
+      onClick={stopProp}
+      onWheel={stopProp}
+      role="region"
+      aria-label="Car Dashboard Controls"
+    >
+      <DashboardContainer style={themeStyle}>
+        {/* =====================================================================
+            ZONE LEFT – Driving HUD
+        ===================================================================== */}
+        <ZoneLeft>
+          <div className={styles.gaugeRow}>
+            <SpeedGauge
+              value={Math.round(simulatedSpeed)}
+              size={120}
+              unit="MPH"
+              nightGlow={nightIntensity}
+            />
+            <GearIndicator gear={gear} size={36} />
+            <RpmGauge
+              value={Math.round(simulatedRpm)}
+              size={120}
+              nightGlow={nightIntensity}
+            />
+          </div>
+        </ZoneLeft>
 
-                {/* ============================================================================
-                    ZONE LEFT - Driving HUD
-                    Contains speedometer, gear indicator, and RPM gauge
-                ============================================================================ */}
-                <ZoneLeft>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        justifyContent: 'center',
-                        height: '100%'
-                    }}>
-                        <SpeedGauge value={Math.round(simulatedSpeed)} size={120} unit="MPH" nightGlow={nightIntensity} />
-                        <GearIndicator gear={gear} size={36} />
-                        <RpmGauge value={Math.round(simulatedRpm)} size={120} nightGlow={nightIntensity} />
-                    </div>
-                </ZoneLeft>
+        {/* =====================================================================
+            ZONE CENTER – Media & Navigation
+        ===================================================================== */}
+        <ZoneCenter>
+          <div className={styles.centerCol}>
+            {/* Station metadata */}
+            {stationName && (
+              <div className={styles.stationMeta}>
+                <span
+                  className={
+                    isRadioPlaying ? styles.stationNameActive : styles.stationNameInactive
+                  }
+                >
+                  {stationName}
+                </span>
+                {stationTags && (
+                  <span className={styles.stationTags}>
+                    {stationTags.split(',').slice(0, 3).join(' · ')}
+                  </span>
+                )}
+              </div>
+            )}
 
-                {/* ============================================================================
-                    ZONE CENTER - Media & Navigation
-                    Contains radio controls, audio visualizer, and vehicle controls
-                ============================================================================ */}
-                <ZoneCenter>
-                    <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center', 
-                        gap: '12px' 
-                    }}>
-                        {/* Station metadata readout */}
-                        {stationName && (
-                            <div style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '2px',
-                                maxWidth: '220px',
-                                overflow: 'hidden',
-                            }}>
-                                <span style={{
-                                    fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace",
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    color: isRadioPlaying ? '#00D4FF' : 'rgba(255,255,255,0.5)',
-                                    textShadow: isRadioPlaying ? '0 0 8px rgba(0,212,255,0.6)' : 'none',
-                                    letterSpacing: '0.05em',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    width: '100%',
-                                    textAlign: 'center',
-                                }}>
-                                    {stationName}
-                                </span>
-                                {stationTags && (
-                                    <span style={{
-                                        fontFamily: "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                                        fontSize: '9px',
-                                        fontWeight: 500,
-                                        color: 'rgba(255,255,255,0.4)',
-                                        letterSpacing: '0.1em',
-                                        textTransform: 'uppercase',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        width: '100%',
-                                        textAlign: 'center',
-                                    }}>
-                                        {stationTags.split(',').slice(0, 3).join(' · ')}
-                                    </span>
-                                )}
-                            </div>
-                        )}
+            {/* Radio toggle + visualizer */}
+            <ButtonRow>
+              <ControlButton
+                active={isRadioPlaying}
+                onClick={onToggleRadio}
+                ariaLabel="Toggle Radio"
+              >
+                <IconSvg path={RADIO_ICON} size={24} fill={isRadioPlaying ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Radio</Label>
+              </ControlButton>
+              <AudioVisualizer
+                analyser={analyser}
+                isActive={isRadioPlaying}
+                width={180}
+                height={32}
+              />
+            </ButtonRow>
 
-                        {/* Radio toggle button with visualizer */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <IconButton 
-                                icon={RADIO_ICON} 
-                                label="Radio" 
-                                active={isRadioPlaying} 
-                                onClick={onToggleRadio} 
-                                ariaLabel="Toggle Radio" 
-                            />
-                            <AudioVisualizer 
-                                analyser={analyser} 
-                                isActive={isRadioPlaying} 
-                                width={180} 
-                                height={32} 
-                            />
-                        </div>
+            {/* Quick-access row */}
+            <ButtonRow>
+              <ControlButton active={isMapOpen} onClick={onToggleGPS} ariaLabel="Toggle GPS">
+                <IconSvg path={GPS_ICON} size={24} fill={isMapOpen ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>GPS</Label>
+              </ControlButton>
+              {onToggleVehicle && (
+                <ControlButton onClick={onToggleVehicle} ariaLabel="Toggle Vehicle">
+                  <IconSvg path={VEHICLE_ICON} size={24} fill="rgba(255,255,255,0.7)" />
+                  <Label>{getVehicleLabel()}</Label>
+                </ControlButton>
+              )}
+              <ControlButton active={isRoofOpen} onClick={onToggleRoof} ariaLabel="Toggle Roof">
+                <IconSvg path={ROOF_ICON} size={24} fill={isRoofOpen ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>{isRoofOpen ? 'Open' : 'Closed'}</Label>
+              </ControlButton>
+            </ButtonRow>
 
-                        {/* Control buttons row */}
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <IconButton 
-                                icon={GPS_ICON} 
-                                label="GPS" 
-                                active={isMapOpen} 
-                                onClick={onToggleGPS} 
-                                ariaLabel="Toggle GPS" 
-                            />
-                            {onToggleVehicle && (
-                                <IconButton 
-                                    icon={VEHICLE_ICON} 
-                                    label={getVehicleLabel()} 
-                                    onClick={onToggleVehicle} 
-                                    ariaLabel="Toggle Vehicle" 
-                                />
-                            )}
-                            <IconButton 
-                                icon={ROOF_ICON} 
-                                label={isRoofOpen ? 'Open' : 'Closed'} 
-                                active={isRoofOpen} 
-                                onClick={onToggleRoof} 
-                                ariaLabel="Toggle Roof" 
-                            />
-                        </div>
+            {/* Direction pad */}
+            {onNavigate && <DirectionPad onNavigate={onNavigate} />}
+          </div>
+        </ZoneCenter>
 
-                        {/* Directional navigation pad */}
-                        {onNavigate && (
-                            <DirectionPad onNavigate={onNavigate} />
-                        )}
-                    </div>
-                </ZoneCenter>
+        {/* =====================================================================
+            ZONE RIGHT – Environment Controls
+        ===================================================================== */}
+        <ZoneRight>
+          {/* Light-control row */}
+          <div className={styles.lightGrid}>
+            {onToggleHeadlights && (
+              <ControlButton
+                active={headlightsOn}
+                onClick={onToggleHeadlights}
+                ariaLabel="Toggle Headlights"
+              >
+                <IconSvg path={HEADLIGHT_ICON} size={20} fill={headlightsOn ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Lights</Label>
+              </ControlButton>
+            )}
+            {headlightsOn && onToggleHighBeam && (
+              <ControlButton
+                active={highBeam}
+                onClick={onToggleHighBeam}
+                ariaLabel="Toggle High Beam"
+              >
+                <IconSvg path={HIGHBEAM_ICON} size={20} fill={highBeam ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>High</Label>
+              </ControlButton>
+            )}
+            {onToggleDomeLight && (
+              <ControlButton
+                active={domeLightOn}
+                onClick={onToggleDomeLight}
+                ariaLabel="Toggle Dome Light"
+              >
+                <IconSvg path={DOME_ICON} size={20} fill={domeLightOn ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Dome</Label>
+              </ControlButton>
+            )}
+            {rainIntensity > 0 && onToggleWipers && (
+              <ControlButton
+                active={wipersEnabled}
+                onClick={onToggleWipers}
+                ariaLabel="Toggle Wipers"
+              >
+                <IconSvg path={WIPER_ICON} size={20} fill={wipersEnabled ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Wipers</Label>
+              </ControlButton>
+            )}
+          </div>
 
-                {/* ============================================================================
-                    ZONE RIGHT - Environment Controls
-                    Contains light controls, weather sliders, and time selector
-                ============================================================================ */}
-                <ZoneRight>
-                    {/* Light controls grid */}
-                    <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: '1fr 1fr', 
-                        gap: '8px' 
-                    }}>
-                        {onToggleHeadlights && (
-                            <IconButton 
-                                icon={HEADLIGHT_ICON} 
-                                label="Lights" 
-                                active={headlightsOn} 
-                                activeColor={headlightsOn ? '#FFC107' : '#00D4FF'}
-                                onClick={onToggleHeadlights} 
-                                size="sm"
-                                ariaLabel="Toggle Headlights" 
-                            />
-                        )}
-                        {headlightsOn && onToggleHighBeam && (
-                            <IconButton 
-                                icon={HIGHBEAM_ICON} 
-                                label="High" 
-                                active={highBeam} 
-                                activeColor="#42A5F5"
-                                onClick={onToggleHighBeam} 
-                                size="sm"
-                                ariaLabel="Toggle High Beam" 
-                            />
-                        )}
-                        {onToggleDomeLight && (
-                            <IconButton 
-                                icon={DOME_ICON} 
-                                label="Dome" 
-                                active={domeLightOn} 
-                                activeColor="#FFE8B0"
-                                onClick={onToggleDomeLight} 
-                                size="sm"
-                                ariaLabel="Toggle Dome Light" 
-                            />
-                        )}
-                        {rainIntensity > 0 && onToggleWipers && (
-                            <IconButton 
-                                icon={WIPER_ICON} 
-                                label="Wipers" 
-                                active={wipersEnabled} 
-                                onClick={onToggleWipers} 
-                                size="sm"
-                                ariaLabel="Toggle Wipers" 
-                            />
-                        )}
-                    </div>
+          {/* Weather sliders */}
+          <div className={styles.weatherSliders}>
+            <SliderControl
+              label="Rain"
+              value={rainIntensity}
+              onChange={onRainIntensity}
+            />
+            {onSnowIntensity && (
+              <SliderControl
+                label="Snow"
+                value={snowIntensity}
+                onChange={onSnowIntensity}
+              />
+            )}
+            {onWind && (
+              <SliderControl
+                label="Wind"
+                value={wind}
+                min={-100}
+                max={100}
+                onChange={onWind}
+              />
+            )}
+            {onWindowTint && (
+              <SliderControl
+                label="Tint"
+                value={windowTint}
+                max={1}
+                step={0.01}
+                onChange={onWindowTint}
+              />
+            )}
+          </div>
 
-                    {/* Weather sliders */}
-                    <div style={{ marginTop: '8px' }}>
-                        <Slider 
-                            label="Rain" 
-                            icon={RAIN_ICON} 
-                            value={rainIntensity} 
-                            onChange={onRainIntensity} 
-                            color="#4FC3F7" 
-                        />
-                        {onSnowIntensity && (
-                            <Slider 
-                                label="Snow" 
-                                icon={SNOW_ICON} 
-                                value={snowIntensity} 
-                                onChange={onSnowIntensity} 
-                                color="#E3F2FD" 
-                            />
-                        )}
-                        {onWind && (
-                            <Slider 
-                                label="Wind" 
-                                icon={WIND_ICON} 
-                                value={wind} 
-                                min={-100} 
-                                max={100} 
-                                onChange={onWind} 
-                                color="#B3E5FC" 
-                            />
-                        )}
-                        {onWindowTint && (
-                            <Slider 
-                                label="Tint" 
-                                icon={TINT_ICON} 
-                                value={windowTint} 
-                                onChange={onWindowTint} 
-                                color="#81C784" 
-                            />
-                        )}
-                    </div>
-
-                    {/* Time of Day selector */}
-                    <select 
-                        value={timeOfDay} 
-                        onChange={(e) => onTimeOfDay(e.target.value)}
-                        style={{
-                            marginTop: '8px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            padding: '6px 12px',
-                            color: '#fff',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                            outline: 'none',
-                            transition: 'all 0.2s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.3)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
-                        }}
-                        aria-label="Select Time of Day"
-                    >
-                        <option value="day">☀️ Day</option>
-                        <option value="sunset">🌅 Sunset</option>
-                        <option value="night">🌙 Night</option>
-                    </select>
-                </ZoneRight>
-            </DashboardContainer>
-        </div>
-    );
+          {/* Time-of-Day selector */}
+          <select
+            value={timeOfDay}
+            onChange={(e) => onTimeOfDay(e.target.value)}
+            className={styles.timeSelect}
+            aria-label="Select Time of Day"
+            onMouseDown={stopProp}
+            onClick={stopProp}
+          >
+            <option value="day">☀️ Day</option>
+            <option value="sunset">🌅 Sunset</option>
+            <option value="night">🌙 Night</option>
+          </select>
+        </ZoneRight>
+      </DashboardContainer>
+    </div>
+  );
 };
 
 export default DashboardUI;

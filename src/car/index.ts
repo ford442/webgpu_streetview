@@ -13,6 +13,16 @@ import {
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
 export { SelectivePostProcessing } from './SelectivePostProcessing';
+export { createMaterials } from './interior/MaterialFactory';
+export type { MaterialSet } from './interior/MaterialFactory';
+export { GeometryFactory } from './interior/GeometryFactory';
+export { LODManager } from './interior/LODManager';
+export { InteractionHelper } from './interior/InteractionHelper';
+export { ClockRenderer } from './interior/ClockRenderer';
+export { PostProcessingManager } from './interior/PostProcessingManager';
+export { RainSystem } from './interior/RainSystem';
+export { PerformanceProfiler } from './interior/PerformanceProfiler';
+export { buildInteriorLighting } from './interior/LightingBuilder';
 export type { VehicleType, VehicleConfig } from './VehicleManager';
 export {
     VEHICLES,
@@ -431,6 +441,38 @@ export function setWindTurbulence(turbulence: number): void {
  */
 export function isConvertibleOpen(): boolean {
     return carModeState?.convertibleMode?.isConvertibleOpen() ?? false;
+}
+
+/**
+ * Toggle rain droplets on the windshield.
+ */
+export function setCarRainActive(active: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setRainActive(active);
+}
+
+/**
+ * Enable/disable post-processing (bloom + SMAA).
+ */
+export function setCarPostProcessingEnabled(enabled: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setPostProcessingEnabled(enabled);
+}
+
+/**
+ * Adjust bloom strength (0-1).
+ */
+export function setCarBloomStrength(strength: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setBloomStrength(strength);
+}
+
+/**
+ * Get current performance metrics string for debug overlay.
+ */
+export function getCarPerformanceString(): string {
+    if (!carModeState) return '';
+    return carModeState.interior.getPerformanceString();
 }
 
 /**

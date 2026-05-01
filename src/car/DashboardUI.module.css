@@ -1,0 +1,201 @@
+/* ============================================================================
+   Dashboard UI – CSS Module (dashboard-specific styles)
+   Layout primitives (container, zones, buttons, sliders) live in
+   DashboardLayout.module.css and are imported via DashboardLayout.tsx.
+   ============================================================================ */
+
+/* --------------------------------------------------------------------------
+   Outer wrapper
+   -------------------------------------------------------------------------- */
+.wrapper {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  pointer-events: auto;
+  z-index: 100;
+}
+
+/* --------------------------------------------------------------------------
+   Gauge row (left zone inner layout)
+   -------------------------------------------------------------------------- */
+.gaugeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  height: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Center column helper
+   -------------------------------------------------------------------------- */
+.centerCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Station metadata
+   -------------------------------------------------------------------------- */
+.stationMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 220px;
+  overflow: hidden;
+}
+
+.stationName {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+}
+
+.stationNameActive {
+  composes: stationName;
+  color: var(--accent, #00d4ff);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+}
+
+.stationNameInactive {
+  composes: stationName;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.stationTags {
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Direction pad
+   -------------------------------------------------------------------------- */
+.padGrid {
+  display: grid;
+  grid-template-columns: 60px 60px 60px;
+  grid-template-rows: 54px 54px;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.padBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 60px;
+  height: 54px;
+  background: rgba(0, 180, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 10px;
+  color: rgba(0, 212, 255, 0.85);
+  cursor: pointer;
+  font-size: 8px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s, transform 0.07s;
+  user-select: none;
+}
+
+.padBtn:hover,
+.padBtnHover {
+  background: rgba(0, 212, 255, 0.15);
+  color: #00d4ff;
+}
+
+.padBtn:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.padBtn:active {
+  transform: translateY(1px);
+}
+
+.padBtnActive {
+  composes: padBtn;
+  background: rgba(0, 212, 255, 0.22);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Light controls grid
+   -------------------------------------------------------------------------- */
+.lightGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   Weather sliders container
+   -------------------------------------------------------------------------- */
+.weatherSliders {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Time-of-day selector
+   -------------------------------------------------------------------------- */
+.timeSelect {
+  margin-top: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.timeSelect:hover,
+.timeSelect:focus {
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .gaugeRow {
+    flex-wrap: wrap;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .padBtn,
+  .padBtnActive,
+  .timeSelect {
+    transition: none;
+  }
+}
