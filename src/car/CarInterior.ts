@@ -139,7 +139,7 @@ export class CarInterior {
         this.canvas.style.top = '0';
         this.canvas.style.left = '0';
         this.canvas.style.pointerEvents = 'none';
-        this.canvas.style.zIndex = '100';
+        this.canvas.style.zIndex = '50';
         this.canvas.style.display = 'block';
         this.canvas.style.visibility = 'visible';
         container.appendChild(this.canvas);

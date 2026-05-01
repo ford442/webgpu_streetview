@@ -242,7 +242,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 params[21] = e.moonAltitude;
 
                 // [22-31]: Atmospheric effects
-                params[22] = 0.0;                         // fog intensity
+                params[22] = e.fogDensity / 100.0;        // fog intensity (same as density, from single fog slider)
                 params[23] = e.fogDensity / 100.0;        // fog density (0-1)
                 params[24] = 0.0;                         // fog height
                 params[25] = 0.0;                         // fog color index

@@ -99,6 +99,12 @@ function InnerApp() {
   const [isConnected, setIsConnected] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [webGPUAvailable, setWebGPUAvailable] = useState(true);
+  const [webgpuReady, setWebgpuReady] = useState(false);
+
+  const handleWebGPUStatus = useCallback((available: boolean) => {
+    setWebGPUAvailable(available);
+    setWebgpuReady(true); // GPU init has completed (success or failure)
+  }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
@@ -791,7 +797,7 @@ function InnerApp() {
       </div>
 
       {/* Global WebGPU canvas - never unmounts, lives behind the views */}
-      {isConnected && isCanvasReady && <WebGPUCanvas onWebGPUStatus={setWebGPUAvailable} />}
+      {isConnected && isCanvasReady && <WebGPUCanvas onWebGPUStatus={handleWebGPUStatus} />}
 
       {/* Main View - switches between FreeLookView and CarModeView */}
       <div 
@@ -807,10 +813,10 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && isCanvasReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+        {isConnected && isCanvasReady && webgpuReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
         
-        {/* Show loading screen while waiting for canvas */}
-        {isConnected && !isCanvasReady && (
+        {/* Show loading screen while waiting for canvas or WebGPU init */}
+        {isConnected && (!isCanvasReady || !webgpuReady) && (
           <div style={{
             position: 'absolute',
             top: 0,
