@@ -24,16 +24,15 @@ const MiniMap: React.FC<MiniMapProps> = ({
 }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
-    const [map] = useState<google.maps.Map | null>(null);
+    const [map, setMap] = useState<google.maps.Map | null>(null);
     const [cesiumViewer, setCesiumViewer] = useState<Cesium.Viewer | null>(null);
-    const [marker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
+    const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
     const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | Cesium.Entity)[]>([]);
 
-    // Helper to create custom marker content (preserved for future use)
-    /*
+    /** Create a heading-aware marker element */
     const createMarkerContent = (rotation: number): HTMLElement => {
         const el = document.createElement('div');
         el.style.cssText = `
@@ -44,10 +43,9 @@ const MiniMap: React.FC<MiniMapProps> = ({
             border: 3px solid #00CCFF;
             box-shadow: 0 0 12px #00CCFF;
         `;
-        el.title = "Drag to move (You are here) 🖱️";
+        el.title = "Drag to move (You are here)";
         return el;
     };
-    */
 
     // Helper to add a breadcrumb at the current panorama position
     const addBreadcrumb = useCallback(() => {
@@ -76,35 +74,108 @@ const MiniMap: React.FC<MiniMapProps> = ({
     }, [map, panorama, addBreadcrumb]);
 
 
+    // Initialize Google Maps 2D
+    useEffect(() => {
+        if (viewMode !== 'map' || !mapRef.current || map) return;
+
+        const initMap = () => {
+            const initialPos = panorama.getPosition();
+            const center = initialPos ?? new google.maps.LatLng(0, 0);
+
+            const gMap = new google.maps.Map(mapRef.current!, {
+                center,
+                zoom: 18,
+                mapTypeId: google.maps.MapTypeId.ROADMAP,
+                streetViewControl: false,
+                fullscreenControl: false,
+                mapTypeControl: false,
+                zoomControl: true,
+                zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+                styles: [
+                    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+                    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+                ],
+            });
+
+            // Street View coverage layer
+            const svLayer = new google.maps.StreetViewCoverageLayer();
+            svLayer.setMap(gMap);
+
+            // Create heading-aware marker
+            let gMarker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker | null = null;
+            const rotation = heading;
+            const markerContent = createMarkerContent(rotation);
+
+            if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+                gMarker = new google.maps.marker.AdvancedMarkerElement({
+                    map: gMap,
+                    position: center,
+                    title: 'You are here',
+                    content: markerContent,
+                    gmpDraggable: true,
+                });
+            } else {
+                // Fallback to legacy Marker
+                gMarker = new google.maps.Marker({
+                    map: gMap,
+                    position: center,
+                    title: 'You are here',
+                    icon: {
+                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                        scale: 4,
+                        rotation,
+                        fillColor: '#00CCFF',
+                        fillOpacity: 1,
+                        strokeColor: '#fff',
+                        strokeWeight: 2,
+                    },
+                });
+            }
+
+            setMap(gMap);
+            setMarker(gMarker as google.maps.marker.AdvancedMarkerElement);
+        };
+
+        initMap();
+
+        return () => {
+            setMap(null);
+            setMarker(null);
+        };
+    }, [viewMode, map, panorama, heading]);
+
     // Initialize Cesium Globe
     useEffect(() => {
         const initCesium = async () => {
             if (viewMode !== 'globe' || !cesiumRef.current || cesiumViewer) return;
 
-            // Set Cesium Ion access token (you'll need to get this from cesium.com)
-            Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || '';
+            try {
+                Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || '';
 
-            const viewer = new Cesium.Viewer(cesiumRef.current, {
-                terrainProvider: await Cesium.createWorldTerrainAsync(),
-                baseLayerPicker: false,
-                geocoder: false,
-                homeButton: false,
-                sceneModePicker: false,
-                navigationHelpButton: false,
-                animation: false,
-                timeline: false,
-                fullscreenButton: false,
-                vrButton: false,
-                infoBox: false,
-                selectionIndicator: false,
-            });
+                const viewer = new Cesium.Viewer(cesiumRef.current, {
+                    terrainProvider: await Cesium.createWorldTerrainAsync(),
+                    baseLayerPicker: false,
+                    geocoder: false,
+                    homeButton: false,
+                    sceneModePicker: false,
+                    navigationHelpButton: false,
+                    animation: false,
+                    timeline: false,
+                    fullscreenButton: false,
+                    vrButton: false,
+                    infoBox: false,
+                    selectionIndicator: false,
+                });
 
-            // Configure the camera for top-down view
-            viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(0, 0, 20000000), // High altitude for globe view
-            });
+                viewer.camera.setView({
+                    destination: Cesium.Cartesian3.fromDegrees(0, 0, 20000000),
+                });
 
-            setCesiumViewer(viewer);
+                setCesiumViewer(viewer);
+            } catch (err) {
+                console.warn('[MiniMap] Cesium init failed, falling back to 2D map:', err);
+                // Fallback: the parent can detect this and switch viewMode to 'map'
+            }
         };
 
         initCesium();
@@ -153,32 +224,30 @@ const MiniMap: React.FC<MiniMapProps> = ({
             const position = panorama.getPosition();
             if (position) {
                 map.setCenter(position);
-                marker.position = position;
+                if ('position' in marker) {
+                    (marker as any).position = position;
+                }
             }
         };
 
         const listener = panorama.addListener('position_changed', updatePosition);
 
         // Handle Marker Drag End
-        const dragEndListener = marker.addListener('dragend', () => {
-            const newPos = marker.position;
+        const handleDragEnd = () => {
+            const newPos = (marker as any).position;
             if (newPos) {
-                // Convert position to LatLng if it's not already
                 const latLng = newPos instanceof google.maps.LatLng
                     ? newPos
                     : new google.maps.LatLng(newPos.lat, newPos.lng);
                 teleportTo(latLng);
-                // Optional: Flash marker for feedback
-                const content = marker.content as HTMLElement;
-                if (content) {
-                    const originalTransform = content.style.transform;
-                    content.style.transform = `scale(1.5) ${originalTransform}`;
-                    setTimeout(() => {
-                        content.style.transform = originalTransform;
-                    }, 200);
-                }
             }
-        });
+        };
+
+        if (marker instanceof google.maps.Marker) {
+            marker.addListener('dragend', handleDragEnd);
+        } else if (marker.addEventListener) {
+            marker.addEventListener('dragend', handleDragEnd);
+        }
 
         // Handle Map Click
         const mapClickListener = map.addListener("click", (e: google.maps.MapMouseEvent) => {
@@ -194,26 +263,32 @@ const MiniMap: React.FC<MiniMapProps> = ({
             }
         });
 
-
         // Initial sync
         updatePosition();
 
         return () => {
             google.maps.event.removeListener(listener);
-            google.maps.event.removeListener(dragEndListener);
+            if (marker instanceof google.maps.Marker) {
+                google.maps.event.clearListeners(marker, 'dragend');
+            } else if (marker.removeEventListener) {
+                marker.removeEventListener('dragend', handleDragEnd);
+            }
             google.maps.event.removeListener(mapClickListener);
             google.maps.event.removeListener(mapDblClickListener);
         };
     }, [map, marker, panorama, teleportTo]);
 
-
     // Sync Marker Heading
     useEffect(() => {
         if (!marker) return;
 
-        const content = marker.content as HTMLElement;
-        if (content) {
-            content.style.transform = `rotate(${heading}deg)`;
+        if ('content' in marker && marker.content) {
+            (marker.content as HTMLElement).style.transform = `rotate(${heading}deg)`;
+        } else if (marker instanceof google.maps.Marker) {
+            const icon = marker.getIcon() as google.maps.Symbol;
+            if (icon && 'rotation' in icon) {
+                marker.setIcon({ ...icon, rotation: heading });
+            }
         }
     }, [heading, marker]);
 
