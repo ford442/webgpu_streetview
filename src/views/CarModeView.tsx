@@ -182,8 +182,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       // rotates with the car (rigid coupling) or freely (free coupling).
       updateCarMode(
         carHeadingRef.current,
-        headYawOffset,
-        headPitch,
+        controlMode === 'freeLook' ? 0 : headYawOffset,
+        controlMode === 'freeLook' ? 0 : headPitch,
         carSpeedRef.current,
         nightIntensity,
         headlightsOn,
