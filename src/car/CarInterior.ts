@@ -142,7 +142,11 @@ export class CarInterior {
         this.renderer.setSize(container.clientWidth, container.clientHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.gpuProfile.pixelRatio));
         this.renderer.setClearColor(0x000000, 0);
-        this.renderer.autoClear = false;
+        // autoClear must stay true so the EffectComposer's RenderPass clears its intermediate
+        // render targets each frame.  With autoClear=false the RenderPass skips the clear
+        // (because renderer.autoClearColor=false), causing transparent objects to accumulate
+        // alpha across frames and eventually becoming opaque — blocking the WebGPU panorama.
+        this.renderer.autoClear = true;
         
         // Apply performance optimizations
         applyPerformanceProfile(this.renderer, this.gpuProfile);
@@ -1792,17 +1796,21 @@ export class CarInterior {
     public updateWindowTint(val: number): void {
         const clamped = Math.max(0, Math.min(1, val));
         const darkness = 0.1 + clamped * 0.7;
-        const transmission = 1.0 - clamped * 0.6;
+        // Scale canvas opacity with tint level.  opacity=0.08 (nearly transparent) at val=0
+        // so the WebGPU panorama shows through; opacity=0.70 at val=1 for a dark tint.
+        // transmission is not used here — it renders the Three.js scene background, not the
+        // WebGPU panorama canvas that sits behind the Three.js canvas in the DOM.
+        const opacity = 0.08 + clamped * 0.62;
 
         if (this.windshieldGlassMesh?.material) {
             const mat = this.windshieldGlassMesh.material as THREE.MeshPhysicalMaterial;
             mat.color.set(new THREE.Color('#eef5f8')).multiplyScalar(1 - darkness * 0.5);
-            mat.transmission = transmission;
+            mat.opacity = opacity;
         }
         if (this.rearGlassMesh?.material) {
             const mat = this.rearGlassMesh.material as THREE.MeshPhysicalMaterial;
             mat.color.set(new THREE.Color('#6a9aae')).multiplyScalar(1 - darkness * 0.5);
-            mat.transmission = transmission;
+            mat.opacity = opacity;
         }
     }
 
