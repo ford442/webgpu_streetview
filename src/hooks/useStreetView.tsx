@@ -352,7 +352,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       let stableCount = 0;
       let lastFingerprint = '';
       let tickCount = 0;
-      const REQUIRED_STABLE = 3; // 300 ms of stability
+      const REQUIRED_STABLE = 5; // 500 ms of stability
+      const MIN_DELAY_TICKS = 4; // 400 ms minimum delay after pano_changed
       const MAX_TICKS = 15;      // 1.5 s fallback
       
       stabilityInterval = setInterval(() => {
@@ -373,7 +374,9 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         const fingerprint = getCanvasFingerprint(c);
         if (fingerprint && fingerprint === lastFingerprint) {
           stableCount++;
-          if (stableCount >= REQUIRED_STABLE) {
+          // Require both sufficient stability AND minimum delay to avoid
+          // revealing the low-res preview tile before 720 imagery decodes.
+          if (stableCount >= REQUIRED_STABLE && tickCount >= MIN_DELAY_TICKS) {
             clearInterval(stabilityInterval!);
             stabilityInterval = null;
             console.log('[StreetView] Canvas stable, panorama ready');

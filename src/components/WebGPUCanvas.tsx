@@ -106,6 +106,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
         sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
         shaderEffectsEnabled, timeOfDay
     });
+
+    // Page-relative time to avoid f32 precision loss in shader sin()/hash()
+    const timeRef = useRef(Date.now());
     useEffect(() => {
         envRef.current = {
             nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
@@ -218,10 +221,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 params[5] = e.tint;
 
                 // [6-10]: Animation time, rain, snow, wind, speed
-                params[6] = Date.now() / 1000.0;
-                params[7] = e.rainIntensity;
-                params[8] = e.snowIntensity;
-                params[9] = e.wind;
+                params[6] = (Date.now() - timeRef.current) / 1000.0;
+                params[7] = (e.rainIntensity / 100.0) * 2.0;   // UI 0-100 -> shader 0-2
+                params[8] = (e.snowIntensity / 100.0) * 2.0;   // UI 0-100 -> shader 0-2
+                params[9] = (e.wind / 100.0) * 2.0 - 1.0;      // UI 0-100 -> shader -1 to +1
                 params[10] = 1.0;
 
                 // [11-15]: Night mode and headlights

@@ -108,6 +108,12 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   useEffect(() => {
     if (!containerRef.current) return;
     
+    // Guard against double-init (React Strict Mode remounts, rapid toggles)
+    if (carModeStateRef.current) {
+      toggleCarMode(true);
+      return;
+    }
+    
     // Initialize car interior
     try {
       carModeStateRef.current = initCarMode(containerRef.current);

@@ -101,11 +101,11 @@ function InnerApp() {
   const [isConnected, setIsConnected] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [webGPUAvailable, setWebGPUAvailable] = useState(true);
-  const [webgpuReady, setWebgpuReady] = useState(false);
+  const [webgpuStatus, setWebgpuStatus] = useState<'initializing' | 'ready' | 'fallback'>('initializing');
 
   const handleWebGPUStatus = useCallback((available: boolean) => {
     setWebGPUAvailable(available);
-    setWebgpuReady(true); // GPU init has completed (success or failure)
+    setWebgpuStatus(available ? 'ready' : 'fallback');
   }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
@@ -849,10 +849,10 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && isCanvasReady && webgpuReady && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+        {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
         
         {/* Show loading screen while waiting for canvas or WebGPU init */}
-        {isConnected && (!isCanvasReady || !webgpuReady) && (
+        {isConnected && (!isCanvasReady || webgpuStatus === 'initializing') && (
           <div style={{
             position: 'absolute',
             top: 0,

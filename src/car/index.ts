@@ -180,8 +180,18 @@ export function toggleCarMode(enabled: boolean): void {
 
     // Show/hide the Three.js canvas
     if (carModeState.interior.canvas) {
-        carModeState.interior.canvas.style.display = enabled ? 'block' : 'none';
-        carModeState.interior.canvas.style.visibility = enabled ? 'visible' : 'hidden';
+        const c = carModeState.interior.canvas;
+        c.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 50;
+            pointer-events: none;
+            display: ${enabled ? 'block' : 'none'};
+            visibility: ${enabled ? 'visible' : 'hidden'};
+        `;
     }
 }
 

@@ -86,6 +86,7 @@ export class Renderer {
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
+    private startTime: number = Date.now();
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -831,7 +832,7 @@ export class Renderer {
         
         try {
             // Update time in weather params for continuous animation
-            const time = Date.now() / 1000;
+            const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[6] = time % 10000.0; // looped time
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         } catch (e) {
@@ -848,7 +849,7 @@ export class Renderer {
 
         try {
             // Update time for animation
-            const time = Date.now() / 1000;
+            const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[6] = time % 10000.0;
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
 
@@ -955,7 +956,7 @@ export class Renderer {
 
         try {
             // Update time in weather params for animation
-            const time = Date.now() / 1000;
+            const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[6] = time % 10000.0; // looped time
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
 
