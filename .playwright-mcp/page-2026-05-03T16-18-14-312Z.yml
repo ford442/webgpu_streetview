@@ -1,0 +1,20 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - dialog "1ink.us Streetview" [ref=e5]:
+    - generic [ref=e6]:
+      - heading "1ink.us Streetview" [level=1] [ref=e7]
+      - paragraph [ref=e8]: Hey! Explore the world in a new way.
+      - generic [ref=e9]:
+        - heading "Features:" [level=2] [ref=e10]
+        - list [ref=e11]:
+          - listitem [ref=e12]: 360° panoramic navigation
+          - listitem [ref=e13]: WebGPU-accelerated rendering
+          - listitem [ref=e14]: Route planning and cruise mode
+          - listitem [ref=e15]: Interactive mini-map
+          - listitem [ref=e16]: Snapshot functionality
+          - listitem [ref=e17]: Keyboard navigation support
+          - listitem [ref=e18]: Screen reader compatible
+      - button "Start exploring Street View. Press Enter to begin." [active] [ref=e19] [cursor=pointer]: Start Exploring
+      - paragraph [ref=e21]: Press Tab to navigate, Enter to select
+  - main "Street View Canvas" [ref=e24]

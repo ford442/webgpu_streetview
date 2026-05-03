@@ -30,6 +30,7 @@ import {
   PerformanceStatsOverlay,
   WebGPUCanvas,
 } from './components';
+import { ErrorDisplay } from './components/LoadingOverlay';
 
 // Hooks
 import { useBookmarks } from './hooks/useBookmarks';
@@ -110,6 +111,7 @@ function InnerApp() {
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
+  const [canvasError, setCanvasError] = useState<string | null>(null);
   const [navPending, setNavPending] = useState(false);
   
   // Panel visibility
@@ -818,10 +820,12 @@ function InnerApp() {
       }}>
         <StreetView
           apiKey={GOOGLE_MAPS_KEY}
-          initialPosition={{ lat: 39.2575004, lng: -121.021821 }}
+          initialPosition={{ lat: 37.86926, lng: -122.254811 }}
           onCanvasReady={setCanvas}
+          onError={setCanvasError}
           onPanoramaReady={(pano) => {
             setPanorama(pano);
+            setCanvasError(null);
             if (!directionsServiceRef.current) {
               directionsServiceRef.current = new google.maps.DirectionsService();
             }
@@ -866,28 +870,38 @@ function InnerApp() {
             justifyContent: 'center',
             zIndex: 1
           }}>
-            <div style={{
-              color: '#4CAF50',
-              fontSize: '18px',
-              marginBottom: '20px',
-              fontFamily: 'sans-serif'
-            }}>
-              Loading Street View...
-            </div>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              border: '4px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: '#4CAF50',
-              borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite'
-            }} />
-            <style>{`
-              @keyframes spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-              }
-            `}</style>
+            {canvasError ? (
+              <ErrorDisplay
+                message={canvasError}
+                retryable={true}
+                onRetry={() => window.location.reload()}
+              />
+            ) : (
+              <>
+                <div style={{
+                  color: '#4CAF50',
+                  fontSize: '18px',
+                  marginBottom: '20px',
+                  fontFamily: 'sans-serif'
+                }}>
+                  Loading Street View...
+                </div>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  border: '4px solid rgba(255, 255, 255, 0.1)',
+                  borderTopColor: '#4CAF50',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+                <style>{`
+                  @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </>
+            )}
           </div>
         )}
       </div>

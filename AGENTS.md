@@ -81,6 +81,7 @@ webgpu_streetview/
 │   └── shaders/                     # WGSL shader files loaded at runtime via fetch()
 │       ├── streetview.wgsl          # Pass 1: panorama → HDR intermediate
 │       ├── weather-post.wgsl        # Pass 2: HDR + weather/color grading → screen
+│       ├── weather-post-compute.wgsl # Compute pipeline variant of weather post-process
 │       ├── carview.wgsl             # Car windshield post-process
 │       ├── texture.wgsl             # Debug passthrough
 │       └── transition-*.wgsl        # GPU panorama transitions (fade, zoom, zoom-blur, zoom-chromatic)
@@ -126,10 +127,33 @@ webgpu_streetview/
 │   │   ├── RearviewMirror.ts        # Reflective mirror rendering
 │   │   ├── SelectivePostProcessing.ts # Post-process settings manager
 │   │   ├── VehicleManager.ts        # Vehicle configs (sedan, convertible, science-lab, limousine)
+│   │   ├── theme.ts                 # Car interior theme tokens
+│   │   ├── interior/                # Low-level interior building blocks
+│   │   │   ├── GeometryFactory.ts
+│   │   │   ├── MaterialFactory.ts
+│   │   │   ├── LightingBuilder.ts
+│   │   │   ├── LODManager.ts
+│   │   │   ├── InteractionHelper.ts
+│   │   │   ├── ClockRenderer.ts
+│   │   │   ├── PostProcessingManager.ts
+│   │   │   ├── RainSystem.ts
+│   │   │   └── PerformanceProfiler.ts
+│   │   ├── ui/                      # Reusable car dashboard UI primitives
+│   │   │   ├── Button.tsx
+│   │   │   ├── IconButton.tsx
+│   │   │   ├── Slider.tsx
+│   │   │   ├── ToggleGroup.tsx
+│   │   │   ├── AudioVisualizer.tsx
+│   │   │   ├── ControlPanel.tsx
+│   │   │   ├── Icon.tsx
+│   │   │   ├── icons.ts
+│   │   │   ├── injectSliderStyles.ts
+│   │   │   └── theme.tsx
 │   │   └── variants/                # Vehicle-specific implementations
 │   │       ├── ConvertibleMode.ts
 │   │       ├── LimousineMode.ts
-│   │       └── ScienceLabMode.ts
+│   │       ├── ScienceLabMode.ts
+│   │       └── index.ts
 │   ├── hooks/                       # Custom React hooks + providers
 │   │   ├── index.ts                 # Barrel export
 │   │   ├── useStreetView.tsx        # StreetViewProvider: panorama, heading, pitch, zoom, advance, isTransitioning
@@ -148,17 +172,23 @@ webgpu_streetview/
 │   │   ├── useDeviceDetection.ts    # Mobile / capability detection
 │   │   ├── useGlobeMode.ts          # Cesium globe state
 │   │   ├── useAutoNight.ts          # Automatic night mode
+│   │   ├── useAdvanceSafe.ts        # Safe navigation with panorama-ready guards
+│   │   ├── usePanoramaCache.ts      # Panorama pre-fetch cache
 │   │   └── __tests__/               # Hook tests (mobile.test.tsx)
 │   ├── effects/
 │   │   ├── PostProcessing.ts
 │   │   ├── LightingEffects.ts
-│   │   └── WindAudio.ts             # Procedural wind audio
+│   │   ├── WindAudio.ts             # Procedural wind audio
+│   │   └── index.ts
 │   ├── animation/
-│   │   └── PhysicsAnimations.ts     # Spring physics for UI / camera
+│   │   ├── PhysicsAnimations.ts     # Spring physics for UI / camera
+│   │   └── index.ts
 │   ├── audio/
-│   │   └── AudioAnalyzer.ts         # Radio stream Web Audio analysis
+│   │   ├── AudioAnalyzer.ts         # Radio stream Web Audio analysis
+│   │   └── index.ts
 │   ├── materials/
-│   │   └── PBRMaterials.ts          # Three.js PBR presets
+│   │   ├── PBRMaterials.ts          # Three.js PBR presets
+│   │   └── index.ts
 │   ├── shaders/                     # GLSL shaders inlined for Three.js
 │   │   ├── windowRain.ts
 │   │   ├── dashboardGlow.ts
@@ -170,10 +200,13 @@ webgpu_streetview/
 │   │   ├── astronomicalConstants.ts
 │   │   └── index.ts
 │   ├── store/
-│   │   └── loadingState.ts          # Loading state store singleton
+│   │   ├── loadingState.ts          # Loading state store singleton
+│   │   └── index.ts
 │   ├── services/
 │   │   ├── radioBrowserService.ts   # Radio station lookup
 │   │   └── storageApi.ts            # Cloud storage API client
+│   ├── docs/
+│   │   └── GRAPHICS.md              # Graphics pipeline documentation
 │   └── utils/
 │       ├── navigation.ts            # findBestLink() + angle math + haversine
 │       ├── navigation.test.ts       # Unit tests for navigation math
@@ -242,7 +275,7 @@ App.tsx
 4. `Renderer.ts` uploads the canvas every frame with `device.queue.copyExternalImageToTexture`.
 5. The dual-pass pipeline renders to screen.
 
-**Important**: The hidden Google Maps DOM element must maintain `opacity: 1`. Google Maps stops updating its internal canvas when opacity drops too low. The element is pushed behind the WebGPU canvas via `zIndex: 0` vs `zIndex: 1`.
+**Important**: The hidden Google Maps DOM element must maintain `opacity: 1`. Google Maps stops updating its internal render canvas when opacity drops too low. The element is pushed behind the WebGPU canvas via `zIndex: 0` vs `zIndex: 1`.
 
 ### WebGPU Dual-Pass Pipeline (`src/renderer/Renderer.ts`)
 
@@ -259,6 +292,8 @@ App.tsx
 - Output target: swap-chain surface (screen).
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
+
+A compute variant `weather-post-compute.wgsl` exists for potential compute-pipeline integration. It uses an `extraBuffer` storage array (index 0–36) mapped to the same weather parameters and exposes additional bindings for depth textures and data textures.
 
 ### GPU Transition System
 
@@ -297,6 +332,8 @@ Browser Output (top to bottom)
 - **`DashboardUI.tsx`** is a React overlay; its buttons call functions exported from `src/car/index.ts` directly (not through React state).
 - **`RearviewMirror.ts`** renders a 180° behind view into the mirror surface using the Street View canvas.
 - **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
+- **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
+- **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
 
 ### Input Handling
 
@@ -475,4 +512,4 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
-*Last Updated: April 27, 2026*
+*Last Updated: May 3, 2026*

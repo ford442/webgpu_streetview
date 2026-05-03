@@ -83,8 +83,10 @@ function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
       hash = ((hash << 5) - hash) + d[i] + d[i + 1] + d[i + 2];
       brightness += d[i] + d[i + 1] + d[i + 2];
     }
-    // Mostly black = probably still loading
-    if (brightness / ((d.length / 4) * 3) < 5) return '';
+    // Mostly black = probably still loading, but allow very dark valid frames
+    // (e.g. nighttime/error screens) to pass so we don't hang forever.
+    const avgBrightness = brightness / ((d.length / 4) * 3);
+    if (avgBrightness < 2) return '';
     return `${w}x${h}-${hash}`;
   } catch {
     return '';
@@ -93,7 +95,7 @@ function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
 
 export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   children,
-  initialPosition = { lat: 39.2575004, lng: -121.021821 },
+  initialPosition = { lat: 37.86926, lng: -122.254811 },
   initialHeading = 34,
   initialPitch = 10,
 }) => {
@@ -336,30 +338,41 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         const desc = loc.description || loc.shortDescription || 'Unknown Location';
         setLocationName(desc);
       }
-      
+
       const pos = pano.getPosition();
       if (pos) {
         setPositionState(pos);
       }
-      
+
       // --- Canvas stability gate ---
       // Replace the old fixed 700 ms timer with a real load/stability check.
       if (stabilityInterval) {
         clearInterval(stabilityInterval);
         stabilityInterval = null;
       }
-      
+
       let stableCount = 0;
       let lastFingerprint = '';
       let tickCount = 0;
       const REQUIRED_STABLE = 5; // 500 ms of stability
       const MIN_DELAY_TICKS = 4; // 400 ms minimum delay after pano_changed
       const MAX_TICKS = 15;      // 1.5 s fallback
-      
+
       stabilityInterval = setInterval(() => {
         const c = canvasRef.current;
         tickCount++;
-        
+
+        // Check panorama status — if Google reports the imagery is unavailable,
+        // don't hang waiting for a stable canvas.
+        const status = (pano as any).getStatus?.();
+        if (status && status !== 'OK') {
+          clearInterval(stabilityInterval!);
+          stabilityInterval = null;
+          console.warn('[StreetView] Panorama status not OK, forcing ready:', status);
+          setIsPanoramaReady(true);
+          return;
+        }
+
         if (!c || c.width < 256 || c.height < 256) {
           stableCount = 0;
           if (tickCount >= MAX_TICKS) {
@@ -370,7 +383,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
           }
           return;
         }
-        
+
         const fingerprint = getCanvasFingerprint(c);
         if (fingerprint && fingerprint === lastFingerprint) {
           stableCount++;
@@ -387,7 +400,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
           stableCount = 0;
           lastFingerprint = fingerprint;
         }
-        
+
         if (tickCount >= MAX_TICKS) {
           clearInterval(stabilityInterval!);
           stabilityInterval = null;

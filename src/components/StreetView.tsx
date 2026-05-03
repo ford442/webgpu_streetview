@@ -5,6 +5,7 @@ interface StreetViewProps {
     apiKey: string;
     initialPosition?: { lat: number; lng: number };
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
+    onError?: (message: string) => void;
 }
 
 // Global callback for Google Maps async loading
@@ -15,12 +16,12 @@ declare global {
     }
 }
 
-const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady }) => {
+const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
 
-    const startLocation = initialPosition ?? { lat: 39.2575004, lng: -121.021821 };
+    const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
     useEffect(() => {
         if (isInitializedRef.current) return;
@@ -70,6 +71,15 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
 
                 mapInstance.setStreetView(panoInstance);
 
+                // Listen for panorama status changes (e.g. imagery unavailable)
+                panoInstance.addListener('status_changed', () => {
+                    const status = panoInstance.getStatus();
+                    if (status !== google.maps.StreetViewStatus.OK) {
+                        console.warn('[StreetView] Panorama status:', status);
+                        onError?.(`Street View unavailable: ${status}`);
+                    }
+                });
+
                 if (onPanoramaReady) onPanoramaReady(panoInstance);
 
                 // Canvas detection with retry
@@ -106,7 +116,15 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 
                 // Retry a few times for canvas detection
                 const retryInterval = setInterval(checkForCanvas, 200);
-                setTimeout(() => clearInterval(retryInterval), 3000);
+                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 3000);
+
+                // Hard timeout: if no canvas detected after ~3.5s, surface an error
+                const canvasTimeout = setTimeout(() => {
+                    if (!activeCanvasRef.current) {
+                        console.error('[StreetView] Canvas detection timed out');
+                        onError?.('Canvas detection timed out — Street View may be unavailable at this location.');
+                    }
+                }, 3500);
 
                 observer = new MutationObserver(() => {
                     checkForCanvas();
@@ -120,6 +138,8 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 return () => {
                     clearTimeout(initialTimeout);
                     clearInterval(retryInterval);
+                    clearTimeout(retryTimeout);
+                    clearTimeout(canvasTimeout);
                     if (mapDiv.parentElement) {
                         mapDiv.parentElement.removeChild(mapDiv);
                     }
@@ -143,11 +163,26 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             };
 
             const script = document.createElement('script');
-            // Use callback pattern for reliable loading
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&callback=initGoogleMaps&libraries=marker`;
+            // Pin to stable version instead of weekly to avoid silent breakage
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=3.56&callback=initGoogleMaps&libraries=marker`;
             script.async = true;
+
+            let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+            script.onload = () => {
+                // Script tag loaded, but callback may still be pending
+                loadTimeout = setTimeout(() => {
+                    if (isMounted && !window.google?.maps) {
+                        console.error('[StreetView] Google Maps API callback never fired');
+                        onError?.('Google Maps API failed to initialize. Please check your network connection and try again.');
+                    }
+                }, 10000);
+            };
+
             script.onerror = () => {
                 console.error('[StreetView] Failed to load Google Maps API');
+                if (loadTimeout) clearTimeout(loadTimeout);
+                onError?.('Failed to load Google Maps API. Please check your network connection and try again.');
             };
             document.head.appendChild(script);
         } else {
