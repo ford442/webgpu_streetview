@@ -34,15 +34,17 @@ export const QUALITY_PRESETS: Record<MaterialQuality, QualityPreset> = {
 
 export function createGlassMaterial(tintColor: string, darkness: number): THREE.MeshPhysicalMaterial {
     const color = new THREE.Color(tintColor).multiplyScalar(1 - darkness * 0.5);
+    // transmission:0 and low opacity so the Three.js canvas stays mostly transparent —
+    // this lets the WebGPU panorama canvas underneath show through the window openings.
+    // Physical transmission (transmission:1) would render the Three.js scene background
+    // (which is transparent/black) rather than the WebGPU panorama, making the glass opaque-black.
     return new THREE.MeshPhysicalMaterial({
         color,
         metalness: 0.0,
         roughness: 0.05,
-        transmission: 1.0,
-        thickness: 0.02,
-        ior: 1.5,
         transparent: true,
-        opacity: 1.0,
+        opacity: 0.08,
+        depthWrite: false,
         envMapIntensity: 1.0,
         clearcoat: 1.0,
         clearcoatRoughness: 0.1,
