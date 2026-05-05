@@ -1,229 +1,276 @@
-# CLAUDE.md — Developer Guide for AI Agents
+# Claude Development Guide - WebGPU StreetView
 
-This file provides the essential context needed to safely work on this codebase.
-Read this before making any changes.
+## Project Overview
 
----
+**WebGPU StreetView** is a React + WebGPU application that captures Google Maps Street View panoramas and renders them with custom shaders. It includes an immersive car interior mode with interactive controls (steering wheel, wipers, gauges) and comprehensive features like bookmarks, history, snapshots, and accessibility support.
 
-## What This Project Is
+### Core Technology Stack
+- **Frontend**: React 19 (TypeScript)
+- **Rendering Engine**: WebGPU with WGSL shaders
+- **3D Graphics**: Three.js (for car interior scenes)
+- **Maps Integration**: Google Maps JavaScript API
+- **State Management**: React hooks (useState, useRef, useContext)
+- **Build Tool**: Create React App
 
-**WebGPU StreetView** is a React/TypeScript app that wraps the Google Maps JavaScript API
-to create an immersive first-person street navigation experience. It captures the hidden
-Google Maps Street View canvas via `MutationObserver` and re-renders it through a custom
-WebGPU pipeline, enabling GPU-accelerated post-processing effects unavailable in the native
-Maps UI. On top of the panorama it composites a Three.js 3D car interior.
+## Project Structure
 
-**Live URL**: https://test.1ink.us/streetview
-**Deploy**: `npm run build` then `python deploy.py` (SFTP upload to test.1ink.us)
+```
+src/
+├── App.tsx                    # Main app controller, coordinates all features
+├── components/                # React UI components
+│   ├── WebGPUCanvas.tsx       # WebGPU renderer wrapper
+│   ├── StreetView.tsx         # Google Maps Street View integration
+│   ├── InputHandler.tsx       # Keyboard & mouse input handling
+│   ├── MiniMap.tsx            # Secondary navigation map
+│   ├── VehicleSelector.tsx    # Car selection UI
+│   ├── DashboardUI.tsx        # Car interior dashboard (EXPORTS from car/)
+│   └── [others]               # Accessibility, bookmarks, history, etc.
+├── car/                       # Car interior mode implementation
+│   ├── index.ts               # Car mode API exports
+│   ├── CarInterior.ts         # Three.js car scene and animations
+│   ├── CarAnimator.ts         # Animation loop management
+│   ├── SelectivePostProcessing.ts  # Dashboard UI rendering
+│   ├── DashboardUI.tsx        # Dashboard UI React wrapper
+│   └── shaders/               # WGSL shaders for post-processing
+├── renderer/                  # WebGPU rendering system
+│   ├── Renderer.ts            # Main WebGPU renderer
+│   ├── types.ts               # Shader and render mode types
+│   └── shaders/               # WGSL shader files
+├── hooks/                     # Custom React hooks
+│   ├── useKeyboardShortcuts.tsx     # Keyboard shortcuts & accessibility
+│   ├── useBookmarks.tsx             # Bookmark management
+│   ├── useLocationHistory.tsx       # Navigation history
+│   ├── useSnapshots.tsx             # Screenshot functionality
+│   └── usePerformanceMonitor.tsx    # Performance metrics
+└── utils/                     # Utility functions
+    ├── navigation.ts          # Link finding and route planning
+    └── [others]               # Helper utilities
+```
 
----
+## Key Features & Implementation
 
-## Stack at a Glance
+### 1. **Street View Rendering**
+- **Entry Point**: `src/components/WebGPUCanvas.tsx` → `src/renderer/Renderer.ts`
+- **How it works**: Captures hidden Google Maps canvas, uploads to GPU texture, renders via `streetview.wgsl`
+- **Critical Code**: `Renderer.ts` handles dynamic texture resizing and external image copying
 
-| Layer | Technology | File/Location |
-|---|---|---|
-| Framework | React 19 + TypeScript 4.9 | `src/` |
-| Build | Create React App (react-scripts 5) | `package.json` |
-| GPU rendering | WebGPU (WGSL shaders) | `src/renderer/`, `public/shaders/` |
-| 3D overlay | Three.js 0.160 | `src/car/` |
-| Maps | Google Maps JS API (loaded dynamically) | `src/components/StreetView.tsx` |
-| State | React hooks only (`useState`, `useRef`) | local to components |
+### 2. **Car Interior Mode**
+- **Entry Point**: `src/car/index.ts` → `src/car/CarInterior.ts`
+- **Features**:
+  - Real-time 3D steering wheel animation (A/D or Arrow keys)
+  - Functional windshield wipers (animated sweep, toggle control)
+  - Live dashboard gauges (speedometer 0-100 km/h, tachometer 0-8000 RPM)
+  - Side mirrors (positioned for realistic viewing)
+  - Toggleable headlights with spotlight effects
+  - Dashboard UI in React (`DashboardUI.tsx`)
+- **Control Restrictions**: Only WASD/Arrow keys affect car heading; no mouse steering
+- **Integration**: `App.tsx` calls `setCarSteering()`, `setCarWipers()`, `updateCarGauges()`
 
----
+### 3. **Input Handling**
+- **Entry Point**: `src/components/InputHandler.tsx`
+- **Modes**:
+  - **Free Look**: Mouse + WASD for heading/pitch control
+  - **Car Mode**: WASD for steering, mouse for head look only
+- **Keyboard Shortcuts**: Managed by `useKeyboardShortcuts.tsx` hook
+- **Accessibility**: Full keyboard navigation support
 
-## Common Commands
+### 4. **Navigation & Route Planning**
+- **Best Link Finding**: `src/utils/navigation.ts` maps desired direction to available panorama links
+- **Cruise Mode**: Auto-advances through best available links on interval
+- **Route Planning**: Uses Google Directions API to calculate walking paths
+- **Critical Math**: `findBestLink()` calculates angles; errors here cause backwards walking
 
+### 5. **Dashboard Features**
+- **Bookmarks**: Save/load location markers with custom notes
+- **History**: Track visited locations with breadcrumb trail
+- **Snapshots**: Capture WebGPU canvas as PNG with metadata
+- **Color Grading**: Apply tone-mapping and color adjustments
+- **Performance Stats**: Real-time FPS, memory, and rendering metrics
+
+### 6. **Accessibility**
+- **Keyboard Shortcuts**: Full control without mouse
+- **Screen Reader Support**: ARIA labels and announcements
+- **Skip Links**: Jump to main content
+- **Settings**: User-configurable keyboard bindings, UI zoom levels
+
+## Critical Hotspots & Gotchas
+
+### 🔴 Canvas Scraping (StreetView.tsx)
+**Why fragile**: Google Maps doesn't expose canvas officially. Code uses `MutationObserver` to find largest `<canvas>` element.
+
+**Risks**:
+- If Google changes DOM structure, code breaks
+- Canvas may not be available immediately
+- Multiple canvases exist; size sorting heuristic could fail
+
+**Best Practice**: Add defensive checks before accessing `canvasElement.getContext('webgl2')`
+
+### 🔴 Coordinate System Complexity (App.tsx, navigation.ts)
+**Why complex**:
+- Heading/pitch state sync'd back to Google Panorama
+- Link finding algorithm calculates 3D angles
+- Zoom is inverted then re-mapped
+
+**Best Practice**: Test `findBestLink()` thoroughly when modifying; tiny math errors cause navigation failure
+
+### 🔴 WebGPU Texture Management (Renderer.ts)
+**Why complex**: Must handle dynamic resize, transient source failures, external image copying
+
+**Best Practice**: Always wrap `device.queue.copyExternalImageToTexture()` in try-catch; validate source dimensions before upload
+
+### 🔴 Ghost Documentation in AGENTS.md
+**Known Issue**: Documents non-existent "Fluid Simulation" feature. RenderMode only supports `'streetview'`.
+
+**Action**: Ignore "Fluid Simulation" sections unless explicitly tasked to re-implement.
+
+### 🔴 Input Event Hijacking
+**Issue**: `InputHandler` attaches to `window` globally, so UI overlays hijack events unless `e.stopPropagation()` is called.
+
+**Best Practice**: Any new UI overlay must block mouse/keyboard event propagation.
+
+### 🔴 Hardcoded API Key
+**Security Issue**: Google Maps API key in `App.tsx` is hardcoded. Should be environment variable in production.
+
+**Action**: Never commit new API keys; use `.env` file locally.
+
+## Common Tasks & Workflows
+
+### Adding a New Feature to Car Interior
+1. Add 3D geometry to `CarInterior.ts` constructor
+2. Export control function from `src/car/index.ts`
+3. Call from `App.tsx` in render loop or event handler
+4. Wire UI button in `DashboardUI.tsx`
+
+Example:
+```typescript
+// 1. In CarInterior.ts
+private sunroof: THREE.Group;
+public setSunroofPosition(angle: number) {
+  this.sunroof.rotation.x = THREE.MathUtils.degToRad(angle);
+}
+
+// 2. In car/index.ts
+export function setSunroofAngle(angle: number) {
+  if (carScene?.carInterior) carScene.carInterior.setSunroofPosition(angle);
+}
+
+// 3. In DashboardUI.tsx
+<button onClick={() => setSunroofAngle(45)}>Open Sunroof</button>
+```
+
+### Debugging Navigation Issues
+1. Check `console.log()` in `findBestLink()` to see calculated angles
+2. Verify `panorama.getLinks()` returns expected data
+3. Test with specific coordinates to isolate problem
+
+### Profiling Performance
+- Use `PerformanceStatsOverlay` component (already in App.tsx)
+- Check WebGPU queue timing and texture upload size
+- Monitor steering/wiper animation frames in browser DevTools
+
+## State Management Patterns
+
+### Global App State (App.tsx)
+```typescript
+const [heading, setHeading] = useState(0);        // Camera rotation
+const [pitch, setPitch] = useState(0);            // Camera tilt
+const [zoom, setZoom] = useState(1);              // Zoom level
+const [isCarMode, setIsCarMode] = useState(false);// Car mode toggle
+```
+
+### Persistent Refs (useRef)
+```typescript
+const rendererRef = useRef<Renderer | null>(null);   // Persists across renders
+const panoramaRef = useRef<google.maps.StreetViewPanorama>(null);
+const carAnimatorRef = useRef<CarAnimator | null>(null);
+```
+
+### Custom Hooks Pattern
+```typescript
+const { bookmarks, addBookmark } = useBookmarks();
+const { history, navigateTo } = useLocationHistory();
+const { snapshots, takeSnapshot } = useSnapshots();
+```
+
+## Testing & Validation
+
+### Unit Tests
 ```bash
-npm install          # install deps
-npm start            # dev server → http://localhost:3000
-npm run build        # production build → build/
-npm test             # jest + react-testing-library
-python deploy.py     # deploy build/ via SFTP (prompts for password)
+npm test
 ```
 
----
-
-## Architecture in One Picture
-
-```
-Google Maps API (hidden DOM)
-        │
-        │ MutationObserver
-        ▼
-  StreetView.tsx ──canvas ref──► App.tsx ──► WebGPUCanvas.tsx
-                                                   │
-                                            Renderer.ts (WebGPU)
-                                           ┌────────────────────┐
-                                           │ Pass 1: panorama   │
-                                           │  streetview.wgsl   │
-                                           │  → rgba16float HDR │
-                                           │ Pass 2: post-proc  │
-                                           │  weather-post.wgsl │
-                                           │  → screen canvas   │
-                                           └────────────────────┘
-                                                   │ (layered on top)
-                                           CarInterior.ts (Three.js)
-                                           DashboardUI.tsx (React)
-```
-
-**Navigation flow**: User input → `InputHandler.tsx` → App state (`heading`/`pitch`/`zoom`)
-→ `panorama.setPov()` → Google Maps rotates hidden canvas → Renderer uploads new pixels.
-
----
-
-## Critical Files
-
-| File | Role |
-|---|---|
-| `src/App.tsx` | Central mediator. Owns all state. Do not duplicate state here. |
-| `src/components/StreetView.tsx` | Canvas scraper — extremely fragile (see below) |
-| `src/renderer/Renderer.ts` | WebGPU orchestrator: dual-pass render pipeline |
-| `src/components/InputHandler.tsx` | Global `window` event listeners (see below) |
-| `src/utils/navigation.ts` | `findBestLink()` — do not break heading math |
-| `public/shaders/streetview.wgsl` | Pass 1 shader: panorama texture + zoom/pan |
-| `public/shaders/weather-post.wgsl` | Pass 2 shader: HDR color grading + rain/snow |
-| `src/car/CarInterior.ts` | Three.js 3D car scene |
-| `src/car/VehicleManager.ts` | Vehicle configs (sedan, convertible, lab, limo) |
-| `src/config/visualPresets.ts` | Quality levels (low/medium/high/ultra) |
-
----
-
-## Danger Zones — Read Before Touching
-
-### 1. Canvas Scraping (`src/components/StreetView.tsx`)
-
-Google Maps does **not** expose a public canvas API. The code uses `MutationObserver`
-to watch the DOM, collects all `<canvas>` elements, sorts by area, and picks the
-largest one ≥256×256 pixels.
-
-**Risk**: If Google changes their internal DOM structure, canvas detection silently breaks.
-`onCanvasReady` simply won't fire and the WebGPU output stays black.
-**Do not** add assumptions about canvas element IDs, class names, or tree depth.
-
-### 2. Input Event Hijacking (`src/components/InputHandler.tsx`)
-
-Listeners are attached to `window`. Every UI overlay (panels, modals, inputs) **must**
-call `e.stopPropagation()` on mouse and keyboard events, or the panorama will spin when
-the user types or clicks buttons.
-
-### 3. Navigation Math (`src/utils/navigation.ts` → `findBestLink`)
-
-`findBestLink` maps `'forward' | 'backward' | 'left' | 'right'` to the nearest available
-panorama link by angle difference. The 45° threshold is intentional. Small errors here
-cause the user to walk backwards or loop in circles. Test any changes manually in cruise
-mode.
-
-### 4. Dual-Pass Render Pipeline (`src/renderer/Renderer.ts`)
-
-- **Pass 1** (`streetview.wgsl`) renders to an `rgba16float` intermediate texture (HDR).
-- **Pass 2** (`weather-post.wgsl`) reads that texture and writes to the canvas-format surface.
-
-`ensureIntermediateTexture()` lazily creates/resizes the HDR texture. If canvas dimensions
-change mid-frame the old texture view becomes invalid — do not cache `GPUTextureView` across frames.
-
-### 5. Google Maps API Key
-
-The key is hardcoded in `src/App.tsx`. **Do not commit new keys.** In production it should
-be in an environment variable (`REACT_APP_MAPS_API_KEY`) and restricted by HTTP referrer.
-
----
-
-## Ghost Code Warning
-
-`AGENTS.md` and older docs reference a "Fluid Simulation" with velocity/advection shaders.
-**This code does not exist.** `RenderMode` only supports `'streetview'`. Do not attempt
-to wire up fluid simulation unless explicitly asked to implement it from scratch.
-
----
-
-## Car Mode
-
-Car mode layers a Three.js scene over the WebGPU canvas.
-
-**Entry**: `src/car/index.ts` exports `initCarMode`, `toggleCarMode`, `updateCarMode`, `disposeCarMode`.
-**Vehicles**: `sedan | convertible | science-lab | limousine` — configs in `VehicleManager.ts`.
-  - **Future**: `streetcar | trolley` could be added as open-air transit models with exterior-facing viewports
-**Dashboard**: `src/car/DashboardUI.tsx` (React). Buttons trigger car module functions directly.
-**Animations**: Steering wheel (A/D), wipers (toggle), gauges updated via `updateCarGauges()`.
-
-When adding new vehicle features, add config to `VehicleManager.ts` first, then implement
-in `CarInterior.ts`. Do not put vehicle-specific logic in `App.tsx`.
-
----
-
-## Shader System
-
-WGSL shaders in `public/shaders/` are loaded at runtime via `fetch('./shaders/name.wgsl')`.
-They are NOT bundled by webpack; they are static files served from `public/`.
-
-When adding a new shader:
-1. Put `.wgsl` file in `public/shaders/`
-2. Add pipeline creation method in `Renderer.ts`
-3. Insert pass into `renderStreetView()` in the correct order
-4. Add a quality gate in `visualPresets.ts` if the effect is expensive
-
-`weather-post.wgsl` uniforms layout:
-```
-[0] vibrance  [1] saturation  [2] contrast  [3] exposure
-[4] temperature  [5] tint  [6] time  [7] rainIntensity
-[8] snowIntensity  [9] wind  [10] speed  [11-15] padding
-```
-
----
-
-## Adding New UI Panels
-
-1. Create component in `src/components/MyPanel.tsx`
-2. Add state (`isMyPanelOpen`) and toggle in `App.tsx`
-3. Register keyboard shortcut in `useKeyboardShortcuts.tsx`
-4. Add `e.stopPropagation()` on **all** mouse and keyboard events inside the panel
-5. Add skip link if the panel is a significant UI region
-
----
-
-## Testing
-
+### Build & Run Locally
 ```bash
-npm test                  # runs all tests in watch mode
-npm test -- --watchAll=false   # single run (CI)
+npm install
+npm start  # Starts dev server at http://localhost:3000
 ```
 
-Tests use Jest + React Testing Library. The test suite is thin — manual testing is still
-required for WebGPU rendering and canvas detection. `findBestLink` is a good candidate
-for unit tests if you add navigation logic.
-
----
+### Common Issues
+| Issue | Solution |
+|-------|----------|
+| Black canvas | Check if Google Maps canvas detected, verify GPU support |
+| Jerky steering | Lower animation frame rate, check for RAF conflicts |
+| Missing textures | Verify shader URLs in `public/` directory |
+| API errors | Check API key limits, enable Maps/Directions APIs |
 
 ## Deployment
 
+### Production Build
 ```bash
-npm run build          # creates build/
-python deploy.py       # SFTP upload to test.1ink.us/streetview
+npm run build  # Creates optimized bundle in build/
 ```
 
-`deploy.py` prompts for the server password. Do not hardcode credentials.
+### Environment Variables
+Create `.env` file (not committed):
+```
+REACT_APP_MAPS_API_KEY=<your-key>
+```
+
+### Web Server
+Requires HTTPS for `navigator.gpu` WebGPU access.
+
+## Code Quality Standards
+
+- **TypeScript Strict Mode**: Enforced by `tsconfig.json`
+- **No Console Spam**: Remove debug logs before commit
+- **Comments**: Only for non-obvious logic; code should self-document
+- **Imports**: Organize by external deps, internal modules, types
+- **Naming**: camelCase for variables/functions, PascalCase for classes/components
+
+## Resources
+
+- **WebGPU Spec**: https://gpuweb.github.io/gpuweb/
+- **WGSL Reference**: https://www.w3.org/TR/WGSL/
+- **Three.js Docs**: https://threejs.org/docs/
+- **React 19 Docs**: https://react.dev/
+- **Google Maps API**: https://developers.google.com/maps
+
+## Git Workflow
+
+**Branch Convention**: `claude/<feature-description>-<session-id>`
+
+1. **Make changes** on feature branch
+2. **Commit early and often**: `git commit -m "Clear message"`
+3. **Push to origin**: `git push -u origin <branch-name>`
+4. **Create PR** for code review
+
+**Commit Message Format**:
+```
+Short, imperative summary (50 chars max)
+
+Optional detailed explanation. Reference issues/PRs:
+Closes #123
+Related to CAR_MODE_ENHANCEMENTS.md
+```
+
+## Getting Help
+
+- Read `DEVELOPER_CONTEXT.md` for architecture deep-dive
+- Check `CAR_MODE_ENHANCEMENTS.md` for car feature documentation
+- Review `feature_expansion_plan.md` for planned work
+- Inspect `tasks/` directory for issue tracking
 
 ---
 
-## Code Conventions
-
-- **TypeScript strict mode** — no `any` unless absolutely necessary
-- **Functional components** with hooks — no class components
-- **PascalCase** for components, **camelCase** for everything else
-- State owned as high as needed but no higher — prefer hooks over prop drilling
-- `useCallback` for handlers passed to children
-- Always return a cleanup function from `useEffect` if you register timers or observers
-- `e.stopPropagation()` on all events inside UI overlays
-
----
-
-## Quick Diagnostic Checklist
-
-| Symptom | Likely Cause | Where to look |
-|---|---|---|
-| Black screen on load | Canvas detection failed | `StreetView.tsx` console logs |
-| Panorama not updating | `copyExternalImageToTexture` silent error | `Renderer.ts` try/catch |
-| Navigation loops / walks backward | `findBestLink` angle math | `navigation.ts` |
-| UI buttons spin the camera | Missing `stopPropagation` | The new component's event handlers |
-| WebGPU unavailable | Browser too old or no HTTPS | `navigator.gpu` check in console |
-| Car mode not visible | Three.js canvas z-index | `CarInterior.ts` canvas style |
+**Last Updated**: March 11, 2026
+**Maintainer**: Claude Code
