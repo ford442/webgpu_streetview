@@ -624,7 +624,7 @@ export class Renderer {
         });
 
         const names = ['fade', 'zoom', 'zoom-blur', 'zoom-chromatic'] as const;
-        for (const name of names) {
+        const pipelinePromises = names.map(async (name) => {
             const url = `${baseUrl}/shaders/transition-${name}.wgsl`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
@@ -647,6 +647,11 @@ export class Renderer {
                 primitive: { topology: 'triangle-list' },
             });
 
+            return { name, pipeline };
+        });
+
+        const results = await Promise.all(pipelinePromises);
+        for (const { name, pipeline } of results) {
             this.transitionPipelines.set(name, pipeline);
         }
 
