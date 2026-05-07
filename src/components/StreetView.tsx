@@ -51,6 +51,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 const mapInstance = new google.maps.Map(mapDiv, {
                     center: startLocation,
                     zoom: 12,
+                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'webgpu-streetview-default',
                     disableDefaultUI: true,
                 });
 

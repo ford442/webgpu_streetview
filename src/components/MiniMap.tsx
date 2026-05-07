@@ -85,6 +85,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
             const gMap = new google.maps.Map(mapRef.current!, {
                 center,
                 zoom: 18,
+                mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'webgpu-streetview-default',
                 mapTypeId: google.maps.MapTypeId.ROADMAP,
                 streetViewControl: false,
                 fullscreenControl: false,
