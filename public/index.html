@@ -11,16 +11,6 @@
     <meta http-equiv="Cross-Origin-Embedder-Policy" content="credentialless">
     <style>
       body { margin: 0; background-color: #000; overflow: hidden; }
-      /* Suppress the Google Maps "This page can't load Google Maps correctly" warning
-         overlay. The map is hidden behind WebGPU canvas; our own error UI handles
-         actual failures via the onError prop in StreetView.tsx. */
-      .gm-err-container,
-      .gm-err-content,
-      .gm-err-message,
-      .gm-err-title,
-      .gm-err-icon,
-      .gm-err-map,
-      .gm-err-code { display: none !important; }
     </style>
   </head>
   <script>

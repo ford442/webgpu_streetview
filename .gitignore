@@ -1,6 +1,10 @@
 # Node modules
 node_modules/
 
+# Local environment files with real secrets (never commit)
+.env.local
+.env.*.local
+
 # npm lockfile
 package-lock.json
 
