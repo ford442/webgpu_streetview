@@ -50,8 +50,14 @@ import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geo
 import { getTopStationForLocation } from './services/radioBrowserService';
 
 
-// Google Maps API Key
-const GOOGLE_MAPS_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
+// Google Maps API Key — set REACT_APP_MAPS_API_KEY in .env.local (never commit real keys)
+const GOOGLE_MAPS_KEY = process.env.REACT_APP_MAPS_API_KEY || "";
+if (!GOOGLE_MAPS_KEY) {
+  console.warn(
+    "[WebGPU StreetView] REACT_APP_MAPS_API_KEY is not set. " +
+    "Create a .env.local file with REACT_APP_MAPS_API_KEY=<your key> and rebuild."
+  );
+}
 
 /**
  * InnerApp - The actual app content that uses the providers.

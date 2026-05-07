@@ -90,11 +90,19 @@ npm install
 npm start          # dev server at http://localhost:3000
 ```
 
-The Google Maps API key is currently hardcoded in `src/App.tsx`. For production, move it to an environment variable:
+The Google Maps API key is read from the `REACT_APP_MAPS_API_KEY` environment variable at build time.
+Create a `.env.local` file (gitignored) with your key before running the dev server or building:
 
 ```bash
-# .env (do not commit)
+# .env.local  ← gitignored, never commit real keys
 REACT_APP_MAPS_API_KEY=your_key_here
+```
+
+For production builds, set the variable in your shell before running `npm run build`:
+
+```bash
+export REACT_APP_MAPS_API_KEY="your-production-key"
+npm run build
 ```
 
 ### Build & Deploy
