@@ -299,10 +299,9 @@ const MiniMap: React.FC<MiniMapProps> = ({
 
         // Clear old markers
         breadcrumbMarkersRef.current.forEach(m => m.map = null);
-        breadcrumbMarkersRef.current = [];
 
-        // Add new markers
-        breadcrumbs.forEach((pos, index) => {
+        // Add new markers - Optimized to create all markers first and set ref once
+        breadcrumbMarkersRef.current = breadcrumbs.map((pos, index) => {
             const crumbContent = document.createElement('div');
             crumbContent.style.cssText = `
                  width: 8px; height: 8px; background: #888; border-radius: 50%; 
@@ -322,7 +321,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
                     panorama.setPosition(pos);
                 });
 
-                breadcrumbMarkersRef.current.push(crumb);
+                return crumb;
             } else {
                 // Fallback to standard marker if AdvancedMarkerElement not available
                 const crumb = new google.maps.Marker({
@@ -335,7 +334,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
                     panorama.setPosition(pos);
                 });
 
-                breadcrumbMarkersRef.current.push(crumb);
+                return crumb;
             }
         });
 
@@ -391,8 +390,8 @@ const MiniMap: React.FC<MiniMapProps> = ({
         if (!showCryptoMarkers) return;
 
         if (viewMode === 'map' && map) {
-            // Add Google Maps markers
-            CRYPTO_COMPANIES.forEach((company) => {
+            // Add Google Maps markers - Optimized to create all markers first and set ref once
+            cryptoMarkersRef.current = CRYPTO_COMPANIES.map((company) => {
                 const content = document.createElement('div');
                 content.style.cssText = `
                     width: 20px; height: 20px; background: #FFD700; border-radius: 50%;
@@ -416,12 +415,13 @@ const MiniMap: React.FC<MiniMapProps> = ({
                         teleportTo(latLng);
                     });
 
-                    cryptoMarkersRef.current.push(marker);
+                    return marker;
                 }
-            });
+                return null;
+            }).filter((m): m is google.maps.marker.AdvancedMarkerElement => m !== null);
         } else if (viewMode === 'globe' && cesiumViewer) {
-            // Add Cesium entities
-            CRYPTO_COMPANIES.forEach((company) => {
+            // Add Cesium entities - Optimized to create all entities first and set ref once
+            cryptoMarkersRef.current = CRYPTO_COMPANIES.map((company) => {
                 const entity = cesiumViewer.entities.add({
                     position: Cesium.Cartesian3.fromDegrees(company.lng, company.lat),
                     billboard: {
@@ -449,7 +449,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
                 // Add click handler for teleportation
                 entity.description = new Cesium.ConstantProperty(company.description);
 
-                cryptoMarkersRef.current.push(entity);
+                return entity;
             });
         }
     }, [showCryptoMarkers, viewMode, map, cesiumViewer, teleportTo]);
