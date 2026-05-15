@@ -62,17 +62,26 @@ interface StreetViewProviderProps {
   initialPitch?: number;
 }
 
+let sharedOffscreenCanvas: HTMLCanvasElement | null = null;
+let sharedOffscreenCtx: CanvasRenderingContext2D | null = null;
+
 /** Lightweight pixel fingerprint to detect canvas stability */
 function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
   const w = canvas.width;
   const h = canvas.height;
   if (w < 256 || h < 256) return '';
   try {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = 4;
-    offscreen.height = 4;
-    const ctx = offscreen.getContext('2d');
+    if (!sharedOffscreenCanvas) {
+      sharedOffscreenCanvas = document.createElement('canvas');
+      sharedOffscreenCanvas.width = 4;
+      sharedOffscreenCanvas.height = 4;
+    }
+    if (!sharedOffscreenCtx) {
+      sharedOffscreenCtx = sharedOffscreenCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    const ctx = sharedOffscreenCtx;
     if (!ctx) return '';
+
     const sx = Math.floor(w / 2 - 64);
     const sy = Math.floor(h / 2 - 64);
     ctx.drawImage(canvas, sx, sy, 128, 128, 0, 0, 4, 4);
