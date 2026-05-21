@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { loadMapsApi } from '../services/maps/loader';
 
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
@@ -6,14 +7,6 @@ interface StreetViewProps {
     initialPosition?: { lat: number; lng: number };
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
     onError?: (message: string) => void;
-}
-
-// Global callback for Google Maps async loading
-declare global {
-    interface Window {
-        initGoogleMaps?: () => void;
-        google?: typeof google;
-    }
 }
 
 const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError }) => {
@@ -48,12 +41,18 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             document.body.appendChild(mapDiv);
 
             try {
-                const mapInstance = new google.maps.Map(mapDiv, {
+                // Only pass mapId when a registered Cloud Map ID is configured.
+                // The placeholder 'webgpu-streetview-default' is NOT a registered ID
+                // and causes failing MapsConfigService requests on every page load.
+                const mapOptions: google.maps.MapOptions = {
                     center: startLocation,
                     zoom: 12,
-                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'webgpu-streetview-default',
                     disableDefaultUI: true,
-                });
+                };
+                if (process.env.REACT_APP_GOOGLE_MAPS_MAP_ID) {
+                    mapOptions.mapId = process.env.REACT_APP_GOOGLE_MAPS_MAP_ID;
+                }
+                const mapInstance = new google.maps.Map(mapDiv, mapOptions);
 
                 const panoInstance = new google.maps.StreetViewPanorama(panoRef.current, {
                     position: startLocation,
@@ -154,41 +153,17 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             }
         };
 
-        // Load Google Maps API if not already loaded
-        if (!window.google?.maps) {
-            // Set up global callback
-            window.initGoogleMaps = () => {
-                if (isMounted) {
-                    cleanup = initialize();
-                }
-            };
-
-            const script = document.createElement('script');
-            // Pin to stable version instead of weekly to avoid silent breakage
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=3.56&callback=initGoogleMaps&libraries=marker`;
-            script.async = true;
-
-            let loadTimeout: ReturnType<typeof setTimeout> | null = null;
-
-            script.onload = () => {
-                // Script tag loaded, but callback may still be pending
-                loadTimeout = setTimeout(() => {
-                    if (isMounted && !window.google?.maps) {
-                        console.error('[StreetView] Google Maps API callback never fired');
-                        onError?.('Google Maps API failed to initialize. Please check your network connection and try again.');
-                    }
-                }, 10000);
-            };
-
-            script.onerror = () => {
-                console.error('[StreetView] Failed to load Google Maps API');
-                if (loadTimeout) clearTimeout(loadTimeout);
-                onError?.('Failed to load Google Maps API. Please check your network connection and try again.');
-            };
-            document.head.appendChild(script);
-        } else {
-            cleanup = initialize();
-        }
+        // Load Google Maps API via singleton loader (idempotent, no callback, no libraries)
+        loadMapsApi(apiKey).then(() => {
+            if (isMounted) {
+                cleanup = initialize();
+            }
+        }).catch((err) => {
+            if (isMounted) {
+                console.error('[StreetView] Maps API load failed:', err);
+                onError?.('Failed to load Google Maps API. Please check your API key and network connection.');
+            }
+        });
 
         return () => {
             isMounted = false;
