@@ -267,15 +267,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         viewerRef.current = viewer;
 
-        // Street View coverage tile overlay (blue lines)
-        const svCoverageLayer = viewer.imageryLayers.addImageryProvider(
-            new Cesium.UrlTemplateImageryProvider({
-                url: 'https://mts1.googleapis.com/vt?hl=en-US&lyrs=svv|cb_client:apiv3&x={x}&y={y}&z={z}',
-                credit: '\u00a9 Google',
-                maximumLevel: 19,
-            })
-        );
-        svCoverageLayer.alpha = 0.7;
+        // Note: The mts1.googleapis.com/vt Street View coverage overlay has been
+        // removed — it is an undocumented endpoint that can 403 silently, causing
+        // Cesium to retry tiles indefinitely and contributing to billing risk.
 
         // Lazy-init StreetViewService for pre-flight validation
         if (!svServiceRef.current && (window as any).google?.maps) {

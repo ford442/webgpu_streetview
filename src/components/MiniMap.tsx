@@ -82,10 +82,12 @@ const MiniMap: React.FC<MiniMapProps> = ({
             const initialPos = panorama.getPosition();
             const center = initialPos ?? new google.maps.LatLng(0, 0);
 
-            const gMap = new google.maps.Map(mapRef.current!, {
+            // Only pass mapId when a registered Cloud Map ID is configured.
+            // The placeholder 'webgpu-streetview-default' is NOT a registered ID
+            // and causes failing MapsConfigService requests on every map creation.
+            const mapOptions: google.maps.MapOptions = {
                 center,
                 zoom: 18,
-                mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'webgpu-streetview-default',
                 mapTypeId: google.maps.MapTypeId.ROADMAP,
                 streetViewControl: false,
                 fullscreenControl: false,
@@ -96,11 +98,16 @@ const MiniMap: React.FC<MiniMapProps> = ({
                     { featureType: 'poi', stylers: [{ visibility: 'off' }] },
                     { featureType: 'transit', stylers: [{ visibility: 'off' }] },
                 ],
-            });
+            };
+            if (process.env.REACT_APP_GOOGLE_MAPS_MAP_ID) {
+                mapOptions.mapId = process.env.REACT_APP_GOOGLE_MAPS_MAP_ID;
+            }
 
-            // Street View coverage layer
-            const svLayer = new google.maps.StreetViewCoverageLayer();
-            svLayer.setMap(gMap);
+            const gMap = new google.maps.Map(mapRef.current!, mapOptions);
+
+            // Note: StreetViewCoverageLayer is intentionally omitted — it
+            // auto-fetches Street View tile imagery on every map load, which
+            // adds billing volume without user action.
 
             // Create heading-aware marker
             let gMarker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker | null = null;

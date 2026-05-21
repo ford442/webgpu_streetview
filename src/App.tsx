@@ -48,6 +48,7 @@ import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
 import { getTopStationForLocation } from './services/radioBrowserService';
+import { onMapsAuthFailure } from './services/maps/loader';
 
 
 // Google Maps API Key — set REACT_APP_MAPS_API_KEY in .env.local (never commit real keys)
@@ -119,6 +120,11 @@ function InnerApp() {
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [navPending, setNavPending] = useState(false);
+
+  // Maps API auth/key status
+  const [mapsAuthFailed, setMapsAuthFailed] = useState(false);
+  const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!GOOGLE_MAPS_KEY);
+  const [showAuthFailedBanner, setShowAuthFailedBanner] = useState(false);
   
   // Panel visibility
   const [isBookmarkPanelOpen, setIsBookmarkPanelOpen] = useState(false);
@@ -202,6 +208,18 @@ function InnerApp() {
       console.log('[App] Canvas is ready');
     }
   }, [canvas, isCanvasReady]);
+
+  // Subscribe to Maps API auth failures (invalid key, referrer-blocked, billing disabled)
+  useEffect(() => {
+    const unsubscribe = onMapsAuthFailure(() => {
+      setMapsAuthFailed(true);
+      setShowAuthFailedBanner(true);
+      // Auto-disable cruise mode on auth failure — prevents indefinite error spam
+      setIsCruiseMode(false);
+      console.error('[App] Maps API auth failure — cruise mode disabled');
+    });
+    return unsubscribe;
+  }, []);
   
   // Handlers
   const handleStart = () => {
@@ -216,6 +234,8 @@ function InnerApp() {
   const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const useTransitionRef = useRef(isTransitioning);
   useTransitionRef.current = isTransitioning;
+  // Circuit-breaker: counts consecutive advance failures; auto-disables cruise after 3
+  const cruiseFailCountRef = useRef(0);
   
   useEffect(() => {
     if (!isCruiseMode || !panorama || !advance) {
@@ -223,6 +243,8 @@ function InnerApp() {
         clearInterval(cruiseIntervalRef.current);
         cruiseIntervalRef.current = null;
       }
+      // Reset failure count whenever cruise is toggled off
+      cruiseFailCountRef.current = 0;
       return;
     }
     const hop = async () => {
@@ -231,10 +253,25 @@ function InnerApp() {
         console.log('[CruiseMode] Skipping hop - still transitioning');
         return;
       }
+      // Halt immediately if auth has already failed
+      if (mapsAuthFailed) {
+        setIsCruiseMode(false);
+        return;
+      }
       // Safe advance — waits for current pano to be ready before moving
       setNavPending(true);
       try {
         await advanceSafe('forward', undefined, cruiseHeadingRef.current);
+        // Successful hop — reset failure counter
+        cruiseFailCountRef.current = 0;
+      } catch (err) {
+        cruiseFailCountRef.current += 1;
+        console.warn(`[CruiseMode] Advance failed (${cruiseFailCountRef.current}/3):`, err);
+        if (cruiseFailCountRef.current >= 3) {
+          console.error('[CruiseMode] 3 consecutive failures — auto-disabling cruise mode');
+          setIsCruiseMode(false);
+          cruiseFailCountRef.current = 0;
+        }
       } finally {
         setNavPending(false);
       }
@@ -245,7 +282,7 @@ function InnerApp() {
       cruiseIntervalRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama, advance, advanceSafe]);
+  }, [isCruiseMode, panorama, advance, advanceSafe, mapsAuthFailed]);
 
   const toggleRadio = () => {
     if (!audioRef.current) return;
@@ -530,6 +567,60 @@ function InnerApp() {
     <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
       {/* Skip link for keyboard navigation */}
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
+
+      {/* Missing API key banner */}
+      {showMissingKeyBanner && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2000,
+            background: 'rgba(180,100,0,0.95)', color: '#fff',
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
+            fontFamily: 'system-ui, sans-serif', fontSize: 14,
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <span style={{ flex: 1 }}>
+            ⚠️ <strong>REACT_APP_MAPS_API_KEY is not set.</strong>{' '}
+            Street View will not load. Create a <code>.env.local</code> file with your Maps API key and rebuild.
+          </span>
+          <button
+            onClick={() => setShowMissingKeyBanner(false)}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Maps API auth-failure banner */}
+      {showAuthFailedBanner && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
+            background: 'rgba(180,0,0,0.95)', color: '#fff',
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
+            fontFamily: 'system-ui, sans-serif', fontSize: 14,
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <span style={{ flex: 1 }}>
+            🔑 <strong>Google Maps API authentication failed.</strong>{' '}
+            The API key may be invalid, referrer-restricted, or billing may be disabled. Cruise mode has been paused.
+          </span>
+          <button
+            onClick={() => setShowAuthFailedBanner(false)}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       
       {showWelcome && <WelcomeModal onStart={handleStart} />}
 
