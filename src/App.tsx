@@ -258,22 +258,30 @@ function InnerApp() {
         setIsCruiseMode(false);
         return;
       }
-      // Safe advance — waits for current pano to be ready before moving
+      // Snapshot the panoId before the hop. `advanceSafe` doesn't throw on
+      // no-coverage / no-link — it just no-ops — so we detect a stuck hop by
+      // checking whether the panorama actually moved.
+      const panoIdBefore = panorama.getPano();
       setNavPending(true);
       try {
         await advanceSafe('forward', undefined, cruiseHeadingRef.current);
-        // Successful hop — reset failure counter
+      } finally {
+        setNavPending(false);
+      }
+      // Give `pano.setPano(...)` a moment to fire `pano_changed` before we
+      // judge the hop. 1.5s ≈ half the cruise interval.
+      await new Promise(r => setTimeout(r, 1500));
+      const panoIdAfter = panorama.getPano();
+      if (panoIdAfter && panoIdAfter !== panoIdBefore) {
         cruiseFailCountRef.current = 0;
-      } catch (err) {
+      } else {
         cruiseFailCountRef.current += 1;
-        console.warn(`[CruiseMode] Advance failed (${cruiseFailCountRef.current}/3):`, err);
+        console.warn(`[CruiseMode] Hop did not advance (${cruiseFailCountRef.current}/3)`);
         if (cruiseFailCountRef.current >= 3) {
-          console.error('[CruiseMode] 3 consecutive failures — auto-disabling cruise mode');
+          console.error('[CruiseMode] 3 consecutive stuck hops — auto-disabling cruise mode');
           setIsCruiseMode(false);
           cruiseFailCountRef.current = 0;
         }
-      } finally {
-        setNavPending(false);
       }
     };
     cruiseIntervalRef.current = setInterval(hop, 3000);

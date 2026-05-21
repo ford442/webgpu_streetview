@@ -384,9 +384,12 @@ const MiniMap: React.FC<MiniMapProps> = ({
 
     // Add/Remove Crypto Company Markers
     useEffect(() => {
-        // Clear existing crypto markers
+        // Clear existing crypto markers. Guard the AdvancedMarkerElement access:
+        // the `marker` library is no longer requested at load time, so
+        // `google.maps.marker` is undefined and a direct property access throws.
+        const AdvancedMarker = window.google?.maps?.marker?.AdvancedMarkerElement;
         cryptoMarkersRef.current.forEach(marker => {
-            if (marker instanceof google.maps.marker.AdvancedMarkerElement) {
+            if (AdvancedMarker && marker instanceof AdvancedMarker) {
                 marker.map = null;
             } else if (cesiumViewer && marker instanceof Cesium.Entity) {
                 cesiumViewer.entities.remove(marker);
