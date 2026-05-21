@@ -71,7 +71,7 @@ export function loadMapsApi(apiKey: string): Promise<void> {
         '[Maps Loader] gm_authFailure — API key invalid, referrer-blocked, or billing disabled'
       );
       authFailureListeners.forEach(cb => {
-        try { cb(); } catch (e) { /* ignore */ }
+        try { cb(); } catch (e) { console.error('[Maps Loader] Auth failure listener error:', e); }
       });
     };
   }

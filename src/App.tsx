@@ -584,7 +584,7 @@ function InnerApp() {
         >
           <span style={{ flex: 1 }}>
             ⚠️ <strong>REACT_APP_MAPS_API_KEY is not set.</strong>{' '}
-            Street View will not load. Create a <code>.env.local</code> file with your Maps API key and rebuild.
+            Street View will not load. Set the <code>REACT_APP_MAPS_API_KEY</code> environment variable and restart the dev server (or redeploy for production).
           </span>
           <button
             onClick={() => setShowMissingKeyBanner(false)}
