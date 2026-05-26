@@ -9,6 +9,8 @@
       body { margin: 0; background-color: #000; overflow: hidden; }
     </style>
   </head>
+  <!-- Runtime configuration: set window.MAPS_API_KEY without rebuilding the app -->
+  <script src="%PUBLIC_URL%/config.js"></script>
   <script>
   // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
   const originalGetContext = HTMLCanvasElement.prototype.getContext;

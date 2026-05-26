@@ -51,12 +51,16 @@ import { getTopStationForLocation } from './services/radioBrowserService';
 import { onMapsAuthFailure } from './services/maps/loader';
 
 
-// Google Maps API Key — set REACT_APP_MAPS_API_KEY in .env.local (never commit real keys)
-const GOOGLE_MAPS_KEY = process.env.REACT_APP_MAPS_API_KEY || "";
+// Google Maps API Key resolution (in priority order):
+//  1. window.MAPS_API_KEY  — set at runtime via public/config.js (no rebuild needed)
+//  2. REACT_APP_MAPS_API_KEY — baked in at build time via .env.local / CI env var
+// Never commit real keys. See public/config.js and README for deployment instructions.
+const GOOGLE_MAPS_KEY = window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "";
 if (!GOOGLE_MAPS_KEY) {
   console.warn(
-    "[WebGPU StreetView] REACT_APP_MAPS_API_KEY is not set. " +
-    "Create a .env.local file with REACT_APP_MAPS_API_KEY=<your key> and rebuild."
+    "[WebGPU StreetView] No Maps API key found. " +
+    "Set window.MAPS_API_KEY in public/config.js (preferred) or set " +
+    "REACT_APP_MAPS_API_KEY in .env.local and rebuild."
   );
 }
 
