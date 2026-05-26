@@ -21,36 +21,26 @@ export interface UseWasmModuleResult {
   wasm: StreetViewWasmAPI | null;
   /** True while the WASM binary is being fetched. */
   loading: boolean;
-  /** Set if loading failed (the JS fallback is still available via `wasm`). */
-  error: Error | null;
 }
 
 export function useWasmModule(): UseWasmModuleResult {
   const [wasm, setWasm] = useState<StreetViewWasmAPI | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    loadWasmModule()
-      .then((mod) => {
-        if (!cancelled) {
-          setWasm(mod);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-          setLoading(false);
-        }
-      });
+    loadWasmModule().then((mod) => {
+      if (!cancelled) {
+        setWasm(mod);
+        setLoading(false);
+      }
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return { wasm, loading, error };
+  return { wasm, loading };
 }
 
 /**

@@ -63,7 +63,7 @@ if ! $USE_WAT_ONLY && command -v emcc &>/dev/null; then
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_CXX_FLAGS="$CXXFLAGS"
 
-  emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+  emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
   echo "==> Emscripten build done."
   echo "    WASM: $WASM_OUT"

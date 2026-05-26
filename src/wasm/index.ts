@@ -201,7 +201,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   try {
     // Resolve the WASM URL relative to the public base (Create React App serves
     // public/ at the root, so the file is at /wasm/streetview-wasm.wasm).
-    const wasmUrl = `${process.env.PUBLIC_URL ?? ''}/wasm/streetview-wasm.wasm`;
+    const wasmUrl = `${process.env.PUBLIC_URL || ''}/wasm/streetview-wasm.wasm`;
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const bytes = await response.arrayBuffer();
@@ -246,7 +246,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       seed,
       noise2d,
       fillNoiseBuffer,
-      haversine: _jsHaversine, // haversine uses libm; JS fallback is exact
+      haversine: _jsHaversine, // haversine uses JS (WAT source lacks sin/cos builtins)
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       isWasm: true,

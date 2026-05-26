@@ -19,15 +19,17 @@
 static uint8_t perm[512];
 
 // Gradient vectors for 2-D Perlin noise (8 directions).
+// Diagonal vectors use 1/√2 ≈ 0.7071 for unit-length normalisation.
+static const float SQRT2_INV = 0.70710678f;
 static const float grad2[8][2] = {
-    { 1.0f,  0.0f},
-    {-1.0f,  0.0f},
-    { 0.0f,  1.0f},
-    { 0.0f, -1.0f},
-    { 0.7071f,  0.7071f},
-    {-0.7071f,  0.7071f},
-    { 0.7071f, -0.7071f},
-    {-0.7071f, -0.7071f},
+    { 1.0f,       0.0f      },
+    {-1.0f,       0.0f      },
+    { 0.0f,       1.0f      },
+    { 0.0f,      -1.0f      },
+    { SQRT2_INV,  SQRT2_INV },
+    {-SQRT2_INV,  SQRT2_INV },
+    { SQRT2_INV, -SQRT2_INV },
+    {-SQRT2_INV, -SQRT2_INV },
 };
 
 // ---------------------------------------------------------------------------
@@ -126,7 +128,8 @@ float sw_normalize_angle(float angle) {
 
 float sw_signed_angle_diff(float from, float to) {
     float diff = fmodf((to - from + 180.0f), 360.0f) - 180.0f;
-    if (diff < -180.0f) diff += 360.0f;
+    // fmod can return -180 when the inputs are exactly opposite; keep as -180
+    // per the convention used throughout the codebase (matches navigation.ts).
     return diff;
 }
 
