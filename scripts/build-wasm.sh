@@ -21,6 +21,7 @@
 #   --wat-only   Always use the WAT→WASM path, even if emcc is available.
 
 set -euo pipefail
+source /content/buil*/emsdk/emsdk_env.sh
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$REPO_ROOT/cpp"
