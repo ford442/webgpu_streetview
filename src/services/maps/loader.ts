@@ -16,8 +16,27 @@ declare global {
     google?: typeof google;
     /** Internal: cached in-flight load promise. */
     __mapsApiPromise?: Promise<void>;
+    /**
+     * Runtime API key injected by public/config.js before the React bundle
+     * loads. Takes precedence over the build-time REACT_APP_MAPS_API_KEY env var.
+     */
+    MAPS_API_KEY?: string;
   }
 }
+
+/**
+ * Patterns that identify well-known placeholder / template values that are
+ * NOT real API keys. Treated the same as an empty key — the loader will
+ * reject immediately rather than pass the placeholder to Google Maps and
+ * trigger the confusing "This page can't load Google Maps correctly" overlay.
+ */
+const PLACEHOLDER_KEY_PATTERNS: RegExp[] = [
+  /^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key[_-]?(here)?$/i,
+  /^YOUR_MAPS_API_KEY$/,
+  /^placeholder$/i,
+  /^<.*>$/,          // angle-bracket templates like <YOUR_KEY>
+  /^AIzaSy-placeholder/i,
+];
 
 /** Registered auth-failure callbacks */
 const authFailureListeners: Array<() => void> = [];
@@ -45,10 +64,18 @@ export function onMapsAuthFailure(cb: () => void): () => void {
  * @param apiKey  Maps API key.  If empty the promise rejects immediately.
  */
 export function loadMapsApi(apiKey: string): Promise<void> {
-  // Guard: empty key is a misconfiguration — reject immediately.
-  if (!apiKey) {
+  // Guard: empty key or obvious placeholder — reject immediately with a clear
+  // message rather than passing the value to Google Maps and triggering the
+  // "This page can't load Google Maps correctly" error overlay.
+  const isPlaceholder = apiKey
+    ? PLACEHOLDER_KEY_PATTERNS.some(re => re.test(apiKey.trim()))
+    : false;
+  if (!apiKey || isPlaceholder) {
+    const reason = isPlaceholder ? 'placeholder value detected' : 'key is empty';
     const msg =
-      '[Maps Loader] REACT_APP_MAPS_API_KEY is not set. ' +
+      `[Maps Loader] Google Maps API key not configured (${reason}). ` +
+      'Set window.MAPS_API_KEY in public/config.js (runtime, no rebuild needed) ' +
+      'or set REACT_APP_MAPS_API_KEY in .env.local and rebuild. ' +
       'The Maps API will not load.';
     console.warn(msg);
     return Promise.reject(new Error(msg));
