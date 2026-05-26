@@ -55,7 +55,7 @@ import { onMapsAuthFailure } from './services/maps/loader';
 //  1. window.MAPS_API_KEY  — set at runtime via public/config.js (no rebuild needed)
 //  2. REACT_APP_MAPS_API_KEY — baked in at build time via .env.local / CI env var
 // Never commit real keys. See public/config.js and README for deployment instructions.
-const GOOGLE_MAPS_KEY = (window as Window & { MAPS_API_KEY?: string }).MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "";
+const GOOGLE_MAPS_KEY = window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "";
 if (!GOOGLE_MAPS_KEY) {
   console.warn(
     "[WebGPU StreetView] No Maps API key found. " +

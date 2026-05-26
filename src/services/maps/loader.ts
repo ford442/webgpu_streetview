@@ -67,9 +67,7 @@ export function loadMapsApi(apiKey: string): Promise<void> {
   // Guard: empty key or obvious placeholder — reject immediately with a clear
   // message rather than passing the value to Google Maps and triggering the
   // "This page can't load Google Maps correctly" error overlay.
-  const isPlaceholder = apiKey
-    ? PLACEHOLDER_KEY_PATTERNS.some(re => re.test(apiKey.trim()))
-    : false;
+  const isPlaceholder = PLACEHOLDER_KEY_PATTERNS.some(re => re.test(apiKey?.trim() || ''));
   if (!apiKey || isPlaceholder) {
     const reason = isPlaceholder ? 'placeholder value detected' : 'key is empty';
     const msg =
