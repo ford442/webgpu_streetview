@@ -27,6 +27,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
