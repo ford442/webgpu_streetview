@@ -45,9 +45,13 @@ import {
   SkipLink,
 } from './hooks/useKeyboardShortcuts';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
+import { useCruiseMode } from './hooks/useCruiseMode';
+import { useAutopilot } from './hooks/useAutopilot';
+import { buildAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
+import { useGlobeTeleport } from './hooks/useGlobeTeleport';
+import AppToolbar from './components/AppToolbar';
+import AppBanners from './components/AppBanners';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
-import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
-import { getTopStationForLocation } from './services/radioBrowserService';
 import { onMapsAuthFailure } from './services/maps/loader';
 
 
@@ -120,7 +124,6 @@ function InnerApp() {
     setWebgpuStatus(available ? 'ready' : 'fallback');
   }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
-  const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [navPending, setNavPending] = useState(false);
@@ -232,69 +235,14 @@ function InnerApp() {
   };
   
 
-  // Cruise mode auto-advance — use a ref for heading to avoid restarting the interval on every pan
-  const cruiseHeadingRef = useRef(heading);
-  cruiseHeadingRef.current = heading;
-  const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const useTransitionRef = useRef(isTransitioning);
-  useTransitionRef.current = isTransitioning;
-  // Circuit-breaker: counts consecutive advance failures; auto-disables cruise after 3
-  const cruiseFailCountRef = useRef(0);
-  
-  useEffect(() => {
-    if (!isCruiseMode || !panorama || !advance) {
-      if (cruiseIntervalRef.current) {
-        clearInterval(cruiseIntervalRef.current);
-        cruiseIntervalRef.current = null;
-      }
-      // Reset failure count whenever cruise is toggled off
-      cruiseFailCountRef.current = 0;
-      return;
-    }
-    const hop = async () => {
-      // Skip if currently transitioning between locations
-      if (useTransitionRef.current) {
-        console.log('[CruiseMode] Skipping hop - still transitioning');
-        return;
-      }
-      // Halt immediately if auth has already failed
-      if (mapsAuthFailed) {
-        setIsCruiseMode(false);
-        return;
-      }
-      // Snapshot the panoId before the hop. `advanceSafe` doesn't throw on
-      // no-coverage / no-link — it just no-ops — so we detect a stuck hop by
-      // checking whether the panorama actually moved.
-      const panoIdBefore = panorama.getPano();
-      setNavPending(true);
-      try {
-        await advanceSafe('forward', undefined, cruiseHeadingRef.current);
-      } finally {
-        setNavPending(false);
-      }
-      // Give `pano.setPano(...)` a moment to fire `pano_changed` before we
-      // judge the hop. 1.5s ≈ half the cruise interval.
-      await new Promise(r => setTimeout(r, 1500));
-      const panoIdAfter = panorama.getPano();
-      if (panoIdAfter && panoIdAfter !== panoIdBefore) {
-        cruiseFailCountRef.current = 0;
-      } else {
-        cruiseFailCountRef.current += 1;
-        console.warn(`[CruiseMode] Hop did not advance (${cruiseFailCountRef.current}/3)`);
-        if (cruiseFailCountRef.current >= 3) {
-          console.error('[CruiseMode] 3 consecutive stuck hops — auto-disabling cruise mode');
-          setIsCruiseMode(false);
-          cruiseFailCountRef.current = 0;
-        }
-      }
-    };
-    cruiseIntervalRef.current = setInterval(hop, 3000);
-    return () => {
-      if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
-      cruiseIntervalRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama, advance, advanceSafe, mapsAuthFailed]);
+  const { isCruiseMode, setIsCruiseMode } = useCruiseMode({
+    panorama,
+    advanceSafe,
+    mapsAuthFailed,
+    heading,
+    isTransitioning,
+    setNavPending,
+  });
 
   const toggleRadio = () => {
     if (!audioRef.current) return;
@@ -320,324 +268,74 @@ function InnerApp() {
     });
   };
   
-  // Globe teleport with auto-lighting (Phase 4) and auto-radio (Phase 3)
-  const handleGlobeTeleport = useCallback(async (lat: number, lng: number) => {
-    // Teleport the Street View panorama safely
-    setNavPending(true);
-    try {
-      await teleportSafe(lat, lng);
-    } finally {
-      setNavPending(false);
-    }
+  const handleGlobeTeleport = useGlobeTeleport({
+    teleportSafe,
+    applyTimeOfDayPreset,
+    applyColorGradingPreset,
+    globeMode,
+    audioRef,
+    setNavPending,
+    setIsRadioPlaying,
+  });
 
-    // Phase 4: Auto-lighting based on destination's real-world time
-    try {
-      const timePreset = getTimeOfDayForLocation(lat, lng);
-      applyTimeOfDayPreset(timePreset);
-      const colorPreset = getColorPresetForTimeOfDay(timePreset);
-      applyColorGradingPreset(colorPreset);
-    } catch (err) {
-      console.warn('[GlobeTeleport] Auto-lighting failed:', err);
-    }
+  const { handleStartJourney } = useAutopilot({
+    teleportSafe,
+    handleGlobeTeleport,
+    panoCache,
+    isTransitioning,
+    setNavPending,
+  });
 
-    // Phase 3: Auto-tune radio to local station
-    getTopStationForLocation(lat, lng).then(station => {
-      if (station && audioRef.current) {
-        audioRef.current.src = station.urlResolved || station.url;
-        audioRef.current.play().catch(() => {});
-        setIsRadioPlaying(true);
-        console.log(`[GlobeTeleport] Tuned to: ${station.name} (${station.country})`);
-      }
-    }).catch(err => {
-      console.warn('[GlobeTeleport] Auto-radio failed:', err);
-    });
+  const shortcuts = buildAppKeyboardShortcuts({
+    showPerformanceStats,
+    setShowPerformanceStats,
+    timeOfDay,
+    applyTimeOfDayPreset,
+    isRadioPlaying,
+    toggleRadio,
+    isMapOpen,
+    setIsMapOpen,
+    isBookmarkPanelOpen,
+    setIsBookmarkPanelOpen,
+    isHistoryPanelOpen,
+    setIsHistoryPanelOpen,
+    isSnapshotGalleryOpen,
+    setIsSnapshotGalleryOpen,
+    isColorGradingPanelOpen,
+    setIsColorGradingPanelOpen,
+    isAccessibilityPanelOpen,
+    setIsAccessibilityPanelOpen,
+    isWeatherPanelOpen,
+    setIsWeatherPanelOpen,
+    viewMode,
+    toggleViewMode,
+    rainIntensity,
+    wipersEnabled,
+    toggleWipers,
+    headlightsOn,
+    toggleHeadlights,
+    toggleDomeLight,
+    isRoofOpen,
+    toggleRoof,
+    isCruiseMode,
+    setIsCruiseMode,
+    globeMode,
+    announce,
+  });
 
-    // Deactivate globe after teleport
-    globeMode.deactivate();
-  }, [teleportSafe, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
-
-  // Phase 5: Waypoint autopilot
-  // Interval chosen to allow Street View panorama to load between jumps.
-  // Shorter values risk showing loading spinners; longer values feel sluggish.
-  const WAYPOINT_INTERVAL_MS = 5000;
-  const autopilotRef = useRef<NodeJS.Timeout | null>(null);
-  const autopilotTransitionRef = useRef(isTransitioning);
-  autopilotTransitionRef.current = isTransitioning;
-  
-  const handleStartJourney = useCallback(async (waypoints: { lat: number; lng: number }[]) => {
-    if (waypoints.length === 0) return;
-
-    // Pre-fetch all waypoints (fire-and-forget)
-    waypoints.forEach(wp => panoCache.fetch(wp.lat, wp.lng).catch(() => {}));
-
-    // Teleport to first waypoint with auto-lighting/radio effects
-    await handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
-
-    // Set up autopilot: advance through remaining waypoints
-    if (waypoints.length > 1) {
-      let idx = 1;
-      autopilotRef.current = setInterval(async () => {
-        if (idx >= waypoints.length) {
-          if (autopilotRef.current) clearInterval(autopilotRef.current);
-          autopilotRef.current = null;
-          return;
-        }
-        // Respect transition pause before moving to next waypoint
-        if (autopilotTransitionRef.current) {
-          console.log('[Autopilot] Waiting for transition pause before next waypoint');
-          return;
-        }
-        const wp = waypoints[idx];
-        setNavPending(true);
-        try {
-          await teleportSafe(wp.lat, wp.lng);
-        } catch (err) {
-          console.warn(`[Autopilot] Failed to teleport to waypoint ${idx}:`, err);
-        } finally {
-          setNavPending(false);
-        }
-        idx++;
-      }, WAYPOINT_INTERVAL_MS);
-    }
-  }, [handleGlobeTeleport, panoCache, teleportSafe]);
-
-  // Cleanup autopilot on unmount
-  useEffect(() => {
-    return () => {
-      if (autopilotRef.current) clearInterval(autopilotRef.current);
-    };
-  }, []);
-
-  // Keyboard shortcuts
-  useKeyboardShortcuts(
-    [
-      {
-        key: 'F9',
-        description: 'Toggle performance stats overlay',
-        action: () => {
-          setShowPerformanceStats(!showPerformanceStats);
-          announce(`Performance stats ${!showPerformanceStats ? 'shown' : 'hidden'}`);
-        },
-      },
-      {
-        key: 'n',
-        description: 'Toggle night mode',
-        action: () => {
-          const modes: TimeOfDay[] = ['day', 'sunrise', 'sunset', 'night'];
-          const currentIndex = modes.indexOf(timeOfDay);
-          const nextMode = modes[(currentIndex + 1) % modes.length];
-          applyTimeOfDayPreset(nextMode);
-          announce(`Night mode: ${nextMode}`);
-        },
-      },
-      {
-        key: 'm',
-        description: 'Toggle radio',
-        action: () => {
-          toggleRadio();
-          announce(`Radio ${!isRadioPlaying ? 'on' : 'off'}`);
-        },
-      },
-      {
-        key: 'g',
-        description: 'Toggle GPS map',
-        action: () => {
-          setIsMapOpen(!isMapOpen);
-          announce(`Map ${!isMapOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'b',
-        description: 'Toggle bookmarks',
-        action: () => {
-          setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
-          setIsHistoryPanelOpen(false);
-          setIsSnapshotGalleryOpen(false);
-          announce(`Bookmarks ${!isBookmarkPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'h',
-        description: 'Toggle history (free look) or control mode (car)',
-        action: () => {
-          if (viewMode === 'car') {
-            // In car mode, H toggles control mode - handled by CarInputHandler
-            announce('Toggle control mode');
-          } else {
-            setIsHistoryPanelOpen(!isHistoryPanelOpen);
-            setIsBookmarkPanelOpen(false);
-            setIsSnapshotGalleryOpen(false);
-            announce(`History ${!isHistoryPanelOpen ? 'opened' : 'closed'}`);
-          }
-        },
-      },
-      {
-        key: 's',
-        description: 'Toggle snapshot gallery',
-        action: () => {
-          setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
-          setIsBookmarkPanelOpen(false);
-          setIsHistoryPanelOpen(false);
-          announce(`Gallery ${!isSnapshotGalleryOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'e',
-        description: 'Toggle color grading',
-        action: () => {
-          setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
-          setIsBookmarkPanelOpen(false);
-          setIsHistoryPanelOpen(false);
-          setIsSnapshotGalleryOpen(false);
-          announce(`Color grading ${!isColorGradingPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'a',
-        description: 'Toggle accessibility panel',
-        action: () => {
-          setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen);
-          announce(`Accessibility panel ${!isAccessibilityPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'c',
-        description: 'Toggle car mode',
-        action: () => {
-          toggleViewMode();
-          announce(viewMode === 'car' ? 'Free look mode' : 'Car mode enabled');
-        },
-      },
-      {
-        key: 'w',
-        description: 'Toggle wipers',
-        action: () => {
-          if (rainIntensity > 0 || wipersEnabled) {
-            toggleWipers();
-            announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
-          }
-        },
-      },
-      {
-        key: 'l',
-        description: 'Toggle dome light (car) / headlights (free look)',
-        action: () => {
-          if (viewMode === 'car') {
-            const newState = toggleDomeLight();
-            announce(`Dome light ${newState ? 'on' : 'off'}`);
-          } else {
-            const newState = toggleHeadlights();
-            announce(`Headlights ${newState ? 'on' : 'off'}`);
-          }
-        },
-      },
-      {
-        key: 'o',
-        description: 'Toggle roof',
-        action: () => {
-          toggleRoof();
-          announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
-        },
-      },
-      {
-        key: 'r',
-        description: 'Toggle cruise mode',
-        action: () => {
-          setIsCruiseMode(!isCruiseMode);
-          announce(`Cruise mode ${!isCruiseMode ? 'on' : 'off'}`);
-        },
-      },
-      {
-        key: 'G',
-        modifier: 'shift',
-        description: 'Toggle Globe Mode',
-        action: () => {
-          globeMode.toggle();
-          announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
-        },
-      },
-      {
-        key: 'Escape',
-        description: 'Close panels',
-        action: () => {
-          if (globeMode.isActive) { globeMode.deactivate(); return; }
-          if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
-          if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
-          else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
-          else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
-          else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
-          else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
-          else if (isMapOpen) setIsMapOpen(false);
-        },
-        preventDefault: false,
-      },
-    ],
-    isConnected && !showWelcome
-  );
+  useKeyboardShortcuts(shortcuts, isConnected && !showWelcome);
   
   return (
     <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
       {/* Skip link for keyboard navigation */}
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
 
-      {/* Missing API key banner */}
-      {showMissingKeyBanner && (
-        <div
-          role="alert"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2000,
-            background: 'rgba(180,100,0,0.95)', color: '#fff',
-            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
-            fontFamily: 'system-ui, sans-serif', fontSize: 14,
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
-        >
-          <span style={{ flex: 1 }}>
-            ⚠️ <strong>REACT_APP_MAPS_API_KEY is not set.</strong>{' '}
-            Street View will not load. Set the <code>REACT_APP_MAPS_API_KEY</code> environment variable and restart the dev server (or redeploy for production).
-          </span>
-          <button
-            onClick={() => setShowMissingKeyBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Maps API auth-failure banner — prominent and diagnostic */}
-      {showAuthFailedBanner && (
-        <div
-          role="alert"
-          style={{
-            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
-            background: 'rgba(180,0,0,0.97)', color: '#fff',
-            padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12,
-            fontFamily: 'system-ui, sans-serif', fontSize: 14, lineHeight: 1.35,
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
-        >
-          <div style={{ flex: 1 }}>
-            🔑 <strong>Google Maps API authentication failed on this host.</strong><br />
-            The key is either referrer-restricted to other domains (e.g. go.1ink.us but not test.1ink.us), billing is disabled on the GCP project, or the Maps JavaScript + Directions APIs are not enabled for the key.
-            <span style={{ opacity: 0.9 }}> Cruise mode paused. Street View may show Google’s error overlay until a valid key for this origin is deployed.</span>
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-              Fix: Update the key’s HTTP referrer restrictions in Google Cloud Console to include <code>https://test.1ink.us/*</code> and <code>https://go.1ink.us/*</code>, ensure billing is linked, and re-deploy with <code>MAPS_API_KEY=... python deploy.py</code>.
-            </div>
-          </div>
-          <button
-            onClick={() => setShowAuthFailedBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13, flexShrink: 0, marginTop: 2 }}
-            title="Dismiss (error may still affect the map)"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <AppBanners
+        showMissingKeyBanner={showMissingKeyBanner}
+        setShowMissingKeyBanner={setShowMissingKeyBanner}
+        showAuthFailedBanner={showAuthFailedBanner}
+        setShowAuthFailedBanner={setShowAuthFailedBanner}
+      />
       
       {showWelcome && <WelcomeModal onStart={handleStart} />}
 
@@ -675,87 +373,26 @@ function InnerApp() {
       {/* Global UI Panels */}
       {isConnected && (
         <>
-          {/* Floating Toolbar — top-right HUD */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              zIndex: 10,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: 8,
-              pointerEvents: 'auto',
-            }}
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
-              disabled={!isPanoramaReady}
-              style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110, opacity: isPanoramaReady ? 1 : 0.5 }}
-              onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
-            >
-              Cruise: {isCruiseMode ? 'ON' : 'OFF'}
-            </button>
-            <button
-              className={`control-btn${isRadioPlaying ? ' disconnect' : ''}`}
-              style={{ backgroundColor: isRadioPlaying ? 'rgba(255,71,87,0.85)' : undefined, minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); toggleRadio(); }}
-            >
-              Radio: {isRadioPlaying ? 'ON' : 'OFF'}
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen); }}
-            >
-              📷 Gallery
-            </button>
-            <button
-              className={`control-btn${isBookmarkPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsBookmarkPanelOpen(!isBookmarkPanelOpen); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🔖 Bookmarks
-            </button>
-            <button
-              className={`control-btn${isHistoryPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsHistoryPanelOpen(!isHistoryPanelOpen); setIsBookmarkPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🕒 History
-            </button>
-            <button
-              className={`control-btn${isColorGradingPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsColorGradingPanelOpen(!isColorGradingPanelOpen); setIsBookmarkPanelOpen(false); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🎨 Color
-            </button>
-            <button
-              className={`control-btn${isWeatherPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
-            >
-              🌧 Weather
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); toggleViewMode(); }}
-            >
-              {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); globeMode.toggle(); }}
-            >
-              🌍 Globe
-            </button>
-          </div>
+          <AppToolbar
+            isCruiseMode={isCruiseMode}
+            setIsCruiseMode={setIsCruiseMode}
+            isPanoramaReady={isPanoramaReady}
+            isRadioPlaying={isRadioPlaying}
+            toggleRadio={toggleRadio}
+            isSnapshotGalleryOpen={isSnapshotGalleryOpen}
+            setIsSnapshotGalleryOpen={setIsSnapshotGalleryOpen}
+            isBookmarkPanelOpen={isBookmarkPanelOpen}
+            setIsBookmarkPanelOpen={setIsBookmarkPanelOpen}
+            isHistoryPanelOpen={isHistoryPanelOpen}
+            setIsHistoryPanelOpen={setIsHistoryPanelOpen}
+            isColorGradingPanelOpen={isColorGradingPanelOpen}
+            setIsColorGradingPanelOpen={setIsColorGradingPanelOpen}
+            isWeatherPanelOpen={isWeatherPanelOpen}
+            setIsWeatherPanelOpen={setIsWeatherPanelOpen}
+            viewMode={viewMode}
+            toggleViewMode={toggleViewMode}
+            onGlobeToggle={globeMode.toggle}
+          />
 
           {/* Bookmark Panel */}
           {isBookmarkPanelOpen && panorama && (
