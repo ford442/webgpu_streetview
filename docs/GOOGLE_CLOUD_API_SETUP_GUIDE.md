@@ -87,14 +87,16 @@ This guide provides step-by-step instructions for safely setting up Google Cloud
 1. On the same **Restrict Key** page:
 2. Under **"Application Restrictions"**:
    - Select **"HTTP referrers (websites)"**
-   - In the text field, add:
+   - In the text field, add **every host you will ever deploy the demo to** (the live demo uses two):
      ```
-     localhost:3000/*
-     localhost:3001/*
+     https://test.1ink.us/*
+     https://go.1ink.us/*
+     http://localhost:3000/*
+     http://localhost:3001/*
      ```
 3. Click **"Save"**
 
-> **Why?** This prevents anyone on the internet from using your API key. Only requests from `localhost:3000` will be accepted.
+> **Why?** The most common cause of the "This page can't load Google Maps correctly" error on the live demo is forgetting to add the `test.1ink.us` (or `go.1ink.us`) pattern. The same key works on one host but fails on the other when restrictions are incomplete. Use the runtime `config.js` + `deploy.py` mechanism for production so you can rotate keys without rebuilding.
 
 ### Step 4: Label Your Key
 
@@ -104,19 +106,23 @@ This guide provides step-by-step instructions for safely setting up Google Cloud
 
 ---
 
-## Part 4: Create Production API Key
+## Part 4: Create Production API Key (for test.1ink.us / go.1ink.us)
 
 ### When Deploying to Production
 
-1. Repeat **Part 3** to create a new key
-2. For **Website Restrictions**, use your production domain:
+1. Repeat **Part 3** (or edit an existing key) and add **both** live hosts:
    ```
-   https://yourdomain.com/*
-   https://www.yourdomain.com/*
+   https://test.1ink.us/*
+   https://go.1ink.us/*
    ```
-3. Label it: `webgpu-streetview-prod-domain`
+2. Label it clearly: `webgpu-streetview-prod-2026`
+3. **Use the runtime injection path** for deploys:
+   ```bash
+   MAPS_API_KEY="the-new-prod-key" python deploy.py
+   ```
+   This writes `public/config.js` (actually `build/config.js`) at deploy time so the key never lives in the git history or a baked bundle for the wrong host.
 
-> **Important**: Keep production and development keys separate!
+> **Important**: Keep production and development keys separate! The #72 "can't load Google Maps correctly" bug was caused by a key restricted only for `go.1ink.us` being served to `test.1ink.us` visitors.
 
 ---
 

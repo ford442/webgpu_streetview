@@ -128,10 +128,19 @@ src/
 
 **Best Practice**: Any new UI overlay must block mouse/keyboard event propagation.
 
-### 🔴 Hardcoded API Key
-**Security Issue**: Google Maps API key in `App.tsx` is hardcoded. Should be environment variable in production.
+### 🔴 Google Maps API Key Restrictions & Deployment (Issue #72)
+**The persistent "This page can't load Google Maps correctly" error** on https://test.1ink.us/streetview is almost always caused by the key's **HTTP referrer (website) restrictions** in Google Cloud Console not including the exact production origin.
 
-**Action**: Never commit new API keys; use `.env` file locally.
+- The key that works at `go.1ink.us/streetview` will fail at `test.1ink.us/streetview` (and vice versa) unless both patterns are explicitly whitelisted.
+- `public/config.js` + `deploy.py` (with `MAPS_API_KEY=...`) is the supported production path. It lets you change the key on the server without a rebuild.
+- `REACT_APP_MAPS_API_KEY` is only a fallback baked at build time.
+- `.env` (plain) is now gitignored; only `.env.local` should ever hold real dev keys.
+
+**Action**:
+- Before any prod deploy: confirm the target host(s) are in the key's referrer allowlist.
+- Run deploys with `MAPS_API_KEY=... python deploy.py` so the runtime config wins.
+- After deploy, immediately verify `https://test.1ink.us/streetview/config.js` returns the correct key.
+- See the new "Production Deployment & Google Maps API Key Setup" section in README.md and the updated `docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md`.
 
 ## Common Tasks & Workflows
 

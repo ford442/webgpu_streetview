@@ -396,8 +396,22 @@ Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, da
 ### 4. Transition / `isTransitioning` Coordination
 `StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and forces full fps during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
 
-### 5. API Key Management
-The Google Maps API key has a fallback hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`), but the preferred source is `.env` (`REACT_APP_MAPS_API_KEY`). Cesium also uses `REACT_APP_CESIUM_ION_TOKEN` from `.env`. Do not commit new keys.
+### 5. API Key Management & Referrer Restrictions (Root Cause of Issue #72)
+The live demo at `test.1ink.us/streetview` historically showed "This page can't load Google Maps correctly" because the key baked into the bundle (or served via the committed `public/config.js`) had HTTP referrer restrictions that only allowed `go.1ink.us` (or localhost), not `test.1ink.us`.
+
+**Current correct architecture** (as of the fixes for #72):
+- **Primary (prod deploys)**: Runtime `window.MAPS_API_KEY` via `public/config.js` (injected by `deploy.py` when you pass `MAPS_API_KEY=...`).
+- **Fallback**: `REACT_APP_MAPS_API_KEY` baked at build time.
+- The committed `public/config.js` must **never** contain a real key (now empty + example file provided).
+- `.env` (plain) is gitignored; real dev keys only in `.env.local`.
+- Every production key **must** list **all** demo hosts under HTTP referrers:
+  ```
+  https://test.1ink.us/*
+  https://go.1ink.us/*
+  ```
+- The `gm_authFailure` global + `onMapsAuthFailure()` + React banners + DOM post-load scanner in `src/services/maps/loader.ts` give excellent visibility. The prebuild warning + deploy.py loud checks make the mistake obvious before it reaches users.
+
+**Never** rely on a single baked key for multiple hosts with different restrictions. Always prefer the runtime override for the official demo. Do not commit new keys.
 
 ### 6. Shader Uniform Layouts
 `weather-post.wgsl` expects a 40-float (160-byte) uniform buffer:

@@ -90,28 +90,109 @@ npm install
 npm start          # dev server at http://localhost:3000
 ```
 
-The Google Maps API key is read from the `REACT_APP_MAPS_API_KEY` environment variable at build time.
-Create a `.env.local` file (gitignored) with your key before running the dev server or building:
+The Google Maps API key is resolved at runtime from `window.MAPS_API_KEY` (via `public/config.js`) with a build-time fallback from `REACT_APP_MAPS_API_KEY`.
+
+**For local development**, create `.env.local` (gitignored):
 
 ```bash
-# .env.local  ← gitignored, never commit real keys
-REACT_APP_MAPS_API_KEY=your_key_here
+REACT_APP_MAPS_API_KEY=your_dev_key_here
 ```
 
-For production builds, set the variable in your shell before running `npm run build`:
+**For production deploys to test.1ink.us / go.1ink.us**, see the full "Production Deployment & Google Maps API Key Setup" section below. The recommended path uses the `MAPS_API_KEY` environment variable with `python deploy.py` so you never need to bake the production key into a commit.
 
-```bash
-export REACT_APP_MAPS_API_KEY="your-production-key"
-npm run build
-```
-
-### Build & Deploy
+### Build & Deploy (Development)
 
 ```bash
 npm run build          # production bundle → build/
 npm test               # run test suite
 python deploy.py       # SFTP upload to test.1ink.us (prompts for password)
 ```
+
+---
+
+## Production Deployment & Google Maps API Key Setup
+
+**The #1 cause of "This page can't load Google Maps correctly" on the live demo is a mismatch between the API key's HTTP referrer restrictions and the actual host (`test.1ink.us` vs `go.1ink.us`).**
+
+The app supports **two ways** to provide the key (priority order):
+
+1. **Runtime (preferred for deploys)**: `window.MAPS_API_KEY` set by `public/config.js` (loaded before the bundle via a `<script>` tag in `index.html`). Change this file on the server or let `deploy.py` generate it — **no rebuild required**.
+2. **Build-time fallback**: `REACT_APP_MAPS_API_KEY` baked into the JS bundle by Create React App during `npm run build`.
+
+### Step-by-step: Creating a Production-Ready Key
+
+1. **Go to Google Cloud Console → APIs & Services → Credentials**
+2. **Create a new API key** (or edit an existing one).
+3. **Immediately restrict it**:
+   - **Application restrictions** → **HTTP referrers (websites)**
+     Add **all** hosts you will deploy to (exact patterns matter):
+     ```
+     https://test.1ink.us/*
+     https://go.1ink.us/*
+     http://localhost:3000/*
+     http://localhost:3001/*
+     ```
+   - **API restrictions** → **Restrict key**
+     - ✅ Maps JavaScript API
+     - ✅ Maps Directions API
+     - (Disable everything else)
+4. **Enable billing & alerts for the project** (required for production keys):
+   - Link a billing account
+   - Create a budget alert at $10 / $25 / $50
+   - Enable "Prevent overspend" if available
+5. **Verify the required APIs are enabled** for the project:
+   - Maps JavaScript API
+   - Maps Directions API
+6. **(Optional but recommended)** Create separate keys for dev vs. prod with different restrictions.
+
+### Deploying the Key to test.1ink.us / go.1ink.us
+
+**Preferred method (no full rebuild needed):**
+
+```bash
+# From the repo root, after `npm run build`
+MAPS_API_KEY="AIzaSy...your_production_key..." python deploy.py
+```
+
+`deploy.py` will:
+- Overwrite `build/config.js` with `window.MAPS_API_KEY = "..."` (JSON-safe)
+- Upload everything (including the fresh config.js)
+- Print diagnostics about what key source is being used
+
+**Alternative (bake at build time):**
+
+```bash
+export REACT_APP_MAPS_API_KEY="AIzaSy...your_production_key..."
+npm run build
+python deploy.py   # still recommended to also provide MAPS_API_KEY for the runtime file
+```
+
+### After Deploy — Verification Checklist
+
+- Visit `https://test.1ink.us/streetview/config.js` — you should see your key (not empty, not the placeholder).
+- Hard-refresh the demo. The welcome modal should appear and Street View should load cleanly (no Google error watermark in the top-left).
+- Open DevTools → Console. There should be **no** `gm_authFailure` or "can't load Google Maps correctly" messages.
+- If the error still appears:
+  1. Confirm the exact referrer pattern in the GCP key matches what the browser sends (check the Network tab for the maps/api/js request's "Referer" header).
+  2. Confirm the GCP project has an active billing account with no payment failures.
+  3. Re-deploy with the `MAPS_API_KEY` environment variable set.
+
+### Local Development
+
+```bash
+# .env.local  (gitignored — never commit real keys)
+REACT_APP_MAPS_API_KEY=AIzaSy...your_dev_key_with_localhost_referrers...
+npm start
+```
+
+See also:
+- `docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md` (detailed GCP console screenshots & billing safety)
+- `BILLING_SAFETY_CHECKLIST.md`
+- `public/config.js.example`
+
+**Security note**: Never commit real API keys to the repository. The current mechanism (runtime `config.js` + deploy.py override + build-time env var) is designed to keep keys out of git while making production deploys reliable.
+
+---
 
 ---
 

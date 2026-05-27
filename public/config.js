@@ -13,4 +13,8 @@
 //
 // The build-time env var REACT_APP_MAPS_API_KEY is still honoured as a
 // fallback if window.MAPS_API_KEY is left empty.
-window.MAPS_API_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
+// IMPORTANT: Leave this empty in the committed source.
+// Real key must be injected at deploy time via `MAPS_API_KEY=... python deploy.py`
+// or by manually editing the deployed config.js on the server.
+// See README.md "Production Deployment" section and deploy.py for details.
+window.MAPS_API_KEY = "";

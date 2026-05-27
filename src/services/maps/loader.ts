@@ -129,6 +129,34 @@ export function loadMapsApi(apiKey: string): Promise<void> {
 
     script.onload = () => {
       if (window.google?.maps) {
+        // Schedule a verification pass. Google sometimes injects a visible error
+        // overlay into map containers (or the body) asynchronously even after the
+        // script "loads", especially for referrer/billing/auth failures.
+        // If we detect the classic error text, treat it as an auth failure so the
+        // app can show a clear actionable message instead of the confusing Google UI.
+        setTimeout(() => {
+          const bodyText = (document.body && document.body.innerText) || '';
+          const hasClassicError =
+            /This page can['’]t load Google Maps correctly/i.test(bodyText) ||
+            /无法正确加载 Google 地图/i.test(bodyText) ||
+            /Do you own this website/i.test(bodyText);
+
+          if (hasClassicError) {
+            console.error(
+              '[Maps Loader] Detected Google Maps authentication error UI in DOM after script load. ' +
+              'This almost always means: (1) HTTP referrer restriction on the key does not include the current origin, ' +
+              '(2) billing is not enabled / payment method issue on the GCP project, or (3) Maps JavaScript API is disabled for the key.'
+            );
+            // Fire the same listeners that gm_authFailure would have triggered.
+            authFailureListeners.forEach(cb => {
+              try { cb(); } catch (e) { console.error('[Maps Loader] Auth failure listener error (post-load scan):', e); }
+            });
+            // Do not resolve as success; downstream code (StreetView) will surface via onError + banners.
+            // We resolve here only to avoid double-rejection in the promise chain, but the listeners have already
+            // notified the app which will disable cruise and show the prominent banner.
+          }
+        }, 1200);
+
         resolve();
       } else {
         reject(new Error('[Maps Loader] Script loaded but google.maps is undefined'));
