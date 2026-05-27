@@ -70,9 +70,9 @@ describe('fillNoiseBuffer', () => {
     wasm.seed(7);
     const buf = new Float32Array(8 * 8);
     wasm.fillNoiseBuffer(buf, 8, 8, 50, 0, 0);
-    for (const v of buf) {
-      expect(v).toBeGreaterThanOrEqual(-1);
-      expect(v).toBeLessThanOrEqual(1);
+    for (let i = 0; i < buf.length; i++) {
+      expect(buf[i]).toBeGreaterThanOrEqual(-1);
+      expect(buf[i]).toBeLessThanOrEqual(1);
     }
   });
 
