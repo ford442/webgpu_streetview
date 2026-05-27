@@ -13,4 +13,4 @@
 //
 // The build-time env var REACT_APP_MAPS_API_KEY is still honoured as a
 // fallback if window.MAPS_API_KEY is left empty.
-window.MAPS_API_KEY = "";
+window.MAPS_API_KEY = "AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM";
