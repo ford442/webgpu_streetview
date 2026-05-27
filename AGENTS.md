@@ -453,6 +453,58 @@ WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any cha
 - Cruise mode navigation loops
 - GPU panorama transitions
 
+### Local Testing with Headless Chrome (GPU)
+When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
+
+1. **Serve the build**
+   ```bash
+   npm run build   # outputs to build/
+   cd build && python3 -m http.server 80
+   ```
+
+2. **Cesium post-build patches (CRITICAL)**
+   Cesium 1.140.0 bundles ESM-only code (`import.meta.url`, `__webpack_module__`) that crashes in CRA's IIFE output. After every `npm run build`, patch `build/static/js/main.*.js`:
+   ```bash
+   # Replace import.meta (syntax error in non-module scripts)
+   sed -i 's/import\.meta/({url:typeof window!=="undefined"?window.location.href:""})/g' build/static/js/main.*.js
+   # Replace __webpack_module__ (undefined in IIFE bundles)
+   sed -i 's/__webpack_module__/undefined/g' build/static/js/main.*.js
+   ```
+   Without these patches, the page throws `Cannot use 'import.meta' outside a module` and stays black.
+
+3. **Google Maps API key for local testing**
+   The production key has referrer restrictions. For local testing, either:
+   - Add your localhost origin to the key's allowlist in Google Cloud Console, **or**
+   - Spoof an allowed domain via `/etc/hosts`:
+     ```bash
+     echo "127.0.0.1 test.1ink.us go.1ink.us" >> /etc/hosts
+     # Then serve on port 80 and access http://test.1ink.us
+     ```
+   - Set the key in `build/config.js` (runtime, no rebuild needed):
+     ```js
+     window.MAPS_API_KEY = "<your-key>";
+     ```
+
+4. **Headless Chrome launch flags for WebGPU**
+   ```js
+   chromium.launch({
+     headless: true,
+     args: [
+       '--use-gl=egl',
+       '--use-angle=gl-egl',
+       '--enable-features=Vulkan',
+       '--enable-unsafe-webgpu',
+       '--ignore-gpu-blocklist',
+       '--enable-gpu-rasterization',
+       '--enable-zero-copy',
+       '--disable-software-rasterizer',
+       '--no-sandbox',
+       '--disable-setuid-sandbox'
+     ]
+   });
+   ```
+   Note: WebGPU adapter availability varies by headless Chrome version and OS. The app falls back to standard Street View rendering if WebGPU is unavailable.
+
 ---
 
 ## Deployment
@@ -500,6 +552,7 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 6. **API Key Exposure**: Fallback key is visible in `App.tsx` source.
 7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
 8. **Build Tool Lock-in**: Create React App 5.0.1 is used; ejecting is irreversible.
+9. **Cesium ESM in IIFE bundles**: Cesium 1.140.0 ships code that uses `import.meta.url` and `__webpack_module__`, which are invalid in CRA's default IIFE bundle output. The built `main.*.js` must be post-processed before deployment or local testing (see *Local Testing with Headless Chrome* above).
 
 ---
 
@@ -512,4 +565,4 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
-*Last Updated: May 3, 2026*
+*Last Updated: May 27, 2026*
