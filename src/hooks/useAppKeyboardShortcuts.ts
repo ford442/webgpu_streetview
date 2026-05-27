@@ -28,7 +28,7 @@ export interface UseAppKeyboardShortcutsOptions {
   wipersEnabled: boolean;
   toggleWipers: () => void;
   headlightsOn: boolean;
-  toggleHeadlights: () => void;
+  toggleHeadlights: () => boolean;
   toggleDomeLight: () => boolean;
   isRoofOpen: boolean;
   toggleRoof: () => void;
