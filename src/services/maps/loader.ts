@@ -140,7 +140,6 @@ async function importRequiredLibraries(): Promise<void> {
   await Promise.all([
     importLibrary('maps'),
     importLibrary('streetView'),
-    importLibrary('marker'),
   ]);
 }
 
