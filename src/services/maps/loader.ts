@@ -43,7 +43,6 @@ const PLACEHOLDER_KEY_PATTERNS: RegExp[] = [
 
 const MAPS_SCRIPT_ID = 'webgpu-streetview-google-maps-js';
 const MAPS_CALLBACK_NAME = '__initWebGpuStreetviewMaps';
-const AUTH_ERROR_SCAN_DELAY_MS = 1200;
 
 /** Registered auth-failure callbacks */
 const authFailureListeners: Array<() => void> = [];
@@ -77,17 +76,6 @@ function installAuthFailureHandler(): void {
   window.gm_authFailure = () => notifyAuthFailure('gm_authFailure');
 }
 
-function scanForAuthErrorOverlay(): void {
-  const bodyText = (document.body && document.body.innerText) || '';
-  const hasClassicError =
-    /This page can['’]t load Google Maps correctly/i.test(bodyText) ||
-    /无法正确加载 Google 地图/i.test(bodyText) ||
-    /Do you own this website/i.test(bodyText);
-
-  if (hasClassicError) {
-    notifyAuthFailure('Detected Google Maps authentication error UI in DOM after script load');
-  }
-}
 
 function getKeyConfigurationError(apiKey: string): string | null {
   const trimmed = apiKey?.trim() || '';
@@ -188,9 +176,6 @@ export function loadMapsApi(apiKey: string): Promise<void> {
 
   const promise = createBootstrapScript(trimmedKey)
     .then(importRequiredLibraries)
-    .then(() => {
-      setTimeout(scanForAuthErrorOverlay, AUTH_ERROR_SCAN_DELAY_MS);
-    })
     .catch(err => {
       removeFailedBootstrap();
       throw err;
