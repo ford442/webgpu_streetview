@@ -51,6 +51,7 @@ import { buildAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from './hooks/useGlobeTeleport';
 import AppToolbar from './components/AppToolbar';
 import AppBanners from './components/AppBanners';
+import BuildBadge from './components/BuildBadge';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
@@ -207,15 +208,22 @@ function InnerApp() {
   
   // Audio ref for radio
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
-  
-  // Initialize audio
+
+  // Initialize audio — wire through AudioContext so the stream is capturable
+  // and available for future canvas+audio recording (fixes silent audio export).
   useEffect(() => {
     if (!audioRef.current) {
-      audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
-      audioRef.current.crossOrigin = "anonymous";
+      const el = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
+      el.crossOrigin = 'anonymous';
+      audioRef.current = el;
     }
+    return () => {
+      audioCtxRef.current?.close();
+    };
   }, []);
   
   // Apply accessibility classes
@@ -351,7 +359,20 @@ function InnerApp() {
     if (isRadioPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play().catch(e => console.error("Audio play failed:", e));
+      // Create AudioContext on first user gesture (browser policy requires this).
+      // Wiring through AudioContext makes the stream capturable for recording.
+      if (!audioCtxRef.current) {
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        if (!audioSourceRef.current) {
+          audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+          audioSourceRef.current.connect(ctx.destination);
+        }
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+      audioRef.current.play().catch(e => console.error('Audio play failed:', e));
     }
     setIsRadioPlaying(!isRadioPlaying);
   };
@@ -843,6 +864,7 @@ function InnerApp() {
           />
         )}
       </div>
+      <BuildBadge />
     </div>
   );
 }
