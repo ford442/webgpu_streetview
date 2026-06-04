@@ -79,13 +79,18 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             document.body.appendChild(mapDiv);
 
             try {
+                // Do NOT set a mapId unless a real Cloud Map ID is configured.
+                // Any mapId (including 'DEMO_MAP_ID') causes Maps to issue a
+                // MapsConfigService request that gets blocked by the server's
+                // Cross-Origin-Embedder-Policy: require-corp header, triggering
+                // the "can't load Google Maps correctly" error UI.
                 const mapOptions: google.maps.MapOptions = {
                     center: startLocation,
                     zoom: 12,
                     disableDefaultUI: true,
-                    // 'DEMO_MAP_ID' suppresses the "no Map ID / Advanced Markers" warning.
-                    // Override with a real Cloud Map ID via REACT_APP_GOOGLE_MAPS_MAP_ID if needed.
-                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
+                    ...(process.env.REACT_APP_GOOGLE_MAPS_MAP_ID
+                        ? { mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID }
+                        : {}),
                 };
                 const mapInstance = new google.maps.Map(mapDiv, mapOptions);
 
