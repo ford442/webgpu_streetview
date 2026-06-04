@@ -47,13 +47,19 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 return null;
             }
 
-            // Create a temporary hidden map div
+            // Off-screen container for the linked Map instance.
+            // Must have real pixel dimensions — a 0×0 or visibility:hidden div
+            // prevents Google Maps from initialising its WebGL context, which in
+            // turn stops the StreetViewPanorama from rendering its canvas (#87).
             const mapDiv = document.createElement('div');
-            mapDiv.style.position = 'absolute';
+            mapDiv.setAttribute('aria-hidden', 'true');
+            mapDiv.style.position = 'fixed';
+            mapDiv.style.left = '-10000px';
+            mapDiv.style.top = '0';
+            mapDiv.style.width = '640px';
+            mapDiv.style.height = '480px';
             mapDiv.style.pointerEvents = 'none';
-            mapDiv.style.visibility = 'hidden';
-            mapDiv.style.width = '0';
-            mapDiv.style.height = '0';
+            mapDiv.style.opacity = '0';
             document.body.appendChild(mapDiv);
 
             try {
@@ -137,8 +143,14 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 // Hard timeout: if no canvas detected after ~3.5s, surface an error
                 const canvasTimeout = setTimeout(() => {
                     if (!activeCanvasRef.current) {
-                        console.error('[StreetView] Canvas detection timed out');
-                        onError?.('Canvas detection timed out — Street View may be unavailable at this location.');
+                        const found = panoRef.current
+                            ? Array.from(panoRef.current.getElementsByTagName('canvas'))
+                                  .map(c => `${c.width}×${c.height}`)
+                                  .join(', ') || 'none'
+                            : 'pano div missing';
+                        const msg = `Canvas detection timed out (found: ${found}) — Street View may be unavailable at this location.`;
+                        console.error('[StreetView]', msg);
+                        onError?.(msg);
                     }
                 }, 3500);
 
