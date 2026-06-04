@@ -13,10 +13,30 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
+    const lastKeyRef = useRef<string>('');
 
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
     useEffect(() => {
+        const trimmed = (apiKey || '').trim();
+        if (!trimmed) {
+            // Do not initialize (or keep previous) with empty/placeholder key.
+            // This allows a late-arriving key (see #84) to trigger a clean init.
+            return;
+        }
+        if (isInitializedRef.current && lastKeyRef.current === trimmed) {
+            return;
+        }
+        // If key changed, allow re-initialization (fixes #85). Clean up previous failed bootstrap if any.
+        if (lastKeyRef.current && lastKeyRef.current !== trimmed) {
+            isInitializedRef.current = false;
+            // Loader also exposes removeFailedBootstrap for full cleanup; we call it here defensively
+            try {
+                // dynamic import to avoid circulars; the function is also exported from loader
+                import('../services/maps/loader').then(({ removeFailedBootstrap }) => removeFailedBootstrap?.());
+            } catch {}
+        }
+        lastKeyRef.current = trimmed;
         if (isInitializedRef.current) return;
         isInitializedRef.current = true;
 

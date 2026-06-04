@@ -59,12 +59,20 @@ import { onMapsAuthFailure } from './services/maps/loader';
 //  1. window.MAPS_API_KEY  — set at runtime via public/config.js (no rebuild needed)
 //  2. REACT_APP_MAPS_API_KEY — baked in at build time via .env.local / CI env var
 // Never commit real keys. See public/config.js and README for deployment instructions.
-const GOOGLE_MAPS_KEY = window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "";
-if (!GOOGLE_MAPS_KEY) {
+//
+// NOTE: We use a small state + poller below so a slightly delayed config.js
+// (race on some deploys / CDNs) still gets picked up without requiring a full
+// page reload. See issues #84 and #85.
+function getInitialMapsKey(): string {
+  return (window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "").trim();
+}
+const INITIAL_MAPS_KEY = getInitialMapsKey();
+if (!INITIAL_MAPS_KEY) {
   console.warn(
-    "[WebGPU StreetView] No Maps API key found. " +
+    "[WebGPU StreetView] No Maps API key found at initial eval. " +
     "Set window.MAPS_API_KEY in public/config.js (preferred) or set " +
-    "REACT_APP_MAPS_API_KEY in .env.local and rebuild."
+    "REACT_APP_MAPS_API_KEY in .env.local and rebuild. " +
+    "A poller will retry for late-arriving runtime keys."
   );
 }
 
@@ -130,7 +138,8 @@ function InnerApp() {
 
   // Maps API auth/key status
   const [mapsAuthFailed, setMapsAuthFailed] = useState(false);
-  const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!GOOGLE_MAPS_KEY);
+  const [effectiveMapsKey, setEffectiveMapsKey] = useState<string>(INITIAL_MAPS_KEY);
+  const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!INITIAL_MAPS_KEY);
   const [showAuthFailedBanner, setShowAuthFailedBanner] = useState(false);
   
   // Panel visibility
@@ -215,6 +224,39 @@ function InnerApp() {
       console.log('[App] Canvas is ready');
     }
   }, [canvas, isCanvasReady]);
+
+  // Reactive key poller / listener: recovers from config.js race (#84) and allows
+  // a valid runtime key that arrives after initial bundle eval to initialize Maps.
+  // Complements the reset logic in StreetView.tsx (#85).
+  useEffect(() => {
+    let stopped = false;
+    const syncKey = () => {
+      if (stopped) return;
+      const k = (window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || '').trim();
+      if (k && k !== effectiveMapsKey) {
+        console.log('[App] Late Maps API key detected — updating effective key');
+        setEffectiveMapsKey(k);
+        setShowMissingKeyBanner(false);
+        // If we previously showed auth failure for the empty key, clear it so the
+        // new key can be tried (user may still get auth error if the key itself is bad).
+        if (!mapsAuthFailed) {
+          setShowAuthFailedBanner(false);
+        }
+      }
+    };
+    // Poll briefly (covers slow script / some CDN timings)
+    const iv = setInterval(syncKey, 120);
+    // Also react to a custom event some setups can dispatch after injecting config
+    const onKeyReady = () => syncKey();
+    window.addEventListener('maps-api-key-ready', onKeyReady);
+    // Initial sync in case it became available between eval and mount
+    syncKey();
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+      window.removeEventListener('maps-api-key-ready', onKeyReady);
+    };
+  }, [effectiveMapsKey, mapsAuthFailed]);
 
   // Subscribe to Maps API auth failures (invalid key, referrer-blocked, billing disabled)
   useEffect(() => {
@@ -545,7 +587,7 @@ function InnerApp() {
                 heading: b.heading,
                 pitch: b.pitch,
               }))}
-              mapsApiKey={GOOGLE_MAPS_KEY}
+              mapsApiKey={effectiveMapsKey}
               onTeleportRequest={handleGlobeTeleport}
               onEnterComplete={globeMode.onEnterComplete}
               onExitComplete={globeMode.onExitComplete}
@@ -570,7 +612,7 @@ function InnerApp() {
         pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
       }}>
         <StreetView
-          apiKey={GOOGLE_MAPS_KEY}
+          apiKey={effectiveMapsKey}
           initialPosition={{ lat: 37.86926, lng: -122.254811 }}
           onCanvasReady={setCanvas}
           onError={setCanvasError}
@@ -604,7 +646,7 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+        {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={effectiveMapsKey} />}
         
         {/* Show loading screen while waiting for canvas or WebGPU init */}
         {isConnected && (!isCanvasReady || webgpuStatus === 'initializing') && (

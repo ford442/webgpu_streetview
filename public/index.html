@@ -12,6 +12,11 @@
   <!-- Runtime configuration: set window.MAPS_API_KEY without rebuilding the app -->
   <script src="%PUBLIC_URL%/config.js"></script>
   <script>
+    // Notify the app that a (possibly late) runtime key may now be present.
+    // This helps recover from config.js / bundle eval races (see issues #84, #85).
+    try { window.dispatchEvent(new CustomEvent('maps-api-key-ready')); } catch (e) {}
+  </script>
+  <script>
   // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function(type, options) {

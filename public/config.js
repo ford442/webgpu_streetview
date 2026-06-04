@@ -3,18 +3,16 @@
 // This file is served as a plain static asset and is loaded BEFORE the React
 // bundle, so changes here take effect immediately without a full rebuild.
 //
-// HOW TO USE ON YOUR SERVER:
-//   Replace the empty string below with your Google Maps JavaScript API key.
-//   You can do this by editing this file directly on the server, or by having
-//   your deploy script regenerate it (see deploy.py — set MAPS_API_KEY env var).
+// HOW TO SUPPLY A KEY (current deploy uses Contabo bundle upload of build/):
+// - Preferred for safety: leave empty in git. Bake via REACT_APP_MAPS_API_KEY
+//   at `npm run build` time, **or** manually edit the deployed config.js on the
+//   server after a bundle deploy (no rebuild needed for runtime changes).
+// - For CI-like deploys, extend deploy.py to patch config.js inside the zip
+//   using a secret before the POST (see issues #84 + #89).
 //
-// Example:
-//   window.MAPS_API_KEY = "AIzaSyABC123...your_real_key_here...";
+// The key used on https://test.1ink.us and https://go.1ink.us MUST have
+// HTTP referrer restrictions that whitelist both origins (plus localhost for dev),
+// plus billing + Maps JavaScript + Directions APIs enabled.
 //
-// The build-time env var REACT_APP_MAPS_API_KEY is still honoured as a
-// fallback if window.MAPS_API_KEY is left empty.
-// IMPORTANT: Leave this empty in the committed source.
-// Real key must be injected at deploy time via `MAPS_API_KEY=... python deploy.py`
-// or by manually editing the deployed config.js on the server.
-// See README.md "Production Deployment" section and deploy.py for details.
+// See README "Production Deployment", docs/DEPLOY_CHECKLIST.md, and #89.
 window.MAPS_API_KEY = "";

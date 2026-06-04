@@ -40,12 +40,28 @@ DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NA
 # Optional deploy token (recommended for security).
 # Set via environment: export DEPLOY_TOKEN="your_long_token_from_vps_env"
 DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6da4a1c2a9d9cadc0"
+
+# Maps API key injection for runtime config (supports "MAPS_API_KEY=... python deploy.py"
+# even with the current bundle-upload mechanism). This directly addresses repeated
+# map loading failures after deploys (see #89, #84).
+MAPS_API_KEY: Optional[str] = os.environ.get("MAPS_API_KEY", "").strip() or None
 # ============================================================
 
 
+def _inject_maps_key(data: bytes, key: str) -> bytes:
+    """Return a JS config snippet setting window.MAPS_API_KEY safely."""
+    import json
+    safe = json.dumps(key)
+    return f"// Injected by deploy.py (MAPS_API_KEY env)\nwindow.MAPS_API_KEY = {safe};\n".encode("utf-8")
+
+
 def build_zip(build_path: Path) -> bytes:
-    """Zip the contents of build_path into an in-memory archive."""
+    """Zip the contents of build_path into an in-memory archive.
+    If MAPS_API_KEY env is set, patch build/config.js inside the archive
+    (no need to have baked the key or edited after deploy).
+    """
     buf = io.BytesIO()
+    injected = False
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(build_path.rglob("*")):
             if file.is_dir():
@@ -55,8 +71,24 @@ def build_zip(build_path: Path) -> bytes:
             parts = rel.parts
             if any(p in (".git", "node_modules", "__pycache__") for p in parts):
                 continue
+
+            if MAPS_API_KEY and str(rel) == "config.js":
+                print("  + config.js (with MAPS_API_KEY injected at deploy time)")
+                zf.writestr(str(rel), _inject_maps_key(file.read_bytes(), MAPS_API_KEY))
+                injected = True
+                continue
+
             zf.write(file, str(rel))
             print(f"  + {rel}")
+
+        if MAPS_API_KEY and not injected:
+            # No config.js in the build tree? Still provide one (defensive).
+            print("  + config.js (synthesized with MAPS_API_KEY)")
+            zf.writestr("config.js", _inject_maps_key(b"", MAPS_API_KEY))
+
+    if MAPS_API_KEY:
+        print(f"\n[deploy] Maps key injected for runtime use (length {len(MAPS_API_KEY)}).")
+        print("         Ensure the key's referrer allowlist covers test.1ink.us and go.1ink.us.")
     return buf.getvalue()
 
 
@@ -69,6 +101,10 @@ def deploy_bundle(build_path: Path) -> bool:
         headers["X-Deploy-Token"] = DEPLOY_TOKEN
 
     print("Building zip archive...")
+    if MAPS_API_KEY:
+        print(f"  MAPS_API_KEY provided (masked: {MAPS_API_KEY[:8]}...{MAPS_API_KEY[-4:]}) — will patch config.js")
+    else:
+        print("  No MAPS_API_KEY env — shipping with whatever is in build/config.js (may be empty)")
     zip_bytes = build_zip(build_path)
     print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
 
@@ -118,6 +154,12 @@ def main():
     success = deploy_bundle(build_path)
 
     print(f"\n=== {'Deployment complete' if success else 'Deployment finished with errors'} ===")
+    if success:
+        print("Post-deploy verification (do this now):")
+        print("  1. curl https://test.1ink.us/streetview/config.js  (or go.1ink.us) — expect your key")
+        print("  2. Hard refresh the demo; no 'This page can't load Google Maps correctly'")
+        print("  3. Check GCP: key has referrers for both hosts + billing + JS API + Directions enabled")
+        print("See docs/DEPLOY_CHECKLIST.md and GitHub issues #84 #89.")
     sys.exit(0 if success else 1)
 
 

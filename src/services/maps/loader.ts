@@ -106,7 +106,7 @@ function getKeyConfigurationError(apiKey: string): string | null {
   return null;
 }
 
-function removeFailedBootstrap(): void {
+export function removeFailedBootstrap(): void {
   const script = document.getElementById(MAPS_SCRIPT_ID);
   if (script?.parentElement) {
     script.parentElement.removeChild(script);
