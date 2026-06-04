@@ -1,0 +1,12 @@
+Map loading fixes build ready for user deploy test.
+
+1. git checkout fix/map-loading-reliability-84-89
+2. (or) patch -p1 < map-loading-fixes.patch
+3. On machine with secret: MAPS_API_KEY=your-key-with-test-and-go-referrers python deploy.py
+4. Follow printed post-deploy steps + the checklist in docs/DEPLOY_CHECKLIST.md
+
+Tarball also available in agent session.
+
+Notion tracker: main page + DB with rows for #84-89 all set to Ready.
+
+All GitHub comments expanded and updated.

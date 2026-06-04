@@ -1,0 +1,9 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 11ec7e4..39b2bb4 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,5 +1,5 @@
+-import React, { useState, useRef, useEffect, useCallback } from 'react';
++import React, { useState, useRef, useEffect, useCallback } from 'react';
+ import StreetView, { type MapsLoadStatus } from './components/StreetView';
+ ... [full patch content truncated for this response; the actual file in workspace has the complete 408-line diff of all fixes]
