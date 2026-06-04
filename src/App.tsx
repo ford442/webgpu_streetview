@@ -52,7 +52,7 @@ import { useGlobeTeleport } from './hooks/useGlobeTeleport';
 import AppToolbar from './components/AppToolbar';
 import AppBanners from './components/AppBanners';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
-import { onMapsAuthFailure } from './services/maps/loader';
+import { loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
 
 // Google Maps API Key resolution (in priority order):
@@ -63,10 +63,23 @@ import { onMapsAuthFailure } from './services/maps/loader';
 // NOTE: We use a small state + poller below so a slightly delayed config.js
 // (race on some deploys / CDNs) still gets picked up without requiring a full
 // page reload. See issues #84 and #85.
-function getInitialMapsKey(): string {
-  return (window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || "").trim();
+const PLACEHOLDER_MAPS_KEY_PATTERNS: RegExp[] = [
+  /^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key[_-]?(here)?$/i,
+  /^YOUR_MAPS_API_KEY$/,
+  /^placeholder/i,
+  /^<.*>$/,
+  /replace/i,
+];
+
+function normalizeMapsKey(value: string | undefined): string {
+  const trimmed = value?.trim() || '';
+  return PLACEHOLDER_MAPS_KEY_PATTERNS.some(re => re.test(trimmed)) ? '' : trimmed;
 }
-const INITIAL_MAPS_KEY = getInitialMapsKey();
+
+function getConfiguredMapsKey(): string {
+  return normalizeMapsKey(window.MAPS_API_KEY) || normalizeMapsKey(process.env.REACT_APP_MAPS_API_KEY);
+}
+const INITIAL_MAPS_KEY = getConfiguredMapsKey();
 if (!INITIAL_MAPS_KEY) {
   console.warn(
     "[WebGPU StreetView] No Maps API key found at initial eval. " +
@@ -138,6 +151,8 @@ function InnerApp() {
 
   // Maps API auth/key status
   const [mapsAuthFailed, setMapsAuthFailed] = useState(false);
+  const [mapsAuthError, setMapsAuthError] = useState<string | null>(null);
+  const [isRetryingMapsAuth, setIsRetryingMapsAuth] = useState(false);
   const [effectiveMapsKey, setEffectiveMapsKey] = useState<string>(INITIAL_MAPS_KEY);
   const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!INITIAL_MAPS_KEY);
   const [showAuthFailedBanner, setShowAuthFailedBanner] = useState(false);
@@ -232,7 +247,7 @@ function InnerApp() {
     let stopped = false;
     const syncKey = () => {
       if (stopped) return;
-      const k = (window.MAPS_API_KEY?.trim() || process.env.REACT_APP_MAPS_API_KEY || '').trim();
+      const k = getConfiguredMapsKey();
       if (k && k !== effectiveMapsKey) {
         console.log('[App] Late Maps API key detected — updating effective key');
         setEffectiveMapsKey(k);
@@ -240,6 +255,7 @@ function InnerApp() {
         // If we previously showed auth failure for the empty key, clear it so the
         // new key can be tried (user may still get auth error if the key itself is bad).
         if (!mapsAuthFailed) {
+          setMapsAuthError(null);
           setShowAuthFailedBanner(false);
         }
       }
@@ -262,6 +278,7 @@ function InnerApp() {
   useEffect(() => {
     const unsubscribe = onMapsAuthFailure(() => {
       setMapsAuthFailed(true);
+      setMapsAuthError('Google Maps API key error — check referrer restrictions, billing, and enabled APIs in Google Cloud Console.');
       setShowAuthFailedBanner(true);
       // Auto-disable cruise mode on auth failure — prevents indefinite error spam
       setIsCruiseMode(false);
@@ -285,6 +302,33 @@ function InnerApp() {
     isTransitioning,
     setNavPending,
   });
+
+  const handleRetryMapsAuth = useCallback(() => {
+    const nextKey = getConfiguredMapsKey();
+    if (!nextKey) {
+      setMapsAuthError('No Google Maps API key is configured. Set window.MAPS_API_KEY in public/config.js or provide REACT_APP_MAPS_API_KEY at build time.');
+      setShowMissingKeyBanner(true);
+      return;
+    }
+
+    setIsRetryingMapsAuth(true);
+    setMapsAuthFailed(false);
+    setMapsAuthError(null);
+    setShowAuthFailedBanner(false);
+    setShowMissingKeyBanner(false);
+    setEffectiveMapsKey(nextKey);
+    removeFailedBootstrap();
+
+    loadMapsApi(nextKey)
+      .catch((err) => {
+        setMapsAuthFailed(true);
+        setShowAuthFailedBanner(true);
+        setMapsAuthError(err instanceof Error ? err.message : 'Google Maps API key error — retry failed.');
+      })
+      .finally(() => {
+        setIsRetryingMapsAuth(false);
+      });
+  }, []);
 
   const toggleRadio = () => {
     if (!audioRef.current) return;

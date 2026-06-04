@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { loadMapsApi } from '../services/maps/loader';
+import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
 
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
@@ -27,14 +27,10 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         if (isInitializedRef.current && lastKeyRef.current === trimmed) {
             return;
         }
-        // If key changed, allow re-initialization (fixes #85). Clean up previous failed bootstrap if any.
-        if (lastKeyRef.current && lastKeyRef.current !== trimmed) {
+        // Key changed (including first real key after empty start) — reset so we re-initialize.
+        if (trimmed !== lastKeyRef.current) {
             isInitializedRef.current = false;
-            // Loader also exposes removeFailedBootstrap for full cleanup; we call it here defensively
-            try {
-                // dynamic import to avoid circulars; the function is also exported from loader
-                import('../services/maps/loader').then(({ removeFailedBootstrap }) => removeFailedBootstrap?.());
-            } catch {}
+            removeFailedBootstrap();
         }
         lastKeyRef.current = trimmed;
         if (isInitializedRef.current) return;
