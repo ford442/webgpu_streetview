@@ -22,12 +22,72 @@ Requirements:
 
 import io
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
 from typing import Optional
 
 import requests
+
+# Patterns that identify placeholder / template values — not real keys.
+_PLACEHOLDER_PATTERNS = [
+    re.compile(r'^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key', re.I),
+    re.compile(r'^YOUR_MAPS_API_KEY$'),
+    re.compile(r'^placeholder', re.I),
+    re.compile(r'^<.*>$'),
+    re.compile(r'replace', re.I),
+    re.compile(r'^AIzaSy-placeholder', re.I),
+]
+
+
+def _is_placeholder(key: str) -> bool:
+    if not key:
+        return True
+    return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
+
+
+def _validate_maps_key(key: str) -> None:
+    """Warn loudly if key looks wrong; optionally do a live probe."""
+    if not key or _is_placeholder(key):
+        print("\n" + "!" * 70)
+        print("  WARNING: MAPS_API_KEY is empty or a placeholder value.")
+        print("  The deployed app will show 'This page can't load Google Maps correctly'.")
+        print("  Set a real key:  MAPS_API_KEY=AIzaSy... python deploy.py")
+        print("!" * 70 + "\n")
+        return
+
+    if not re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', key):
+        print(f"\nWARNING: MAPS_API_KEY doesn't match the expected AIzaSy... format (length {len(key)}).")
+        print("  Double-check the key is correct before deploying.\n")
+        return
+
+    # Quick live probe: fetch the Maps JS bootstrap and look for auth error markers.
+    # This catches: billing disabled, API not enabled, key entirely invalid.
+    # It does NOT catch referrer restrictions (those only fire in a browser with
+    # a matching Origin/Referer header) — verify those manually in GCP Console.
+    print(f"  Probing Maps JS API with key {key[:8]}...{key[-4:]} (checks billing & API-enabled)…", end=" ", flush=True)
+    try:
+        resp = requests.get(
+            "https://maps.googleapis.com/maps/api/js",
+            params={"key": key, "v": "weekly"},
+            timeout=10,
+            headers={"User-Agent": "deploy-preflight/1.0"},
+        )
+        body = resp.text
+        if resp.status_code != 200:
+            print(f"FAIL (HTTP {resp.status_code})")
+            print("  WARNING: Maps JS API returned non-200 — key may be invalid or APIs not enabled.")
+        elif any(marker in body for marker in ("InvalidKey", "MapsInvalidKey", "AuthFailure", "ApiNotActivatedMapError")):
+            print("FAIL (auth/activation error in response)")
+            print("  WARNING: Maps JS API returned an auth or activation error.")
+            print("  Check: key validity, Maps JS API enabled, billing active.")
+        else:
+            print("OK")
+            print("  NOTE: Referrer restrictions cannot be verified from a script.")
+            print("        Confirm test.1ink.us and go.1ink.us are in the key's allowlist in GCP Console.")
+    except Exception as exc:
+        print(f"SKIP (network error: {exc})")
 
 # ============================================================
 # PER-PROJECT CONFIGURATION - EDIT THESE
@@ -142,6 +202,11 @@ def main():
         print(f"ERROR: Build directory '{BUILD_DIR}/' does not exist.")
         print("Please run your build command first (e.g. `npm run build`).")
         sys.exit(1)
+
+    # --- Pre-deploy Maps key validation ---
+    print("Checking Maps API key...")
+    _validate_maps_key(MAPS_API_KEY or "")
+    # ----------------------------------------
 
     try:
         health = requests.get(f"{CONTABO_BASE_URL}/api/deploy/health", timeout=10)
