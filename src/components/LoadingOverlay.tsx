@@ -276,6 +276,8 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
     duration: 300,
     easing: easings.easeInOut,
   });
+  const fadeOpacity = fadeTransition.opacity;
+  const toggleFade = fadeTransition.toggle;
 
   // Auto-connect to loading state manager if type is provided
   useEffect(() => {
@@ -308,11 +310,11 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 
   // Handle visibility changes with fade
   useEffect(() => {
-    fadeTransition.toggle(displayState.isVisible);
-  }, [displayState.isVisible, fadeTransition]);
+    toggleFade(displayState.isVisible);
+  }, [displayState.isVisible, toggleFade]);
 
   // Don't render if not visible and fade is complete
-  if (fadeTransition.opacity <= 0.01 && !displayState.isVisible) {
+  if (fadeOpacity <= 0.01 && !displayState.isVisible) {
     return null;
   }
 
@@ -366,13 +368,13 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
         justifyContent: 'center',
         gap: 20,
         backgroundColor: size === 'fullscreen' 
-          ? `rgba(0, 0, 0, ${0.85 * fadeTransition.opacity})` 
-          : `rgba(30, 30, 30, ${0.95 * fadeTransition.opacity})`,
+          ? `rgba(0, 0, 0, ${0.85 * fadeOpacity})` 
+          : `rgba(30, 30, 30, ${0.95 * fadeOpacity})`,
         backdropFilter: size === 'fullscreen' ? `blur(8px)` : 'blur(4px)',
         zIndex: 9999,
-        opacity: fadeTransition.opacity,
+        opacity: fadeOpacity,
         transition: 'opacity 0.3s ease',
-        pointerEvents: fadeTransition.opacity > 0.5 ? 'auto' : 'none',
+        pointerEvents: fadeOpacity > 0.5 ? 'auto' : 'none',
       }}
     >
       {displayState.error ? (

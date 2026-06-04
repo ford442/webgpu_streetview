@@ -1,15 +1,26 @@
 import React, { useEffect, useRef } from 'react';
 import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
 
+export type MapsLoadStatus =
+    | 'idle'
+    | 'loading-api'
+    | 'api-ready'
+    | 'api-error'
+    | 'loading-panorama'
+    | 'canvas-ready'
+    | 'canvas-timeout'
+    | 'rendering';
+
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
     apiKey: string;
     initialPosition?: { lat: number; lng: number };
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
     onError?: (message: string) => void;
+    onStatusChange?: (status: MapsLoadStatus) => void;
 }
 
-const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError }) => {
+const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError, onStatusChange }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
@@ -22,6 +33,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         if (!trimmed) {
             // Do not initialize (or keep previous) with empty/placeholder key.
             // This allows a late-arriving key (see #84) to trigger a clean init.
+            onStatusChange?.('idle');
             return;
         }
         if (isInitializedRef.current && lastKeyRef.current === trimmed) {
@@ -35,6 +47,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         lastKeyRef.current = trimmed;
         if (isInitializedRef.current) return;
         isInitializedRef.current = true;
+        onStatusChange?.('loading-api');
 
         let isMounted = true;
         let cleanup: (() => void) | null = null;
@@ -44,8 +57,11 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             if (!isMounted || !panoRef.current) return null;
             if (!window.google?.maps?.Map) {
                 console.error('[StreetView] Google Maps API not available');
+                onStatusChange?.('api-error');
                 return null;
             }
+
+            onStatusChange?.('loading-panorama');
 
             // Off-screen container for the linked Map instance.
             // Must have real pixel dimensions — a 0×0 or visibility:hidden div
@@ -98,6 +114,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     const status = panoInstance.getStatus();
                     if (status !== google.maps.StreetViewStatus.OK) {
                         console.warn('[StreetView] Panorama status:', status);
+                        onStatusChange?.('canvas-timeout');
                         onError?.(`Street View unavailable: ${status}`);
                     }
                 });
@@ -129,6 +146,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     if (bestCanvas !== activeCanvasRef.current) {
                         console.log(`[StreetView] Canvas ready: ${bestCanvas.width}×${bestCanvas.height}`);
                         activeCanvasRef.current = bestCanvas;
+                        onStatusChange?.('canvas-ready');
                         onCanvasReady(bestCanvas);
                     }
                 };
@@ -150,6 +168,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                             : 'pano div missing';
                         const msg = `Canvas detection timed out (found: ${found}) — Street View may be unavailable at this location.`;
                         console.error('[StreetView]', msg);
+                        onStatusChange?.('canvas-timeout');
                         onError?.(msg);
                     }
                 }, 3500);
@@ -174,6 +193,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 };
             } catch (err) {
                 console.error('[StreetView] Initialization error:', err);
+                onStatusChange?.('api-error');
                 if (mapDiv.parentElement) {
                     mapDiv.parentElement.removeChild(mapDiv);
                 }
@@ -184,11 +204,13 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         // Load Google Maps API via singleton loader (idempotent, no callback, no libraries)
         loadMapsApi(apiKey).then(() => {
             if (isMounted) {
+                onStatusChange?.('api-ready');
                 cleanup = initialize();
             }
         }).catch((err) => {
             if (isMounted) {
                 console.error('[StreetView] Maps API load failed:', err);
+                onStatusChange?.('api-error');
                 onError?.('Failed to load Google Maps API. Please check your API key and network connection.');
             }
         });

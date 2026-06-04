@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import StreetView from './components/StreetView';
+import StreetView, { type MapsLoadStatus } from './components/StreetView';
 import WelcomeModal from './components/WelcomeModal';
 import './style.css';
 
@@ -29,8 +29,8 @@ import {
   GlobeView,
   PerformanceStatsOverlay,
   WebGPUCanvas,
+  LoadingOverlay,
 } from './components';
-import { ErrorDisplay } from './components/LoadingOverlay';
 
 // Hooks
 import { useBookmarks } from './hooks/useBookmarks';
@@ -144,9 +144,16 @@ function InnerApp() {
     setWebGPUAvailable(available);
     setWebgpuStatus(available ? 'ready' : 'fallback');
   }, []);
+  const handleMapsStatusChange = useCallback((status: MapsLoadStatus) => {
+    setMapsLoadStatus(status);
+    if (status !== 'api-error' && status !== 'canvas-timeout') {
+      setCanvasError(null);
+    }
+  }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
   const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [mapsLoadStatus, setMapsLoadStatus] = useState<MapsLoadStatus>(INITIAL_MAPS_KEY ? 'idle' : 'api-error');
   const [navPending, setNavPending] = useState(false);
 
   // Maps API auth/key status
@@ -240,6 +247,12 @@ function InnerApp() {
     }
   }, [canvas, isCanvasReady]);
 
+  useEffect(() => {
+    if (isCanvasReady && webgpuStatus !== 'initializing' && mapsLoadStatus !== 'api-error' && mapsLoadStatus !== 'canvas-timeout') {
+      setMapsLoadStatus('rendering');
+    }
+  }, [isCanvasReady, mapsLoadStatus, webgpuStatus]);
+
   // Reactive key poller / listener: recovers from config.js race (#84) and allows
   // a valid runtime key that arrives after initial bundle eval to initialize Maps.
   // Complements the reset logic in StreetView.tsx (#85).
@@ -251,6 +264,7 @@ function InnerApp() {
       if (k && k !== effectiveMapsKey) {
         console.log('[App] Late Maps API key detected — updating effective key');
         setEffectiveMapsKey(k);
+        setMapsLoadStatus('loading-api');
         setShowMissingKeyBanner(false);
         // If we previously showed auth failure for the empty key, clear it so the
         // new key can be tried (user may still get auth error if the key itself is bad).
@@ -279,6 +293,7 @@ function InnerApp() {
     const unsubscribe = onMapsAuthFailure(() => {
       setMapsAuthFailed(true);
       setMapsAuthError('Google Maps API key error — check referrer restrictions, billing, and enabled APIs in Google Cloud Console.');
+      setMapsLoadStatus('api-error');
       setShowAuthFailedBanner(true);
       // Auto-disable cruise mode on auth failure — prevents indefinite error spam
       setIsCruiseMode(false);
@@ -307,11 +322,13 @@ function InnerApp() {
     const nextKey = getConfiguredMapsKey();
     if (!nextKey) {
       setMapsAuthError('No Google Maps API key is configured. Set window.MAPS_API_KEY in public/config.js or provide REACT_APP_MAPS_API_KEY at build time.');
+      setMapsLoadStatus('api-error');
       setShowMissingKeyBanner(true);
       return;
     }
 
     setIsRetryingMapsAuth(true);
+    setMapsLoadStatus('loading-api');
     setMapsAuthFailed(false);
     setMapsAuthError(null);
     setShowAuthFailedBanner(false);
@@ -322,6 +339,7 @@ function InnerApp() {
     loadMapsApi(nextKey)
       .catch((err) => {
         setMapsAuthFailed(true);
+        setMapsLoadStatus('api-error');
         setShowAuthFailedBanner(true);
         setMapsAuthError(err instanceof Error ? err.message : 'Google Maps API key error — retry failed.');
       })
@@ -410,6 +428,53 @@ function InnerApp() {
   });
 
   useKeyboardShortcuts(shortcuts, isConnected && !showWelcome);
+
+  const mapsLoadingOverlay = (() => {
+    if (!isConnected) return null;
+    if (mapsAuthFailed) return null;
+
+    if (!effectiveMapsKey) {
+      return {
+        isVisible: true,
+        message: '',
+        error: 'No Google Maps API key is configured. Set window.MAPS_API_KEY in public/config.js or provide REACT_APP_MAPS_API_KEY at build time.',
+        retryable: true,
+        onRetry: handleRetryMapsAuth,
+      };
+    }
+
+    switch (mapsLoadStatus) {
+      case 'loading-api':
+        return { isVisible: true, message: 'Connecting to Google Maps...', progress: 15 };
+      case 'api-ready':
+        return { isVisible: true, message: 'Google Maps connected. Preparing Street View...', progress: 35 };
+      case 'loading-panorama':
+        return { isVisible: true, message: 'Loading Street View...', progress: 55 };
+      case 'canvas-ready':
+        return { isVisible: webgpuStatus === 'initializing', message: 'Preparing WebGPU renderer...', progress: 85 };
+      case 'canvas-timeout':
+        return {
+          isVisible: true,
+          message: '',
+          error: canvasError || 'Street View unavailable at this location.',
+          retryable: true,
+          onRetry: () => window.location.reload(),
+        };
+      case 'api-error':
+        return {
+          isVisible: true,
+          message: '',
+          error: mapsAuthError || canvasError || 'Failed to load Google Maps API. Please check your API key and network connection.',
+          retryable: true,
+          onRetry: handleRetryMapsAuth,
+        };
+      case 'idle':
+        return { isVisible: !isCanvasReady, message: 'Preparing Maps connection...', progress: 5 };
+      case 'rendering':
+      default:
+        return { isVisible: false, message: '' };
+    }
+  })();
   
   return (
     <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
@@ -422,6 +487,84 @@ function InnerApp() {
         showAuthFailedBanner={showAuthFailedBanner}
         setShowAuthFailedBanner={setShowAuthFailedBanner}
       />
+
+      {mapsAuthFailed && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="maps-auth-error-title"
+          aria-describedby="maps-auth-error-description"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2500,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            color: '#fff',
+            fontFamily: 'system-ui, sans-serif',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <div
+            style={{
+              width: 'min(560px, 100%)',
+              background: 'linear-gradient(145deg, rgba(32,12,12,0.98), rgba(10,10,10,0.98))',
+              border: '1px solid rgba(255,120,120,0.55)',
+              borderRadius: 16,
+              boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
+              padding: 28,
+            }}
+          >
+            <div style={{ fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ffb3b3', marginBottom: 10 }}>
+              Maps authentication failed
+            </div>
+            <h2 id="maps-auth-error-title" style={{ margin: '0 0 12px', fontSize: 28, lineHeight: 1.1 }}>
+              Google Maps API key error
+            </h2>
+            <p id="maps-auth-error-description" style={{ margin: '0 0 16px', lineHeight: 1.5, color: 'rgba(255,255,255,0.88)' }}>
+              {mapsAuthError || 'Google Maps API key error — check referrer restrictions and billing in Google Cloud Console.'}
+            </p>
+            <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 12, fontSize: 13, lineHeight: 1.45, marginBottom: 20 }}>
+              Verify that this host is whitelisted under HTTP referrer restrictions, billing is enabled, and the Maps JavaScript API plus Street View dependencies are enabled for the key.
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={handleRetryMapsAuth}
+                disabled={isRetryingMapsAuth}
+                style={{
+                  background: isRetryingMapsAuth ? 'rgba(255,255,255,0.22)' : '#ff6b6b',
+                  border: 0,
+                  borderRadius: 8,
+                  color: '#fff',
+                  cursor: isRetryingMapsAuth ? 'wait' : 'pointer',
+                  fontWeight: 700,
+                  padding: '10px 16px',
+                }}
+              >
+                {isRetryingMapsAuth ? 'Retrying…' : 'Retry Maps'}
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.5)',
+                  borderRadius: 8,
+                  color: '#fff',
+                  cursor: 'pointer',
+                  padding: '10px 16px',
+                }}
+              >
+                Reload page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {showWelcome && <WelcomeModal onStart={handleStart} />}
 
@@ -660,6 +803,7 @@ function InnerApp() {
           initialPosition={{ lat: 37.86926, lng: -122.254811 }}
           onCanvasReady={setCanvas}
           onError={setCanvasError}
+          onStatusChange={handleMapsStatusChange}
           onPanoramaReady={(pano) => {
             setPanorama(pano);
             setCanvasError(null);
@@ -692,54 +836,16 @@ function InnerApp() {
       >
         {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={effectiveMapsKey} />}
         
-        {/* Show loading screen while waiting for canvas or WebGPU init */}
-        {isConnected && (!isCanvasReady || webgpuStatus === 'initializing') && (
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#000',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1
-          }}>
-            {canvasError ? (
-              <ErrorDisplay
-                message={canvasError}
-                retryable={true}
-                onRetry={() => window.location.reload()}
-              />
-            ) : (
-              <>
-                <div style={{
-                  color: '#4CAF50',
-                  fontSize: '18px',
-                  marginBottom: '20px',
-                  fontFamily: 'sans-serif'
-                }}>
-                  Loading Street View...
-                </div>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  border: '4px solid rgba(255, 255, 255, 0.1)',
-                  borderTopColor: '#4CAF50',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }} />
-                <style>{`
-                  @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
-              </>
-            )}
-          </div>
+        {mapsLoadingOverlay && (
+          <LoadingOverlay
+            isVisible={mapsLoadingOverlay.isVisible}
+            message={mapsLoadingOverlay.message}
+            progress={mapsLoadingOverlay.progress}
+            error={mapsLoadingOverlay.error}
+            retryable={mapsLoadingOverlay.retryable}
+            onRetry={mapsLoadingOverlay.onRetry}
+            size="fullscreen"
+          />
         )}
       </div>
     </div>
