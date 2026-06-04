@@ -21,7 +21,29 @@
 #   --wat-only   Always use the WAT→WASM path, even if emcc is available.
 
 set -euo pipefail
-source /content/buil*/emsdk/emsdk_env.sh
+
+# Activate Emscripten if an emsdk environment is available, but never let a
+# missing/relocated emsdk abort the build — the script falls back to the
+# wabt (WAT → WASM) path below when emcc is not present. Honour EMSDK_ENV if
+# set, otherwise probe a couple of common locations.
+activate_emsdk() {
+  local candidate
+  for candidate in \
+    "${EMSDK_ENV:-}" \
+    "${EMSDK:-}/emsdk_env.sh" \
+    /content/buil*/emsdk/emsdk_env.sh \
+    "$HOME"/emsdk/emsdk_env.sh; do
+    [ -n "$candidate" ] || continue
+    for resolved in $candidate; do
+      if [ -f "$resolved" ]; then
+        # shellcheck disable=SC1090
+        source "$resolved" && return 0
+      fi
+    done
+  done
+  return 0
+}
+activate_emsdk
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$REPO_ROOT/cpp"
