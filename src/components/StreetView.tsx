@@ -79,17 +79,14 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             document.body.appendChild(mapDiv);
 
             try {
-                // Only pass mapId when a registered Cloud Map ID is configured.
-                // The placeholder 'webgpu-streetview-default' is NOT a registered ID
-                // and causes failing MapsConfigService requests on every page load.
                 const mapOptions: google.maps.MapOptions = {
                     center: startLocation,
                     zoom: 12,
                     disableDefaultUI: true,
+                    // 'DEMO_MAP_ID' suppresses the "no Map ID / Advanced Markers" warning.
+                    // Override with a real Cloud Map ID via REACT_APP_GOOGLE_MAPS_MAP_ID if needed.
+                    mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
                 };
-                if (process.env.REACT_APP_GOOGLE_MAPS_MAP_ID) {
-                    mapOptions.mapId = process.env.REACT_APP_GOOGLE_MAPS_MAP_ID;
-                }
                 const mapInstance = new google.maps.Map(mapDiv, mapOptions);
 
                 const panoInstance = new google.maps.StreetViewPanorama(panoRef.current, {

@@ -208,8 +208,6 @@ function InnerApp() {
   // Audio ref for radio
   const audioRef = useRef<HTMLAudioElement | null>(null);
   
-  // Directions service
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   
   // Initialize audio
@@ -807,9 +805,6 @@ function InnerApp() {
           onPanoramaReady={(pano) => {
             setPanorama(pano);
             setCanvasError(null);
-            if (!directionsServiceRef.current) {
-              directionsServiceRef.current = new google.maps.DirectionsService();
-            }
             if (!geocoderRef.current) {
               geocoderRef.current = new google.maps.Geocoder();
             }
