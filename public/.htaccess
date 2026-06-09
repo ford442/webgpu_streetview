@@ -1,0 +1,7 @@
+<IfModule mod_headers.c>
+  # WebGPU works with credentialless COEP and it does NOT block Google Maps
+  # StaticMap / QuotaService / Street View Static API requests the way
+  # require-corp does (ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep).
+  Header set Cross-Origin-Embedder-Policy "credentialless"
+  Header set Cross-Origin-Opener-Policy "same-origin"
+</IfModule>
