@@ -89,7 +89,18 @@ else
   fi
 fi
 
-# 5. Optional: size sanity (warn only)
+# 5. Cesium / CRA IIFE: main bundle must not contain raw import.meta
+MAIN_JS=$(find "$BUILD_DIR/static/js" -name 'main.*.js' | head -1)
+if [ -n "$MAIN_JS" ]; then
+  if grep -q 'import\.meta' "$MAIN_JS"; then
+    echo "❌ ERROR: $MAIN_JS still contains import.meta — run ./scripts/patch-cesium-bundle.sh"
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ No raw import.meta in main bundle (Cesium patch OK)"
+  fi
+fi
+
+# 6. Optional: size sanity (warn only)
 BUNDLE_SIZE=$(du -sm "$BUILD_DIR" | cut -f1)
 echo "ℹ️  Build size: ${BUNDLE_SIZE} MB"
 

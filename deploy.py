@@ -254,6 +254,8 @@ def main():
         print("  1. curl https://test.1ink.us/streetview/config.js  (or go.1ink.us) — expect your key")
         print("  2. Hard refresh the demo; no 'This page can't load Google Maps correctly'")
         print("  3. Check GCP: key has referrers for both hosts + billing + JS API + Directions enabled")
+        print("  4. curl -sI https://test.1ink.us/streetview/ | grep -i cross-origin-embedder")
+        print("     Expect 'credentialless' (NOT 'require-corp') — require-corp blocks Google Maps sub-requests and causes flicker.")
         print("See docs/DEPLOY_CHECKLIST.md and GitHub issues #84 #89.")
     sys.exit(0 if success else 1)
 

@@ -302,7 +302,9 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
           // Transition complete (or hard timeout)
           transitionRafRef.current = null;
           if (rendererRef.current) {
-            rendererRef.current.setTransitionProgress(1.0);
+            // Reset blend weight — leaving progress at 0.85 caused visible flicker
+            // when the shader kept mixing previous/current frames after the move ended.
+            rendererRef.current.setTransitionProgress(0.0);
           }
           setIsTransitioning(false);
           setTransitionSource(null);
@@ -339,9 +341,17 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (!pano) return;
     
     let stabilityInterval: ReturnType<typeof setInterval> | null = null;
+    let lastHandledPanoId = pano.getPano() || '';
     
     const handlePanoChanged = () => {
-      console.log('[StreetView] Panorama changed event fired');
+      const panoId = pano.getPano() || '';
+      // Google sometimes fires spurious pano_changed events (e.g. when COEP blocks
+      // auxiliary Maps requests). Ignore repeats for the same pano once we're ready.
+      if (panoId && panoId === lastHandledPanoId && isPanoramaReadyRef.current) {
+        return;
+      }
+      lastHandledPanoId = panoId;
+      console.log('[StreetView] Panorama changed event fired', panoId ? `(${panoId})` : '');
       const loc = pano.getLocation();
       if (loc) {
         const desc = loc.description || loc.shortDescription || 'Unknown Location';
