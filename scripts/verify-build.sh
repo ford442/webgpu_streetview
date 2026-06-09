@@ -56,8 +56,11 @@ if [ -n "$MAIN_JS" ]; then
     echo "ℹ️  Note: Main bundle contains an 'AIzaSy...' string (this is the build-time fallback key)."
     echo "    This is acceptable only if you intentionally built with REACT_APP_MAPS_API_KEY set."
     echo "    For the safest deploys, build without it and rely on deploy.py MAPS_API_KEY override."
+  elif grep -q '__RUNTIME_MAPS_KEY_SENTINEL__' "$MAIN_JS"; then
+    echo "✅ Deploy sentinel present in main bundle (deploy.py will bake MAPS_API_KEY)"
   else
-    echo "✅ No API key pattern found in main bundle (pure runtime config path)"
+    echo "❌ ERROR: main bundle has no API key and no deploy sentinel — Maps will not load"
+    ERRORS=$((ERRORS+1))
   fi
 fi
 
@@ -81,11 +84,10 @@ else
     echo "✅ index.html references the main JS bundle"
   fi
 
-  if ! grep -q 'config.js' "$INDEX_HTML"; then
-    echo "❌ ERROR: build/index.html does not reference config.js"
-    ERRORS=$((ERRORS+1))
+  if grep -q 'config.js' "$INDEX_HTML"; then
+    echo "ℹ️  index.html still references config.js (optional; go.1ink.us uses bundle-only keys)"
   else
-    echo "✅ index.html correctly references config.js"
+    echo "✅ index.html uses bundle-only Maps key delivery (go.1ink.us style)"
   fi
 fi
 
