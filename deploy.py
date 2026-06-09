@@ -47,6 +47,34 @@ def _is_placeholder(key: str) -> bool:
     return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
 
 
+def _validate_build_index(build_path: Path) -> None:
+    """Reject builds whose index.html looks like an unprocessed CRA template."""
+    index_html = build_path / "index.html"
+    if not index_html.is_file():
+        print(f"\nERROR: {index_html} is missing. Run 'npm run build' first.")
+        sys.exit(1)
+
+    content = index_html.read_text(encoding="utf-8", errors="replace")
+    problems: list[str] = []
+    if "%PUBLIC_URL%" in content:
+        problems.append("contains unprocessed %PUBLIC_URL% (public/index.html was deployed instead of build/index.html)")
+    if "static/js/main" not in content:
+        problems.append("does not reference static/js/main.*.js (React bundle will never load)")
+    if "config.js" not in content:
+        problems.append("does not reference config.js (runtime MAPS_API_KEY override will not work)")
+
+    if problems:
+        print("\n" + "!" * 70)
+        print("  ERROR: build/index.html is not safe to deploy:")
+        for item in problems:
+            print(f"    - {item}")
+        print("  Fix: run 'npm run build' and deploy the build/ directory output.")
+        print("!" * 70 + "\n")
+        sys.exit(1)
+
+    print("  build/index.html looks valid (bundle + config.js present, no %PUBLIC_URL%).")
+
+
 def _validate_maps_key(key: str) -> None:
     """Warn loudly if key looks wrong; optionally do a live probe."""
     if not key or _is_placeholder(key):
@@ -203,7 +231,9 @@ def main():
         print("Please run your build command first (e.g. `npm run build`).")
         sys.exit(1)
 
-    # --- Pre-deploy Maps key validation ---
+    # --- Pre-deploy build + Maps key validation ---
+    print("Checking build/index.html...")
+    _validate_build_index(build_path)
     print("Checking Maps API key...")
     _validate_maps_key(MAPS_API_KEY or "")
     # ----------------------------------------

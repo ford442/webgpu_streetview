@@ -61,12 +61,32 @@ if [ -n "$MAIN_JS" ]; then
   fi
 fi
 
-# 4. Basic sanity: index.html must reference config.js
-if ! grep -q 'config.js' "$BUILD_DIR/index.html"; then
-  echo "❌ ERROR: build/index.html does not reference config.js"
+# 4. index.html deploy sanity (catches public/ template uploaded instead of build/)
+INDEX_HTML="$BUILD_DIR/index.html"
+if [ ! -f "$INDEX_HTML" ]; then
+  echo "❌ ERROR: $INDEX_HTML is missing."
   ERRORS=$((ERRORS+1))
 else
-  echo "✅ index.html correctly references config.js"
+  if grep -q '%PUBLIC_URL%' "$INDEX_HTML"; then
+    echo "❌ ERROR: build/index.html still contains %PUBLIC_URL% (unprocessed CRA template)."
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ index.html has no unprocessed %PUBLIC_URL% placeholders"
+  fi
+
+  if ! grep -q 'static/js/main' "$INDEX_HTML"; then
+    echo "❌ ERROR: build/index.html does not reference static/js/main.*.js"
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ index.html references the main JS bundle"
+  fi
+
+  if ! grep -q 'config.js' "$INDEX_HTML"; then
+    echo "❌ ERROR: build/index.html does not reference config.js"
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ index.html correctly references config.js"
+  fi
 fi
 
 # 5. Optional: size sanity (warn only)
