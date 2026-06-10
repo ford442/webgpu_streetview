@@ -56,17 +56,17 @@ import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
 
-// Google Maps API Key resolution (in priority order):
-//  1. window.MAPS_API_KEY  — set at runtime via public/config.js (no rebuild needed)
-//  2. REACT_APP_MAPS_API_KEY — baked in at build time via .env.local / CI env var
-// Never commit real keys. See public/config.js and README for deployment instructions.
-//
-// NOTE: We use a small state + poller below so a slightly delayed config.js
-// (race on some deploys / CDNs) still gets picked up without requiring a full
-// page reload. See issues #84 and #85.
+// Google Maps API Key resolution (matches go.1ink.us — baked into the JS bundle):
+//  1. REACT_APP_MAPS_API_KEY — set at `npm run build` via .env.local / CI env var
+//  2. __RUNTIME_MAPS_KEY_SENTINEL__ — replaced in the built bundle by deploy.py
+//  3. window.MAPS_API_KEY — optional manual override via config.js (dev/emergency only)
+// Never commit real keys. Production deploy: MAPS_API_KEY=... python deploy.py
+const MAPS_KEY_DEPLOY_SENTINEL = '__RUNTIME_MAPS_KEY_SENTINEL__';
+
 const PLACEHOLDER_MAPS_KEY_PATTERNS: RegExp[] = [
   /^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key[_-]?(here)?$/i,
   /^YOUR_MAPS_API_KEY$/,
+  /^__RUNTIME_MAPS_KEY_SENTINEL__$/,
   /^placeholder/i,
   /^<.*>$/,
   /replace/i,
@@ -78,15 +78,18 @@ function normalizeMapsKey(value: string | undefined): string {
 }
 
 function getConfiguredMapsKey(): string {
-  return normalizeMapsKey(window.MAPS_API_KEY) || normalizeMapsKey(process.env.REACT_APP_MAPS_API_KEY);
+  return (
+    normalizeMapsKey(process.env.REACT_APP_MAPS_API_KEY) ||
+    normalizeMapsKey(MAPS_KEY_DEPLOY_SENTINEL) ||
+    normalizeMapsKey(window.MAPS_API_KEY)
+  );
 }
 const INITIAL_MAPS_KEY = getConfiguredMapsKey();
 if (!INITIAL_MAPS_KEY) {
   console.warn(
     "[WebGPU StreetView] No Maps API key found at initial eval. " +
-    "Set window.MAPS_API_KEY in public/config.js (preferred) or set " +
-    "REACT_APP_MAPS_API_KEY in .env.local and rebuild. " +
-    "A poller will retry for late-arriving runtime keys."
+    "Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with " +
+    "MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style)."
   );
 }
 

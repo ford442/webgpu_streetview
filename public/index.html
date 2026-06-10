@@ -9,16 +9,8 @@
       body { margin: 0; background-color: #000; overflow: hidden; }
     </style>
   </head>
-  <!-- Runtime configuration: set window.MAPS_API_KEY without rebuilding the app -->
-  <script src="./config.js"></script>
-  <script>
-    // Notify the app that a (possibly late) runtime key may now be present.
-    // This helps recover from config.js / bundle eval races (see issues #84, #85).
-    try { window.dispatchEvent(new CustomEvent('maps-api-key-ready')); } catch (e) {}
-  </script>
   <script>
     // Recover when build/index.html was not deployed (public/index.html uploaded by mistake).
-    // Loads main.js + main.css from asset-manifest.json so test.1ink.us can self-heal.
     (function recoverMissingBundle() {
       function hasMainBundle() {
         return !!document.querySelector('script[src*="static/js/main"]');
