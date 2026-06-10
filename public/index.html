@@ -1,1 +1,65 @@
-[full with the dispatch script]
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1ink.us Streetview</title>
+    <meta name="description" content="WebGPU Fluid Simulation Street View Experience">
+    <style>
+      body { margin: 0; background-color: #000; overflow: hidden; }
+    </style>
+  </head>
+  <script>
+    // Recover when build/index.html was not deployed (public/index.html uploaded by mistake).
+    (function recoverMissingBundle() {
+      function hasMainBundle() {
+        return !!document.querySelector('script[src*="static/js/main"]');
+      }
+
+      function injectFromManifest() {
+        if (hasMainBundle()) return;
+        fetch('./asset-manifest.json')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (manifest) {
+            if (!manifest || !manifest.files || hasMainBundle()) return;
+            var css = manifest.files['main.css'];
+            var js = manifest.files['main.js'];
+            if (css && !document.querySelector('link[href*="static/css/main"]')) {
+              var link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = css;
+              document.head.appendChild(link);
+            }
+            if (js) {
+              var script = document.createElement('script');
+              script.defer = true;
+              script.src = js;
+              document.head.appendChild(script);
+            }
+          })
+          .catch(function () {});
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectFromManifest);
+      } else {
+        injectFromManifest();
+      }
+    })();
+  </script>
+  <script>
+  // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, options) {
+    if (type === 'webgl' || type === 'webgl2') {
+      options = options || {};
+      options.preserveDrawingBuffer = true;
+    }
+    return originalGetContext.call(this, type, options);
+  };
+</script>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

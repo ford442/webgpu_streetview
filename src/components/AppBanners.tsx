@@ -13,6 +13,11 @@ const AppBanners: React.FC<AppBannersProps> = ({
   showAuthFailedBanner,
   setShowAuthFailedBanner,
 }) => {
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : 'this host';
+
   return (
     <>
       {/* Missing API key banner */}
@@ -30,8 +35,8 @@ const AppBanners: React.FC<AppBannersProps> = ({
           onKeyDown={e => e.stopPropagation()}
         >
           <span style={{ flex: 1 }}>
-            ⚠️ <strong>REACT_APP_MAPS_API_KEY is not set.</strong>{' '}
-            Street View will not load. Set the <code>REACT_APP_MAPS_API_KEY</code> environment variable and restart the dev server (or redeploy for production).
+            ⚠️ <strong>No Google Maps API key is configured.</strong>{' '}
+            Street View will not load until <code>window.MAPS_API_KEY</code> is set in <code>public/config.js</code> or <code>REACT_APP_MAPS_API_KEY</code> is provided at build time.
           </span>
           <button
             onClick={() => setShowMissingKeyBanner(false)}
@@ -57,11 +62,11 @@ const AppBanners: React.FC<AppBannersProps> = ({
           onKeyDown={e => e.stopPropagation()}
         >
           <div style={{ flex: 1 }}>
-            🔑 <strong>Google Maps API authentication failed on this host.</strong><br />
-            The key is either referrer-restricted to other domains (e.g. go.1ink.us but not test.1ink.us), billing is disabled on the GCP project, or the Maps JavaScript + Directions APIs are not enabled for the key.
+            🔑 <strong>Google Maps API authentication failed on {currentHost}.</strong><br />
+            The key is either referrer-restricted to other domains (e.g. go.1ink.us works but test.1ink.us does not), billing is disabled on the GCP project, or the Maps JavaScript + Directions APIs are not enabled for the key.
             <span style={{ opacity: 0.9 }}> Cruise mode paused. Street View may show Google’s error overlay until a valid key for this origin is deployed.</span>
             <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-              Fix: Update the key’s HTTP referrer restrictions in Google Cloud Console to include <code>https://test.1ink.us/*</code> and <code>https://go.1ink.us/*</code>, ensure billing is linked, and re-deploy with <code>MAPS_API_KEY=... python deploy.py</code>.
+              Fix: In Google Cloud Console, add <code>{`https://${currentHost}/*`}</code> to the key’s HTTP referrer allowlist (also include <code>https://test.1ink.us/*</code> and <code>https://go.1ink.us/*</code> if you use both), ensure billing is linked, then re-deploy with <code>MAPS_API_KEY=... python deploy.py</code> and verify <code>{`https://${currentHost}/streetview/config.js`}</code> returns your key.
             </div>
           </div>
           <button

@@ -75,18 +75,18 @@ After the script says "complete", immediately do the post-deploy checks below.
   - The key used in the artifact is still the wrong one (check the served config.js or search the main.*.js for the key suffix).
   - Referrer patterns use `http` vs `https`, missing `/*`, or only one of the two hosts.
   - The project has the APIs enabled but the specific key credential does not have them restricted to (or the restriction is too narrow).
-  - COEP / CORP headers or other hosting rules interfering with the Maps script (rare).
+  - **COEP must be `credentialless`, not `require-corp`**. Both test/go currently need this: `require-corp` blocks Google Maps `StaticMapService`, `QuotaService`, and Street View Static API images (`ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep`), which causes the Maps error overlay and visible flicker. The repo ships `public/.htaccess` with the correct headers for Apache; for nginx, set the same on the server.
 
 Update the key in GCP, re-run the deploy with the correct `MAPS_API_KEY=...`, and re-verify.
 
 ## 7. Related GitHub issues (the "map loading" cluster)
 
 These open issues capture the symptoms and remaining engineering work:
-- #84: Maps API key not available at load time — config.js race
-- #85: StreetView component never re-initializes when apiKey prop changes
-- #86: No visible error UI when Google Maps auth fails
-- #87: Canvas detection fails silently when pano div is hidden
-- #88: Improve loading sequence: show spinner/status while Maps API and first panorama load
+- #84 Maps API key not available at load time — config.js race
+- #85 StreetView component never re-initializes when apiKey prop changes
+- #86 No visible error UI when Google Maps auth fails
+- #87 Canvas detection fails silently when pano div is hidden
+- #88 Improve loading sequence: show spinner/status while Maps API and first panorama load
 - #89 (this one) Deploy checklist
 
 See the comments on each for the latest codebase status and partial fixes (reactive key poller, init guard reset, deploy.py injection support, etc.).

@@ -56,20 +56,53 @@ if [ -n "$MAIN_JS" ]; then
     echo "ℹ️  Note: Main bundle contains an 'AIzaSy...' string (this is the build-time fallback key)."
     echo "    This is acceptable only if you intentionally built with REACT_APP_MAPS_API_KEY set."
     echo "    For the safest deploys, build without it and rely on deploy.py MAPS_API_KEY override."
+  elif grep -q '__RUNTIME_MAPS_KEY_SENTINEL__' "$MAIN_JS"; then
+    echo "✅ Deploy sentinel present in main bundle (deploy.py will bake MAPS_API_KEY)"
   else
-    echo "✅ No API key pattern found in main bundle (pure runtime config path)"
+    echo "❌ ERROR: main bundle has no API key and no deploy sentinel — Maps will not load"
+    ERRORS=$((ERRORS+1))
   fi
 fi
 
-# 4. Basic sanity: index.html must reference config.js
-if ! grep -q 'config.js' "$BUILD_DIR/index.html"; then
-  echo "❌ ERROR: build/index.html does not reference config.js"
+# 4. index.html deploy sanity (catches public/ template uploaded instead of build/)
+INDEX_HTML="$BUILD_DIR/index.html"
+if [ ! -f "$INDEX_HTML" ]; then
+  echo "❌ ERROR: $INDEX_HTML is missing."
   ERRORS=$((ERRORS+1))
 else
-  echo "✅ index.html correctly references config.js"
+  if grep -q '%PUBLIC_URL%' "$INDEX_HTML"; then
+    echo "❌ ERROR: build/index.html still contains %PUBLIC_URL% (unprocessed CRA template)."
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ index.html has no unprocessed %PUBLIC_URL% placeholders"
+  fi
+
+  if ! grep -q 'static/js/main' "$INDEX_HTML"; then
+    echo "❌ ERROR: build/index.html does not reference static/js/main.*.js"
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ index.html references the main JS bundle"
+  fi
+
+  if grep -q 'config.js' "$INDEX_HTML"; then
+    echo "ℹ️  index.html still references config.js (optional; go.1ink.us uses bundle-only keys)"
+  else
+    echo "✅ index.html uses bundle-only Maps key delivery (go.1ink.us style)"
+  fi
 fi
 
-# 5. Optional: size sanity (warn only)
+# 5. Cesium / CRA IIFE: main bundle must not contain raw import.meta
+MAIN_JS=$(find "$BUILD_DIR/static/js" -name 'main.*.js' | head -1)
+if [ -n "$MAIN_JS" ]; then
+  if grep -q 'import\.meta' "$MAIN_JS"; then
+    echo "❌ ERROR: $MAIN_JS still contains import.meta — run ./scripts/patch-cesium-bundle.sh"
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ No raw import.meta in main bundle (Cesium patch OK)"
+  fi
+fi
+
+# 6. Optional: size sanity (warn only)
 BUNDLE_SIZE=$(du -sm "$BUILD_DIR" | cut -f1)
 echo "ℹ️  Build size: ${BUNDLE_SIZE} MB"
 

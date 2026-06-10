@@ -180,7 +180,7 @@ export class Renderer {
                 { binding: 0, resource: this.sampler },
                 { binding: 1, resource: textureView },
                 { binding: 2, resource: { buffer: this.uniformBuffer } },
-                { binding: 3, resource: (this.transitionManager.previousFrame ? this.transitionManager.previousFrame.createView() : textureView) },
+                { binding: 3, resource: (this.transitionManager?.previousFrame ? this.transitionManager.previousFrame.createView() : textureView) },
             ],
         });
     }

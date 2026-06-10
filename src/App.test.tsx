@@ -1,21 +1,189 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import App from './App';
+import type { MapsLoadStatus } from './components/StreetView';
+
+const streetViewApiKeys: string[] = [];
+const mockMapsAuthListeners: Array<() => void> = [];
+const mockLoadMapsApi = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
+const mockRemoveFailedBootstrap = jest.fn<void, []>();
+let mockLatestStreetViewStatusChange: ((status: MapsLoadStatus) => void) | undefined;
+let mockLatestStreetViewCanvasReady: ((canvas: HTMLCanvasElement) => void) | undefined;
+
+jest.mock('./components/StreetView', () => {
+  return function MockStreetView({
+    apiKey,
+    onStatusChange,
+    onCanvasReady,
+  }: {
+    apiKey: string;
+    onStatusChange?: (status: MapsLoadStatus) => void;
+    onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+  }) {
+    streetViewApiKeys.push(apiKey);
+    mockLatestStreetViewStatusChange = onStatusChange;
+    mockLatestStreetViewCanvasReady = onCanvasReady;
+    return <div data-testid="mock-street-view" data-api-key={apiKey} />;
+  };
+});
+
+jest.mock('./components/WebGPUCanvas', () => {
+  const React = require('react');
+  return function MockWebGPUCanvas({ onWebGPUStatus }: { onWebGPUStatus?: (available: boolean) => void }) {
+    React.useEffect(() => {
+      onWebGPUStatus?.(true);
+    }, [onWebGPUStatus]);
+    return <div data-testid="mock-webgpu-canvas" />;
+  };
+});
+
+jest.mock('./car', () => ({
+  initCarMode: jest.fn(() => null),
+  toggleCarMode: jest.fn(),
+  disposeCarMode: jest.fn(),
+}));
+
+jest.mock('./services/maps/loader', () => ({
+  loadMapsApi: (apiKey: string) => mockLoadMapsApi(apiKey),
+  removeFailedBootstrap: () => mockRemoveFailedBootstrap(),
+  onMapsAuthFailure: (cb: () => void) => {
+    mockMapsAuthListeners.push(cb);
+    return () => {
+      const idx = mockMapsAuthListeners.indexOf(cb);
+      if (idx !== -1) mockMapsAuthListeners.splice(idx, 1);
+    };
+  },
+}));
 
 describe('App', () => {
+  beforeEach(() => {
+    streetViewApiKeys.length = 0;
+    mockMapsAuthListeners.length = 0;
+    mockLoadMapsApi.mockClear();
+    mockLoadMapsApi.mockResolvedValue(undefined);
+    mockRemoveFailedBootstrap.mockClear();
+    mockLatestStreetViewStatusChange = undefined;
+    mockLatestStreetViewCanvasReady = undefined;
+    window.MAPS_API_KEY = '';
+  });
+
   it('renders without crashing', () => {
     render(<App />);
   });
 
-  it('renders WebGPU canvas container', () => {
+  it('renders the Street View mount point', () => {
     render(<App />);
-    expect(screen.getByTestId('webgpu-canvas-container')).toBeInTheDocument();
+    expect(screen.getByTestId('mock-street-view')).toBeInTheDocument();
   });
 
   it('initially shows welcome modal', () => {
     render(<App />);
     expect(screen.getByText('1ink.us Streetview')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Start Exploring/i })).toBeInTheDocument();
+  });
+
+  it('shows a missing key error and picks up a late runtime key without reload', async () => {
+    render(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No Google Maps API key is configured');
+    expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', '');
+
+    window.MAPS_API_KEY = 'late-runtime-key';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', 'late-runtime-key');
+    });
+    expect(screen.queryByText(/No Google Maps API key is configured/i)).not.toBeInTheDocument();
+    expect(streetViewApiKeys).toContain('');
+    expect(streetViewApiKeys).toContain('late-runtime-key');
+  });
+
+  it('shows granular loading states and hides after rendering starts', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+
+    window.MAPS_API_KEY = 'runtime-key';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', 'runtime-key');
+    });
+
+    act(() => mockLatestStreetViewStatusChange?.('loading-api'));
+    expect(screen.getByText('Connecting to Google Maps...')).toBeInTheDocument();
+
+    act(() => mockLatestStreetViewStatusChange?.('api-ready'));
+    expect(screen.getByText('Google Maps connected. Preparing Street View...')).toBeInTheDocument();
+
+    act(() => mockLatestStreetViewStatusChange?.('loading-panorama'));
+    expect(screen.getByText('Loading Street View...')).toBeInTheDocument();
+
+    act(() => mockLatestStreetViewStatusChange?.('canvas-ready'));
+    expect(screen.getByText('Preparing WebGPU renderer...')).toBeInTheDocument();
+
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'width', { value: 512 });
+    Object.defineProperty(canvas, 'height', { value: 512 });
+    act(() => mockLatestStreetViewCanvasReady?.(canvas));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-webgpu-canvas')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Preparing WebGPU renderer...')).not.toBeInTheDocument();
+    });
+  });
+
+  it('distinguishes canvas timeout from API loading', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+
+    window.MAPS_API_KEY = 'runtime-key';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', 'runtime-key');
+    });
+
+    act(() => mockLatestStreetViewStatusChange?.('canvas-timeout'));
+
+    expect(screen.getByText('Street View unavailable at this location.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+  });
+
+  it('shows a blocking auth error overlay and retries Maps with the current runtime key', async () => {
+    render(<App />);
+
+    act(() => {
+      mockMapsAuthListeners.forEach(listener => listener());
+    });
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Google Maps API key error');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('check referrer restrictions');
+    expect(screen.getByRole('button', { name: /Retry Maps/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reload page/i })).toBeInTheDocument();
+
+    window.MAPS_API_KEY = 'fixed-runtime-key';
+    fireEvent.click(screen.getByRole('button', { name: /Retry Maps/i }));
+
+    await waitFor(() => {
+      expect(mockLoadMapsApi).toHaveBeenCalledWith('fixed-runtime-key');
+    });
+    expect(mockRemoveFailedBootstrap).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('unsubscribes the Maps auth failure listener on unmount', () => {
+    const { unmount } = render(<App />);
+
+    expect(mockMapsAuthListeners).toHaveLength(1);
+    unmount();
+    expect(mockMapsAuthListeners).toHaveLength(0);
   });
 });

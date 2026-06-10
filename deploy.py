@@ -22,12 +22,98 @@ Requirements:
 
 import io
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
 from typing import Optional
 
 import requests
+
+# Patterns that identify placeholder / template values — not real keys.
+_PLACEHOLDER_PATTERNS = [
+    re.compile(r'^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key', re.I),
+    re.compile(r'^YOUR_MAPS_API_KEY$'),
+    re.compile(r'^placeholder', re.I),
+    re.compile(r'^<.*>$'),
+    re.compile(r'replace', re.I),
+    re.compile(r'^AIzaSy-placeholder', re.I),
+]
+
+
+def _is_placeholder(key: str) -> bool:
+    if not key:
+        return True
+    return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
+
+
+def _validate_build_index(build_path: Path) -> None:
+    """Reject builds whose index.html looks like an unprocessed CRA template."""
+    index_html = build_path / "index.html"
+    if not index_html.is_file():
+        print(f"\nERROR: {index_html} is missing. Run 'npm run build' first.")
+        sys.exit(1)
+
+    content = index_html.read_text(encoding="utf-8", errors="replace")
+    problems: list[str] = []
+    if "%PUBLIC_URL%" in content:
+        problems.append("contains unprocessed %PUBLIC_URL% (public/index.html was deployed instead of build/index.html)")
+    if "static/js/main" not in content:
+        problems.append("does not reference static/js/main.*.js (React bundle will never load)")
+
+    if problems:
+        print("\n" + "!" * 70)
+        print("  ERROR: build/index.html is not safe to deploy:")
+        for item in problems:
+            print(f"    - {item}")
+        print("  Fix: run 'npm run build' and deploy the build/ directory output.")
+        print("!" * 70 + "\n")
+        sys.exit(1)
+
+    print("  build/index.html looks valid (main JS bundle present, no %PUBLIC_URL%).")
+
+
+def _validate_maps_key(key: str) -> None:
+    """Warn loudly if key looks wrong; optionally do a live probe."""
+    if not key or _is_placeholder(key):
+        print("\n" + "!" * 70)
+        print("  WARNING: MAPS_API_KEY is empty or a placeholder value.")
+        print("  The deployed app will show 'This page can't load Google Maps correctly'.")
+        print("  Set a real key:  MAPS_API_KEY=AIzaSy... python deploy.py")
+        print("!" * 70 + "\n")
+        return
+
+    if not re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', key):
+        print(f"\nWARNING: MAPS_API_KEY doesn't match the expected AIzaSy... format (length {len(key)}).")
+        print("  Double-check the key is correct before deploying.\n")
+        return
+
+    # Quick live probe: fetch the Maps JS bootstrap and look for auth error markers.
+    # This catches: billing disabled, API not enabled, key entirely invalid.
+    # It does NOT catch referrer restrictions (those only fire in a browser with
+    # a matching Origin/Referer header) — verify those manually in GCP Console.
+    print(f"  Probing Maps JS API with key {key[:8]}...{key[-4:]} (checks billing & API-enabled)…", end=" ", flush=True)
+    try:
+        resp = requests.get(
+            "https://maps.googleapis.com/maps/api/js",
+            params={"key": key, "v": "weekly"},
+            timeout=10,
+            headers={"User-Agent": "deploy-preflight/1.0"},
+        )
+        body = resp.text
+        if resp.status_code != 200:
+            print(f"FAIL (HTTP {resp.status_code})")
+            print("  WARNING: Maps JS API returned non-200 — key may be invalid or APIs not enabled.")
+        elif any(marker in body for marker in ("InvalidKey", "MapsInvalidKey", "AuthFailure", "ApiNotActivatedMapError")):
+            print("FAIL (auth/activation error in response)")
+            print("  WARNING: Maps JS API returned an auth or activation error.")
+            print("  Check: key validity, Maps JS API enabled, billing active.")
+        else:
+            print("OK")
+            print("  NOTE: Referrer restrictions cannot be verified from a script.")
+            print("        Confirm test.1ink.us and go.1ink.us are in the key's allowlist in GCP Console.")
+    except Exception as exc:
+        print(f"SKIP (network error: {exc})")
 
 # ============================================================
 # PER-PROJECT CONFIGURATION - EDIT THESE
@@ -45,23 +131,27 @@ DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6d
 # even with the current bundle-upload mechanism). This directly addresses repeated
 # map loading failures after deploys (see #89, #84).
 MAPS_API_KEY: Optional[str] = os.environ.get("MAPS_API_KEY", "").strip() or None
+# Sentinel string in src/App.tsx — deploy.py replaces it inside static/js/*.js bundles
+# (same delivery model as go.1ink.us, which bakes the key into main.js).
+MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
 # ============================================================
 
 
-def _inject_maps_key(data: bytes, key: str) -> bytes:
-    """Return a JS config snippet setting window.MAPS_API_KEY safely."""
-    import json
-    safe = json.dumps(key)
-    return f"// Injected by deploy.py (MAPS_API_KEY env)\nwindow.MAPS_API_KEY = {safe};\n".encode("utf-8")
+def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
+    """Replace the deploy sentinel with the real Maps API key in a JS bundle."""
+    needle = MAPS_KEY_SENTINEL.encode("utf-8")
+    if needle not in data:
+        return data
+    return data.replace(needle, key.encode("utf-8"))
 
 
 def build_zip(build_path: Path) -> bytes:
     """Zip the contents of build_path into an in-memory archive.
-    If MAPS_API_KEY env is set, patch build/config.js inside the archive
-    (no need to have baked the key or edited after deploy).
+    If MAPS_API_KEY env is set, bake it into static/js/*.js by replacing
+    __RUNTIME_MAPS_KEY_SENTINEL__ (go.1ink.us style — key lives in main.js).
     """
     buf = io.BytesIO()
-    injected = False
+    bundle_patched = False
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(build_path.rglob("*")):
             if file.is_dir():
@@ -72,22 +162,33 @@ def build_zip(build_path: Path) -> bytes:
             if any(p in (".git", "node_modules", "__pycache__") for p in parts):
                 continue
 
-            if MAPS_API_KEY and str(rel) == "config.js":
-                print("  + config.js (with MAPS_API_KEY injected at deploy time)")
-                zf.writestr(str(rel), _inject_maps_key(file.read_bytes(), MAPS_API_KEY))
-                injected = True
-                continue
+            file_data = file.read_bytes()
+            if (
+                MAPS_API_KEY
+                and len(parts) >= 2
+                and parts[0] == "static"
+                and parts[1] == "js"
+                and str(rel).endswith(".js")
+            ):
+                patched = _inject_maps_key_into_bundle(file_data, MAPS_API_KEY)
+                if patched != file_data:
+                    print(f"  + {rel} (Maps API key baked into bundle)")
+                    zf.writestr(str(rel), patched)
+                    bundle_patched = True
+                    continue
 
-            zf.write(file, str(rel))
+            zf.writestr(str(rel), file_data)
             print(f"  + {rel}")
 
-        if MAPS_API_KEY and not injected:
-            # No config.js in the build tree? Still provide one (defensive).
-            print("  + config.js (synthesized with MAPS_API_KEY)")
-            zf.writestr("config.js", _inject_maps_key(b"", MAPS_API_KEY))
-
     if MAPS_API_KEY:
-        print(f"\n[deploy] Maps key injected for runtime use (length {len(MAPS_API_KEY)}).")
+        if not bundle_patched:
+            print("\n" + "!" * 70)
+            print(f"  ERROR: MAPS_API_KEY provided but '{MAPS_KEY_SENTINEL}' was not found")
+            print("  in build/static/js/*.js. Run 'npm run build' first, then deploy again.")
+            print("!" * 70 + "\n")
+            sys.exit(1)
+        print(f"\n[deploy] Maps API key baked into JS bundle (length {len(MAPS_API_KEY)}).")
+        print("         Same delivery as go.1ink.us — no config.js required.")
         print("         Ensure the key's referrer allowlist covers test.1ink.us and go.1ink.us.")
     return buf.getvalue()
 
@@ -102,9 +203,9 @@ def deploy_bundle(build_path: Path) -> bool:
 
     print("Building zip archive...")
     if MAPS_API_KEY:
-        print(f"  MAPS_API_KEY provided (masked: {MAPS_API_KEY[:8]}...{MAPS_API_KEY[-4:]}) — will patch config.js")
+        print(f"  MAPS_API_KEY provided (masked: {MAPS_API_KEY[:8]}...{MAPS_API_KEY[-4:]}) — will bake into JS bundle")
     else:
-        print("  No MAPS_API_KEY env — shipping with whatever is in build/config.js (may be empty)")
+        print("  No MAPS_API_KEY env — bundle must already contain a key (REACT_APP_MAPS_API_KEY at build time)")
     zip_bytes = build_zip(build_path)
     print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
 
@@ -143,6 +244,13 @@ def main():
         print("Please run your build command first (e.g. `npm run build`).")
         sys.exit(1)
 
+    # --- Pre-deploy build + Maps key validation ---
+    print("Checking build/index.html...")
+    _validate_build_index(build_path)
+    print("Checking Maps API key...")
+    _validate_maps_key(MAPS_API_KEY or "")
+    # ----------------------------------------
+
     try:
         health = requests.get(f"{CONTABO_BASE_URL}/api/deploy/health", timeout=10)
         if health.status_code == 200:
@@ -156,9 +264,11 @@ def main():
     print(f"\n=== {'Deployment complete' if success else 'Deployment finished with errors'} ===")
     if success:
         print("Post-deploy verification (do this now):")
-        print("  1. curl https://test.1ink.us/streetview/config.js  (or go.1ink.us) — expect your key")
+        print("  1. curl -s https://test.1ink.us/streetview/static/js/main.*.js | grep -o 'AIzaSy[^\"]*' | head -1")
         print("  2. Hard refresh the demo; no 'This page can't load Google Maps correctly'")
         print("  3. Check GCP: key has referrers for both hosts + billing + JS API + Directions enabled")
+        print("  4. curl -sI https://test.1ink.us/streetview/ | grep -i cross-origin-embedder")
+        print("     Expect 'credentialless' (NOT 'require-corp') — require-corp blocks Google Maps sub-requests and causes flicker.")
         print("See docs/DEPLOY_CHECKLIST.md and GitHub issues #84 #89.")
     sys.exit(0 if success else 1)
 
