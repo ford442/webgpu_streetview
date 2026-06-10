@@ -1,7 +1,13 @@
 <IfModule mod_headers.c>
+  # Ensure only one COEP/COOP header value is sent.
+  # Some hosts inject `require-corp` at a higher level, which conflicts with
+  # Street View subresource requests and causes flicker/error overlays.
+  Header always unset Cross-Origin-Embedder-Policy
+  Header always unset Cross-Origin-Opener-Policy
+
   # WebGPU works with credentialless COEP and it does NOT block Google Maps
   # StaticMap / QuotaService / Street View Static API requests the way
   # require-corp does (ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep).
-  Header set Cross-Origin-Embedder-Policy "credentialless"
-  Header set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Embedder-Policy "credentialless"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
 </IfModule>
