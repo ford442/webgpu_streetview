@@ -1,6 +1,7 @@
 import { RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
+import { getCanvasFingerprint } from '../hooks/useStreetView';
 
 export class Renderer {
     public canvas: HTMLCanvasElement;
@@ -434,20 +435,41 @@ export class Renderer {
                     this.videoTextureWidth !== srcWidth ||
                     this.videoTextureHeight !== srcHeight;
 
-                this.createVideoTexture(srcWidth, srcHeight);
+                // P1 defensive guard: only create / upload when the source actually has
+                // usable content. This protects us if a canvas somehow reaches us before
+                // StreetView's stability gate (or during a mid-run replacement).
+                const isCanvasSource = source instanceof HTMLCanvasElement;
+                const sourceStable = !isCanvasSource || !!getCanvasFingerprint(source as HTMLCanvasElement);
 
-                if (needsBindGroupUpdate) {
-                    this.updateBindGroup();
-                }
+                if (sourceStable) {
+                    this.createVideoTexture(srcWidth, srcHeight);
 
-                try {
-                    this.device.queue.copyExternalImageToTexture(
-                        { source: source },
-                        { texture: this.videoTexture! },
-                        [srcWidth, srcHeight]
-                    );
-                } catch (e) {
-                    // Ignore transient copy errors
+                    if (needsBindGroupUpdate) {
+                        this.updateBindGroup();
+                    }
+
+                    try {
+                        this.device.queue.copyExternalImageToTexture(
+                            { source: source },
+                            { texture: this.videoTexture! },
+                            [srcWidth, srcHeight]
+                        );
+                    } catch (e) {
+                        // Ignore transient copy errors
+                    }
+                } else {
+                    // Source is not stable (still black / decoding / transient).
+                    // Do not clobber an existing good videoTexture. If we have none yet,
+                    // the render pass below will fall back to weather-only or transition path.
+                    if (needsBindGroupUpdate && this.videoTexture) {
+                        // sizes drifted but we have a previous good texture — keep using it
+                        // (it may be slightly wrong aspect but better than a black flash)
+                    } else if (!this.videoTexture) {
+                        // No previous good texture and current source is garbage — bail to a clean frame.
+                        this.renderWeatherOnly();
+                        return;
+                    }
+                    // else: keep previous videoTexture as-is and continue to draw
                 }
             }
         }

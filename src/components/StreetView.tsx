@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
+import { getCanvasFingerprint } from '../hooks/useStreetView';
 
 export type MapsLoadStatus =
     | 'idle'
@@ -25,6 +26,15 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
     const lastKeyRef = useRef<string>('');
+
+    // P1 stability tracking: do not hand a canvas to the renderer until its *content*
+    // has produced N consecutive identical good fingerprints. This prevents flashing
+    // low-res tiles, black frames, or transient Google internal canvases during init,
+    // pano loads, or network hiccups.
+    const lastFingerprintRef = useRef<string>('');
+    const stableCountRef = useRef<number>(0);
+    const everSawCandidateRef = useRef(false);
+    const REQUIRED_STABLE_SAMPLES = 2; // ~400 ms at current 200 ms polling cadence
 
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
@@ -123,7 +133,12 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
 
                 if (onPanoramaReady) onPanoramaReady(panoInstance);
 
-                // Canvas detection with retry
+                // Canvas detection with retry + P1 stability gate (see repro + analysis for "map API loading error flickering").
+                // We only promote a canvas (and thus feed it to WebGPU copyExternalImageToTexture + the render loop)
+                // after it has shown the same usable fingerprint for REQUIRED_STABLE_SAMPLES consecutive checks.
+                // This stops the renderer from ever seeing a partially decoded tile, a black/near-black frame,
+                // or a short-lived internal Google canvas during initial load, pano transitions, cruise jumps,
+                // or transient network / tile errors.
                 const checkForCanvas = () => {
                     if (!panoRef.current) return;
 
@@ -143,24 +158,64 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                         }
                     }
 
-                    if (bestCanvas.width < 256 || bestCanvas.height < 256) return;
+                    if (bestCanvas.width < 256 || bestCanvas.height < 256) {
+                        // Too small — Google is probably still creating/replacing it.
+                        stableCountRef.current = 0;
+                        return;
+                    }
 
-                    if (bestCanvas !== activeCanvasRef.current) {
-                        console.log(`[StreetView] Canvas ready: ${bestCanvas.width}×${bestCanvas.height}`);
-                        activeCanvasRef.current = bestCanvas;
-                        onStatusChange?.('canvas-ready');
-                        onCanvasReady(bestCanvas);
+                    everSawCandidateRef.current = true;
+
+                    const fp = getCanvasFingerprint(bestCanvas);
+                    if (!fp) {
+                        // Content not usable yet (black, low-res preview, still decoding, noisy).
+                        stableCountRef.current = 0;
+                        lastFingerprintRef.current = '';
+                        return;
+                    }
+
+                    const sameElement = bestCanvas === activeCanvasRef.current;
+                    const sameFp = fp === lastFingerprintRef.current;
+
+                    if (!sameFp) {
+                        lastFingerprintRef.current = fp;
+                        stableCountRef.current = 1;
+                    } else {
+                        stableCountRef.current = Math.min(stableCountRef.current + 1, REQUIRED_STABLE_SAMPLES + 1);
+                    }
+
+                    const isStable = stableCountRef.current >= REQUIRED_STABLE_SAMPLES;
+
+                    if (isStable) {
+                        if (!sameElement) {
+                            console.log(`[StreetView] Canvas stable (${stableCountRef.current} samples): ${bestCanvas.width}×${bestCanvas.height} fp=${fp}`);
+                            activeCanvasRef.current = bestCanvas;
+                            onStatusChange?.('canvas-ready');
+                            onCanvasReady(bestCanvas);
+                        } else if (!sameFp) {
+                            // Same canvas element, but content fingerprint changed and is now stable again
+                            // (e.g. Google finished loading better tiles into the existing canvas).
+                            console.log(`[StreetView] Canvas content restabilized: ${bestCanvas.width}×${bestCanvas.height}`);
+                            onCanvasReady(bestCanvas);
+                        }
+                    } else {
+                        // Candidate seen but not yet stable — do not promote.
+                        if (stableCountRef.current === 1) {
+                            console.log(`[StreetView] Canvas candidate ${bestCanvas.width}×${bestCanvas.height} (waiting for stability, fp=${fp})`);
+                        }
                     }
                 };
 
                 // Initial check with delay
                 const initialTimeout = setTimeout(checkForCanvas, 500);
                 
-                // Retry a few times for canvas detection
+                // Retry/polling window for canvas + stability. Extended so we can wait for
+                // fingerprint stability instead of promoting the first 256px canvas we see.
                 const retryInterval = setInterval(checkForCanvas, 200);
-                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 3000);
+                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 6000);
 
-                // Hard timeout: if no canvas detected after ~3.5s, surface an error
+                // Hard timeout: if we never managed to promote a *stable* canvas, surface an error.
+                // We give it a bit longer than before because we now require content stability.
                 const canvasTimeout = setTimeout(() => {
                     if (!activeCanvasRef.current) {
                         const found = panoRef.current
@@ -168,12 +223,15 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                                   .map(c => `${c.width}×${c.height}`)
                                   .join(', ') || 'none'
                             : 'pano div missing';
-                        const msg = `Canvas detection timed out (found: ${found}) — Street View may be unavailable at this location.`;
+                        const sawCandidates = everSawCandidateRef.current;
+                        const msg = sawCandidates
+                            ? `Canvas detection timed out waiting for stable imagery (saw candidates: ${found}). The panorama may be slow to load or unavailable.`
+                            : `Canvas detection timed out (found: ${found}) — Street View may be unavailable at this location.`;
                         console.error('[StreetView]', msg);
                         onStatusChange?.('canvas-timeout');
                         onError?.(msg);
                     }
-                }, 3500);
+                }, 6500);
 
                 observer = new MutationObserver(() => {
                     checkForCanvas();

@@ -1,0 +1,79 @@
+{
+  "state": {
+    "canvasCount": 0,
+    "canvases": [],
+    "gmCount": 10,
+    "gms": [
+      {
+        "cls": "gm-err-container",
+        "txt": "Oops! Something went wrong.This page didn't load Google Maps correctly. See the JavaScript console f",
+        "z": "auto",
+        "vis": "table"
+      },
+      {
+        "cls": "gm-err-content",
+        "txt": "Oops! Something went wrong.This page didn't load Google Maps correctly. See the JavaScript console f",
+        "z": "auto",
+        "vis": "table-cell"
+      },
+      {
+        "cls": "gm-err-icon",
+        "txt": "",
+        "z": "auto",
+        "vis": "block"
+      },
+      {
+        "cls": "gm-err-title",
+        "txt": "Oops! Something went wrong.",
+        "z": "auto",
+        "vis": "block"
+      },
+      {
+        "cls": "gm-err-message",
+        "txt": "This page didn't load Google Maps correctly. See the JavaScript console for technical details.",
+        "z": "auto",
+        "vis": "block"
+      },
+      {
+        "cls": "gm-err-container",
+        "txt": "Oops! Something went wrong.This page didn't load Google Maps correctly. See the JavaScript console f",
+        "z": "auto",
+        "vis": "table"
+      },
+      {
+        "cls": "gm-err-content",
+        "txt": "Oops! Something went wrong.This page didn't load Google Maps correctly. See the JavaScript console f",
+        "z": "auto",
+        "vis": "table-cell"
+      },
+      {
+        "cls": "gm-err-icon",
+        "txt": "",
+        "z": "auto",
+        "vis": "block"
+      },
+      {
+        "cls": "gm-err-title",
+        "txt": "Oops! Something went wrong.",
+        "z": "auto",
+        "vis": "block"
+      },
+      {
+        "cls": "gm-err-message",
+        "txt": "This page didn't load Google Maps correctly. See the JavaScript console for technical details.",
+        "z": "auto",
+        "vis": "block"
+      }
+    ],
+    "hasPano": true,
+    "bodyClasses": "",
+    "hasErrorDialog": true
+  },
+  "state2": {
+    "cans": [],
+    "errs": [
+      "Oops! Something went wrong.This page didn't load Google Maps correctly. See the ",
+      "Oops! Something went wrong.This page didn't load Google Maps correctly. See the "
+    ]
+  }
+}

@@ -65,8 +65,11 @@ interface StreetViewProviderProps {
 let sharedOffscreenCanvas: HTMLCanvasElement | null = null;
 let sharedOffscreenCtx: CanvasRenderingContext2D | null = null;
 
-/** Lightweight pixel fingerprint to detect canvas stability */
-function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
+/** Lightweight pixel fingerprint to detect canvas stability.
+ * Exported so StreetView (canvas detection) and Renderer (upload guard) can use the
+ * same definition for "is this frame usable / stable".
+ */
+export function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
   const w = canvas.width;
   const h = canvas.height;
   if (w < 256 || h < 256) return '';
