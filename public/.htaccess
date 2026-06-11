@@ -1,3 +1,10 @@
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^$ index.html [L]
+</IfModule>
+
 <IfModule mod_headers.c>
   # Ensure only one COEP/COOP header value is sent.
   # Some hosts inject `require-corp` at a higher level, which conflicts with

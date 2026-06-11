@@ -61,7 +61,7 @@ describe('loadMapsApi', () => {
     expect(url.searchParams.get('loading')).toBe('async');
     expect(url.searchParams.get('v')).toBe('weekly');
     expect(url.searchParams.get('callback')).toBe('__initWebGpuStreetviewMaps');
-    expect(importedLibraries.sort()).toEqual(['maps', 'marker', 'streetView']);
+    expect(importedLibraries.sort()).toEqual(['maps', 'streetView']);
   });
 
   it('notifies registered listeners when Google reports an auth failure', () => {
@@ -73,5 +73,21 @@ describe('loadMapsApi', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
+  });
+
+  it('rejects the load promise when Google reports an auth failure during bootstrap', async () => {
+    const appendSpy = jest.spyOn(document.head, 'appendChild');
+
+    appendSpy.mockImplementation((node: Node) => {
+      const script = node as HTMLScriptElement;
+      setTimeout(() => {
+        window.gm_authFailure?.();
+      }, 0);
+      return script;
+    });
+
+    await expect(loadMapsApi('AIzaSyCleanConnectionTestKey')).rejects.toThrow(
+      'Google Maps authentication failed'
+    );
   });
 });

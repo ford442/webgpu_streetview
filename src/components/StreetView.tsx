@@ -85,7 +85,8 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             mapDiv.style.width = '640px';
             mapDiv.style.height = '480px';
             mapDiv.style.pointerEvents = 'none';
-            mapDiv.style.opacity = '0';
+            mapDiv.style.opacity = '1';
+            mapDiv.style.zIndex = '0';
             document.body.appendChild(mapDiv);
 
             try {

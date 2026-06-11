@@ -76,7 +76,6 @@ function installAuthFailureHandler(): void {
   window.gm_authFailure = () => notifyAuthFailure('gm_authFailure');
 }
 
-
 function getKeyConfigurationError(apiKey: string): string | null {
   const trimmed = apiKey?.trim() || '';
   const isPlaceholder = PLACEHOLDER_KEY_PATTERNS.some(re => re.test(trimmed));
@@ -173,8 +172,23 @@ export function loadMapsApi(apiKey: string): Promise<void> {
 
   installAuthFailureHandler();
 
-  const promise = createBootstrapScript(trimmedKey)
-    .then(importRequiredLibraries)
+  const promise = new Promise<void>((resolve, reject) => {
+    const unsubscribe = onMapsAuthFailure(() => {
+      unsubscribe();
+      reject(new Error('[Maps Loader] Google Maps authentication failed. Check referrer restrictions, billing, and enabled APIs.'));
+    });
+
+    createBootstrapScript(trimmedKey)
+      .then(importRequiredLibraries)
+      .then(() => {
+        unsubscribe();
+        resolve();
+      })
+      .catch((err) => {
+        unsubscribe();
+        reject(err);
+      });
+  })
     .catch(err => {
       removeFailedBootstrap();
       throw err;

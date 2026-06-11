@@ -8,6 +8,19 @@
     <style>
       body { margin: 0; background-color: #000; overflow: hidden; }
     </style>
+    <script>
+      (function loadRuntimeMapsConfig() {
+        var script = document.createElement('script');
+        script.src = '%PUBLIC_URL%/config.js';
+        script.onload = function () {
+          window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+        };
+        script.onerror = function () {
+          console.warn('[WebGPU StreetView] Runtime config.js failed to load');
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
   </head>
   <script>
     // Recover when build/index.html was not deployed (public/index.html uploaded by mistake).
