@@ -138,26 +138,71 @@ MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
 
 
 def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
-    """Replace the deploy sentinel with the real Maps API key in a JS bundle.
-    Also ensure a window.MAPS_API_KEY assignment exists near the top for
-    maximum compatibility with the app's getConfiguredMapsKey() logic.
-    """
-    needle = MAPS_KEY_SENTINEL.encode("utf-8")
-    if needle not in data:
-        return data
+    """Replace quoted deploy sentinel literals with the real Maps API key.
 
-    patched = data.replace(needle, key.encode("utf-8"))
+    IMPORTANT: only replace quoted strings like "__RUNTIME_MAPS_KEY_SENTINEL__".
+    A global replace also corrupts the placeholder regex /^__RUNTIME_MAPS_KEY_SENTINEL__$/
+    into /^AIzaSy...$/ which then rejects the real key as a 'placeholder'.
+    Also ensure a window.MAPS_API_KEY assignment exists near the top for
+    maximum compatibility (belt-and-suspenders).
+    """
+    quoted = (
+        f'"{MAPS_KEY_SENTINEL}"'.encode("utf-8"),
+        f"'{MAPS_KEY_SENTINEL}'".encode("utf-8"),
+    )
+    patched = data
+    changed = False
+    for needle in quoted:
+        if needle in patched:
+            replacement = f'"{key}"'.encode("utf-8") if needle.startswith(b'"') else f"'{key}'".encode("utf-8")
+            patched = patched.replace(needle, replacement)
+            changed = True
 
     # Belt-and-suspenders: also inject an early window assignment if not already present.
     # This makes the key visible to the top-level INITIAL_MAPS_KEY evaluation even
     # if the sentinel replacement site was inlined/mangled by the minifier.
-    key_assignment = f'window.MAPS_API_KEY="{key}";'.encode("utf-8")
-    if key_assignment not in patched:
-        # Insert right after the first <script or at the very beginning of the JS content
-        # A simple safe insertion: put it at the start of the file content for the main bundle.
-        patched = key_assignment + b"\n" + patched
+    if changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched:  # if we patched or no sentinel left
+        key_assignment = f'window.MAPS_API_KEY="{key}";'.encode("utf-8")
+        if key_assignment not in patched:
+            patched = key_assignment + b"\n" + patched
 
-    return patched
+    return patched if (changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched) else data
+
+
+def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
+    """Ensure index.html references the CRA main.js bundle (not just public/ template)."""
+    text = index_html.decode("utf-8", errors="replace")
+    if "static/js/main" in text:
+        return index_html
+
+    manifest_path = build_path / "asset-manifest.json"
+    if not manifest_path.is_file():
+        return index_html
+
+    import json
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    main_js = manifest.get("files", {}).get("main.js", "")
+    main_css = manifest.get("files", {}).get("main.css", "")
+    if not main_js:
+        return index_html
+
+    insert = ""
+    if main_css and main_css not in text:
+        insert += f'<link href="{main_css}" rel="stylesheet">'
+    if main_js not in text:
+        insert += f'<script defer="defer" src="{main_js}"></script>'
+
+    if not insert:
+        return index_html
+
+    if "</head>" in text:
+        repaired = text.replace("</head>", f"{insert}</head>", 1)
+    else:
+        repaired = insert + text
+
+    print("  ! index.html repaired — injected CRA bundle script tags from asset-manifest.json")
+    return repaired.encode("utf-8")
 
 
 def build_zip(build_path: Path) -> bytes:
@@ -178,6 +223,10 @@ def build_zip(build_path: Path) -> bytes:
                 continue
 
             file_data = file.read_bytes()
+
+            if str(rel) == "index.html":
+                file_data = _repair_index_html(file_data, build_path)
+
             if (
                 MAPS_API_KEY
                 and len(parts) >= 2

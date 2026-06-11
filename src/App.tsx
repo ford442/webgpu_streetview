@@ -385,7 +385,7 @@ function InnerApp() {
   const handleRetryMapsAuth = useCallback(() => {
     const nextKey = getConfiguredMapsKey();
     if (!nextKey) {
-      setMapsAuthError('No Google Maps API key is configured. Set window.MAPS_API_KEY in public/config.js or provide REACT_APP_MAPS_API_KEY at build time.');
+      setMapsAuthError('No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.');
       setMapsLoadStatus('api-error');
       setShowMissingKeyBanner(true);
       return;
@@ -518,7 +518,7 @@ function InnerApp() {
       return {
         isVisible: true,
         message: '',
-        error: 'No Google Maps API key is configured. Set window.MAPS_API_KEY in public/config.js or provide REACT_APP_MAPS_API_KEY at build time.',
+        error: 'No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.',
         retryable: true,
         onRetry: handleRetryMapsAuth,
       };
