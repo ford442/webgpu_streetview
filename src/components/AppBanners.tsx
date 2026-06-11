@@ -36,7 +36,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
         >
           <span style={{ flex: 1 }}>
             ⚠️ <strong>No Google Maps API key is configured.</strong>{' '}
-            Street View will not load until <code>window.MAPS_API_KEY</code> is set in <code>public/config.js</code> or <code>REACT_APP_MAPS_API_KEY</code> is provided at build time.
+            Street View will not load until you build with <code>REACT_APP_MAPS_API_KEY</code> in <code>.env.local</code> or deploy with <code>MAPS_API_KEY=... python deploy.py</code> (bakes the key into <code>main.js</code>, same as go.1ink.us).
           </span>
           <button
             onClick={() => setShowMissingKeyBanner(false)}
