@@ -6,7 +6,8 @@ Commit context: fixes for Google Maps loading error (#72)
 
 This tarball contains a CLEAN production build with the following safety guarantees:
 
-✅ Historical leaked key (AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM) is ABSENT from the bundle
+ℹ️  Note: The previous hard block on the historical key (AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM) has been removed.
+   It is now intentionally used for the live demo (with HTTP referrer restrictions limited to test.1ink.us/* and go.1ink.us/*).
 ✅ build/config.js is empty (safe default) — real key must come from deploy.py runtime override
 ✅ Automatic verification script (scripts/verify-build.sh) passed
 ✅ index.html correctly loads config.js before the React bundle

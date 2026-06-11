@@ -138,11 +138,26 @@ MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
 
 
 def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
-    """Replace the deploy sentinel with the real Maps API key in a JS bundle."""
+    """Replace the deploy sentinel with the real Maps API key in a JS bundle.
+    Also ensure a window.MAPS_API_KEY assignment exists near the top for
+    maximum compatibility with the app's getConfiguredMapsKey() logic.
+    """
     needle = MAPS_KEY_SENTINEL.encode("utf-8")
     if needle not in data:
         return data
-    return data.replace(needle, key.encode("utf-8"))
+
+    patched = data.replace(needle, key.encode("utf-8"))
+
+    # Belt-and-suspenders: also inject an early window assignment if not already present.
+    # This makes the key visible to the top-level INITIAL_MAPS_KEY evaluation even
+    # if the sentinel replacement site was inlined/mangled by the minifier.
+    key_assignment = f'window.MAPS_API_KEY="{key}";'.encode("utf-8")
+    if key_assignment not in patched:
+        # Insert right after the first <script or at the very beginning of the JS content
+        # A simple safe insertion: put it at the start of the file content for the main bundle.
+        patched = key_assignment + b"\n" + patched
+
+    return patched
 
 
 def build_zip(build_path: Path) -> bytes:

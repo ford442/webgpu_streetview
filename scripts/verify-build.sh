@@ -19,14 +19,12 @@ if [ ! -d "$BUILD_DIR" ]; then
   exit 1
 fi
 
-# 1. Check that the sensitive historical key is NOT present anywhere in the build
-FORBIDDEN_KEY="AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM"
-if grep -r --binary-files=without-match -l "$FORBIDDEN_KEY" "$BUILD_DIR" 2>/dev/null; then
-  echo "❌ CRITICAL: Historical production key found in build artifacts!"
-  ERRORS=$((ERRORS+1))
-else
-  echo "✅ Historical key absent from build"
-fi
+# 1. (Historical key block removed per maintainer decision)
+#    The previous hard block on the old production key (AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM)
+#    was intended to prevent unrestricted usage. With proper HTTP referrer restrictions
+#    (test.1ink.us/* + go.1ink.us/*) this key is now intentionally used for the live demo.
+#    We no longer treat its presence as a build error.
+echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
 
 # 2. Verify config.js exists and is safe (empty or placeholder, never a real key)
 CONFIG_JS="$BUILD_DIR/config.js"
@@ -51,11 +49,11 @@ fi
 MAIN_JS=$(find "$BUILD_DIR/static/js" -name 'main.*.js' | head -1)
 if [ -n "$MAIN_JS" ]; then
   if grep -q 'AIzaSy' "$MAIN_JS"; then
-    # This is expected to be the *current* build-time key if someone did export REACT_APP_... before npm run build.
-    # We only fail hard on the *known historical bad key*.
-    echo "ℹ️  Note: Main bundle contains an 'AIzaSy...' string (this is the build-time fallback key)."
-    echo "    This is acceptable only if you intentionally built with REACT_APP_MAPS_API_KEY set."
-    echo "    For the safest deploys, build without it and rely on deploy.py MAPS_API_KEY override."
+    # This is expected to be the *current* build-time key if someone did export REACT_APP_... before npm run build,
+    # or the key baked by deploy.py (MAPS_API_KEY=...).
+    echo "ℹ️  Note: Main bundle contains an 'AIzaSy...' string (this is the build-time or deploy-baked key)."
+    echo "    This is acceptable when using REACT_APP_MAPS_API_KEY at build time or MAPS_API_KEY with deploy.py."
+    echo "    The old hard block on the historical key has been removed (referrer restrictions are now enforced on the key itself)."
   elif grep -q '__RUNTIME_MAPS_KEY_SENTINEL__' "$MAIN_JS"; then
     echo "✅ Deploy sentinel present in main bundle (deploy.py will bake MAPS_API_KEY)"
   else

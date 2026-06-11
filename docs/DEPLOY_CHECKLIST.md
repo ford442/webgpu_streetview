@@ -37,9 +37,9 @@ npm run build   # runs prebuild warning + scripts/verify-build.sh automatically
 
 - [ ] `npm run build` succeeds with no critical errors.
 - [ ] `./scripts/verify-build.sh` (or the step at end of build) passes:
-  - Historical bad key absent.
   - `config.js` is safe (empty or the one you intend).
   - No obvious placeholder.
+  - (Note: the previous hard block on the historical key has been removed; it is now used intentionally with proper referrer restrictions.)
 - [ ] (Optional but powerful) Temporarily set a dev key with localhost referrers and `npm start`; confirm the demo loads cleanly before the prod deploy.
 
 ## 4. The deploy command
