@@ -306,6 +306,8 @@ function InnerApp() {
       setShowAuthFailedBanner(true);
       // Auto-disable cruise mode on auth failure — prevents indefinite error spam
       setIsCruiseMode(false);
+      // Remove Google's injected error UI from the hidden scraper so it can't flash.
+      document.querySelectorAll('.streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message').forEach((el) => el.remove());
       console.error('[App] Maps API auth failure — cruise mode disabled');
     });
     return unsubscribe;
@@ -810,7 +812,7 @@ function InnerApp() {
       {/* When WebGPU is active, pushed behind the WebGPU canvas via zIndex (0 vs 1). */}
       {/* opacity must stay at 1 — Google Maps stops updating its canvas at low opacity. */}
       {/* When WebGPU fails, promoted to zIndex 2 as visible fallback. */}
-      <div style={{
+      <div className="streetview-scraper" style={{
         position: 'absolute',
         top: 0,
         left: 0,

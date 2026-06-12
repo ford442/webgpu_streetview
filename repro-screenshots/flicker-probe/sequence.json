@@ -1,0 +1,194 @@
+[
+  {
+    "time": "0.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_00.png",
+    "label": "t0.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "0.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_01.png",
+    "label": "t0.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "1.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_02.png",
+    "label": "t1.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "1.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_03.png",
+    "label": "t1.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "2.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_04.png",
+    "label": "t2.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "2.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_05.png",
+    "label": "t2.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "3.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_06.png",
+    "label": "t3.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "3.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_07.png",
+    "label": "t3.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "4.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_08.png",
+    "label": "t4.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "4.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_09.png",
+    "label": "t4.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "5.0s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_10.png",
+    "label": "t5.0s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  },
+  {
+    "time": "5.5s",
+    "screenshot": "/content/webgpu_streetview/repro-screenshots/flicker-probe/frame_11.png",
+    "label": "t5.5s",
+    "canvasCount": 0,
+    "canvases": [],
+    "gmErrCount": 0,
+    "gmErr": [],
+    "alertCount": 1,
+    "alerts": [
+      {
+        "cls": "",
+        "txt": "⚠️ No Google Maps API key is configured. Street View will not load until window.MAPS_API_KEY is set in public/config.js "
+      }
+    ]
+  }
+]

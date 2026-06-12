@@ -5,6 +5,7 @@
 [2026-06-12T12:58:07.620Z] [INFO] STEP 1: Navigate to live site
 [CONSOLE WARNING] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
 [2026-06-12T12:58:09.043Z] [INFO] Goto completed in 1422ms
+[CONSOLE LOG] [ViewMode] Switching: null → freelook
 [2026-06-12T12:58:11.555Z] [DEBUG] CANVAS DUMP [post-goto]: 0 canvases. GM-related elems: 0
 [2026-06-12T12:58:11.555Z] [INFO] Waiting for app to become interactive (up to 25s)...
 [2026-06-12T12:58:15.557Z] [INFO] Waiting for welcome modal / Start Exploring button...
@@ -20,6 +21,7 @@
 === STEP 2: Hard reload / initial load flicker test ===
 [2026-06-12T12:58:53.613Z] [INFO] ACTION: Simulating hard refresh (reload with cache bypass intent)
 [CONSOLE WARNING] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
+[CONSOLE LOG] [ViewMode] Switching: null → freelook
 [2026-06-12T12:58:56.130Z] [INFO] Waiting for welcome modal / Start Exploring button...
 [2026-06-12T12:58:56.533Z] [INFO] Clicked welcome button via button:has-text("Start Exploring")
 [2026-06-12T12:59:00.742Z] [DEBUG] CANVAS DUMP [post-reload-3s]: 0 canvases. GM-related elems: 0
@@ -49,6 +51,8 @@
 [2026-06-12T12:59:27.619Z] [INFO] 
 === STEP 4: Cruise mode test (30s run) ===
 [2026-06-12T12:59:27.619Z] [INFO] Trying to enable cruise mode...
+[CONSOLE LOG] [ViewMode] Switching: freelook → car
+[CONSOLE LOG] [ViewMode] Switching: car → freelook
 [2026-06-12T12:59:29.749Z] [DEBUG] CANVAS DUMP [cruise-start]: 0 canvases. GM-related elems: 0
 [2026-06-12T12:59:30.612Z] [INFO] SCREENSHOT: 04_cruise_start.png
 [2026-06-12T12:59:35.511Z] [INFO] SCREENSHOT: 04_cruise_01.png
@@ -67,13 +71,18 @@
 [2026-06-12T13:00:02.605Z] [DEBUG] CANVAS DUMP [cruise-step-7]: 0 canvases. GM-related elems: 0
 [2026-06-12T13:00:06.660Z] [INFO] SCREENSHOT: 04_cruise_08.png
 [2026-06-12T13:00:06.664Z] [DEBUG] CANVAS DUMP [cruise-step-8]: 0 canvases. GM-related elems: 0
+[CONSOLE LOG] [ViewMode] Switching: freelook → car
 [2026-06-12T13:00:07.176Z] [INFO] 
 === STEP 5: Car mode toggle test ===
 [2026-06-12T13:00:07.176Z] [INFO] ACTION: Toggling car mode (KeyC or button)
+[CONSOLE LOG] [ViewMode] Switching: car → freelook
+[CONSOLE LOG] [ViewMode] Switching: freelook → car
 [2026-06-12T13:00:09.340Z] [INFO] SCREENSHOT: 05_car_on_01.png
 [2026-06-12T13:00:09.346Z] [DEBUG] CANVAS DUMP [car-on]: 0 canvases. GM-related elems: 0
 [2026-06-12T13:00:13.399Z] [INFO] SCREENSHOT: 05_car_on_moving.png
 [2026-06-12T13:00:13.399Z] [INFO] ACTION: Toggling car mode (KeyC or button)
+[CONSOLE LOG] [ViewMode] Switching: car → freelook
+[CONSOLE LOG] [ViewMode] Switching: freelook → car
 [2026-06-12T13:00:16.140Z] [INFO] SCREENSHOT: 05_car_off.png
 [2026-06-12T13:00:16.143Z] [DEBUG] CANVAS DUMP [car-off]: 0 canvases. GM-related elems: 0
 [2026-06-12T13:00:16.144Z] [INFO] 
@@ -115,7 +124,3 @@
 === COLLECTING FINAL STATE ===
 [2026-06-12T13:00:56.932Z] [DEBUG] CANVAS DUMP [end-of-run]: 0 canvases. GM-related elems: 0
 [2026-06-12T13:00:56.937Z] [INFO] Final body HTML snippet (first 800): <noscript>You need to enable JavaScript to run this app.</noscript><div id="root"><div id="app-container" style="position: relative; width: 100vw; height: 100vh; overflow: hidden; padding: 0px; margin: 0px; background-color: rgb(0, 0, 0);"><a href="#main-content" class="skip-link" style="position: absolute; top: -40px; left: 0px; background: rgb(0, 0, 0); color: rgb(255, 255, 255); padding: 8px 16px; z-index: 10000; text-decoration: none; transition: top 0.2s;">Skip to main content</a><div role="alert" style="position: fixed; top: 0px; left: 0px; right: 0px; z-index: 2000; background: rgba(180, 100, 0, 0.95); color: rgb(255, 255, 255); padding: 10px 16px; display: flex; align-items: center; gap: 12px; font-family: system-ui, sans-serif; font-size: 14px;"><span style="flex: 1 1 0%;">⚠️ <str
-[2026-06-12T13:00:56.938Z] [INFO] 
-=== REPRO COMPLETE ===
-[2026-06-12T13:00:56.938Z] [INFO] Screenshots + logs in /content/webgpu_streetview/repro-screenshots
-[2026-06-12T13:00:56.938Z] [INFO] Videos in /content/webgpu_streetview/repro-screenshots/videos

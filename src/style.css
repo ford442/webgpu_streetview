@@ -113,6 +113,23 @@ input[type="text"]:focus {
     cursor: grabbing !important;
 }
 
+/* Suppress Google's injected auth/error UI inside the hidden Street View scraper.
+   When the Maps key is invalid or referrer-blocked, Google injects .gm-err-*
+   elements directly into the scraper div. Because the scraper must remain
+   opacity:1 for Google to keep rendering, those error elements can flash and
+   cause visible flicker. Hiding them here stops that without affecting the
+   app's own auth-failure banners. */
+.streetview-scraper .gm-err-container,
+.streetview-scraper .gm-err-content,
+.streetview-scraper .gm-err-icon,
+.streetview-scraper .gm-err-title,
+.streetview-scraper .gm-err-message,
+.streetview-scraper .gm-err-dialog {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
 /* Loading Overlay Animations */
 @keyframes loadingSpin {
     from { transform: rotate(0deg); }

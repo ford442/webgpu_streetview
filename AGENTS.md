@@ -567,6 +567,7 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
 8. **Build Tool Lock-in**: Create React App 5.0.1 is used; ejecting is irreversible.
 9. **Cesium ESM in IIFE bundles**: Cesium 1.140.0 ships code that uses `import.meta.url` and `__webpack_module__`, which are invalid in CRA's default IIFE bundle output. The built `main.*.js` must be post-processed before deployment or local testing (see *Local Testing with Headless Chrome* above).
+10. **Hidden Google Maps error UI flicker**: When the Maps key is invalid or referrer-blocked, Google injects `.gm-err-*` elements into the hidden Street View scraper div. Because the scraper must stay `opacity:1` for Google to keep rendering, those error elements can flash and produce visible flicker. The fix is to suppress them via CSS scoped to `.streetview-scraper` and/or remove them on `gm_authFailure`.
 
 ---
 
