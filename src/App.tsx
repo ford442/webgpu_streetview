@@ -152,6 +152,14 @@ function InnerApp() {
     setMapsLoadStatus(status);
     if (status !== 'api-error' && status !== 'canvas-timeout') {
       setCanvasError(null);
+      // Auto-clear previous auth failure state on any successful progress.
+      // This removes the hard "blocking" after a key is corrected (runtime config,
+      // deploy, or manual retry) so Street View rendering can resume without reload.
+      // The onMapsAuthFailure listener may still fire for truly bad keys; this only
+      // clears when we have positive evidence the current key is working.
+      setMapsAuthFailed(false);
+      setMapsAuthError(null);
+      setShowAuthFailedBanner(false);
     }
   }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
@@ -215,6 +223,10 @@ function InnerApp() {
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
 
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  // Ref for the always-present hidden scraper wrapper so we can attach a
+  // secondary live suppressor (defense in depth for any nodes Google injects
+  // at the .streetview-scraper level rather than only inside panoRef).
+  const scraperRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize audio — wire through AudioContext so the stream is capturable
   // and available for future canvas+audio recording (fixes silent audio export).
@@ -275,12 +287,14 @@ function InnerApp() {
         setEffectiveMapsKey(k);
         setMapsLoadStatus('loading-api');
         setShowMissingKeyBanner(false);
-        // If we previously showed auth failure for the empty key, clear it so the
-        // new key can be tried (user may still get auth error if the key itself is bad).
-        if (!mapsAuthFailed) {
-          setMapsAuthError(null);
-          setShowAuthFailedBanner(false);
-        }
+        // Always clear prior auth-failure state for a *new* key. This ensures that
+        // after an API key vulnerability/bug was present (and gm_authFailure fired),
+        // a corrected runtime key (config.js, deploy, etc) will allow full recovery
+        // of Street View rendering. The auth listener will re-set failed=true only if
+        // the *new* key itself triggers gm_authFailure.
+        setMapsAuthFailed(false);
+        setMapsAuthError(null);
+        setShowAuthFailedBanner(false);
       }
     };
     // Poll briefly (covers slow script / some CDN timings)
@@ -307,10 +321,49 @@ function InnerApp() {
       // Auto-disable cruise mode on auth failure — prevents indefinite error spam
       setIsCruiseMode(false);
       // Remove Google's injected error UI from the hidden scraper so it can't flash.
-      document.querySelectorAll('.streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message').forEach((el) => el.remove());
+      // (The primary defense is now the always-on MutationObserver + sweeps inside
+      // StreetView.tsx + expanded CSS. This is the legacy one-shot path.)
+      const errSel = '.streetview-scraper [class*="gm-err"], .streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message, .streetview-scraper [aria-label*="Google Maps" i]';
+      document.querySelectorAll(errSel).forEach((el) => {
+        const he = el as HTMLElement;
+        he.style.setProperty('display', 'none', 'important');
+        he.style.setProperty('visibility', 'hidden', 'important');
+        he.style.setProperty('opacity', '0', 'important');
+        if (he.parentNode) { try { he.parentNode.removeChild(he); } catch {} }
+      });
       console.error('[App] Maps API auth failure — cruise mode disabled');
     });
     return unsubscribe;
+  }, []);
+
+  // Secondary live suppressor on the .streetview-scraper wrapper itself (defense-in-depth).
+  // Complements the one inside StreetView (which targets the actual pano container
+  // Google writes errors into). This catches any sibling/outer injections and ensures
+  // that even if the pano effect hasn't attached yet, the class-named container is watched.
+  useEffect(() => {
+    let mo: MutationObserver | null = null;
+    const run = () => {
+      const root = scraperRef.current || document.querySelector('.streetview-scraper');
+      if (!root) return;
+      const sel = '[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]';
+      root.querySelectorAll(sel).forEach((n) => {
+        const e = n as HTMLElement;
+        e.style.setProperty('display', 'none', 'important');
+        e.style.setProperty('visibility', 'hidden', 'important');
+        e.style.setProperty('opacity', '0', 'important');
+        if (e.parentNode) { try { e.parentNode.removeChild(e); } catch {} }
+      });
+    };
+    // Attach when possible (the div is always rendered once connected)
+    const t = setTimeout(() => {
+      const root = scraperRef.current || document.querySelector('.streetview-scraper');
+      if (root) {
+        run();
+        mo = new MutationObserver(run);
+        mo.observe(root, { childList: true, subtree: true });
+      }
+    }, 50);
+    return () => { clearTimeout(t); if (mo) mo.disconnect(); };
   }, []);
   
   // Handlers
@@ -455,7 +508,11 @@ function InnerApp() {
 
   const mapsLoadingOverlay = (() => {
     if (!isConnected) return null;
-    if (mapsAuthFailed) return null;
+    // Do not early-return on mapsAuthFailed here: we want the standard LoadingOverlay
+    // (with its api-error state + retry button) to be available as a non-modal path.
+    // The hard full-screen mapsAuthFailed dialog below is the legacy "blocker".
+    // With the auto-clear logic above, a good key will transition us out of failed
+    // and into normal loading/rendering states.
 
     if (!effectiveMapsKey) {
       return {
@@ -547,6 +604,10 @@ function InnerApp() {
             <div style={{ fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ffb3b3', marginBottom: 10 }}>
               Maps authentication failed
             </div>
+            {/* The "Dismiss block" button (below) + auto-clear on good status/key change
+                means this full-screen dialog is no longer a hard permanent block once
+                the key problem (referrer, billing, or prior vulnerability) is resolved.
+                Rendering recovery for Street View mode is the goal of the follow-up issues. */}
             <h2 id="maps-auth-error-title" style={{ margin: '0 0 12px', fontSize: 28, lineHeight: 1.1 }}>
               Google Maps API key error
             </h2>
@@ -584,6 +645,30 @@ function InnerApp() {
                 }}
               >
                 Reload page
+              </button>
+              <button
+                onClick={() => {
+                  // Emergency escape hatch: clear the auth-failed block so that if
+                  // the key was corrected out-of-band (config.js updated on server,
+                  // new deploy, etc.) the StreetView init + WebGPU render can proceed
+                  // without waiting for the loadMapsApi promise roundtrip.
+                  // This removes the remaining hard API-key blocking UI.
+                  setMapsAuthFailed(false);
+                  setMapsAuthError(null);
+                  setShowAuthFailedBanner(true); // keep soft banner for awareness
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  borderRadius: 8,
+                  color: 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  padding: '10px 16px',
+                  fontSize: '13px',
+                }}
+                title="Clear error overlay (use if key was fixed externally; canvas may now load)"
+              >
+                Dismiss block
               </button>
             </div>
           </div>
@@ -812,16 +897,20 @@ function InnerApp() {
       {/* When WebGPU is active, pushed behind the WebGPU canvas via zIndex (0 vs 1). */}
       {/* opacity must stay at 1 — Google Maps stops updating its canvas at low opacity. */}
       {/* When WebGPU fails, promoted to zIndex 2 as visible fallback. */}
-      <div className="streetview-scraper" style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
-        opacity: 1,
-        pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
-      }}>
+      <div
+        ref={scraperRef}
+        className="streetview-scraper"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
+          opacity: 1,
+          pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
+        }}
+      >
         <StreetView
           apiKey={effectiveMapsKey}
           initialPosition={{ lat: 37.86926, lng: -122.254811 }}

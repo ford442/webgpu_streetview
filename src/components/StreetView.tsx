@@ -36,7 +36,83 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     const everSawCandidateRef = useRef(false);
     const REQUIRED_STABLE_SAMPLES = 2; // ~400 ms at current 200 ms polling cadence
 
+    // Persistent suppression of Google's "could not load Google Maps properly" / .gm-err-*
+    // error UI. Google injects these DOM nodes into the pano container (even for transient
+    // referrer/tile/auth hiccups) when it detects a problem with the key at bootstrap or
+    // during some operations. Because we keep the container at opacity:1 (required for
+    // Google to keep painting the real panorama canvas that we scrape), the error chrome
+    // can flash into view repeatedly → rapid flicker, even while actual navigation and
+    // canvas content are working fine.
+    //
+    // The CSS in style.css helps, the one-shot remove in App on gm_authFailure helps,
+    // but a live MutationObserver + sweeps from the existing canvas poller are the
+    // reliable "first step" to kill the flicker without changing the scraper architecture.
+    // (See also the sibling issues around recovery after key fixes and car mode.)
+    //
+    // This runs for the lifetime of the pano container and is independent of view mode
+    // (freelook vs car), so entering car mode shouldn't cause the streetview "to vanish"
+    // due to visible error UI.
+    const errorSuppressorRef = useRef<MutationObserver | null>(null);
+
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
+
+    // === Live Google Maps error UI suppressor (the key anti-flicker step) ===
+    // Set up once per StreetView lifetime. Observes the exact container Google writes
+    // its error nodes into. Combined with the broadened CSS and periodic sweeps from
+    // checkForCanvas, this should stop the rapid "could not load..." popup from
+    // appearing even on hosts where a marginal key or race still triggers
+    // gm_authFailure / internal error injection (while the actual imagery canvas
+    // continues to work, as reported: navigation is possible).
+    useEffect(() => {
+        const SUPPRESS_SEL = '[class*="gm-err"], .gm-err-container, .gm-err-content, .gm-err-icon, .gm-err-title, .gm-err-message, .gm-err-dialog, [aria-label*="Google Maps" i], [aria-label*="This page can\'t load" i], [aria-label*="load Google" i]';
+
+        const suppress = () => {
+            const container = panoRef.current;
+            if (!container) return;
+            const nodes = container.querySelectorAll(SUPPRESS_SEL);
+            nodes.forEach((node) => {
+                const el = node as HTMLElement;
+                // Belt-and-suspenders: force invisible + remove from DOM when safe.
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('opacity', '0', 'important');
+                el.style.setProperty('pointer-events', 'none', 'important');
+                el.style.setProperty('z-index', '-9999', 'important');
+                if (el.parentNode) {
+                    try { el.parentNode.removeChild(el); } catch {}
+                }
+            });
+        };
+
+        // Early + delayed sweeps (bootstrap race window)
+        suppress();
+        const t0 = setTimeout(suppress, 80);
+        const t1 = setTimeout(suppress, 280);
+        const t2 = setTimeout(suppress, 900);
+        const t3 = setTimeout(suppress, 1800);
+
+        // Live observer — catches injections no matter when Google decides to show them
+        // (initial bad key, during WASD hops, on car mode entry, tile auth hiccups, etc.)
+        let mo: MutationObserver | null = null;
+        const attachObserver = () => {
+            const container = panoRef.current;
+            if (container && !mo) {
+                mo = new MutationObserver(suppress);
+                mo.observe(container, { childList: true, subtree: true });
+                errorSuppressorRef.current = mo;
+            }
+        };
+        const attachT = setTimeout(attachObserver, 0);
+
+        return () => {
+            clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(attachT);
+            if (mo) {
+                mo.disconnect();
+                mo = null;
+            }
+            errorSuppressorRef.current = null;
+        };
+    }, []);
 
     useEffect(() => {
         const trimmed = (apiKey || '').trim();
@@ -142,6 +218,24 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 // or transient network / tile errors.
                 const checkForCanvas = () => {
                     if (!panoRef.current) return;
+
+                    // Extra sweep for error UI on every stability poll. The dedicated
+                    // MutationObserver (above) does the heavy lifting for live injection,
+                    // but this catches early bootstrap cases + gives belt-and-suspenders
+                    // during the exact windows when flicker was reported (initial load,
+                    // rapid advances, car mode toggle).
+                    // We deliberately do a broad query here too.
+                    try {
+                        const container = panoRef.current;
+                        const bad = container.querySelectorAll('[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]');
+                        bad.forEach((n) => {
+                            const e = n as HTMLElement;
+                            e.style.setProperty('display', 'none', 'important');
+                            e.style.setProperty('visibility', 'hidden', 'important');
+                            e.style.setProperty('opacity', '0', 'important');
+                            if (e.parentNode) { try { e.parentNode.removeChild(e); } catch {} }
+                        });
+                    } catch {}
 
                     const canvases = panoRef.current.getElementsByTagName('canvas');
                     const len = canvases.length;
