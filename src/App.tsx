@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import StreetView from './components/StreetView';
+import StreetView, { type MapsLoadStatus } from './components/StreetView';
 import WelcomeModal from './components/WelcomeModal';
 import './style.css';
 
@@ -29,8 +29,8 @@ import {
   GlobeView,
   PerformanceStatsOverlay,
   WebGPUCanvas,
+  LoadingOverlay,
 } from './components';
-import { ErrorDisplay } from './components/LoadingOverlay';
 
 // Hooks
 import { useBookmarks } from './hooks/useBookmarks';
@@ -45,18 +45,51 @@ import {
   SkipLink,
 } from './hooks/useKeyboardShortcuts';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
+import { useCruiseMode } from './hooks/useCruiseMode';
+import { useAutopilot } from './hooks/useAutopilot';
+import { buildAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
+import { useGlobeTeleport } from './hooks/useGlobeTeleport';
+import AppToolbar from './components/AppToolbar';
+import AppBanners from './components/AppBanners';
+import BuildBadge from './components/BuildBadge';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
-import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from './utils/geoTimeUtils';
-import { getTopStationForLocation } from './services/radioBrowserService';
-import { onMapsAuthFailure } from './services/maps/loader';
+import { loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
 
-// Google Maps API Key — set REACT_APP_MAPS_API_KEY in .env.local (never commit real keys)
-const GOOGLE_MAPS_KEY = process.env.REACT_APP_MAPS_API_KEY || "";
-if (!GOOGLE_MAPS_KEY) {
+// Google Maps API Key resolution (matches go.1ink.us — baked into the JS bundle):
+//  1. REACT_APP_MAPS_API_KEY — set at `npm run build` via .env.local / CI env var
+//  2. __RUNTIME_MAPS_KEY_SENTINEL__ — replaced in the built bundle by deploy.py
+//  3. window.MAPS_API_KEY — optional manual override via config.js (dev/emergency only)
+// Never commit real keys. Production deploy: MAPS_API_KEY=... python deploy.py
+const MAPS_KEY_DEPLOY_SENTINEL = '__RUNTIME_MAPS_KEY_SENTINEL__';
+
+const PLACEHOLDER_MAPS_KEY_PATTERNS: RegExp[] = [
+  /^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key[_-]?(here)?$/i,
+  /^YOUR_MAPS_API_KEY$/,
+  /^__RUNTIME_MAPS_KEY_SENTINEL__$/,
+  /^placeholder/i,
+  /^<.*>$/,
+  /replace/i,
+];
+
+function normalizeMapsKey(value: string | undefined): string {
+  const trimmed = value?.trim() || '';
+  return PLACEHOLDER_MAPS_KEY_PATTERNS.some(re => re.test(trimmed)) ? '' : trimmed;
+}
+
+function getConfiguredMapsKey(): string {
+  return (
+    normalizeMapsKey(process.env.REACT_APP_MAPS_API_KEY) ||
+    normalizeMapsKey(MAPS_KEY_DEPLOY_SENTINEL) ||
+    normalizeMapsKey(window.MAPS_API_KEY)
+  );
+}
+const INITIAL_MAPS_KEY = getConfiguredMapsKey();
+if (!INITIAL_MAPS_KEY) {
   console.warn(
-    "[WebGPU StreetView] REACT_APP_MAPS_API_KEY is not set. " +
-    "Create a .env.local file with REACT_APP_MAPS_API_KEY=<your key> and rebuild."
+    "[WebGPU StreetView] No Maps API key found at initial eval. " +
+    "Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with " +
+    "MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style)."
   );
 }
 
@@ -115,15 +148,32 @@ function InnerApp() {
     setWebGPUAvailable(available);
     setWebgpuStatus(available ? 'ready' : 'fallback');
   }, []);
+  const handleMapsStatusChange = useCallback((status: MapsLoadStatus) => {
+    setMapsLoadStatus(status);
+    if (status !== 'api-error' && status !== 'canvas-timeout') {
+      setCanvasError(null);
+      // Auto-clear previous auth failure state on any successful progress.
+      // This removes the hard "blocking" after a key is corrected (runtime config,
+      // deploy, or manual retry) so Street View rendering can resume without reload.
+      // The onMapsAuthFailure listener may still fire for truly bad keys; this only
+      // clears when we have positive evidence the current key is working.
+      setMapsAuthFailed(false);
+      setMapsAuthError(null);
+      setShowAuthFailedBanner(false);
+    }
+  }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
-  const [isCruiseMode, setIsCruiseMode] = useState(false);
   const [isCanvasReady, setIsCanvasReady] = useState(false); // Track if Google Maps canvas is ready
   const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [mapsLoadStatus, setMapsLoadStatus] = useState<MapsLoadStatus>(INITIAL_MAPS_KEY ? 'idle' : 'api-error');
   const [navPending, setNavPending] = useState(false);
 
   // Maps API auth/key status
   const [mapsAuthFailed, setMapsAuthFailed] = useState(false);
-  const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!GOOGLE_MAPS_KEY);
+  const [mapsAuthError, setMapsAuthError] = useState<string | null>(null);
+  const [isRetryingMapsAuth, setIsRetryingMapsAuth] = useState(false);
+  const [effectiveMapsKey, setEffectiveMapsKey] = useState<string>(INITIAL_MAPS_KEY);
+  const [showMissingKeyBanner, setShowMissingKeyBanner] = useState(!INITIAL_MAPS_KEY);
   const [showAuthFailedBanner, setShowAuthFailedBanner] = useState(false);
   
   // Panel visibility
@@ -169,17 +219,26 @@ function InnerApp() {
   
   // Audio ref for radio
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Directions service
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
-  
-  // Initialize audio
+  // Ref for the always-present hidden scraper wrapper so we can attach a
+  // secondary live suppressor (defense in depth for any nodes Google injects
+  // at the .streetview-scraper level rather than only inside panoRef).
+  const scraperRef = useRef<HTMLDivElement | null>(null);
+
+  // Initialize audio — wire through AudioContext so the stream is capturable
+  // and available for future canvas+audio recording (fixes silent audio export).
   useEffect(() => {
     if (!audioRef.current) {
-      audioRef.current = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
-      audioRef.current.crossOrigin = "anonymous";
+      const el = new Audio('https://stream.zeno.fm/ywcmn7hpha0uv');
+      el.crossOrigin = 'anonymous';
+      audioRef.current = el;
     }
+    return () => {
+      audioCtxRef.current?.close();
+    };
   }, []);
   
   // Apply accessibility classes
@@ -209,16 +268,102 @@ function InnerApp() {
     }
   }, [canvas, isCanvasReady]);
 
+  useEffect(() => {
+    if (isCanvasReady && webgpuStatus !== 'initializing' && mapsLoadStatus !== 'api-error' && mapsLoadStatus !== 'canvas-timeout') {
+      setMapsLoadStatus('rendering');
+    }
+  }, [isCanvasReady, mapsLoadStatus, webgpuStatus]);
+
+  // Reactive key poller / listener: recovers from config.js race (#84) and allows
+  // a valid runtime key that arrives after initial bundle eval to initialize Maps.
+  // Complements the reset logic in StreetView.tsx (#85).
+  useEffect(() => {
+    let stopped = false;
+    const syncKey = () => {
+      if (stopped) return;
+      const k = getConfiguredMapsKey();
+      if (k && k !== effectiveMapsKey) {
+        console.log('[App] Late Maps API key detected — updating effective key');
+        setEffectiveMapsKey(k);
+        setMapsLoadStatus('loading-api');
+        setShowMissingKeyBanner(false);
+        // Always clear prior auth-failure state for a *new* key. This ensures that
+        // after an API key vulnerability/bug was present (and gm_authFailure fired),
+        // a corrected runtime key (config.js, deploy, etc) will allow full recovery
+        // of Street View rendering. The auth listener will re-set failed=true only if
+        // the *new* key itself triggers gm_authFailure.
+        setMapsAuthFailed(false);
+        setMapsAuthError(null);
+        setShowAuthFailedBanner(false);
+      }
+    };
+    // Poll briefly (covers slow script / some CDN timings)
+    const iv = setInterval(syncKey, 120);
+    // Also react to a custom event some setups can dispatch after injecting config
+    const onKeyReady = () => syncKey();
+    window.addEventListener('maps-api-key-ready', onKeyReady);
+    // Initial sync in case it became available between eval and mount
+    syncKey();
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+      window.removeEventListener('maps-api-key-ready', onKeyReady);
+    };
+  }, [effectiveMapsKey, mapsAuthFailed]);
+
   // Subscribe to Maps API auth failures (invalid key, referrer-blocked, billing disabled)
   useEffect(() => {
     const unsubscribe = onMapsAuthFailure(() => {
       setMapsAuthFailed(true);
+      setMapsAuthError('Google Maps API key error — check referrer restrictions, billing, and enabled APIs in Google Cloud Console.');
+      setMapsLoadStatus('api-error');
       setShowAuthFailedBanner(true);
       // Auto-disable cruise mode on auth failure — prevents indefinite error spam
       setIsCruiseMode(false);
+      // Remove Google's injected error UI from the hidden scraper so it can't flash.
+      // (The primary defense is now the always-on MutationObserver + sweeps inside
+      // StreetView.tsx + expanded CSS. This is the legacy one-shot path.)
+      const errSel = '.streetview-scraper [class*="gm-err"], .streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message, .streetview-scraper [aria-label*="Google Maps" i]';
+      document.querySelectorAll(errSel).forEach((el) => {
+        const he = el as HTMLElement;
+        he.style.setProperty('display', 'none', 'important');
+        he.style.setProperty('visibility', 'hidden', 'important');
+        he.style.setProperty('opacity', '0', 'important');
+        if (he.parentNode) { try { he.parentNode.removeChild(he); } catch {} }
+      });
       console.error('[App] Maps API auth failure — cruise mode disabled');
     });
     return unsubscribe;
+  }, []);
+
+  // Secondary live suppressor on the .streetview-scraper wrapper itself (defense-in-depth).
+  // Complements the one inside StreetView (which targets the actual pano container
+  // Google writes errors into). This catches any sibling/outer injections and ensures
+  // that even if the pano effect hasn't attached yet, the class-named container is watched.
+  useEffect(() => {
+    let mo: MutationObserver | null = null;
+    const run = () => {
+      const root = scraperRef.current || document.querySelector('.streetview-scraper');
+      if (!root) return;
+      const sel = '[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]';
+      root.querySelectorAll(sel).forEach((n) => {
+        const e = n as HTMLElement;
+        e.style.setProperty('display', 'none', 'important');
+        e.style.setProperty('visibility', 'hidden', 'important');
+        e.style.setProperty('opacity', '0', 'important');
+        if (e.parentNode) { try { e.parentNode.removeChild(e); } catch {} }
+      });
+    };
+    // Attach when possible (the div is always rendered once connected)
+    const t = setTimeout(() => {
+      const root = scraperRef.current || document.querySelector('.streetview-scraper');
+      if (root) {
+        run();
+        mo = new MutationObserver(run);
+        mo.observe(root, { childList: true, subtree: true });
+      }
+    }, 50);
+    return () => { clearTimeout(t); if (mo) mo.disconnect(); };
   }, []);
   
   // Handlers
@@ -228,76 +373,64 @@ function InnerApp() {
   };
   
 
-  // Cruise mode auto-advance — use a ref for heading to avoid restarting the interval on every pan
-  const cruiseHeadingRef = useRef(heading);
-  cruiseHeadingRef.current = heading;
-  const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const useTransitionRef = useRef(isTransitioning);
-  useTransitionRef.current = isTransitioning;
-  // Circuit-breaker: counts consecutive advance failures; auto-disables cruise after 3
-  const cruiseFailCountRef = useRef(0);
-  
-  useEffect(() => {
-    if (!isCruiseMode || !panorama || !advance) {
-      if (cruiseIntervalRef.current) {
-        clearInterval(cruiseIntervalRef.current);
-        cruiseIntervalRef.current = null;
-      }
-      // Reset failure count whenever cruise is toggled off
-      cruiseFailCountRef.current = 0;
+  const { isCruiseMode, setIsCruiseMode } = useCruiseMode({
+    panorama,
+    advanceSafe,
+    mapsAuthFailed,
+    heading,
+    isTransitioning,
+    setNavPending,
+  });
+
+  const handleRetryMapsAuth = useCallback(() => {
+    const nextKey = getConfiguredMapsKey();
+    if (!nextKey) {
+      setMapsAuthError('No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.');
+      setMapsLoadStatus('api-error');
+      setShowMissingKeyBanner(true);
       return;
     }
-    const hop = async () => {
-      // Skip if currently transitioning between locations
-      if (useTransitionRef.current) {
-        console.log('[CruiseMode] Skipping hop - still transitioning');
-        return;
-      }
-      // Halt immediately if auth has already failed
-      if (mapsAuthFailed) {
-        setIsCruiseMode(false);
-        return;
-      }
-      // Snapshot the panoId before the hop. `advanceSafe` doesn't throw on
-      // no-coverage / no-link — it just no-ops — so we detect a stuck hop by
-      // checking whether the panorama actually moved.
-      const panoIdBefore = panorama.getPano();
-      setNavPending(true);
-      try {
-        await advanceSafe('forward', undefined, cruiseHeadingRef.current);
-      } finally {
-        setNavPending(false);
-      }
-      // Give `pano.setPano(...)` a moment to fire `pano_changed` before we
-      // judge the hop. 1.5s ≈ half the cruise interval.
-      await new Promise(r => setTimeout(r, 1500));
-      const panoIdAfter = panorama.getPano();
-      if (panoIdAfter && panoIdAfter !== panoIdBefore) {
-        cruiseFailCountRef.current = 0;
-      } else {
-        cruiseFailCountRef.current += 1;
-        console.warn(`[CruiseMode] Hop did not advance (${cruiseFailCountRef.current}/3)`);
-        if (cruiseFailCountRef.current >= 3) {
-          console.error('[CruiseMode] 3 consecutive stuck hops — auto-disabling cruise mode');
-          setIsCruiseMode(false);
-          cruiseFailCountRef.current = 0;
-        }
-      }
-    };
-    cruiseIntervalRef.current = setInterval(hop, 3000);
-    return () => {
-      if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
-      cruiseIntervalRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama, advance, advanceSafe, mapsAuthFailed]);
+
+    setIsRetryingMapsAuth(true);
+    setMapsLoadStatus('loading-api');
+    setMapsAuthFailed(false);
+    setMapsAuthError(null);
+    setShowAuthFailedBanner(false);
+    setShowMissingKeyBanner(false);
+    setEffectiveMapsKey(nextKey);
+    removeFailedBootstrap();
+
+    loadMapsApi(nextKey)
+      .catch((err) => {
+        setMapsAuthFailed(true);
+        setMapsLoadStatus('api-error');
+        setShowAuthFailedBanner(true);
+        setMapsAuthError(err instanceof Error ? err.message : 'Google Maps API key error — retry failed.');
+      })
+      .finally(() => {
+        setIsRetryingMapsAuth(false);
+      });
+  }, []);
 
   const toggleRadio = () => {
     if (!audioRef.current) return;
     if (isRadioPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play().catch(e => console.error("Audio play failed:", e));
+      // Create AudioContext on first user gesture (browser policy requires this).
+      // Wiring through AudioContext makes the stream capturable for recording.
+      if (!audioCtxRef.current) {
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        if (!audioSourceRef.current) {
+          audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+          audioSourceRef.current.connect(ctx.destination);
+        }
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+      audioRef.current.play().catch(e => console.error('Audio play failed:', e));
     }
     setIsRadioPlaying(!isRadioPlaying);
   };
@@ -316,317 +449,229 @@ function InnerApp() {
     });
   };
   
-  // Globe teleport with auto-lighting (Phase 4) and auto-radio (Phase 3)
-  const handleGlobeTeleport = useCallback(async (lat: number, lng: number) => {
-    // Teleport the Street View panorama safely
-    setNavPending(true);
-    try {
-      await teleportSafe(lat, lng);
-    } finally {
-      setNavPending(false);
+  const handleGlobeTeleport = useGlobeTeleport({
+    teleportSafe,
+    applyTimeOfDayPreset,
+    applyColorGradingPreset,
+    globeMode,
+    audioRef,
+    setNavPending,
+    setIsRadioPlaying,
+  });
+
+  const { handleStartJourney } = useAutopilot({
+    teleportSafe,
+    handleGlobeTeleport,
+    panoCache,
+    isTransitioning,
+    setNavPending,
+  });
+
+  const shortcuts = buildAppKeyboardShortcuts({
+    showPerformanceStats,
+    setShowPerformanceStats,
+    timeOfDay,
+    applyTimeOfDayPreset,
+    isRadioPlaying,
+    toggleRadio,
+    isMapOpen,
+    setIsMapOpen,
+    isBookmarkPanelOpen,
+    setIsBookmarkPanelOpen,
+    isHistoryPanelOpen,
+    setIsHistoryPanelOpen,
+    isSnapshotGalleryOpen,
+    setIsSnapshotGalleryOpen,
+    isColorGradingPanelOpen,
+    setIsColorGradingPanelOpen,
+    isAccessibilityPanelOpen,
+    setIsAccessibilityPanelOpen,
+    isWeatherPanelOpen,
+    setIsWeatherPanelOpen,
+    viewMode,
+    toggleViewMode,
+    rainIntensity,
+    wipersEnabled,
+    toggleWipers,
+    headlightsOn,
+    toggleHeadlights,
+    toggleDomeLight,
+    isRoofOpen,
+    toggleRoof,
+    isCruiseMode,
+    setIsCruiseMode,
+    globeMode,
+    announce,
+  });
+
+  useKeyboardShortcuts(shortcuts, isConnected && !showWelcome);
+
+  const mapsLoadingOverlay = (() => {
+    if (!isConnected) return null;
+    // Do not early-return on mapsAuthFailed here: we want the standard LoadingOverlay
+    // (with its api-error state + retry button) to be available as a non-modal path.
+    // The hard full-screen mapsAuthFailed dialog below is the legacy "blocker".
+    // With the auto-clear logic above, a good key will transition us out of failed
+    // and into normal loading/rendering states.
+
+    if (!effectiveMapsKey) {
+      return {
+        isVisible: true,
+        message: '',
+        error: 'No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.',
+        retryable: true,
+        onRetry: handleRetryMapsAuth,
+      };
     }
 
-    // Phase 4: Auto-lighting based on destination's real-world time
-    try {
-      const timePreset = getTimeOfDayForLocation(lat, lng);
-      applyTimeOfDayPreset(timePreset);
-      const colorPreset = getColorPresetForTimeOfDay(timePreset);
-      applyColorGradingPreset(colorPreset);
-    } catch (err) {
-      console.warn('[GlobeTeleport] Auto-lighting failed:', err);
+    switch (mapsLoadStatus) {
+      case 'loading-api':
+        return { isVisible: true, message: 'Connecting to Google Maps...', progress: 15 };
+      case 'api-ready':
+        return { isVisible: true, message: 'Google Maps connected. Preparing Street View...', progress: 35 };
+      case 'loading-panorama':
+        return { isVisible: true, message: 'Loading Street View...', progress: 55 };
+      case 'canvas-ready':
+        return { isVisible: webgpuStatus === 'initializing', message: 'Preparing WebGPU renderer...', progress: 85 };
+      case 'canvas-timeout':
+        return {
+          isVisible: true,
+          message: '',
+          error: canvasError || 'Street View unavailable at this location.',
+          retryable: true,
+          onRetry: () => window.location.reload(),
+        };
+      case 'api-error':
+        return {
+          isVisible: true,
+          message: '',
+          error: mapsAuthError || canvasError || 'Failed to load Google Maps API. Please check your API key and network connection.',
+          retryable: true,
+          onRetry: handleRetryMapsAuth,
+        };
+      case 'idle':
+        return { isVisible: !isCanvasReady, message: 'Preparing Maps connection...', progress: 5 };
+      case 'rendering':
+      default:
+        return { isVisible: false, message: '' };
     }
-
-    // Phase 3: Auto-tune radio to local station
-    getTopStationForLocation(lat, lng).then(station => {
-      if (station && audioRef.current) {
-        audioRef.current.src = station.urlResolved || station.url;
-        audioRef.current.play().catch(() => {});
-        setIsRadioPlaying(true);
-        console.log(`[GlobeTeleport] Tuned to: ${station.name} (${station.country})`);
-      }
-    }).catch(err => {
-      console.warn('[GlobeTeleport] Auto-radio failed:', err);
-    });
-
-    // Deactivate globe after teleport
-    globeMode.deactivate();
-  }, [teleportSafe, applyTimeOfDayPreset, applyColorGradingPreset, globeMode]);
-
-  // Phase 5: Waypoint autopilot
-  // Interval chosen to allow Street View panorama to load between jumps.
-  // Shorter values risk showing loading spinners; longer values feel sluggish.
-  const WAYPOINT_INTERVAL_MS = 5000;
-  const autopilotRef = useRef<NodeJS.Timeout | null>(null);
-  const autopilotTransitionRef = useRef(isTransitioning);
-  autopilotTransitionRef.current = isTransitioning;
-  
-  const handleStartJourney = useCallback(async (waypoints: { lat: number; lng: number }[]) => {
-    if (waypoints.length === 0) return;
-
-    // Pre-fetch all waypoints (fire-and-forget)
-    waypoints.forEach(wp => panoCache.fetch(wp.lat, wp.lng).catch(() => {}));
-
-    // Teleport to first waypoint with auto-lighting/radio effects
-    await handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
-
-    // Set up autopilot: advance through remaining waypoints
-    if (waypoints.length > 1) {
-      let idx = 1;
-      autopilotRef.current = setInterval(async () => {
-        if (idx >= waypoints.length) {
-          if (autopilotRef.current) clearInterval(autopilotRef.current);
-          autopilotRef.current = null;
-          return;
-        }
-        // Respect transition pause before moving to next waypoint
-        if (autopilotTransitionRef.current) {
-          console.log('[Autopilot] Waiting for transition pause before next waypoint');
-          return;
-        }
-        const wp = waypoints[idx];
-        setNavPending(true);
-        try {
-          await teleportSafe(wp.lat, wp.lng);
-        } catch (err) {
-          console.warn(`[Autopilot] Failed to teleport to waypoint ${idx}:`, err);
-        } finally {
-          setNavPending(false);
-        }
-        idx++;
-      }, WAYPOINT_INTERVAL_MS);
-    }
-  }, [handleGlobeTeleport, panoCache, teleportSafe]);
-
-  // Cleanup autopilot on unmount
-  useEffect(() => {
-    return () => {
-      if (autopilotRef.current) clearInterval(autopilotRef.current);
-    };
-  }, []);
-
-  // Keyboard shortcuts
-  useKeyboardShortcuts(
-    [
-      {
-        key: 'F9',
-        description: 'Toggle performance stats overlay',
-        action: () => {
-          setShowPerformanceStats(!showPerformanceStats);
-          announce(`Performance stats ${!showPerformanceStats ? 'shown' : 'hidden'}`);
-        },
-      },
-      {
-        key: 'n',
-        description: 'Toggle night mode',
-        action: () => {
-          const modes: TimeOfDay[] = ['day', 'sunrise', 'sunset', 'night'];
-          const currentIndex = modes.indexOf(timeOfDay);
-          const nextMode = modes[(currentIndex + 1) % modes.length];
-          applyTimeOfDayPreset(nextMode);
-          announce(`Night mode: ${nextMode}`);
-        },
-      },
-      {
-        key: 'm',
-        description: 'Toggle radio',
-        action: () => {
-          toggleRadio();
-          announce(`Radio ${!isRadioPlaying ? 'on' : 'off'}`);
-        },
-      },
-      {
-        key: 'g',
-        description: 'Toggle GPS map',
-        action: () => {
-          setIsMapOpen(!isMapOpen);
-          announce(`Map ${!isMapOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'b',
-        description: 'Toggle bookmarks',
-        action: () => {
-          setIsBookmarkPanelOpen(!isBookmarkPanelOpen);
-          setIsHistoryPanelOpen(false);
-          setIsSnapshotGalleryOpen(false);
-          announce(`Bookmarks ${!isBookmarkPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'h',
-        description: 'Toggle history (free look) or control mode (car)',
-        action: () => {
-          if (viewMode === 'car') {
-            // In car mode, H toggles control mode - handled by CarInputHandler
-            announce('Toggle control mode');
-          } else {
-            setIsHistoryPanelOpen(!isHistoryPanelOpen);
-            setIsBookmarkPanelOpen(false);
-            setIsSnapshotGalleryOpen(false);
-            announce(`History ${!isHistoryPanelOpen ? 'opened' : 'closed'}`);
-          }
-        },
-      },
-      {
-        key: 's',
-        description: 'Toggle snapshot gallery',
-        action: () => {
-          setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen);
-          setIsBookmarkPanelOpen(false);
-          setIsHistoryPanelOpen(false);
-          announce(`Gallery ${!isSnapshotGalleryOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'e',
-        description: 'Toggle color grading',
-        action: () => {
-          setIsColorGradingPanelOpen(!isColorGradingPanelOpen);
-          setIsBookmarkPanelOpen(false);
-          setIsHistoryPanelOpen(false);
-          setIsSnapshotGalleryOpen(false);
-          announce(`Color grading ${!isColorGradingPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'a',
-        description: 'Toggle accessibility panel',
-        action: () => {
-          setIsAccessibilityPanelOpen(!isAccessibilityPanelOpen);
-          announce(`Accessibility panel ${!isAccessibilityPanelOpen ? 'opened' : 'closed'}`);
-        },
-      },
-      {
-        key: 'c',
-        description: 'Toggle car mode',
-        action: () => {
-          toggleViewMode();
-          announce(viewMode === 'car' ? 'Free look mode' : 'Car mode enabled');
-        },
-      },
-      {
-        key: 'w',
-        description: 'Toggle wipers',
-        action: () => {
-          if (rainIntensity > 0 || wipersEnabled) {
-            toggleWipers();
-            announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
-          }
-        },
-      },
-      {
-        key: 'l',
-        description: 'Toggle dome light (car) / headlights (free look)',
-        action: () => {
-          if (viewMode === 'car') {
-            const newState = toggleDomeLight();
-            announce(`Dome light ${newState ? 'on' : 'off'}`);
-          } else {
-            const newState = toggleHeadlights();
-            announce(`Headlights ${newState ? 'on' : 'off'}`);
-          }
-        },
-      },
-      {
-        key: 'o',
-        description: 'Toggle roof',
-        action: () => {
-          toggleRoof();
-          announce(`Roof ${!isRoofOpen ? 'open' : 'closed'}`);
-        },
-      },
-      {
-        key: 'r',
-        description: 'Toggle cruise mode',
-        action: () => {
-          setIsCruiseMode(!isCruiseMode);
-          announce(`Cruise mode ${!isCruiseMode ? 'on' : 'off'}`);
-        },
-      },
-      {
-        key: 'G',
-        modifier: 'shift',
-        description: 'Toggle Globe Mode',
-        action: () => {
-          globeMode.toggle();
-          announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
-        },
-      },
-      {
-        key: 'Escape',
-        description: 'Close panels',
-        action: () => {
-          if (globeMode.isActive) { globeMode.deactivate(); return; }
-          if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
-          if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
-          else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);
-          else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
-          else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
-          else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
-          else if (isMapOpen) setIsMapOpen(false);
-        },
-        preventDefault: false,
-      },
-    ],
-    isConnected && !showWelcome
-  );
+  })();
   
   return (
     <div id="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', padding: 0, margin: 0, backgroundColor: '#000' }}>
       {/* Skip link for keyboard navigation */}
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
 
-      {/* Missing API key banner */}
-      {showMissingKeyBanner && (
-        <div
-          role="alert"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2000,
-            background: 'rgba(180,100,0,0.95)', color: '#fff',
-            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
-            fontFamily: 'system-ui, sans-serif', fontSize: 14,
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
-        >
-          <span style={{ flex: 1 }}>
-            ⚠️ <strong>REACT_APP_MAPS_API_KEY is not set.</strong>{' '}
-            Street View will not load. Set the <code>REACT_APP_MAPS_API_KEY</code> environment variable and restart the dev server (or redeploy for production).
-          </span>
-          <button
-            onClick={() => setShowMissingKeyBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <AppBanners
+        showMissingKeyBanner={showMissingKeyBanner}
+        setShowMissingKeyBanner={setShowMissingKeyBanner}
+        showAuthFailedBanner={showAuthFailedBanner}
+        setShowAuthFailedBanner={setShowAuthFailedBanner}
+      />
 
-      {/* Maps API auth-failure banner */}
-      {showAuthFailedBanner && (
+      {mapsAuthFailed && (
         <div
-          role="alert"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="maps-auth-error-title"
+          aria-describedby="maps-auth-error-description"
           style={{
-            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
-            background: 'rgba(180,0,0,0.95)', color: '#fff',
-            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
-            fontFamily: 'system-ui, sans-serif', fontSize: 14,
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2500,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            color: '#fff',
+            fontFamily: 'system-ui, sans-serif',
           }}
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
         >
-          <span style={{ flex: 1 }}>
-            🔑 <strong>Google Maps API authentication failed.</strong>{' '}
-            The API key may be invalid, referrer-restricted, or billing may be disabled. Cruise mode has been paused.
-          </span>
-          <button
-            onClick={() => setShowAuthFailedBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
+          <div
+            style={{
+              width: 'min(560px, 100%)',
+              background: 'linear-gradient(145deg, rgba(32,12,12,0.98), rgba(10,10,10,0.98))',
+              border: '1px solid rgba(255,120,120,0.55)',
+              borderRadius: 16,
+              boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
+              padding: 28,
+            }}
           >
-            Dismiss
-          </button>
+            <div style={{ fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ffb3b3', marginBottom: 10 }}>
+              Maps authentication failed
+            </div>
+            {/* The "Dismiss block" button (below) + auto-clear on good status/key change
+                means this full-screen dialog is no longer a hard permanent block once
+                the key problem (referrer, billing, or prior vulnerability) is resolved.
+                Rendering recovery for Street View mode is the goal of the follow-up issues. */}
+            <h2 id="maps-auth-error-title" style={{ margin: '0 0 12px', fontSize: 28, lineHeight: 1.1 }}>
+              Google Maps API key error
+            </h2>
+            <p id="maps-auth-error-description" style={{ margin: '0 0 16px', lineHeight: 1.5, color: 'rgba(255,255,255,0.88)' }}>
+              {mapsAuthError || 'Google Maps API key error — check referrer restrictions and billing in Google Cloud Console.'}
+            </p>
+            <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 12, fontSize: 13, lineHeight: 1.45, marginBottom: 20 }}>
+              Verify that this host is whitelisted under HTTP referrer restrictions, billing is enabled, and the Maps JavaScript API plus Street View dependencies are enabled for the key.
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={handleRetryMapsAuth}
+                disabled={isRetryingMapsAuth}
+                style={{
+                  background: isRetryingMapsAuth ? 'rgba(255,255,255,0.22)' : '#ff6b6b',
+                  border: 0,
+                  borderRadius: 8,
+                  color: '#fff',
+                  cursor: isRetryingMapsAuth ? 'wait' : 'pointer',
+                  fontWeight: 700,
+                  padding: '10px 16px',
+                }}
+              >
+                {isRetryingMapsAuth ? 'Retrying…' : 'Retry Maps'}
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.5)',
+                  borderRadius: 8,
+                  color: '#fff',
+                  cursor: 'pointer',
+                  padding: '10px 16px',
+                }}
+              >
+                Reload page
+              </button>
+              <button
+                onClick={() => {
+                  // Emergency escape hatch: clear the auth-failed block so that if
+                  // the key was corrected out-of-band (config.js updated on server,
+                  // new deploy, etc.) the StreetView init + WebGPU render can proceed
+                  // without waiting for the loadMapsApi promise roundtrip.
+                  // This removes the remaining hard API-key blocking UI.
+                  setMapsAuthFailed(false);
+                  setMapsAuthError(null);
+                  setShowAuthFailedBanner(true); // keep soft banner for awareness
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  borderRadius: 8,
+                  color: 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  padding: '10px 16px',
+                  fontSize: '13px',
+                }}
+                title="Clear error overlay (use if key was fixed externally; canvas may now load)"
+              >
+                Dismiss block
+              </button>
+            </div>
+          </div>
         </div>
       )}
       
@@ -666,87 +711,26 @@ function InnerApp() {
       {/* Global UI Panels */}
       {isConnected && (
         <>
-          {/* Floating Toolbar — top-right HUD */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              zIndex: 10,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: 8,
-              pointerEvents: 'auto',
-            }}
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
-              disabled={!isPanoramaReady}
-              style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110, opacity: isPanoramaReady ? 1 : 0.5 }}
-              onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
-            >
-              Cruise: {isCruiseMode ? 'ON' : 'OFF'}
-            </button>
-            <button
-              className={`control-btn${isRadioPlaying ? ' disconnect' : ''}`}
-              style={{ backgroundColor: isRadioPlaying ? 'rgba(255,71,87,0.85)' : undefined, minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); toggleRadio(); }}
-            >
-              Radio: {isRadioPlaying ? 'ON' : 'OFF'}
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen); }}
-            >
-              📷 Gallery
-            </button>
-            <button
-              className={`control-btn${isBookmarkPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsBookmarkPanelOpen(!isBookmarkPanelOpen); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🔖 Bookmarks
-            </button>
-            <button
-              className={`control-btn${isHistoryPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsHistoryPanelOpen(!isHistoryPanelOpen); setIsBookmarkPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🕒 History
-            </button>
-            <button
-              className={`control-btn${isColorGradingPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsColorGradingPanelOpen(!isColorGradingPanelOpen); setIsBookmarkPanelOpen(false); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-            >
-              🎨 Color
-            </button>
-            <button
-              className={`control-btn${isWeatherPanelOpen ? ' disconnect' : ''}`}
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
-            >
-              🌧 Weather
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); toggleViewMode(); }}
-            >
-              {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
-            </button>
-            <button
-              className="control-btn"
-              style={{ minWidth: 110 }}
-              onClick={e => { e.stopPropagation(); globeMode.toggle(); }}
-            >
-              🌍 Globe
-            </button>
-          </div>
+          <AppToolbar
+            isCruiseMode={isCruiseMode}
+            setIsCruiseMode={setIsCruiseMode}
+            isPanoramaReady={isPanoramaReady}
+            isRadioPlaying={isRadioPlaying}
+            toggleRadio={toggleRadio}
+            isSnapshotGalleryOpen={isSnapshotGalleryOpen}
+            setIsSnapshotGalleryOpen={setIsSnapshotGalleryOpen}
+            isBookmarkPanelOpen={isBookmarkPanelOpen}
+            setIsBookmarkPanelOpen={setIsBookmarkPanelOpen}
+            isHistoryPanelOpen={isHistoryPanelOpen}
+            setIsHistoryPanelOpen={setIsHistoryPanelOpen}
+            isColorGradingPanelOpen={isColorGradingPanelOpen}
+            setIsColorGradingPanelOpen={setIsColorGradingPanelOpen}
+            isWeatherPanelOpen={isWeatherPanelOpen}
+            setIsWeatherPanelOpen={setIsWeatherPanelOpen}
+            viewMode={viewMode}
+            toggleViewMode={toggleViewMode}
+            onGlobeToggle={globeMode.toggle}
+          />
 
           {/* Bookmark Panel */}
           {isBookmarkPanelOpen && panorama && (
@@ -899,7 +883,7 @@ function InnerApp() {
                 heading: b.heading,
                 pitch: b.pitch,
               }))}
-              mapsApiKey={GOOGLE_MAPS_KEY}
+              mapsApiKey={effectiveMapsKey}
               onTeleportRequest={handleGlobeTeleport}
               onEnterComplete={globeMode.onEnterComplete}
               onExitComplete={globeMode.onExitComplete}
@@ -913,27 +897,29 @@ function InnerApp() {
       {/* When WebGPU is active, pushed behind the WebGPU canvas via zIndex (0 vs 1). */}
       {/* opacity must stay at 1 — Google Maps stops updating its canvas at low opacity. */}
       {/* When WebGPU fails, promoted to zIndex 2 as visible fallback. */}
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
-        opacity: 1,
-        pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
-      }}>
+      <div
+        ref={scraperRef}
+        className="streetview-scraper"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: (isConnected && webGPUAvailable) ? 0 : 2,
+          opacity: 1,
+          pointerEvents: (isConnected && webGPUAvailable) ? 'none' : 'auto'
+        }}
+      >
         <StreetView
-          apiKey={GOOGLE_MAPS_KEY}
+          apiKey={effectiveMapsKey}
           initialPosition={{ lat: 37.86926, lng: -122.254811 }}
           onCanvasReady={setCanvas}
           onError={setCanvasError}
+          onStatusChange={handleMapsStatusChange}
           onPanoramaReady={(pano) => {
             setPanorama(pano);
             setCanvasError(null);
-            if (!directionsServiceRef.current) {
-              directionsServiceRef.current = new google.maps.DirectionsService();
-            }
             if (!geocoderRef.current) {
               geocoderRef.current = new google.maps.Geocoder();
             }
@@ -958,58 +944,21 @@ function InnerApp() {
           zIndex: 1
         }}
       >
-        {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={GOOGLE_MAPS_KEY} />}
+        {isConnected && isCanvasReady && webgpuStatus !== 'initializing' && <MainView mapsApiKey={effectiveMapsKey} />}
         
-        {/* Show loading screen while waiting for canvas or WebGPU init */}
-        {isConnected && (!isCanvasReady || webgpuStatus === 'initializing') && (
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#000',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1
-          }}>
-            {canvasError ? (
-              <ErrorDisplay
-                message={canvasError}
-                retryable={true}
-                onRetry={() => window.location.reload()}
-              />
-            ) : (
-              <>
-                <div style={{
-                  color: '#4CAF50',
-                  fontSize: '18px',
-                  marginBottom: '20px',
-                  fontFamily: 'sans-serif'
-                }}>
-                  Loading Street View...
-                </div>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  border: '4px solid rgba(255, 255, 255, 0.1)',
-                  borderTopColor: '#4CAF50',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }} />
-                <style>{`
-                  @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
-              </>
-            )}
-          </div>
+        {mapsLoadingOverlay && (
+          <LoadingOverlay
+            isVisible={mapsLoadingOverlay.isVisible}
+            message={mapsLoadingOverlay.message}
+            progress={mapsLoadingOverlay.progress}
+            error={mapsLoadingOverlay.error}
+            retryable={mapsLoadingOverlay.retryable}
+            onRetry={mapsLoadingOverlay.onRetry}
+            size="fullscreen"
+          />
         )}
       </div>
+      <BuildBadge />
     </div>
   );
 }

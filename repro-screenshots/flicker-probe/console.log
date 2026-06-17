@@ -1,0 +1,1 @@
+[CONSOLE warn] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).

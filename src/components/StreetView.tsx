@@ -1,5 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { loadMapsApi } from '../services/maps/loader';
+import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
+import { getCanvasFingerprint } from '../hooks/useStreetView';
+
+export type MapsLoadStatus =
+    | 'idle'
+    | 'loading-api'
+    | 'api-ready'
+    | 'api-error'
+    | 'loading-panorama'
+    | 'canvas-ready'
+    | 'canvas-timeout'
+    | 'rendering';
 
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
@@ -7,18 +18,122 @@ interface StreetViewProps {
     initialPosition?: { lat: number; lng: number };
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
     onError?: (message: string) => void;
+    onStatusChange?: (status: MapsLoadStatus) => void;
 }
 
-const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError }) => {
+const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError, onStatusChange }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
+    const lastKeyRef = useRef<string>('');
+
+    // P1 stability tracking: do not hand a canvas to the renderer until its *content*
+    // has produced N consecutive identical good fingerprints. This prevents flashing
+    // low-res tiles, black frames, or transient Google internal canvases during init,
+    // pano loads, or network hiccups.
+    const lastFingerprintRef = useRef<string>('');
+    const stableCountRef = useRef<number>(0);
+    const everSawCandidateRef = useRef(false);
+    const REQUIRED_STABLE_SAMPLES = 2; // ~400 ms at current 200 ms polling cadence
+
+    // Persistent suppression of Google's "could not load Google Maps properly" / .gm-err-*
+    // error UI. Google injects these DOM nodes into the pano container (even for transient
+    // referrer/tile/auth hiccups) when it detects a problem with the key at bootstrap or
+    // during some operations. Because we keep the container at opacity:1 (required for
+    // Google to keep painting the real panorama canvas that we scrape), the error chrome
+    // can flash into view repeatedly → rapid flicker, even while actual navigation and
+    // canvas content are working fine.
+    //
+    // The CSS in style.css helps, the one-shot remove in App on gm_authFailure helps,
+    // but a live MutationObserver + sweeps from the existing canvas poller are the
+    // reliable "first step" to kill the flicker without changing the scraper architecture.
+    // (See also the sibling issues around recovery after key fixes and car mode.)
+    //
+    // This runs for the lifetime of the pano container and is independent of view mode
+    // (freelook vs car), so entering car mode shouldn't cause the streetview "to vanish"
+    // due to visible error UI.
+    const errorSuppressorRef = useRef<MutationObserver | null>(null);
 
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
+    // === Live Google Maps error UI suppressor (the key anti-flicker step) ===
+    // Set up once per StreetView lifetime. Observes the exact container Google writes
+    // its error nodes into. Combined with the broadened CSS and periodic sweeps from
+    // checkForCanvas, this should stop the rapid "could not load..." popup from
+    // appearing even on hosts where a marginal key or race still triggers
+    // gm_authFailure / internal error injection (while the actual imagery canvas
+    // continues to work, as reported: navigation is possible).
     useEffect(() => {
+        const SUPPRESS_SEL = '[class*="gm-err"], .gm-err-container, .gm-err-content, .gm-err-icon, .gm-err-title, .gm-err-message, .gm-err-dialog, [aria-label*="Google Maps" i], [aria-label*="This page can\'t load" i], [aria-label*="load Google" i]';
+
+        const suppress = () => {
+            const container = panoRef.current;
+            if (!container) return;
+            const nodes = container.querySelectorAll(SUPPRESS_SEL);
+            nodes.forEach((node) => {
+                const el = node as HTMLElement;
+                // Belt-and-suspenders: force invisible + remove from DOM when safe.
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('opacity', '0', 'important');
+                el.style.setProperty('pointer-events', 'none', 'important');
+                el.style.setProperty('z-index', '-9999', 'important');
+                if (el.parentNode) {
+                    try { el.parentNode.removeChild(el); } catch {}
+                }
+            });
+        };
+
+        // Early + delayed sweeps (bootstrap race window)
+        suppress();
+        const t0 = setTimeout(suppress, 80);
+        const t1 = setTimeout(suppress, 280);
+        const t2 = setTimeout(suppress, 900);
+        const t3 = setTimeout(suppress, 1800);
+
+        // Live observer — catches injections no matter when Google decides to show them
+        // (initial bad key, during WASD hops, on car mode entry, tile auth hiccups, etc.)
+        let mo: MutationObserver | null = null;
+        const attachObserver = () => {
+            const container = panoRef.current;
+            if (container && !mo) {
+                mo = new MutationObserver(suppress);
+                mo.observe(container, { childList: true, subtree: true });
+                errorSuppressorRef.current = mo;
+            }
+        };
+        const attachT = setTimeout(attachObserver, 0);
+
+        return () => {
+            clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(attachT);
+            if (mo) {
+                mo.disconnect();
+                mo = null;
+            }
+            errorSuppressorRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        const trimmed = (apiKey || '').trim();
+        if (!trimmed) {
+            // Do not initialize (or keep previous) with empty/placeholder key.
+            // This allows a late-arriving key (see #84) to trigger a clean init.
+            onStatusChange?.('idle');
+            return;
+        }
+        if (isInitializedRef.current && lastKeyRef.current === trimmed) {
+            return;
+        }
+        // Key changed (including first real key after empty start) — reset so we re-initialize.
+        if (trimmed !== lastKeyRef.current) {
+            isInitializedRef.current = false;
+            removeFailedBootstrap();
+        }
+        lastKeyRef.current = trimmed;
         if (isInitializedRef.current) return;
         isInitializedRef.current = true;
+        onStatusChange?.('loading-api');
 
         let isMounted = true;
         let cleanup: (() => void) | null = null;
@@ -28,11 +143,16 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             if (!isMounted || !panoRef.current) return null;
             if (!window.google?.maps?.Map) {
                 console.error('[StreetView] Google Maps API not available');
+                onStatusChange?.('api-error');
                 return null;
             }
 
+            onStatusChange?.('loading-panorama');
+
             // Off-screen container for the linked Map instance.
-            // Must have real pixel dimensions — 0×0 blocks WebGL init (#87).
+            // Must have real pixel dimensions — a 0×0 or visibility:hidden div
+            // prevents Google Maps from initialising its WebGL context, which in
+            // turn stops the StreetViewPanorama from rendering its canvas (#87).
             const mapDiv = document.createElement('div');
             mapDiv.setAttribute('aria-hidden', 'true');
             mapDiv.style.position = 'fixed';
@@ -45,17 +165,19 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             document.body.appendChild(mapDiv);
 
             try {
-                // Only pass mapId when a registered Cloud Map ID is configured.
-                // The placeholder 'webgpu-streetview-default' is NOT a registered ID
-                // and causes failing MapsConfigService requests on every page load.
+                // Do NOT set a mapId unless a real Cloud Map ID is configured.
+                // Any mapId (including 'DEMO_MAP_ID') causes Maps to issue a
+                // MapsConfigService request that gets blocked by the server's
+                // Cross-Origin-Embedder-Policy: require-corp header, triggering
+                // the "can't load Google Maps correctly" error UI.
                 const mapOptions: google.maps.MapOptions = {
                     center: startLocation,
                     zoom: 12,
                     disableDefaultUI: true,
+                    ...(process.env.REACT_APP_GOOGLE_MAPS_MAP_ID
+                        ? { mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID }
+                        : {}),
                 };
-                if (process.env.REACT_APP_GOOGLE_MAPS_MAP_ID) {
-                    mapOptions.mapId = process.env.REACT_APP_GOOGLE_MAPS_MAP_ID;
-                }
                 const mapInstance = new google.maps.Map(mapDiv, mapOptions);
 
                 const panoInstance = new google.maps.StreetViewPanorama(panoRef.current, {
@@ -80,15 +202,39 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     const status = panoInstance.getStatus();
                     if (status !== google.maps.StreetViewStatus.OK) {
                         console.warn('[StreetView] Panorama status:', status);
+                        onStatusChange?.('canvas-timeout');
                         onError?.(`Street View unavailable: ${status}`);
                     }
                 });
 
                 if (onPanoramaReady) onPanoramaReady(panoInstance);
 
-                // Canvas detection with retry
+                // Canvas detection with retry + P1 stability gate (see repro + analysis for "map API loading error flickering").
+                // We only promote a canvas (and thus feed it to WebGPU copyExternalImageToTexture + the render loop)
+                // after it has shown the same usable fingerprint for REQUIRED_STABLE_SAMPLES consecutive checks.
+                // This stops the renderer from ever seeing a partially decoded tile, a black/near-black frame,
+                // or a short-lived internal Google canvas during initial load, pano transitions, cruise jumps,
+                // or transient network / tile errors.
                 const checkForCanvas = () => {
                     if (!panoRef.current) return;
+
+                    // Extra sweep for error UI on every stability poll. The dedicated
+                    // MutationObserver (above) does the heavy lifting for live injection,
+                    // but this catches early bootstrap cases + gives belt-and-suspenders
+                    // during the exact windows when flicker was reported (initial load,
+                    // rapid advances, car mode toggle).
+                    // We deliberately do a broad query here too.
+                    try {
+                        const container = panoRef.current;
+                        const bad = container.querySelectorAll('[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]');
+                        bad.forEach((n) => {
+                            const e = n as HTMLElement;
+                            e.style.setProperty('display', 'none', 'important');
+                            e.style.setProperty('visibility', 'hidden', 'important');
+                            e.style.setProperty('opacity', '0', 'important');
+                            if (e.parentNode) { try { e.parentNode.removeChild(e); } catch {} }
+                        });
+                    } catch {}
 
                     const canvases = panoRef.current.getElementsByTagName('canvas');
                     const len = canvases.length;
@@ -106,29 +252,80 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                         }
                     }
 
-                    if (bestCanvas.width < 256 || bestCanvas.height < 256) return;
+                    if (bestCanvas.width < 256 || bestCanvas.height < 256) {
+                        // Too small — Google is probably still creating/replacing it.
+                        stableCountRef.current = 0;
+                        return;
+                    }
 
-                    if (bestCanvas !== activeCanvasRef.current) {
-                        console.log(`[StreetView] Canvas ready: ${bestCanvas.width}×${bestCanvas.height}`);
-                        activeCanvasRef.current = bestCanvas;
-                        onCanvasReady(bestCanvas);
+                    everSawCandidateRef.current = true;
+
+                    const fp = getCanvasFingerprint(bestCanvas);
+                    if (!fp) {
+                        // Content not usable yet (black, low-res preview, still decoding, noisy).
+                        stableCountRef.current = 0;
+                        lastFingerprintRef.current = '';
+                        return;
+                    }
+
+                    const sameElement = bestCanvas === activeCanvasRef.current;
+                    const sameFp = fp === lastFingerprintRef.current;
+
+                    if (!sameFp) {
+                        lastFingerprintRef.current = fp;
+                        stableCountRef.current = 1;
+                    } else {
+                        stableCountRef.current = Math.min(stableCountRef.current + 1, REQUIRED_STABLE_SAMPLES + 1);
+                    }
+
+                    const isStable = stableCountRef.current >= REQUIRED_STABLE_SAMPLES;
+
+                    if (isStable) {
+                        if (!sameElement) {
+                            console.log(`[StreetView] Canvas stable (${stableCountRef.current} samples): ${bestCanvas.width}×${bestCanvas.height} fp=${fp}`);
+                            activeCanvasRef.current = bestCanvas;
+                            onStatusChange?.('canvas-ready');
+                            onCanvasReady(bestCanvas);
+                        } else if (!sameFp) {
+                            // Same canvas element, but content fingerprint changed and is now stable again
+                            // (e.g. Google finished loading better tiles into the existing canvas).
+                            console.log(`[StreetView] Canvas content restabilized: ${bestCanvas.width}×${bestCanvas.height}`);
+                            onCanvasReady(bestCanvas);
+                        }
+                    } else {
+                        // Candidate seen but not yet stable — do not promote.
+                        if (stableCountRef.current === 1) {
+                            console.log(`[StreetView] Canvas candidate ${bestCanvas.width}×${bestCanvas.height} (waiting for stability, fp=${fp})`);
+                        }
                     }
                 };
 
                 // Initial check with delay
                 const initialTimeout = setTimeout(checkForCanvas, 500);
                 
-                // Retry a few times for canvas detection
+                // Retry/polling window for canvas + stability. Extended so we can wait for
+                // fingerprint stability instead of promoting the first 256px canvas we see.
                 const retryInterval = setInterval(checkForCanvas, 200);
-                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 3000);
+                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 6000);
 
-                // Hard timeout: if no canvas detected after ~3.5s, surface an error
+                // Hard timeout: if we never managed to promote a *stable* canvas, surface an error.
+                // We give it a bit longer than before because we now require content stability.
                 const canvasTimeout = setTimeout(() => {
                     if (!activeCanvasRef.current) {
-                        console.error('[StreetView] Canvas detection timed out');
-                        onError?.('Canvas detection timed out — Street View may be unavailable at this location.');
+                        const found = panoRef.current
+                            ? Array.from(panoRef.current.getElementsByTagName('canvas'))
+                                  .map(c => `${c.width}×${c.height}`)
+                                  .join(', ') || 'none'
+                            : 'pano div missing';
+                        const sawCandidates = everSawCandidateRef.current;
+                        const msg = sawCandidates
+                            ? `Canvas detection timed out waiting for stable imagery (saw candidates: ${found}). The panorama may be slow to load or unavailable.`
+                            : `Canvas detection timed out (found: ${found}) — Street View may be unavailable at this location.`;
+                        console.error('[StreetView]', msg);
+                        onStatusChange?.('canvas-timeout');
+                        onError?.(msg);
                     }
-                }, 3500);
+                }, 6500);
 
                 observer = new MutationObserver(() => {
                     checkForCanvas();
@@ -163,6 +360,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 };
             } catch (err) {
                 console.error('[StreetView] Initialization error:', err);
+                onStatusChange?.('api-error');
                 if (mapDiv.parentElement) {
                     mapDiv.parentElement.removeChild(mapDiv);
                 }
@@ -173,11 +371,13 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         // Load Google Maps API via singleton loader (idempotent, no callback, no libraries)
         loadMapsApi(apiKey).then(() => {
             if (isMounted) {
+                onStatusChange?.('api-ready');
                 cleanup = initialize();
             }
         }).catch((err) => {
             if (isMounted) {
                 console.error('[StreetView] Maps API load failed:', err);
+                onStatusChange?.('api-error');
                 onError?.('Failed to load Google Maps API. Please check your API key and network connection.');
             }
         });

@@ -2,8 +2,10 @@
 node_modules/
 
 # Local environment files with real secrets (never commit)
+.env
 .env.local
 .env.*.local
+.env.*
 
 # npm lockfile
 package-lock.json
@@ -11,3 +13,13 @@ package-lock.json
 # Build artifacts
 build/
 .aider*
+
+# C++ / Emscripten build artifacts
+cpp/build-emscripten/
+cpp/**/*.o
+cpp/**/*.d
+
+# WASM build artifacts (keep the pre-built binary, exclude intermediate files)
+# public/wasm/*.wasm is committed as a pre-built artifact
+# Emscripten-generated JS glue is NOT committed (rebuild with: npm run build:wasm)
+public/wasm/*.js

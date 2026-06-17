@@ -65,8 +65,11 @@ interface StreetViewProviderProps {
 let sharedOffscreenCanvas: HTMLCanvasElement | null = null;
 let sharedOffscreenCtx: CanvasRenderingContext2D | null = null;
 
-/** Lightweight pixel fingerprint to detect canvas stability */
-function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
+/** Lightweight pixel fingerprint to detect canvas stability.
+ * Exported so StreetView (canvas detection) and Renderer (upload guard) can use the
+ * same definition for "is this frame usable / stable".
+ */
+export function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
   const w = canvas.width;
   const h = canvas.height;
   if (w < 256 || h < 256) return '';
@@ -268,6 +271,38 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
 
       pano.setPano(bestLink.pano);
+      
+      const BASE_DURATION = 400; // ms
+      const MAX_TRANSITION_WAIT = 3000; // ms hard ceiling
+      const startTime = performance.now();
+      
+      const animateTransition = () => {
+        const elapsed = performance.now() - startTime;
+        const rawProgress = elapsed / BASE_DURATION;
+        const maxProgress = isPanoramaReadyRef.current ? 1.0 : 0.85;
+        const progress = Math.min(maxProgress, rawProgress);
+        
+        // Push progress to the renderer
+        if (rendererRef.current) {
+          rendererRef.current.setTransitionProgress(progress);
+        }
+        
+        if (progress < 1.0 && elapsed < MAX_TRANSITION_WAIT) {
+          transitionRafRef.current = requestAnimationFrame(animateTransition);
+        } else {
+          // Transition complete (or hard timeout)
+          transitionRafRef.current = null;
+          if (rendererRef.current) {
+            // Reset blend weight — leaving progress at 0.85 caused visible flicker
+            // when the shader kept mixing previous/current frames after the move ended.
+            rendererRef.current.setTransitionProgress(0.0);
+          }
+          setIsTransitioning(false);
+          setTransitionSource(null);
+        }
+      };
+      
+      transitionRafRef.current = requestAnimationFrame(animateTransition);
     }
   }, [heading, pitch, isTransitioning]);
   
@@ -297,9 +332,17 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (!pano) return;
     
     let stabilityInterval: ReturnType<typeof setInterval> | null = null;
+    let lastHandledPanoId = pano.getPano() || '';
     
     const handlePanoChanged = () => {
-      console.log('[StreetView] Panorama changed event fired');
+      const panoId = pano.getPano() || '';
+      // Google sometimes fires spurious pano_changed events (e.g. when COEP blocks
+      // auxiliary Maps requests). Ignore repeats for the same pano once we're ready.
+      if (panoId && panoId === lastHandledPanoId && isPanoramaReadyRef.current) {
+        return;
+      }
+      lastHandledPanoId = panoId;
+      console.log('[StreetView] Panorama changed event fired', panoId ? `(${panoId})` : '');
       const loc = pano.getLocation();
       if (loc) {
         const desc = loc.description || loc.shortDescription || 'Unknown Location';

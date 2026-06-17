@@ -26,9 +26,13 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build && ./scripts/patch-cesium-bundle.sh",
+    "prebuild": "node -e \"\nconst key = process.env.REACT_APP_MAPS_API_KEY || '';\nconst isBad = !key || /placeholder|your_|replace|example/i.test(key);\nif (isBad) {\n  console.warn('\\n⚠️  WARNING: REACT_APP_MAPS_API_KEY is missing or looks like a placeholder.');\n  console.warn('   The production bundle will contain a non-working key.\\n' +\n  '   For live deploys, either:\\n' +\n  '     1. export REACT_APP_MAPS_API_KEY=... before npm run build, OR\\n' +\n  '     2. Run with MAPS_API_KEY=... python deploy.py (it can override at deploy time).\\n');\n} else {\n  console.log('✅ Maps API key present at build time (length ' + key.length + '). Remember to also set referrer restrictions for all target hosts (test.1ink.us, go.1ink.us, localhost).');\n}\nconst {execSync}=require('child_process');\nconst hash=execSync('git rev-parse --short HEAD').toString().trim();\nconst ts=new Date().toISOString().replace('T',' ').substring(0,16)+' UTC';\nprocess.env.REACT_APP_BUILD_VERSION=hash;\nprocess.env.REACT_APP_BUILD_TIME=ts;\nconst fs=require('fs');\nlet e=fs.existsSync('.env.local')?fs.readFileSync('.env.local','utf8'):'';\ne=e.replace(/^REACT_APP_BUILD_VERSION=.*$/m,'').replace(/^REACT_APP_BUILD_TIME=.*$/m,'').trim();\nfs.writeFileSync('.env.local',(e?e+'\\n':'')+'REACT_APP_BUILD_VERSION='+hash+'\\nREACT_APP_BUILD_TIME='+ts+'\\n');\nconsole.log('Build: '+hash+' @ '+ts);\n\"",
+    "build": "react-scripts build && npm run build:wasm && ./scripts/patch-cesium-bundle.sh && ./scripts/verify-build.sh",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\""
   },
   "eslintConfig": {
     "extends": [
@@ -52,6 +56,8 @@
     "@types/google.maps": "^3.58.1",
     "@types/suncalc": "^1.9.2",
     "@types/three": "^0.160.0",
-    "typescript": "^4.9.5"
+    "playwright": "^1.60.0",
+    "typescript": "^4.9.5",
+    "wabt": "^1.0.39"
   }
 }

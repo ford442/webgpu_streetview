@@ -128,10 +128,34 @@ src/
 
 **Best Practice**: Any new UI overlay must block mouse/keyboard event propagation.
 
-### 🔴 Hardcoded API Key
-**Security Issue**: Google Maps API key in `App.tsx` is hardcoded. Should be environment variable in production.
+### 🔴 Google Maps API Key Restrictions & Deployment (Issue #72) + recovery follow-ups
+**The persistent "This page can't load Google Maps correctly" error** on https://test.1ink.us/streetview is almost always caused by the key's **HTTP referrer (website) restrictions** in Google Cloud Console not including the exact production origin.
 
-**Action**: Never commit new API keys; use `.env` file locally.
+- The key that works at `go.1ink.us/streetview` will fail at `test.1ink.us/streetview` (and vice versa) unless both patterns are explicitly whitelisted.
+- `public/config.js` + `deploy.py` (with `MAPS_API_KEY=...`) is the supported production path. It lets you change the key on the server without a rebuild.
+- `REACT_APP_MAPS_API_KEY` is only a fallback baked at build time.
+- `.env` (plain) is now gitignored; only `.env.local` should ever hold real dev keys.
+
+After the key bug/vulnerability cleanup, residual state (sticky `mapsAuthFailed`, hard full-screen modal in App.tsx, one-shot gm-err removal) could still make Street View *appear* blocked or flicker even with a now-valid key. See the June 2026 recovery series filed under epic #90:
+
+- #97 (sticky auth state / render recovery)
+- #98 (robust gm-err flicker suppression)
+- #99 (seamless late-key recovery, no reload)
+- #100 (tests + deploy recovery checklist)
+- #101 (deprecate the hard modal)
+
+**Local mitigations applied** (remove blocking):
+- Auto-clear `mapsAuthFailed` + banners on `api-ready` / `canvas-ready` / good status and on any new effective key.
+- Key poller now clears failed unconditionally for a fresh key.
+- "Dismiss block" escape + loading overlay now participates for auth errors.
+- Persistent removal of error chrome is still needed (see #98).
+
+**Action**:
+- Before any prod deploy: confirm the target host(s) are in the key's referrer allowlist.
+- Run deploys with `MAPS_API_KEY=... python deploy.py` so the runtime config wins.
+- After deploy, immediately verify `https://test.1ink.us/streetview/config.js` returns the correct key.
+- See the new "Production Deployment & Google Maps API Key Setup" section in README.md and the updated `docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md`.
+- After key rotation incident: watch for the new recovery behaviors (late key log, auto modal clear, canvas promotion) rather than forcing reload.
 
 ## Common Tasks & Workflows
 

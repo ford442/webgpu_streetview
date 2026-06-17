@@ -1,0 +1,15 @@
+{
+  "state": {
+    "canvasCount": 0,
+    "canvases": [],
+    "gmCount": 0,
+    "gms": [],
+    "hasPano": true,
+    "bodyClasses": "",
+    "hasErrorDialog": false
+  },
+  "state2": {
+    "cans": [],
+    "errs": []
+  }
+}

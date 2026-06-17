@@ -1,0 +1,5 @@
+[2026-06-12T12:56:54.320Z] PROBE: forcing bad key to exercise GM load + auth fail + canvas creation paths
+[2026-06-12T12:56:56.431Z] [CONSOLE] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
+[2026-06-12T12:57:01.043Z] STATE: {"canvasCount":0,"canvases":[],"gmCount":0,"gms":[],"hasPano":true,"bodyClasses":"","hasErrorDialog":false}
+[2026-06-12T12:57:02.143Z] STATE2 after input: {"cans":[],"errs":[]}
+[2026-06-12T12:57:02.444Z] Probe complete. Screenshots: /content/webgpu_streetview/repro-screenshots/probe-*.png

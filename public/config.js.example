@@ -1,0 +1,18 @@
+// Runtime configuration for WebGPU StreetView (EXAMPLE FILE).
+//
+// Copy this to `config.js` (gitignored in practice via deployment) and fill in your key,
+// OR (recommended for production) let `deploy.py` generate it by setting MAPS_API_KEY.
+//
+// This file is loaded via <script src="%PUBLIC_URL%/config.js"> in index.html
+// BEFORE the React bundle, so the key is available to the earliest module code.
+//
+// For the official demo hosts, create a single key with multiple referrer patterns:
+//   https://test.1ink.us/*
+//   https://go.1ink.us/*
+//   http://localhost:3000/*
+//   http://localhost:3001/*
+//
+// See README.md → "Production Deployment" and docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md
+// for the exact Google Cloud Console steps (required APIs, billing alerts, restrictions).
+
+window.MAPS_API_KEY = "YOUR_REAL_API_KEY_HERE";

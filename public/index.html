@@ -8,7 +8,58 @@
     <style>
       body { margin: 0; background-color: #000; overflow: hidden; }
     </style>
+    <script>
+      (function loadRuntimeMapsConfig() {
+        var script = document.createElement('script');
+        script.src = '%PUBLIC_URL%/config.js';
+        script.onload = function () {
+          window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+        };
+        script.onerror = function () {
+          console.warn('[WebGPU StreetView] Runtime config.js failed to load');
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
   </head>
+  <script>
+    // Recover when build/index.html was not deployed (public/index.html uploaded by mistake).
+    (function recoverMissingBundle() {
+      function hasMainBundle() {
+        return !!document.querySelector('script[src*="static/js/main"]');
+      }
+
+      function injectFromManifest() {
+        if (hasMainBundle()) return;
+        fetch('./asset-manifest.json')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (manifest) {
+            if (!manifest || !manifest.files || hasMainBundle()) return;
+            var css = manifest.files['main.css'];
+            var js = manifest.files['main.js'];
+            if (css && !document.querySelector('link[href*="static/css/main"]')) {
+              var link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = css;
+              document.head.appendChild(link);
+            }
+            if (js) {
+              var script = document.createElement('script');
+              script.defer = true;
+              script.src = js;
+              document.head.appendChild(script);
+            }
+          })
+          .catch(function () {});
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectFromManifest);
+      } else {
+        injectFromManifest();
+      }
+    })();
+  </script>
   <script>
   // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
   const originalGetContext = HTMLCanvasElement.prototype.getContext;

@@ -114,7 +114,18 @@ input[type="text"]:focus {
 }
 
 /* Suppress Google's injected auth/error UI inside the hidden Street View scraper.
-   Google injects .gm-err-* when quota/auth fails; without this it flashes and flickers. */
+   Google injects .gm-err-* when quota/auth fails; without this it flashes and flickers. 
+   When the Maps key is invalid or referrer-blocked, Google injects .gm-err-*
+   elements (and sometimes other error chrome) directly into the pano container.
+   The scraper (and its pano child) MUST remain opacity:1 + visible dimensions
+   or Google stops updating its internal WebGL canvas (which we scrape for WebGPU).
+   Static CSS + live JS removal (see StreetView.tsx + App.tsx) is required to
+   prevent the "could not load Google Maps properly" banner from flashing
+   repeatedly and causing rapid visual flicker, even when panorama tiles
+   themselves are successfully loading and navigation works.
+   This is the primary source of the post-key-fix flicker on hosts where the
+   runtime key may race or have temporary referrer issues vs go.1ink.us.
+*/
 .streetview-scraper [class*="gm-err"],
 .streetview-scraper .gm-err-container,
 .streetview-scraper .gm-err-content,
@@ -124,12 +135,13 @@ input[type="text"]:focus {
 .streetview-scraper .gm-err-dialog,
 .streetview-scraper [aria-label*="Google Maps" i],
 .streetview-scraper [aria-label*="This page can't load" i],
-.streetview-scraper [aria-label*="load Google" i] {
+.streetview-scraper [aria-label*="load Google" i],
+.streetview-scraper .gm-style div[style*="background-color: rgb(255, 255, 255)"][style*="color"] /* rough match for some error boxes */ {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
-    position: absolute !important;
+    position: absolute !important; /* pull out of flow if removal is delayed */
     z-index: -1 !important;
     width: 0 !important;
     height: 0 !important;

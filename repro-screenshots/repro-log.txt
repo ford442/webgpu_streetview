@@ -1,0 +1,121 @@
+[2026-06-12T12:58:06.983Z] [INFO] === REPRODUCTION SCRIPT START ===
+[2026-06-12T12:58:06.984Z] [INFO] Target: https://test.1ink.us/streetview/index.html
+[2026-06-12T12:58:06.984Z] [INFO] Launching browser with GPU + WebGPU flags...
+[2026-06-12T12:58:07.620Z] [INFO] CDP session acquired for network emulation
+[2026-06-12T12:58:07.620Z] [INFO] STEP 1: Navigate to live site
+[CONSOLE WARNING] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
+[2026-06-12T12:58:09.043Z] [INFO] Goto completed in 1422ms
+[2026-06-12T12:58:11.555Z] [DEBUG] CANVAS DUMP [post-goto]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:58:11.555Z] [INFO] Waiting for app to become interactive (up to 25s)...
+[2026-06-12T12:58:15.557Z] [INFO] Waiting for welcome modal / Start Exploring button...
+[2026-06-12T12:58:16.052Z] [INFO] Clicked welcome button via button:has-text("Start Exploring")
+[2026-06-12T12:58:21.095Z] [INFO] Pressed P for performance stats
+[2026-06-12T12:58:21.101Z] [DEBUG] CANVAS DUMP [after-welcome-dismiss]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:58:22.043Z] [INFO] SCREENSHOT: 01_idle_baseline.png
+[2026-06-12T12:58:22.043Z] [INFO] Baseline idle observation: waiting 30s...
+[2026-06-12T12:58:37.049Z] [DEBUG] CANVAS DUMP [idle-15s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:58:52.060Z] [DEBUG] CANVAS DUMP [idle-30s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:58:53.613Z] [INFO] SCREENSHOT: 01b_idle_30s.png
+[2026-06-12T12:58:53.613Z] [INFO] 
+=== STEP 2: Hard reload / initial load flicker test ===
+[2026-06-12T12:58:53.613Z] [INFO] ACTION: Simulating hard refresh (reload with cache bypass intent)
+[CONSOLE WARNING] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
+[2026-06-12T12:58:56.130Z] [INFO] Waiting for welcome modal / Start Exploring button...
+[2026-06-12T12:58:56.533Z] [INFO] Clicked welcome button via button:has-text("Start Exploring")
+[2026-06-12T12:59:00.742Z] [DEBUG] CANVAS DUMP [post-reload-3s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:01.568Z] [INFO] SCREENSHOT: 02_initial_reload_3s.png
+[2026-06-12T12:59:03.373Z] [DEBUG] CANVAS DUMP [reload-t+1.8s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:04.169Z] [INFO] SCREENSHOT: 02_reload_t01.png
+[2026-06-12T12:59:05.974Z] [DEBUG] CANVAS DUMP [reload-t+3.6s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:06.833Z] [INFO] SCREENSHOT: 02_reload_t02.png
+[2026-06-12T12:59:08.640Z] [DEBUG] CANVAS DUMP [reload-t+5.4s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:10.350Z] [INFO] SCREENSHOT: 02_reload_t03.png
+[2026-06-12T12:59:12.156Z] [DEBUG] CANVAS DUMP [reload-t+7.2s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:13.913Z] [INFO] SCREENSHOT: 02_reload_t04.png
+[2026-06-12T12:59:15.723Z] [DEBUG] CANVAS DUMP [reload-t+9s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:17.537Z] [INFO] SCREENSHOT: 02_reload_t05.png
+[2026-06-12T12:59:19.347Z] [DEBUG] CANVAS DUMP [reload-t+10.8s]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:20.593Z] [INFO] SCREENSHOT: 02_reload_t06.png
+[2026-06-12T12:59:20.593Z] [INFO] 
+=== STEP 3: Pano transition test (WASD + mouse) ===
+[2026-06-12T12:59:21.573Z] [INFO] SCREENSHOT: 03_transition_forward_001.png
+[2026-06-12T12:59:21.575Z] [DEBUG] CANVAS DUMP [fwd1-during]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:23.423Z] [INFO] SCREENSHOT: 03_transition_forward_005.png
+[2026-06-12T12:59:23.427Z] [DEBUG] CANVAS DUMP [fwd5-after]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:23.427Z] [INFO] Mouse drag + scroll zoom
+[2026-06-12T12:59:25.111Z] [INFO] SCREENSHOT: 03_mouse_drag.png
+[2026-06-12T12:59:26.312Z] [INFO] SCREENSHOT: 03_scroll_zoom_in.png
+[2026-06-12T12:59:27.619Z] [INFO] SCREENSHOT: 03_scroll_zoom_out.png
+[2026-06-12T12:59:27.619Z] [INFO] 
+=== STEP 4: Cruise mode test (30s run) ===
+[2026-06-12T12:59:27.619Z] [INFO] Trying to enable cruise mode...
+[2026-06-12T12:59:29.749Z] [DEBUG] CANVAS DUMP [cruise-start]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:30.612Z] [INFO] SCREENSHOT: 04_cruise_start.png
+[2026-06-12T12:59:35.511Z] [INFO] SCREENSHOT: 04_cruise_01.png
+[2026-06-12T12:59:35.517Z] [DEBUG] CANVAS DUMP [cruise-step-1]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:39.663Z] [INFO] SCREENSHOT: 04_cruise_02.png
+[2026-06-12T12:59:39.665Z] [DEBUG] CANVAS DUMP [cruise-step-2]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:43.808Z] [INFO] SCREENSHOT: 04_cruise_03.png
+[2026-06-12T12:59:43.811Z] [DEBUG] CANVAS DUMP [cruise-step-3]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:48.550Z] [INFO] SCREENSHOT: 04_cruise_04.png
+[2026-06-12T12:59:48.557Z] [DEBUG] CANVAS DUMP [cruise-step-4]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:53.645Z] [INFO] SCREENSHOT: 04_cruise_05.png
+[2026-06-12T12:59:53.648Z] [DEBUG] CANVAS DUMP [cruise-step-5]: 0 canvases. GM-related elems: 0
+[2026-06-12T12:59:58.453Z] [INFO] SCREENSHOT: 04_cruise_06.png
+[2026-06-12T12:59:58.459Z] [DEBUG] CANVAS DUMP [cruise-step-6]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:02.601Z] [INFO] SCREENSHOT: 04_cruise_07.png
+[2026-06-12T13:00:02.605Z] [DEBUG] CANVAS DUMP [cruise-step-7]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:06.660Z] [INFO] SCREENSHOT: 04_cruise_08.png
+[2026-06-12T13:00:06.664Z] [DEBUG] CANVAS DUMP [cruise-step-8]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:07.176Z] [INFO] 
+=== STEP 5: Car mode toggle test ===
+[2026-06-12T13:00:07.176Z] [INFO] ACTION: Toggling car mode (KeyC or button)
+[2026-06-12T13:00:09.340Z] [INFO] SCREENSHOT: 05_car_on_01.png
+[2026-06-12T13:00:09.346Z] [DEBUG] CANVAS DUMP [car-on]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:13.399Z] [INFO] SCREENSHOT: 05_car_on_moving.png
+[2026-06-12T13:00:13.399Z] [INFO] ACTION: Toggling car mode (KeyC or button)
+[2026-06-12T13:00:16.140Z] [INFO] SCREENSHOT: 05_car_off.png
+[2026-06-12T13:00:16.143Z] [DEBUG] CANVAS DUMP [car-off]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:16.144Z] [INFO] 
+=== STEP 6: Quality preset change test ===
+[2026-06-12T13:00:16.144Z] [INFO] ACTION: Attempting quality preset change (may be UI only)
+[2026-06-12T13:00:18.956Z] [INFO] SCREENSHOT: 06_quality_change_attempt.png
+[2026-06-12T13:00:18.962Z] [DEBUG] CANVAS DUMP [after-quality-ui]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:18.963Z] [INFO] 
+=== STEP 7: Network-throttled test (Slow 3G + moves) ===
+[2026-06-12T13:00:18.968Z] [INFO] CDP: Emulating Slow 3G conditions
+[2026-06-12T13:00:19.771Z] [DEBUG] CANVAS DUMP [throttled-pre-move]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:20.576Z] [INFO] SCREENSHOT: 07_throttled_pre.png
+[2026-06-12T13:00:20.576Z] [INFO] Rapid WASD while throttled...
+[2026-06-12T13:00:21.850Z] [INFO] SCREENSHOT: 07_throttled_move_w1.png
+[2026-06-12T13:00:21.854Z] [DEBUG] CANVAS DUMP [throttled-w1]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:22.902Z] [INFO] SCREENSHOT: 07_throttled_move_w2.png
+[2026-06-12T13:00:22.909Z] [DEBUG] CANVAS DUMP [throttled-w2]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:24.186Z] [INFO] SCREENSHOT: 07_throttled_move_w3.png
+[2026-06-12T13:00:24.189Z] [DEBUG] CANVAS DUMP [throttled-w3]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:25.566Z] [INFO] SCREENSHOT: 07_throttled_move_w4.png
+[2026-06-12T13:00:25.575Z] [DEBUG] CANVAS DUMP [throttled-w4]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:27.652Z] [INFO] SCREENSHOT: 07_throttled_move_w5.png
+[2026-06-12T13:00:27.654Z] [DEBUG] CANVAS DUMP [throttled-w5]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:29.891Z] [INFO] SCREENSHOT: 07_throttled_after_d.png
+[2026-06-12T13:00:29.891Z] [INFO] Going OFFLINE for 12s...
+[2026-06-12T13:00:34.906Z] [INFO] SCREENSHOT: 07_offline_3s.png
+[2026-06-12T13:00:34.910Z] [DEBUG] CANVAS DUMP [offline-3s]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:40.944Z] [INFO] SCREENSHOT: 07_offline_8s.png
+[2026-06-12T13:00:44.402Z] [INFO] SCREENSHOT: 07_offline_during_attempt.png
+[2026-06-12T13:00:44.407Z] [DEBUG] CANVAS DUMP [offline-during-attempt]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:44.410Z] [INFO] Restoring network...
+[2026-06-12T13:00:46.822Z] [INFO] SCREENSHOT: 07_restored_1.png
+[2026-06-12T13:00:46.827Z] [DEBUG] CANVAS DUMP [restored-1s]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:53.038Z] [INFO] SCREENSHOT: 07_restored_5.png
+[2026-06-12T13:00:53.051Z] [DEBUG] CANVAS DUMP [restored-5s]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:56.923Z] [INFO] SCREENSHOT: 08_final_after_throttle.png
+[2026-06-12T13:00:56.927Z] [DEBUG] CANVAS DUMP [final]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:56.927Z] [INFO] 
+=== COLLECTING FINAL STATE ===
+[2026-06-12T13:00:56.932Z] [DEBUG] CANVAS DUMP [end-of-run]: 0 canvases. GM-related elems: 0
+[2026-06-12T13:00:56.937Z] [INFO] Final body HTML snippet (first 800): <noscript>You need to enable JavaScript to run this app.</noscript><div id="root"><div id="app-container" style="position: relative; width: 100vw; height: 100vh; overflow: hidden; padding: 0px; margin: 0px; background-color: rgb(0, 0, 0);"><a href="#main-content" class="skip-link" style="position: absolute; top: -40px; left: 0px; background: rgb(0, 0, 0); color: rgb(255, 255, 255); padding: 8px 16px; z-index: 10000; text-decoration: none; transition: top 0.2s;">Skip to main content</a><div role="alert" style="position: fixed; top: 0px; left: 0px; right: 0px; z-index: 2000; background: rgba(180, 100, 0, 0.95); color: rgb(255, 255, 255); padding: 10px 16px; display: flex; align-items: center; gap: 12px; font-family: system-ui, sans-serif; font-size: 14px;"><span style="flex: 1 1 0%;">⚠️ <str
+[2026-06-12T13:00:56.938Z] [INFO] 
+=== REPRO COMPLETE ===
+[2026-06-12T13:00:56.938Z] [INFO] Screenshots + logs in /content/webgpu_streetview/repro-screenshots
+[2026-06-12T13:00:56.938Z] [INFO] Videos in /content/webgpu_streetview/repro-screenshots/videos

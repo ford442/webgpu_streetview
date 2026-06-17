@@ -1,0 +1,18 @@
+[2026-06-12T12:53:33.207Z] Probing https://test.1ink.us/streetview/index.html
+[2026-06-12T12:53:38.342Z] [CONSOLE warn] [WebGPU StreetView] No Maps API key found at initial eval. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py to bake the key into the bundle (go.1ink.us style).
+[2026-06-12T12:53:38.353Z] Navigation complete
+[2026-06-12T12:53:38.489Z] Runtime key check: {"mapsKey":"AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM","probeKey":"AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM"}
+[2026-06-12T12:53:42.015Z] Welcome dismiss fallback: Escape
+[2026-06-12T12:53:43.688Z] Frame 0: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:44.599Z] Frame 1: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:45.387Z] Frame 2: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:46.087Z] Frame 3: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:46.755Z] Frame 4: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:47.470Z] Frame 5: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:48.148Z] Frame 6: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:48.810Z] Frame 7: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:49.454Z] Frame 8: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:50.166Z] Frame 9: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:50.805Z] Frame 10: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:51.527Z] Frame 11: 0 gm-err elements, 1 alert elements
+[2026-06-12T12:53:51.527Z] Probe complete. 12 frames captured in /content/webgpu_streetview/repro-screenshots/flicker-probe

@@ -396,8 +396,22 @@ Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, da
 ### 4. Transition / `isTransitioning` Coordination
 `StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and forces full fps during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
 
-### 5. API Key Management
-The Google Maps API key has a fallback hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`), but the preferred source is `.env` (`REACT_APP_MAPS_API_KEY`). Cesium also uses `REACT_APP_CESIUM_ION_TOKEN` from `.env`. Do not commit new keys.
+### 5. API Key Management & Referrer Restrictions (Root Cause of Issue #72)
+The live demo at `test.1ink.us/streetview` historically showed "This page can't load Google Maps correctly" because the key baked into the bundle (or served via the committed `public/config.js`) had HTTP referrer restrictions that only allowed `go.1ink.us` (or localhost), not `test.1ink.us`.
+
+**Current correct architecture** (as of the fixes for #72):
+- **Primary (prod deploys)**: Runtime `window.MAPS_API_KEY` via `public/config.js` (injected by `deploy.py` when you pass `MAPS_API_KEY=...`).
+- **Fallback**: `REACT_APP_MAPS_API_KEY` baked at build time.
+- The committed `public/config.js` must **never** contain a real key (now empty + example file provided).
+- `.env` (plain) is gitignored; real dev keys only in `.env.local`.
+- Every production key **must** list **all** demo hosts under HTTP referrers:
+  ```
+  https://test.1ink.us/*
+  https://go.1ink.us/*
+  ```
+- The `gm_authFailure` global + `onMapsAuthFailure()` + React banners + DOM post-load scanner in `src/services/maps/loader.ts` give excellent visibility. The prebuild warning + deploy.py loud checks make the mistake obvious before it reaches users.
+
+**Never** rely on a single baked key for multiple hosts with different restrictions. Always prefer the runtime override for the official demo. Do not commit new keys.
 
 ### 6. Shader Uniform Layouts
 `weather-post.wgsl` expects a 40-float (160-byte) uniform buffer:
@@ -453,6 +467,58 @@ WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any cha
 - Cruise mode navigation loops
 - GPU panorama transitions
 
+### Local Testing with Headless Chrome (GPU)
+When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
+
+1. **Serve the build**
+   ```bash
+   npm run build   # outputs to build/
+   cd build && python3 -m http.server 80
+   ```
+
+2. **Cesium post-build patches (CRITICAL)**
+   Cesium 1.140.0 bundles ESM-only code (`import.meta.url`, `__webpack_module__`) that crashes in CRA's IIFE output. After every `npm run build`, patch `build/static/js/main.*.js`:
+   ```bash
+   # Replace import.meta (syntax error in non-module scripts)
+   sed -i 's/import\.meta/({url:typeof window!=="undefined"?window.location.href:""})/g' build/static/js/main.*.js
+   # Replace __webpack_module__ (undefined in IIFE bundles)
+   sed -i 's/__webpack_module__/undefined/g' build/static/js/main.*.js
+   ```
+   Without these patches, the page throws `Cannot use 'import.meta' outside a module` and stays black.
+
+3. **Google Maps API key for local testing**
+   The production key has referrer restrictions. For local testing, either:
+   - Add your localhost origin to the key's allowlist in Google Cloud Console, **or**
+   - Spoof an allowed domain via `/etc/hosts`:
+     ```bash
+     echo "127.0.0.1 test.1ink.us go.1ink.us" >> /etc/hosts
+     # Then serve on port 80 and access http://test.1ink.us
+     ```
+   - Set the key in `build/config.js` (runtime, no rebuild needed):
+     ```js
+     window.MAPS_API_KEY = "<your-key>";
+     ```
+
+4. **Headless Chrome launch flags for WebGPU**
+   ```js
+   chromium.launch({
+     headless: true,
+     args: [
+       '--use-gl=egl',
+       '--use-angle=gl-egl',
+       '--enable-features=Vulkan',
+       '--enable-unsafe-webgpu',
+       '--ignore-gpu-blocklist',
+       '--enable-gpu-rasterization',
+       '--enable-zero-copy',
+       '--disable-software-rasterizer',
+       '--no-sandbox',
+       '--disable-setuid-sandbox'
+     ]
+   });
+   ```
+   Note: WebGPU adapter availability varies by headless Chrome version and OS. The app falls back to standard Street View rendering if WebGPU is unavailable.
+
 ---
 
 ## Deployment
@@ -500,6 +566,8 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 6. **API Key Exposure**: Fallback key is visible in `App.tsx` source.
 7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
 8. **Build Tool Lock-in**: Create React App 5.0.1 is used; ejecting is irreversible.
+9. **Cesium ESM in IIFE bundles**: Cesium 1.140.0 ships code that uses `import.meta.url` and `__webpack_module__`, which are invalid in CRA's default IIFE bundle output. The built `main.*.js` must be post-processed before deployment or local testing (see *Local Testing with Headless Chrome* above).
+10. **Hidden Google Maps error UI flicker**: When the Maps key is invalid or referrer-blocked, Google injects `.gm-err-*` elements into the hidden Street View scraper div. Because the scraper must stay `opacity:1` for Google to keep rendering, those error elements can flash and produce visible flicker. The fix is to suppress them via CSS scoped to `.streetview-scraper` and/or remove them on `gm_authFailure`.
 
 ---
 
@@ -512,4 +580,4 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
-*Last Updated: May 3, 2026*
+*Last Updated: May 27, 2026*
