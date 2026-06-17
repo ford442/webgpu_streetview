@@ -113,6 +113,29 @@ input[type="text"]:focus {
     cursor: grabbing !important;
 }
 
+/* Suppress Google's injected auth/error UI inside the hidden Street View scraper.
+   Google injects .gm-err-* when quota/auth fails; without this it flashes and flickers. */
+.streetview-scraper [class*="gm-err"],
+.streetview-scraper .gm-err-container,
+.streetview-scraper .gm-err-content,
+.streetview-scraper .gm-err-icon,
+.streetview-scraper .gm-err-title,
+.streetview-scraper .gm-err-message,
+.streetview-scraper .gm-err-dialog,
+.streetview-scraper [aria-label*="Google Maps" i],
+.streetview-scraper [aria-label*="This page can't load" i],
+.streetview-scraper [aria-label*="load Google" i] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    z-index: -1 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
 /* Loading Overlay Animations */
 @keyframes loadingSpin {
     from { transform: rotate(0deg); }

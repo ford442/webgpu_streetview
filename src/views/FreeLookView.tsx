@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import Compass from '../components/Compass';
-import MiniMap from '../components/MiniMap';
 import FreeLookInputHandler from '../components/FreeLookInputHandler';
 
 interface FreeLookViewProps {
@@ -19,8 +18,8 @@ interface FreeLookViewProps {
  * - 'C' key to toggle to car mode
  * - Compass and MiniMap overlays
  */
-const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey }) => {
-  const { heading, panorama } = useStreetView();
+const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey: _mapsApiKey }) => {
+  const { heading } = useStreetView();
   const containerRef = useRef<HTMLDivElement>(null);
   
   return (
@@ -40,14 +39,8 @@ const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey }) => {
       {/* Compass overlay */}
       <Compass heading={heading} />
       
-      {/* MiniMap overlay */}
-      {panorama && (
-        <MiniMap
-          apiKey={mapsApiKey}
-          panorama={panorama}
-          heading={heading}
-        />
-      )}
+      {/* MiniMap deferred — a full-viewport Map instance doubles API quota usage
+          and contributed to OverQuotaMapError flicker. Re-enable via map panel later. */}
     </div>
   );
 }
