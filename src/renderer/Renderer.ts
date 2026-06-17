@@ -22,6 +22,17 @@ export class Renderer {
     // Car mode effects
     private carModeActive: boolean = false;
     private effectsBuffer?: GPUBuffer;
+    
+    // === INLINE TRANSITION SYSTEM ===
+    // previousFrameTexture holds a GPU snapshot of the departing panorama.
+    // The main shader (streetview.wgsl) mixes between previous and current
+    // based on transitionProgress passed in the uniform buffer.
+    private previousFrameTexture?: GPUTexture;
+    private inlineTransitionProgress: number = 0.0;
+    private holdActive: boolean = false;
+    
+    // === DUAL-PASS WEATHER SYSTEM ===
+    // Intermediate HDR texture for post-processing
 
     // Intermediate HDR texture
     private intermediateTexture!: GPUTexture;
@@ -36,6 +47,8 @@ export class Renderer {
     // World-space pan tracking
     private lastPanX: number = 0.5;
     private lastPanY: number = 0.5;
+    private capturePanX: number = 0.5;
+    private capturePanY: number = 0.5;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -89,6 +102,11 @@ export class Renderer {
 
             this.createTexture(1, 1);
 
+            // Uniform buffer: 32 bytes (8 floats) for 16-byte alignment
+            // [0-3]: time, zoom, panX (heading norm), panY (pitch norm)
+            // [4]:   transitionProgress (0.0 = old frame, 1.0 = new frame)
+            // [5]:   holdActive (1.0 = freeze on previous frame while loading)
+            // [6-7]: capturePanX, capturePanY at snapshot time (look-around delta)
             this.uniformBuffer = this.device.createBuffer({
                 size: 32,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -387,6 +405,35 @@ export class Renderer {
         this.updateBindGroup();
     }
 
+    /**
+     * Arm hold-pause transition: snapshot the outgoing frame and freeze rendering
+     * on it until endHoldTransition() is called when the new panorama is ready.
+     */
+    public beginHoldTransition(heading?: number, pitch?: number): void {
+        this.captureCurrentFrame();
+        const panX = ((heading ?? 0) % 360) / 360;
+        const panY = ((pitch ?? 0) + 90) / 180;
+        this.capturePanX = panX;
+        this.capturePanY = panY;
+        this.lastPanX = panX;
+        this.lastPanY = panY;
+        this.holdActive = true;
+        this.transitionManager?.setTransitionProgress(0.0);
+    }
+
+    /** End the hold phase so the release crossfade can run. */
+    public endHoldTransition(): void {
+        this.holdActive = false;
+    }
+
+    public isHoldActive(): boolean {
+        return this.holdActive;
+    }
+
+    /**
+     * Set the transition progress for the inline shader transition.
+     * 0.0 = fully old frame, 1.0 = fully new frame.
+     */
     public setTransitionProgress(progress: number): void {
         this.transitionManager?.setTransitionProgress(progress);
     }
@@ -484,13 +531,14 @@ export class Renderer {
 
             this.lastPanX = panX;
             this.lastPanY = panY;
+            this.transitionManager?.recordLastPan(panX, panY);
 
             const uniforms = new Float32Array([
                 time, z, panX, panY,
                 this.transitionManager?.inlineProgress ?? 0.0,
-                this.transitionManager?.transitionDefaults['zoom'].param1 ?? 2.4,
-                this.transitionManager?.transitionDefaults['zoom-blur'].param2 ?? 1.1,
-                0.0,
+                this.holdActive ? 1.0 : 0.0,
+                this.capturePanX,
+                this.capturePanY,
             ]);
             this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 

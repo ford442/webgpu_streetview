@@ -114,6 +114,7 @@ input[type="text"]:focus {
 }
 
 /* Suppress Google's injected auth/error UI inside the hidden Street View scraper.
+   Google injects .gm-err-* when quota/auth fails; without this it flashes and flickers. 
    When the Maps key is invalid or referrer-blocked, Google injects .gm-err-*
    elements (and sometimes other error chrome) directly into the pano container.
    The scraper (and its pano child) MUST remain opacity:1 + visible dimensions

@@ -204,6 +204,12 @@ export function setMirrorStreetViewCanvas(canvas: HTMLCanvasElement | null): voi
     carModeState.mirror.setStreetViewCanvas(canvas);
 }
 
+/** Sync Three.js camera FOV with WebGPU shader zoom for window alignment. */
+export function setCarZoomFOV(zoom: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setZoomFOV(zoom);
+}
+
 /**
  * Toggle windshield wipers on/off.
  */

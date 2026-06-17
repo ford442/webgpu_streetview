@@ -27,8 +27,11 @@ export class PostProcessingManager {
     this.gpuProfile = gpuProfile;
     this.composer = new EffectComposer(renderer);
 
-    // Render pass
-    this.composer.addPass(new RenderPass(scene, camera));
+    // Render pass — clear with transparent alpha so the WebGPU panorama shows through window openings
+    const renderPass = new RenderPass(scene, camera);
+    renderPass.clearColor = new THREE.Color(0x000000);
+    renderPass.clearAlpha = 0;
+    this.composer.addPass(renderPass);
 
     // Bloom — disabled on low-end GPUs
     this.bloomPass = new UnrealBloomPass(

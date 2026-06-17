@@ -281,6 +281,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   return (
     <div
       className={styles.wrapper}
+      style={{ pointerEvents: 'auto' }}
       onMouseDown={stopProp}
       onMouseUp={stopProp}
       onMouseMove={stopProp}

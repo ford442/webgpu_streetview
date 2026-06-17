@@ -16,6 +16,8 @@ import {
   updateCarGauges,
   isCarSteeringWheelHit,
   setWindowTint,
+  setMirrorStreetViewCanvas,
+  setCarZoomFOV,
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
@@ -35,7 +37,7 @@ interface CarModeViewProps {
  * - Head look independent of car steering
  */
 const CarModeView: React.FC<CarModeViewProps> = () => {
-  const { heading, pitch, panorama, advance } = useStreetView();
+  const { heading, pitch, panorama, advance, canvas, zoom } = useStreetView();
   const {
     controlMode,
     setControlMode,
@@ -149,11 +151,22 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     );
   }, [wipersEnabled, headlightsOn, domeLightOn, nightIntensity]);
   
+  // Keep rearview mirror fed from the scraped Street View canvas
+  useEffect(() => {
+    setMirrorStreetViewCanvas(canvas);
+    return () => setMirrorStreetViewCanvas(null);
+  }, [canvas]);
+
+  // Sync Three.js camera FOV with WebGPU zoom so window frames line up with the panorama
+  useEffect(() => {
+    setCarZoomFOV(zoom);
+  }, [zoom]);
+
   // Sync window tint to car interior
   useEffect(() => {
     setWindowTint(windowTint);
   }, [windowTint]);
-  
+
   // Animation loop for car mode
   useEffect(() => {
     if (!carModeStateRef.current) return;
@@ -182,18 +195,17 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         });
       }
 
-      // Update car interior
-      // In freeLook mode, the car body stays fixed to carHeading while the
-      // head/camera looks around independently. In steer modes, the head
-      // rotates with the car (rigid coupling) or freely (free coupling).
+      // Head/camera orientation for looking around inside the cabin.
+      // Camera rotates locally on driverSeatGroup — dashboard stays fixed.
       updateCarMode(
         carHeadingRef.current,
-        controlMode === 'freeLook' ? 0 : headYawOffset,
-        controlMode === 'freeLook' ? 0 : headPitch,
+        headYawOffset,
+        headPitch,
         carSpeedRef.current,
         nightIntensity,
         headlightsOn,
-        domeLightOn
+        domeLightOn,
+        headingRef.current
       );
       
       // Update steering wheel
@@ -374,11 +386,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const getModeDescription = (mode: ControlMode): string => {
     switch (mode) {
       case 'freeLook':
-        return '🖱️ Mouse = Look 360° • Click wheel = Temp steer • A/D = Steer';
+        return '🖱️ Drag = look around • A/D = turn head • W/S = drive • Click wheel = steer';
       case 'uiMouse':
-        return '🖱️ Normal cursor • Use menus • Cruise continues';
+        return '🖱️ Use dashboard controls • Right-drag = steer • H = switch mode';
       case 'carSteer':
-        return '🚗 Mouse X = Steer • Mouse Y = Pitch • A/D = Steer';
+        return '🚗 Drag X = steer car • Drag Y = look up/down • W/S = drive • Q/E = snap ±45°';
     }
   };
   
@@ -391,6 +403,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         height: '100vh',
         overflow: 'hidden',
         backgroundColor: 'transparent',
+        // UI mode: let clicks pass through to the dashboard; other modes capture look/steer input
+        pointerEvents: controlMode === 'uiMouse' ? 'none' : 'auto',
+        cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'grab',
       }}
     >
       {/* Input handler */}

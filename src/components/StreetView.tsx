@@ -161,8 +161,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             mapDiv.style.width = '640px';
             mapDiv.style.height = '480px';
             mapDiv.style.pointerEvents = 'none';
-            mapDiv.style.opacity = '1';
-            mapDiv.style.zIndex = '0';
+            mapDiv.style.opacity = '0';
             document.body.appendChild(mapDiv);
 
             try {
@@ -337,11 +336,24 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     subtree: true
                 });
 
+                // Remove Google's injected error overlay (.gm-err-*) to stop flicker.
+                const suppressGmErr = () => {
+                    if (!panoRef.current) return;
+                    panoRef.current.querySelectorAll(
+                        '[class*="gm-err"], .gm-err-container, [aria-label*="Google Maps" i], [aria-label*="This page can\'t load" i]'
+                    ).forEach(el => el.remove());
+                };
+                suppressGmErr();
+                const errObserver = new MutationObserver(suppressGmErr);
+                errObserver.observe(panoRef.current, { childList: true, subtree: true });
+                const errCleanup = () => errObserver.disconnect();
+
                 return () => {
                     clearTimeout(initialTimeout);
                     clearInterval(retryInterval);
                     clearTimeout(retryTimeout);
                     clearTimeout(canvasTimeout);
+                    errCleanup();
                     if (mapDiv.parentElement) {
                         mapDiv.parentElement.removeChild(mapDiv);
                     }
@@ -382,7 +394,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     }, [apiKey]); // eslint-disable-line react-hooks/exhaustive-deps -- onCanvasReady, onPanoramaReady, and startLocation are intentionally omitted: the Google Maps instance should only be created once per apiKey, not recreated on every parent render
 
     return (
-        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+        <div className="streetview-scraper" style={{ width: '100%', height: '100%', position: 'relative' }}>
             <div
                 ref={panoRef}
                 style={{
