@@ -271,38 +271,6 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
 
       pano.setPano(bestLink.pano);
-      
-      const BASE_DURATION = 400; // ms
-      const MAX_TRANSITION_WAIT = 3000; // ms hard ceiling
-      const startTime = performance.now();
-      
-      const animateTransition = () => {
-        const elapsed = performance.now() - startTime;
-        const rawProgress = elapsed / BASE_DURATION;
-        const maxProgress = isPanoramaReadyRef.current ? 1.0 : 0.85;
-        const progress = Math.min(maxProgress, rawProgress);
-        
-        // Push progress to the renderer
-        if (rendererRef.current) {
-          rendererRef.current.setTransitionProgress(progress);
-        }
-        
-        if (progress < 1.0 && elapsed < MAX_TRANSITION_WAIT) {
-          transitionRafRef.current = requestAnimationFrame(animateTransition);
-        } else {
-          // Transition complete (or hard timeout)
-          transitionRafRef.current = null;
-          if (rendererRef.current) {
-            // Reset blend weight — leaving progress at 0.85 caused visible flicker
-            // when the shader kept mixing previous/current frames after the move ended.
-            rendererRef.current.setTransitionProgress(0.0);
-          }
-          setIsTransitioning(false);
-          setTransitionSource(null);
-        }
-      };
-      
-      transitionRafRef.current = requestAnimationFrame(animateTransition);
     }
   }, [heading, pitch, isTransitioning]);
   

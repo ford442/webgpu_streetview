@@ -47,6 +47,8 @@ export class Renderer {
     // World-space pan tracking
     private lastPanX: number = 0.5;
     private lastPanY: number = 0.5;
+    private capturePanX: number = 0.5;
+    private capturePanY: number = 0.5;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -416,7 +418,7 @@ export class Renderer {
         this.lastPanX = panX;
         this.lastPanY = panY;
         this.holdActive = true;
-        this.inlineTransitionProgress = 0.0;
+        this.transitionManager?.setTransitionProgress(0.0);
     }
 
     /** End the hold phase so the release crossfade can run. */
@@ -527,23 +529,16 @@ export class Renderer {
             const panX = ((heading || 0) % 360) / 360;
             const panY = ((pitch || 0) + 90) / 180;
 
-const uniforms = new Float32Array([
-    time, z, panX, panY,
-    this.inlineTransitionProgress,
-    this.holdActive ? 1.0 : 0.0,
-    this.capturePanX,
-    this.capturePanY,
-]);
-this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
             this.lastPanX = panX;
             this.lastPanY = panY;
+            this.transitionManager?.recordLastPan(panX, panY);
 
             const uniforms = new Float32Array([
                 time, z, panX, panY,
                 this.transitionManager?.inlineProgress ?? 0.0,
-                this.transitionManager?.transitionDefaults['zoom'].param1 ?? 2.4,
-                this.transitionManager?.transitionDefaults['zoom-blur'].param2 ?? 1.1,
-                0.0,
+                this.holdActive ? 1.0 : 0.0,
+                this.capturePanX,
+                this.capturePanY,
             ]);
             this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 

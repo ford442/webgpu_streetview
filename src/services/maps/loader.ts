@@ -170,21 +170,21 @@ function createBootstrapScript(apiKey: string): Promise<void> {
     });
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly`;
+    script.id = MAPS_SCRIPT_ID;
+    script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
     script.async = true;
     script.onerror = () => reject(new Error('[Maps Loader] Failed to load Google Maps API script'));
     document.head.appendChild(script);
   });
 }
 
-    script.onload = () => {
-      if (window.google?.maps) {
-        installOverQuotaGuard();
-        resolve();
-      } else {
-        reject(new Error('[Maps Loader] Script loaded but google.maps is undefined'));
-      }
-    };
+async function importRequiredLibraries(): Promise<void> {
+  const importLibrary = window.google?.maps?.importLibrary;
+  if (!importLibrary) {
+    throw new Error('[Maps Loader] google.maps.importLibrary is unavailable after script load');
+  }
+
+  installOverQuotaGuard();
 
   await Promise.all([
     importLibrary('maps'),
