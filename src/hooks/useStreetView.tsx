@@ -134,7 +134,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const readyPromiseRef = useRef<Set<() => void>>(new Set());
   const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
   
-  // Transition animation RAF ref
+  // Transition animation RAF ref (release crossfade only)
   const transitionRafRef = useRef<number | null>(null);
   
   // Keep refs in sync with state for listeners / RAF loops
@@ -235,23 +235,13 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     );
     
     if (bestLink && bestLink.pano) {
-      // === GPU TRANSITION SEQUENCE ===
-      // 1. Capture the current frame BEFORE changing panorama
+      // === HOLD-PAUSE TRANSITION ===
+      // 1. Snapshot outgoing frame and arm GPU hold (look-around enabled)
       const renderer = rendererRef.current;
-      if (renderer) {
-        renderer.captureCurrentFrame();
-      }
-      
-      // Normalize the link heading to the same 0-1 range used by panX uniforms
-      const movementHeading = bestLink.heading ?? useHeading;
-      const movementHeadingNorm = (((movementHeading % 360) + 360) % 360) / 360;
+      const usePitch = pitch;
+      renderer?.beginHoldTransition(useHeading, usePitch);
 
-      // Snapshot raw panorama texture with movement direction so the shader
-      // can shift the old frame's UVs as the user looks around during load
-      renderer?.capturePanorama?.(movementHeadingNorm);
-
-      // 2. Create a CPU-side snapshot of the outgoing panorama so
-      //    WebGPUCanvas can keep rendering it while the new one loads.
+      // 2. CPU-side snapshot so WebGPUCanvas keeps rendering while tiles load
       const currentCanvas = canvasRef.current;
       if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
         try {
@@ -268,50 +258,18 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         }
       }
 
-      // 3. Start the transition state
+      // 3. Start hold state and change panorama
       setIsPanoramaReady(false);
       setIsTransitioning(true);
-      
-      // 4. Change to the new panorama
-      pano.setPano(bestLink.pano);
-      
-      // 5. Animate transition progress 0→1 with a load gate.
-      //    Progress is clamped while isPanoramaReady is false.
+
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
       }
-      
-      const BASE_DURATION = 400; // ms
-      const MAX_TRANSITION_WAIT = 3000; // ms hard ceiling
-      const startTime = performance.now();
-      
-      const animateTransition = () => {
-        const elapsed = performance.now() - startTime;
-        const rawProgress = elapsed / BASE_DURATION;
-        const maxProgress = isPanoramaReadyRef.current ? 1.0 : 0.85;
-        const progress = Math.min(maxProgress, rawProgress);
-        
-        // Push progress to the renderer
-        if (rendererRef.current) {
-          rendererRef.current.setTransitionProgress(progress);
-        }
-        
-        if (progress < 1.0 && elapsed < MAX_TRANSITION_WAIT) {
-          transitionRafRef.current = requestAnimationFrame(animateTransition);
-        } else {
-          // Transition complete (or hard timeout)
-          transitionRafRef.current = null;
-          if (rendererRef.current) {
-            rendererRef.current.setTransitionProgress(1.0);
-          }
-          setIsTransitioning(false);
-          setTransitionSource(null);
-        }
-      };
-      
-      transitionRafRef.current = requestAnimationFrame(animateTransition);
+
+      pano.setPano(bestLink.pano);
     }
-  }, [heading, isTransitioning]);
+  }, [heading, pitch, isTransitioning]);
   
   // Teleport function
   const teleport = useCallback((
@@ -428,6 +386,52 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
     };
   }, [panorama]);
+
+  // Release crossfade once the new panorama canvas is stable
+  useEffect(() => {
+    if (!isTransitioning || !isPanoramaReady) return;
+
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      setIsTransitioning(false);
+      setTransitionSource(null);
+      return;
+    }
+
+    renderer.endHoldTransition();
+
+    const RELEASE_DURATION = 250;
+    const startTime = performance.now();
+
+    const animateRelease = () => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(1.0, elapsed / RELEASE_DURATION);
+      renderer.setTransitionProgress(progress);
+
+      if (progress < 1.0) {
+        transitionRafRef.current = requestAnimationFrame(animateRelease);
+      } else {
+        transitionRafRef.current = null;
+        renderer.setTransitionProgress(0.0);
+        renderer.endHoldTransition();
+        setIsTransitioning(false);
+        setTransitionSource(null);
+        console.log('[StreetView] Transition pause complete, ready for next advance');
+      }
+    };
+
+    if (transitionRafRef.current !== null) {
+      cancelAnimationFrame(transitionRafRef.current);
+    }
+    transitionRafRef.current = requestAnimationFrame(animateRelease);
+
+    return () => {
+      if (transitionRafRef.current !== null) {
+        cancelAnimationFrame(transitionRafRef.current);
+        transitionRafRef.current = null;
+      }
+    };
+  }, [isTransitioning, isPanoramaReady]);
   
   // Cleanup transition RAF on unmount
   useEffect(() => {

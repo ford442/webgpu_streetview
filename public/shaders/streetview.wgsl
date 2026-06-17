@@ -2,9 +2,10 @@
 // Outputs to HDR intermediate texture for post-processing
 // Note: Color grading and weather effects are applied in weather-post.wgsl
 //
-// Transition support: When transitionProgress is between 0.0 and 1.0,
-// the shader mixes between previousFrameTexture (old panorama) and
-// tex (current panorama) with a zoom effect on the outgoing frame.
+// Transition support:
+// - holdActive: freeze on previousFrameTexture while the next panorama loads
+// - Look-around: UV shift on the frozen frame from heading/pitch delta
+// - Release: simple crossfade (no zoom/blur) when transitionProgress goes 0→1
 
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
@@ -14,12 +15,12 @@ struct VertexOutput {
 struct PanoramaUniforms {
     time: f32,
     zoom: f32,
-    cameraHeadingNorm: f32,
-    cameraPitchNorm: f32,
+    panX: f32,              // current normalized heading (0–1)
+    panY: f32,              // current normalized pitch  (0–1)
     transitionProgress: f32,
-    transitionZoomAmount: f32,
-    transitionBlurStrength: f32,
-    _pad: f32,
+    holdActive: f32,        // 1.0 = freeze on previous frame
+    capturePanX: f32,       // panX at snapshot capture time
+    capturePanY: f32,       // panY at snapshot capture time
 };
 
 @vertex
@@ -37,6 +38,23 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(2) var<uniform> uniforms: PanoramaUniforms;
 @group(0) @binding(3) var previousFrameTexture: texture_2d<f32>;
 
+// Wrap heading delta across the 0/1 seam (e.g. 350° → 10° = +20°, not -340°)
+fn wrapDelta(a: f32, b: f32) -> f32 {
+    var d = a - b;
+    if (d > 0.5) { d -= 1.0; }
+    if (d < -0.5) { d += 1.0; }
+    return d;
+}
+
+fn samplePrevWithLookAround(baseUV: vec2<f32>) -> vec3<f32> {
+    let lookScaleH = 4.0 / uniforms.zoom;
+    let lookScaleV = 2.8 / uniforms.zoom;
+    let deltaX = wrapDelta(uniforms.panX, uniforms.capturePanX) * lookScaleH;
+    let deltaY = (uniforms.panY - uniforms.capturePanY) * lookScaleV;
+    let prevUV = clamp(baseUV - vec2<f32>(deltaX, deltaY), vec2<f32>(0.0), vec2<f32>(1.0));
+    return textureSample(previousFrameTexture, texSampler, prevUV).rgb;
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = uniforms.zoom;
@@ -49,45 +67,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Sample live feed — Google Maps renders at the current heading/pitch, no UV shift needed
     var color = textureSample(tex, texSampler, clampedUV).rgb;
 
-    // === TRANSITION: Mix with previous frame ===
     let t = uniforms.transitionProgress;
-    if (t > 0.0 && t < 1.0) {
-        // Zoom the outgoing (previous) panorama toward the vanishing point
-        let transitionZoom = 1.0 + (uniforms.transitionZoomAmount - 1.0) * t;
-        let prevUV = (input.uv - center) / transitionZoom + center;
-        let prevClampedUV = clamp(prevUV, vec2<f32>(0.0), vec2<f32>(1.0));
+    let holding = uniforms.holdActive > 0.5;
 
-        // Sample the previous frame
-        var prevColor = textureSample(previousFrameTexture, texSampler, prevClampedUV).rgb;
-
-        // Optional: Apply a subtle blur to the previous frame during transition
-        // This creates a dreamy "departing" feel
-        if (uniforms.transitionBlurStrength > 0.0) {
-            let res = vec2<f32>(textureDimensions(previousFrameTexture));
-            let blur = uniforms.transitionBlurStrength * t * (0.008 * 1280.0 / res.x);
-
-            // 4-tap additional blur samples
-            var blurSample = textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>(-blur, -blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
-            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>( blur, -blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
-            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>(-blur,  blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
-            blurSample += textureSample(previousFrameTexture, texSampler, clamp(prevUV + vec2<f32>( blur,  blur), vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
-            blurSample *= 0.25;
-
-            // Blend between sharp and blurred previous frame
-            prevColor = mix(prevColor, blurSample, t * 0.5);
-        }
-
-        // Smooth fade curve (slightly accelerated)
-        let fade = pow(t, 1.4);
-
-        // Mix previous (outgoing) and current (incoming) panoramas
+    if (holding) {
+        // Pause: show only the frozen outgoing frame; user can look around via UV shift
+        color = samplePrevWithLookAround(uv);
+    } else if (t > 0.0 && t < 1.0) {
+        // Release: clean crossfade from held frame to the new live panorama
+        let prevColor = samplePrevWithLookAround(uv);
+        let fade = pow(t, 1.2);
         color = mix(prevColor, color, fade);
-
-        // Subtle vignette during transition to focus attention on center
-        let baseDist = length(input.uv - center);
-        color = color * (1.0 - baseDist * 0.55 * t);
     }
 
-    // Output to HDR intermediate (color grading and weather applied in weather-post.wgsl)
     return vec4<f32>(color, 1.0);
 }
