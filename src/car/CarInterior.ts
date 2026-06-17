@@ -608,6 +608,11 @@ private buildInteriorFromBuilder(): void {
 
     }
 
+    /** Sync Three.js camera FOV with WebGPU shader zoom for window alignment. */
+    public setZoomFOV(zoom: number): void {
+        this.rendererDelegate.setZoomFOV(zoom);
+    }
+
     /** Dump memory stats to the console (dev-only). */
 
     /** Get current performance metrics (FPS, draw calls, etc.). */
