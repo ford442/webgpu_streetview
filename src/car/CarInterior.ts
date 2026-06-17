@@ -80,7 +80,7 @@ export class CarInterior {
     private lodManager: LODManager;
     private postProcessing?: PostProcessingManager;
     private rainSystem?: RainSystem;
-    private postProcessingEnabled = true;
+    private postProcessingEnabled = false; // Post-FX breaks alpha compositing over WebGPU panorama
     private profiler?: PerformanceProfiler;
 
     private vehicleType: VehicleType = 'sedan';

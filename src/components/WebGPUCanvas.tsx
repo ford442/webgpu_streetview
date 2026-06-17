@@ -32,7 +32,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     } = useEnvironmentSettings();
 
     // Get street view state
-    const { canvas: source, heading, zoom, isTransitioning: isStreetViewTransitioning, setRenderer, isPanoramaReady, transitionSource } = useStreetView();
+    const { canvas: source, heading, pitch, zoom, isTransitioning: isStreetViewTransitioning, setRenderer, isPanoramaReady, transitionSource } = useStreetView();
 
     // Get view mode
     const { viewMode, carHeading } = useViewMode();
@@ -199,13 +199,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 (frameCountRef.current % FRAME_SKIP === 0)
             );
 
-            // Calculate camera params based on current view mode
-            const isCarMode = viewMode === 'car';
-            const headYawOffset = ((heading - carHeading + 540) % 360) - 180;
-            const currentPanX = isCarMode ? 0.5 - (headYawOffset / 90.0) * 0.5 : 0.5;
-            const currentPanY = 0.5;
-            const renderHeading = currentPanX * 360;
-            const renderPitch = currentPanY * 180 - 90;
+            // Google Maps canvas already reflects heading/pitch via setPov — pass through
+            // directly so the WebGPU view matches what you see through the windows.
+            const renderHeading = heading;
+            const renderPitch = pitch;
+            const weatherHeading = (((heading % 360) + 360) % 360) / 360;
+            const weatherPitch = (pitch + 90) / 180;
 
             if (currentRendererRef.current) {
                 // Build and upload weather params every frame BEFORE rendering
@@ -262,8 +261,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 params[32] = e.shaderEffectsEnabled ? 1.0 : 0.0;
 
                 // [33-35]: Camera params and padding
-                params[33] = currentPanX;
-                params[34] = currentPanY;
+                params[33] = weatherHeading;
+                params[34] = weatherPitch;
                 params[35] = 0.0;
 
                 // [36]: Sunrise flag
@@ -276,7 +275,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 params[39] = 0.0;
 
                 currentRendererRef.current.updateWeatherParams(params);
-                currentRendererRef.current.updateCameraParams(currentPanX, currentPanY);
+                currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
             }
 
             // Gate the render source: while a transition is in progress and the
@@ -306,7 +305,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             cancelAnimationFrame(animationFrameId.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [source, zoom, heading, carHeading, viewMode, shouldSkipFrame]);
+    }, [source, zoom, heading, pitch, carHeading, viewMode, shouldSkipFrame]);
 
     return (
         <canvas
