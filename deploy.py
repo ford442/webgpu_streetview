@@ -127,6 +127,10 @@ DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NA
 # Set via environment: export DEPLOY_TOKEN="your_long_token_from_vps_env"
 DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6da4a1c2a9d9cadc0"
 
+# Optional deploy target: "test" (default → test.1ink.us) or "go" (→ go.1ink.us)
+# Set via environment: export DEPLOY_TARGET=go
+DEPLOY_TARGET: str = os.getenv("DEPLOY_TARGET", "test")
+
 # Maps API key injection for runtime config (supports "MAPS_API_KEY=... python deploy.py"
 # even with the current bundle-upload mechanism). This directly addresses repeated
 # map loading failures after deploys (see #89, #84).
@@ -278,7 +282,7 @@ def deploy_bundle(build_path: Path) -> bool:
         response = requests.post(
             url,
             files={"bundle": ("build.zip", zip_bytes, "application/zip")},
-            data={"target_folder": target_folder},
+            data={"target_folder": target_folder, "target_site": DEPLOY_TARGET},
             headers=headers,
             timeout=300,
         )
@@ -300,7 +304,8 @@ def deploy_bundle(build_path: Path) -> bool:
 
 
 def main():
-    print(f"\n=== Deploying '{PROJECT_NAME}' via Contabo -> storage.1ink.us ===\n")
+    _site_host = "go.1ink.us" if DEPLOY_TARGET == "go" else "test.1ink.us"
+    print(f"\n=== Deploying '{PROJECT_NAME}' via Contabo -> {_site_host} (target={DEPLOY_TARGET}) ===\n")
 
     build_path = Path(BUILD_DIR)
     if not build_path.exists() or not build_path.is_dir():
@@ -328,10 +333,10 @@ def main():
     print(f"\n=== {'Deployment complete' if success else 'Deployment finished with errors'} ===")
     if success:
         print("Post-deploy verification (do this now):")
-        print("  1. curl -s https://test.1ink.us/streetview/static/js/main.*.js | grep -o 'AIzaSy[^\"]*' | head -1")
+        print(f"  1. curl -s https://{_site_host}/streetview/static/js/main.*.js | grep -o 'AIzaSy[^\"]*' | head -1")
         print("  2. Hard refresh the demo; no 'This page can't load Google Maps correctly'")
         print("  3. Check GCP: key has referrers for both hosts + billing + JS API + Directions enabled")
-        print("  4. curl -sI https://test.1ink.us/streetview/ | grep -i cross-origin-embedder")
+        print(f"  4. curl -sI https://{_site_host}/streetview/ | grep -i cross-origin-embedder")
         print("     Expect 'credentialless' (NOT 'require-corp') — require-corp blocks Google Maps sub-requests and causes flicker.")
         print("See docs/DEPLOY_CHECKLIST.md and GitHub issues #84 #89.")
     sys.exit(0 if success else 1)
