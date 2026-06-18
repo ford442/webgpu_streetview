@@ -1,6 +1,7 @@
-import { loadMapsApi, onMapsAuthFailure } from './loader';
+import { clearAuthFailure, loadMapsApi, onMapsAuthFailure } from './loader';
 
 const resetMapsGlobals = () => {
+  clearAuthFailure();
   document.head.innerHTML = '';
   document.body.innerHTML = '';
   delete (window as any).google;
@@ -17,6 +18,7 @@ describe('loadMapsApi', () => {
 
   afterEach(() => {
     resetMapsGlobals();
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -72,7 +74,27 @@ describe('loadMapsApi', () => {
     window.gm_authFailure?.();
 
     expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'AIzaSyCleanConnectionTestKey',
+      currentKey: 'AIzaSyCleanConnectionTestKey',
+      source: 'gm_authFailure',
+    }));
     unsubscribe();
+  });
+
+  it('supports key-scoped auth failure listeners', () => {
+    const currentKeyListener = jest.fn();
+    const oldKeyListener = jest.fn();
+    const unsubscribeCurrent = onMapsAuthFailure(currentKeyListener, { forKey: 'AIzaSyCurrentRuntimeKey' });
+    const unsubscribeOld = onMapsAuthFailure(oldKeyListener, { forKey: 'AIzaSyOldRuntimeKey' });
+
+    loadMapsApi('AIzaSyOldRuntimeKey').catch(() => undefined);
+    window.gm_authFailure?.();
+
+    expect(oldKeyListener).toHaveBeenCalledTimes(1);
+    expect(currentKeyListener).not.toHaveBeenCalled();
+    unsubscribeCurrent();
+    unsubscribeOld();
   });
 
   it('rejects the load promise when Google reports an auth failure during bootstrap', async () => {
@@ -89,5 +111,43 @@ describe('loadMapsApi', () => {
     await expect(loadMapsApi('AIzaSyCleanConnectionTestKey')).rejects.toThrow(
       'Google Maps authentication failed'
     );
+  });
+
+  it('clears auth failure state and drops spurious gm_authFailure shortly after success', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(1000);
+    const listener = jest.fn();
+    const unsubscribe = onMapsAuthFailure(listener);
+    const appendSpy = jest.spyOn(document.head, 'appendChild');
+
+    appendSpy.mockImplementation((node: Node) => {
+      const script = node as HTMLScriptElement;
+      setTimeout(() => {
+        (window as any).google = {
+          maps: {
+            Map: function MockMap() {},
+            StreetViewPanorama: function MockStreetViewPanorama() {},
+            importLibrary: jest.fn(() => Promise.resolve({})),
+          },
+        };
+        (window as any).__initWebGpuStreetviewMaps?.();
+      }, 0);
+      return script;
+    });
+
+    const promise = loadMapsApi('AIzaSyCleanConnectionTestKey');
+    jest.runOnlyPendingTimers();
+    await Promise.resolve();
+    await promise;
+
+    window.gm_authFailure?.();
+    expect(listener).not.toHaveBeenCalled();
+
+    jest.setSystemTime(2500);
+    window.gm_authFailure?.();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    clearAuthFailure('AIzaSyCleanConnectionTestKey');
+    unsubscribe();
   });
 });

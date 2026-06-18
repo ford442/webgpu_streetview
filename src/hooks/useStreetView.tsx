@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { findBestLink } from '../utils/navigation';
-import { Renderer } from '../renderer/Renderer';
+import { StreetViewRenderer } from '../renderer/RendererBackend';
 
 // Types
 export interface StreetViewState {
@@ -18,8 +18,8 @@ export interface StreetViewState {
   locationName: string;
   
   // Renderer reference for GPU transition control
-  renderer: Renderer | null;
-  setRenderer: (renderer: Renderer | null) => void;
+  renderer: StreetViewRenderer | null;
+  setRenderer: (renderer: StreetViewRenderer | null) => void;
   
   // Actions
   setPanorama: (panorama: google.maps.StreetViewPanorama | null) => void;
@@ -118,8 +118,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Renderer reference for GPU transitions
-  const [renderer, setRendererState] = useState<Renderer | null>(null);
-  const rendererRef = useRef<Renderer | null>(null);
+  const [renderer, setRendererState] = useState<StreetViewRenderer | null>(null);
+  const rendererRef = useRef<StreetViewRenderer | null>(null);
   
   // View state
   const [heading, setHeadingState] = useState(initialHeading);
@@ -187,7 +187,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (name) setLocationName(name);
   }, []);
   
-  const setRenderer = useCallback((r: Renderer | null) => {
+  const setRenderer = useCallback((r: StreetViewRenderer | null) => {
     rendererRef.current = r;
     setRendererState(r);
   }, []);

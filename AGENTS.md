@@ -295,6 +295,23 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 A compute variant `weather-post-compute.wgsl` exists for potential compute-pipeline integration. It uses an `extraBuffer` storage array (index 0–36) mapped to the same weather parameters and exposes additional bindings for depth textures and data textures.
 
+### WebGL2 Fallback / Debug Renderer
+
+`src/renderer/createStreetViewRenderer.ts` selects the active post-processing backend. The default path tries WebGPU first, then WebGL2, then lets the app expose raw Street View if both renderer backends fail. Explicit flags:
+
+```
+?renderer=webgpu
+?renderer=webgl
+?webgpu
+?webgl
+```
+
+The selected backend is exposed as `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, and `window.rendererFallbackReason`. DevTools/automation can call `window.streetViewRendererDebug.setBackend('webgl' | 'webgpu' | 'auto')`.
+
+The WebGL2 backend (`src/renderer/WebGLFallbackRenderer.ts`) shares the scraped panorama source, camera heading/pitch/zoom, and the same 40-float weather layout. It is an SDR single-pass approximation for debugging, not a full HDR parity renderer. It supports `?effect=raw|color|weather|fog|night|lighting` and `?wireframe` for effect isolation.
+
+When porting WebGL debug effects back to WebGPU, keep `WebGPUCanvas.tsx`, `WeatherPostProcessor.ts`, `weather-post.wgsl`, and `WebGLFallbackRenderer.ts` aligned on weather uniform indices. See `docs/RENDERER_FALLBACK.md`.
+
 ### GPU Transition System
 
 When the panorama changes (e.g., cruise mode advancing), `Renderer.beginTransition(mode)` snapshots the current `videoTexture` into `prevTexture` via a GPU→GPU `copyTextureToTexture`. Over the next ~350–500ms, `updateTransitionProgress(progress)` drives the transition shader to crossfade between the old and new panoramas. This masks Google Maps tile-tearing during loads.

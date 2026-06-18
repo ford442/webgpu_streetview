@@ -5,9 +5,10 @@ import App from './App';
 import type { MapsLoadStatus } from './components/StreetView';
 
 const streetViewApiKeys: string[] = [];
-const mockMapsAuthListeners: Array<() => void> = [];
+const mockMapsAuthListeners: Array<(event: { key: string; currentKey: string; source: string }) => void> = [];
 const mockLoadMapsApi = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
 const mockRemoveFailedBootstrap = jest.fn<void, []>();
+const mockClearAuthFailure = jest.fn<void, [string?]>();
 let mockLatestStreetViewStatusChange: ((status: MapsLoadStatus) => void) | undefined;
 let mockLatestStreetViewCanvasReady: ((canvas: HTMLCanvasElement) => void) | undefined;
 
@@ -45,9 +46,10 @@ jest.mock('./car', () => ({
 }));
 
 jest.mock('./services/maps/loader', () => ({
+  clearAuthFailure: (forKey?: string) => mockClearAuthFailure(forKey),
   loadMapsApi: (apiKey: string) => mockLoadMapsApi(apiKey),
   removeFailedBootstrap: () => mockRemoveFailedBootstrap(),
-  onMapsAuthFailure: (cb: () => void) => {
+  onMapsAuthFailure: (cb: (event: { key: string; currentKey: string; source: string }) => void) => {
     mockMapsAuthListeners.push(cb);
     return () => {
       const idx = mockMapsAuthListeners.indexOf(cb);
@@ -63,6 +65,7 @@ describe('App', () => {
     mockLoadMapsApi.mockClear();
     mockLoadMapsApi.mockResolvedValue(undefined);
     mockRemoveFailedBootstrap.mockClear();
+    mockClearAuthFailure.mockClear();
     mockLatestStreetViewStatusChange = undefined;
     mockLatestStreetViewCanvasReady = undefined;
     window.MAPS_API_KEY = '';
@@ -161,7 +164,11 @@ describe('App', () => {
     render(<App />);
 
     act(() => {
-      mockMapsAuthListeners.forEach(listener => listener());
+      mockMapsAuthListeners.forEach(listener => listener({
+        key: 'runtime-key',
+        currentKey: 'runtime-key',
+        source: 'gm_authFailure',
+      }));
     });
 
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Google Maps API key error');
@@ -177,6 +184,55 @@ describe('App', () => {
     });
     expect(mockRemoveFailedBootstrap).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('auto-recovers from a failed old key when a corrected runtime key is injected', async () => {
+    window.MAPS_API_KEY = 'bad-runtime-key';
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', 'bad-runtime-key');
+    });
+
+    act(() => {
+      mockMapsAuthListeners.forEach(listener => listener({
+        key: 'bad-runtime-key',
+        currentKey: 'bad-runtime-key',
+        source: 'gm_authFailure',
+      }));
+    });
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Google Maps API key error');
+
+    window.MAPS_API_KEY = 'fixed-runtime-key';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Retrying with new Maps key');
+    expect(screen.getByText('Retrying with new key...')).toBeInTheDocument();
+
+    act(() => mockLatestStreetViewStatusChange?.('api-ready'));
+    expect(screen.getByText('New key accepted. Preparing Street View...')).toBeInTheDocument();
+
+    act(() => mockLatestStreetViewStatusChange?.('canvas-ready'));
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'width', { value: 512 });
+    Object.defineProperty(canvas, 'height', { value: 512 });
+    act(() => mockLatestStreetViewCanvasReady?.(canvas));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-webgpu-canvas')).toBeInTheDocument();
+    });
+    expect(mockClearAuthFailure).toHaveBeenCalledWith('fixed-runtime-key');
+    expect(mockRemoveFailedBootstrap).toHaveBeenCalled();
+    expect(mockLoadMapsApi).not.toHaveBeenCalledWith('fixed-runtime-key');
   });
 
   it('unsubscribes the Maps auth failure listener on unmount', () => {

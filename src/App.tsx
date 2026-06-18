@@ -53,7 +53,7 @@ import AppToolbar from './components/AppToolbar';
 import AppBanners from './components/AppBanners';
 import BuildBadge from './components/BuildBadge';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
-import { loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
+import { clearAuthFailure, loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
 
 // Google Maps API Key resolution (matches go.1ink.us — baked into the JS bundle):
@@ -160,6 +160,12 @@ function InnerApp() {
       setMapsAuthFailed(false);
       setMapsAuthError(null);
       setShowAuthFailedBanner(false);
+      if (status === 'api-ready' || status === 'canvas-ready' || status === 'rendering') {
+        clearAuthFailure(getConfiguredMapsKey());
+      }
+      if (status === 'canvas-ready' || status === 'rendering') {
+        setIsRetryingMapsAuth(false);
+      }
     }
   }, []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
@@ -284,8 +290,11 @@ function InnerApp() {
       const k = getConfiguredMapsKey();
       if (k && k !== effectiveMapsKey) {
         console.log('[App] Late Maps API key detected — updating effective key');
+        clearAuthFailure();
+        removeFailedBootstrap();
         setEffectiveMapsKey(k);
         setMapsLoadStatus('loading-api');
+        setIsRetryingMapsAuth(Boolean(effectiveMapsKey || mapsAuthFailed));
         setShowMissingKeyBanner(false);
         // Always clear prior auth-failure state for a *new* key. This ensures that
         // after an API key vulnerability/bug was present (and gm_authFailure fired),
@@ -313,8 +322,14 @@ function InnerApp() {
 
   // Subscribe to Maps API auth failures (invalid key, referrer-blocked, billing disabled)
   useEffect(() => {
-    const unsubscribe = onMapsAuthFailure(() => {
+    const unsubscribe = onMapsAuthFailure((event) => {
+      const currentKey = getConfiguredMapsKey() || effectiveMapsKey;
+      if (event.key && currentKey && event.key !== currentKey) {
+        console.warn('[App] Ignoring stale Maps auth failure for a previous key');
+        return;
+      }
       setMapsAuthFailed(true);
+      setIsRetryingMapsAuth(false);
       setMapsAuthError('Google Maps API key error — check referrer restrictions, billing, and enabled APIs in Google Cloud Console.');
       setMapsLoadStatus('api-error');
       setShowAuthFailedBanner(true);
@@ -334,7 +349,7 @@ function InnerApp() {
       console.error('[App] Maps API auth failure — cruise mode disabled');
     });
     return unsubscribe;
-  }, []);
+  }, [effectiveMapsKey]); // eslint-disable-line react-hooks/exhaustive-deps -- setIsCruiseMode is stable from useCruiseMode; auth filtering must follow effective key
 
   // Secondary live suppressor on the .streetview-scraper wrapper itself (defense-in-depth).
   // Complements the one inside StreetView (which targets the actual pano container
@@ -392,6 +407,7 @@ function InnerApp() {
     }
 
     setIsRetryingMapsAuth(true);
+    clearAuthFailure(nextKey);
     setMapsLoadStatus('loading-api');
     setMapsAuthFailed(false);
     setMapsAuthError(null);
@@ -402,13 +418,11 @@ function InnerApp() {
 
     loadMapsApi(nextKey)
       .catch((err) => {
+        setIsRetryingMapsAuth(false);
         setMapsAuthFailed(true);
         setMapsLoadStatus('api-error');
         setShowAuthFailedBanner(true);
         setMapsAuthError(err instanceof Error ? err.message : 'Google Maps API key error — retry failed.');
-      })
-      .finally(() => {
-        setIsRetryingMapsAuth(false);
       });
   }, []);
 
@@ -526,9 +540,9 @@ function InnerApp() {
 
     switch (mapsLoadStatus) {
       case 'loading-api':
-        return { isVisible: true, message: 'Connecting to Google Maps...', progress: 15 };
+        return { isVisible: true, message: isRetryingMapsAuth ? 'Retrying with new key...' : 'Connecting to Google Maps...', progress: isRetryingMapsAuth ? 20 : 15 };
       case 'api-ready':
-        return { isVisible: true, message: 'Google Maps connected. Preparing Street View...', progress: 35 };
+        return { isVisible: true, message: isRetryingMapsAuth ? 'New key accepted. Preparing Street View...' : 'Google Maps connected. Preparing Street View...', progress: 35 };
       case 'loading-panorama':
         return { isVisible: true, message: 'Loading Street View...', progress: 55 };
       case 'canvas-ready':
@@ -567,6 +581,7 @@ function InnerApp() {
         setShowMissingKeyBanner={setShowMissingKeyBanner}
         showAuthFailedBanner={showAuthFailedBanner}
         setShowAuthFailedBanner={setShowAuthFailedBanner}
+        isRecoveringMapsAuth={isRetryingMapsAuth}
       />
 
       {mapsAuthFailed && (

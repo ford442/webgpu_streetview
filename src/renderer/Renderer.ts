@@ -2,8 +2,11 @@ import { RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { getCanvasFingerprint } from '../hooks/useStreetView';
+import { RendererDebugOptions, StreetViewRenderer } from './RendererBackend';
 
-export class Renderer {
+export class Renderer implements StreetViewRenderer {
+    public readonly backendType = 'webgpu' as const;
+    public readonly fallbackReason?: string;
     public canvas: HTMLCanvasElement;
     private device!: GPUDevice;
     private context!: GPUCanvasContext;
@@ -324,6 +327,11 @@ export class Renderer {
 
     public getCanvasDataURL(): string {
         return this.canvas.toDataURL('image/png', 1.0);
+    }
+
+    public setDebugOptions(_options: Partial<RendererDebugOptions>): void {
+        // WebGPU debug isolation remains controlled through shaderEffectsEnabled
+        // until individual WGSL effect branches are split into debug toggles.
     }
 
     // =========================================================================

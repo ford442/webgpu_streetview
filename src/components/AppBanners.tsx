@@ -5,6 +5,7 @@ export interface AppBannersProps {
   setShowMissingKeyBanner: (v: boolean) => void;
   showAuthFailedBanner: boolean;
   setShowAuthFailedBanner: (v: boolean) => void;
+  isRecoveringMapsAuth?: boolean;
 }
 
 const AppBanners: React.FC<AppBannersProps> = ({
@@ -12,6 +13,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
   setShowMissingKeyBanner,
   showAuthFailedBanner,
   setShowAuthFailedBanner,
+  isRecoveringMapsAuth = false,
 }) => {
   const currentHost =
     typeof window !== 'undefined' && window.location?.hostname
@@ -47,8 +49,27 @@ const AppBanners: React.FC<AppBannersProps> = ({
         </div>
       )}
 
+      {isRecoveringMapsAuth && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
+            background: 'rgba(26,92,120,0.96)', color: '#fff',
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
+            fontFamily: 'system-ui, sans-serif', fontSize: 14,
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <span style={{ flex: 1 }}>
+            <strong>Retrying with new Maps key...</strong> Street View will resume automatically when the API and panorama canvas are ready.
+          </span>
+        </div>
+      )}
+
       {/* Maps API auth-failure banner — prominent and diagnostic */}
-      {showAuthFailedBanner && (
+      {showAuthFailedBanner && !isRecoveringMapsAuth && (
         <div
           role="alert"
           style={{

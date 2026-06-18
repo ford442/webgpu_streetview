@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Renderer } from '../renderer/Renderer';
+import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
+import { StreetViewRenderer } from '../renderer/RendererBackend';
 import { usePerformanceMonitor, useEnvironmentSettings, useStreetView, useViewMode } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 
@@ -19,7 +20,7 @@ interface WebGPUCanvasProps {
 
 const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const internalRendererRef = useRef<Renderer | null>(null);
+    const internalRendererRef = useRef<StreetViewRenderer | null>(null);
     const animationFrameId = useRef<number>(0);
     
     // Get environment settings from React context
@@ -136,12 +137,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     useEffect(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
-        const renderer = new Renderer(canvas);
 
         let isActive = true;
+        let activeRenderer: StreetViewRenderer | null = null;
 
         (async () => {
-            const success = await renderer.init({
+            const result = await createStreetViewRenderer(canvas, {
                 onLost: (info) => {
                     console.warn('[WebGPU] Device lost:', info);
                     if (isActive) {
@@ -149,14 +150,22 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                     }
                 }
             });
-            if (!isActive) return;
-            if (success) {
-                internalRendererRef.current = renderer;
-                setRenderer(renderer);  // Register with StreetView context
+            if (!isActive) {
+                result.renderer?.destroy();
+                return;
+            }
+            if (result.renderer) {
+                activeRenderer = result.renderer;
+                internalRendererRef.current = result.renderer;
+                setRenderer(result.renderer);  // Register with StreetView context
                 onWebGPUStatusRef.current?.(true);
                 startMonitoringRef.current();
+                console.info(
+                    `[Renderer] ${result.backendType} renderer active` +
+                    (result.fallbackReason ? ` (${result.fallbackReason})` : '')
+                );
             } else {
-                console.warn("WebGPU initialization failed. Please check your browser compatibility.");
+                console.warn("Renderer initialization failed. Raw Street View fallback active.");
                 onWebGPUStatusRef.current?.(false);
             }
         })();
@@ -165,7 +174,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             isActive = false;
             setRenderer(null);  // Unregister from StreetView context
             stopMonitoringRef.current();
-            renderer.destroy();
+            activeRenderer?.destroy();
         };
     }, [reinitCounter, setRenderer]);
 

@@ -349,6 +349,14 @@ The Google Maps API renders Street View into internal `<canvas>` elements inside
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change.
 
+### WebGL2 Debug Fallback
+
+The post-processing canvas has an explicit WebGL2 fallback/debug backend in `src/renderer/WebGLFallbackRenderer.ts`. Use `?renderer=webgl` or `?webgl` to force it, `?renderer=webgpu` or `?webgpu` to prefer WebGPU, and no flag for automatic WebGPU -> WebGL2 -> raw Street View fallback.
+
+Runtime breadcrumbs are available as `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, and `window.rendererFallbackReason`. WebGL-only debugging supports `?effect=raw|color|weather|fog|night|lighting` and `?wireframe`.
+
+See [Renderer Fallback and Debugging](docs/RENDERER_FALLBACK.md) for parity notes and WebGL -> WebGPU porting guidance.
+
 ### Navigation Algorithm (`findBestLink`)
 
 `findBestLink(panorama, direction, currentHeading)` in `src/utils/navigation.ts`:
