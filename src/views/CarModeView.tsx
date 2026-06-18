@@ -475,6 +475,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
           boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
           userSelect: 'none',
           padding: '8px 12px',
+          // The root container gets pointerEvents:'none' in uiMouse to let clicks reach the
+          // dashboard. This overlay must explicitly opt back in so users can always switch modes.
+          pointerEvents: 'auto',
         }}
       >
         <div style={{ 
