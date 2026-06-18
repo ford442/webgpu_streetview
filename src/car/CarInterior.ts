@@ -251,6 +251,8 @@ export class CarInterior {
             this.postProcessing,
             this.canvas
         );
+        // Post-FX OutputPass forces opaque alpha and blocks the WebGPU panorama through glass.
+        this.rendererDelegate.setPostProcessingEnabled(this.postProcessingEnabled);
 
         this.lightingManager = new CarInteriorLightingManager(
             this.headlightsLight,
@@ -595,9 +597,8 @@ private buildInteriorFromBuilder(): void {
     /** Enable/disable post-processing (bloom + SMAA). */
 
     public setPostProcessingEnabled(enabled: boolean): void {
-
+        this.postProcessingEnabled = enabled;
         this.rendererDelegate.setPostProcessingEnabled(enabled);
-
     }
 
     /** Adjust bloom strength (0-1). */

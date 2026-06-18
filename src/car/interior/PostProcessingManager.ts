@@ -83,6 +83,10 @@ export class PostProcessingManager {
     this.enabled = enabled && this.gpuProfile.name !== 'low';
   }
 
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
   /** Resize composer targets on window resize. */
   setSize(width: number, height: number): void {
     this.composer.setSize(width, height);

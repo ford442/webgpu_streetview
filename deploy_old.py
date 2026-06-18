@@ -1,4 +1,5 @@
 import os
+import sys
 import paramiko
 import getpass
 
@@ -14,6 +15,37 @@ USERNAME = "ford442"
 LOCAL_DIRECTORY = "build"
 # The directory on the server where the files should go (e.g., 'public_html/wasm-game').
 REMOTE_DIRECTORY = "go.1ink.us/streetview"
+
+def _validate_build():
+    """Reject obviously broken build/ output before uploading."""
+    index_html = os.path.join(LOCAL_DIRECTORY, "index.html")
+    if not os.path.isfile(index_html):
+        print(f"Error: {index_html} not found. Run 'npm run build' first.")
+        sys.exit(1)
+
+    with open(index_html, encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    problems = []
+    if "%PUBLIC_URL%" in content:
+        problems.append("index.html still has %PUBLIC_URL% — you may have uploaded public/ instead of build/")
+    if "static/js/main" not in content:
+        problems.append("index.html does not reference static/js/main.*.js")
+
+    if problems:
+        print("\nERROR: build/ is not safe to deploy:")
+        for p in problems:
+            print(f"  - {p}")
+        print("\nFix: npm run build  (then re-run this script)\n")
+        sys.exit(1)
+
+    print("build/index.html looks valid.")
+
+    print(
+        "\nNOTE: Prefer the maintained deploy path for go.1ink.us:\n"
+        "  MAPS_API_KEY=your_key DEPLOY_TARGET=go python deploy.py\n"
+        "deploy_old.py uploads build/ as-is (no key injection, no Cesium post-build patches).\n"
+    )
 
 def upload_directory(sftp_client, local_path, remote_path):
     """
@@ -76,4 +108,5 @@ if __name__ == "__main__":
     if not os.path.exists(LOCAL_DIRECTORY):
         print(f"Error: Local directory '{LOCAL_DIRECTORY}' not found. Did you run 'npm run build' first?")
     else:
+        _validate_build()
         main()

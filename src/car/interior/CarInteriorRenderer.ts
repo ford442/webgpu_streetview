@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { PostProcessingManager } from './PostProcessingManager';
 
 export class CarInteriorRenderer {
+    /** Post-FX (bloom/SMAA/OutputPass) breaks alpha compositing over the WebGPU panorama. */
+    private postProcessingActive = false;
+
     constructor(
         private renderer: THREE.WebGLRenderer,
         private camera: THREE.PerspectiveCamera,
@@ -11,7 +14,7 @@ export class CarInteriorRenderer {
     ) {}
 
     public render(): void {
-        if (this.postProcessing) {
+        if (this.postProcessing && this.postProcessingActive) {
             this.postProcessing.render();
         } else {
             this.renderer.render(this.scene, this.camera);
@@ -40,6 +43,7 @@ export class CarInteriorRenderer {
     }
 
     public setPostProcessingEnabled(enabled: boolean): void {
+        this.postProcessingActive = enabled;
         if (this.postProcessing) {
             this.postProcessing.setEnabled(enabled);
         }
