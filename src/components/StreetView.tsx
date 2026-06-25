@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
-import { getCanvasFingerprint } from '../hooks/useStreetView';
+import {
+  getCanvasFingerprint,
+  STABILITY_POLL_INTERVAL_MS,
+  STABILITY_REQUIRED_STABLE_TICKS,
+} from '../utils/panoramaStability';
 
 export type MapsLoadStatus =
     | 'idle'
@@ -30,11 +34,13 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     // P1 stability tracking: do not hand a canvas to the renderer until its *content*
     // has produced N consecutive identical good fingerprints. This prevents flashing
     // low-res tiles, black frames, or transient Google internal canvases during init,
-    // pano loads, or network hiccups.
+    // pano loads, or network hiccups. Cadence + tick count come from
+    // utils/panoramaStability so this poller and the pano_changed watcher in
+    // useStreetView.tsx always agree on what "stable" means.
     const lastFingerprintRef = useRef<string>('');
     const stableCountRef = useRef<number>(0);
     const everSawCandidateRef = useRef(false);
-    const REQUIRED_STABLE_SAMPLES = 2; // ~400 ms at current 200 ms polling cadence
+    const REQUIRED_STABLE_SAMPLES = STABILITY_REQUIRED_STABLE_TICKS;
 
     // Persistent suppression of Google's "could not load Google Maps properly" / .gm-err-*
     // error UI. Google injects these DOM nodes into the pano container (even for transient
@@ -305,7 +311,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 
                 // Retry/polling window for canvas + stability. Extended so we can wait for
                 // fingerprint stability instead of promoting the first 256px canvas we see.
-                const retryInterval = setInterval(checkForCanvas, 200);
+                const retryInterval = setInterval(checkForCanvas, STABILITY_POLL_INTERVAL_MS);
                 const retryTimeout = setTimeout(() => clearInterval(retryInterval), 6000);
 
                 // Hard timeout: if we never managed to promote a *stable* canvas, surface an error.

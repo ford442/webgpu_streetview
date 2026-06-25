@@ -32,7 +32,8 @@
     "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\""
+    "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\"",
+    "probe:hold-pause": "node scripts/hold-pause-probe.mjs"
   },
   "eslintConfig": {
     "extends": [

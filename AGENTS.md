@@ -236,8 +236,8 @@ State is no longer owned solely by `App.tsx`. Three React Context providers wrap
 1. **`StreetViewProvider`** (`src/hooks/useStreetView.tsx`)
    - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, heading, pitch, zoom, position, and `isTransitioning`.
    - `advance(direction, currentHeading?)` calls `findBestLink` and triggers `pano.setPano()`.
-   - `teleport(lat, lng, targetHeading?, targetPitch?)` moves the panorama.
-   - `isTransitioning` is set to `true` on advance and cleared ~700ms after the `pano_changed` event fires.
+   - `teleport(lat, lng, targetHeading?, targetPitch?)` moves the panorama — shares the same `armHold()` hold-pause as `advance()` (see *Hold-Pause Transition* below).
+   - `isTransitioning`/`isPanoramaReady` (hold-pause state) are set on advance/teleport and cleared once the new canvas passes the stability check in `src/utils/panoramaStability.ts` (not a fixed delay).
    - Maintains a `renderer` ref for GPU transition coordination.
 
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
@@ -314,14 +314,23 @@ When porting WebGL debug effects back to WebGPU, keep `WebGPUCanvas.tsx`, `Weath
 
 ### GPU Transition System
 
-When the panorama changes (e.g., cruise mode advancing), `Renderer.beginTransition(mode)` snapshots the current `videoTexture` into `prevTexture` via a GPU→GPU `copyTextureToTexture`. Over the next ~350–500ms, `updateTransitionProgress(progress)` drives the transition shader to crossfade between the old and new panoramas. This masks Google Maps tile-tearing during loads.
+`Renderer.beginTransition(mode)` (legacy path, `prevTexture` via GPU→GPU `copyTextureToTexture`) supports the named crossfade modes below, but the **active** mechanism for `advance()`/`teleport()` is the **hold-pause** system described next.
 
-Supported modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
+Supported legacy modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
 
-Additionally, an **inline transition** system is used by `useStreetView.tsx`:
-- `captureCurrentFrame()` snapshots `videoTexture` into `previousFrameTexture`.
-- `setTransitionProgress(0→1)` is animated via `requestAnimationFrame` over 500ms.
-- The main `streetview.wgsl` uses `inlineTransitionProgress` to crossfade.
+### Hold-Pause Transition (cruise hops, MiniMap/autopilot/globe teleports)
+
+`useStreetView.tsx`'s `armHold()` (shared by `advance()` and `teleport()`) does three things before changing the panorama:
+1. `renderer.beginHoldTransition(heading, pitch)` — GPU-snapshots `videoTexture` into `previousFrameTexture`, records `capturePanX/Y`, sets `holdActive = true`.
+2. A CPU-side `<canvas>` snapshot of the outgoing frame (`transitionSource`, used by the WebGL fallback).
+3. `setIsPanoramaReady(false)` + `setIsTransitioning(true)`.
+
+While `holdActive`/`isPanoramaUpdatePaused` is true:
+- `WebGPUCanvas.tsx` calls `renderer.renderHeldFrame(heading, pitch, zoom)` every frame instead of `renderStreetView(...)`. This **never uploads the live Google Maps canvas** — `streetview.wgsl`'s `holding` branch only samples `previousFrameTexture`, UV-shifted by the heading/pitch delta since capture (`samplePrevWithLookAround`), so mouse-look still pans the frozen frame and weather animation keeps running.
+- `useStreetView.tsx`'s `pano_changed` listener polls the new (loading) hidden canvas with `getCanvasFingerprint()` until it reports `STABILITY_REQUIRED_STABLE_TICKS` consecutive identical fingerprints (and at least `STABILITY_MIN_DELAY_TICKS` have elapsed), then sets `isPanoramaReady = true`. A `STABILITY_MAX_TICKS` fallback prevents hanging forever on a status error or persistently-unstable canvas. **All of these constants live in `src/utils/panoramaStability.ts`** and are shared by this watcher, `StreetView.tsx`'s initial canvas-promotion poller, and `Renderer.ts`'s per-frame upload guard — change them in one place.
+- Once ready, the release effect calls `renderer.endHoldTransition()` (clears `holdActive`) and runs a 250ms `requestAnimationFrame` crossfade via `setTransitionProgress(0→1)`.
+
+**Regression guard**: `src/utils/streetViewProbe.ts` exposes `window.__STREETVIEW_PROBE__` with `getTimeline()` (armed/first-stable/released timestamps per hop) and `getWarnings()`. `Renderer.uploadLiveSource()` calls `streetViewProbe.warnLeak(...)` (a loud `console.warn`) if it's ever invoked while `holdActive` is true — i.e. if a future change bypasses the `renderStreetView()` hold guard. Call `window.__STREETVIEW_PROBE__.enablePixelWatch()` from DevTools to also flag abrupt brightness jumps in the visible canvas during a hold (opt-in; off by default). `scripts/hold-pause-probe.mjs` (`npm run probe:hold-pause`) drives this from Playwright against a running dev server.
 
 ### Navigation Algorithm (`findBestLink`)
 
@@ -410,8 +419,8 @@ Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, da
 - `copyExternalImageToTexture` is wrapped in try-catch to survive transient resize errors.
 - Do not cache `GPUTextureView` across frames — the underlying texture may be recreated.
 
-### 4. Transition / `isTransitioning` Coordination
-`StreetViewProvider` sets `isTransitioning = true` when `advance()` is called and clears it after `pano_changed` + 700ms. `WebGPUCanvas.tsx` reads this flag and forces full fps during transitions. If `isTransitioning` is not properly wired, cruise mode will show torn/stuttering frames on every hop.
+### 4. Hold-Pause / `isTransitioning` + `isPanoramaReady` Coordination
+`StreetViewProvider` sets `isTransitioning = true` and `isPanoramaReady = false` when `advance()`/`teleport()` arm the hold (see *Hold-Pause Transition* above), and only flips `isPanoramaReady` back to `true` once the new hidden canvas passes the shared stability check — not a fixed delay. `WebGPUCanvas.tsx` reads `isPanoramaUpdatePaused` (`isTransitioning && !isPanoramaReady`) to render the frozen GPU snapshot (`renderHeldFrame`) instead of uploading the live (still-loading) canvas, and forces full fps during the hold/release. If this wiring breaks — the `holdActive` guard in `Renderer.renderStreetView()`/`uploadLiveSource()`, or the `isPanoramaUpdatePaused` check in `WebGPUCanvas.tsx` — cruise mode will flash blurry/low-res tiles on every hop. `window.__STREETVIEW_PROBE__` (`src/utils/streetViewProbe.ts`) is the regression guard for exactly this: it warns loudly if the live canvas is ever uploaded while a hold is active.
 
 ### 5. API Key Management & Referrer Restrictions (Root Cause of Issue #72)
 The live demo at `test.1ink.us/streetview` historically showed "This page can't load Google Maps correctly" because the key baked into the bundle (or served via the committed `public/config.js`) had HTTP referrer restrictions that only allowed `go.1ink.us` (or localhost), not `test.1ink.us`.
@@ -474,6 +483,12 @@ The project uses Create React App's default testing setup:
 - `src/utils/navigation.test.ts` — Unit tests for `findBestLink`, angle math (`normalizeAngle`, `signedAngleDiff`, `absoluteAngleDiff`), and `haversineDistance`.
 - `src/hooks/__tests__/mobile.test.tsx` — Mobile hook behavior tests (`useTouchControls` gesture state, `useDeviceDetection` quality settings, battery save mode).
 - `src/App.test.tsx` — Default CRA smoke test (renders without crashing, welcome modal visible).
+- `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
+- `src/utils/panoramaLookAround.test.ts` — Pure math for the hold-pause look-around UV shift (`wrapPanDelta`, `heldLookAroundUvDelta`, zoom scaling).
+- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, and the opt-in intra-hold pixel-drift heuristic.
+- `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
+- `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
+- `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts` — Backend preference/debug-flag parsing and the WebGPU→WebGL2→raw fallback chain.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any changes to the following require manual browser verification:
@@ -483,6 +498,18 @@ WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any cha
 - Input handlers and UI overlay interactions
 - Cruise mode navigation loops
 - GPU panorama transitions
+
+### Hold-Pause Manual Checklist
+Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, `StreetView.tsx`, or `src/utils/panoramaStability.ts` / `streetViewProbe.ts`:
+
+1. Open DevTools console. Enable cruise mode and watch 10+ hops.
+   - **Pass**: each hop holds on a frozen frame, then crossfades cleanly into the new panorama — no visible blur, no low-res tile pop-in, no torn/duplicated frame.
+   - **Fail signal**: any `[StreetViewProbe] INVARIANT VIOLATION: ...` warning in the console. This means the `holdActive` guard was bypassed and live Google Maps content reached the screen.
+   - You should see one `[StreetViewProbe] hold armed at T=...` / `first stable at T+...ms` / `released at T+...ms (hold total)` triple per hop, with the released delta consistent (roughly 400–1900ms: `STABILITY_MIN_DELAY_MS`..`STABILITY_MAX_WAIT_MS` plus the 250ms release crossfade) and no repeated "Stability fallback" log spam.
+2. During a hop (while held), click-drag the mouse to look around. The frozen pano should pan with the drag; rain/snow/fog should keep animating. Releasing the mouse should not change which way you're facing once the new pano loads.
+3. Click a MiniMap point (or trigger an autopilot waypoint / globe Orbital Drop) far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
+4. Optional deeper check: `window.__STREETVIEW_PROBE__.enablePixelWatch()` in DevTools, then repeat step 1. Inspect `window.__STREETVIEW_PROBE__.getWarnings()` afterward — should be empty.
+5. Automated version of the above: `npm start` in one terminal, then `npm run probe:hold-pause -- --hops=10` (requires a real Maps key — a placeholder key will load the app but report "no hold was armed" since there are no panorama links to follow). Non-zero exit / `FAIL` in the output means either a probe warning fired or an intra-hold screenshot comparison detected a sudden jump.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
@@ -597,4 +624,4 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
-*Last Updated: May 27, 2026*
+*Last Updated: June 25, 2026*

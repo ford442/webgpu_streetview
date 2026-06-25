@@ -1,24 +1,27 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
-import { StreetViewRenderer } from '../renderer/RendererBackend';
-import { usePerformanceMonitor, useEnvironmentSettings, useStreetView, useViewMode } from '../hooks';
+import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
+import { usePerformanceMonitor, useEnvironmentSettings, useStreetView } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
+import { streetViewProbe } from '../utils/streetViewProbe';
+import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
  * 1. WEATHER SYNC: This canvas MUST actively read `useEnvironmentSettings()` 
  *    and pass values into `renderer.updateWeatherParams()` inside the render loop. 
  *    If disconnected, the UI sliders will move but shaders will not react.
- * 2. CRUISE PAUSE: This canvas relies on `useStreetView().isTransitioning` to fade 
- *    opacity to 0 during node advances. This hides Google Maps tile-tearing when 
- *    the panorama is loading a new location.
+ * 2. CRUISE PAUSE: While `isPanoramaUpdatePaused`, WebGPUCanvas calls
+ *    `renderHeldFrame()` so the GPU snapshot is drawn without uploading the
+ *    loading Google Maps canvas.
  */
 
 interface WebGPUCanvasProps {
     onWebGPUStatus?: (available: boolean) => void;
+    onBackendInfo?: (info: { backendType: RendererBackendType | null; fallbackReason?: string }) => void;
 }
 
-const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
+const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendInfo }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<StreetViewRenderer | null>(null);
     const animationFrameId = useRef<number>(0);
@@ -33,10 +36,15 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     } = useEnvironmentSettings();
 
     // Get street view state
-    const { canvas: source, heading, pitch, zoom, isTransitioning: isStreetViewTransitioning, setRenderer, isPanoramaReady, transitionSource } = useStreetView();
-
-    // Get view mode
-    const { viewMode, carHeading } = useViewMode();
+    const {
+        canvas: source,
+        heading,
+        pitch,
+        zoom,
+        isTransitioning: isStreetViewTransitioning,
+        isPanoramaUpdatePaused,
+        setRenderer,
+    } = useStreetView();
 
     // State to track window size for full-screen rendering
     const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -46,11 +54,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     const lastSourceRef = useRef<CanvasImageSource | null | undefined>(undefined);
     const sourceChangeFlagRef = useRef<boolean>(true);
     const FRAME_SKIP = 2; // Render every 2nd frame (30fps base) when source unchanged, 60fps when changed
-
-    // Transition state ref — updated on every render so the RAF loop always
-    // sees the latest React state without re-creating the animation closure.
-    const isTransitioningRef = useRef(isStreetViewTransitioning);
-    isTransitioningRef.current = isStreetViewTransitioning;
 
     // Performance: Debounced resize
     const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -65,6 +68,24 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
         criticalThreshold: 30,
         enableAdaptiveQuality: true
     });
+
+    // Dynamic inputs for the RAF loop — synced every render so animate() always
+    // reads the latest values without tearing down requestAnimationFrame.
+    const headingRef = useRef(heading);
+    const pitchRef = useRef(pitch);
+    const zoomRef = useRef(zoom);
+    const sourceRef = useRef(source);
+    const isPanoramaUpdatePausedRef = useRef(isPanoramaUpdatePaused);
+    const isTransitioningRef = useRef(isStreetViewTransitioning);
+    const shouldSkipFrameRef = useRef(shouldSkipFrame);
+
+    headingRef.current = heading;
+    pitchRef.current = pitch;
+    zoomRef.current = zoom;
+    sourceRef.current = source;
+    isPanoramaUpdatePausedRef.current = isPanoramaUpdatePaused;
+    isTransitioningRef.current = isStreetViewTransitioning;
+    shouldSkipFrameRef.current = shouldSkipFrame;
 
     // Memory profiling
     useEffect(() => {
@@ -128,9 +149,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
 
     // Use refs for callbacks to avoid reinit when they change
     const onWebGPUStatusRef = useRef(onWebGPUStatus);
+    const onBackendInfoRef = useRef(onBackendInfo);
     const startMonitoringRef = useRef(startMonitoring);
     const stopMonitoringRef = useRef(stopMonitoring);
     useEffect(() => { onWebGPUStatusRef.current = onWebGPUStatus; }, [onWebGPUStatus]);
+    useEffect(() => { onBackendInfoRef.current = onBackendInfo; }, [onBackendInfo]);
     useEffect(() => { startMonitoringRef.current = startMonitoring; }, [startMonitoring]);
     useEffect(() => { stopMonitoringRef.current = stopMonitoring; }, [stopMonitoring]);
 
@@ -159,6 +182,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 internalRendererRef.current = result.renderer;
                 setRenderer(result.renderer);  // Register with StreetView context
                 onWebGPUStatusRef.current?.(true);
+                onBackendInfoRef.current?.({ backendType: result.backendType, fallbackReason: result.fallbackReason });
                 startMonitoringRef.current();
                 console.info(
                     `[Renderer] ${result.backendType} renderer active` +
@@ -167,6 +191,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             } else {
                 console.warn("Renderer initialization failed. Raw Street View fallback active.");
                 onWebGPUStatusRef.current?.(false);
+                onBackendInfoRef.current?.({ backendType: null, fallbackReason: result.fallbackReason });
             }
         })();
 
@@ -179,12 +204,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
     }, [reinitCounter, setRenderer]);
 
     useEffect(() => {
-        // Performance: Track source changes
+        // Ignore live canvas swaps while the outgoing frame is held — they are loading artifacts.
+        if (isPanoramaUpdatePaused) return;
         if (source !== lastSourceRef.current) {
             sourceChangeFlagRef.current = true;
             lastSourceRef.current = source;
         }
-    }, [source]);
+    }, [source, isPanoramaUpdatePaused]);
 
     // Resize renderer when canvas size changes
     useEffect(() => {
@@ -198,22 +224,30 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
         const animate = () => {
             if (!active) return;
 
-            // Performance: Adaptive frame skipping based on quality
-            const skipFrame = shouldSkipFrame();
+            const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
+            const skipFrame = shouldBypassAdaptiveSkip(panoramaUpdatePaused)
+                ? false
+                : shouldSkipFrameRef.current();
 
-            // Force full-fps while a GPU transition is animating (isTransitioning = true)
-            const shouldRender = !skipFrame && (
-                isTransitioningRef.current ||
-                sourceChangeFlagRef.current ||
-                (frameCountRef.current % FRAME_SKIP === 0)
-            );
+            const isTransitioning = isTransitioningRef.current;
+            const renderHeading = headingRef.current;
+            const renderPitch = pitchRef.current;
+            const renderZoom = zoomRef.current;
+            const liveSource = sourceRef.current;
+
+            const shouldRender = shouldRenderHeldFrameThisTick({
+                panoramaUpdatePaused,
+                skipFrame,
+                isTransitioning,
+                sourceChanged: sourceChangeFlagRef.current,
+                frameCount: frameCountRef.current,
+                frameSkip: FRAME_SKIP,
+            });
 
             // Google Maps canvas already reflects heading/pitch via setPov — pass through
             // directly so the WebGPU view matches what you see through the windows.
-            const renderHeading = heading;
-            const renderPitch = pitch;
-            const weatherHeading = (((heading % 360) + 360) % 360) / 360;
-            const weatherPitch = (pitch + 90) / 180;
+            const weatherHeading = (((renderHeading % 360) + 360) % 360) / 360;
+            const weatherPitch = (renderPitch + 90) / 180;
 
             if (currentRendererRef.current) {
                 // Build and upload weather params every frame BEFORE rendering
@@ -287,22 +321,24 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
             }
 
-            // Gate the render source: while a transition is in progress and the
-            // new panorama is not yet confirmed stable, keep rendering the cached
-            // outgoing snapshot so the user doesn't see partial tiles.
-            const renderSource = (isStreetViewTransitioning && !isPanoramaReady)
-                ? transitionSource
-                : source;
-
             if (shouldRender && currentRendererRef.current) {
-                if (renderSource) {
-                    currentRendererRef.current.renderStreetView('streetview', renderSource, renderHeading, renderPitch, zoom);
+                const renderer = currentRendererRef.current;
+                const holding = panoramaUpdatePaused || renderer.isHoldActive();
+                if (holding) {
+                    renderer.renderHeldFrame(renderHeading, renderPitch, renderZoom);
+                    if (canvasRef.current) streetViewProbe.checkPixelDrift(canvasRef.current);
+                } else if (liveSource) {
+                    renderer.renderStreetView('streetview', liveSource, renderHeading, renderPitch, renderZoom);
                 } else {
-                    currentRendererRef.current.renderWeatherOnly();
+                    renderer.renderWeatherOnly();
                 }
                 sourceChangeFlagRef.current = false;
             } else if (currentRendererRef.current) {
                 currentRendererRef.current.updateWeatherAnimation();
+                if (panoramaUpdatePaused || currentRendererRef.current.isHoldActive()) {
+                    currentRendererRef.current.renderHeldFrame(renderHeading, renderPitch, renderZoom);
+                    if (canvasRef.current) streetViewProbe.checkPixelDrift(canvasRef.current);
+                }
             }
 
             frameCountRef.current++;
@@ -313,8 +349,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus }) => {
             active = false;
             cancelAnimationFrame(animationFrameId.current);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [source, zoom, heading, pitch, carHeading, viewMode, shouldSkipFrame]);
+    }, []);
 
     return (
         <canvas

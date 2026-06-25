@@ -4,7 +4,7 @@ import {
     RendererEffectIsolation,
     StreetViewRenderer,
 } from './RendererBackend';
-import { getCanvasFingerprint } from '../hooks/useStreetView';
+import { getCanvasFingerprint } from '../utils/panoramaStability';
 
 const VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -429,6 +429,14 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         this.transitionProgress = progress;
     }
 
+    public renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void {
+        if (!this.holdActive || !this.lastSource) {
+            this.renderWeatherOnly();
+            return;
+        }
+        this.draw(zoom || 1.0, ((heading || 0) % 360) / 360, ((pitch || 0) + 90) / 180);
+    }
+
     public setDebugOptions(options: Partial<RendererDebugOptions>): void {
         this.debugOptions = { ...this.debugOptions, ...options };
     }
@@ -442,6 +450,11 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
     ): void {
         const gl = this.gl;
         if (!gl || !this.texture) return;
+
+        if (this.holdActive) {
+            this.renderHeldFrame(heading, pitch, zoom);
+            return;
+        }
 
         if (source) {
             const width = source instanceof HTMLCanvasElement

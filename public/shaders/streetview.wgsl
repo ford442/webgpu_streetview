@@ -64,20 +64,22 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var uv = (input.uv - center) / zoom + center;
     let clampedUV = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
 
-    // Sample live feed — Google Maps renders at the current heading/pitch, no UV shift needed
-    var color = textureSample(tex, texSampler, clampedUV).rgb;
-
     let t = uniforms.transitionProgress;
     let holding = uniforms.holdActive > 0.5;
 
+    var color: vec3<f32>;
     if (holding) {
-        // Pause: show only the frozen outgoing frame; user can look around via UV shift
+        // Pause: only sample the GPU snapshot — never touch the live tex binding
         color = samplePrevWithLookAround(uv);
-    } else if (t > 0.0 && t < 1.0) {
-        // Release: clean crossfade from held frame to the new live panorama
-        let prevColor = samplePrevWithLookAround(uv);
-        let fade = pow(t, 1.2);
-        color = mix(prevColor, color, fade);
+    } else {
+        // Live feed — Google Maps renders at the current heading/pitch, no UV shift needed
+        color = textureSample(tex, texSampler, clampedUV).rgb;
+        if (t > 0.0 && t < 1.0) {
+            // Release: clean crossfade from held frame to the new live panorama
+            let prevColor = samplePrevWithLookAround(uv);
+            let fade = pow(t, 1.2);
+            color = mix(prevColor, color, fade);
+        }
     }
 
     return vec4<f32>(color, 1.0);

@@ -25,6 +25,7 @@ export { default as SnapshotGallery } from './SnapshotGallery';
 export { default as VehicleSelector } from './VehicleSelector';
 export { default as ColorGradingPanel } from './ColorGradingPanel';
 export { default as PerformanceStatsOverlay } from './PerformanceStatsOverlay';
+export { default as RendererBackendIndicator } from './RendererBackendIndicator';
 export { default as WeatherPanel } from './WeatherPanel';
 export { default as GlobeView } from './GlobeView';
 export { default as AccessibilityPanel } from './AccessibilityPanel';

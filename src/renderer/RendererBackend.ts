@@ -50,6 +50,8 @@ export interface StreetViewRenderer {
     endHoldTransition(): void;
     isHoldActive(): boolean;
     setTransitionProgress(progress: number): void;
+    /** Draw the frozen outgoing panorama (GPU snapshot) without uploading any source. */
+    renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void;
     renderStreetView(
         mode: RenderMode,
         source: CanvasImageSource | null,

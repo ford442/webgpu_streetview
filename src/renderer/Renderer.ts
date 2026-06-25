@@ -1,7 +1,8 @@
 import { RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
-import { getCanvasFingerprint } from '../hooks/useStreetView';
+import { getCanvasFingerprint } from '../utils/panoramaStability';
+import { streetViewProbe } from '../utils/streetViewProbe';
 import { RendererDebugOptions, StreetViewRenderer } from './RendererBackend';
 
 export class Renderer implements StreetViewRenderer {
@@ -450,85 +451,22 @@ export class Renderer implements StreetViewRenderer {
     // Main render
     // =========================================================================
 
-    public renderStreetView(
-        mode: RenderMode,
-        source: CanvasImageSource | null,
-        heading?: number,
-        pitch?: number,
-        zoom?: number
-    ): void {
+    /**
+     * Draw using the GPU snapshot only — no external image upload.
+     * Used while holdActive to keep blurry/loading GMaps pixels off videoTexture.
+     */
+    public renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void {
         if (this.isDestroyed || !this.device || !this.pipeline) return;
 
-        if (!source) {
-            if (this.transitionManager?.isInTransition() && this.transitionManager?.hasPrevTexture && this.videoTexture) {
-                // continue — transition pipeline will use cached GPU textures
-            } else {
-                this.renderWeatherOnly();
-                return;
-            }
+        if (!this.holdActive || !this.transitionManager?.previousFrame || !this.videoTexture) {
+            this.renderWeatherOnly();
+            return;
         }
 
-        let srcWidth = 0;
-        let srcHeight = 0;
+        this.submitPanoramaFrame(heading, pitch, zoom);
+    }
 
-        if (source) {
-            if (source instanceof HTMLCanvasElement) {
-                srcWidth = source.width;
-                srcHeight = source.height;
-            } else if (source instanceof HTMLVideoElement) {
-                if (source.readyState >= 2) {
-                    srcWidth = source.videoWidth;
-                    srcHeight = source.videoHeight;
-                }
-            } else if (source instanceof ImageBitmap) {
-                srcWidth = source.width;
-                srcHeight = source.height;
-            }
-
-            if (srcWidth > 0 && srcHeight > 0) {
-                const needsBindGroupUpdate = !this.videoTexture ||
-                    this.videoTextureWidth !== srcWidth ||
-                    this.videoTextureHeight !== srcHeight;
-
-                // P1 defensive guard: only create / upload when the source actually has
-                // usable content. This protects us if a canvas somehow reaches us before
-                // StreetView's stability gate (or during a mid-run replacement).
-                const isCanvasSource = source instanceof HTMLCanvasElement;
-                const sourceStable = !isCanvasSource || !!getCanvasFingerprint(source as HTMLCanvasElement);
-
-                if (sourceStable) {
-                    this.createVideoTexture(srcWidth, srcHeight);
-
-                    if (needsBindGroupUpdate) {
-                        this.updateBindGroup();
-                    }
-
-                    try {
-                        this.device.queue.copyExternalImageToTexture(
-                            { source: source },
-                            { texture: this.videoTexture! },
-                            [srcWidth, srcHeight]
-                        );
-                    } catch (e) {
-                        // Ignore transient copy errors
-                    }
-                } else {
-                    // Source is not stable (still black / decoding / transient).
-                    // Do not clobber an existing good videoTexture. If we have none yet,
-                    // the render pass below will fall back to weather-only or transition path.
-                    if (needsBindGroupUpdate && this.videoTexture) {
-                        // sizes drifted but we have a previous good texture — keep using it
-                        // (it may be slightly wrong aspect but better than a black flash)
-                    } else if (!this.videoTexture) {
-                        // No previous good texture and current source is garbage — bail to a clean frame.
-                        this.renderWeatherOnly();
-                        return;
-                    }
-                    // else: keep previous videoTexture as-is and continue to draw
-                }
-            }
-        }
-
+    private submitPanoramaFrame(heading?: number, pitch?: number, zoom?: number): void {
         try {
             const time = (Date.now() - this.startTime) / 1000;
             this.weatherPostProcessor?.updateWeatherAnimation();
@@ -585,5 +523,106 @@ export class Renderer implements StreetViewRenderer {
         } catch (e) {
             // Suppress sporadic frame errors
         }
+    }
+
+    private uploadLiveSource(source: CanvasImageSource): boolean {
+        // Defense in depth: this is the only place live Google Maps pixels reach
+        // videoTexture. If a future change calls renderStreetView() (or this
+        // method directly) while a hold is armed, the shader's `holding` branch
+        // still won't sample `tex` — but refusing the upload here keeps the
+        // texture itself clean and gives a loud signal that the holdActive guard
+        // in renderStreetView() was bypassed.
+        if (this.holdActive) {
+            streetViewProbe.warnLeak(
+                'uploadLiveSource() called while holdActive=true — the renderStreetView() hold guard was bypassed.'
+            );
+            return !!this.videoTexture;
+        }
+
+        let srcWidth = 0;
+        let srcHeight = 0;
+
+        if (source instanceof HTMLCanvasElement) {
+            srcWidth = source.width;
+            srcHeight = source.height;
+        } else if (source instanceof HTMLVideoElement) {
+            if (source.readyState >= 2) {
+                srcWidth = source.videoWidth;
+                srcHeight = source.videoHeight;
+            }
+        } else if (source instanceof ImageBitmap) {
+            srcWidth = source.width;
+            srcHeight = source.height;
+        }
+
+        if (srcWidth <= 0 || srcHeight <= 0) {
+            return false;
+        }
+
+        const needsBindGroupUpdate = !this.videoTexture ||
+            this.videoTextureWidth !== srcWidth ||
+            this.videoTextureHeight !== srcHeight;
+
+        const isCanvasSource = source instanceof HTMLCanvasElement;
+        const sourceStable = !isCanvasSource || !!getCanvasFingerprint(source as HTMLCanvasElement);
+
+        if (!sourceStable) {
+            if (!this.videoTexture) {
+                return false;
+            }
+            return true;
+        }
+
+        this.createVideoTexture(srcWidth, srcHeight);
+
+        if (needsBindGroupUpdate) {
+            this.updateBindGroup();
+        }
+
+        try {
+            this.device.queue.copyExternalImageToTexture(
+                { source: source },
+                { texture: this.videoTexture! },
+                [srcWidth, srcHeight]
+            );
+        } catch (e) {
+            // Ignore transient copy errors
+        }
+
+        return true;
+    }
+
+    public renderStreetView(
+        mode: RenderMode,
+        source: CanvasImageSource | null,
+        heading?: number,
+        pitch?: number,
+        zoom?: number
+    ): void {
+        if (this.isDestroyed || !this.device || !this.pipeline) return;
+
+        if (this.holdActive) {
+            this.renderHeldFrame(heading, pitch, zoom);
+            return;
+        }
+
+        if (!source) {
+            if (this.transitionManager?.isInTransition() && this.transitionManager?.hasPrevTexture && this.videoTexture) {
+                // continue — transition pipeline will use cached GPU textures
+            } else {
+                this.renderWeatherOnly();
+                return;
+            }
+        }
+
+        if (source) {
+            const uploaded = this.uploadLiveSource(source);
+            if (!uploaded && !this.videoTexture) {
+                this.renderWeatherOnly();
+                return;
+            }
+        }
+
+        this.submitPanoramaFrame(heading, pitch, zoom);
     }
 }

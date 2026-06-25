@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import StreetView, { type MapsLoadStatus } from './components/StreetView';
 import WelcomeModal from './components/WelcomeModal';
+import type { RendererBackendType } from './renderer/RendererBackend';
 import './style.css';
 
 // Providers
@@ -28,6 +29,7 @@ import {
   AccessibilityPanel,
   GlobeView,
   PerformanceStatsOverlay,
+  RendererBackendIndicator,
   WebGPUCanvas,
   LoadingOverlay,
 } from './components';
@@ -143,10 +145,14 @@ function InnerApp() {
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [webGPUAvailable, setWebGPUAvailable] = useState(true);
   const [webgpuStatus, setWebgpuStatus] = useState<'initializing' | 'ready' | 'fallback'>('initializing');
+  const [rendererBackendInfo, setRendererBackendInfo] = useState<{ backendType: RendererBackendType | null; fallbackReason?: string } | null>(null);
 
   const handleWebGPUStatus = useCallback((available: boolean) => {
     setWebGPUAvailable(available);
     setWebgpuStatus(available ? 'ready' : 'fallback');
+  }, []);
+  const handleBackendInfo = useCallback((info: { backendType: RendererBackendType | null; fallbackReason?: string }) => {
+    setRendererBackendInfo(info);
   }, []);
   const handleMapsStatusChange = useCallback((status: MapsLoadStatus) => {
     setMapsLoadStatus(status);
@@ -704,6 +710,9 @@ function InnerApp() {
         />
       )}
 
+      {/* Renderer backend indicator (corner chip, expandable) */}
+      {isConnected && <RendererBackendIndicator backendInfo={rendererBackendInfo} />}
+
       {/* Navigation pending overlay */}
       {isConnected && navPending && (
         <div style={{
@@ -943,7 +952,9 @@ function InnerApp() {
       </div>
 
       {/* Global WebGPU canvas - never unmounts, lives behind the views */}
-      {isConnected && isCanvasReady && <WebGPUCanvas onWebGPUStatus={handleWebGPUStatus} />}
+      {isConnected && isCanvasReady && (
+        <WebGPUCanvas onWebGPUStatus={handleWebGPUStatus} onBackendInfo={handleBackendInfo} />
+      )}
 
       {/* Main View - switches between FreeLookView and CarModeView */}
       <div 

@@ -31,10 +31,17 @@ jest.mock('./components/StreetView', () => {
 
 jest.mock('./components/WebGPUCanvas', () => {
   const React = require('react');
-  return function MockWebGPUCanvas({ onWebGPUStatus }: { onWebGPUStatus?: (available: boolean) => void }) {
+  return function MockWebGPUCanvas({
+    onWebGPUStatus,
+    onBackendInfo,
+  }: {
+    onWebGPUStatus?: (available: boolean) => void;
+    onBackendInfo?: (info: { backendType: 'webgpu' | 'webgl' | null; fallbackReason?: string }) => void;
+  }) {
     React.useEffect(() => {
       onWebGPUStatus?.(true);
-    }, [onWebGPUStatus]);
+      onBackendInfo?.({ backendType: 'webgpu' });
+    }, [onWebGPUStatus, onBackendInfo]);
     return <div data-testid="mock-webgpu-canvas" />;
   };
 });
@@ -139,6 +146,30 @@ describe('App', () => {
     });
     await waitFor(() => {
       expect(screen.queryByText('Preparing WebGPU renderer...')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows the renderer backend indicator once the backend is known', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+
+    window.MAPS_API_KEY = 'runtime-key';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', 'runtime-key');
+    });
+
+    act(() => mockLatestStreetViewStatusChange?.('canvas-ready'));
+
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'width', { value: 512 });
+    Object.defineProperty(canvas, 'height', { value: 512 });
+    act(() => mockLatestStreetViewCanvasReady?.(canvas));
+
+    await waitFor(() => {
+      expect(screen.getByText(/WebGPU/i)).toBeInTheDocument();
     });
   });
 
