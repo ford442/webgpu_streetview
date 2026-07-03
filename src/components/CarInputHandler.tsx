@@ -13,9 +13,9 @@ interface CarInputHandlerProps {
 
 /**
  * CarInputHandler - Routes input by control mode:
- * - freeLook: drag = head look, A/D = head turn, W/S/arrows = drive position
+ * - freeLook: click-drag = head look, A/D = head turn, car stays put (no W/S drive)
  * - uiMouse: dashboard/menus only, right-drag = steer
- * - carSteer: drag X = steer car heading, drag Y = pitch, W/S = drive
+ * - carSteer: click-drag X = steer car heading, drag Y = pitch, W/S = drive
  */
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
@@ -40,6 +40,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     headCoupling,
     startTempSteerMode,
     endTempSteerMode,
+    isTempSteerMode,
     carHeading,
     setCarHeading,
   } = useViewMode();
@@ -67,11 +68,32 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     onSteeringDelta?.(steerDelta * 0.5);
   }, [headCoupling, setCarHeading, setHeading, onSteeringDelta]);
 
+  const clearDragState = useCallback(() => {
+    if (isSteeringWheelDragRef.current) {
+      endTempSteerMode();
+    }
+    isDraggingRef.current = false;
+    isSteeringWheelDragRef.current = false;
+    isRightMouseRef.current = false;
+    dragStartedOnTargetRef.current = false;
+  }, [endTempSteerMode]);
+
+  // Drop any in-progress drag when switching control modes (but not during a
+  // steering-wheel hold, which intentionally switches into temp carSteer).
+  useEffect(() => {
+    if (!isTempSteerMode) {
+      clearDragState();
+    }
+  }, [controlMode, isTempSteerMode, clearDragState]);
+
   useEffect(() => {
     const target = targetRef.current;
     if (!target) return;
 
     const getEffectiveControlMode = (): ControlMode => controlMode;
+
+    const isMouseButtonHeld = (e: MouseEvent): boolean =>
+      (e.buttons & 1) !== 0 || (e.buttons & 2) !== 0;
 
     const handleMouseDown = (e: MouseEvent) => {
       if (controlMode === 'uiMouse' && e.button === 0) return;
@@ -107,6 +129,13 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       const currentMode = getEffectiveControlMode();
       if (!isDraggingRef.current || !dragStartedOnTargetRef.current) return;
 
+      // Require an actual held mouse button — prevents stale drag state from
+      // mode switches or missed mouseup events from panning without a click.
+      if (!isMouseButtonHeld(e)) {
+        clearDragState();
+        return;
+      }
+
       if (currentMode === 'freeLook') {
         const steeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current || e.shiftKey;
         if (steeringDrag) {
@@ -126,13 +155,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
 
     const handleMouseUp = (e: MouseEvent) => {
       if (e.button === 0 || e.button === 2) {
-        if (e.button === 0 && isSteeringWheelDragRef.current) {
-          endTempSteerMode();
-        }
-        isDraggingRef.current = false;
-        isSteeringWheelDragRef.current = false;
-        isRightMouseRef.current = false;
-        dragStartedOnTargetRef.current = false;
+        clearDragState();
       }
     };
 
@@ -148,21 +171,25 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       switch (key) {
         case 'w':
         case 'arrowup':
+          if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
           advance('forward', carHeading);
-          if (controlMode !== 'freeLook') onThrustRef.current?.('forward');
+          onThrustRef.current?.('forward');
           break;
         case 's':
         case 'arrowdown':
+          if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
           advance('backward', carHeading);
-          if (controlMode !== 'freeLook') onThrustRef.current?.('backward');
+          onThrustRef.current?.('backward');
           break;
         case 'arrowleft':
+          if (controlMode === 'freeLook') break;
           e.preventDefault();
           advance('left', carHeading);
           break;
         case 'arrowright':
+          if (controlMode === 'freeLook') break;
           e.preventDefault();
           advance('right', carHeading);
           break;
@@ -199,6 +226,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           break;
         }
         case 'h':
+          clearDragState();
           toggleControlMode();
           break;
         case 'u':
@@ -248,6 +276,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     setCarHeading,
     applySteering,
     onSteeringDelta,
+    isTempSteerMode,
+    clearDragState,
   ]);
 
   return null;
