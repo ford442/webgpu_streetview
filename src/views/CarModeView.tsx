@@ -403,11 +403,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const getModeDescription = (mode: ControlMode): string => {
     switch (mode) {
       case 'freeLook':
-        return '🖱️ Drag = look around • A/D = turn head • W/S = drive • Click wheel = steer';
+        return '🖱️ Click-drag = look around • A/D = turn head • Car stays put • Click wheel = steer';
       case 'uiMouse':
         return '🖱️ Use dashboard controls • Right-drag = steer • H = switch mode';
       case 'carSteer':
-        return '🚗 Drag X = steer car • Drag Y = look up/down • W/S = drive • Q/E = snap ±45°';
+        return '🚗 Click-drag X = steer car • drag Y = look up/down • W/S = drive • Q/E = snap ±45°';
     }
   };
   
@@ -422,7 +422,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         backgroundColor: 'transparent',
         // UI mode: let clicks pass through to the dashboard; other modes capture look/steer input
         pointerEvents: controlMode === 'uiMouse' ? 'none' : 'auto',
-        cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'grab',
+        cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'default',
       }}
     >
       {/* Input handler */}
