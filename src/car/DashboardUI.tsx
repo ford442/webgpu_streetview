@@ -67,6 +67,7 @@ export interface DashboardUIProps {
   onToggleHighBeam?: () => void;
   onToggleDomeLight?: () => void;
   onWindowTint?: (value: number) => void;
+  onSeatDistance?: (value: number) => void;
   isRoofOpen: boolean;
   wipersEnabled?: boolean;
   headlightsOn?: boolean;
@@ -77,6 +78,10 @@ export interface DashboardUIProps {
   snowIntensity?: number;
   wind?: number;
   windowTint?: number;
+  /** Driver seat pullback distance (metres) off the dashboard. */
+  seatDistance?: number;
+  /** Upper bound for the seat-distance slider. */
+  maxSeatDistance?: number;
   timeOfDay: string;
   audioElement?: HTMLAudioElement | null;
   analyser?: AnalyserNode | null;
@@ -208,6 +213,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   onToggleHighBeam,
   onToggleDomeLight,
   onWindowTint,
+  onSeatDistance,
   isRoofOpen,
   wipersEnabled = false,
   headlightsOn = false,
@@ -218,6 +224,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   snowIntensity = 0,
   wind = 0,
   windowTint = 0.1,
+  seatDistance = 0,
+  maxSeatDistance = 0.6,
   timeOfDay,
   analyser,
   nightIntensity = 0,
@@ -411,7 +419,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                 <Label>Dome</Label>
               </ControlButton>
             )}
-            {rainIntensity > 0 && onToggleWipers && (
+            {onToggleWipers && (
               <ControlButton
                 active={wipersEnabled}
                 onClick={onToggleWipers}
@@ -453,6 +461,15 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                 max={1}
                 step={0.01}
                 onChange={onWindowTint}
+              />
+            )}
+            {onSeatDistance && (
+              <SliderControl
+                label="Seat"
+                value={seatDistance}
+                max={maxSeatDistance}
+                step={0.01}
+                onChange={onSeatDistance}
               />
             )}
           </div>

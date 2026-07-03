@@ -9,6 +9,12 @@ import {
 
 const STORAGE_KEY = 'webgpu_streetview_vehicle';
 const TINT_STORAGE_KEY = 'webgpu_streetview_window_tint';
+const SEAT_STORAGE_KEY = 'webgpu_streetview_seat_distance';
+
+/** Default pullback (metres) off the dashboard for a roomier default driving posture. */
+const DEFAULT_SEAT_DISTANCE = 0.25;
+/** Max seat pullback — keeps the eye ahead of the rear-seat/console geometry. */
+export const MAX_SEAT_DISTANCE = 0.6;
 
 interface UseVehicleSettingsReturn {
     currentVehicle: VehicleType;
@@ -19,6 +25,8 @@ interface UseVehicleSettingsReturn {
     isTransitioning: boolean;
     windowTint: number;
     setWindowTint: (value: number) => void;
+    seatDistance: number;
+    setSeatDistance: (value: number) => void;
 }
 
 /**
@@ -50,6 +58,17 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
         return 0.1;
     });
 
+    const [seatDistance, setSeatDistanceState] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem(SEAT_STORAGE_KEY);
+            if (stored) {
+                const parsed = parseFloat(stored);
+                if (!isNaN(parsed)) return Math.max(0, Math.min(MAX_SEAT_DISTANCE, parsed));
+            }
+        }
+        return DEFAULT_SEAT_DISTANCE;
+    });
+
     // Sync with vehicle manager
     useEffect(() => {
         const unsubscribe = vehicleManager.onChange((vehicle) => {
@@ -71,8 +90,18 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
         }
     }, [windowTint]);
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(SEAT_STORAGE_KEY, String(seatDistance));
+        }
+    }, [seatDistance]);
+
     const setWindowTint = useCallback((value: number) => {
         setWindowTintState(Math.max(0, Math.min(1, value)));
+    }, []);
+
+    const setSeatDistance = useCallback((value: number) => {
+        setSeatDistanceState(Math.max(0, Math.min(MAX_SEAT_DISTANCE, value)));
     }, []);
 
     const setVehicle = useCallback((type: VehicleType) => {
@@ -114,6 +143,8 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
         isTransitioning,
         windowTint,
         setWindowTint,
+        seatDistance,
+        setSeatDistance,
     };
 }
 

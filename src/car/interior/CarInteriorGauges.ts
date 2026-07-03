@@ -139,6 +139,29 @@ export class CarInteriorGauges {
         tachometerNeedle.position.set(-0.15, 0.98, -0.71);
         interiorGroup.add(tachometerNeedle);
 
+        // Physical-glass covers over the gauge faces so they pick up the
+        // panorama environment reflections like real instrument glass.
+        const coverMat = new THREE.MeshPhysicalMaterial({
+            color: 0xdde8f0,
+            metalness: 0,
+            roughness: 0.04,
+            transparent: true,
+            opacity: 0.08,
+            depthWrite: false,
+            envMapIntensity: 1.4,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.06,
+        });
+        const coverGeo = new THREE.CircleGeometry(0.155, 32);
+        const speedoCover = new THREE.Mesh(coverGeo, coverMat);
+        speedoCover.name = 'gaugeCoverSpeedo';
+        speedoCover.position.set(-0.5, 0.95, -0.695);
+        interiorGroup.add(speedoCover);
+        const tachoCover = new THREE.Mesh(coverGeo, coverMat);
+        tachoCover.name = 'gaugeCoverTacho';
+        tachoCover.position.set(-0.15, 0.95, -0.695);
+        interiorGroup.add(tachoCover);
+
         return { speedometerNeedle, tachometerNeedle };
     }
 

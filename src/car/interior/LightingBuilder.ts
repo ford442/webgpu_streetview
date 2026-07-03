@@ -11,6 +11,7 @@ export interface InteriorLights {
   interiorBounceLight: THREE.PointLight;
   domeLightSource: THREE.PointLight;
   dashLight: THREE.PointLight;
+  sunLight: THREE.DirectionalLight;
 }
 
 /**
@@ -88,6 +89,14 @@ export function buildInteriorLighting(
   domeLightSource.position.set(0, 1.8, 0.3);
   interiorGroup.add(domeLightSource);
 
+  // Real-sun directional light — position/colour/intensity are driven each
+  // update from SunCalc azimuth/altitude for the pano's location. Lives in
+  // scene root (not interiorGroup) so it stays world-fixed as the car turns.
+  const sunLight = new THREE.DirectionalLight(0xfff4e6, 0);
+  sunLight.position.set(0, 20, 0);
+  scene.add(sunLight);
+  scene.add(sunLight.target);
+
   return {
     hemisphereLight,
     ambientLight,
@@ -98,5 +107,6 @@ export function buildInteriorLighting(
     interiorBounceLight,
     domeLightSource,
     dashLight,
+    sunLight,
   };
 }

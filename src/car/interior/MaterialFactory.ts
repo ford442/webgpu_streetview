@@ -126,13 +126,17 @@ export function createMaterials(
     side: THREE.FrontSide,
   });
 
-  const accent = new THREE.MeshStandardMaterial({
+  // Lacquered trim: clearcoat gives the accent pieces a sharp reflection of
+  // the panorama environment on top of the tinted base.
+  const accent = new THREE.MeshPhysicalMaterial({
     color: parseInt(config.accentColor.replace('#', '0x')),
     roughness: 0.35,
     metalness: 0.65,
     emissive: parseInt(config.accentColor.replace('#', '0x')),
     emissiveIntensity: 0.2,
     envMapIntensity: 0.8,
+    clearcoat: 0.9,
+    clearcoatRoughness: 0.12,
     side: THREE.DoubleSide,
   });
 

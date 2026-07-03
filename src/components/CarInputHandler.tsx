@@ -7,6 +7,8 @@ interface CarInputHandlerProps {
   isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
   onThrust?: (direction: 'forward' | 'backward') => void;
   onSteeringDelta?: (delta: number) => void;
+  /** Toggle the 2D dashboard HUD (bound to the `U` key) so the cockpit can be seen unobstructed. */
+  onToggleHud?: () => void;
 }
 
 /**
@@ -19,7 +21,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
   isSteeringWheelAtPoint,
   onThrust,
-  onSteeringDelta
+  onSteeringDelta,
+  onToggleHud
 }) => {
   const {
     heading,
@@ -49,6 +52,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const keysPressedRef = useRef<Set<string>>(new Set());
   const onThrustRef = useRef(onThrust);
   useEffect(() => { onThrustRef.current = onThrust; }, [onThrust]);
+  const onToggleHudRef = useRef(onToggleHud);
+  useEffect(() => { onToggleHudRef.current = onToggleHud; }, [onToggleHud]);
 
   const HEAD_LOOK_SENSITIVITY = 0.18;
   const KEYBOARD_LOOK_RATE = 90;
@@ -195,6 +200,9 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
         }
         case 'h':
           toggleControlMode();
+          break;
+        case 'u':
+          onToggleHudRef.current?.();
           break;
       }
     };

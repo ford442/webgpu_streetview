@@ -19,10 +19,71 @@ export class CarInteriorLightingManager {
         private leatherMaterial: THREE.MeshStandardMaterial | undefined,
         private frameMaterial: THREE.MeshStandardMaterial | undefined,
         private windshieldGlassMesh: THREE.Mesh | null,
-        private rearGlassMesh: THREE.Mesh | null
+        private rearGlassMesh: THREE.Mesh | null,
+        private sunLight?: THREE.DirectionalLight
     ) {}
 
     private isDomeLightOn: boolean = false;
+    /** 0 = sun up, 1 = full night; derived from real sun altitude. */
+    private sunNightFactor: number = 0;
+
+    // Sun colour ramp: warm at the horizon (golden hour) → neutral at midday.
+    private static readonly SUN_WARM = new THREE.Color(0xffab5e);
+    private static readonly SUN_NEUTRAL = new THREE.Color(0xfff4e6);
+    // Ambient sky tint: cool blue at night, golden at the horizon, warm-neutral midday.
+    private static readonly SKY_NIGHT = new THREE.Color(0x3a4a72);
+    private static readonly SKY_GOLDEN = new THREE.Color(0xffc78f);
+    private static readonly SKY_DAY = new THREE.Color(0xfff5e0);
+
+    /**
+     * Drive the sun directional light and ambient tint from the real sun.
+     * @param azimuth  - SunCalc azimuth in radians (0 = south, positive west)
+     * @param altitude - SunCalc altitude in radians (0 = horizon)
+     */
+    public setSunState(azimuth: number, altitude: number): void {
+        const sinAlt = Math.sin(altitude);
+        // Below the horizon → night; fully night by -12° (nautical twilight).
+        this.sunNightFactor = altitude <= 0
+            ? Math.min(1, -altitude / 0.21)
+            : 0;
+
+        if (this.sunLight) {
+            // SunCalc azimuth is measured from south; compass heading H maps
+            // to world direction (sin H, 0, -cos H) in this scene's frame.
+            const heading = azimuth + Math.PI;
+            const cosAlt = Math.cos(altitude);
+            this.sunLight.position.set(
+                Math.sin(heading) * cosAlt * 20,
+                sinAlt * 20,
+                -Math.cos(heading) * cosAlt * 20
+            );
+            this.sunLight.target.position.set(0, 0, 0);
+
+            // Ramp up over the first ~14° of altitude; off below the horizon.
+            const strength = Math.max(0, Math.min(1, sinAlt / 0.25));
+            this.sunLight.intensity = strength * 1.1;
+            this.sunLight.color
+                .copy(CarInteriorLightingManager.SUN_WARM)
+                .lerp(CarInteriorLightingManager.SUN_NEUTRAL, strength);
+        }
+
+        // Ambient tint by altitude: goldenness peaks at the horizon and fades
+        // out by ±20°, blended toward cool blue as night falls.
+        const goldenness = Math.max(0, 1 - Math.abs(sinAlt) / 0.35);
+        const tint = new THREE.Color()
+            .copy(CarInteriorLightingManager.SKY_DAY)
+            .lerp(CarInteriorLightingManager.SKY_GOLDEN, goldenness)
+            .lerp(CarInteriorLightingManager.SKY_NIGHT, this.sunNightFactor);
+        this.hemisphereLight?.color.copy(tint);
+        this.overheadLight?.color.copy(tint);
+        this.leftWindowLight?.color.copy(tint);
+        this.rightWindowLight?.color.copy(tint);
+    }
+
+    /** Night factor (0-1) derived from the last reported sun altitude. */
+    public getSunNightFactor(): number {
+        return this.sunNightFactor;
+    }
 
     public toggleHeadlights(): void {
         if (this.headlightsLight) {
@@ -54,7 +115,10 @@ export class CarInteriorLightingManager {
     }
 
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
-        const dayFactor = 1 - nightIntensity;
+        // Whichever says it's darker wins: the user/preset nightIntensity or
+        // the real sun's altitude at the pano's location.
+        const effectiveNight = Math.max(nightIntensity, this.sunNightFactor);
+        const dayFactor = 1 - effectiveNight;
         if (this.hemisphereLight) {
             const hemiTarget = 0.38 * dayFactor + 0.05;
             this.hemisphereLight.intensity += (hemiTarget - this.hemisphereLight.intensity) * 0.05;
@@ -87,21 +151,24 @@ export class CarInteriorLightingManager {
             this.frameMaterial.color.setScalar(matBrightness);
         }
 
-        const bounceTarget = headlightsOn ? nightIntensity * 0.35 : 0;
+        const bounceTarget = headlightsOn ? effectiveNight * 0.35 : 0;
         if (this.interiorBounceLight) {
             this.interiorBounceLight.intensity += (bounceTarget - this.interiorBounceLight.intensity) * 0.08;
         }
 
+        // Dash panels self-glow after dark (gauge backlights), with an extra
+        // bump when the headlights are on.
         if (this.instrumentClusterMat) {
-            const target = headlightsOn ? 0.5 + nightIntensity * 0.8 : 0.5;
+            const target = 0.5 + effectiveNight * 0.8 + (headlightsOn ? 0.2 : 0);
             this.instrumentClusterMat.emissiveIntensity += (target - this.instrumentClusterMat.emissiveIntensity) * 0.08;
         }
         if (this.centerDisplayMat) {
-            const target = headlightsOn ? 0.3 + nightIntensity * 0.6 : 0.3;
+            const target = 0.3 + effectiveNight * 0.6 + (headlightsOn ? 0.15 : 0);
             this.centerDisplayMat.emissiveIntensity += (target - this.centerDisplayMat.emissiveIntensity) * 0.08;
         }
 
-        const domeTarget = domeLightOn ? 1.2 : 0;
+        // Faint warm cabin glow at night even with the dome switch off.
+        const domeTarget = domeLightOn ? 1.2 : effectiveNight * 0.18;
         if (this.domeLightSource) {
             this.domeLightSource.intensity += (domeTarget - this.domeLightSource.intensity) * 0.08;
         }
@@ -116,7 +183,7 @@ export class CarInteriorLightingManager {
         }
         if (this.digitalClockMesh) {
             const clockMat = this.digitalClockMesh.material as THREE.MeshStandardMaterial;
-            const clockTarget = domeLightOn ? 1.1 : 0.75 + nightIntensity * 0.4;
+            const clockTarget = domeLightOn ? 1.1 : 0.75 + effectiveNight * 0.4;
             clockMat.emissiveIntensity += (clockTarget - clockMat.emissiveIntensity) * 0.08;
         }
     }

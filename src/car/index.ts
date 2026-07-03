@@ -1,6 +1,7 @@
 import { CarInterior } from './CarInterior';
 import { RearviewMirror } from './RearviewMirror';
 import { SelectivePostProcessing } from './SelectivePostProcessing';
+import { PanoLocationInfo } from '../utils/panoLocation';
 import {
     VehicleType,
     DEFAULT_VEHICLE,
@@ -294,6 +295,51 @@ export function setCarSteering(steeringInput: number): void {
 export function setCarWipers(active: boolean): void {
     if (!carModeState) return;
     carModeState.interior.setWipersActive(active);
+}
+
+/**
+ * Set how far back the driver's eye sits from the default per-vehicle position.
+ * @param offset - Distance in metres to dolly the camera back off the dashboard (0 = default).
+ */
+export function setCarSeatOffset(offset: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setSeatOffset(offset);
+}
+
+/**
+ * Update the dashboard location readout with the current panorama's metadata.
+ */
+export function setCarLocationInfo(info: PanoLocationInfo | null): void {
+    if (!carModeState) return;
+    carModeState.interior.setLocationInfo(info);
+}
+
+/**
+ * Update the live compass heading shown on the location readout panel.
+ */
+export function setCarCompassHeading(heading: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setCompassHeading(heading);
+}
+
+/**
+ * Rebuild the cabin's IBL environment from the current panorama.
+ * @param equirect - 2:1 equirect image of the pano (low-res is fine; it gets PMREM-filtered)
+ * @param centerHeading - Compass heading at the horizontal centre of the image
+ */
+export function setCarPanoEnvironment(equirect: HTMLCanvasElement, centerHeading: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setEnvironmentFromPano(equirect, centerHeading);
+}
+
+/**
+ * Aim the cabin's sun light at the real sun for the pano's location/time.
+ * @param azimuth  - SunCalc azimuth in radians (0 = south, positive west)
+ * @param altitude - SunCalc altitude in radians (0 = horizon)
+ */
+export function setCarSunPosition(azimuth: number, altitude: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setSunPosition(azimuth, altitude);
 }
 
 /**

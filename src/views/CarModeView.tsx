@@ -2,7 +2,9 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
 import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
-import { useVehicleSettings } from '../hooks/useVehicleSettings';
+import { useVehicleSettings, MAX_SEAT_DISTANCE } from '../hooks/useVehicleSettings';
+import { usePanoInfoPanel } from '../hooks/usePanoInfoPanel';
+import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
 import CarInputHandler from '../components/CarInputHandler';
 import { AudioAnalyzer } from '../audio/AudioAnalyzer';
 import { getTopStationForLocation } from '../services/radioBrowserService';
@@ -13,6 +15,7 @@ import {
   updateCarMode,
   setCarSteering,
   setCarWipers,
+  setCarSeatOffset,
   updateCarGauges,
   isCarSteeringWheelHit,
   setWindowTint,
@@ -37,7 +40,7 @@ interface CarModeViewProps {
  * - Head look independent of car steering
  */
 const CarModeView: React.FC<CarModeViewProps> = () => {
-  const { heading, pitch, panorama, advance, canvas, zoom } = useStreetView();
+  const { heading, pitch, panorama, advance, canvas, zoom, position } = useStreetView();
   const {
     controlMode,
     setControlMode,
@@ -72,13 +75,22 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const {
     windowTint,
     setWindowTint: setVehicleWindowTint,
+    seatDistance,
+    setSeatDistance,
   } = useVehicleSettings();
+
+  // Feed the dashboard location readout (road/area, coords, heading, capture date).
+  usePanoInfoPanel(panorama, position, heading);
+
+  // Cabin lighting from the surrounding panorama (IBL) + the real sun.
+  useCabinEnvironment(panorama, position);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const carModeStateRef = useRef<CarModeState | null>(null);
   
   // Dashboard visibility state
-  const [isDashboardVisible] = useState(true);
+  const [isDashboardVisible, setIsDashboardVisible] = useState(true);
+  const toggleDashboard = useCallback(() => setIsDashboardVisible(prev => !prev), []);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
@@ -166,6 +178,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   useEffect(() => {
     setWindowTint(windowTint);
   }, [windowTint]);
+
+  // Sync driver seat distance (camera pullback off the dashboard) to car interior
+  useEffect(() => {
+    setCarSeatOffset(seatDistance);
+  }, [seatDistance]);
 
   // Animation loop for car mode
   useEffect(() => {
@@ -414,6 +431,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
         onThrust={handleThrust}
         onSteeringDelta={handleSteeringDelta}
+        onToggleHud={toggleDashboard}
       />
       
       {/* Premium Car Dashboard */}
@@ -445,6 +463,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         wind={wind}
         windowTint={windowTint}
         onWindowTint={setVehicleWindowTint}
+        seatDistance={seatDistance}
+        maxSeatDistance={MAX_SEAT_DISTANCE}
+        onSeatDistance={setSeatDistance}
         timeOfDay={timeOfDay}
         audioElement={audioElement}
         analyser={analyserNode}
@@ -557,6 +578,24 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
             Steer
           </button>
         </div>
+        <button
+          onClick={toggleDashboard}
+          title="Toggle dashboard HUD (U)"
+          style={{
+            width: '100%',
+            marginTop: '4px',
+            padding: '4px 8px',
+            background: isDashboardVisible ? 'rgba(255,255,255,0.05)' : 'rgba(0,212,255,0.2)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '6px',
+            color: isDashboardVisible ? 'rgba(255,255,255,0.6)' : '#00d4ff',
+            cursor: 'pointer',
+            fontSize: '10px',
+            transition: 'all 0.2s',
+          }}
+        >
+          {isDashboardVisible ? 'Hide HUD (U)' : 'Show HUD (U)'}
+        </button>
       </div>
       
       {/* Steering wheel overlay - shows when steering */}

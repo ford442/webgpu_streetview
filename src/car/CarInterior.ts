@@ -5,17 +5,17 @@ import {
   VehicleLODConfig, 
   FrustumCuller, 
   optimizeTextures,
-  GPU_PROFILES,
   applyPerformanceProfile,
   detectGPUProfile
 } from '../utils/performance';
 import { CarInteriorBuilder } from './interior/CarInteriorBuilder';
 import { CarInteriorGauges } from './interior/CarInteriorGauges';
+import { LocationPanel } from './interior/LocationPanel';
+import { PanoLocationInfo } from '../utils/panoLocation';
 import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { CarInteriorRenderer } from './interior/CarInteriorRenderer';
 import { CarInteriorLightingManager } from './interior/CarInteriorLightingManager';
 import { getMemoryProfiler, MemoryProfiler } from '../utils/memoryProfiler';
-import { createGlassMaterial } from '../materials/PBRMaterials';
 import { InteractionHelper } from './interior/InteractionHelper';
 import { createMaterials } from './interior/MaterialFactory';
 import { GeometryFactory } from './interior/GeometryFactory';
@@ -23,6 +23,7 @@ import { LODManager } from './interior/LODManager';
 import { PostProcessingManager } from './interior/PostProcessingManager';
 import { RainSystem } from './interior/RainSystem';
 import { buildInteriorLighting } from './interior/LightingBuilder';
+import { PanoEnvironment } from './interior/PanoEnvironment';
 import { PerformanceProfiler } from './interior/PerformanceProfiler';
 
 /**
@@ -39,6 +40,8 @@ export class CarInterior {
     public roofGroup: THREE.Group;
     /** Anchored at the driver's eye position inside the car; child of interiorGroup */
     private driverSeatGroup: THREE.Group;
+    /** User seat-distance offset (metres) added to the config eye position along +Z (dolly back). */
+    private seatOffset: number = 0;
     private steeringWheelGroup!: THREE.Group;
     private leftMirrorPlane!: THREE.Mesh;
     private rightMirrorPlane!: THREE.Mesh;
@@ -51,6 +54,8 @@ export class CarInterior {
     private domeLightFixtureMesh!: THREE.Mesh;
     private domeSwitchMesh!: THREE.Mesh;
     private interiorBounceLight!: THREE.PointLight;
+    private sunLight!: THREE.DirectionalLight;
+    private panoEnvironment!: PanoEnvironment;
     private ambientLight!: THREE.AmbientLight;
     private hemisphereLight!: THREE.HemisphereLight;
     private overheadLight!: THREE.DirectionalLight;
@@ -66,6 +71,12 @@ export class CarInterior {
     private clockCanvas: HTMLCanvasElement | null = null;
     private clockCtx: CanvasRenderingContext2D | null = null;
     private clockUpdateInterval?: number;
+
+    // Location readout dash panel (road/area, coords, heading, capture date)
+    private locationPanel: LocationPanel | null = null;
+    private lastLocationInfo: PanoLocationInfo | null = null;
+    private lastCompassHeading: number = 0;
+
     private isActive: boolean = true;
 
     private isRoofOpen: boolean = false;
@@ -125,7 +136,6 @@ export class CarInterior {
         // FOV is set to 60° vertical which corresponds to ~88° horizontal at 16:9 aspect —
         // this matches Google Maps Street View zoom=1 (~90° horizontal FOV) so the 3D car
         // interior window openings stay aligned with the background panorama.
-        const { x, y, z } = this.vehicleConfig.cameraPosition;
         this.camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 100);
         // Camera starts at origin of driverSeatGroup (position set via driverSeatGroup below)
         this.camera.position.set(0, 0, 0);
@@ -184,7 +194,7 @@ export class CarInterior {
         // It is a child of interiorGroup so it rotates with the car body automatically.
         // The camera is a child of driverSeatGroup for clean local-space head look.
         this.driverSeatGroup = new THREE.Group();
-        this.driverSeatGroup.position.set(x, y, z);
+        this.applySeatPosition();
         this.interiorGroup.add(this.driverSeatGroup);
         this.driverSeatGroup.add(this.camera);
 
@@ -223,6 +233,8 @@ export class CarInterior {
         this.headlightsLight = lights.headlightsLight;
         this.interiorBounceLight = lights.interiorBounceLight;
         this.domeLightSource = lights.domeLightSource;
+        this.sunLight = lights.sunLight;
+        this.panoEnvironment = new PanoEnvironment(this.renderer, this.scene);
         this.buildInteriorFromBuilder();
         
         // Setup LOD after building interior
@@ -272,8 +284,30 @@ export class CarInterior {
             this.leatherMaterial,
             this.frameMaterial,
             this.windshieldGlassMesh,
-            this.rearGlassMesh
+            this.rearGlassMesh,
+            this.sunLight
         );
+    }
+
+    /**
+     * Rebuild the IBL environment from the current panorama's equirect image.
+     * The previous PMREM render target is disposed on every swap.
+     */
+    public setEnvironmentFromPano(equirect: HTMLCanvasElement, centerHeading: number): void {
+        this.panoEnvironment.setFromEquirect(equirect, centerHeading);
+    }
+
+    /**
+     * Point the sun light at the real sun for the pano's location/time and
+     * retune the cabin for day/night (env dim, panel glow, ambient tint).
+     * @param azimuth  - SunCalc azimuth in radians (0 = south, positive west)
+     * @param altitude - SunCalc altitude in radians (0 = horizon)
+     */
+    public setSunPosition(azimuth: number, altitude: number): void {
+        this.lightingManager.setSunState(azimuth, altitude);
+        const night = this.lightingManager.getSunNightFactor();
+        this.panoEnvironment.setIntensity(1 - night * 0.7);
+        this.locationPanel?.setNightGlow(night);
     }
 
     /**
@@ -354,6 +388,30 @@ private buildInteriorFromBuilder(): void {
             this.clockCtx = gaugeResult.clockCtx ?? null;
             this.clockUpdateInterval = gaugeResult.clockUpdateInterval;
         }
+
+        if (this.vehicleConfig.hasDashboard && this.quality !== 'low') {
+            this.locationPanel?.dispose();
+            this.locationPanel = new LocationPanel(this.vehicleConfig.accentColor, this.gpuProfile.name);
+            this.interiorGroup.add(this.locationPanel.mesh);
+            // Re-apply the latest data so a vehicle swap keeps the current readout.
+            this.locationPanel.setLocation(this.lastLocationInfo);
+            this.locationPanel.setHeading(this.lastCompassHeading);
+            // lightingManager is undefined during the constructor's first build;
+            // on vehicle swaps it re-applies the current night glow.
+            this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
+        }
+    }
+
+    /** Update the location readout panel with per-pano metadata. */
+    public setLocationInfo(info: PanoLocationInfo | null): void {
+        this.lastLocationInfo = info;
+        this.locationPanel?.setLocation(info);
+    }
+
+    /** Update the live compass heading on the location readout panel. */
+    public setCompassHeading(heading: number): void {
+        this.lastCompassHeading = heading;
+        this.locationPanel?.setHeading(heading);
     }
     public setVehicleType(vehicleType: VehicleType): void {
         if (this.vehicleType === vehicleType) return;
@@ -371,9 +429,8 @@ private buildInteriorFromBuilder(): void {
             this.clockUpdateInterval = undefined;
         }
         
-        // Update camera anchor position for the new vehicle
-        const { x, y, z } = this.vehicleConfig.cameraPosition;
-        this.driverSeatGroup.position.set(x, y, z);
+        // Update camera anchor position for the new vehicle (preserving seat offset)
+        this.applySeatPosition();
         
         // Recreate materials and rebuild
         const mats = createMaterials(this.vehicleConfig, this.gpuProfile);
@@ -614,6 +671,23 @@ private buildInteriorFromBuilder(): void {
         this.rendererDelegate.setZoomFOV(zoom);
     }
 
+    /** Position the driver eye anchor from the vehicle config plus the user seat offset. */
+    private applySeatPosition(): void {
+        const { x, y, z } = this.vehicleConfig.cameraPosition;
+        // +Z is toward the rear of the cabin, so a positive offset dollies the eye
+        // back away from the wheel/dashboard for a roomier driving posture.
+        this.driverSeatGroup.position.set(x, y, z + this.seatOffset);
+    }
+
+    /**
+     * Set how far back the driver's eye sits from the default position (metres).
+     * 0 keeps the per-vehicle config position; larger values pull back off the dash.
+     */
+    public setSeatOffset(offset: number): void {
+        this.seatOffset = offset;
+        this.applySeatPosition();
+    }
+
     /** Dump memory stats to the console (dev-only). */
 
     /** Get current performance metrics (FPS, draw calls, etc.). */
@@ -673,7 +747,10 @@ private buildInteriorFromBuilder(): void {
             }
         });
         
+        this.panoEnvironment.dispose();
+
         // Clear references
+        this.locationPanel = null;
         this.detailMeshes = [];
         this.lodUpdateFn = undefined;
         this.geometryFactory.dispose();
