@@ -12,6 +12,8 @@ import { CarInteriorBuilder } from './interior/CarInteriorBuilder';
 import { CarInteriorGauges, GaugeRig } from './interior/CarInteriorGauges';
 import { LocationPanel } from './interior/LocationPanel';
 import { CenterDisplay, DisplayPage } from './interior/CenterDisplay';
+import { SunShafts } from './interior/SunShafts';
+import { resetGlowRegistry } from './interior/MaterialFactory';
 import { PanoLocationInfo } from '../utils/panoLocation';
 import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { CarInteriorRenderer } from './interior/CarInteriorRenderer';
@@ -81,6 +83,11 @@ export class CarInterior {
 
     // Centre-stack infotainment display (nav / media / trip pages)
     private centerDisplay: CenterDisplay | null = null;
+
+    // Fake volumetric light shafts through the side windows at low sun
+    private sunShafts: SunShafts | null = null;
+    private lastSunAzimuth: number = 0;
+    private lastSunAltitude: number = -1;
     private lastMediaInfo: { name: string; tags: string; playing: boolean } = { name: '', tags: '', playing: false };
 
     private isActive: boolean = true;
@@ -294,6 +301,7 @@ export class CarInterior {
             this.rearGlassMesh,
             this.sunLight
         );
+        this.lightingManager.setReducedMotion(this.reducedMotion);
     }
 
     /**
@@ -311,6 +319,8 @@ export class CarInterior {
      * @param altitude - SunCalc altitude in radians (0 = horizon)
      */
     public setSunPosition(azimuth: number, altitude: number): void {
+        this.lastSunAzimuth = azimuth;
+        this.lastSunAltitude = altitude;
         this.lightingManager.setSunState(azimuth, altitude);
         const night = this.lightingManager.getSunNightFactor();
         this.panoEnvironment.setIntensity(1 - night * 0.7);
@@ -350,6 +360,8 @@ export class CarInterior {
      */
 
 private buildInteriorFromBuilder(): void {
+        // Emissive trim/backlight materials re-register as the builders run.
+        resetGlowRegistry();
         const builder = new CarInteriorBuilder(
             this.interiorGroup,
             this.roofGroup,
@@ -412,6 +424,13 @@ private buildInteriorFromBuilder(): void {
             // lightingManager is undefined during the constructor's first build;
             // on vehicle swaps it re-applies the current night glow.
             this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
+        }
+
+        this.sunShafts?.dispose();
+        this.sunShafts = null;
+        if (this.quality !== 'low') {
+            this.sunShafts = new SunShafts(this.reducedMotion);
+            this.interiorGroup.add(this.sunShafts.group);
         }
 
         this.centerDisplay?.dispose();
@@ -503,6 +522,17 @@ private buildInteriorFromBuilder(): void {
 
         this.animator.update(deltaTime);
         this.centerDisplay?.update(deltaTime);
+        if (this.sunShafts) {
+            // interiorGroup.rotation.y is -carHeading (set by the animator).
+            const carHeadingRad = -this.interiorGroup.rotation.y;
+            this.sunShafts.update(
+                deltaTime,
+                this.lastSunAzimuth,
+                this.lastSunAltitude,
+                carHeadingRad,
+                this.lightingManager?.getWeatherIntensity() ?? 0
+            );
+        }
 
     }
 
@@ -707,6 +737,15 @@ private buildInteriorFromBuilder(): void {
         if (this.rainSystem) this.rainSystem.setActive(active);
     }
 
+    /**
+     * 0-1 rain intensity: dims/diffuses the daylight rig, kills the sun
+     * shafts, and toggles the windshield droplet system.
+     */
+    public setWeatherIntensity(rain: number): void {
+        this.lightingManager.setWeatherIntensity(rain);
+        this.rainSystem?.setActive(rain > 0.02);
+    }
+
     /** Enable/disable post-processing (bloom + SMAA). */
 
     public setPostProcessingEnabled(enabled: boolean): void {
@@ -773,6 +812,8 @@ private buildInteriorFromBuilder(): void {
 
         this.centerDisplay?.dispose();
         this.centerDisplay = null;
+        this.sunShafts?.dispose();
+        this.sunShafts = null;
         this.locationPanel?.dispose();
         this.locationPanel = null;
 

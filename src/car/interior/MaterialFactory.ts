@@ -111,12 +111,58 @@ function brushedMetalRoughnessTexture(size: number): THREE.CanvasTexture {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Cabin glow registry: every emissive trim/backlight material registers its
+// authored base intensity here, and the lighting manager scales them all with
+// one call per frame — accent strips brighten at night, button backlights
+// come up with the headlights, and the whole set breathes together. No extra
+// lights are involved; it's pure emissive modulation.
+// ---------------------------------------------------------------------------
+
+interface GlowEntry {
+  material: THREE.MeshStandardMaterial;
+  base: number;
+}
+
+let glowRegistry: GlowEntry[] = [];
+
+/** Drop all registered glow materials (call before rebuilding an interior). */
+export function resetGlowRegistry(): void {
+  glowRegistry = [];
+}
+
+/** Register an emissive material whose glow should follow cabin state. */
+export function registerGlowMaterial(
+  material: THREE.MeshStandardMaterial,
+  baseIntensity: number
+): void {
+  glowRegistry.push({ material, base: baseIntensity });
+}
+
+/**
+ * Scale every registered glow material for the current cabin state.
+ * @param night        0-1 effective night factor
+ * @param headlightsOn instrument/backlight bump when the lights are on
+ * @param breathe      small ±modulation for the ambient breathing effect
+ */
+export function setCabinGlowState(
+  night: number,
+  headlightsOn: boolean,
+  breathe: number
+): void {
+  const scale = 1 + night * 1.1 + (headlightsOn ? 0.25 : 0) + breathe;
+  for (const entry of glowRegistry) {
+    entry.material.emissiveIntensity = entry.base * scale;
+  }
+}
+
 /**
  * Lacquered accent trim material. Clearcoat gives the pieces a sharp
  * reflection of the panorama environment on top of the tinted base, and the
  * emissive term makes the trim read as ambient accent lighting. Callers pass
  * different `emissiveIntensity` values so trim pieces vary in glow (bezels
- * brighter than long strips); the neon theme boosts all of them.
+ * brighter than long strips); the neon theme boosts all of them. Each accent
+ * material joins the glow registry so cabin state modulates it.
  */
 export function createAccentMaterial(
   config: VehicleConfig,
@@ -124,7 +170,7 @@ export function createAccentMaterial(
 ): THREE.MeshPhysicalMaterial {
   const accentHex = parseInt(config.accentColor.replace('#', '0x'));
   const themeBoost = config.theme === 'neon' ? 1.6 : 1;
-  return new THREE.MeshPhysicalMaterial({
+  const material = new THREE.MeshPhysicalMaterial({
     color: accentHex,
     roughness: 0.3,
     metalness: 0.65,
@@ -135,6 +181,8 @@ export function createAccentMaterial(
     clearcoatRoughness: 0.12,
     side: THREE.DoubleSide,
   });
+  registerGlowMaterial(material, emissiveIntensity * themeBoost);
+  return material;
 }
 
 /** Create all interior materials from vehicle config + GPU profile */

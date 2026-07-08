@@ -24,6 +24,7 @@ import {
   setCarMediaInfo,
   isCarCenterDisplayHit,
   cycleCarDisplayPage,
+  setCarWeather,
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
@@ -190,6 +191,11 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     );
   }, [wipersEnabled, headlightsOn, domeLightOn, nightIntensity]);
   
+  // Rain dims/diffuses the cabin daylight and enables windshield droplets
+  useEffect(() => {
+    setCarWeather(rainIntensity / 100);
+  }, [rainIntensity]);
+
   // Keep the centre display's media page in sync with the radio
   useEffect(() => {
     setCarMediaInfo(stationName, stationTags, isRadioPlaying);

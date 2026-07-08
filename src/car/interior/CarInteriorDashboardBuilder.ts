@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
-import { createAccentMaterial } from './MaterialFactory';
+import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 
 export class CarInteriorDashboardBuilder {
@@ -201,6 +201,7 @@ export class CarInteriorDashboardBuilder {
             clearcoat: 0.6,
             clearcoatRoughness: 0.15,
         });
+        registerGlowMaterial(hazardMat, 0.3);
         const hazardBtn = new THREE.Mesh(hazardGeo, hazardMat);
         hazardBtn.position.set(0.35, 0.85, -0.72);
         this.interiorGroup.add(hazardBtn);
@@ -220,7 +221,10 @@ export class CarInteriorDashboardBuilder {
             metalness: 0.1,
             clearcoat: 0.35,
             clearcoatRoughness: 0.4,
+            emissive: 0xffb060,
+            emissiveIntensity: 0.12,
         });
+        registerGlowMaterial(btnMat, 0.12);
 
         for (let row = 0; row < 2; row++) {
             for (let col = 0; col < 4; col++) {
@@ -241,6 +245,7 @@ export class CarInteriorDashboardBuilder {
             clearcoat: 0.8,
             clearcoatRoughness: 0.1,
         });
+        registerGlowMaterial(startBtnMat, 0.2);
         const startBtn = new THREE.Mesh(startBtnGeo, startBtnMat);
         startBtn.position.set(0.0, 0.82, -0.72);
         this.interiorGroup.add(startBtn);

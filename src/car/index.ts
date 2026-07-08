@@ -539,6 +539,15 @@ export function setCarRainActive(active: boolean): void {
 }
 
 /**
+ * Set 0-1 rain intensity: dims and diffuses the cabin daylight, suppresses
+ * the low-sun window shafts, and drives the windshield droplet system.
+ */
+export function setCarWeather(rain: number): void {
+    if (!carModeState) return;
+    carModeState.interior.setWeatherIntensity(rain);
+}
+
+/**
  * Enable/disable post-processing (bloom + SMAA).
  */
 export function setCarPostProcessingEnabled(enabled: boolean): void {
