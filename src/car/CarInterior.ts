@@ -9,8 +9,11 @@ import {
   detectGPUProfile
 } from '../utils/performance';
 import { CarInteriorBuilder } from './interior/CarInteriorBuilder';
-import { CarInteriorGauges } from './interior/CarInteriorGauges';
+import { CarInteriorGauges, GaugeRig } from './interior/CarInteriorGauges';
 import { LocationPanel } from './interior/LocationPanel';
+import { CenterDisplay, DisplayPage } from './interior/CenterDisplay';
+import { SunShafts } from './interior/SunShafts';
+import { resetGlowRegistry } from './interior/MaterialFactory';
 import { PanoLocationInfo } from '../utils/panoLocation';
 import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { CarInteriorRenderer } from './interior/CarInteriorRenderer';
@@ -49,6 +52,7 @@ export class CarInterior {
     private wiperRight!: THREE.Group;
     private speedometerNeedle!: THREE.Mesh;
     private tachometerNeedle!: THREE.Mesh;
+    private gaugeRig: GaugeRig | null = null;
     private headlightsLight!: THREE.SpotLight;
     private domeLightSource!: THREE.PointLight;
     private domeLightFixtureMesh!: THREE.Mesh;
@@ -76,6 +80,15 @@ export class CarInterior {
     private locationPanel: LocationPanel | null = null;
     private lastLocationInfo: PanoLocationInfo | null = null;
     private lastCompassHeading: number = 0;
+
+    // Centre-stack infotainment display (nav / media / trip pages)
+    private centerDisplay: CenterDisplay | null = null;
+
+    // Fake volumetric light shafts through the side windows at low sun
+    private sunShafts: SunShafts | null = null;
+    private lastSunAzimuth: number = 0;
+    private lastSunAltitude: number = -1;
+    private lastMediaInfo: { name: string; tags: string; playing: boolean } = { name: '', tags: '', playing: false };
 
     private isActive: boolean = true;
 
@@ -107,6 +120,7 @@ export class CarInterior {
     private glassMaterial!: THREE.MeshStandardMaterial;
     private mirrorMaterial!: THREE.MeshStandardMaterial;
     private accentMaterial!: THREE.MeshStandardMaterial;
+    private chromeMaterial!: THREE.MeshPhysicalMaterial;
 
     // Performance optimization
     private lodUpdateFn?: () => void;
@@ -224,6 +238,7 @@ export class CarInterior {
         this.glassMaterial = mats.glass;
         this.mirrorMaterial = mats.mirror;
         this.accentMaterial = mats.accent;
+        this.chromeMaterial = mats.chrome;
         const lights = buildInteriorLighting(this.scene, this.interiorGroup, this.renderer, this.vehicleConfig);
         this.hemisphereLight = lights.hemisphereLight;
         this.ambientLight = lights.ambientLight;
@@ -247,14 +262,13 @@ export class CarInterior {
             this.steeringWheelGroup,
             this.wiperLeft,
             this.wiperRight,
-            this.speedometerNeedle,
-            this.tachometerNeedle,
             this.lodManager,
             this.rainSystem,
             this.lodUpdateFn,
             this.quality,
             this.reducedMotion
         );
+        this.animator.setGaugeRig(this.gaugeRig);
 
         this.rendererDelegate = new CarInteriorRenderer(
             this.renderer,
@@ -287,6 +301,7 @@ export class CarInterior {
             this.rearGlassMesh,
             this.sunLight
         );
+        this.lightingManager.setReducedMotion(this.reducedMotion);
     }
 
     /**
@@ -304,10 +319,13 @@ export class CarInterior {
      * @param altitude - SunCalc altitude in radians (0 = horizon)
      */
     public setSunPosition(azimuth: number, altitude: number): void {
+        this.lastSunAzimuth = azimuth;
+        this.lastSunAltitude = altitude;
         this.lightingManager.setSunState(azimuth, altitude);
         const night = this.lightingManager.getSunNightFactor();
         this.panoEnvironment.setIntensity(1 - night * 0.7);
         this.locationPanel?.setNightGlow(night);
+        this.centerDisplay?.setNightGlow(night);
     }
 
     /**
@@ -342,6 +360,8 @@ export class CarInterior {
      */
 
 private buildInteriorFromBuilder(): void {
+        // Emissive trim/backlight materials re-register as the builders run.
+        resetGlowRegistry();
         const builder = new CarInteriorBuilder(
             this.interiorGroup,
             this.roofGroup,
@@ -357,6 +377,7 @@ private buildInteriorFromBuilder(): void {
                 glass: this.glassMaterial,
                 mirror: this.mirrorMaterial,
                 accent: this.accentMaterial,
+                chrome: this.chromeMaterial,
             }
         );
 
@@ -373,6 +394,9 @@ private buildInteriorFromBuilder(): void {
         this.domeLightFixtureMesh = buildResult.domeLightFixtureMesh;
         this.domeSwitchMesh = buildResult.domeSwitchMesh;
 
+        if (!this.vehicleConfig.hasGauges) {
+            this.gaugeRig = null;
+        }
         if (this.vehicleConfig.hasGauges) {
             const gaugeResult = CarInteriorGauges.build(
                 this.interiorGroup,
@@ -383,6 +407,7 @@ private buildInteriorFromBuilder(): void {
             );
             this.speedometerNeedle = gaugeResult.speedometerNeedle;
             this.tachometerNeedle = gaugeResult.tachometerNeedle;
+            this.gaugeRig = gaugeResult.gaugeRig;
             this.digitalClockMesh = gaugeResult.digitalClockMesh ?? null;
             this.clockCanvas = gaugeResult.clockCanvas ?? null;
             this.clockCtx = gaugeResult.clockCtx ?? null;
@@ -400,18 +425,43 @@ private buildInteriorFromBuilder(): void {
             // on vehicle swaps it re-applies the current night glow.
             this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
         }
+
+        this.sunShafts?.dispose();
+        this.sunShafts = null;
+        if (this.quality !== 'low') {
+            this.sunShafts = new SunShafts(this.reducedMotion);
+            this.interiorGroup.add(this.sunShafts.group);
+        }
+
+        this.centerDisplay?.dispose();
+        this.centerDisplay = null;
+        if (this.vehicleConfig.hasDashboard && this.quality !== 'low') {
+            this.centerDisplay = new CenterDisplay(this.vehicleConfig, this.gpuProfile.name);
+            this.interiorGroup.add(this.centerDisplay.group);
+            // Re-apply live state so a vehicle swap keeps the readouts.
+            this.centerDisplay.setLocation(this.lastLocationInfo);
+            this.centerDisplay.setHeading(this.lastCompassHeading);
+            this.centerDisplay.setMedia(this.lastMediaInfo.name, this.lastMediaInfo.tags, this.lastMediaInfo.playing);
+            this.centerDisplay.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
+        }
+
+        // On vehicle swaps the animator already exists — point it at the new
+        // needles so it never animates meshes from the removed interior.
+        this.animator?.setGaugeRig(this.gaugeRig);
     }
 
     /** Update the location readout panel with per-pano metadata. */
     public setLocationInfo(info: PanoLocationInfo | null): void {
         this.lastLocationInfo = info;
         this.locationPanel?.setLocation(info);
+        this.centerDisplay?.setLocation(info);
     }
 
     /** Update the live compass heading on the location readout panel. */
     public setCompassHeading(heading: number): void {
         this.lastCompassHeading = heading;
         this.locationPanel?.setHeading(heading);
+        this.centerDisplay?.setHeading(heading);
     }
     public setVehicleType(vehicleType: VehicleType): void {
         if (this.vehicleType === vehicleType) return;
@@ -441,6 +491,7 @@ private buildInteriorFromBuilder(): void {
         this.glassMaterial = mats.glass;
         this.mirrorMaterial = mats.mirror;
         this.accentMaterial = mats.accent;
+        this.chromeMaterial = mats.chrome;
         this.buildInteriorFromBuilder();
         
         // Update roof state based on vehicle
@@ -470,6 +521,18 @@ private buildInteriorFromBuilder(): void {
     public update(deltaTime: number): void {
 
         this.animator.update(deltaTime);
+        this.centerDisplay?.update(deltaTime);
+        if (this.sunShafts) {
+            // interiorGroup.rotation.y is -carHeading (set by the animator).
+            const carHeadingRad = -this.interiorGroup.rotation.y;
+            this.sunShafts.update(
+                deltaTime,
+                this.lastSunAzimuth,
+                this.lastSunAltitude,
+                carHeadingRad,
+                this.lightingManager?.getWeatherIntensity() ?? 0
+            );
+        }
 
     }
 
@@ -553,6 +616,7 @@ private buildInteriorFromBuilder(): void {
     public setGaugeValues(speed: number, rpm: number): void {
 
         this.animator.setGaugeValues(speed, rpm);
+        this.centerDisplay?.setTelemetry(speed, rpm);
 
     }
 
@@ -620,6 +684,8 @@ private buildInteriorFromBuilder(): void {
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
 
         this.lightingManager.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
+        // Gauge backlight brightens with the same night factor.
+        this.animator.setNightFactor(nightIntensity);
 
     }
 
@@ -632,6 +698,26 @@ private buildInteriorFromBuilder(): void {
             clientX, clientY, this.canvas.getBoundingClientRect(),
             this.camera, this.domeSwitchMesh, false
         );
+    }
+
+    /** Update the media page with the current radio station state. */
+    public setMediaInfo(name: string, tags: string, playing: boolean): void {
+        this.lastMediaInfo = { name, tags, playing };
+        this.centerDisplay?.setMedia(name, tags, playing);
+    }
+
+    /** Test whether screen coordinates hit the centre display screen. */
+    public isCenterDisplayHit(clientX: number, clientY: number): boolean {
+        if (!this.centerDisplay) return false;
+        return this.interaction.hitTest(
+            clientX, clientY, this.canvas.getBoundingClientRect(),
+            this.camera, this.centerDisplay.screenMesh, false
+        );
+    }
+
+    /** Cycle the centre display to its next page. Returns the new page, or null. */
+    public cycleDisplayPage(): DisplayPage | null {
+        return this.centerDisplay?.cyclePage() ?? null;
     }
 
     /**
@@ -649,6 +735,15 @@ private buildInteriorFromBuilder(): void {
     /** Toggle rain droplets on the windshield. */
     public setRainActive(active: boolean): void {
         if (this.rainSystem) this.rainSystem.setActive(active);
+    }
+
+    /**
+     * 0-1 rain intensity: dims/diffuses the daylight rig, kills the sun
+     * shafts, and toggles the windshield droplet system.
+     */
+    public setWeatherIntensity(rain: number): void {
+        this.lightingManager.setWeatherIntensity(rain);
+        this.rainSystem?.setActive(rain > 0.02);
     }
 
     /** Enable/disable post-processing (bloom + SMAA). */
@@ -714,6 +809,13 @@ private buildInteriorFromBuilder(): void {
      */
     public dispose(): void {
         cancelAnimationFrame(this.animationId);
+
+        this.centerDisplay?.dispose();
+        this.centerDisplay = null;
+        this.sunShafts?.dispose();
+        this.sunShafts = null;
+        this.locationPanel?.dispose();
+        this.locationPanel = null;
 
         // Stop clock update loop
         if (this.clockUpdateInterval !== undefined) {
