@@ -21,6 +21,7 @@ import {
   setWindowTint,
   setMirrorStreetViewCanvas,
   setCarZoomFOV,
+<<<<<<< HEAD
   setCarWeatherAmbient,
   setCarInteriorEditMode,
   triggerCarInteriorPress,
@@ -28,9 +29,16 @@ import {
   handleCarInteriorPointerMove,
   handleCarInteriorPointerUp,
   isConvertibleOpen,
+=======
+  setCarMediaInfo,
+  isCarCenterDisplayHit,
+  cycleCarDisplayPage,
+  setCarWeather,
+>>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
+import { VehicleDynamics, VehicleTelemetry } from '../car/VehicleDynamics';
 
 interface CarModeViewProps {
   mapsApiKey: string;
@@ -123,6 +131,14 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
   const carRPMRef = useRef(0);
+  // Speed/RPM/gear model fed by pano hops (GPS velocity) and thrust keys.
+  const dynamicsRef = useRef<VehicleDynamics | null>(null);
+  if (!dynamicsRef.current) dynamicsRef.current = new VehicleDynamics();
+  const [telemetry, setTelemetry] = useState<VehicleTelemetry>({
+    speedKmh: 0, rpm: 850, gear: 'P', accelerating: false,
+  });
+  const lastTelemetryPushRef = useRef(0);
+  const prevPositionRef = useRef<google.maps.LatLng | null>(null);
   const bodyPitchRef = useRef(0);
   const bodyRollRef = useRef(0);
   const pitchImpulseRef = useRef(0);
@@ -157,6 +173,21 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     };
   }, [registerCarModeState]);
   
+  // Infer GPS velocity from panorama hops: each position change reports its
+  // travel distance, so cruise mode / repeated advances read as real speed.
+  useEffect(() => {
+    const prev = prevPositionRef.current;
+    prevPositionRef.current = position;
+    if (!prev || !position) return;
+    const toRad = Math.PI / 180;
+    const dLat = (position.lat() - prev.lat()) * toRad;
+    const dLng = (position.lng() - prev.lng()) * toRad;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(prev.lat() * toRad) * Math.cos(position.lat() * toRad) * Math.sin(dLng / 2) ** 2;
+    const distanceMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    dynamicsRef.current?.notePanoHop(distanceMeters);
+  }, [position]);
+
   // Sync environment settings to car interior
   useEffect(() => {
     if (!carModeStateRef.current) return;
@@ -190,6 +221,16 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     setCarInteriorEditMode(controlMode === 'uiMouse');
   }, [controlMode]);
   
+  // Rain dims/diffuses the cabin daylight and enables windshield droplets
+  useEffect(() => {
+    setCarWeather(rainIntensity / 100);
+  }, [rainIntensity]);
+
+  // Keep the centre display's media page in sync with the radio
+  useEffect(() => {
+    setCarMediaInfo(stationName, stationTags, isRadioPlaying);
+  }, [stationName, stationTags, isRadioPlaying]);
+
   // Keep rearview mirror fed from the scraped Street View canvas
   useEffect(() => {
     setMirrorStreetViewCanvas(canvas);
@@ -255,9 +296,16 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       // Update steering wheel
       setCarSteering(steeringInputRef.current);
       
-      // Update gauges
-      carRPMRef.current = Math.abs(steeringInputRef.current) * 100 + carSpeedRef.current * 50;
-      updateCarGauges(carSpeedRef.current, carRPMRef.current);
+      // Vehicle dynamics → 3D cluster needles + React dashboard gauges
+      const telem = dynamicsRef.current!.update(deltaTime);
+      carSpeedRef.current = telem.speedKmh;
+      carRPMRef.current = telem.rpm;
+      updateCarGauges(telem.speedKmh, telem.rpm);
+      // Throttle React state pushes; the HUD gauges spring-animate between them.
+      if (now - lastTelemetryPushRef.current > 150) {
+        lastTelemetryPushRef.current = now;
+        setTelemetry(telem);
+      }
       
       // Decay steering
       if (steeringInputRef.current !== 0) {
@@ -265,11 +313,6 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         if (Math.abs(steeringInputRef.current) < 0.1) {
           steeringInputRef.current = 0;
         }
-      }
-      
-      // Decay speed
-      if (carSpeedRef.current > 0) {
-        carSpeedRef.current = Math.max(0, carSpeedRef.current - 5 * deltaTime);
       }
       
       // Body tilt physics: only in carSteer mode and clamped
@@ -319,13 +362,33 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const isSteeringWheelAtPoint = useCallback((x: number, y: number): boolean => {
     return isCarSteeringWheelHit(x, y);
   }, []);
+
+  // Click (press-release without drag) on the centre display cycles its page.
+  const displayPressRef = useRef<{ x: number; y: number } | null>(null);
+  const handleDisplayMouseDown = useCallback((e: React.MouseEvent) => {
+    displayPressRef.current = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+  }, []);
+  const handleDisplayClick = useCallback((e: React.MouseEvent) => {
+    const press = displayPressRef.current;
+    displayPressRef.current = null;
+    if (!press) return;
+    const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+    if (moved > 6) return; // was a look/steer drag, not a tap
+    if (isCarCenterDisplayHit(e.clientX, e.clientY)) {
+      cycleCarDisplayPage();
+    }
+  }, []);
   
   // Handle thrust from W/S keys for body pitch effect
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
     if (controlMode === 'freeLook') return; // Car is locked when looking around
     pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
+<<<<<<< HEAD
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
     triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
+=======
+    dynamicsRef.current?.noteThrust(direction);
+>>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
   }, [controlMode]);
 
   // Handle steering deltas from CarInputHandler for wheel visual + body tilt
@@ -392,6 +455,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   // Reset body physics when entering freeLook so no residual tilt remains
   useEffect(() => {
     if (controlMode === 'freeLook') {
+      dynamicsRef.current?.stop();
       carSpeedRef.current = 0;
       pitchImpulseRef.current = 0;
       steeringInputRef.current = 0;
@@ -442,6 +506,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   return (
     <div
       ref={containerRef}
+      onMouseDown={handleDisplayMouseDown}
+      onClick={handleDisplayClick}
       style={{
         position: 'relative',
         width: '100vw',
@@ -504,6 +570,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         ambientLightColor={ambientLightColor}
         stationName={stationName}
         stationTags={stationTags}
+        speedKmh={telemetry.speedKmh}
+        rpm={telemetry.rpm}
+        gear={telemetry.gear}
       />
       
       {/* Control Mode Indicator (small overlay) */}

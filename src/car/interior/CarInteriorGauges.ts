@@ -1,13 +1,54 @@
 import * as THREE from 'three';
 
+export const SPEED_DIAL_MAX_KMH = 180;
+export const TACHO_DIAL_MAX_RPM = 8000;
+export const TACHO_REDLINE_RPM = 6500;
+
+/**
+ * Map a 0..1 dial fraction to needle rotation.z.
+ * Dials sweep 270° clockwise from lower-left (7:30) to lower-right (4:30);
+ * a needle mesh pointing +Y at rotation 0 therefore starts at +135°.
+ */
+export function needleAngle(frac: number): number {
+    const clamped = Math.max(0, Math.min(1, frac));
+    return THREE.MathUtils.degToRad(135 - clamped * 270);
+}
+
+/** Live handles the animator uses to drive needles and backlighting. */
+export interface GaugeRig {
+    speedNeedle: THREE.Mesh;
+    tachoNeedle: THREE.Mesh;
+    fuelNeedle: THREE.Mesh | null;
+    tempNeedle: THREE.Mesh | null;
+    /** Dial-face materials whose emissiveIntensity is pulsed for backlight. */
+    dialMaterials: THREE.MeshStandardMaterial[];
+    /** Needle materials whose emissive glow tracks night/engine state. */
+    needleMaterials: THREE.MeshStandardMaterial[];
+}
+
 export interface CarInteriorGaugeResult {
     speedometerNeedle: THREE.Mesh;
     tachometerNeedle: THREE.Mesh;
+    gaugeRig: GaugeRig;
     digitalClockMesh?: THREE.Mesh;
     clockCanvas?: HTMLCanvasElement;
     clockCtx?: CanvasRenderingContext2D;
     clockUpdateInterval?: number;
 }
+
+interface DialSpec {
+    emissiveColor: string;
+    /** Labels placed at major ticks, evenly across the sweep. */
+    majorLabels: string[];
+    minorTicksPerMajor: number;
+    unit: string;
+    /** Fraction of the sweep where the red zone begins. */
+    redlineFrac?: number;
+}
+
+/** Dial sweep in canvas coordinates: 270° clockwise starting at lower-left. */
+const DIAL_START = Math.PI * 0.75;
+const DIAL_SWEEP = Math.PI * 1.5;
 
 export class CarInteriorGauges {
     static build(
@@ -17,7 +58,7 @@ export class CarInteriorGauges {
         gpuProfile: { name: string },
         quality: 'high' | 'medium' | 'low'
     ): CarInteriorGaugeResult {
-        const result = CarInteriorGauges.buildGauges(interiorGroup, metalMaterial);
+        const result = CarInteriorGauges.buildGauges(interiorGroup, vehicleConfig, gpuProfile, quality);
         if (quality !== 'low') {
             const clock = CarInteriorGauges.buildDigitalClock(interiorGroup, vehicleConfig, gpuProfile);
             return {
@@ -28,116 +69,262 @@ export class CarInteriorGauges {
         return result;
     }
 
+    /**
+     * Paint a dial face. Rendered at 2× the display request and left to
+     * mipmapping + anisotropy so ticks and numerals stay crisp at an angle.
+     */
+    private static buildDialCanvas(size: number, spec: DialSpec): HTMLCanvasElement {
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d')!;
+        const cx = size / 2;
+        const r = size / 2;
+
+        const bg = ctx.createRadialGradient(cx, cx, 0, cx, cx, r);
+        bg.addColorStop(0, '#242428');
+        bg.addColorStop(0.75, '#141416');
+        bg.addColorStop(1, '#08080a');
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.arc(cx, cx, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glancing sheen from upper-left, like light on a recessed dial.
+        const sheen = ctx.createLinearGradient(0, 0, size, size);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.10)');
+        sheen.addColorStop(0.35, 'rgba(255,255,255,0.0)');
+        ctx.fillStyle = sheen;
+        ctx.beginPath();
+        ctx.arc(cx, cx, r - 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Accent rim ring
+        ctx.strokeStyle = spec.emissiveColor;
+        ctx.lineWidth = Math.max(2, size * 0.012);
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.arc(cx, cx, r - size * 0.02, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+
+        // Red zone arc
+        if (spec.redlineFrac !== undefined) {
+            ctx.strokeStyle = '#e01818';
+            ctx.lineWidth = size * 0.028;
+            ctx.beginPath();
+            ctx.arc(cx, cx, r - size * 0.055, DIAL_START + spec.redlineFrac * DIAL_SWEEP, DIAL_START + DIAL_SWEEP);
+            ctx.stroke();
+        }
+
+        const majorCount = spec.majorLabels.length - 1;
+        const minorTicks = majorCount * spec.minorTicksPerMajor;
+        for (let i = 0; i <= minorTicks; i++) {
+            const frac = i / minorTicks;
+            const a = DIAL_START + frac * DIAL_SWEEP;
+            const isMajor = i % spec.minorTicksPerMajor === 0;
+            const inRedline = spec.redlineFrac !== undefined && frac >= spec.redlineFrac;
+            const inner = isMajor ? r - size * 0.085 : r - size * 0.058;
+            const outer = r - size * 0.03;
+            ctx.strokeStyle = inRedline ? '#ff4040' : isMajor ? spec.emissiveColor : 'rgba(255,255,255,0.4)';
+            ctx.lineWidth = isMajor ? Math.max(2, size * 0.012) : Math.max(1, size * 0.005);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(a) * inner, cx + Math.sin(a) * inner);
+            ctx.lineTo(cx + Math.cos(a) * outer, cx + Math.sin(a) * outer);
+            ctx.stroke();
+
+            if (isMajor) {
+                const labelRadius = r - size * 0.16;
+                const label = spec.majorLabels[i / spec.minorTicksPerMajor];
+                ctx.fillStyle = inRedline ? '#ff6060' : 'rgba(255,255,255,0.85)';
+                ctx.font = `bold ${Math.round(size * 0.09)}px "Arial Narrow", Arial, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, cx + Math.cos(a) * labelRadius, cx + Math.sin(a) * labelRadius);
+            }
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.font = `${Math.round(size * 0.075)}px "Arial Narrow", Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(spec.unit, cx, cx + size * 0.24);
+
+        // Hub
+        ctx.fillStyle = '#151517';
+        ctx.beginPath();
+        ctx.arc(cx, cx, size * 0.075, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = spec.emissiveColor;
+        ctx.lineWidth = Math.max(1.5, size * 0.007);
+        ctx.globalAlpha = 0.65;
+        ctx.beginPath();
+        ctx.arc(cx, cx, size * 0.075, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+
+        return c;
+    }
+
+    private static buildDialMesh(
+        canvas: HTMLCanvasElement,
+        radius: number,
+        emissive: number,
+        anisotropy: number
+    ): { mesh: THREE.Mesh; material: THREE.MeshStandardMaterial } {
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.anisotropy = anisotropy;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const material = new THREE.MeshStandardMaterial({
+            map: tex,
+            roughness: 0.7,
+            emissive: new THREE.Color(emissive),
+            emissiveIntensity: 0.25,
+            emissiveMap: tex,
+        });
+        const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), material);
+        return { mesh, material };
+    }
+
+    /**
+     * Tapered flat needle pivoting at the hub, with a short counterweight
+     * tail. rotation.z spins it around the gauge center.
+     */
+    private static buildNeedle(
+        length: number,
+        color: number
+    ): { mesh: THREE.Mesh; material: THREE.MeshStandardMaterial } {
+        const halfBase = length * 0.055;
+        const shape = new THREE.Shape();
+        shape.moveTo(-halfBase, -length * 0.22);
+        shape.lineTo(halfBase, -length * 0.22);
+        shape.lineTo(halfBase * 0.22, length);
+        shape.lineTo(-halfBase * 0.22, length);
+        shape.closePath();
+        const geo = new THREE.ShapeGeometry(shape);
+        const material = new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 1.0,
+            roughness: 0.4,
+            metalness: 0.1,
+        });
+        const mesh = new THREE.Mesh(geo, material);
+        return { mesh, material };
+    }
+
     private static buildGauges(
         interiorGroup: THREE.Group,
-        metalMaterial: THREE.MeshStandardMaterial
-    ): { speedometerNeedle: THREE.Mesh; tachometerNeedle: THREE.Mesh } {
-        const buildDialCanvas = (size: number, emissiveColor: string, labelMax: number, unit: string): HTMLCanvasElement => {
-            const c = document.createElement('canvas');
-            c.width = size; c.height = size;
-            const ctx = c.getContext('2d')!;
+        vehicleConfig: { accentColor: string },
+        gpuProfile: { name: string },
+        quality: 'high' | 'medium' | 'low'
+    ): { speedometerNeedle: THREE.Mesh; tachometerNeedle: THREE.Mesh; gaugeRig: GaugeRig } {
+        const dialSize = gpuProfile.name === 'high' ? 512 : 256;
+        const anisotropy = gpuProfile.name === 'high' ? 8 : 4;
+        const dialMaterials: THREE.MeshStandardMaterial[] = [];
+        const needleMaterials: THREE.MeshStandardMaterial[] = [];
 
-            const bg = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-            bg.addColorStop(0, '#222222');
-            bg.addColorStop(1, '#0d0d0d');
-            ctx.fillStyle = bg;
-            ctx.beginPath();
-            ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
-            ctx.fill();
+        const speedLabels: string[] = [];
+        for (let v = 0; v <= SPEED_DIAL_MAX_KMH; v += 30) speedLabels.push(String(v));
+        const speedDial = CarInteriorGauges.buildDialMesh(
+            CarInteriorGauges.buildDialCanvas(dialSize, {
+                emissiveColor: '#00dd88',
+                majorLabels: speedLabels,
+                minorTicksPerMajor: 5,
+                unit: 'km/h',
+            }),
+            0.15, 0x002211, anisotropy
+        );
+        speedDial.mesh.position.set(-0.5, 0.95, -0.712);
+        interiorGroup.add(speedDial.mesh);
+        dialMaterials.push(speedDial.material);
 
-            ctx.strokeStyle = emissiveColor;
-            ctx.lineWidth = 3;
-            ctx.globalAlpha = 0.45;
-            ctx.beginPath();
-            ctx.arc(size/2, size/2, size/2 - 4, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = 1.0;
+        const speedNeedle = CarInteriorGauges.buildNeedle(0.115, 0xff5030);
+        speedNeedle.mesh.position.set(-0.5, 0.95, -0.706);
+        speedNeedle.mesh.rotation.z = needleAngle(0);
+        interiorGroup.add(speedNeedle.mesh);
+        needleMaterials.push(speedNeedle.material);
 
-            const startAngle = -Math.PI * 0.75;
-            const sweepAngle = Math.PI * 1.5;
-            const majorTicks = 6;
-            const minorTicks = 30;
-            for (let i = 0; i <= minorTicks; i++) {
-                const a = startAngle + (i / minorTicks) * sweepAngle;
-                const isMajor = i % (minorTicks / majorTicks) === 0;
-                const inner = isMajor ? size/2 - 18 : size/2 - 11;
-                const outer = size/2 - 6;
-                ctx.strokeStyle = isMajor ? emissiveColor : 'rgba(255,255,255,0.35)';
-                ctx.lineWidth = isMajor ? 2 : 1;
-                ctx.beginPath();
-                ctx.moveTo(size/2 + Math.cos(a) * inner, size/2 + Math.sin(a) * inner);
-                ctx.lineTo(size/2 + Math.cos(a) * outer, size/2 + Math.sin(a) * outer);
-                ctx.stroke();
+        const tachoLabels: string[] = [];
+        for (let v = 0; v <= 8; v++) tachoLabels.push(String(v));
+        const tachoDial = CarInteriorGauges.buildDialMesh(
+            CarInteriorGauges.buildDialCanvas(dialSize, {
+                emissiveColor: '#dd4422',
+                majorLabels: tachoLabels,
+                minorTicksPerMajor: 4,
+                unit: 'x1000',
+                redlineFrac: TACHO_REDLINE_RPM / TACHO_DIAL_MAX_RPM,
+            }),
+            0.15, 0x220800, anisotropy
+        );
+        tachoDial.mesh.position.set(-0.15, 0.95, -0.712);
+        interiorGroup.add(tachoDial.mesh);
+        dialMaterials.push(tachoDial.material);
 
-                if (isMajor) {
-                    const labelRadius = size/2 - 28;
-                    const val = Math.round((i / minorTicks) * labelMax);
-                    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-                    ctx.font = `bold ${Math.round(size * 0.10)}px "Arial Narrow", Arial, sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(String(val), size/2 + Math.cos(a) * labelRadius, size/2 + Math.sin(a) * labelRadius);
-                }
-            }
+        const tachoNeedle = CarInteriorGauges.buildNeedle(0.115, 0xff5030);
+        tachoNeedle.mesh.position.set(-0.15, 0.95, -0.706);
+        tachoNeedle.mesh.rotation.z = needleAngle(0);
+        interiorGroup.add(tachoNeedle.mesh);
+        needleMaterials.push(tachoNeedle.material);
 
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
-            ctx.font = `${Math.round(size * 0.09)}px "Arial Narrow", Arial, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(unit, size/2, size/2 + size * 0.28);
+        // Fuel + coolant-temperature mini gauges below the main pair.
+        let fuelNeedleMesh: THREE.Mesh | null = null;
+        let tempNeedleMesh: THREE.Mesh | null = null;
+        if (quality !== 'low') {
+            const miniSize = dialSize / 2;
+            const fuelDial = CarInteriorGauges.buildDialMesh(
+                CarInteriorGauges.buildDialCanvas(miniSize, {
+                    emissiveColor: '#ffaa00',
+                    majorLabels: ['E', '½', 'F'],
+                    minorTicksPerMajor: 2,
+                    unit: 'FUEL',
+                }),
+                0.05, 0x221400, anisotropy
+            );
+            fuelDial.mesh.position.set(-0.43, 0.78, -0.712);
+            interiorGroup.add(fuelDial.mesh);
+            dialMaterials.push(fuelDial.material);
 
-            ctx.fillStyle = '#1a1a1a';
-            ctx.beginPath();
-            ctx.arc(size/2, size/2, size * 0.08, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = emissiveColor;
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = 0.6;
-            ctx.beginPath();
-            ctx.arc(size/2, size/2, size * 0.08, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = 1.0;
+            const fuelNeedle = CarInteriorGauges.buildNeedle(0.038, 0xffaa30);
+            fuelNeedle.mesh.position.set(-0.43, 0.78, -0.706);
+            fuelNeedle.mesh.rotation.z = needleAngle(0.85);
+            interiorGroup.add(fuelNeedle.mesh);
+            needleMaterials.push(fuelNeedle.material);
+            fuelNeedleMesh = fuelNeedle.mesh;
 
-            return c;
-        };
+            const tempDial = CarInteriorGauges.buildDialMesh(
+                CarInteriorGauges.buildDialCanvas(miniSize, {
+                    emissiveColor: '#44aaff',
+                    majorLabels: ['C', '', 'H'],
+                    minorTicksPerMajor: 2,
+                    unit: 'TEMP',
+                    redlineFrac: 0.86,
+                }),
+                0.05, 0x081422, anisotropy
+            );
+            tempDial.mesh.position.set(-0.22, 0.78, -0.712);
+            interiorGroup.add(tempDial.mesh);
+            dialMaterials.push(tempDial.material);
 
-        const speedDialCanvas = buildDialCanvas(256, '#00dd88', 300, 'km/h');
-        const speedTex = new THREE.CanvasTexture(speedDialCanvas);
-        const speedoMat = new THREE.MeshStandardMaterial({
-            map: speedTex,
-            roughness: 0.7,
-            emissive: new THREE.Color(0x004422),
-            emissiveIntensity: 0.25,
-            emissiveMap: speedTex,
+            const tempNeedle = CarInteriorGauges.buildNeedle(0.038, 0x60b8ff);
+            tempNeedle.mesh.position.set(-0.22, 0.78, -0.706);
+            tempNeedle.mesh.rotation.z = needleAngle(0.05);
+            interiorGroup.add(tempNeedle.mesh);
+            needleMaterials.push(tempNeedle.material);
+            tempNeedleMesh = tempNeedle.mesh;
+        }
+
+        // Chrome hub caps over the needle pivots.
+        const hubMat = new THREE.MeshPhysicalMaterial({
+            color: 0xd8d8dc, metalness: 1, roughness: 0.12,
+            clearcoat: 1, clearcoatRoughness: 0.08,
         });
-        const speedoGeo = new THREE.CircleGeometry(0.15, 32);
-        const speedometer = new THREE.Mesh(speedoGeo, speedoMat);
-        speedometer.position.set(-0.5, 0.95, -0.72);
-        interiorGroup.add(speedometer);
-
-        const needleGeo = new THREE.BoxGeometry(0.008, 0.12, 0.008);
-        const speedometerNeedle = new THREE.Mesh(needleGeo, metalMaterial);
-        speedometerNeedle.position.set(-0.5, 0.98, -0.71);
-        interiorGroup.add(speedometerNeedle);
-
-        const tachoDialCanvas = buildDialCanvas(256, '#dd2200', 8, 'x1000');
-        const tachoTex = new THREE.CanvasTexture(tachoDialCanvas);
-        const tachoMat = new THREE.MeshStandardMaterial({
-            map: tachoTex,
-            roughness: 0.7,
-            emissive: new THREE.Color(0x220000),
-            emissiveIntensity: 0.25,
-            emissiveMap: tachoTex,
-        });
-        const tachoGeo = new THREE.CircleGeometry(0.15, 32);
-        const tachometer = new THREE.Mesh(tachoGeo, tachoMat);
-        tachometer.position.set(-0.15, 0.95, -0.72);
-        interiorGroup.add(tachometer);
-
-        const tachoNeedleGeo = new THREE.BoxGeometry(0.008, 0.12, 0.008);
-        const tachometerNeedle = new THREE.Mesh(tachoNeedleGeo, metalMaterial);
-        tachometerNeedle.position.set(-0.15, 0.98, -0.71);
-        interiorGroup.add(tachometerNeedle);
+        const hubGeo = new THREE.CircleGeometry(0.012, 24);
+        for (const pos of [[-0.5, 0.95, -0.703], [-0.15, 0.95, -0.703]] as const) {
+            const hub = new THREE.Mesh(hubGeo, hubMat);
+            hub.position.set(pos[0], pos[1], pos[2]);
+            interiorGroup.add(hub);
+        }
 
         // Physical-glass covers over the gauge faces so they pick up the
         // panorama environment reflections like real instrument glass.
@@ -162,7 +349,18 @@ export class CarInteriorGauges {
         tachoCover.position.set(-0.15, 0.95, -0.695);
         interiorGroup.add(tachoCover);
 
-        return { speedometerNeedle, tachometerNeedle };
+        return {
+            speedometerNeedle: speedNeedle.mesh,
+            tachometerNeedle: tachoNeedle.mesh,
+            gaugeRig: {
+                speedNeedle: speedNeedle.mesh,
+                tachoNeedle: tachoNeedle.mesh,
+                fuelNeedle: fuelNeedleMesh,
+                tempNeedle: tempNeedleMesh,
+                dialMaterials,
+                needleMaterials,
+            },
+        };
     }
 
     private static buildDigitalClock(
@@ -268,21 +466,5 @@ export class CarInteriorGauges {
 
         const clockMat = mesh.material as THREE.MeshStandardMaterial;
         if (clockMat.map) clockMat.map.needsUpdate = true;
-    }
-
-    static updateGaugeNeedles(
-        speedometerNeedle: THREE.Mesh | null | undefined,
-        tachometerNeedle: THREE.Mesh | null | undefined,
-        speed: number,
-        rpm: number
-    ): void {
-        if (speedometerNeedle) {
-            const speedAngle = THREE.MathUtils.degToRad((speed / 100) * 300 - 150);
-            speedometerNeedle.rotation.z = speedAngle;
-        }
-        if (tachometerNeedle) {
-            const tachoAngle = THREE.MathUtils.degToRad((rpm / 8000) * 300 - 150);
-            tachometerNeedle.rotation.z = tachoAngle;
-        }
     }
 }

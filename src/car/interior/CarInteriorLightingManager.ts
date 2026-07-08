@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setCabinGlowState } from './MaterialFactory';
 
 export class CarInteriorLightingManager {
     constructor(
@@ -26,6 +27,12 @@ export class CarInteriorLightingManager {
     private isDomeLightOn: boolean = false;
     /** 0 = sun up, 1 = full night; derived from real sun altitude. */
     private sunNightFactor: number = 0;
+    /** 0-1 rain intensity: overcast skies dim and diffuse the daylight. */
+    private weatherIntensity: number = 0;
+    /** Sun intensity before weather attenuation (set with the sun state). */
+    private sunBaseIntensity: number = 0;
+    /** Disables the ambient breathing modulation. */
+    private reducedMotion: boolean = false;
 
     // Sun colour ramp: warm at the horizon (golden hour) → neutral at midday.
     private static readonly SUN_WARM = new THREE.Color(0xffab5e);
@@ -61,7 +68,7 @@ export class CarInteriorLightingManager {
 
             // Ramp up over the first ~14° of altitude; off below the horizon.
             const strength = Math.max(0, Math.min(1, sinAlt / 0.25));
-            this.sunLight.intensity = strength * 1.1;
+            this.sunBaseIntensity = strength * 1.1;
             this.sunLight.color
                 .copy(CarInteriorLightingManager.SUN_WARM)
                 .lerp(CarInteriorLightingManager.SUN_NEUTRAL, strength);
@@ -83,6 +90,19 @@ export class CarInteriorLightingManager {
     /** Night factor (0-1) derived from the last reported sun altitude. */
     public getSunNightFactor(): number {
         return this.sunNightFactor;
+    }
+
+    /** 0-1 rain intensity; dims the sun and diffuses window light. */
+    public setWeatherIntensity(rain: number): void {
+        this.weatherIntensity = Math.max(0, Math.min(1, rain));
+    }
+
+    public getWeatherIntensity(): number {
+        return this.weatherIntensity;
+    }
+
+    public setReducedMotion(reduced: boolean): void {
+        this.reducedMotion = reduced;
     }
 
     public toggleHeadlights(): void {
@@ -119,26 +139,45 @@ export class CarInteriorLightingManager {
         // the real sun's altitude at the pano's location.
         const effectiveNight = Math.max(nightIntensity, this.sunNightFactor);
         const dayFactor = 1 - effectiveNight;
+        // Rain reads as overcast: direct sun collapses, diffuse light dims a
+        // little but survives (clouds scatter rather than block).
+        const rain = this.weatherIntensity;
+        const direct = 1 - rain * 0.75;
+        const diffuse = 1 - rain * 0.3;
+        // Living-cabin breathing: a ±2% swell on the ambient terms, slow
+        // enough to be felt rather than seen.
+        const breathe = this.reducedMotion
+            ? 0
+            : Math.sin(performance.now() * 0.0006) * 0.02;
+
+        if (this.sunLight) {
+            const sunTarget = this.sunBaseIntensity * direct;
+            this.sunLight.intensity += (sunTarget - this.sunLight.intensity) * 0.05;
+        }
         if (this.hemisphereLight) {
-            const hemiTarget = 0.38 * dayFactor + 0.05;
+            const hemiTarget = (0.38 * dayFactor + 0.05) * diffuse * (1 + breathe);
             this.hemisphereLight.intensity += (hemiTarget - this.hemisphereLight.intensity) * 0.05;
         }
         if (this.ambientLight) {
-            const ambTarget = 0.11 * dayFactor + 0.02;
+            const ambTarget = (0.11 * dayFactor + 0.02) * diffuse * (1 + breathe);
             this.ambientLight.intensity += (ambTarget - this.ambientLight.intensity) * 0.05;
         }
         if (this.overheadLight) {
-            const overTarget = 0.55 * dayFactor;
+            const overTarget = 0.55 * dayFactor * direct;
             this.overheadLight.intensity += (overTarget - this.overheadLight.intensity) * 0.05;
         }
         if (this.leftWindowLight) {
-            const leftTarget = 0.28 * dayFactor + 0.03;
+            const leftTarget = (0.28 * dayFactor + 0.03) * diffuse;
             this.leftWindowLight.intensity += (leftTarget - this.leftWindowLight.intensity) * 0.05;
         }
         if (this.rightWindowLight) {
-            const rightTarget = 0.18 * dayFactor + 0.02;
+            const rightTarget = (0.18 * dayFactor + 0.02) * diffuse;
             this.rightWindowLight.intensity += (rightTarget - this.rightWindowLight.intensity) * 0.05;
         }
+
+        // Accent strips + button backlights: one call scales every registered
+        // emissive material for the current cabin state.
+        setCabinGlowState(effectiveNight, headlightsOn, breathe);
 
         const matBrightness = 0.6 + dayFactor * 0.4;
         if (this.dashboardMaterial) {
@@ -168,7 +207,7 @@ export class CarInteriorLightingManager {
         }
 
         // Faint warm cabin glow at night even with the dome switch off.
-        const domeTarget = domeLightOn ? 1.2 : effectiveNight * 0.18;
+        const domeTarget = (domeLightOn ? 1.2 : effectiveNight * 0.18) * (1 + breathe);
         if (this.domeLightSource) {
             this.domeLightSource.intensity += (domeTarget - this.domeLightSource.intensity) * 0.08;
         }

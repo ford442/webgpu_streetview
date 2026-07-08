@@ -93,6 +93,12 @@ export interface DashboardUIProps {
   stationName?: string;
   /** Comma-separated genre tags for the current station */
   stationTags?: string;
+  /** Live vehicle speed in km/h; when provided, replaces the demo simulation. */
+  speedKmh?: number;
+  /** Live engine RPM; when provided, replaces the demo simulation. */
+  rpm?: number;
+  /** Live gear indicator (P/R/N/D/1-3); when provided, replaces the demo simulation. */
+  gear?: string;
 }
 
 // ============================================================================
@@ -232,14 +238,18 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   ambientLightColor = 'rgba(255, 255, 255, 0.0)',
   stationName = '',
   stationTags = '',
+  speedKmh,
+  rpm,
+  gear,
 }) => {
-  // Gauge simulation state
+  // Demo gauge simulation — used only when no live telemetry props arrive.
+  const hasTelemetry = speedKmh !== undefined;
   const [simulatedSpeed, setSimulatedSpeed] = useState(45);
   const [simulatedRpm, setSimulatedRpm] = useState(2500);
-  const [gear, setGear] = useState('D');
+  const [simulatedGear, setSimulatedGear] = useState('D');
 
-  // Simulate realistic gauge values
   useEffect(() => {
+    if (hasTelemetry) return;
     const interval = setInterval(() => {
       const targetSpeed = Math.floor(Math.random() * 40) + 25;
       setSimulatedSpeed((prev) => {
@@ -254,12 +264,17 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
       });
 
       if (Math.random() > 0.9) {
-        setGear((prev) => (prev === 'D' ? (Math.random() > 0.5 ? '3' : 'D') : 'D'));
+        setSimulatedGear((prev) => (prev === 'D' ? (Math.random() > 0.5 ? '3' : 'D') : 'D'));
       }
     }, 2500);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [hasTelemetry]);
+
+  // SpeedGauge displays MPH; live telemetry arrives in km/h.
+  const displaySpeedMph = hasTelemetry ? speedKmh! * 0.621371 : simulatedSpeed;
+  const displayRpm = hasTelemetry ? rpm ?? 0 : simulatedRpm;
+  const displayGear = hasTelemetry ? gear ?? 'D' : simulatedGear;
 
   // Event handlers – prevent propagation to underlying canvas
   const stopProp = useCallback((e: React.SyntheticEvent) => {
@@ -305,14 +320,14 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
         <ZoneLeft>
           <div className={styles.gaugeRow}>
             <SpeedGauge
-              value={Math.round(simulatedSpeed)}
+              value={Math.round(displaySpeedMph)}
               size={120}
               unit="MPH"
               nightGlow={nightIntensity}
             />
-            <GearIndicator gear={gear} size={36} />
+            <GearIndicator gear={displayGear} size={36} />
             <RpmGauge
-              value={Math.round(simulatedRpm)}
+              value={Math.round(displayRpm)}
               size={120}
               nightGlow={nightIntensity}
             />
