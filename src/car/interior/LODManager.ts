@@ -30,7 +30,13 @@ export class LODManager {
     mat: THREE.Material,
     count: number
   ): void {
-    if (this.instances.has(name)) return;
+    const existing = this.instances.get(name);
+    if (existing) {
+      // Re-registering (e.g. interior rebuild on vehicle swap): reset the
+      // batch so addInstance calls repopulate it instead of overflowing.
+      existing.count = 0;
+      return;
+    }
     const im = new THREE.InstancedMesh(geo, mat, count);
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     im.count = 0; // start empty

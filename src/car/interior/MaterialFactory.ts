@@ -3,13 +3,14 @@ import { VehicleConfig } from '../VehicleManager';
 import { GPUPerformanceProfile } from '../../utils/performance';
 
 export interface MaterialSet {
-  dashboard: THREE.MeshStandardMaterial;
-  leather: THREE.MeshStandardMaterial;
-  metal: THREE.MeshStandardMaterial;
+  dashboard: THREE.MeshPhysicalMaterial;
+  leather: THREE.MeshPhysicalMaterial;
+  metal: THREE.MeshPhysicalMaterial;
   frame: THREE.MeshStandardMaterial;
   glass: THREE.MeshStandardMaterial;
   mirror: THREE.MeshStandardMaterial;
-  accent: THREE.MeshStandardMaterial;
+  accent: THREE.MeshPhysicalMaterial;
+  chrome: THREE.MeshPhysicalMaterial;
 }
 
 /** Generate a procedural canvas texture */
@@ -26,11 +27,123 @@ function canvasTexture(
   return tex;
 }
 
+/**
+ * Convert a tiling height field into a tangent-space normal map
+ * (Sobel filter, wrapped edges so the texture stays seamless).
+ */
+function normalMapFromHeight(
+  size: number,
+  height: Float32Array,
+  strength: number
+): THREE.CanvasTexture {
+  return canvasTexture(size, (ctx) => {
+    const img = ctx.createImageData(size, size);
+    const d = img.data;
+    const h = (x: number, y: number) =>
+      height[((y + size) % size) * size + ((x + size) % size)];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx =
+          (h(x + 1, y - 1) + 2 * h(x + 1, y) + h(x + 1, y + 1)) -
+          (h(x - 1, y - 1) + 2 * h(x - 1, y) + h(x - 1, y + 1));
+        const dy =
+          (h(x - 1, y + 1) + 2 * h(x, y + 1) + h(x + 1, y + 1)) -
+          (h(x - 1, y - 1) + 2 * h(x, y - 1) + h(x + 1, y - 1));
+        const nx = -dx * strength;
+        const ny = -dy * strength;
+        const len = Math.sqrt(nx * nx + ny * ny + 1);
+        const i = (y * size + x) * 4;
+        d[i] = ((nx / len) * 0.5 + 0.5) * 255;
+        d[i + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+        d[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+}
+
+/** Leather grain height field, with two dashed stitch rows that tile into seam lines. */
+function leatherHeightField(size: number): Float32Array {
+  const field = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fine = (Math.random() - 0.5) * 0.5;
+      const coarse =
+        Math.sin(x * 0.18 + y * 0.1) * Math.cos(x * 0.1 - y * 0.15) * 0.35;
+      field[y * size + x] = fine + coarse;
+    }
+  }
+  // Stitch bumps: dashes of raised thread just inside the top and bottom edges,
+  // sunk into a shallow seam groove.
+  const stitchRows = [Math.floor(size * 0.06), Math.floor(size * 0.94)];
+  const dash = Math.floor(size / 16);
+  for (const row of stitchRows) {
+    for (let x = 0; x < size; x++) {
+      for (let dyOff = -2; dyOff <= 2; dyOff++) {
+        field[(row + dyOff) * size + x] -= 0.5; // seam groove
+      }
+      if (x % dash < dash * 0.55) {
+        field[row * size + x] += 1.6; // raised thread
+        field[(row - 1) * size + x] += 0.9;
+        field[(row + 1) * size + x] += 0.9;
+      }
+    }
+  }
+  return field;
+}
+
+/** Brushed-metal roughness map: fine horizontal streaks over a polished base. */
+function brushedMetalRoughnessTexture(size: number): THREE.CanvasTexture {
+  return canvasTexture(size, (ctx) => {
+    const img = ctx.createImageData(size, size);
+    const d = img.data;
+    for (let y = 0; y < size; y++) {
+      const streak = 50 + Math.random() * 40;
+      for (let x = 0; x < size; x++) {
+        const v = streak + (Math.random() - 0.5) * 18;
+        const i = (y * size + x) * 4;
+        d[i] = d[i + 1] = d[i + 2] = Math.max(30, Math.min(120, v));
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+}
+
+/**
+ * Lacquered accent trim material. Clearcoat gives the pieces a sharp
+ * reflection of the panorama environment on top of the tinted base, and the
+ * emissive term makes the trim read as ambient accent lighting. Callers pass
+ * different `emissiveIntensity` values so trim pieces vary in glow (bezels
+ * brighter than long strips); the neon theme boosts all of them.
+ */
+export function createAccentMaterial(
+  config: VehicleConfig,
+  emissiveIntensity: number
+): THREE.MeshPhysicalMaterial {
+  const accentHex = parseInt(config.accentColor.replace('#', '0x'));
+  const themeBoost = config.theme === 'neon' ? 1.6 : 1;
+  return new THREE.MeshPhysicalMaterial({
+    color: accentHex,
+    roughness: 0.3,
+    metalness: 0.65,
+    emissive: accentHex,
+    emissiveIntensity: emissiveIntensity * themeBoost,
+    envMapIntensity: 0.8,
+    clearcoat: 0.9,
+    clearcoatRoughness: 0.12,
+    side: THREE.DoubleSide,
+  });
+}
+
 /** Create all interior materials from vehicle config + GPU profile */
 export function createMaterials(
   config: VehicleConfig,
   gpuProfile: GPUPerformanceProfile
 ): MaterialSet {
+  const detailMaps = gpuProfile.name !== 'low';
+
   // Leather texture (multi-scale grain)
   const leatherTex = canvasTexture(256, (ctx) => {
     const img = ctx.createImageData(256, 256);
@@ -50,10 +163,23 @@ export function createMaterials(
       data[i + 2] = Math.max(8, Math.min(55, v * 0.54));
       data[i + 3] = 255;
     }
+    // Stitch thread color where the height field raises the seam dashes
+    const dash = 16;
     ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = 'rgba(196,168,120,0.9)';
+    for (const row of [Math.floor(256 * 0.06), Math.floor(256 * 0.94)]) {
+      for (let x = 0; x < 256; x += dash) {
+        ctx.fillRect(x, row - 1, dash * 0.55, 3);
+      }
+    }
   });
   leatherTex.repeat.set(3, 3);
   leatherTex.anisotropy = gpuProfile.name === 'high' ? 8 : 4;
+
+  const leatherNormalTex = detailMaps
+    ? normalMapFromHeight(256, leatherHeightField(256), 1.4)
+    : null;
+  leatherNormalTex?.repeat.set(3, 3);
 
   // Dashboard soft-touch texture
   const dashTex = canvasTexture(128, (ctx) => {
@@ -67,6 +193,14 @@ export function createMaterials(
   });
   dashTex.repeat.set(4, 4);
 
+  let dashNormalTex: THREE.CanvasTexture | null = null;
+  if (detailMaps) {
+    const grain = new Float32Array(128 * 128);
+    for (let i = 0; i < grain.length; i++) grain[i] = Math.random();
+    dashNormalTex = normalMapFromHeight(128, grain, 0.35);
+    dashNormalTex.repeat.set(4, 4);
+  }
+
   const dashboardColors: Record<string, number> = {
     dark: 0x1a1a1a,
     light: 0x2a2a2a,
@@ -74,34 +208,51 @@ export function createMaterials(
     clinical: 0xf0f0f0,
   };
   const dashColor = dashboardColors[config.theme] ?? 0x1a1a1a;
+  const clinical = config.theme === 'clinical';
 
-  const dashboard = new THREE.MeshStandardMaterial({
+  // Soft-touch dash: near-dielectric with a faint sheen so grazing light
+  // picks up the matte-plastic look; clinical theme reads as hard gloss.
+  const dashboard = new THREE.MeshPhysicalMaterial({
     color: dashColor,
-    map: config.theme === 'clinical' ? null : dashTex,
-    roughness: config.theme === 'clinical' ? 0.35 : 0.88,
-    metalness: config.theme === 'clinical' ? 0.15 : 0.04,
+    map: clinical ? null : dashTex,
+    normalMap: clinical ? null : dashNormalTex,
+    normalScale: new THREE.Vector2(0.4, 0.4),
+    roughness: clinical ? 0.35 : 0.88,
+    metalness: clinical ? 0.15 : 0.04,
+    clearcoat: clinical ? 0.6 : 0.0,
+    clearcoatRoughness: 0.25,
+    sheen: clinical ? 0 : 0.25,
+    sheenRoughness: 0.9,
+    sheenColor: new THREE.Color(0x222222),
     envMapIntensity: 0.4,
     side: THREE.DoubleSide,
   });
 
-  const leather = new THREE.MeshStandardMaterial({
+  const leather = new THREE.MeshPhysicalMaterial({
     map: leatherTex,
+    normalMap: leatherNormalTex,
+    normalScale: new THREE.Vector2(0.8, 0.8),
     roughness: 0.78,
     metalness: 0,
+    sheen: 0.35,
+    sheenRoughness: 0.7,
+    sheenColor: new THREE.Color(0x3a2a1a),
     envMapIntensity: 0.2,
     side: THREE.DoubleSide,
   });
 
-  const metal = new THREE.MeshStandardMaterial({
-    color: config.theme === 'clinical' ? 0xd4d4d4 : 0x969696,
-    roughness: 0.22,
+  // Brushed metal: streaked roughness map breaks up reflections along the grain.
+  const metal = new THREE.MeshPhysicalMaterial({
+    color: clinical ? 0xd4d4d4 : 0x969696,
+    roughness: detailMaps ? 1.0 : 0.22,
+    roughnessMap: detailMaps ? brushedMetalRoughnessTexture(128) : null,
     metalness: 0.88,
     envMapIntensity: 1,
     side: THREE.DoubleSide,
   });
 
   const frame = new THREE.MeshStandardMaterial({
-    color: config.theme === 'clinical' ? 0xeeeeee : 0x131313,
+    color: clinical ? 0xeeeeee : 0x131313,
     roughness: 0.92,
     metalness: 0,
     envMapIntensity: 0.15,
@@ -126,19 +277,17 @@ export function createMaterials(
     side: THREE.FrontSide,
   });
 
-  // Lacquered trim: clearcoat gives the accent pieces a sharp reflection of
-  // the panorama environment on top of the tinted base.
-  const accent = new THREE.MeshPhysicalMaterial({
-    color: parseInt(config.accentColor.replace('#', '0x')),
-    roughness: 0.35,
-    metalness: 0.65,
-    emissive: parseInt(config.accentColor.replace('#', '0x')),
-    emissiveIntensity: 0.2,
-    envMapIntensity: 0.8,
-    clearcoat: 0.9,
-    clearcoatRoughness: 0.12,
-    side: THREE.DoubleSide,
+  const accent = createAccentMaterial(config, 0.2);
+
+  // Polished chrome for vent surrounds, rings, handles.
+  const chrome = new THREE.MeshPhysicalMaterial({
+    color: 0xe8e8e8,
+    roughness: 0.08,
+    metalness: 1,
+    clearcoat: 1,
+    clearcoatRoughness: 0.06,
+    envMapIntensity: 1.4,
   });
 
-  return { dashboard, leather, metal, frame, glass, mirror, accent };
+  return { dashboard, leather, metal, frame, glass, mirror, accent, chrome };
 }

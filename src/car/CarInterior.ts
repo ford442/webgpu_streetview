@@ -107,6 +107,7 @@ export class CarInterior {
     private glassMaterial!: THREE.MeshStandardMaterial;
     private mirrorMaterial!: THREE.MeshStandardMaterial;
     private accentMaterial!: THREE.MeshStandardMaterial;
+    private chromeMaterial!: THREE.MeshPhysicalMaterial;
 
     // Performance optimization
     private lodUpdateFn?: () => void;
@@ -224,6 +225,7 @@ export class CarInterior {
         this.glassMaterial = mats.glass;
         this.mirrorMaterial = mats.mirror;
         this.accentMaterial = mats.accent;
+        this.chromeMaterial = mats.chrome;
         const lights = buildInteriorLighting(this.scene, this.interiorGroup, this.renderer, this.vehicleConfig);
         this.hemisphereLight = lights.hemisphereLight;
         this.ambientLight = lights.ambientLight;
@@ -357,6 +359,7 @@ private buildInteriorFromBuilder(): void {
                 glass: this.glassMaterial,
                 mirror: this.mirrorMaterial,
                 accent: this.accentMaterial,
+                chrome: this.chromeMaterial,
             }
         );
 
@@ -441,6 +444,7 @@ private buildInteriorFromBuilder(): void {
         this.glassMaterial = mats.glass;
         this.mirrorMaterial = mats.mirror;
         this.accentMaterial = mats.accent;
+        this.chromeMaterial = mats.chrome;
         this.buildInteriorFromBuilder();
         
         // Update roof state based on vehicle

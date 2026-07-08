@@ -14,6 +14,7 @@ export interface CarInteriorMaterials {
     glass: THREE.MeshStandardMaterial;
     mirror: THREE.MeshStandardMaterial;
     accent: THREE.MeshStandardMaterial;
+    chrome: THREE.MeshPhysicalMaterial;
 }
 
 export interface CarInteriorBuildResult {
@@ -153,12 +154,7 @@ export class CarInteriorBuilder {
 
     private buildDoorPanelDetails(): void {
         const gf = this.geometryFactory;
-
-        const chromeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xdddddd,
-            roughness: 0.15,
-            metalness: 0.9,
-        });
+        const chromeMaterial = this.materials.chrome;
 
         const softTouchMat = new THREE.MeshStandardMaterial({
             color: 0x2a2a2a,
