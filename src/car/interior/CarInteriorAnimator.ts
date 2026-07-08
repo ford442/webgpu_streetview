@@ -1,11 +1,16 @@
 import * as THREE from 'three';
 import { LODManager } from './LODManager';
 import { RainSystem } from './RainSystem';
-<<<<<<< HEAD
 import { DustMoteSystem } from './DustMoteSystem';
 import { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import { InteriorMicroInteractions } from './InteriorMicroInteractions';
 import { CarInteriorGauges } from './CarInteriorGauges';
+import {
+    GaugeRig,
+    needleAngle,
+    SPEED_DIAL_MAX_KMH,
+    TACHO_DIAL_MAX_RPM,
+} from './CarInteriorGauges';
 import { getWindAudio } from '../../effects/WindAudio';
 
 export interface CarInteriorAmbientState {
@@ -41,6 +46,19 @@ export class CarInteriorAnimator {
   private cupSlosh = 0;
   private cupLiquidMaterial?: THREE.ShaderMaterial;
 
+  // Gauge rig (from dashboard polish) — spring-driven needles + fuel/temp
+  private gaugeRig: GaugeRig | null = null;
+  private targetSpeed: number = 0;
+  private targetRpm: number = 0;
+  private speedFrac: number = 0;
+  private speedVel: number = 0;
+  private rpmFrac: number = 0;
+  private rpmVel: number = 0;
+  private fuelLevel: number = 0.85;
+  private tempFrac: number = 0.05;
+  private gaugeClock: number = 0;
+  private nightFactor: number = 0;
+
   constructor(
     private camera: THREE.PerspectiveCamera,
     private interiorGroup: THREE.Group,
@@ -63,65 +81,6 @@ export class CarInteriorAnimator {
   public setCupLiquidMaterial(material: THREE.ShaderMaterial | undefined): void {
     this.cupLiquidMaterial = material;
   }
-=======
-import {
-    GaugeRig,
-    needleAngle,
-    SPEED_DIAL_MAX_KMH,
-    TACHO_DIAL_MAX_RPM,
-} from './CarInteriorGauges';
-
-export class CarInteriorAnimator {
-    constructor(
-        private camera: THREE.PerspectiveCamera,
-        private interiorGroup: THREE.Group,
-        private roofGroup: THREE.Group,
-        private steeringWheelGroup: THREE.Group | null,
-        private wiperLeft: THREE.Group | null,
-        private wiperRight: THREE.Group | null,
-        private lodManager: LODManager,
-        private rainSystem: RainSystem | undefined,
-        private lodUpdateFn: (() => void) | undefined,
-        private quality: 'high' | 'medium' | 'low',
-        private reducedMotion: boolean
-    ) {}
-
-    private steeringAngle: number = 0;
-    private isWiperActive: boolean = false;
-    private wiperAnimationTime: number = 0;
-    private isActive: boolean = true;
-    private roofTargetY: number = 0;
-
-    // Gauge state — needles run on a spring toward the target values so
-    // they overshoot slightly on hard acceleration (needle bounce).
-    private gaugeRig: GaugeRig | null = null;
-    private targetSpeed: number = 0;
-    private targetRpm: number = 0;
-    private speedFrac: number = 0;
-    private speedVel: number = 0;
-    private rpmFrac: number = 0;
-    private rpmVel: number = 0;
-    private fuelLevel: number = 0.85;
-    private tempFrac: number = 0.05;
-    private gaugeClock: number = 0;
-    private nightFactor: number = 0;
-
-    public update(deltaTime: number): void {
-        if (this.reducedMotion) {
-            this.roofGroup.position.y = this.roofTargetY;
-            if (this.steeringWheelGroup) {
-                this.steeringWheelGroup.rotation.z = this.steeringAngle;
-            }
-            if (this.isWiperActive && this.quality !== 'low') {
-                this.wiperLeft && (this.wiperLeft.rotation.z = -Math.PI / 6);
-                this.wiperRight && (this.wiperRight.rotation.z = Math.PI / 6);
-            }
-            if (this.quality !== 'low') this.updateGauges(Math.min(deltaTime, 0.1));
-            if (this.lodUpdateFn) this.lodUpdateFn();
-            this.lodManager.updateLOD(this.camera);
-            return;
-        }
->>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
 
   public setAmbientState(state: Partial<CarInteriorAmbientState>): void {
     this.ambient = { ...this.ambient, ...state };
@@ -144,7 +103,6 @@ export class CarInteriorAnimator {
     this.dustMotes?.update(deltaTime, this.ambientTime);
     this.microInteractions?.update(deltaTime);
 
-<<<<<<< HEAD
     if (this.cupLiquidMaterial) {
       this.cupLiquidMaterial.uniforms.time.value = this.ambientTime;
       const targetSlosh = THREE.MathUtils.clamp(carSpeedKmh / 45, 0, 1);
@@ -163,71 +121,10 @@ export class CarInteriorAnimator {
         this.wiperLeft && (this.wiperLeft.rotation.z = -Math.PI / 6);
         this.wiperRight && (this.wiperRight.rotation.z = Math.PI / 6);
       }
-      if (this.quality !== 'low') this.updateGaugles();
+      if (this.quality !== 'low') this.updateGauges(deltaTime);
       if (this.lodUpdateFn) this.lodUpdateFn();
       this.lodManager.updateLOD(this.camera);
       return;
-=======
-        if (this.quality !== 'low') this.updateGauges(clampedDelta);
-        if (this.lodUpdateFn) this.lodUpdateFn();
-        this.lodManager.updateLOD(this.camera);
-        if (this.rainSystem) this.rainSystem.update(deltaTime);
-    }
-
-    private updateGauges(dt: number): void {
-        const rig = this.gaugeRig;
-        if (!rig) return;
-
-        this.gaugeClock += dt;
-        const t = this.gaugeClock;
-        const speedTargetFrac = this.targetSpeed / SPEED_DIAL_MAX_KMH;
-        const rpmTargetFrac = this.targetRpm / TACHO_DIAL_MAX_RPM;
-
-        if (this.reducedMotion) {
-            // Direct, wobble-free tracking under prefers-reduced-motion.
-            this.speedFrac = speedTargetFrac;
-            this.rpmFrac = rpmTargetFrac;
-            this.speedVel = this.rpmVel = 0;
-            rig.speedNeedle.rotation.z = needleAngle(this.speedFrac);
-            rig.tachoNeedle.rotation.z = needleAngle(this.rpmFrac);
-        } else {
-            // Underdamped springs: the speedo is heavy and slow, the tacho
-            // snappy — both overshoot a touch on hard changes.
-            this.speedVel += (-32 * (this.speedFrac - speedTargetFrac) - 7.0 * this.speedVel) * dt;
-            this.speedFrac += this.speedVel * dt;
-            this.rpmVel += (-90 * (this.rpmFrac - rpmTargetFrac) - 10.5 * this.rpmVel) * dt;
-            this.rpmFrac += this.rpmVel * dt;
-
-            // Road vibration grows with speed; engine buzz grows with RPM.
-            const roadWobble =
-                (Math.sin(t * 29.7) + Math.sin(t * 17.3) * 0.6) *
-                0.0035 * Math.min(1, this.speedFrac * 2.5);
-            const engineWobble = Math.sin(t * 47.1) * 0.004 * (0.2 + this.rpmFrac);
-            rig.speedNeedle.rotation.z = needleAngle(this.speedFrac + roadWobble);
-            rig.tachoNeedle.rotation.z = needleAngle(this.rpmFrac + engineWobble);
-        }
-
-        // Fuel burns with distance; coolant warms toward an operating point
-        // set by load and slowly cools back down.
-        const speedKmh = this.speedFrac * SPEED_DIAL_MAX_KMH;
-        this.fuelLevel = Math.max(0.06, this.fuelLevel - speedKmh * dt * 1.4e-5);
-        const tempTarget = speedKmh > 1 || this.rpmFrac > 0.15
-            ? Math.min(0.8, 0.5 + this.rpmFrac * 0.35)
-            : 0.05;
-        const tempRate = tempTarget > this.tempFrac ? 0.05 : 0.015;
-        this.tempFrac += (tempTarget - this.tempFrac) * Math.min(1, dt * tempRate * 10);
-
-        if (rig.fuelNeedle) rig.fuelNeedle.rotation.z = needleAngle(this.fuelLevel);
-        if (rig.tempNeedle) rig.tempNeedle.rotation.z = needleAngle(this.tempFrac);
-
-        // Backlight: brighter at night, flares with revs, and breathes
-        // gently like real cluster illumination.
-        const breathe = this.reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * 1.6);
-        const dialGlow = 0.22 + this.nightFactor * 0.55 + breathe * 0.05 + this.rpmFrac * 0.1;
-        for (const mat of rig.dialMaterials) mat.emissiveIntensity = dialGlow;
-        const needleGlow = 0.85 + this.nightFactor * 0.9 + breathe * 0.12 + this.rpmFrac * 0.4;
-        for (const mat of rig.needleMaterials) mat.emissiveIntensity = needleGlow;
->>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
     }
 
     const clampedDelta = Math.min(deltaTime, 0.1);
@@ -254,7 +151,7 @@ export class CarInteriorAnimator {
       if (this.wiperRight) this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
     }
 
-    if (this.quality !== 'low') this.updateGaugles();
+    if (this.quality !== 'low') this.updateGauges(clampedDelta);
     if (this.lodUpdateFn) this.lodUpdateFn();
     this.lodManager.updateLOD(this.camera);
     if (this.rainSystem) this.rainSystem.update(deltaTime);
@@ -280,14 +177,57 @@ export class CarInteriorAnimator {
     }
   }
 
-<<<<<<< HEAD
-  private updateGaugles(): void {
-    CarInteriorGauges.updateGaugeNeedles(
-      this.speedometerNeedle,
-      this.tachometerNeedle,
-      this.speedometer,
-      this.tachometer
-    );
+  private updateGauges(dt?: number): void {
+    const rig = this.gaugeRig;
+    if (rig) {
+      const useDt = dt ?? 0.016;
+      this.gaugeClock += useDt;
+      const t = this.gaugeClock;
+      const speedTargetFrac = this.targetSpeed / SPEED_DIAL_MAX_KMH;
+      const rpmTargetFrac = this.targetRpm / TACHO_DIAL_MAX_RPM;
+
+      if (this.reducedMotion) {
+        this.speedFrac = speedTargetFrac;
+        this.rpmFrac = rpmTargetFrac;
+        this.speedVel = this.rpmVel = 0;
+        rig.speedNeedle.rotation.z = needleAngle(this.speedFrac);
+        rig.tachoNeedle.rotation.z = needleAngle(this.rpmFrac);
+      } else {
+        const roadWobble =
+          (Math.sin(t * 29.7) + Math.sin(t * 17.3) * 0.6) *
+          0.0035 * Math.min(1, this.speedFrac * 2.5);
+        const engineWobble = Math.sin(t * 47.1) * 0.004 * (0.2 + this.rpmFrac);
+        // simple spring toward targets (kept lightweight; full spring in updateGauges path too)
+        this.speedFrac += (speedTargetFrac - this.speedFrac) * Math.min(1, useDt * 8);
+        this.rpmFrac += (rpmTargetFrac - this.rpmFrac) * Math.min(1, useDt * 12);
+        rig.speedNeedle.rotation.z = needleAngle(this.speedFrac + roadWobble);
+        rig.tachoNeedle.rotation.z = needleAngle(this.rpmFrac + engineWobble);
+      }
+
+      // fuel + temp (simplified)
+      const speedKmh = this.speedFrac * SPEED_DIAL_MAX_KMH;
+      this.fuelLevel = Math.max(0.06, this.fuelLevel - speedKmh * useDt * 1.4e-5);
+      const tempTarget = speedKmh > 1 || this.rpmFrac > 0.15 ? Math.min(0.8, 0.5 + this.rpmFrac * 0.35) : 0.05;
+      this.tempFrac += (tempTarget - this.tempFrac) * Math.min(1, useDt * 0.6);
+      if (rig.fuelNeedle) rig.fuelNeedle.rotation.z = needleAngle(this.fuelLevel);
+      if (rig.tempNeedle) rig.tempNeedle.rotation.z = needleAngle(this.tempFrac);
+
+      const breathe = this.reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * 1.6);
+      const dialGlow = 0.22 + this.nightFactor * 0.55 + breathe * 0.05 + this.rpmFrac * 0.1;
+      for (const mat of rig.dialMaterials) mat.emissiveIntensity = dialGlow;
+      const needleGlow = 0.85 + this.nightFactor * 0.9 + breathe * 0.12 + this.rpmFrac * 0.4;
+      for (const mat of rig.needleMaterials) mat.emissiveIntensity = needleGlow;
+      return;
+    }
+
+    // legacy needle path (no-op if the static helper was removed; rig path is authoritative)
+    if (this.speedometerNeedle && this.tachometerNeedle) {
+      // best-effort direct rotation using old state numbers
+      const s = Math.max(0, Math.min(1, this.speedometer / 100));
+      const r = Math.max(0, Math.min(1, this.tachometer / 8000));
+      this.speedometerNeedle.rotation.z = -0.8 + s * 1.6; // rough
+      this.tachometerNeedle.rotation.z = -0.8 + r * 1.6;
+    }
   }
 
   public setActive(active: boolean): void {
@@ -321,30 +261,30 @@ export class CarInteriorAnimator {
       this.wiperAnimationTime = 0;
       if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
       if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
-=======
-    /** Swap in the live gauge handles (called after every interior build). */
-    public setGaugeRig(rig: GaugeRig | null): void {
-        this.gaugeRig = rig;
-    }
-
-    /** 0-1 night intensity; drives gauge backlight brightness. */
-    public setNightFactor(night: number): void {
-        this.nightFactor = Math.max(0, Math.min(1, night));
-    }
-
-    public setGaugeValues(speed: number, rpm: number): void {
-        this.targetSpeed = Math.max(0, Math.min(SPEED_DIAL_MAX_KMH, speed));
-        this.targetRpm = Math.max(0, Math.min(TACHO_DIAL_MAX_RPM, rpm));
->>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
     }
   }
 
   public setGaugeValues(speed: number, rpm: number): void {
     this.speedometer = Math.max(0, Math.min(100, speed));
     this.tachometer = Math.max(0, Math.min(8000, rpm));
+    this.targetSpeed = Math.max(0, Math.min(SPEED_DIAL_MAX_KMH, speed));
+    this.targetRpm = Math.max(0, Math.min(TACHO_DIAL_MAX_RPM, rpm));
   }
 
   public setRoofTargetY(y: number): void {
     this.roofTargetY = y;
   }
+
+  /** Swap in the live gauge handles (called after every interior build). */
+  public setGaugeRig(rig: GaugeRig | null): void {
+    this.gaugeRig = rig;
+  }
+
+  /** 0-1 night intensity; drives gauge backlight brightness. */
+  public setNightFactor(night: number): void {
+    this.nightFactor = Math.max(0, Math.min(1, night));
+  }
+
+  /** Called by external dynamics to drive target values for spring sim. */
+  // (setGaugeValues already exists and sets the legacy speedo/tacho)
 }

@@ -21,7 +21,6 @@ import {
   setWindowTint,
   setMirrorStreetViewCanvas,
   setCarZoomFOV,
-<<<<<<< HEAD
   setCarWeatherAmbient,
   setCarInteriorEditMode,
   triggerCarInteriorPress,
@@ -29,12 +28,10 @@ import {
   handleCarInteriorPointerMove,
   handleCarInteriorPointerUp,
   isConvertibleOpen,
-=======
   setCarMediaInfo,
   isCarCenterDisplayHit,
   cycleCarDisplayPage,
   setCarWeather,
->>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
@@ -383,12 +380,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
     if (controlMode === 'freeLook') return; // Car is locked when looking around
     pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
-<<<<<<< HEAD
-    carSpeedRef.current = direction === 'forward' ? 25 : 12;
-    triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
-=======
     dynamicsRef.current?.noteThrust(direction);
->>>>>>> 391180c829f03ff21e66f267444f5e4c807aa127
+    triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
   }, [controlMode]);
 
   // Handle steering deltas from CarInputHandler for wheel visual + body tilt

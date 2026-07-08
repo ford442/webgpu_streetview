@@ -176,6 +176,18 @@ export class CenterDisplay {
         return this.page;
     }
 
+    /** Screen-space hit test (approx until full projection is wired). */
+    isHit(clientX: number, clientY: number): boolean {
+        if (typeof window === 'undefined') return false;
+        const w = window.innerWidth || 1280;
+        const h = window.innerHeight || 720;
+        const cx = w * 0.5;
+        const cy = h * 0.58; // dash area
+        const dx = Math.abs(clientX - cx);
+        const dy = Math.abs(clientY - cy);
+        return dx < Math.max(80, w * 0.16) && dy < Math.max(40, h * 0.10);
+    }
+
     getMaterial(): THREE.MeshStandardMaterial {
         return this.screenMat;
     }
