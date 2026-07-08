@@ -9,7 +9,7 @@ import {
   detectGPUProfile
 } from '../utils/performance';
 import { CarInteriorBuilder } from './interior/CarInteriorBuilder';
-import { CarInteriorGauges } from './interior/CarInteriorGauges';
+import { CarInteriorGauges, GaugeRig } from './interior/CarInteriorGauges';
 import { LocationPanel } from './interior/LocationPanel';
 import { PanoLocationInfo } from '../utils/panoLocation';
 import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
@@ -49,6 +49,7 @@ export class CarInterior {
     private wiperRight!: THREE.Group;
     private speedometerNeedle!: THREE.Mesh;
     private tachometerNeedle!: THREE.Mesh;
+    private gaugeRig: GaugeRig | null = null;
     private headlightsLight!: THREE.SpotLight;
     private domeLightSource!: THREE.PointLight;
     private domeLightFixtureMesh!: THREE.Mesh;
@@ -249,14 +250,13 @@ export class CarInterior {
             this.steeringWheelGroup,
             this.wiperLeft,
             this.wiperRight,
-            this.speedometerNeedle,
-            this.tachometerNeedle,
             this.lodManager,
             this.rainSystem,
             this.lodUpdateFn,
             this.quality,
             this.reducedMotion
         );
+        this.animator.setGaugeRig(this.gaugeRig);
 
         this.rendererDelegate = new CarInteriorRenderer(
             this.renderer,
@@ -376,6 +376,9 @@ private buildInteriorFromBuilder(): void {
         this.domeLightFixtureMesh = buildResult.domeLightFixtureMesh;
         this.domeSwitchMesh = buildResult.domeSwitchMesh;
 
+        if (!this.vehicleConfig.hasGauges) {
+            this.gaugeRig = null;
+        }
         if (this.vehicleConfig.hasGauges) {
             const gaugeResult = CarInteriorGauges.build(
                 this.interiorGroup,
@@ -386,6 +389,7 @@ private buildInteriorFromBuilder(): void {
             );
             this.speedometerNeedle = gaugeResult.speedometerNeedle;
             this.tachometerNeedle = gaugeResult.tachometerNeedle;
+            this.gaugeRig = gaugeResult.gaugeRig;
             this.digitalClockMesh = gaugeResult.digitalClockMesh ?? null;
             this.clockCanvas = gaugeResult.clockCanvas ?? null;
             this.clockCtx = gaugeResult.clockCtx ?? null;
@@ -403,6 +407,10 @@ private buildInteriorFromBuilder(): void {
             // on vehicle swaps it re-applies the current night glow.
             this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
         }
+
+        // On vehicle swaps the animator already exists — point it at the new
+        // needles so it never animates meshes from the removed interior.
+        this.animator?.setGaugeRig(this.gaugeRig);
     }
 
     /** Update the location readout panel with per-pano metadata. */
@@ -624,6 +632,8 @@ private buildInteriorFromBuilder(): void {
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
 
         this.lightingManager.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
+        // Gauge backlight brightens with the same night factor.
+        this.animator.setNightFactor(nightIntensity);
 
     }
 

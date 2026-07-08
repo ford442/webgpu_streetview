@@ -67,12 +67,12 @@ export class CarInteriorDashboardBuilder {
             this.interiorGroup.add(lowerTrim);
 
             const ringMat = createAccentMaterial(this.vehicleConfig, 0.45);
-            const bezelRing = new THREE.Mesh(
-                new THREE.TorusGeometry(0.155, 0.008, 12, this.segments),
-                ringMat
-            );
-            bezelRing.position.set(-0.3, 0.95, -0.708);
-            this.interiorGroup.add(bezelRing);
+            const ringGeo = new THREE.TorusGeometry(0.162, 0.008, 12, this.segments);
+            for (const x of [-0.5, -0.15]) {
+                const bezelRing = new THREE.Mesh(ringGeo, ringMat);
+                bezelRing.position.set(x, 0.95, -0.708);
+                this.interiorGroup.add(bezelRing);
+            }
 
             const displayRing = new THREE.Mesh(
                 new THREE.TorusGeometry(0.11, 0.005, 12, this.segments),
@@ -247,12 +247,12 @@ export class CarInteriorDashboardBuilder {
             clearcoatRoughness: 0.1,
         });
         const startBtn = new THREE.Mesh(startBtnGeo, startBtnMat);
-        startBtn.position.set(-0.15, 0.88, -0.72);
+        startBtn.position.set(0.0, 0.82, -0.72);
         this.interiorGroup.add(startBtn);
 
         const startRingGeo = new THREE.TorusGeometry(0.02, 0.003, 12, this.segments);
         const startRing = new THREE.Mesh(startRingGeo, chrome);
-        startRing.position.set(-0.15, 0.88, -0.715);
+        startRing.position.set(0.0, 0.82, -0.715);
         this.interiorGroup.add(startRing);
     }
 }
