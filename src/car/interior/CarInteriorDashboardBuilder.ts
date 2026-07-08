@@ -38,9 +38,12 @@ export class CarInteriorDashboardBuilder {
         cluster.position.set(-0.3, 0.95, -0.74);
         this.interiorGroup.add(cluster);
 
+        // Recessed housing behind the centre display. At medium/high quality
+        // the live CenterDisplay screen sits in front of it; at low quality
+        // this emissive panel IS the display.
         const displayMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x002200, emissiveIntensity: 0.3 });
         const display = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.02), displayMat);
-        display.position.set(0.15, 0.95, -0.74);
+        display.position.set(0.15, 0.925, -0.74);
         this.interiorGroup.add(display);
 
         if (this.quality !== 'low') {
@@ -51,7 +54,7 @@ export class CarInteriorDashboardBuilder {
             this.interiorGroup.add(clusterBezel);
 
             const displayBezel = new THREE.Mesh(this.makeBezelFrameGeometry(0.34, 0.24, 0.025), this.materials.dashboard);
-            displayBezel.position.set(0.15, 0.95, -0.741);
+            displayBezel.position.set(0.15, 0.925, -0.741);
             this.interiorGroup.add(displayBezel);
 
             // Accent trim: emissive intensity varies per piece so the long
@@ -73,14 +76,6 @@ export class CarInteriorDashboardBuilder {
                 bezelRing.position.set(x, 0.95, -0.708);
                 this.interiorGroup.add(bezelRing);
             }
-
-            const displayRing = new THREE.Mesh(
-                new THREE.TorusGeometry(0.11, 0.005, 12, this.segments),
-                createAccentMaterial(this.vehicleConfig, 0.3)
-            );
-            displayRing.scale.set(1.4, 1, 1);
-            displayRing.position.set(0.15, 0.95, -0.722);
-            this.interiorGroup.add(displayRing);
 
             this.buildDetails();
         }

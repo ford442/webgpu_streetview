@@ -11,6 +11,7 @@ import {
 import { CarInteriorBuilder } from './interior/CarInteriorBuilder';
 import { CarInteriorGauges, GaugeRig } from './interior/CarInteriorGauges';
 import { LocationPanel } from './interior/LocationPanel';
+import { CenterDisplay, DisplayPage } from './interior/CenterDisplay';
 import { PanoLocationInfo } from '../utils/panoLocation';
 import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { CarInteriorRenderer } from './interior/CarInteriorRenderer';
@@ -77,6 +78,10 @@ export class CarInterior {
     private locationPanel: LocationPanel | null = null;
     private lastLocationInfo: PanoLocationInfo | null = null;
     private lastCompassHeading: number = 0;
+
+    // Centre-stack infotainment display (nav / media / trip pages)
+    private centerDisplay: CenterDisplay | null = null;
+    private lastMediaInfo: { name: string; tags: string; playing: boolean } = { name: '', tags: '', playing: false };
 
     private isActive: boolean = true;
 
@@ -310,6 +315,7 @@ export class CarInterior {
         const night = this.lightingManager.getSunNightFactor();
         this.panoEnvironment.setIntensity(1 - night * 0.7);
         this.locationPanel?.setNightGlow(night);
+        this.centerDisplay?.setNightGlow(night);
     }
 
     /**
@@ -408,6 +414,18 @@ private buildInteriorFromBuilder(): void {
             this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
         }
 
+        this.centerDisplay?.dispose();
+        this.centerDisplay = null;
+        if (this.vehicleConfig.hasDashboard && this.quality !== 'low') {
+            this.centerDisplay = new CenterDisplay(this.vehicleConfig, this.gpuProfile.name);
+            this.interiorGroup.add(this.centerDisplay.group);
+            // Re-apply live state so a vehicle swap keeps the readouts.
+            this.centerDisplay.setLocation(this.lastLocationInfo);
+            this.centerDisplay.setHeading(this.lastCompassHeading);
+            this.centerDisplay.setMedia(this.lastMediaInfo.name, this.lastMediaInfo.tags, this.lastMediaInfo.playing);
+            this.centerDisplay.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
+        }
+
         // On vehicle swaps the animator already exists — point it at the new
         // needles so it never animates meshes from the removed interior.
         this.animator?.setGaugeRig(this.gaugeRig);
@@ -417,12 +435,14 @@ private buildInteriorFromBuilder(): void {
     public setLocationInfo(info: PanoLocationInfo | null): void {
         this.lastLocationInfo = info;
         this.locationPanel?.setLocation(info);
+        this.centerDisplay?.setLocation(info);
     }
 
     /** Update the live compass heading on the location readout panel. */
     public setCompassHeading(heading: number): void {
         this.lastCompassHeading = heading;
         this.locationPanel?.setHeading(heading);
+        this.centerDisplay?.setHeading(heading);
     }
     public setVehicleType(vehicleType: VehicleType): void {
         if (this.vehicleType === vehicleType) return;
@@ -482,6 +502,7 @@ private buildInteriorFromBuilder(): void {
     public update(deltaTime: number): void {
 
         this.animator.update(deltaTime);
+        this.centerDisplay?.update(deltaTime);
 
     }
 
@@ -565,6 +586,7 @@ private buildInteriorFromBuilder(): void {
     public setGaugeValues(speed: number, rpm: number): void {
 
         this.animator.setGaugeValues(speed, rpm);
+        this.centerDisplay?.setTelemetry(speed, rpm);
 
     }
 
@@ -648,6 +670,26 @@ private buildInteriorFromBuilder(): void {
         );
     }
 
+    /** Update the media page with the current radio station state. */
+    public setMediaInfo(name: string, tags: string, playing: boolean): void {
+        this.lastMediaInfo = { name, tags, playing };
+        this.centerDisplay?.setMedia(name, tags, playing);
+    }
+
+    /** Test whether screen coordinates hit the centre display screen. */
+    public isCenterDisplayHit(clientX: number, clientY: number): boolean {
+        if (!this.centerDisplay) return false;
+        return this.interaction.hitTest(
+            clientX, clientY, this.canvas.getBoundingClientRect(),
+            this.camera, this.centerDisplay.screenMesh, false
+        );
+    }
+
+    /** Cycle the centre display to its next page. Returns the new page, or null. */
+    public cycleDisplayPage(): DisplayPage | null {
+        return this.centerDisplay?.cyclePage() ?? null;
+    }
+
     /**
      * Test whether the given screen coordinates intersect the steering wheel geometry.
      * Uses a cached Raycaster to avoid GC churn per click.
@@ -728,6 +770,11 @@ private buildInteriorFromBuilder(): void {
      */
     public dispose(): void {
         cancelAnimationFrame(this.animationId);
+
+        this.centerDisplay?.dispose();
+        this.centerDisplay = null;
+        this.locationPanel?.dispose();
+        this.locationPanel = null;
 
         // Stop clock update loop
         if (this.clockUpdateInterval !== undefined) {

@@ -395,6 +395,31 @@ export function getCarDomeLightState(): boolean {
 }
 
 /**
+ * Update the media page on the centre display (radio station name/tags/state).
+ */
+export function setCarMediaInfo(name: string, tags: string, playing: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setMediaInfo(name, tags, playing);
+}
+
+/**
+ * Test whether screen coordinates hit the centre display screen.
+ */
+export function isCarCenterDisplayHit(clientX: number, clientY: number): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.isCenterDisplayHit(clientX, clientY);
+}
+
+/**
+ * Cycle the centre display to its next page (nav → media → trip).
+ * Returns the new page name, or null when no display exists.
+ */
+export function cycleCarDisplayPage(): string | null {
+    if (!carModeState) return null;
+    return carModeState.interior.cycleDisplayPage();
+}
+
+/**
  * Test whether screen coordinates hit the dome switch mesh.
  */
 export function isCarDomeSwitchHit(clientX: number, clientY: number): boolean {
