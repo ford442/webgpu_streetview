@@ -412,7 +412,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         // See capturePanorama note.
     }
 
-    public beginHoldTransition(_heading?: number, _pitch?: number): void {
+    public beginHoldTransition(_heading?: number, _pitch?: number, _cpuSnapshot?: HTMLCanvasElement): void {
         this.holdActive = true;
         this.transitionProgress = 0.0;
     }

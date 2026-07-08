@@ -91,7 +91,7 @@ describe('useStreetView hold look-around', () => {
       result.current.advance('forward', 200);
     });
 
-    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12);
+    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined);
   });
 
   it('syncs setPov when look changes outside of hold', () => {
@@ -124,7 +124,7 @@ describe('useStreetView hold look-around', () => {
       result.current.teleport(1.23, 4.56);
     });
 
-    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12);
+    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined);
     expect(mockSetPosition).toHaveBeenCalledWith({ lat: 1.23, lng: 4.56 });
     expect(result.current.isPanoramaUpdatePaused).toBe(true);
   });

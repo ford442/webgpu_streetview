@@ -22,6 +22,11 @@ import { GeometryFactory } from './interior/GeometryFactory';
 import { LODManager } from './interior/LODManager';
 import { PostProcessingManager } from './interior/PostProcessingManager';
 import { RainSystem } from './interior/RainSystem';
+import { DustMoteSystem } from './interior/DustMoteSystem';
+import { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
+import { InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
+import { CarInteriorDetailProps } from './interior/CarInteriorDetailProps';
+import { VanityMirror } from './interior/VanityMirror';
 import { buildInteriorLighting } from './interior/LightingBuilder';
 import { PanoEnvironment } from './interior/PanoEnvironment';
 import { PerformanceProfiler } from './interior/PerformanceProfiler';
@@ -93,6 +98,12 @@ export class CarInterior {
     private lodManager: LODManager;
     private postProcessing?: PostProcessingManager;
     private rainSystem?: RainSystem;
+    private dustMoteSystem?: DustMoteSystem;
+    private windowWeatherOverlay?: WindowWeatherOverlay;
+    private microInteractions: InteriorMicroInteractions;
+    private cupLiquidMaterial?: THREE.ShaderMaterial;
+    private vanityMirror?: VanityMirror;
+    private vanityMirrorMesh?: THREE.Mesh;
     private postProcessingEnabled = false; // Post-FX breaks alpha compositing over WebGPU panorama
     private profiler?: PerformanceProfiler;
 
@@ -211,9 +222,16 @@ export class CarInterior {
             );
         }
 
-        // Rain droplet system
+        // Rain droplet system + cabin ambience
         this.rainSystem = new RainSystem(200);
         this.interiorGroup.add(this.rainSystem.getMesh());
+
+        if (this.gpuProfile.name !== 'low') {
+            this.dustMoteSystem = new DustMoteSystem(56);
+            this.interiorGroup.add(this.dustMoteSystem.getObject());
+        }
+
+        this.microInteractions = new InteriorMicroInteractions();
 
         // Performance profiler
         this.profiler = new PerformanceProfiler(this.renderer);
@@ -236,6 +254,7 @@ export class CarInterior {
         this.sunLight = lights.sunLight;
         this.panoEnvironment = new PanoEnvironment(this.renderer, this.scene);
         this.buildInteriorFromBuilder();
+        this.setupWindowWeatherOverlay();
         
         // Setup LOD after building interior
         this.setupLOD();
@@ -251,10 +270,15 @@ export class CarInterior {
             this.tachometerNeedle,
             this.lodManager,
             this.rainSystem,
+            this.dustMoteSystem,
+            this.windowWeatherOverlay,
+            this.microInteractions,
             this.lodUpdateFn,
             this.quality,
             this.reducedMotion
         );
+        this.animator.setCupLiquidMaterial(this.cupLiquidMaterial);
+        this.animator.setRoofTargetY(this.roofTargetY);
 
         this.rendererDelegate = new CarInteriorRenderer(
             this.renderer,
@@ -308,6 +332,8 @@ export class CarInterior {
         const night = this.lightingManager.getSunNightFactor();
         this.panoEnvironment.setIntensity(1 - night * 0.7);
         this.locationPanel?.setNightGlow(night);
+        const sunVisibility = Math.max(0, Math.min(1, altitude / 0.35));
+        this.animator?.setAmbientState({ sunVisibility });
     }
 
     /**
@@ -341,7 +367,22 @@ export class CarInterior {
      * Set quality level for rendering
      */
 
-private buildInteriorFromBuilder(): void {
+    private setupWindowWeatherOverlay(): void {
+        this.windowWeatherOverlay?.dispose();
+        this.windowWeatherOverlay = undefined;
+        if (this.windshieldGlassMesh && this.quality !== 'low') {
+            this.windowWeatherOverlay = new WindowWeatherOverlay(this.windshieldGlassMesh);
+            this.interiorGroup.add(this.windowWeatherOverlay.getMesh());
+        }
+        if (this.dustMoteSystem && !this.interiorGroup.children.includes(this.dustMoteSystem.getObject())) {
+            this.interiorGroup.add(this.dustMoteSystem.getObject());
+        }
+        if (this.rainSystem && !this.interiorGroup.children.includes(this.rainSystem.getMesh())) {
+            this.interiorGroup.add(this.rainSystem.getMesh());
+        }
+    }
+
+    private buildInteriorFromBuilder(): void {
         const builder = new CarInteriorBuilder(
             this.interiorGroup,
             this.roofGroup,
@@ -400,6 +441,32 @@ private buildInteriorFromBuilder(): void {
             // on vehicle swaps it re-applies the current night glow.
             this.locationPanel.setNightGlow(this.lightingManager?.getSunNightFactor() ?? 0);
         }
+
+        if (this.quality !== 'low') {
+            const detail = CarInteriorDetailProps.build(
+                this.interiorGroup,
+                {
+                    dashboard: this.dashboardMaterial,
+                    leather: this.leatherMaterial,
+                    metal: this.metalMaterial,
+                    frame: this.frameMaterial,
+                    glass: this.glassMaterial,
+                    mirror: this.mirrorMaterial,
+                    accent: this.accentMaterial,
+                },
+                this.quality
+            );
+            this.cupLiquidMaterial = detail.cupLiquidMaterial;
+            this.microInteractions.register(detail.interactives);
+            this.animator?.setCupLiquidMaterial(this.cupLiquidMaterial);
+
+            this.vanityMirror?.dispose();
+            this.vanityMirror = undefined;
+            this.vanityMirrorMesh = detail.vanityMirrorMesh;
+            if (this.vanityMirrorMesh) {
+                this.vanityMirror = new VanityMirror(this.scene, this.renderer, this.vanityMirrorMesh);
+            }
+        }
     }
 
     /** Update the location readout panel with per-pano metadata. */
@@ -442,6 +509,7 @@ private buildInteriorFromBuilder(): void {
         this.mirrorMaterial = mats.mirror;
         this.accentMaterial = mats.accent;
         this.buildInteriorFromBuilder();
+        this.setupWindowWeatherOverlay();
         
         // Update roof state based on vehicle
         if (this.vehicleConfig.hasRoof) {
@@ -460,17 +528,11 @@ private buildInteriorFromBuilder(): void {
     public toggleRoof(): void {
         this.isRoofOpen = !this.isRoofOpen;
         this.roofTargetY = this.isRoofOpen ? -1.0 : 1.6;
+        this.animator?.setRoofTargetY(this.roofTargetY);
     }
 
-    /**
-     * Update loop - call each frame to animate roof, steering wheel, wipers, and gauges.
-     * Includes LOD updates and performance optimizations.
-     */
-
-    public update(deltaTime: number): void {
-
-        this.animator.update(deltaTime);
-
+    public update(deltaTime: number, carSpeedKmh = 0): void {
+        this.animator.update(deltaTime, carSpeedKmh);
     }
 
     /**
@@ -651,6 +713,71 @@ private buildInteriorFromBuilder(): void {
         if (this.rainSystem) this.rainSystem.setActive(active);
     }
 
+    /** Sync weather-driven cabin effects (rain overlay, condensation, wind audio). */
+    public setWeatherAmbient(opts: {
+        rainIntensity: number;
+        wind: number;
+        fogDensity: number;
+        snowIntensity?: number;
+        sunAltitude?: number;
+        lightShaftFactor?: number;
+        convertibleOpen?: boolean;
+    }): void {
+        const rainNorm = opts.rainIntensity / 100;
+        const windNorm = opts.wind / 100;
+        const fogNorm = opts.fogDensity / 100;
+        const snowNorm = (opts.snowIntensity ?? 0) / 100;
+        const humidityNorm = Math.min(1, fogNorm * 0.55 + rainNorm * 0.25 + snowNorm * 0.35);
+        const sunVisibility = opts.sunAltitude !== undefined
+            ? Math.max(0, Math.min(1, opts.sunAltitude / 0.35))
+            : 0.4;
+        const lightShaftFactor = opts.lightShaftFactor ?? sunVisibility * (1 - fogNorm * 0.6);
+        this.animator?.setAmbientState({
+            rainNorm,
+            windNorm,
+            fogNorm,
+            humidityNorm,
+            sunVisibility,
+            lightShaftFactor,
+            convertibleOpen: opts.convertibleOpen ?? false,
+        });
+    }
+
+    public triggerInteriorPress(meshName: string): boolean {
+        return this.microInteractions.triggerPressByName(meshName);
+    }
+
+    public setVanityStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
+        this.vanityMirror?.setStreetViewCanvas(canvas);
+    }
+
+    public updateVanityMirror(viewHeading: number, headPitch: number): void {
+        this.vanityMirror?.update(viewHeading, headPitch, true);
+    }
+
+    public setInteriorEditMode(enabled: boolean): void {
+        this.microInteractions.setInteriorEditMode(enabled);
+    }
+
+    public handleInteriorPointerDown(clientX: number, clientY: number, editMode: boolean): boolean {
+        return this.microInteractions.handlePointerDown(
+            clientX,
+            clientY,
+            this.canvas.getBoundingClientRect(),
+            this.camera,
+            this.interiorGroup,
+            editMode
+        );
+    }
+
+    public handleInteriorPointerMove(clientX: number, clientY: number): boolean {
+        return this.microInteractions.handlePointerMove(clientX, clientY);
+    }
+
+    public handleInteriorPointerUp(): void {
+        this.microInteractions.handlePointerUp();
+    }
+
     /** Enable/disable post-processing (bloom + SMAA). */
 
     public setPostProcessingEnabled(enabled: boolean): void {
@@ -757,6 +884,9 @@ private buildInteriorFromBuilder(): void {
         this.lodManager.dispose();
         if (this.postProcessing) this.postProcessing.dispose();
         if (this.rainSystem) this.rainSystem.dispose();
+        this.dustMoteSystem?.dispose();
+        this.windowWeatherOverlay?.dispose();
+        this.vanityMirror?.dispose();
         
         if (this.canvas.parentElement) {
             this.canvas.parentElement.removeChild(this.canvas);

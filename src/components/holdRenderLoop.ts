@@ -11,14 +11,18 @@ export function shouldRenderHeldFrameThisTick(opts: {
   frameSkip: number;
 }): boolean {
   if (opts.panoramaUpdatePaused) return true;
+  // Full fps for the release crossfade after the hold lifts.
+  if (opts.isTransitioning) return true;
   if (opts.skipFrame) return false;
   return (
-    opts.isTransitioning ||
     opts.sourceChanged ||
     opts.frameCount % opts.frameSkip === 0
   );
 }
 
-export function shouldBypassAdaptiveSkip(panoramaUpdatePaused: boolean): boolean {
-  return panoramaUpdatePaused;
+export function shouldBypassAdaptiveSkip(
+  panoramaUpdatePaused: boolean,
+  isTransitioning = false
+): boolean {
+  return panoramaUpdatePaused || isTransitioning;
 }

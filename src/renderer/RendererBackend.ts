@@ -46,7 +46,7 @@ export interface StreetViewRenderer {
     isInTransition(): boolean;
     getTransitionDuration(mode?: string): number;
     captureCurrentFrame(): void;
-    beginHoldTransition(heading?: number, pitch?: number): void;
+    beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement): void;
     endHoldTransition(): void;
     isHoldActive(): boolean;
     setTransitionProgress(progress: number): void;

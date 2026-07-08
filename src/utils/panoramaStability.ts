@@ -25,6 +25,95 @@ export const STABILITY_MAX_TICKS = Math.round(
   STABILITY_MAX_WAIT_MS / STABILITY_POLL_INTERVAL_MS
 );
 
+/** True once the canvas fingerprint diverges from the pre-hold baseline. */
+export function hasPanoramaContentChanged(
+  fingerprint: string,
+  holdBaselineFingerprint: string
+): boolean {
+  if (!holdBaselineFingerprint) return true;
+  if (!fingerprint) return false;
+  return fingerprint !== holdBaselineFingerprint;
+}
+
+export interface PanoramaStabilityTickState {
+  tickCount: number;
+  stableCount: number;
+  lastFingerprint: string;
+  sawContentChange: boolean;
+}
+
+export function createPanoramaStabilityState(
+  holdBaselineFingerprint: string
+): PanoramaStabilityTickState {
+  return {
+    tickCount: 0,
+    stableCount: 0,
+    lastFingerprint: '',
+    // No baseline (e.g. first paint) — any stable content is acceptable.
+    sawContentChange: !holdBaselineFingerprint,
+  };
+}
+
+export type PanoramaStabilityTickOutcome =
+  | { type: 'continue' }
+  | { type: 'ready' }
+  | { type: 'force-ready'; reason: 'status-error' | 'no-canvas-timeout' | 'timeout' };
+
+/**
+ * One poll tick of the pano_changed stability gate. Shared by useStreetView and
+ * unit tests so hold-release timing cannot drift from the documented contract.
+ */
+export function advancePanoramaStabilityTick(
+  state: PanoramaStabilityTickState,
+  opts: {
+    fingerprint: string;
+    holdBaselineFingerprint: string;
+    panoStatus?: string;
+    hasCanvas: boolean;
+  }
+): { outcome: PanoramaStabilityTickOutcome; state: PanoramaStabilityTickState } {
+  const next: PanoramaStabilityTickState = {
+    ...state,
+    tickCount: state.tickCount + 1,
+  };
+
+  const status = opts.panoStatus;
+  if (status && status !== 'OK') {
+    return { outcome: { type: 'force-ready', reason: 'status-error' }, state: next };
+  }
+
+  if (!opts.hasCanvas) {
+    if (next.tickCount >= STABILITY_MAX_TICKS) {
+      return { outcome: { type: 'force-ready', reason: 'no-canvas-timeout' }, state: next };
+    }
+    return { outcome: { type: 'continue' }, state: { ...next, stableCount: 0 } };
+  }
+
+  const { fingerprint } = opts;
+  if (hasPanoramaContentChanged(fingerprint, opts.holdBaselineFingerprint)) {
+    next.sawContentChange = true;
+  }
+
+  if (fingerprint && next.sawContentChange && fingerprint === next.lastFingerprint) {
+    next.stableCount++;
+    if (
+      next.stableCount >= STABILITY_REQUIRED_STABLE_TICKS &&
+      next.tickCount >= STABILITY_MIN_DELAY_TICKS
+    ) {
+      return { outcome: { type: 'ready' }, state: next };
+    }
+  } else if (fingerprint !== next.lastFingerprint) {
+    next.stableCount = 0;
+    next.lastFingerprint = fingerprint;
+  }
+
+  if (next.tickCount >= STABILITY_MAX_TICKS) {
+    return { outcome: { type: 'force-ready', reason: 'timeout' }, state: next };
+  }
+
+  return { outcome: { type: 'continue' }, state: next };
+}
+
 let sharedOffscreenCanvas: HTMLCanvasElement | null = null;
 let sharedOffscreenCtx: CanvasRenderingContext2D | null = null;
 

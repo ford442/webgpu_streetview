@@ -146,6 +146,7 @@ export class CarInteriorDashboardBuilder {
             roughness: 0.3,
         });
         const hazardBtn = new THREE.Mesh(hazardGeo, hazardMat);
+        hazardBtn.name = 'hazardBtn';
         hazardBtn.position.set(0.35, 0.85, -0.72);
         this.interiorGroup.add(hazardBtn);
 

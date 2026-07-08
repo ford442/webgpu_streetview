@@ -22,6 +22,10 @@ export { InteractionHelper } from './interior/InteractionHelper';
 export { ClockRenderer } from './interior/ClockRenderer';
 export { PostProcessingManager } from './interior/PostProcessingManager';
 export { RainSystem } from './interior/RainSystem';
+export { DustMoteSystem } from './interior/DustMoteSystem';
+export { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
+export { InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
+export { VanityMirror } from './interior/VanityMirror';
 export { PerformanceProfiler } from './interior/PerformanceProfiler';
 export { buildInteriorLighting } from './interior/LightingBuilder';
 export type { VehicleType, VehicleConfig } from './VehicleManager';
@@ -203,6 +207,7 @@ export function toggleCarMode(enabled: boolean): void {
 export function setMirrorStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
     if (!carModeState) return;
     carModeState.mirror.setStreetViewCanvas(canvas);
+    carModeState.interior.setVanityStreetViewCanvas(canvas);
 }
 
 /** Sync Three.js camera FOV with WebGPU shader zoom for window alignment. */
@@ -252,8 +257,8 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     const deltaTime = (now - lastTimestamp) / 1000;
     lastTimestamp = now;
 
-    // Update interior animations (roof, etc.)
-    carModeState.interior.update(deltaTime);
+    // Update interior animations (roof, wipers, ambient particles, etc.)
+    carModeState.interior.update(deltaTime, carSpeed);
 
     // Update convertible mode (wind particles, etc.)
     if (carModeState.convertibleMode) {
@@ -271,6 +276,8 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     // Update mirror with the rear view (180° behind car heading)
     // The mirror shows what's actually behind the car based on Street View
     carModeState.mirror.update(mirrorHeading ?? carHeading, true); // skipFrame = true for performance
+
+    carModeState.interior.updateVanityMirror(mirrorHeading ?? carHeading, headPitch);
 
     // Update interior lighting based on headlights, night intensity, and dome light
     carModeState.interior.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
@@ -511,6 +518,45 @@ export function isConvertibleOpen(): boolean {
 export function setCarRainActive(active: boolean): void {
     if (!carModeState) return;
     carModeState.interior.setRainActive(active);
+}
+
+/** Weather-driven cabin glass + ambience (rain overlay, condensation, dust, wind). */
+export function setCarWeatherAmbient(opts: {
+    rainIntensity: number;
+    wind: number;
+    fogDensity: number;
+    snowIntensity?: number;
+    sunAltitude?: number;
+    lightShaftFactor?: number;
+    convertibleOpen?: boolean;
+}): void {
+    if (!carModeState) return;
+    carModeState.interior.setWeatherAmbient(opts);
+}
+
+export function triggerCarInteriorPress(meshName: string): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.triggerInteriorPress(meshName);
+}
+
+export function setCarInteriorEditMode(enabled: boolean): void {
+    if (!carModeState) return;
+    carModeState.interior.setInteriorEditMode(enabled);
+}
+
+export function handleCarInteriorPointerDown(clientX: number, clientY: number, editMode: boolean): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.handleInteriorPointerDown(clientX, clientY, editMode);
+}
+
+export function handleCarInteriorPointerMove(clientX: number, clientY: number): boolean {
+    if (!carModeState) return false;
+    return carModeState.interior.handleInteriorPointerMove(clientX, clientY);
+}
+
+export function handleCarInteriorPointerUp(): void {
+    if (!carModeState) return;
+    carModeState.interior.handleInteriorPointerUp();
 }
 
 /**

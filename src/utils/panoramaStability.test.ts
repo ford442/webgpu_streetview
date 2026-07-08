@@ -1,5 +1,8 @@
 import {
+  advancePanoramaStabilityTick,
+  createPanoramaStabilityState,
   getCanvasFingerprint,
+  hasPanoramaContentChanged,
   STABILITY_MAX_TICKS,
   STABILITY_MAX_WAIT_MS,
   STABILITY_MIN_DELAY_MS,
@@ -112,5 +115,90 @@ describe('getCanvasFingerprint', () => {
       const fp2 = getCanvasFingerprint(makeCanvas(400, 400));
       expect(fp1).not.toBe(fp2);
     });
+  });
+});
+
+describe('hasPanoramaContentChanged', () => {
+  it('returns false while fingerprint still matches the pre-hold baseline', () => {
+    expect(hasPanoramaContentChanged('512x512-abc', '512x512-abc')).toBe(false);
+    expect(hasPanoramaContentChanged('', '512x512-abc')).toBe(false);
+  });
+
+  it('returns true once the fingerprint diverges from baseline', () => {
+    expect(hasPanoramaContentChanged('512x512-xyz', '512x512-abc')).toBe(true);
+  });
+
+  it('accepts any stable content when there is no baseline', () => {
+    expect(hasPanoramaContentChanged('512x512-abc', '')).toBe(true);
+  });
+});
+
+describe('advancePanoramaStabilityTick', () => {
+  const baseline = '512x512-old';
+
+  it('does not release while the canvas fingerprint never changes from baseline', () => {
+    let state = createPanoramaStabilityState(baseline);
+
+    for (let i = 0; i < STABILITY_MIN_DELAY_TICKS + STABILITY_REQUIRED_STABLE_TICKS; i++) {
+      const { outcome, state: next } = advancePanoramaStabilityTick(state, {
+        fingerprint: baseline,
+        holdBaselineFingerprint: baseline,
+        hasCanvas: true,
+      });
+      state = next;
+      expect(outcome.type).toBe('continue');
+    }
+  });
+
+  it('releases after content changes and then stabilizes', () => {
+    let state = createPanoramaStabilityState(baseline);
+    const newFp = '512x512-new';
+
+    // Old content still on canvas — must not release early.
+    for (let i = 0; i < STABILITY_MIN_DELAY_TICKS; i++) {
+      ({ state } = advancePanoramaStabilityTick(state, {
+        fingerprint: baseline,
+        holdBaselineFingerprint: baseline,
+        hasCanvas: true,
+      }));
+    }
+
+    // New pano starts painting.
+    ({ state } = advancePanoramaStabilityTick(state, {
+      fingerprint: newFp,
+      holdBaselineFingerprint: baseline,
+      hasCanvas: true,
+    }));
+
+    let released = false;
+    for (let i = 0; i < STABILITY_REQUIRED_STABLE_TICKS + 2 && !released; i++) {
+      const { outcome, state: next } = advancePanoramaStabilityTick(state, {
+        fingerprint: newFp,
+        holdBaselineFingerprint: baseline,
+        hasCanvas: true,
+      });
+      state = next;
+      if (outcome.type === 'ready') released = true;
+    }
+
+    expect(released).toBe(true);
+  });
+
+  it('force-releases at the max wait cap', () => {
+    let state = createPanoramaStabilityState(baseline);
+    let outcome: import('./panoramaStability').PanoramaStabilityTickOutcome = { type: 'continue' };
+
+    for (let i = 0; i < STABILITY_MAX_TICKS; i++) {
+      ({ outcome, state } = advancePanoramaStabilityTick(state, {
+        fingerprint: baseline,
+        holdBaselineFingerprint: baseline,
+        hasCanvas: true,
+      }));
+    }
+
+    expect(outcome.type).toBe('force-ready');
+    if (outcome.type === 'force-ready') {
+      expect(outcome.reason).toBe('timeout');
+    }
   });
 });

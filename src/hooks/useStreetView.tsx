@@ -2,11 +2,10 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { findBestLink } from '../utils/navigation';
 import { StreetViewRenderer } from '../renderer/RendererBackend';
 import {
+  advancePanoramaStabilityTick,
+  createPanoramaStabilityState,
   getCanvasFingerprint,
-  STABILITY_MAX_TICKS,
-  STABILITY_MIN_DELAY_TICKS,
   STABILITY_POLL_INTERVAL_MS,
-  STABILITY_REQUIRED_STABLE_TICKS,
 } from '../utils/panoramaStability';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
 
@@ -101,7 +100,9 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isPanoramaReady, setIsPanoramaReady] = useState(true);
   const isPanoramaReadyRef = useRef(true);
+  const isTransitioningRef = useRef(false);
   const isPanoramaUpdatePausedRef = useRef(false);
+  const holdBaselineFingerprintRef = useRef('');
   const readyPromiseRef = useRef<Set<() => void>>(new Set());
   const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
   
@@ -116,6 +117,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // Keep refs in sync with state for listeners / RAF loops
   useEffect(() => { canvasRef.current = canvas; }, [canvas]);
   useEffect(() => { isPanoramaReadyRef.current = isPanoramaReady; }, [isPanoramaReady]);
+  useEffect(() => { isTransitioningRef.current = isTransitioning; }, [isTransitioning]);
   useEffect(() => {
     isPanoramaUpdatePausedRef.current = isTransitioning && !isPanoramaReady;
   }, [isTransitioning, isPanoramaReady]);
@@ -201,11 +203,16 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // handles the release for either path identically.
   const armHold = useCallback(() => {
     const renderer = rendererRef.current;
+    const currentCanvas = canvasRef.current;
+
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
-    renderer?.beginHoldTransition(heading, pitch);
+    renderer?.beginHoldTransition(heading, pitch, currentCanvas ?? undefined);
     streetViewProbe.holdArmed();
 
-    const currentCanvas = canvasRef.current;
+    holdBaselineFingerprintRef.current = currentCanvas
+      ? getCanvasFingerprint(currentCanvas)
+      : '';
+
     if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
       try {
         const snap = document.createElement('canvas');
@@ -221,6 +228,11 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
     }
 
+    // Sync refs immediately so RAF / pano_changed listeners see the hold before
+    // React re-renders — avoids a one-frame live upload leak.
+    isPanoramaReadyRef.current = false;
+    isTransitioningRef.current = true;
+    isPanoramaUpdatePausedRef.current = true;
     setIsPanoramaReady(false);
     setIsTransitioning(true);
 
@@ -310,68 +322,61 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         setPositionState(pos);
       }
 
+      // Only gate hold-release while a hop is in progress. Outside advance() /
+      // teleport() the live canvas feed should stay connected.
+      if (!isTransitioningRef.current) {
+        return;
+      }
+
       // --- Canvas stability gate ---
-      // Replace the old fixed 700 ms timer with a real load/stability check.
       if (stabilityInterval) {
         clearInterval(stabilityInterval);
         stabilityInterval = null;
       }
 
-      let stableCount = 0;
-      let lastFingerprint = '';
-      let tickCount = 0;
+      let stabilityState = createPanoramaStabilityState(holdBaselineFingerprintRef.current);
 
       stabilityInterval = setInterval(() => {
         const c = canvasRef.current;
-        tickCount++;
+        const status = (pano as { getStatus?: () => string }).getStatus?.();
+        const fingerprint = c ? getCanvasFingerprint(c) : '';
 
-        // Check panorama status — if Google reports the imagery is unavailable,
-        // don't hang waiting for a stable canvas.
-        const status = (pano as any).getStatus?.();
-        if (status && status !== 'OK') {
+        const { outcome, state } = advancePanoramaStabilityTick(stabilityState, {
+          fingerprint,
+          holdBaselineFingerprint: holdBaselineFingerprintRef.current,
+          panoStatus: status,
+          hasCanvas: !!(c && c.width >= 256 && c.height >= 256),
+        });
+        stabilityState = state;
+
+        if (outcome.type === 'ready') {
           clearInterval(stabilityInterval!);
           stabilityInterval = null;
-          console.warn('[StreetView] Panorama status not OK, forcing ready:', status);
+          console.log('[StreetView] Canvas stable, panorama ready');
           streetViewProbe.firstStable();
+          isPanoramaReadyRef.current = true;
+          isPanoramaUpdatePausedRef.current = false;
           setIsPanoramaReady(true);
           return;
         }
 
-        if (!c || c.width < 256 || c.height < 256) {
-          stableCount = 0;
-          if (tickCount >= STABILITY_MAX_TICKS) {
-            clearInterval(stabilityInterval!);
-            stabilityInterval = null;
-            console.log('[StreetView] Stability fallback (no canvas)');
-            streetViewProbe.firstStable();
-            setIsPanoramaReady(true);
-          }
-          return;
-        }
-
-        const fingerprint = getCanvasFingerprint(c);
-        if (fingerprint && fingerprint === lastFingerprint) {
-          stableCount++;
-          // Require both sufficient stability AND minimum delay to avoid
-          // revealing the low-res preview tile before 720 imagery decodes.
-          if (stableCount >= STABILITY_REQUIRED_STABLE_TICKS && tickCount >= STABILITY_MIN_DELAY_TICKS) {
-            clearInterval(stabilityInterval!);
-            stabilityInterval = null;
-            console.log('[StreetView] Canvas stable, panorama ready');
-            streetViewProbe.firstStable();
-            setIsPanoramaReady(true);
-            return;
-          }
-        } else {
-          stableCount = 0;
-          lastFingerprint = fingerprint;
-        }
-
-        if (tickCount >= STABILITY_MAX_TICKS) {
+        if (outcome.type === 'force-ready') {
           clearInterval(stabilityInterval!);
           stabilityInterval = null;
-          console.log('[StreetView] Stability fallback (timeout)');
+          const reason =
+            outcome.reason === 'status-error'
+              ? `Panorama status not OK, forcing ready: ${status}`
+              : outcome.reason === 'no-canvas-timeout'
+                ? 'Stability fallback (no canvas)'
+                : 'Stability fallback (timeout)';
+          if (outcome.reason === 'status-error') {
+            console.warn('[StreetView]', reason);
+          } else {
+            console.log('[StreetView]', reason);
+          }
           streetViewProbe.firstStable();
+          isPanoramaReadyRef.current = true;
+          isPanoramaUpdatePausedRef.current = false;
           setIsPanoramaReady(true);
         }
       }, STABILITY_POLL_INTERVAL_MS);
@@ -393,12 +398,18 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
 
     const renderer = rendererRef.current;
     if (!renderer) {
+      isTransitioningRef.current = false;
+      isPanoramaReadyRef.current = true;
+      isPanoramaUpdatePausedRef.current = false;
+      holdBaselineFingerprintRef.current = '';
       setIsTransitioning(false);
       setTransitionSource(null);
       streetViewProbe.released();
       return;
     }
 
+    // End hold so the shader crossfade path (transitionProgress 0→1) can blend
+    // the GPU snapshot with the now-stable live panorama.
     renderer.endHoldTransition();
 
     const RELEASE_DURATION = 250;
@@ -414,7 +425,10 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       } else {
         transitionRafRef.current = null;
         renderer.setTransitionProgress(0.0);
-        renderer.endHoldTransition();
+        isTransitioningRef.current = false;
+        isPanoramaReadyRef.current = true;
+        isPanoramaUpdatePausedRef.current = false;
+        holdBaselineFingerprintRef.current = '';
         setIsTransitioning(false);
         setTransitionSource(null);
         console.log('[StreetView] Transition pause complete, ready for next advance');

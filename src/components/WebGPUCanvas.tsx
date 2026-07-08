@@ -225,11 +225,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             if (!active) return;
 
             const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
-            const skipFrame = shouldBypassAdaptiveSkip(panoramaUpdatePaused)
+            const isTransitioning = isTransitioningRef.current;
+            const skipFrame = shouldBypassAdaptiveSkip(panoramaUpdatePaused, isTransitioning)
                 ? false
                 : shouldSkipFrameRef.current();
 
-            const isTransitioning = isTransitioningRef.current;
             const renderHeading = headingRef.current;
             const renderPitch = pitchRef.current;
             const renderZoom = zoomRef.current;

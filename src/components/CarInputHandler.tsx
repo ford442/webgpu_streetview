@@ -9,6 +9,10 @@ interface CarInputHandlerProps {
   onSteeringDelta?: (delta: number) => void;
   /** Toggle the 2D dashboard HUD (bound to the `U` key) so the cockpit can be seen unobstructed. */
   onToggleHud?: () => void;
+  onInteriorPointerDown?: (clientX: number, clientY: number, editMode: boolean) => boolean;
+  onInteriorPointerMove?: (clientX: number, clientY: number) => boolean;
+  onInteriorPointerUp?: () => void;
+  interiorEditMode?: boolean;
 }
 
 /**
@@ -22,7 +26,11 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   isSteeringWheelAtPoint,
   onThrust,
   onSteeringDelta,
-  onToggleHud
+  onToggleHud,
+  onInteriorPointerDown,
+  onInteriorPointerMove,
+  onInteriorPointerUp,
+  interiorEditMode = false,
 }) => {
   const {
     heading,
@@ -55,6 +63,15 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   useEffect(() => { onThrustRef.current = onThrust; }, [onThrust]);
   const onToggleHudRef = useRef(onToggleHud);
   useEffect(() => { onToggleHudRef.current = onToggleHud; }, [onToggleHud]);
+  const onInteriorPointerDownRef = useRef(onInteriorPointerDown);
+  useEffect(() => { onInteriorPointerDownRef.current = onInteriorPointerDown; }, [onInteriorPointerDown]);
+  const onInteriorPointerMoveRef = useRef(onInteriorPointerMove);
+  useEffect(() => { onInteriorPointerMoveRef.current = onInteriorPointerMove; }, [onInteriorPointerMove]);
+  const onInteriorPointerUpRef = useRef(onInteriorPointerUp);
+  useEffect(() => { onInteriorPointerUpRef.current = onInteriorPointerUp; }, [onInteriorPointerUp]);
+  const interiorEditModeRef = useRef(interiorEditMode);
+  useEffect(() => { interiorEditModeRef.current = interiorEditMode; }, [interiorEditMode]);
+  const interiorDragRef = useRef(false);
 
   const HEAD_LOOK_SENSITIVITY = 0.18;
   const KEYBOARD_LOOK_RATE = 90;
@@ -96,6 +113,16 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       (e.buttons & 1) !== 0 || (e.buttons & 2) !== 0;
 
     const handleMouseDown = (e: MouseEvent) => {
+      const editMode = interiorEditModeRef.current || (e.shiftKey && controlMode === 'freeLook');
+      if (editMode && e.button === 0) {
+        const hit = onInteriorPointerDownRef.current?.(e.clientX, e.clientY, true);
+        if (hit) {
+          interiorDragRef.current = true;
+          e.stopPropagation();
+          return;
+        }
+      }
+
       if (controlMode === 'uiMouse' && e.button === 0) return;
 
       if (e.button === 0) {
@@ -126,6 +153,12 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (interiorDragRef.current) {
+        if (onInteriorPointerMoveRef.current?.(e.clientX, e.clientY)) {
+          return;
+        }
+      }
+
       const currentMode = getEffectiveControlMode();
       if (!isDraggingRef.current || !dragStartedOnTargetRef.current) return;
 
@@ -154,6 +187,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
+      if (interiorDragRef.current) {
+        interiorDragRef.current = false;
+        onInteriorPointerUpRef.current?.();
+      }
       if (e.button === 0 || e.button === 2) {
         clearDragState();
       }

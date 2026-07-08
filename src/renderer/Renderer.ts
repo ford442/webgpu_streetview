@@ -418,8 +418,26 @@ export class Renderer implements StreetViewRenderer {
      * Arm hold-pause transition: snapshot the outgoing frame and freeze rendering
      * on it until endHoldTransition() is called when the new panorama is ready.
      */
-    public beginHoldTransition(heading?: number, pitch?: number): void {
-        this.captureCurrentFrame();
+    public beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement): void {
+        if (this.videoTexture) {
+            this.captureCurrentFrame();
+        } else if (cpuSnapshot && cpuSnapshot.width >= 256 && cpuSnapshot.height >= 256) {
+            this.createVideoTexture(cpuSnapshot.width, cpuSnapshot.height);
+            try {
+                this.device.queue.copyExternalImageToTexture(
+                    { source: cpuSnapshot },
+                    { texture: this.videoTexture! },
+                    [cpuSnapshot.width, cpuSnapshot.height]
+                );
+                this.transitionManager?.captureCurrentFrame(this.videoTexture!);
+                this.updateBindGroup();
+            } catch (e) {
+                console.warn('[Renderer] CPU hold snapshot upload failed:', e);
+            }
+        } else {
+            console.warn('[Renderer] beginHoldTransition: no GPU or CPU snapshot available');
+        }
+
         const panX = ((heading ?? 0) % 360) / 360;
         const panY = ((pitch ?? 0) + 90) / 180;
         this.capturePanX = panX;

@@ -59,6 +59,13 @@ export class RainSystem {
     }
   }
 
+  setIntensity(norm: number): void {
+    const mat = this.mesh.material as THREE.MeshStandardMaterial;
+    mat.opacity = 0.35 + norm * 0.35;
+    this.active = norm > 0.03;
+    this.mesh.visible = this.active && !this.wipersActive;
+  }
+
   update(deltaTime: number): void {
     if (!this.active || this.wipersActive) return;
 

@@ -12,6 +12,8 @@ interface MiniMapProps {
     routePath?: google.maps.LatLng[] | null;
     viewMode?: 'map' | 'globe';
     showCryptoMarkers?: boolean;
+    /** Hold-pause aware teleport — must route through StreetViewProvider. */
+    onTeleport?: (lat: number, lng: number) => void;
 }
 
 const MiniMap: React.FC<MiniMapProps> = ({
@@ -20,7 +22,8 @@ const MiniMap: React.FC<MiniMapProps> = ({
     heading,
     routePath,
     viewMode = 'map',
-    showCryptoMarkers = false
+    showCryptoMarkers = false,
+    onTeleport,
 }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
@@ -55,6 +58,18 @@ const MiniMap: React.FC<MiniMapProps> = ({
         }
     }, [panorama]);
 
+    const moveToPano = useCallback((data: google.maps.StreetViewPanoramaData, fallbackLatLng: google.maps.LatLng) => {
+        addBreadcrumb();
+        if (onTeleport) {
+            const target = data.location?.latLng ?? fallbackLatLng;
+            onTeleport(target.lat(), target.lng());
+            return;
+        }
+        if (data.location?.pano) {
+            panorama.setPano(data.location.pano);
+        }
+    }, [addBreadcrumb, onTeleport, panorama]);
+
     // Helper to move to a location (teleport)
     const teleportTo = useCallback((latLng: google.maps.LatLng | null) => {
         if (!latLng || !map) return;
@@ -62,16 +77,12 @@ const MiniMap: React.FC<MiniMapProps> = ({
         const sv = new google.maps.StreetViewService();
         sv.getPanorama({ location: latLng, radius: 50 }, (data, status) => {
             if (status === google.maps.StreetViewStatus.OK && data && data.location && data.location.pano) {
-                // Save current location as breadcrumb before moving
-                addBreadcrumb();
-
-                // Move
-                panorama.setPano(data.location.pano);
+                moveToPano(data, latLng);
             } else {
                 console.warn("No Street View found near this location.");
             }
         });
-    }, [map, panorama, addBreadcrumb]);
+    }, [map, moveToPano]);
 
 
     // Initialize Google Maps 2D
@@ -325,7 +336,11 @@ const MiniMap: React.FC<MiniMapProps> = ({
                 });
 
                 crumb.addListener("click", () => {
-                    panorama.setPosition(pos);
+                    if (onTeleport) {
+                        onTeleport(pos.lat(), pos.lng());
+                    } else {
+                        panorama.setPosition(pos);
+                    }
                 });
 
                 return crumb;
@@ -338,7 +353,11 @@ const MiniMap: React.FC<MiniMapProps> = ({
                 }) as any;
 
                 crumb.addListener("click", () => {
-                    panorama.setPosition(pos);
+                    if (onTeleport) {
+                        onTeleport(pos.lat(), pos.lng());
+                    } else {
+                        panorama.setPosition(pos);
+                    }
                 });
 
                 return crumb;

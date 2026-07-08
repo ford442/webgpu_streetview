@@ -21,6 +21,13 @@ import {
   setWindowTint,
   setMirrorStreetViewCanvas,
   setCarZoomFOV,
+  setCarWeatherAmbient,
+  setCarInteriorEditMode,
+  triggerCarInteriorPress,
+  handleCarInteriorPointerDown,
+  handleCarInteriorPointerMove,
+  handleCarInteriorPointerUp,
+  isConvertibleOpen,
   CarModeState
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
@@ -66,10 +73,12 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     setSnowIntensity,
     wind,
     setWind,
+    fogDensity,
     timeOfDay,
     nightIntensity,
     applyTimeOfDayPreset,
     ambientLightColor,
+    sunAltitude,
   } = useEnvironmentSettings();
   
   const {
@@ -162,6 +171,24 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       domeLightOn
     );
   }, [wipersEnabled, headlightsOn, domeLightOn, nightIntensity]);
+
+  // Weather-reactive cabin glass + ambience
+  useEffect(() => {
+    setCarWeatherAmbient({
+      rainIntensity,
+      wind,
+      fogDensity,
+      snowIntensity,
+      sunAltitude,
+      lightShaftFactor: Math.max(0, sunAltitude / 0.35) * (1 - fogDensity / 150),
+      convertibleOpen: isConvertibleOpen(),
+    });
+  }, [rainIntensity, wind, fogDensity, snowIntensity, sunAltitude, isRoofOpen]);
+
+  // UI Mouse mode = interior edit (3D knobs/buttons); Shift temporarily in freeLook too
+  useEffect(() => {
+    setCarInteriorEditMode(controlMode === 'uiMouse');
+  }, [controlMode]);
   
   // Keep rearview mirror fed from the scraped Street View canvas
   useEffect(() => {
@@ -298,6 +325,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     if (controlMode === 'freeLook') return; // Car is locked when looking around
     pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
     carSpeedRef.current = direction === 'forward' ? 25 : 12;
+    triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
   }, [controlMode]);
 
   // Handle steering deltas from CarInputHandler for wheel visual + body tilt
@@ -405,7 +433,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       case 'freeLook':
         return '🖱️ Click-drag = look around • A/D = turn head • Car stays put • Click wheel = steer';
       case 'uiMouse':
-        return '🖱️ Use dashboard controls • Right-drag = steer • H = switch mode';
+        return '🖱️ Dashboard controls • Click cabin knobs/buttons • Right-drag = steer • H = switch mode';
       case 'carSteer':
         return '🚗 Click-drag X = steer car • drag Y = look up/down • W/S = drive • Q/E = snap ±45°';
     }
@@ -420,8 +448,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         height: '100vh',
         overflow: 'hidden',
         backgroundColor: 'transparent',
-        // UI mode: let clicks pass through to the dashboard; other modes capture look/steer input
-        pointerEvents: controlMode === 'uiMouse' ? 'none' : 'auto',
+        pointerEvents: 'auto',
         cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'default',
       }}
     >
@@ -432,6 +459,10 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         onThrust={handleThrust}
         onSteeringDelta={handleSteeringDelta}
         onToggleHud={toggleDashboard}
+        onInteriorPointerDown={(x, y, edit) => handleCarInteriorPointerDown(x, y, edit)}
+        onInteriorPointerMove={(x, y) => handleCarInteriorPointerMove(x, y)}
+        onInteriorPointerUp={() => handleCarInteriorPointerUp()}
+        interiorEditMode={controlMode === 'uiMouse'}
       />
       
       {/* Premium Car Dashboard */}

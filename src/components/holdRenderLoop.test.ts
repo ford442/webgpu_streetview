@@ -4,6 +4,7 @@ describe('holdRenderLoop', () => {
   it('never skips adaptive frame drops while hold look-around is active', () => {
     expect(shouldBypassAdaptiveSkip(true)).toBe(true);
     expect(shouldBypassAdaptiveSkip(false)).toBe(false);
+    expect(shouldBypassAdaptiveSkip(false, true)).toBe(true);
   });
 
   it('always renders held frames each tick during pause even when adaptive skip is on', () => {
@@ -30,5 +31,18 @@ describe('holdRenderLoop', () => {
         frameSkip: 2,
       })
     ).toBe(false);
+  });
+
+  it('keeps rendering during the release crossfade (transitioning but no longer paused)', () => {
+    expect(
+      shouldRenderHeldFrameThisTick({
+        panoramaUpdatePaused: false,
+        skipFrame: true,
+        isTransitioning: true,
+        sourceChanged: false,
+        frameCount: 1,
+        frameSkip: 2,
+      })
+    ).toBe(true);
   });
 });
