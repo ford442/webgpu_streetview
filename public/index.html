@@ -11,7 +11,7 @@
     <script>
       (function loadRuntimeMapsConfig() {
         var script = document.createElement('script');
-        script.src = '%PUBLIC_URL%/config.js';
+        script.src = './config.js';
         script.onload = function () {
           window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
         };
