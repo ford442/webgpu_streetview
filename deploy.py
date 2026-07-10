@@ -23,6 +23,7 @@ Requirements:
 import io
 import os
 import re
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -47,20 +48,54 @@ def _is_placeholder(key: str) -> bool:
     return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
 
 
-def _validate_build_index(build_path: Path) -> None:
-    """Reject builds whose index.html looks like an unprocessed CRA template."""
+def _build_index_problems(build_path: Path) -> list[str]:
+    """Return deploy-blocking problems with build/index.html, if any."""
     index_html = build_path / "index.html"
     if not index_html.is_file():
-        print(f"\nERROR: {index_html} is missing. Run 'npm run build' first.")
-        sys.exit(1)
+        return ["build/index.html is missing"]
 
     content = index_html.read_text(encoding="utf-8", errors="replace")
     problems: list[str] = []
     if "%PUBLIC_URL%" in content:
-        problems.append("contains unprocessed %PUBLIC_URL% (public/index.html was deployed instead of build/index.html)")
+        problems.append(
+            "contains unprocessed %PUBLIC_URL% (public/index.html was deployed instead of build/index.html)"
+        )
     if "static/js/main" not in content:
         problems.append("does not reference static/js/main.*.js (React bundle will never load)")
+    return problems
 
+
+def _ensure_production_build(build_path: Path) -> None:
+    """Run npm run build when build/ is missing or still looks like public/ template."""
+    repo_root = Path(__file__).resolve().parent
+    needs_build = not build_path.is_dir()
+    problems: list[str] = []
+
+    if not needs_build:
+        problems = _build_index_problems(build_path)
+        needs_build = bool(problems)
+
+    if not needs_build:
+        return
+
+    reason = problems[0] if problems else "build/ directory is missing"
+    print(f"\n  build/ is not deployable ({reason}).")
+    print("  Running 'npm run build' to produce a production bundle...\n")
+    result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=repo_root,
+        env=os.environ.copy(),
+    )
+    if result.returncode != 0:
+        print("\nERROR: 'npm run build' failed. Fix build errors, then run deploy again.")
+        sys.exit(1)
+
+    print("\n  npm run build completed successfully.\n")
+
+
+def _validate_build_index(build_path: Path) -> None:
+    """Reject builds whose index.html looks like an unprocessed CRA template."""
+    problems = _build_index_problems(build_path)
     if problems:
         print("\n" + "!" * 70)
         print("  ERROR: build/index.html is not safe to deploy:")
@@ -176,12 +211,18 @@ def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
 def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     """Ensure index.html references the CRA main.js bundle (not just public/ template)."""
     text = index_html.decode("utf-8", errors="replace")
+    changed = False
+    if "%PUBLIC_URL%" in text:
+        text = text.replace("%PUBLIC_URL%", ".")
+        changed = True
+        print("  ! index.html repaired — replaced leftover %PUBLIC_URL% with '.'")
+
     if "static/js/main" in text:
-        return index_html
+        return text.encode("utf-8") if changed else index_html
 
     manifest_path = build_path / "asset-manifest.json"
     if not manifest_path.is_file():
-        return index_html
+        return text.encode("utf-8") if changed else index_html
 
     import json
 
@@ -189,7 +230,7 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     main_js = manifest.get("files", {}).get("main.js", "")
     main_css = manifest.get("files", {}).get("main.css", "")
     if not main_js:
-        return index_html
+        return text.encode("utf-8") if changed else index_html
 
     insert = ""
     if main_css and main_css not in text:
@@ -198,7 +239,7 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
         insert += f'<script defer="defer" src="{main_js}"></script>'
 
     if not insert:
-        return index_html
+        return text.encode("utf-8") if changed else index_html
 
     if "</head>" in text:
         repaired = text.replace("</head>", f"{insert}</head>", 1)
@@ -308,12 +349,9 @@ def main():
     print(f"\n=== Deploying '{PROJECT_NAME}' via Contabo -> {_site_host} (target={DEPLOY_TARGET}) ===\n")
 
     build_path = Path(BUILD_DIR)
-    if not build_path.exists() or not build_path.is_dir():
-        print(f"ERROR: Build directory '{BUILD_DIR}/' does not exist.")
-        print("Please run your build command first (e.g. `npm run build`).")
-        sys.exit(1)
 
     # --- Pre-deploy build + Maps key validation ---
+    _ensure_production_build(build_path)
     print("Checking build/index.html...")
     _validate_build_index(build_path)
     print("Checking Maps API key...")

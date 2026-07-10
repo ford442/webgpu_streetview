@@ -3,7 +3,7 @@
 // Copy this to `config.js` (gitignored in practice via deployment) and fill in your key,
 // OR (recommended for production) let `deploy.py` generate it by setting MAPS_API_KEY.
 //
-// This file is loaded via <script src="%PUBLIC_URL%/config.js"> in index.html
+// This file is loaded via <script src="./config.js"> in index.html
 // BEFORE the React bundle, so the key is available to the earliest module code.
 //
 // For the official demo hosts, create a single key with multiple referrer patterns:
