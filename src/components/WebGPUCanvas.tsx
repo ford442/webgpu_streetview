@@ -5,6 +5,7 @@ import { usePerformanceMonitor, useEnvironmentSettings, useStreetView } from '..
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
+import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
@@ -57,6 +58,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     // Performance: Debounced resize
     const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // WASM-driven ambient dust turbulence (see src/wasm/wasmNoiseFeeder.ts).
+    // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
+    const noiseFeederRef = useRef<WasmNoiseFeeder>(new WasmNoiseFeeder());
+    const wasmNoiseEnabledRef = useRef<boolean>(getWasmNoisePreference());
 
     const currentRendererRef = internalRendererRef;
 
@@ -297,16 +303,21 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 params[27] = 0.0;                         // heat shimmer intensity
                 params[28] = sunVisible * 0.4;            // lens flare intensity
                 params[29] = 0.0;                         // chromatic aberration
-                params[30] = 0.0;                         // dust intensity
+
+                // Ambient dust motes are driven entirely by the WASM noise tile —
+                // no dust renders unless that feature is enabled and loaded, which
+                // makes the wasmNoise dev flag a clean visible on/off toggle.
+                const wasmNoiseActive = wasmNoiseEnabledRef.current && noiseFeederRef.current.isReady;
+                params[30] = wasmNoiseActive ? 0.3 : 0.0; // dust intensity
                 params[31] = 0.0;                         // humidity haze
 
                 // [32]: Shader effects enabled flag
                 params[32] = e.shaderEffectsEnabled ? 1.0 : 0.0;
 
-                // [33-35]: Camera params and padding
+                // [33-35]: Camera params and WASM noise toggle
                 params[33] = weatherHeading;
                 params[34] = weatherPitch;
-                params[35] = 0.0;
+                params[35] = wasmNoiseActive ? 1.0 : 0.0;
 
                 // [36]: Sunrise flag
                 params[36] = e.timeOfDay === 'sunrise' ? 1.0 : 0.0;
@@ -319,6 +330,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
                 currentRendererRef.current.updateWeatherParams(params);
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
+
+                if (wasmNoiseEnabledRef.current) {
+                    const tile = noiseFeederRef.current.sampleTile(frameCountRef.current, params[6]);
+                    if (tile) currentRendererRef.current.updateNoiseBuffer(tile);
+                }
             }
 
             if (shouldRender && currentRendererRef.current) {

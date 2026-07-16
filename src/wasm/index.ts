@@ -205,7 +205,11 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes, {});
+    // The WAT module has no built-in transcendental functions, so haversine()
+    // imports sin/cos/atan2 from the host — this gives it the same
+    // double-precision result as the JS fallback formula.
+    const importObject = { env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 } };
+    const { instance } = await WebAssembly.instantiate(bytes, importObject);
     const exp = instance.exports as Record<string, WebAssembly.ExportValue>;
 
     const wasmMemory = exp['memory'] as WebAssembly.Memory;
@@ -217,6 +221,9 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     ) => void;
     const normalize_angle = exp['normalize_angle'] as (a: number) => number;
     const signed_angle_diff = exp['signed_angle_diff'] as (f: number, t: number) => number;
+    const haversine_wasm = exp['haversine'] as (
+      lat1: number, lon1: number, lat2: number, lon2: number
+    ) => number;
 
     // WASM memory starts at byte 512 (after the permutation table).
     // We use a fixed scratch region for fillNoiseBuffer transfers.
@@ -246,7 +253,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       seed,
       noise2d,
       fillNoiseBuffer,
-      haversine: _jsHaversine, // haversine uses JS (WAT source lacks sin/cos builtins)
+      haversine: haversine_wasm,
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       isWasm: true,

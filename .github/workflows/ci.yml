@@ -18,9 +18,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - run: npm ci
+      # No package-lock.json is committed (see .gitignore), so `npm ci` and
+      # setup-node's built-in `cache: npm` (which requires a lockfile to hash)
+      # aren't usable here.
+      - run: npm install
 
       - name: Run tests
         run: npm test -- --watchAll=false
@@ -33,3 +35,26 @@ jobs:
         run: npm run build
         env:
           CI: false
+
+  # Optional parity check: rebuild the WASM module through the full C++/Emscripten
+  # path (cpp/src/noise_module.cpp) instead of the hand-written WAT source, so a
+  # regression in the C++ implementation doesn't go unnoticed. Not required for
+  # merge — the WAT-built public/wasm/streetview-wasm.wasm committed to the repo
+  # is what actually ships.
+  build-wasm-emscripten:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - run: npm run build:wasm

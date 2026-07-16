@@ -1,3 +1,8 @@
+// Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
+// `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
+const NOISE_TILE_SIZE = 64;
+const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
+
 export class WeatherPostProcessor {
     private device: GPUDevice;
     private context: GPUCanvasContext;
@@ -7,6 +12,7 @@ export class WeatherPostProcessor {
     private weatherBindGroup!: GPUBindGroup;
     private weatherParamsBuffer!: GPUBuffer;
     private weatherSampler!: GPUSampler;
+    private noiseBuffer!: GPUBuffer;
     private weatherParams: Float32Array = new Float32Array(40);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -26,6 +32,13 @@ export class WeatherPostProcessor {
         this.weatherParamsBuffer = this.device.createBuffer({
             size: 160,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        // Zero-initialized until the first WASM-computed tile lands — the
+        // shader only samples it when wasmNoiseEnabled (params[35]) is set.
+        this.noiseBuffer = this.device.createBuffer({
+            size: NOISE_BUFFER_BYTES,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
         this.weatherParams.set([
@@ -74,6 +87,11 @@ export class WeatherPostProcessor {
                     visibility: GPUShaderStage.FRAGMENT,
                     sampler: { type: 'filtering' as GPUSamplerBindingType },
                 },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: 'read-only-storage' as GPUBufferBindingType },
+                },
             ],
         });
 
@@ -105,8 +123,18 @@ export class WeatherPostProcessor {
                 { binding: 0, resource: { buffer: this.weatherParamsBuffer } },
                 { binding: 1, resource: intermediateTextureView },
                 { binding: 2, resource: this.weatherSampler },
+                { binding: 3, resource: { buffer: this.noiseBuffer } },
             ],
         });
+    }
+
+    /**
+     * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts).
+     * `tile` must be NOISE_TILE_SIZE * NOISE_TILE_SIZE elements, row-major.
+     */
+    public updateNoiseBuffer(tile: Float32Array): void {
+        if (!this.noiseBuffer || !this.device) return;
+        this.device.queue.writeBuffer(this.noiseBuffer, 0, tile);
     }
 
     public setShaderEffects(enabled: boolean): void {
@@ -219,10 +247,12 @@ export class WeatherPostProcessor {
     public dispose(): void {
         try {
             if (this.weatherParamsBuffer) this.weatherParamsBuffer.destroy();
+            if (this.noiseBuffer) this.noiseBuffer.destroy();
         } catch (e) {
             // ignore cleanup errors
         }
         this.weatherParamsBuffer = undefined as any;
+        this.noiseBuffer = undefined as any;
         this.weatherPipeline = undefined as any;
         this.weatherBindGroup = undefined as any;
     }

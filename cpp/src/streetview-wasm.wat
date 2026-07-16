@@ -15,11 +15,20 @@
 ;;                     scale: f32, ox: f32, oy: f32)  → void
 ;;   normalize_angle(a: f32)                          → f32  [0, 360)
 ;;   signed_angle_diff(from: f32, to: f32)            → f32  (-180, 180]
+;;   haversine(lat1: f64, lon1: f64,
+;;             lat2: f64, lon2: f64)                  → f64  metres
 ;;
-;; Note: haversine requires sin/cos which are not built into WASM.
-;; The TypeScript wrapper (src/wasm/index.ts) provides a JS fallback.
+;; haversine relies on "env.sin"/"env.cos"/"env.atan2" host imports (WASM has
+;; no built-in transcendental functions) — the TypeScript wrapper
+;; (src/wasm/index.ts) supplies Math.sin/Math.cos/Math.atan2 at instantiation
+;; time, so the result matches the JS fallback formula bit-for-bit.
 
 (module
+  ;; ---- Host-provided math imports (f64, exact precision) ----
+  (import "env" "sin" (func $env_sin (param f64) (result f64)))
+  (import "env" "cos" (func $env_cos (param f64) (result f64)))
+  (import "env" "atan2" (func $env_atan2 (param f64) (param f64) (result f64)))
+
   ;; Memory layout:
   ;;   [0 .. 511]   perm[512] – u8 permutation table (identity default)
   ;; 1 page = 64 KiB.
@@ -275,5 +284,49 @@
         (f32.const 360.0)
         (f32.floor
           (f32.div (f32.add (local.get $d) (f32.const 180.0)) (f32.const 360.0)))))
+  )
+
+  ;; ---- haversine(lat1, lon1, lat2, lon2) → f64 metres (exported) ----
+  ;; Great-circle distance via the haversine formula, using the host sin/cos/
+  ;; atan2 imports above for exact double-precision transcendentals.
+  (func (export "haversine")
+    (param $lat1 f64) (param $lon1 f64) (param $lat2 f64) (param $lon2 f64) (result f64)
+    (local $deg2rad f64)
+    (local $lat1r f64) (local $lat2r f64)
+    (local $dLatHalf f64) (local $dLonHalf f64)
+    (local $sinDLatHalf f64) (local $sinDLonHalf f64)
+    (local $cosLat1 f64) (local $cosLat2 f64)
+    (local $a f64) (local $y f64) (local $x f64)
+
+    (local.set $deg2rad (f64.const 0.017453292519943295))
+    (local.set $lat1r (f64.mul (local.get $lat1) (local.get $deg2rad)))
+    (local.set $lat2r (f64.mul (local.get $lat2) (local.get $deg2rad)))
+    (local.set $dLatHalf
+      (f64.mul (f64.const 0.5)
+        (f64.mul (f64.sub (local.get $lat2) (local.get $lat1)) (local.get $deg2rad))))
+    (local.set $dLonHalf
+      (f64.mul (f64.const 0.5)
+        (f64.mul (f64.sub (local.get $lon2) (local.get $lon1)) (local.get $deg2rad))))
+
+    (local.set $sinDLatHalf (call $env_sin (local.get $dLatHalf)))
+    (local.set $sinDLonHalf (call $env_sin (local.get $dLonHalf)))
+    (local.set $cosLat1 (call $env_cos (local.get $lat1r)))
+    (local.set $cosLat2 (call $env_cos (local.get $lat2r)))
+
+    (local.set $a
+      (f64.add
+        (f64.mul (local.get $sinDLatHalf) (local.get $sinDLatHalf))
+        (f64.mul
+          (f64.mul (local.get $cosLat1) (local.get $cosLat2))
+          (f64.mul (local.get $sinDLonHalf) (local.get $sinDLonHalf)))))
+    ;; Clamp for float round-off (a can drift a hair outside [0,1]).
+    (local.set $a (f64.min (f64.max (local.get $a) (f64.const 0.0)) (f64.const 1.0)))
+
+    (local.set $y (f64.sqrt (local.get $a)))
+    (local.set $x (f64.sqrt (f64.sub (f64.const 1.0) (local.get $a))))
+
+    (f64.mul
+      (f64.const 6371000.0)
+      (f64.mul (f64.const 2.0) (call $env_atan2 (local.get $y) (local.get $x))))
   )
 )
