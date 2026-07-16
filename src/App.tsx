@@ -34,6 +34,7 @@ import {
   HistoricalTimeline,
   ComparisonView,
   TourPanel,
+  SharedSessionPanel,
 } from './components';
 
 import { useHistoricalTimeline } from './hooks/useHistoricalTimeline';
@@ -58,6 +59,7 @@ import { useCruiseMode } from './hooks/useCruiseMode';
 import { useAutopilot } from './hooks/useAutopilot';
 import { buildAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from './hooks/useGlobeTeleport';
+import { useSharedSession } from './hooks/useSharedSession';
 import AppToolbar from './components/AppToolbar';
 import AppBanners from './components/AppBanners';
 import BuildBadge from './components/BuildBadge';
@@ -207,6 +209,7 @@ function InnerApp() {
   const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
   const [isHistoricalTimelineOpen, setIsHistoricalTimelineOpen] = useState(false);
   const [isTourPanelOpen, setIsTourPanelOpen] = useState(false);
+  const [isSharedSessionPanelOpen, setIsSharedSessionPanelOpen] = useState(false);
   const [showPerformanceStats, setShowPerformanceStats] = useState(false);
   
   // Accessibility
@@ -258,6 +261,8 @@ function InnerApp() {
     importTourFromJson,
   } = useTours();
   const globeMode = useGlobeMode();
+  const sharedSession = useSharedSession();
+  const sharedSessionLastAppliedPanoRef = useRef<string | null>(null);
 
   // Historical Timeline ("time travel") — scrub through capture dates near the current location.
   const {
@@ -282,6 +287,40 @@ function InnerApp() {
   const historicalAfterEntry = historicalEntries.find((e) => e.panoId === historicalCurrentPanoId);
   const historicalAfterLabel = historicalAfterEntry ? formatImageDate(historicalAfterEntry.imageDate) : 'Current';
   
+  // Shared Exploration Sessions — host broadcasts POV at 10Hz to connected guests.
+  useEffect(() => {
+    if (sharedSession.role !== 'host' || !sharedSession.isConnected) return;
+    const interval = setInterval(() => {
+      if (!panorama) return;
+      const panoId = panorama.getPano();
+      const pos = panorama.getPosition();
+      if (!panoId || !pos) return;
+      sharedSession.broadcastState({
+        panoId,
+        position: { lat: pos.lat(), lng: pos.lng() },
+        pov: { heading, pitch, zoom },
+        viewMode,
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, [sharedSession.role, sharedSession.isConnected, sharedSession.broadcastState, panorama, heading, pitch, zoom, viewMode]);
+
+  // Shared Exploration Sessions — guests follow the host's POV as it arrives.
+  useEffect(() => {
+    if (sharedSession.role !== 'guest') return;
+    const state = sharedSession.latestState;
+    if (!state) return;
+
+    const currentPanoId = panorama?.getPano();
+    if (state.panoId && state.panoId !== currentPanoId && state.panoId !== sharedSessionLastAppliedPanoRef.current) {
+      sharedSessionLastAppliedPanoRef.current = state.panoId;
+      teleportToPanoSafe(state.panoId);
+    }
+    setHeading(state.pov.heading);
+    setPitch(state.pov.pitch);
+    setZoom(state.pov.zoom);
+  }, [sharedSession.role, sharedSession.latestState, panorama, teleportToPanoSafe, setHeading, setPitch, setZoom]);
+
   // Audio ref for radio
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -833,6 +872,9 @@ function InnerApp() {
             setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
             isTourPanelOpen={isTourPanelOpen}
             setIsTourPanelOpen={setIsTourPanelOpen}
+            isSharedSessionPanelOpen={isSharedSessionPanelOpen}
+            setIsSharedSessionPanelOpen={setIsSharedSessionPanelOpen}
+            isSharedSessionActive={sharedSession.isConnected}
             viewMode={viewMode}
             toggleViewMode={toggleViewMode}
             onGlobeToggle={globeMode.toggle}
@@ -862,6 +904,24 @@ function InnerApp() {
             />
           )}
           
+          {/* Shared Session Panel — multiplayer road trip host/join controls */}
+          {isSharedSessionPanelOpen && (
+            <SharedSessionPanel
+              isOpen={isSharedSessionPanelOpen}
+              onClose={() => setIsSharedSessionPanelOpen(false)}
+              role={sharedSession.role}
+              status={sharedSession.status}
+              error={sharedSession.error}
+              inviteCode={sharedSession.inviteCode}
+              joinCode={sharedSession.joinCode}
+              isConnected={sharedSession.isConnected}
+              onStartHosting={sharedSession.startHosting}
+              onAdmitGuest={sharedSession.admitGuest}
+              onJoinWithInviteCode={sharedSession.joinWithInviteCode}
+              onLeave={sharedSession.leaveSession}
+            />
+          )}
+
           {/* History Panel */}
           {isHistoryPanelOpen && (
             <HistoryPanel

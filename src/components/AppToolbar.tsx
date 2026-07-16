@@ -20,6 +20,9 @@ export interface AppToolbarProps {
   setIsHistoricalTimelineOpen: (v: boolean) => void;
   isTourPanelOpen: boolean;
   setIsTourPanelOpen: (v: boolean) => void;
+  isSharedSessionPanelOpen: boolean;
+  setIsSharedSessionPanelOpen: (v: boolean) => void;
+  isSharedSessionActive: boolean;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -45,6 +48,9 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   setIsHistoricalTimelineOpen,
   isTourPanelOpen,
   setIsTourPanelOpen,
+  isSharedSessionPanelOpen,
+  setIsSharedSessionPanelOpen,
+  isSharedSessionActive,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
@@ -128,6 +134,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); setIsTourPanelOpen(!isTourPanelOpen); }}
       >
         🗺 Tours
+      </button>
+      <button
+        className={`control-btn${isSharedSessionPanelOpen || isSharedSessionActive ? ' disconnect' : ''}`}
+        style={{ minWidth: 110, backgroundColor: isSharedSessionActive ? 'rgba(46,125,50,0.85)' : undefined }}
+        onClick={e => { e.stopPropagation(); setIsSharedSessionPanelOpen(!isSharedSessionPanelOpen); }}
+      >
+        🧑‍🤝‍🧑 Road Trip
       </button>
       <button
         className="control-btn"
