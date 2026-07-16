@@ -32,7 +32,12 @@ import {
   RendererBackendIndicator,
   WebGPUCanvas,
   LoadingOverlay,
+  HistoricalTimeline,
+  ComparisonView,
 } from './components';
+import { useHistoricalTimeline } from './hooks/useHistoricalTimeline';
+import { useHistoricalCompare } from './hooks/useHistoricalCompare';
+import { formatImageDate } from './utils/historicalImagery';
 
 // Hooks
 import { useBookmarks } from './hooks/useBookmarks';
@@ -101,8 +106,8 @@ if (!INITIAL_MAPS_KEY) {
  */
 function InnerApp() {
   // Connect to contexts
-  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, isTransitioning, isPanoramaReady } = useStreetView();
-  const { advanceSafe, teleportSafe, panoCache } = useAdvanceSafe();
+  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, isTransitioning, isPanoramaReady, renderer, readyPromise } = useStreetView();
+  const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const { viewMode, toggleViewMode } = useViewMode();
   const {
     rainIntensity,
@@ -195,6 +200,7 @@ function InnerApp() {
   const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
   const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
   const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
+  const [isHistoricalTimelineOpen, setIsHistoricalTimelineOpen] = useState(false);
   const [showPerformanceStats, setShowPerformanceStats] = useState(false);
   
   // Accessibility
@@ -228,6 +234,29 @@ function InnerApp() {
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
   const { snapshots, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
   const globeMode = useGlobeMode();
+
+  // Historical Timeline ("time travel") — scrub through capture dates near the current location.
+  const {
+    entries: historicalEntries,
+    isLoading: isHistoricalLoading,
+    error: historicalError,
+    hasTimeline: hasHistoricalTimeline,
+    currentIndex: historicalCurrentIndex,
+    currentPanoId: historicalCurrentPanoId,
+  } = useHistoricalTimeline(panorama);
+  const {
+    compare: compareHistorical,
+    exitCompare: exitHistoricalCompare,
+    comparison: historicalComparison,
+    isCapturing: isCapturingComparison,
+  } = useHistoricalCompare({
+    renderer,
+    teleportToPanoSafe,
+    readyPromise,
+    getCurrentPanoId: () => panorama?.getPano() || null,
+  });
+  const historicalAfterEntry = historicalEntries.find((e) => e.panoId === historicalCurrentPanoId);
+  const historicalAfterLabel = historicalAfterEntry ? formatImageDate(historicalAfterEntry.imageDate) : 'Current';
   
   // Audio ref for radio
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -732,6 +761,17 @@ function InnerApp() {
         </div>
       )}
 
+      {/* Historical Imagery comparison — before/after swipe overlay */}
+      {isConnected && historicalComparison && (
+        <ComparisonView
+          beforeUrl={historicalComparison.beforeUrl}
+          afterUrl={historicalComparison.afterUrl}
+          beforeEntry={historicalComparison.beforeEntry}
+          afterLabel={historicalAfterLabel}
+          onClose={exitHistoricalCompare}
+        />
+      )}
+
       {/* Global UI Panels */}
       {isConnected && (
         <>
@@ -751,6 +791,8 @@ function InnerApp() {
             setIsColorGradingPanelOpen={setIsColorGradingPanelOpen}
             isWeatherPanelOpen={isWeatherPanelOpen}
             setIsWeatherPanelOpen={setIsWeatherPanelOpen}
+            isHistoricalTimelineOpen={isHistoricalTimelineOpen}
+            setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
             viewMode={viewMode}
             toggleViewMode={toggleViewMode}
             onGlobeToggle={globeMode.toggle}
@@ -859,6 +901,24 @@ function InnerApp() {
             />
           )}
           
+          {/* Historical Timeline — scrub through capture dates near the current location */}
+          {isHistoricalTimelineOpen && (
+            <HistoricalTimeline
+              isOpen={isHistoricalTimelineOpen}
+              onClose={() => setIsHistoricalTimelineOpen(false)}
+              entries={historicalEntries}
+              isLoading={isHistoricalLoading}
+              error={historicalError}
+              hasTimeline={hasHistoricalTimeline}
+              currentIndex={historicalCurrentIndex}
+              isTransitioning={isTransitioning || isCapturingComparison}
+              onSelectDate={(entry) => teleportToPanoSafe(entry.panoId)}
+              onCompare={compareHistorical}
+              isComparing={!!historicalComparison}
+              onExitCompare={exitHistoricalCompare}
+            />
+          )}
+
           {/* Accessibility Panel */}
           {isAccessibilityPanelOpen && (
             <AccessibilityPanel

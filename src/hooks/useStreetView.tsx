@@ -39,6 +39,8 @@ export interface StreetViewState {
   // Navigation
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;
   teleport: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => void;
+  /** Jump straight to a known panorama id (e.g. a historical capture) with the same hold-pause treatment. */
+  teleportToPano: (panoId: string) => void;
   
   // Transition state
   isTransitioning: boolean;
@@ -293,7 +295,18 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       setPitch(targetPitch);
     }
   }, [isTransitioning, armHold, setHeading, setPitch]);
-  
+
+  // Jump directly to a known panorama id (historical capture, saved bookmark
+  // pano, etc). Heading/pitch are left untouched so a POV comparison stays
+  // apples-to-apples across dates. Same hold-pause treatment as advance/teleport.
+  const teleportToPano = useCallback((panoId: string) => {
+    const pano = panoramaRef.current;
+    if (!pano || isTransitioning || !panoId) return;
+
+    armHold();
+    pano.setPano(panoId);
+  }, [isTransitioning, armHold]);
+
   // Listen for panorama changes
   useEffect(() => {
     const pano = panoramaRef.current;
@@ -478,6 +491,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     setPosition,
     advance,
     teleport,
+    teleportToPano,
     isTransitioning,
     setIsTransitioning,
     isPanoramaReady,

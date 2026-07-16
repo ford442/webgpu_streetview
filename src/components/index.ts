@@ -32,3 +32,5 @@ export { default as AccessibilityPanel } from './AccessibilityPanel';
 export { default as ScoutCard } from './ScoutCard';
 export { default as AppToolbar } from './AppToolbar';
 export { default as AppBanners } from './AppBanners';
+export { default as HistoricalTimeline } from './HistoricalTimeline';
+export { default as ComparisonView } from './ComparisonView';

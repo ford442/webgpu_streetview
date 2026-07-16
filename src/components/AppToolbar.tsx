@@ -16,6 +16,8 @@ export interface AppToolbarProps {
   setIsColorGradingPanelOpen: (v: boolean) => void;
   isWeatherPanelOpen: boolean;
   setIsWeatherPanelOpen: (v: boolean) => void;
+  isHistoricalTimelineOpen: boolean;
+  setIsHistoricalTimelineOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -37,6 +39,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   setIsColorGradingPanelOpen,
   isWeatherPanelOpen,
   setIsWeatherPanelOpen,
+  isHistoricalTimelineOpen,
+  setIsHistoricalTimelineOpen,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
@@ -106,6 +110,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
       >
         🌧 Weather
+      </button>
+      <button
+        className={`control-btn${isHistoricalTimelineOpen ? ' disconnect' : ''}`}
+        style={{ minWidth: 110 }}
+        onClick={e => { e.stopPropagation(); setIsHistoricalTimelineOpen(!isHistoricalTimelineOpen); }}
+      >
+        🕰 Time Travel
       </button>
       <button
         className="control-btn"

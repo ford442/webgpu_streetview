@@ -23,7 +23,7 @@ export interface TeleportSafeOptions {
  *  - Returns a Promise that resolves when the transition has finished.
  */
 export function useAdvanceSafe() {
-  const { isPanoramaReady, readyPromise, advance, teleport } = useStreetView();
+  const { isPanoramaReady, readyPromise, advance, teleport, teleportToPano } = useStreetView();
   const panoCache = usePanoramaCache();
 
   const advanceSafe = useCallback(
@@ -73,5 +73,15 @@ export function useAdvanceSafe() {
     [isPanoramaReady, readyPromise, teleport, panoCache]
   );
 
-  return { advanceSafe, teleportSafe, panoCache };
+  const teleportToPanoSafe = useCallback(
+    async (panoId: string) => {
+      if (!isPanoramaReady) {
+        await readyPromise();
+      }
+      teleportToPano(panoId);
+    },
+    [isPanoramaReady, readyPromise, teleportToPano]
+  );
+
+  return { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache };
 }
