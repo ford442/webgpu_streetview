@@ -56,7 +56,7 @@ export {
   TEMP_ICON,
 } from './ui/icons';
 
-export default {
+const controlsUI = {
   IconButton,
   Slider,
   ToggleGroup,
@@ -66,3 +66,5 @@ export default {
   Divider,
   injectSliderStyles,
 };
+
+export default controlsUI;

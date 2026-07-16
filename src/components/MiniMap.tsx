@@ -17,7 +17,6 @@ interface MiniMapProps {
 }
 
 const MiniMap: React.FC<MiniMapProps> = ({
-    apiKey,
     panorama,
     heading,
     routePath,
@@ -364,7 +363,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
             }
         });
 
-    }, [breadcrumbs, map, panorama]); // Re-render when breadcrumbs change
+    }, [breadcrumbs, map, panorama, onTeleport]); // Re-render when breadcrumbs change
 
     // Render Route Path with optimization to reuse the Polyline object
     useEffect(() => {

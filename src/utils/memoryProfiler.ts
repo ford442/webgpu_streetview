@@ -67,12 +67,10 @@ export const MATERIAL_TEXTURE_PROPS = ['map', 'normalMap', 'roughnessMap', 'meta
 export class MemoryProfiler {
   private snapshots: MemorySnapshot[] = [];
   private maxHistorySize = 60; // Keep last 60 snapshots
-  private trackedObjects = new Map<string, THREE.Object3D>();
   private lastSnapshotTime = 0;
   private snapshotInterval = 1000; // ms
-  
+
   // WebGPU specific
-  private gpuDevice?: GPUDevice;
   private gpuBuffers = new Map<string, number>();
   private gpuTextures = new Map<string, number>();
   
@@ -83,8 +81,8 @@ export class MemoryProfiler {
   /**
    * Set GPU device for WebGPU memory tracking
    */
-  setGPUDevice(device: GPUDevice): void {
-    this.gpuDevice = device;
+  setGPUDevice(_device: GPUDevice): void {
+    // Reserved for future WebGPU-side memory tracking; not yet consumed.
   }
   
   /**
@@ -233,7 +231,8 @@ export class MemoryProfiler {
       };
     }
     
-    const current = this.snapshots[this.snapshots.length - 1];
+    // this.snapshots.length === 0 already returned above, so this index is always present.
+    const current = this.snapshots[this.snapshots.length - 1]!;
     
     // Find peak usage
     const peak = this.snapshots.reduce((max, snap) => 

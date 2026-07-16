@@ -88,9 +88,9 @@ export class VehicleDynamics {
 
         // Gearbox: find the band, run RPM up within it, drop on shift.
         let gearNum = 1;
-        while (gearNum < SHIFT_POINTS.length && this.speed > SHIFT_POINTS[gearNum]) gearNum++;
-        const lo = SHIFT_POINTS[gearNum - 1];
-        const hi = gearNum < SHIFT_POINTS.length ? SHIFT_POINTS[gearNum] : MAX_SPEED_KMH;
+        while (gearNum < SHIFT_POINTS.length && this.speed > SHIFT_POINTS[gearNum]!) gearNum++;
+        const lo = SHIFT_POINTS[gearNum - 1]!;
+        const hi = gearNum < SHIFT_POINTS.length ? SHIFT_POINTS[gearNum]! : MAX_SPEED_KMH;
         const bandFrac = Math.min(1, (this.speed - lo) / (hi - lo));
         const targetRpm = this.speed < 0.5
             ? IDLE_RPM

@@ -72,20 +72,20 @@ export class RainSystem {
     const dt = Math.min(deltaTime, 0.1);
     for (let i = 0; i < this.count; i++) {
       // Slide down
-      this.positions[i * 3 + 1] -= this.velocities[i] * dt;
+      this.positions[i * 3 + 1]! -= this.velocities[i]! * dt;
 
       // Slight horizontal wiggle
-      this.positions[i * 3] += Math.sin(i * 7.3 + performance.now() * 0.001) * 0.0002;
+      this.positions[i * 3]! += Math.sin(i * 7.3 + performance.now() * 0.001) * 0.0002;
 
       // Reset if below windshield
-      if (this.positions[i * 3 + 1] < -0.3) {
+      if (this.positions[i * 3 + 1]! < -0.3) {
         this.resetDrop(i);
       }
 
       this.dummy.position.set(
-        this.positions[i * 3],
-        this.positions[i * 3 + 1],
-        this.positions[i * 3 + 2]
+        this.positions[i * 3]!,
+        this.positions[i * 3 + 1]!,
+        this.positions[i * 3 + 2]!
       );
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(i, this.dummy.matrix);
@@ -101,9 +101,9 @@ export class RainSystem {
     this.velocities[i] = 0.08 + Math.random() * 0.15;
 
     this.dummy.position.set(
-      this.positions[i * 3],
-      this.positions[i * 3 + 1],
-      this.positions[i * 3 + 2]
+      this.positions[i * 3]!,
+      this.positions[i * 3 + 1]!,
+      this.positions[i * 3 + 2]!
     );
     this.dummy.updateMatrix();
     this.mesh.setMatrixAt(i, this.dummy.matrix);

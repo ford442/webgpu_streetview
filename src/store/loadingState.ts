@@ -174,8 +174,8 @@ class LoadingStateManager {
     if (callbacks && callbacks.length > 0) {
       // Clear error state first
       this.clearError(type);
-      // Execute the most recent retry callback
-      const callback = callbacks[callbacks.length - 1];
+      // Execute the most recent retry callback (callbacks.length > 0 checked above).
+      const callback = callbacks[callbacks.length - 1]!;
       callback();
     }
   }

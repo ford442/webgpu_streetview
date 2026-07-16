@@ -61,7 +61,6 @@ export class CenterDisplay {
         this.texture.anisotropy = gpuProfileName === 'high' ? 8 : 4;
         this.texture.colorSpace = THREE.SRGBColorSpace;
 
-        const accentHex = parseInt(this.accent.replace('#', '0x')) || 0x00ffcc;
         this.screenMat = new THREE.MeshStandardMaterial({
             map: this.texture,
             emissive: new THREE.Color(0xffffff),
@@ -115,7 +114,7 @@ export class CenterDisplay {
     /** Plane with a gentle horizontal bulge toward +Z. */
     private static curvedPlane(w: number, h: number, depth: number): THREE.PlaneGeometry {
         const geo = new THREE.PlaneGeometry(w, h, 24, 1);
-        const pos = geo.attributes.position;
+        const pos = geo.attributes.position!;
         const half = w / 2;
         for (let i = 0; i < pos.count; i++) {
             const nx = pos.getX(i) / half;
@@ -167,7 +166,7 @@ export class CenterDisplay {
 
     /** Advance to the next page; returns the new page. */
     cyclePage(): DisplayPage {
-        this.page = PAGES[(PAGES.indexOf(this.page) + 1) % PAGES.length];
+        this.page = PAGES[(PAGES.indexOf(this.page) + 1) % PAGES.length]!;
         this.render(true);
         return this.page;
     }
@@ -369,7 +368,7 @@ export class CenterDisplay {
             ctx.lineTo(x, ribbonY + (isCardinal ? 18 : 10));
             ctx.stroke();
             if (isCardinal) {
-                this.glowText('NESW'[Math.round(norm / 90) % 4], x, ribbonY - 8, 24, 'center');
+                this.glowText('NESW'[Math.round(norm / 90) % 4]!, x, ribbonY - 8, 24, 'center');
             }
         }
         ctx.restore();

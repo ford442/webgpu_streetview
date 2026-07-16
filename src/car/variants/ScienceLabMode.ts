@@ -42,7 +42,6 @@ export class ScienceLabInterior {
 
     // Animation state
     private animationId: number = 0;
-    private time: number = 0;
     private fanRotationSpeed: number = 5;
     private blinkTime: number = 0;
 
@@ -64,7 +63,6 @@ export class ScienceLabInterior {
     private audioContext: AudioContext | null = null;
     private fanOscillator: OscillatorNode | null = null;
     private fanGain: GainNode | null = null;
-    private beepOscillator: OscillatorNode | null = null;
 
     // Materials
     private metalMaterial!: THREE.MeshStandardMaterial;
@@ -427,13 +425,13 @@ export class ScienceLabInterior {
         this.equipmentGroup.add(panel);
 
         // Create multiple instrument displays
-        const displayConfigs = [
+        const displayConfigs: { pos: [number, number, number]; color: number; label: string }[] = [
             { pos: [0.25, 1.3, -0.67], color: 0x00ff88, label: 'SPEC' },
             { pos: [0.5, 1.3, -0.67], color: 0x0088ff, label: 'DATA' },
             { pos: [0.75, 1.3, -0.67], color: 0xff8800, label: 'TEMP' },
         ];
 
-        displayConfigs.forEach((config, index) => {
+        displayConfigs.forEach((config) => {
             // Display frame
             const frameGeo = new THREE.BoxGeometry(0.18, 0.15, 0.02);
             const frame = new THREE.Mesh(frameGeo, this.darkPlasticMaterial);
@@ -728,7 +726,6 @@ export class ScienceLabInterior {
      * Update loop - animate equipment
      */
     public update(deltaTime: number): void {
-        this.time += deltaTime;
         this.blinkTime += deltaTime;
 
         // Animate fans

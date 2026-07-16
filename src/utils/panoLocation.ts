@@ -29,7 +29,8 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 /** Quantize a bearing in degrees to an 8-point compass label. */
 export function headingToCompass(heading: number): string {
   const h = (((heading % 360) + 360) % 360);
-  return COMPASS[Math.round(h / 45) % 8];
+  // Math.round(h / 45) % 8 is always in [0,7], a valid index into COMPASS.
+  return COMPASS[Math.round(h / 45) % 8]!;
 }
 
 const cache = new Map<string, PanoLocationInfo>();

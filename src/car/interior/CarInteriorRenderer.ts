@@ -21,7 +21,7 @@ export class CarInteriorRenderer {
         }
     }
 
-    public setTargetFPS(fps: number): void {
+    public setTargetFPS(_fps: number): void {
         // Frame limiting is handled by the caller; this is a no-op placeholder
         // for future frame-rate capping integration.
     }

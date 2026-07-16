@@ -445,18 +445,18 @@ export class PostProcessingPipeline {
                     break;
 
                 case 'vignette':
-                    this.vignetteMaterial.uniforms.tDiffuse.value = currentTexture;
+                    this.vignetteMaterial.uniforms.tDiffuse!.value = currentTexture;
                     this.renderFullscreen(this.vignetteMaterial, target);
                     break;
 
                 case 'chromatic':
-                    this.chromaticAberrationMaterial.uniforms.tDiffuse.value = currentTexture;
+                    this.chromaticAberrationMaterial.uniforms.tDiffuse!.value = currentTexture;
                     this.renderFullscreen(this.chromaticAberrationMaterial, target);
                     break;
 
                 case 'grain':
-                    this.filmGrainMaterial.uniforms.tDiffuse.value = currentTexture;
-                    this.filmGrainMaterial.uniforms.time.value = this.elapsedTime;
+                    this.filmGrainMaterial.uniforms.tDiffuse!.value = currentTexture;
+                    this.filmGrainMaterial.uniforms.time!.value = this.elapsedTime;
                     this.renderFullscreen(this.filmGrainMaterial, target);
                     break;
             }
@@ -494,8 +494,8 @@ export class PostProcessingPipeline {
         this.bloomBlurRT1.setSize(halfW, halfH);
         this.bloomBlurRT2.setSize(halfW, halfH);
 
-        this.blurMaterial.uniforms.resolution.value.set(halfW, halfH);
-        this.chromaticAberrationMaterial.uniforms.resolution.value.set(this.width, this.height);
+        this.blurMaterial.uniforms.resolution!.value.set(halfW, halfH);
+        this.chromaticAberrationMaterial.uniforms.resolution!.value.set(this.width, this.height);
     }
 
     // ---- Cleanup ------------------------------------------------------------
@@ -561,42 +561,42 @@ export class PostProcessingPipeline {
         const halfH = this.bloomBlurRT1.height;
 
         // Bright-pass extraction
-        this.brightPassMaterial.uniforms.tDiffuse.value = inputTexture;
-        this.brightPassMaterial.uniforms.threshold.value = this.config.bloomThreshold;
+        this.brightPassMaterial.uniforms.tDiffuse!.value = inputTexture;
+        this.brightPassMaterial.uniforms.threshold!.value = this.config.bloomThreshold;
         this.renderFullscreen(this.brightPassMaterial, this.bloomBrightRT);
 
         // Iterative separable Gaussian blur (radius controls iteration count)
         const iterations = Math.max(1, Math.min(5, Math.ceil(this.config.bloomRadius * 5)));
-        this.blurMaterial.uniforms.resolution.value.set(halfW, halfH);
+        this.blurMaterial.uniforms.resolution!.value.set(halfW, halfH);
 
         for (let i = 0; i < iterations; i++) {
             // Horizontal pass
-            this.blurMaterial.uniforms.tDiffuse.value =
+            this.blurMaterial.uniforms.tDiffuse!.value =
                 i === 0 ? this.bloomBrightRT.texture : this.bloomBlurRT2.texture;
-            this.blurMaterial.uniforms.direction.value.set(1.0, 0.0);
+            this.blurMaterial.uniforms.direction!.value.set(1.0, 0.0);
             this.renderFullscreen(this.blurMaterial, this.bloomBlurRT1);
 
             // Vertical pass
-            this.blurMaterial.uniforms.tDiffuse.value = this.bloomBlurRT1.texture;
-            this.blurMaterial.uniforms.direction.value.set(0.0, 1.0);
+            this.blurMaterial.uniforms.tDiffuse!.value = this.bloomBlurRT1.texture;
+            this.blurMaterial.uniforms.direction!.value.set(0.0, 1.0);
             this.renderFullscreen(this.blurMaterial, this.bloomBlurRT2);
         }
 
         // Additive composite (preserves original alpha)
-        this.bloomCompositeMaterial.uniforms.tDiffuse.value = inputTexture;
-        this.bloomCompositeMaterial.uniforms.tBloom.value = this.bloomBlurRT2.texture;
-        this.bloomCompositeMaterial.uniforms.strength.value = this.config.bloomStrength;
+        this.bloomCompositeMaterial.uniforms.tDiffuse!.value = inputTexture;
+        this.bloomCompositeMaterial.uniforms.tBloom!.value = this.bloomBlurRT2.texture;
+        this.bloomCompositeMaterial.uniforms.strength!.value = this.config.bloomStrength;
         this.renderFullscreen(this.bloomCompositeMaterial, outputTarget);
     }
 
     /** Pushes current config values into shader uniforms. */
     private syncUniforms(): void {
-        this.brightPassMaterial.uniforms.threshold.value = this.config.bloomThreshold;
-        this.bloomCompositeMaterial.uniforms.strength.value = this.config.bloomStrength;
-        this.vignetteMaterial.uniforms.strength.value = this.config.vignetteStrength;
-        this.vignetteMaterial.uniforms.offset.value = this.config.vignetteOffset;
-        this.filmGrainMaterial.uniforms.intensity.value = this.config.filmGrainIntensity;
-        this.chromaticAberrationMaterial.uniforms.strength.value =
+        this.brightPassMaterial.uniforms.threshold!.value = this.config.bloomThreshold;
+        this.bloomCompositeMaterial.uniforms.strength!.value = this.config.bloomStrength;
+        this.vignetteMaterial.uniforms.strength!.value = this.config.vignetteStrength;
+        this.vignetteMaterial.uniforms.offset!.value = this.config.vignetteOffset;
+        this.filmGrainMaterial.uniforms.intensity!.value = this.config.filmGrainIntensity;
+        this.chromaticAberrationMaterial.uniforms.strength!.value =
             this.config.chromaticAberrationStrength;
     }
 }

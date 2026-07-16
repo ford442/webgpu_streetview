@@ -7,7 +7,7 @@ export class CarInteriorSeatBuilder {
     constructor(
         private interiorGroup: THREE.Group,
         private materials: CarInteriorMaterials,
-        private vehicleConfig: VehicleConfig,
+        _vehicleConfig: VehicleConfig,
         private quality: 'high' | 'medium' | 'low',
         private geometryFactory: GeometryFactory
     ) {}
@@ -86,6 +86,7 @@ export class CarInteriorSeatBuilder {
 
         const driverCenterGeo = new THREE.PlaneGeometry(0.22, 0.45, 5, 9);
         const pos = driverCenterGeo.attributes.position;
+        if (!pos) return;
         for (let i = 0; i < pos.count; i++) {
             const x = pos.getX(i);
             const y = pos.getY(i);
@@ -103,6 +104,7 @@ export class CarInteriorSeatBuilder {
 
         const driverBottomCenterGeo = new THREE.PlaneGeometry(0.22, 0.35, 5, 7);
         const posB = driverBottomCenterGeo.attributes.position;
+        if (!posB) return;
         for (let i = 0; i < posB.count; i++) {
             const x = posB.getX(i);
             const y = posB.getY(i);
@@ -120,6 +122,7 @@ export class CarInteriorSeatBuilder {
 
         const passCenterGeo = new THREE.PlaneGeometry(0.22, 0.45, 5, 9);
         const posP = passCenterGeo.attributes.position;
+        if (!posP) return;
         for (let i = 0; i < posP.count; i++) {
             const x = posP.getX(i);
             const y = posP.getY(i);
@@ -137,6 +140,7 @@ export class CarInteriorSeatBuilder {
 
         const passBottomCenterGeo = new THREE.PlaneGeometry(0.22, 0.35, 5, 7);
         const posPB = passBottomCenterGeo.attributes.position;
+        if (!posPB) return;
         for (let i = 0; i < posPB.count; i++) {
             const x = posPB.getX(i);
             const y = posPB.getY(i);

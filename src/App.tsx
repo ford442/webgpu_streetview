@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import StreetView, { type MapsLoadStatus } from './components/StreetView';
 import WelcomeModal from './components/WelcomeModal';
 import type { RendererBackendType } from './renderer/RendererBackend';
@@ -101,7 +101,7 @@ if (!INITIAL_MAPS_KEY) {
  */
 function InnerApp() {
   // Connect to contexts
-  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, advance, isTransitioning, isPanoramaReady } = useStreetView();
+  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, isTransitioning, isPanoramaReady } = useStreetView();
   const { advanceSafe, teleportSafe, panoCache } = useAdvanceSafe();
   const { viewMode, toggleViewMode } = useViewMode();
   const {
@@ -764,7 +764,7 @@ function InnerApp() {
                 const pos = panorama.getPosition();
                 return pos ? { lat: pos.lat(), lng: pos.lng() } : { lat: 0, lng: 0 };
               })()}
-              onTeleport={(lat, lng, h, p) => {
+              onTeleport={(_lat, _lng, _h, _p) => {
                 // Teleport via StreetView context
               }}
               onAddBookmark={handleAddBookmark}

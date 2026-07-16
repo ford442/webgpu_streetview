@@ -31,25 +31,25 @@ export class WindowWeatherOverlay {
 
   setWeather(rainNorm: number, fogNorm: number, humidity = 0): void {
     const u = this.material.uniforms;
-    u.rainIntensity.value = Math.max(0, Math.min(1, rainNorm));
+    u.rainIntensity!.value = Math.max(0, Math.min(1, rainNorm));
     const condensation = Math.max(0, Math.min(1, fogNorm * 0.65 + humidity * 0.35 + rainNorm * 0.15));
-    u.condensation.value = condensation;
+    u.condensation!.value = condensation;
     this.mesh.visible = rainNorm > 0.02 || condensation > 0.04;
   }
 
   setWipersActive(active: boolean, phase: number): void {
     const u = this.material.uniforms;
-    u.wiperActive.value = active;
+    u.wiperActive!.value = active;
     this.wiperPhase = phase;
-    u.wiperPhase.value = phase;
+    u.wiperPhase!.value = phase;
   }
 
   update(deltaTime: number): void {
     const u = this.material.uniforms;
-    u.time.value += deltaTime;
-    if (u.wiperActive.value) {
+    u.time!.value += deltaTime;
+    if (u.wiperActive!.value) {
       this.wiperPhase = (this.wiperPhase + deltaTime * 0.55) % 1;
-      u.wiperPhase.value = this.wiperPhase;
+      u.wiperPhase!.value = this.wiperPhase;
     }
   }
 

@@ -70,7 +70,6 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     rainIntensity,
     wipersEnabled,
     toggleWipers,
-    headlightsOn,
     toggleHeadlights,
     toggleDomeLight,
     isRoofOpen,
@@ -96,7 +95,8 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       action: () => {
         const modes: TimeOfDay[] = ['day', 'sunrise', 'sunset', 'night'];
         const currentIndex = modes.indexOf(timeOfDay);
-        const nextMode = modes[(currentIndex + 1) % modes.length];
+        // Modulo of modes.length is always a valid index.
+        const nextMode = modes[(currentIndex + 1) % modes.length]!;
         applyTimeOfDayPreset(nextMode);
         announce(`Night mode: ${nextMode}`);
       },

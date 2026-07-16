@@ -53,7 +53,7 @@ const DIAL_SWEEP = Math.PI * 1.5;
 export class CarInteriorGauges {
     static build(
         interiorGroup: THREE.Group,
-        metalMaterial: THREE.MeshStandardMaterial,
+        _metalMaterial: THREE.MeshStandardMaterial,
         vehicleConfig: { accentColor: string },
         gpuProfile: { name: string },
         quality: 'high' | 'medium' | 'low'
@@ -135,7 +135,7 @@ export class CarInteriorGauges {
 
             if (isMajor) {
                 const labelRadius = r - size * 0.16;
-                const label = spec.majorLabels[i / spec.minorTicksPerMajor];
+                const label = spec.majorLabels[i / spec.minorTicksPerMajor]!;
                 ctx.fillStyle = inRedline ? '#ff6060' : 'rgba(255,255,255,0.85)';
                 ctx.font = `bold ${Math.round(size * 0.09)}px "Arial Narrow", Arial, sans-serif`;
                 ctx.textAlign = 'center';
@@ -215,7 +215,7 @@ export class CarInteriorGauges {
 
     private static buildGauges(
         interiorGroup: THREE.Group,
-        vehicleConfig: { accentColor: string },
+        _vehicleConfig: { accentColor: string },
         gpuProfile: { name: string },
         quality: 'high' | 'medium' | 'low'
     ): { speedometerNeedle: THREE.Mesh; tachometerNeedle: THREE.Mesh; gaugeRig: GaugeRig } {

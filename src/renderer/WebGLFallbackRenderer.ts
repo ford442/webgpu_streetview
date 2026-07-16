@@ -331,7 +331,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
 
     public updateEffects(effectsData: Float32Array): void {
         if (effectsData.length > 8) {
-            this.weatherParams[32] = effectsData[8] || this.weatherParams[32];
+            this.weatherParams[32] = effectsData[8]! || this.weatherParams[32]!;
         }
     }
 
@@ -354,7 +354,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
 
     public updateWeatherParams(params: Float32Array): void {
         this.weatherParams.set(params.subarray(0, Math.min(40, params.length)));
-        this.shaderEffectsEnabled = this.weatherParams[32] >= 0.5;
+        this.shaderEffectsEnabled = this.weatherParams[32]! >= 0.5;
     }
 
     public updateCameraParams(heading: number, pitch: number): void {

@@ -126,8 +126,9 @@ export async function getTopStationForLocation(
     
     if (stations.length === 0) return null;
     
-    // Pick the highest-voted station with a resolved URL
-    const best = stations.find(s => s.urlResolved) || stations[0];
+    // Pick the highest-voted station with a resolved URL.
+    // stations.length === 0 already returned above, so index 0 is always present.
+    const best = stations.find(s => s.urlResolved) || stations[0]!;
     return best;
 }
 

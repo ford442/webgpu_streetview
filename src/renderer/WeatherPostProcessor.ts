@@ -6,7 +6,6 @@ const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
 export class WeatherPostProcessor {
     private device: GPUDevice;
     private context: GPUCanvasContext;
-    private canvas: HTMLCanvasElement;
 
     private weatherPipeline!: GPURenderPipeline;
     private weatherBindGroup!: GPUBindGroup;
@@ -17,10 +16,9 @@ export class WeatherPostProcessor {
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
 
-    constructor(device: GPUDevice, context: GPUCanvasContext, canvas: HTMLCanvasElement) {
+    constructor(device: GPUDevice, context: GPUCanvasContext, _canvas: HTMLCanvasElement) {
         this.device = device;
         this.context = context;
-        this.canvas = canvas;
 
         this.weatherSampler = this.device.createSampler({
             magFilter: 'linear',
@@ -147,8 +145,8 @@ export class WeatherPostProcessor {
 
     public getCameraParams(): { heading: number; pitch: number } {
         return {
-            heading: this.weatherParams[33],
-            pitch: this.weatherParams[34]
+            heading: this.weatherParams[33]!,
+            pitch: this.weatherParams[34]!
         };
     }
 

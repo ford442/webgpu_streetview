@@ -20,7 +20,7 @@ export class VanityMirror {
   private static readonly HEIGHT = 160;
 
   constructor(
-    private readonly scene: THREE.Scene,
+    _scene: THREE.Scene,
     private readonly renderer: THREE.WebGLRenderer,
     mirrorPlane: THREE.Mesh
   ) {

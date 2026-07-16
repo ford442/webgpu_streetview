@@ -50,13 +50,7 @@ export class LimousineMode {
     private screensGroup: THREE.Group;
 
     // Materials
-    private luxuryLeatherMaterial!: THREE.MeshStandardMaterial;
-    private woodMaterial!: THREE.MeshStandardMaterial;
-    private chromeMaterial!: THREE.MeshStandardMaterial;
     private partitionGlassMaterial!: THREE.MeshPhysicalMaterial;
-    private screenMaterial!: THREE.MeshStandardMaterial;
-    private velvetMaterial!: THREE.MeshStandardMaterial;
-    private carpetMaterial!: THREE.MeshStandardMaterial;
 
     // Lights
     private moodLights: THREE.PointLight[] = [];
@@ -66,7 +60,6 @@ export class LimousineMode {
 
     // State
     private state: LimoState;
-    private partitionTargetY: number = 0;
     private animationId: number = 0;
 
     constructor(container: HTMLElement, initialState: Partial<LimoState> = {}) {
@@ -114,13 +107,7 @@ export class LimousineMode {
         this.barGroup = builder.barGroup;
         this.screensGroup = builder.screensGroup;
 
-        this.luxuryLeatherMaterial = builder.luxuryLeatherMaterial;
-        this.woodMaterial = builder.woodMaterial;
-        this.chromeMaterial = builder.chromeMaterial;
         this.partitionGlassMaterial = builder.partitionGlassMaterial;
-        this.screenMaterial = builder.screenMaterial;
-        this.velvetMaterial = builder.velvetMaterial;
-        this.carpetMaterial = builder.carpetMaterial;
 
         this.moodLights = builder.moodLights;
         this.barLight = builder.barLight;
@@ -152,11 +139,11 @@ export class LimousineMode {
             romantic: [0xff4466, 0xff6688, 0xff88aa, 0xffaacc],
         };
 
-        const colors = moodColors[this.state.moodLighting] || moodColors.relaxing;
+        const colors = (moodColors[this.state.moodLighting] || moodColors.relaxing)!;
         const intensity = this.state.entertainmentOn ? 0.8 : 0.4;
 
         this.moodLights.forEach((light, idx) => {
-            light.color.setHex(colors[idx % colors.length]);
+            light.color.setHex(colors[idx % colors.length]!);
             light.intensity = intensity;
         });
 
@@ -195,7 +182,7 @@ export class LimousineMode {
         };
 
         const emissiveIntensity = this.state.entertainmentOn ? 0.8 : 0.2;
-        const color = contentColors[this.state.screenContent] || contentColors.ambient;
+        const color = (contentColors[this.state.screenContent] || contentColors.ambient)!;
 
         this.screensGroup.children.forEach((child) => {
             if (child.name.includes('Screen')) {
@@ -280,7 +267,7 @@ export class LimousineMode {
         }
     }
 
-    public update(deltaTime: number): void {
+    public update(_deltaTime: number): void {
         if (this.state.entertainmentOn && this.state.moodLighting === 'party') {
             const time = performance.now() * 0.001;
             this.moodLights.forEach((light, idx) => {

@@ -124,7 +124,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     currentLng,
     currentHeading,
     pois,
-    bookmarks,
     mapsApiKey,
     onTeleportRequest,
     onEnterComplete,

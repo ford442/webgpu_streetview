@@ -16,18 +16,18 @@ describe('streetViewProbe timeline', () => {
     streetViewProbe.holdArmed();
     const timeline = streetViewProbe.getTimeline();
     expect(timeline).toHaveLength(1);
-    expect(timeline[0].firstStableAt).toBeNull();
-    expect(timeline[0].releasedAt).toBeNull();
+    expect(timeline[0]!.firstStableAt).toBeNull();
+    expect(timeline[0]!.releasedAt).toBeNull();
   });
 
   it('records firstStable only once per hold cycle', () => {
     streetViewProbe.holdArmed();
     streetViewProbe.firstStable();
-    const firstStableAt = streetViewProbe.getTimeline()[0].firstStableAt;
+    const firstStableAt = streetViewProbe.getTimeline()[0]!.firstStableAt;
     expect(firstStableAt).not.toBeNull();
 
     streetViewProbe.firstStable();
-    expect(streetViewProbe.getTimeline()[0].firstStableAt).toBe(firstStableAt);
+    expect(streetViewProbe.getTimeline()[0]!.firstStableAt).toBe(firstStableAt);
   });
 
   it('computes holdDurationMs on release and clears the active entry', () => {
@@ -35,7 +35,7 @@ describe('streetViewProbe timeline', () => {
     streetViewProbe.firstStable();
     streetViewProbe.released();
 
-    const entry = streetViewProbe.getTimeline()[0];
+    const entry = streetViewProbe.getTimeline()[0]!;
     expect(entry.releasedAt).not.toBeNull();
     expect(entry.holdDurationMs).toBe(entry.releasedAt! - entry.armedAt);
 
@@ -77,8 +77,8 @@ describe('streetViewProbe.warnLeak', () => {
     streetViewProbe.warnLeak('uploadLiveSource called while holdActive');
     const warnings = streetViewProbe.getWarnings();
     expect(warnings).toHaveLength(1);
-    expect(warnings[0].message).toBe('uploadLiveSource called while holdActive');
-    expect(typeof warnings[0].at).toBe('number');
+    expect(warnings[0]!.message).toBe('uploadLiveSource called while holdActive');
+    expect(typeof warnings[0]!.at).toBe('number');
   });
 
   it('caps the warning log so a runaway regression cannot leak memory', () => {
@@ -157,7 +157,7 @@ describe('streetViewProbe.checkPixelDrift', () => {
     streetViewProbe.checkPixelDrift(makeCanvas());
     const warnings = streetViewProbe.getWarnings();
     expect(warnings.length).toBeGreaterThanOrEqual(1);
-    expect(warnings[warnings.length - 1].message).toMatch(/possible live GMaps content leak/);
+    expect(warnings[warnings.length - 1]!.message).toMatch(/possible live GMaps content leak/);
   });
 
   it('resets the drift baseline when disabling and re-enabling pixel watch', () => {

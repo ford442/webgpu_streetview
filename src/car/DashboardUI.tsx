@@ -21,8 +21,6 @@ import {
   SliderControl,
   ButtonRow,
   Label,
-  Value,
-  Unit,
 } from './DashboardLayout';
 
 // Gauge components
@@ -38,11 +36,7 @@ import {
   HEADLIGHT_ICON,
   HIGHBEAM_ICON,
   DOME_ICON,
-  SNOW_ICON,
-  RAIN_ICON,
-  WIND_ICON,
   VEHICLE_ICON,
-  TINT_ICON,
 } from './Controls';
 
 // ============================================================================

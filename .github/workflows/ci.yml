@@ -24,6 +24,9 @@ jobs:
       # aren't usable here.
       - run: npm install
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Run tests
         run: npm test -- --watchAll=false
 

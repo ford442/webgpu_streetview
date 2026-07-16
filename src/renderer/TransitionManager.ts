@@ -17,14 +17,6 @@ export class TransitionManager {
         'zoom-chromatic': { duration: 500, param1: 2.5, param2: 1.0 },
     };
 
-    // World-space look-around: last rendered panX/Y (tracked every frame)
-    private lastPanX: number = 0.5;
-    private lastPanY: number = 0.5;
-    // Captured at snapshot time — sent to shader so it can compute the heading delta
-    private capturePanX: number = 0.5;
-    private capturePanY: number = 0.5;
-    private movementHeadingNorm: number = 0.5;
-
     // === INLINE TRANSITION SYSTEM ===
     private previousFrameTexture?: GPUTexture;
     private inlineTransitionProgress: number = 0.0;
@@ -106,12 +98,8 @@ export class TransitionManager {
         this.transitionProgress = 0.0;
     }
 
-    public capturePanorama(movementHeading: number, videoTexture: GPUTexture): void {
+    public capturePanorama(_movementHeading: number, videoTexture: GPUTexture): void {
         if (!this.device || !videoTexture) return;
-
-        this.movementHeadingNorm = Math.max(0.0, Math.min(1.0, movementHeading));
-        this.capturePanX = this.lastPanX;
-        this.capturePanY = this.lastPanY;
 
         if (!this.prevTexture ||
             this.prevTexture.width  !== videoTexture.width ||
@@ -207,17 +195,15 @@ export class TransitionManager {
         return this.previousFrameTexture;
     }
 
-    public recordLastPan(panX: number, panY: number): void {
-        this.lastPanX = panX;
-        this.lastPanY = panY;
+    public recordLastPan(_panX: number, _panY: number): void {
     }
 
     public renderTransitionPass(
         commandEncoder: GPUCommandEncoder,
         intermediateTextureView: GPUTextureView,
         videoTexture: GPUTexture,
-        mainPipeline: GPURenderPipeline,
-        mainBindGroup: GPUBindGroup
+        _mainPipeline: GPURenderPipeline,
+        _mainBindGroup: GPUBindGroup
     ): boolean {
         const transitionPipeline = this.activeTransition
             ? this.transitionPipelines.get(this.activeTransition)
