@@ -182,17 +182,21 @@ describe('useTouchControls', () => {
 
 describe('useDeviceDetection', () => {
   const originalNavigator = global.navigator;
+  const originalUserAgent = navigator.userAgent;
 
   beforeEach(() => {
     // Mock window properties
     Object.defineProperty(window, 'innerWidth', { value: 375, writable: true });
     Object.defineProperty(window, 'innerHeight', { value: 667, writable: true });
     Object.defineProperty(window, 'devicePixelRatio', { value: 2 });
-    Object.defineProperty(window, 'ontouchstart', { value: {} });
+    Object.defineProperty(window, 'ontouchstart', { value: {}, configurable: true });
   });
 
   afterEach(() => {
     global.navigator = originalNavigator;
+    // Individual tests mutate navigator.userAgent; restore it so later tests
+    // (which don't set their own) don't inherit a previous test's device type.
+    Object.defineProperty(navigator, 'userAgent', { value: originalUserAgent, writable: true });
   });
 
   it('should detect mobile device', () => {
@@ -214,7 +218,7 @@ describe('useDeviceDetection', () => {
       writable: true,
     });
 
-    Object.defineProperty(window, 'ontouchstart', { value: undefined });
+    Object.defineProperty(window, 'ontouchstart', { value: undefined, configurable: true });
 
     const { result } = renderHook(() => useDeviceDetection());
 
