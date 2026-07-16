@@ -5,7 +5,12 @@ export type GlobeTransition = 'inactive' | 'loading' | 'entering' | 'active' | '
 // Singleton load promise so multiple calls don't spawn duplicate <script> tags
 let cesiumLoadPromise: Promise<void> | null = null;
 
-function loadCesiumSDK(): Promise<void> {
+/**
+ * Loads the Cesium SDK from a CDN `<script>`/`<link>` tag instead of bundling
+ * the `cesium` npm package, so the ~4MB globe stack never ships in the main
+ * webpack chunk. Shared by GlobeView and MiniMap's globe view.
+ */
+export function loadCesiumSDK(): Promise<void> {
     if (cesiumLoadPromise) return cesiumLoadPromise;
     cesiumLoadPromise = new Promise<void>((resolve, reject) => {
         if ((window as Window & { Cesium?: unknown }).Cesium) {

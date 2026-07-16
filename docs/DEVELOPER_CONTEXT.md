@@ -85,4 +85,35 @@ This application is a WebGPU-accelerated Street View viewer. It acts as a wrappe
 3.  `useEffect` in `App` calls `panorama.setPov({ heading })`.
 4.  Google Maps rotates the hidden view.
 5.  The hidden canvas updates its pixels.
+
+## 6. Chunk Strategy (Bundle Size)
+
+The FreeLook route (the app's default first paint) must never download the CesiumJS
+globe stack. Two rules keep it that way:
+
+*   **Never statically `import` the `cesium` npm package.** `GlobeView.tsx` and
+    `MiniMap.tsx`'s globe view both talk to a global `Cesium` object
+    (`declare const Cesium: any;`) that's injected at runtime by
+    `loadCesiumSDK()` in `src/hooks/useGlobeMode.ts` — a `<script>`/`<link>` tag
+    pointed at the jsDelivr CDN build of Cesium, loaded on first entry into
+    Globe View (or the mini-map's globe toggle), never before. Re-introducing
+    `import * as Cesium from 'cesium'` anywhere puts the whole globe stack back
+    into `main.js` for every user, because webpack has no `"sideEffects": false`
+    hint to safely tree-shake an unused-but-imported module.
+*   **`GlobeView` is deliberately not re-exported from `src/components/index.ts`.**
+    `App.tsx` imports it as `const GlobeView = lazy(() => import('./components/GlobeView'));`
+    and renders it inside `<Suspense fallback={null}>`, so it ships as its own
+    chunk (`729.*.chunk.js` at last measurement, a few KB gzipped since it has
+    no bundled Cesium code) instead of inline in `main.js`. Re-exporting it from
+    the barrel would defeat the code-split — anything importing the barrel
+    would pull `GlobeView` back into its own chunk eagerly.
+*   **`@xenova/transformers` was removed** (was listed in `package.json` with
+    zero imports anywhere in `src/` — pure dead weight on every `npm install`).
+    Re-add it only alongside the feature that actually uses it, pinned to a
+    real version (never `"latest"`).
+*   **Checking for regressions:** run `npm run build`, then either grep the
+    output for stack-specific tokens (`grep -c Cesium build/static/js/main.*.js`
+    should be ~0-1, just the CDN URL string) or run
+    `npx source-map-explorer 'build/static/js/*.js'` for a visual breakdown.
+    `npm run analyze` wraps the latter.
 6.  `Renderer.ts` uploads the new pixels in the next render pass.

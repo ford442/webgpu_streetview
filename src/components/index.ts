@@ -1,5 +1,10 @@
 /**
  * Components index - Export all components
+ *
+ * GlobeView is intentionally NOT re-exported here: consumers must
+ * `React.lazy(() => import('./GlobeView'))` it directly so webpack code-splits
+ * it into its own chunk instead of pulling it into every barrel importer's
+ * bundle. See docs/DEVELOPER_CONTEXT.md#chunk-strategy.
  */
 
 export { 
@@ -27,7 +32,6 @@ export { default as ColorGradingPanel } from './ColorGradingPanel';
 export { default as PerformanceStatsOverlay } from './PerformanceStatsOverlay';
 export { default as RendererBackendIndicator } from './RendererBackendIndicator';
 export { default as WeatherPanel } from './WeatherPanel';
-export { default as GlobeView } from './GlobeView';
 export { default as AccessibilityPanel } from './AccessibilityPanel';
 export { default as ScoutCard } from './ScoutCard';
 export { default as AppToolbar } from './AppToolbar';
