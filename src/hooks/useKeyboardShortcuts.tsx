@@ -65,6 +65,7 @@ export const KEYBOARD_SHORTCUTS = {
     TOGGLE_CRUISE: { key: 'r', description: 'Toggle cruise mode' },
     TOGGLE_COLOR_GRADING: { key: 'e', description: 'Toggle color grading panel' },
     TOGGLE_ACCESSIBILITY: { key: 'a', description: 'Toggle accessibility panel' },
+    TOGGLE_TOUR: { key: 't', description: 'Toggle tour recorder/player panel' },
     RECENTER_HEAD: { key: 'c', description: 'Recenter head position' },
     TOGGLE_HEAD_COUPLING: { key: 'h', description: 'Toggle head coupling mode' },
     STEER_LEFT: { key: 'a', description: 'Steer left' },

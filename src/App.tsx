@@ -33,6 +33,7 @@ import {
   LoadingOverlay,
   HistoricalTimeline,
   ComparisonView,
+  TourPanel,
 } from './components';
 
 import { useHistoricalTimeline } from './hooks/useHistoricalTimeline';
@@ -43,6 +44,7 @@ import { formatImageDate } from './utils/historicalImagery';
 import { useBookmarks } from './hooks/useBookmarks';
 import { useLocationHistory } from './hooks/useLocationHistory';
 import { useSnapshots } from './hooks/useSnapshots';
+import { useTours, type CurrentPOV } from './hooks/useTours';
 import { useGlobeMode } from './hooks/useGlobeMode';
 import {
   useKeyboardShortcuts,
@@ -109,7 +111,7 @@ if (!INITIAL_MAPS_KEY) {
  */
 function InnerApp() {
   // Connect to contexts
-  const { setCanvas, setPanorama, panorama, heading, pitch, canvas, isTransitioning, isPanoramaReady, renderer, readyPromise } = useStreetView();
+  const { setCanvas, setPanorama, panorama, heading, pitch, zoom, canvas, isTransitioning, isPanoramaReady, renderer, readyPromise, locationName, setHeading, setPitch, setZoom } = useStreetView();
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const { viewMode, toggleViewMode } = useViewMode();
   const {
@@ -204,6 +206,7 @@ function InnerApp() {
   const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
   const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
   const [isHistoricalTimelineOpen, setIsHistoricalTimelineOpen] = useState(false);
+  const [isTourPanelOpen, setIsTourPanelOpen] = useState(false);
   const [showPerformanceStats, setShowPerformanceStats] = useState(false);
   
   // Accessibility
@@ -236,6 +239,24 @@ function InnerApp() {
   } = useBookmarks();
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
   const { snapshots, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } = useSnapshots();
+  const {
+    tours,
+    isRecording: isTourRecording,
+    isPaused: isTourPaused,
+    draftWaypoints: tourDraftWaypoints,
+    startRecording: startTourRecording,
+    pauseRecording: pauseTourRecording,
+    resumeRecording: resumeTourRecording,
+    stopRecording: stopTourRecording,
+    cancelRecording: cancelTourRecording,
+    addWaypointFromCurrent: addTourWaypoint,
+    deleteTour,
+    renameTour,
+    updateTourSettings,
+    downloadTourJson,
+    downloadTourKml,
+    importTourFromJson,
+  } = useTours();
   const globeMode = useGlobeMode();
 
   // Historical Timeline ("time travel") — scrub through capture dates near the current location.
@@ -501,6 +522,18 @@ function InnerApp() {
     });
   };
   
+  const getCurrentPOV = useCallback((): CurrentPOV | null => {
+    if (!panorama) return null;
+    const pos = panorama.getPosition();
+    const panoId = panorama.getPano();
+    if (!pos || !panoId) return null;
+    return {
+      panoId,
+      position: { lat: pos.lat(), lng: pos.lng() },
+      pov: { heading, pitch, zoom },
+    };
+  }, [panorama, heading, pitch, zoom]);
+
   const handleGlobeTeleport = useGlobeTeleport({
     teleportSafe,
     applyTimeOfDayPreset,
@@ -540,6 +573,8 @@ function InnerApp() {
     setIsAccessibilityPanelOpen,
     isWeatherPanelOpen,
     setIsWeatherPanelOpen,
+    isTourPanelOpen,
+    setIsTourPanelOpen,
     viewMode,
     toggleViewMode,
     rainIntensity,
@@ -796,6 +831,8 @@ function InnerApp() {
             setIsWeatherPanelOpen={setIsWeatherPanelOpen}
             isHistoricalTimelineOpen={isHistoricalTimelineOpen}
             setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
+            isTourPanelOpen={isTourPanelOpen}
+            setIsTourPanelOpen={setIsTourPanelOpen}
             viewMode={viewMode}
             toggleViewMode={toggleViewMode}
             onGlobeToggle={globeMode.toggle}
@@ -932,6 +969,37 @@ function InnerApp() {
             />
           )}
           
+          {/* Tour Panel — record/play shareable Street View tours */}
+          {isTourPanelOpen && (
+            <TourPanel
+              isOpen={isTourPanelOpen}
+              onClose={() => setIsTourPanelOpen(false)}
+              tours={tours}
+              isRecording={isTourRecording}
+              isPaused={isTourPaused}
+              draftWaypoints={tourDraftWaypoints}
+              getCurrentPOV={getCurrentPOV}
+              currentLocationLabel={locationName}
+              onStartRecording={(name, getPOV) => startTourRecording(name, getPOV)}
+              onPauseRecording={pauseTourRecording}
+              onResumeRecording={resumeTourRecording}
+              onStopRecording={stopTourRecording}
+              onCancelRecording={cancelTourRecording}
+              onAddWaypoint={addTourWaypoint}
+              onDeleteTour={deleteTour}
+              onRenameTour={renameTour}
+              onUpdateTourSettings={updateTourSettings}
+              onDownloadTourJson={downloadTourJson}
+              onDownloadTourKml={downloadTourKml}
+              onImportTourFromJson={importTourFromJson}
+              teleportToPano={teleportToPanoSafe}
+              setHeading={setHeading}
+              setPitch={setPitch}
+              setZoom={setZoom}
+              isPanoramaReady={isPanoramaReady}
+            />
+          )}
+
           {/* Globe View — CesiumJS 3D globe overlay */}
           {/* Show a loading screen while Cesium SDK downloads from CDN */}
           {globeMode.transition === 'loading' && (

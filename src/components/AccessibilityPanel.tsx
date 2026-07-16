@@ -437,6 +437,7 @@ const ShortcutsList: React.FC<{ settings: AccessibilitySettings }> = ({ settings
             'TOGGLE_CRUISE',
             'TOGGLE_COLOR_GRADING',
             'TOGGLE_ACCESSIBILITY',
+            'TOGGLE_TOUR',
         ],
         'Car Mode': [
             'RECENTER_HEAD',
