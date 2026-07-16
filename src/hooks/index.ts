@@ -39,6 +39,11 @@ export {
 export { usePanoramaCache } from './usePanoramaCache';
 export { useAdvanceSafe } from './useAdvanceSafe';
 
+// Historical Timeline ("time travel") hooks
+export { useHistoricalImagery, type UseHistoricalImageryResult } from './useHistoricalImagery';
+export { useHistoricalTimeline, type UseHistoricalTimelineResult } from './useHistoricalTimeline';
+export { useHistoricalCompare, type HistoricalComparison } from './useHistoricalCompare';
+
 // Loading integration helpers
 export {
   useStreetViewLoading,
