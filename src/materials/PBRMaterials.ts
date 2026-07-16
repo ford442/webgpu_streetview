@@ -134,10 +134,10 @@ export class VehiclePBRMaterials {
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
                 const i = (y * size + x) * 4;
-                const left = data[(y * size + ((x - 1 + size) % size)) * 4];
-                const right = data[(y * size + ((x + 1) % size)) * 4];
-                const up = data[(((y - 1 + size) % size) * size + x) * 4];
-                const down = data[(((y + 1) % size) * size + x) * 4];
+                const left = data[(y * size + ((x - 1 + size) % size)) * 4]!;
+                const right = data[(y * size + ((x + 1) % size)) * 4]!;
+                const up = data[(((y - 1 + size) % size) * size + x) * 4]!;
+                const down = data[(((y + 1) % size) * size + x) * 4]!;
                 const dx = (left - right) / 255 * strength;
                 const dy = (up - down) / 255 * strength;
                 const dz = 1.0;
@@ -176,9 +176,9 @@ export class VehiclePBRMaterials {
                         const falloff = (1 - dist) * (1 - dist);
                         const idx = (y * size + x) * 4;
                         const bump = falloff * 50;
-                        data[idx] = Math.min(255, data[idx] + bump);
-                        data[idx + 1] = Math.min(255, data[idx + 1] + bump);
-                        data[idx + 2] = Math.min(255, data[idx + 2] + bump);
+                        data[idx] = Math.min(255, data[idx]! + bump);
+                        data[idx + 1] = Math.min(255, data[idx + 1]! + bump);
+                        data[idx + 2] = Math.min(255, data[idx + 2]! + bump);
                     }
                 }
             }
@@ -236,9 +236,9 @@ export class VehiclePBRMaterials {
                             const ny = (py + dy + size) % size;
                             const idx = (ny * size + nx) * 4;
                             const darken = (1 - Math.sqrt(dx * dx + dy * dy) / pr) * 50;
-                            hImg.data[idx] = Math.max(0, hImg.data[idx] - darken);
-                            hImg.data[idx + 1] = Math.max(0, hImg.data[idx + 1] - darken);
-                            hImg.data[idx + 2] = Math.max(0, hImg.data[idx + 2] - darken);
+                            hImg.data[idx] = Math.max(0, hImg.data[idx]! - darken);
+                            hImg.data[idx + 1] = Math.max(0, hImg.data[idx + 1]! - darken);
+                            hImg.data[idx + 2] = Math.max(0, hImg.data[idx + 2]! - darken);
                         }
                     }
                 }
@@ -589,7 +589,7 @@ export class VehiclePBRMaterials {
                     for (let dy = -1; dy <= 1; dy++) {
                         for (let dx = -1; dx <= 1; dx++) {
                             const ni = ((y + dy) * size + (x + dx)) * 4;
-                            if (alphaImg.data[ni] > 0) neighborDust++;
+                            if (alphaImg.data[ni]! > 0) neighborDust++;
                         }
                     }
                     if (neighborDust >= 2 && Math.random() < 0.4) {

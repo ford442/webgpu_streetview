@@ -10,7 +10,6 @@ import { FrustumCuller } from '../../utils/performance';
 export class LODManager {
   private instances = new Map<string, THREE.InstancedMesh>();
   private detailMeshes: THREE.Mesh[] = [];
-  private dummy = new THREE.Object3D();
   private frustumCuller: FrustumCuller;
 
   constructor(frustumCuller: FrustumCuller) {

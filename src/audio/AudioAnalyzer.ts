@@ -164,28 +164,29 @@ export class AudioAnalyzer {
       highMid = 0,
       high = 0;
 
+    // All loop bounds below are <= totalBins === this.dataArray.length.
     for (let i = 0; i < bassBins; i++) {
-      bass += this.dataArray[i];
+      bass += this.dataArray[i]!;
     }
     bass /= Math.max(1, bassBins) * 255;
 
     for (let i = bassBins; i < lowMidBins; i++) {
-      lowMid += this.dataArray[i];
+      lowMid += this.dataArray[i]!;
     }
     lowMid /= Math.max(1, lowMidBins - bassBins) * 255;
 
     for (let i = lowMidBins; i < midBins; i++) {
-      mid += this.dataArray[i];
+      mid += this.dataArray[i]!;
     }
     mid /= Math.max(1, midBins - lowMidBins) * 255;
 
     for (let i = midBins; i < highMidBins; i++) {
-      highMid += this.dataArray[i];
+      highMid += this.dataArray[i]!;
     }
     highMid /= Math.max(1, highMidBins - midBins) * 255;
 
     for (let i = highMidBins; i < totalBins; i++) {
-      high += this.dataArray[i];
+      high += this.dataArray[i]!;
     }
     high /= Math.max(1, totalBins - highMidBins) * 255;
 

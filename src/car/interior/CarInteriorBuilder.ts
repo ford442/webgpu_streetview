@@ -392,7 +392,7 @@ export class CarInteriorBuilder {
 
     private buildWindshieldGlass(): void {
         const geometry = new THREE.PlaneGeometry(1.9, 0.75, 16, 8);
-        const pos = geometry.attributes.position;
+        const pos = geometry.attributes.position!;
         for (let i = 0; i < pos.count; i++) {
             const x = pos.getX(i);
             const y = pos.getY(i);

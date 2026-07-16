@@ -56,7 +56,7 @@ describe('loadMapsApi', () => {
 
     await promise;
 
-    const script = appendSpy.mock.calls[0][0] as HTMLScriptElement;
+    const script = appendSpy.mock.calls[0]![0] as HTMLScriptElement;
     const url = new URL(script.src);
     expect(url.origin).toBe('https://maps.googleapis.com');
     expect(url.pathname).toBe('/maps/api/js');

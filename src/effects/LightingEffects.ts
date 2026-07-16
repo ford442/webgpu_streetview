@@ -96,7 +96,7 @@ export class EquipmentGlowEffect {
         if (!isActive) {
             // Dim all materials when inactive
             this.materials.forEach((mat, i) => {
-                mat.emissiveIntensity = this.baseIntensities[i] * 0.3;
+                mat.emissiveIntensity = (this.baseIntensities[i] ?? 0) * 0.3;
             });
             return;
         }
@@ -106,7 +106,7 @@ export class EquipmentGlowEffect {
         // Pulsating effect
         this.materials.forEach((mat, i) => {
             const pulse = Math.sin(this.time * this.pulseSpeed + i * 0.5) * 0.15;
-            mat.emissiveIntensity = this.baseIntensities[i] + pulse;
+            mat.emissiveIntensity = (this.baseIntensities[i] ?? 0) + pulse;
         });
     }
 
@@ -242,11 +242,8 @@ export class LightingEffectsManager {
     private equipmentGlow: EquipmentGlowEffect;
     private emergencyLights: EmergencyLightEffect;
     private taskLights: TaskLightEffect[] = [];
-    private config: LightingEffectConfig;
 
-    constructor(scene: THREE.Scene, config: Partial<LightingEffectConfig> = {}) {
-        this.config = { ...DEFAULT_LIGHTING_CONFIG, ...config };
-
+    constructor(scene: THREE.Scene, _config: Partial<LightingEffectConfig> = {}) {
         this.uvEffect = new UVLightEffect(scene);
         this.equipmentGlow = new EquipmentGlowEffect();
         this.emergencyLights = new EmergencyLightEffect(scene);
@@ -271,8 +268,9 @@ export class LightingEffectsManager {
     }
 
     setTaskLightIntensity(intensity: number, index?: number): void {
-        if (index !== undefined && this.taskLights[index]) {
-            this.taskLights[index].setIntensity(intensity);
+        const light = index !== undefined ? this.taskLights[index] : undefined;
+        if (light) {
+            light.setIntensity(intensity);
         } else {
             this.taskLights.forEach(light => light.setIntensity(intensity));
         }

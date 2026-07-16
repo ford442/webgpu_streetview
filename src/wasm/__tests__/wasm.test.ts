@@ -30,7 +30,7 @@ describe('noise2d', () => {
       [0, 0], [0.5, 0.5], [1.5, 2.5], [-3.7, 8.1], [100, 200],
     ];
     for (const [x, y] of testCoords) {
-      const n = wasm.noise2d(x, y);
+      const n = wasm.noise2d(x!, y!);
       expect(n).toBeGreaterThanOrEqual(-1);
       expect(n).toBeLessThanOrEqual(1);
     }

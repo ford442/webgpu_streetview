@@ -100,15 +100,19 @@ function _jsSeed(s: number): void {
   for (let i = 255; i > 0; i--) {
     state = ((state * 1664525) + 1013904223) >>> 0;
     const j = ((state >>> 16) & 0x7fff) % (i + 1);
-    const t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t;
+    // i in [1,255] and j in [0,i], both always valid indices into tmp.
+    const t = tmp[i]!; tmp[i] = tmp[j]!; tmp[j] = t;
   }
   _perm = new Uint8Array(512);
-  for (let i = 0; i < 256; i++) _perm[i] = _perm[i + 256] = tmp[i];
+  // i in [0,255] is always a valid index into tmp.
+  for (let i = 0; i < 256; i++) _perm[i] = _perm[i + 256] = tmp[i]!;
 }
 
 function _jsGrad2(h: number, dx: number, dy: number): number {
-  const g = GRAD2[h & 7];
-  return g[0] * dx + g[1] * dy;
+  // h & 7 is always in [0,7], a valid index into GRAD2.
+  const g = GRAD2[h & 7]!;
+  // Every GRAD2 entry is a 2-element [x, y] pair.
+  return g[0]! * dx + g[1]! * dy;
 }
 
 function _jsNoise2d(x: number, y: number): number {
@@ -120,12 +124,13 @@ function _jsNoise2d(x: number, y: number): number {
   const v = _fade(fy);
   const X = ix & 255;
   const Y = iy & 255;
-  const pX = _perm[X];
-  const pX1 = _perm[X + 1];
-  const n00 = _jsGrad2(_perm[pX + Y], fx, fy);
-  const n10 = _jsGrad2(_perm[pX1 + Y], fx - 1, fy);
-  const n01 = _jsGrad2(_perm[pX + Y + 1], fx, fy - 1);
-  const n11 = _jsGrad2(_perm[pX1 + Y + 1], fx - 1, fy - 1);
+  // X, X + 1 in [0,256] are always valid indices into the 512-entry _perm table.
+  const pX = _perm[X]!;
+  const pX1 = _perm[X + 1]!;
+  const n00 = _jsGrad2(_perm[pX + Y]!, fx, fy);
+  const n10 = _jsGrad2(_perm[pX1 + Y]!, fx - 1, fy);
+  const n01 = _jsGrad2(_perm[pX + Y + 1]!, fx, fy - 1);
+  const n11 = _jsGrad2(_perm[pX1 + Y + 1]!, fx - 1, fy - 1);
   return _lerp(_lerp(n00, n10, u), _lerp(n01, n11, u), v);
 }
 

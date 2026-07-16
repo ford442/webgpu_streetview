@@ -7,7 +7,7 @@
  * this file contains only component structure and event handling.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import styles from './DashboardLayout.module.css';
 
 // ============================================================================

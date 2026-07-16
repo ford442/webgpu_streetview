@@ -46,7 +46,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = React.memo(
       const barW = width / barCount - 2;
 
       for (let i = 0; i < barCount; i++) {
-        const v = data[i * step] / 255;
+        const v = data[i * step]! / 255;
         const h = Math.max(2, v * (height - 4));
         const x = i * (barW + 2);
         const y = height - h;

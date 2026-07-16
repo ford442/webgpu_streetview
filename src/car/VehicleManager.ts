@@ -134,7 +134,7 @@ export function getNextVehicle(current: VehicleType): VehicleType {
     const types = Object.keys(VEHICLES) as VehicleType[];
     const currentIndex = types.indexOf(current);
     const nextIndex = (currentIndex + 1) % types.length;
-    return types[nextIndex];
+    return types[nextIndex]!;
 }
 
 /**
@@ -144,7 +144,7 @@ export function getPreviousVehicle(current: VehicleType): VehicleType {
     const types = Object.keys(VEHICLES) as VehicleType[];
     const currentIndex = types.indexOf(current);
     const prevIndex = (currentIndex - 1 + types.length) % types.length;
-    return types[prevIndex];
+    return types[prevIndex]!;
 }
 
 /**

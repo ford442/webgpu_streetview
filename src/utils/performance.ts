@@ -46,7 +46,7 @@ export function setupLOD(model: THREE.Group, config?: Partial<LODConfig>): THREE
 /**
  * Create simplified geometry by reducing vertex count
  */
-function createSimplifiedLOD(model: THREE.Group, ratio: number): THREE.Group {
+function createSimplifiedLOD(model: THREE.Group, _ratio: number): THREE.Group {
   const simplified = model.clone();
   
   simplified.traverse((child) => {
@@ -523,7 +523,7 @@ export interface GPUPerformanceProfile {
   lodDistance: number[];
 }
 
-export const GPU_PROFILES: Record<string, GPUPerformanceProfile> = {
+export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformanceProfile; low: GPUPerformanceProfile } = {
   // High-end desktop (RTX 3080+, M1 Max)
   high: {
     name: 'high',

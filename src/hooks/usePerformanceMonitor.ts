@@ -97,7 +97,7 @@ export function usePerformanceMonitor(
       };
     }
     
-    const current = times[times.length - 1];
+    const current = times[times.length - 1]!;
     const average = times.reduce((a, b) => a + b, 0) / times.length;
     const min = Math.min(...times);
     const max = Math.max(...times);

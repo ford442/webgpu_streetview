@@ -4,7 +4,6 @@ import { RainSystem } from './RainSystem';
 import { DustMoteSystem } from './DustMoteSystem';
 import { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import { InteriorMicroInteractions } from './InteriorMicroInteractions';
-import { CarInteriorGauges } from './CarInteriorGauges';
 import {
     GaugeRig,
     needleAngle,
@@ -51,9 +50,7 @@ export class CarInteriorAnimator {
   private targetSpeed: number = 0;
   private targetRpm: number = 0;
   private speedFrac: number = 0;
-  private speedVel: number = 0;
   private rpmFrac: number = 0;
-  private rpmVel: number = 0;
   private fuelLevel: number = 0.85;
   private tempFrac: number = 0.05;
   private gaugeClock: number = 0;
@@ -104,10 +101,10 @@ export class CarInteriorAnimator {
     this.microInteractions?.update(deltaTime);
 
     if (this.cupLiquidMaterial) {
-      this.cupLiquidMaterial.uniforms.time.value = this.ambientTime;
+      this.cupLiquidMaterial.uniforms.time!.value = this.ambientTime;
       const targetSlosh = THREE.MathUtils.clamp(carSpeedKmh / 45, 0, 1);
       this.cupSlosh += (targetSlosh - this.cupSlosh) * Math.min(deltaTime * 4, 1);
-      this.cupLiquidMaterial.uniforms.slosh.value = this.cupSlosh;
+      this.cupLiquidMaterial.uniforms.slosh!.value = this.cupSlosh;
     }
 
     this.syncWindAudio();
@@ -189,7 +186,6 @@ export class CarInteriorAnimator {
       if (this.reducedMotion) {
         this.speedFrac = speedTargetFrac;
         this.rpmFrac = rpmTargetFrac;
-        this.speedVel = this.rpmVel = 0;
         rig.speedNeedle.rotation.z = needleAngle(this.speedFrac);
         rig.tachoNeedle.rotation.z = needleAngle(this.rpmFrac);
       } else {

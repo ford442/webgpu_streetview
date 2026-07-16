@@ -31,7 +31,7 @@ export class RearviewMirror {
     private static readonly MIRROR_HEIGHT = 256;
 
     constructor(
-        private scene: THREE.Scene,
+        scene: THREE.Scene,
         private renderer: THREE.WebGLRenderer
     ) {
         // Create render target for the mirror
@@ -160,7 +160,7 @@ export class RearviewMirror {
      * Update mirror view based on car heading.
      * The mirror shows the view 180° behind the car.
      */
-    public updateOrientation(carHeading: number, headPitch: number): void {
+    public updateOrientation(_carHeading: number, _headPitch: number): void {
         // Mirror shows the view from behind the car (180° offset)
         // We don't actually rotate the camera - we just use the texture offset
         // The mirror always shows "behind" relative to car heading
@@ -208,7 +208,7 @@ export class RearviewMirror {
      */
     public toggleNightMode(): void {
         this.isNightMode = !this.isNightMode;
-        this.mirrorMaterial.uniforms.nightMode.value = this.isNightMode ? 1.0 : 0.0;
+        this.mirrorMaterial.uniforms.nightMode!.value = this.isNightMode ? 1.0 : 0.0;
     }
 
     /**

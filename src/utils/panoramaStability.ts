@@ -144,8 +144,9 @@ export function getCanvasFingerprint(canvas: HTMLCanvasElement): string {
     let hash = 0;
     let brightness = 0;
     for (let i = 0; i < d.length; i += 4) {
-      hash = ((hash << 5) - hash) + d[i] + d[i + 1] + d[i + 2];
-      brightness += d[i] + d[i + 1] + d[i + 2];
+      // Each RGBA pixel is 4 bytes, so i, i+1, i+2 are always within bounds.
+      hash = ((hash << 5) - hash) + d[i]! + d[i + 1]! + d[i + 2]!;
+      brightness += d[i]! + d[i + 1]! + d[i + 2]!;
     }
     // Mostly black = probably still loading, but allow very dark valid frames
     // (e.g. nighttime/error screens) to pass so we don't hang forever.

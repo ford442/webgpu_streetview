@@ -20,7 +20,6 @@ interface BookmarkPanelProps {
 
 const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
     bookmarks,
-    currentCoords,
     onTeleport,
     onAddBookmark,
     onRemoveBookmark,

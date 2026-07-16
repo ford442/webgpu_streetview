@@ -65,7 +65,7 @@ export class InteriorMicroInteractions {
     clientY: number,
     rect: DOMRect,
     camera: THREE.Camera,
-    root: THREE.Object3D
+    _root: THREE.Object3D
   ): InteriorInteractive | null {
     for (const item of this.items) {
       if (this.raycaster.hitTest(clientX, clientY, rect, camera, item.mesh, false)) {
@@ -108,7 +108,7 @@ export class InteriorMicroInteractions {
     return false;
   }
 
-  handlePointerMove(clientX: number, clientY: number): boolean {
+  handlePointerMove(clientX: number, _clientY: number): boolean {
     if (!this.activeDrag || this.activeDrag.interactive.kind !== 'knob') return false;
     const { interactive, startClientX, startRotation } = this.activeDrag;
     const delta = (clientX - startClientX) * 0.008;

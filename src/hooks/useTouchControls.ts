@@ -100,21 +100,22 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
 
       if (touches.length === 1) {
         // Single finger - start drag
-        initialTouchRef.current = { x: touches[0].clientX, y: touches[0].clientY };
+        const t0 = touches[0]!;
+        initialTouchRef.current = { x: t0.clientX, y: t0.clientY };
         setGestureState((prev) => ({
           ...prev,
           isDragging: true,
           isPinching: false,
-          lastTouchX: touches[0].clientX,
-          lastTouchY: touches[0].clientY,
+          lastTouchX: t0.clientX,
+          lastTouchY: t0.clientY,
           velocityX: 0,
           velocityY: 0,
         }));
         velocityRef.current = { x: 0, y: 0 };
       } else if (touches.length === 2) {
         // Two fingers - start pinch
-        const distance = getTouchDistance(touches[0], touches[1]);
-        initialTouchRef.current = getTouchMidpoint(touches[0], touches[1]);
+        const distance = getTouchDistance(touches[0]!, touches[1]!);
+        initialTouchRef.current = getTouchMidpoint(touches[0]!, touches[1]!);
         setGestureState((prev) => ({
           ...prev,
           isDragging: false,
@@ -140,8 +141,9 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
 
       if (touches.length === 1 && gestureState.isDragging) {
         // Single finger drag - pan
-        const deltaX = (touches[0].clientX - gestureState.lastTouchX) * panSensitivity;
-        const deltaY = (touches[0].clientY - gestureState.lastTouchY) * panSensitivity;
+        const t0 = touches[0]!;
+        const deltaX = (t0.clientX - gestureState.lastTouchX) * panSensitivity;
+        const deltaY = (t0.clientY - gestureState.lastTouchY) * panSensitivity;
 
         // Calculate velocity for momentum scrolling
         velocityRef.current = {
@@ -151,8 +153,8 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
 
         setGestureState((prev) => ({
           ...prev,
-          lastTouchX: touches[0].clientX,
-          lastTouchY: touches[0].clientY,
+          lastTouchX: t0.clientX,
+          lastTouchY: t0.clientY,
           velocityX: velocityRef.current.x,
           velocityY: velocityRef.current.y,
         }));
@@ -160,14 +162,14 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
         onPan?.(deltaX, deltaY);
       } else if (touches.length === 2 && gestureState.isPinching) {
         // Two finger pinch - zoom
-        const currentDistance = getTouchDistance(touches[0], touches[1]);
+        const currentDistance = getTouchDistance(touches[0]!, touches[1]!);
         const pinchRatio = currentDistance / gestureState.touchStartDistance;
         const zoomDelta = (pinchRatio - 1) * 100 * zoomSensitivity;
 
         onZoom?.(zoomDelta);
 
         // Update midpoint for reference
-        const midpoint = getTouchMidpoint(touches[0], touches[1]);
+        const midpoint = getTouchMidpoint(touches[0]!, touches[1]!);
         setGestureState((prev) => ({
           ...prev,
           lastTouchX: midpoint.x,
@@ -213,7 +215,7 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
 
       // Check for tap (quick touch with minimal movement)
       if (e.changedTouches.length === 1 && touchDuration < 200 && initialTouchRef.current) {
-        const touch = e.changedTouches[0];
+        const touch = e.changedTouches[0]!;
         const moveDistance = Math.sqrt(
           Math.pow(touch.clientX - initialTouchRef.current.x, 2) +
           Math.pow(touch.clientY - initialTouchRef.current.y, 2)
@@ -256,7 +258,7 @@ export function useTouchControls(options: UseTouchControlsOptions = {}): UseTouc
    * Handle touch cancel
    */
   const handleTouchCancel = useCallback(
-    (e: React.TouchEvent) => {
+    (_e: React.TouchEvent) => {
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;

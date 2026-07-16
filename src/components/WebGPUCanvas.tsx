@@ -365,7 +365,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             active = false;
             cancelAnimationFrame(animationFrameId.current);
         };
-    }, []);
+    }, [currentRendererRef]);
 
     return (
         <canvas

@@ -40,7 +40,7 @@ function normalMapFromHeight(
     const img = ctx.createImageData(size, size);
     const d = img.data;
     const h = (x: number, y: number) =>
-      height[((y + size) % size) * size + ((x + size) % size)];
+      height[((y + size) % size) * size + ((x + size) % size)]!;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const dx =

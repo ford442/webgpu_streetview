@@ -87,26 +87,28 @@ export class WindParticleSystem {
     // Update wind speed based on car speed
     this.windSpeed = Math.max(10, carSpeed * 2);
 
-    const positions = this.particleGeometry.attributes.position.array as Float32Array;
+    const positionAttr = this.particleGeometry.attributes.position;
+    if (!positionAttr) return;
+    const positions = positionAttr.array as Float32Array;
 
     for (let i = 0; i < this.particleCount; i++) {
       const i3 = i * 3;
 
       // Update position based on velocity
-      positions[i3] += this.velocities[i3] * deltaTime;
-      positions[i3 + 1] += this.velocities[i3 + 1] * deltaTime;
-      positions[i3 + 2] += this.velocities[i3 + 2] * deltaTime;
+      positions[i3] = (positions[i3] ?? 0) + (this.velocities[i3] ?? 0) * deltaTime;
+      positions[i3 + 1] = (positions[i3 + 1] ?? 0) + (this.velocities[i3 + 1] ?? 0) * deltaTime;
+      positions[i3 + 2] = (positions[i3 + 2] ?? 0) + (this.velocities[i3 + 2] ?? 0) * deltaTime;
 
       // Decrease lifetime
-      this.lifetimes[i] -= deltaTime;
+      this.lifetimes[i] = (this.lifetimes[i] ?? 0) - deltaTime;
 
       // Reset if expired or passed the cabin
-      if (this.lifetimes[i] <= 0 || positions[i3 + 2] > 2) {
+      if ((this.lifetimes[i] ?? 0) <= 0 || (positions[i3 + 2] ?? 0) > 2) {
         this.resetParticle(i);
       }
     }
 
-    this.particleGeometry.attributes.position.needsUpdate = true;
+    positionAttr.needsUpdate = true;
   }
 
   /**
@@ -291,11 +293,9 @@ export class SportDashboard {
  * SportSeats - Sport bucket seats for convertible mode
  */
 export class SportSeats {
-  private interiorGroup: THREE.Group;
   private seatsGroup: THREE.Group;
 
-  constructor(interiorGroup: THREE.Group) {
-    this.interiorGroup = interiorGroup;
+  constructor(_interiorGroup: THREE.Group) {
     this.seatsGroup = new THREE.Group();
     this.buildSportSeats();
   }
@@ -405,15 +405,12 @@ type LocalVehicleType = VehicleType;
  * ConvertibleMode - Main class for managing convertible vehicle mode
  */
 export class ConvertibleMode {
-  private scene: THREE.Scene;
   private interiorGroup: THREE.Group;
   private roofGroup: THREE.Group;
   private windParticles: WindParticleSystem;
   private convertibleInterior: ConvertibleInterior;
   private sportDashboard: SportDashboard;
   private sportSeats: SportSeats;
-  private standardSeats: THREE.Group | null = null;
-  private standardDashboard: THREE.Group | null = null;
 
   private state: ConvertibleState = {
     isOpen: true,
@@ -429,7 +426,6 @@ export class ConvertibleMode {
     interiorGroup: THREE.Group,
     roofGroup: THREE.Group
   ) {
-    this.scene = scene;
     this.interiorGroup = interiorGroup;
     this.roofGroup = roofGroup;
 

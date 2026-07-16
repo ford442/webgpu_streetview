@@ -26,7 +26,7 @@ export function useAutopilot({
 
     waypoints.forEach(wp => panoCache.fetch(wp.lat, wp.lng).catch(() => {}));
 
-    await handleGlobeTeleport(waypoints[0].lat, waypoints[0].lng);
+    await handleGlobeTeleport(waypoints[0]!.lat, waypoints[0]!.lng);
 
     if (waypoints.length > 1) {
       let idx = 1;
@@ -40,7 +40,7 @@ export function useAutopilot({
           console.log('[Autopilot] Waiting for transition pause before next waypoint');
           return;
         }
-        const wp = waypoints[idx];
+        const wp = waypoints[idx]!;
         setNavPending(true);
         try {
           await teleportSafe(wp.lat, wp.lng);

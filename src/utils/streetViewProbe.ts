@@ -64,7 +64,8 @@ function sampleBrightness(canvas: HTMLCanvasElement): number | null {
     const d = sampleCtx.getImageData(0, 0, 4, 4).data;
     let brightness = 0;
     for (let i = 0; i < d.length; i += 4) {
-      brightness += d[i] + d[i + 1] + d[i + 2];
+      // Each RGBA pixel is 4 bytes, so i, i+1, i+2 are always within bounds.
+      brightness += d[i]! + d[i + 1]! + d[i + 2]!;
     }
     return brightness / (d.length / 4);
   } catch {

@@ -24,15 +24,11 @@ export class Renderer implements StreetViewRenderer {
     private uniformBuffer!: GPUBuffer;
 
     // Car mode effects
-    private carModeActive: boolean = false;
     private effectsBuffer?: GPUBuffer;
-    
+
     // === INLINE TRANSITION SYSTEM ===
-    // previousFrameTexture holds a GPU snapshot of the departing panorama.
     // The main shader (streetview.wgsl) mixes between previous and current
     // based on transitionProgress passed in the uniform buffer.
-    private previousFrameTexture?: GPUTexture;
-    private inlineTransitionProgress: number = 0.0;
     private holdActive: boolean = false;
     
     // === DUAL-PASS WEATHER SYSTEM ===
@@ -49,8 +45,6 @@ export class Renderer implements StreetViewRenderer {
     private weatherPostProcessor!: WeatherPostProcessor;
 
     // World-space pan tracking
-    private lastPanX: number = 0.5;
-    private lastPanY: number = 0.5;
     private capturePanX: number = 0.5;
     private capturePanY: number = 0.5;
 
@@ -279,7 +273,7 @@ export class Renderer implements StreetViewRenderer {
         });
     }
 
-    public resize(width: number, height: number) {
+    public resize(_width: number, _height: number) {
         if (this.isDestroyed) return;
         this.configureContext();
     }
@@ -311,8 +305,7 @@ export class Renderer implements StreetViewRenderer {
         this.bindGroup = undefined as any;
     }
 
-    public setCarMode(active: boolean): void {
-        this.carModeActive = active;
+    public setCarMode(_active: boolean): void {
     }
 
     public updateEffects(effectsData: Float32Array): void {
@@ -446,8 +439,6 @@ export class Renderer implements StreetViewRenderer {
         const panY = ((pitch ?? 0) + 90) / 180;
         this.capturePanX = panX;
         this.capturePanY = panY;
-        this.lastPanX = panX;
-        this.lastPanY = panY;
         this.holdActive = true;
         this.transitionManager?.setTransitionProgress(0.0);
     }
@@ -497,8 +488,6 @@ export class Renderer implements StreetViewRenderer {
             const panX = ((heading || 0) % 360) / 360;
             const panY = ((pitch || 0) + 90) / 180;
 
-            this.lastPanX = panX;
-            this.lastPanY = panY;
             this.transitionManager?.recordLastPan(panX, panY);
 
             const uniforms = new Float32Array([
@@ -615,7 +604,7 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public renderStreetView(
-        mode: RenderMode,
+        _mode: RenderMode,
         source: CanvasImageSource | null,
         heading?: number,
         pitch?: number,

@@ -73,7 +73,7 @@ interface StreetViewProviderProps {
 
 export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   children,
-  initialPosition = { lat: 37.86926, lng: -122.254811 },
+  initialPosition: _initialPosition = { lat: 37.86926, lng: -122.254811 },
   initialHeading = 34,
   initialPitch = 10,
 }) => {
@@ -451,11 +451,12 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   
   // Cleanup transition RAF on unmount
   useEffect(() => {
+    const readyPromiseTracker = readyPromiseRef.current;
     return () => {
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
       }
-      readyPromiseRef.current.clear();
+      readyPromiseTracker.clear();
     };
   }, []);
   

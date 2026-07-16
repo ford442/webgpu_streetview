@@ -50,8 +50,6 @@ export class CarInterior {
     /** User seat-distance offset (metres) added to the config eye position along +Z (dolly back). */
     private seatOffset: number = 0;
     private steeringWheelGroup!: THREE.Group;
-    private leftMirrorPlane!: THREE.Mesh;
-    private rightMirrorPlane!: THREE.Mesh;
     private wiperLeft!: THREE.Group;
     private wiperRight!: THREE.Group;
     private speedometerNeedle!: THREE.Mesh;
@@ -76,8 +74,6 @@ export class CarInterior {
 
     // Digital Clock
     private digitalClockMesh: THREE.Mesh | null = null;
-    private clockCanvas: HTMLCanvasElement | null = null;
-    private clockCtx: CanvasRenderingContext2D | null = null;
     private clockUpdateInterval?: number;
 
     // Location readout dash panel (road/area, coords, heading, capture date)
@@ -94,16 +90,9 @@ export class CarInterior {
     private lastSunAzimuth: number = 0;
     private lastSunAltitude: number = -1;
 
-    private isActive: boolean = true;
-
     private isRoofOpen: boolean = false;
     private roofTargetY: number = 0;
     private animationId: number = 0;
-    private steeringAngle: number = 0;
-    private wiperAnimationTime: number = 0;
-    private isWiperActive: boolean = false;
-    private speedometer: number = 0; // 0-100 km/h
-    private tachometer: number = 0; // 0-8000 RPM
     private interaction: InteractionHelper;
     private reducedMotion: boolean;
     private geometryFactory: GeometryFactory;
@@ -426,8 +415,6 @@ export class CarInterior {
         this.steeringWheelGroup = buildResult.steeringWheelGroup;
         this.wiperLeft = buildResult.wiperLeft;
         this.wiperRight = buildResult.wiperRight;
-        this.leftMirrorPlane = buildResult.leftMirrorPlane;
-        this.rightMirrorPlane = buildResult.rightMirrorPlane;
         this.windshieldGlassMesh = buildResult.windshieldGlassMesh;
         this.rearGlassMesh = buildResult.rearGlassMesh;
         this.instrumentClusterMat = buildResult.instrumentClusterMat;
@@ -450,8 +437,6 @@ export class CarInterior {
             this.tachometerNeedle = gaugeResult.tachometerNeedle;
             this.gaugeRig = gaugeResult.gaugeRig ?? null;
             this.digitalClockMesh = gaugeResult.digitalClockMesh ?? null;
-            this.clockCanvas = gaugeResult.clockCanvas ?? null;
-            this.clockCtx = gaugeResult.clockCtx ?? null;
             this.clockUpdateInterval = gaugeResult.clockUpdateInterval;
         }
 

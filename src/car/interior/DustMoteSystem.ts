@@ -73,10 +73,10 @@ export class DustMoteSystem {
     const t = time * 0.35;
 
     for (let i = 0; i < this.count; i++) {
-      const phase = this.phases[i];
-      const bx = this.basePositions[i * 3];
-      const by = this.basePositions[i * 3 + 1];
-      const bz = this.basePositions[i * 3 + 2];
+      const phase = this.phases[i]!;
+      const bx = this.basePositions[i * 3]!;
+      const by = this.basePositions[i * 3 + 1]!;
+      const bz = this.basePositions[i * 3 + 2]!;
       attr.setXYZ(
         i,
         bx + Math.sin(t + phase) * 0.04,
