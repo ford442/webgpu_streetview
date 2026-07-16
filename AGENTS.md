@@ -624,4 +624,17 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ---
 
+## Cursor Cloud specific instructions
+
+Single-product Create React App project; `npm install` is the only dependency step (runs automatically on VM startup). Standard commands live in **Build, Test, and Deploy Commands** above — reuse those rather than inventing new ones.
+
+- **Run the app**: `npm start` (dev server on `http://localhost:3000`; `BROWSER=none` avoids a browser-launch attempt in headless VMs). CRA runs ESLint during `npm start`/`npm run build`; the current tree compiles with lint warnings only (unused vars, exhaustive-deps) — no errors.
+- **Type check** (no dedicated npm script): `npx tsc --noEmit`. Passes clean.
+- **Tests**: `CI=true npm test -- --watchAll=false`. As of this setup, 123/128 pass. The 5 failures are pre-existing and unrelated to the environment: `src/App.test.tsx` fails to load because Cesium needs a `TextDecoder`/`TextEncoder` polyfill under jsdom, and `src/hooks/__tests__/mobile.test.tsx` tries to `Object.defineProperty(window, 'ontouchstart', ...)` on a non-configurable property. Do not treat these as setup breakage.
+- **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key.
+- **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the renderer falls back to WebGL2 → raw. Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
+- No committed lockfile (`package-lock.json` is gitignored), so `npm install` resolves fresh each run.
+
+---
+
 *Last Updated: June 25, 2026*
