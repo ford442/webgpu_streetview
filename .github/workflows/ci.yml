@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run tests
+        run: npm test -- --watchAll=false
+
+      - name: Build
+        # CRA fails on pre-existing ESLint warnings when CI=true, so override
+        # the runner's default CI=true just for this step (build/build:wasm,
+        # patch-cesium-bundle.sh, and verify-build.sh all run as part of
+        # `npm run build` and any failure here blocks the merge).
+        run: npm run build
+        env:
+          CI: false

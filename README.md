@@ -2,6 +2,7 @@
 
 A high-performance Google Maps Street View viewer with an immersive 3D car interior experience, built with React 19, WebGPU, and Three.js.
 
+[![CI](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml/badge.svg)](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml)
 [![React](https://img.shields.io/badge/React-19.1.1-61DAFB?logo=react)](https://react.dev/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-Latest-FF6B00)](https://gpuweb.github.io/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.9-3178C6?logo=typescript)](https://www.typescriptlang.org/)

@@ -91,7 +91,14 @@ These open issues capture the symptoms and remaining engineering work:
 
 See the comments on each for the latest codebase status and partial fixes (reactive key poller, init guard reset, deploy.py injection support, etc.).
 
-## 8. One-time / periodic
+## 8. CI (GitHub Actions)
+
+- `.github/workflows/ci.yml` runs on every push/PR to `main`: `npm ci`, `npm test -- --watchAll=false`, then `npm run build` (which chains `build:wasm`, `patch-cesium-bundle.sh`, and `verify-build.sh`). No secrets are required for this job — it never touches a real Maps key.
+- `.github/workflows/nightly-probe.yml` runs `npm run probe:hold-pause` against a real dev server on a daily schedule (and via manual dispatch). This job needs a repository secret:
+  - **`REACT_APP_MAPS_API_KEY`** — a Maps key with `http://localhost:3000/*` (or whatever CI runner host) in its referrer allowlist. Without it the probe reports "Street View imagery did not render" rather than false-passing (see `scripts/hold-pause-probe.mjs`).
+- Configure secrets under Settings → Secrets and variables → Actions on the repo.
+
+## 9. One-time / periodic
 
 - [ ] Rotate the production key every 90 days (create new restricted key, deploy with it, delete old).
 - [ ] Review the GCP project's enabled APIs and billing monthly.
