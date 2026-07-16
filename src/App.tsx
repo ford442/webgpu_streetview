@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import StreetView, { type MapsLoadStatus } from './components/StreetView';
 import WelcomeModal from './components/WelcomeModal';
 import type { RendererBackendType } from './renderer/RendererBackend';
@@ -27,7 +27,6 @@ import {
   ColorGradingPanel,
   WeatherPanel,
   AccessibilityPanel,
-  GlobeView,
   PerformanceStatsOverlay,
   RendererBackendIndicator,
   WebGPUCanvas,
@@ -35,6 +34,7 @@ import {
   HistoricalTimeline,
   ComparisonView,
 } from './components';
+
 import { useHistoricalTimeline } from './hooks/useHistoricalTimeline';
 import { useHistoricalCompare } from './hooks/useHistoricalCompare';
 import { formatImageDate } from './utils/historicalImagery';
@@ -62,6 +62,9 @@ import BuildBadge from './components/BuildBadge';
 import { getMemoryProfiler, MemoryStats } from './utils/memoryProfiler';
 import { clearAuthFailure, loadMapsApi, onMapsAuthFailure, removeFailedBootstrap } from './services/maps/loader';
 
+// GlobeView pulls in the CesiumJS globe overlay; lazy-load it as its own
+// chunk so users who never leave FreeLook don't pay for it on first paint.
+const GlobeView = lazy(() => import('./components/GlobeView'));
 
 // Google Maps API Key resolution (matches go.1ink.us — baked into the JS bundle):
 //  1. REACT_APP_MAPS_API_KEY — set at `npm run build` via .env.local / CI env var
@@ -949,6 +952,7 @@ function InnerApp() {
             </div>
           )}
           {globeMode.isVisible && (
+            <Suspense fallback={null}>
             <GlobeView
               transition={globeMode.transition}
               currentLat={panorama?.getPosition()?.lat() ?? 39.2575}
@@ -973,6 +977,7 @@ function InnerApp() {
               onExitComplete={globeMode.onExitComplete}
               onStartJourney={handleStartJourney}
             />
+            </Suspense>
           )}
         </>
       )}

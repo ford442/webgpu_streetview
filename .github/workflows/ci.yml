@@ -39,6 +39,24 @@ jobs:
         env:
           CI: false
 
+      - name: Bundle size report
+        # Visibility only — does not fail the build. Watches for regressions
+        # like Cesium (or another heavy dep) creeping back into main.js; see
+        # docs/DEVELOPER_CONTEXT.md#6-chunk-strategy-bundle-size.
+        run: |
+          echo "### JS bundle sizes (gzip)" | tee -a "$GITHUB_STEP_SUMMARY"
+          npx --no-install source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html || true
+          for f in build/static/js/*.js; do
+            gzip -c "$f" | wc -c | awk -v f="$f" '{printf "%s: %.1f kB\n", f, $1/1024}'
+          done | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bundle report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-report
+          path: /tmp/bundle-report.html
+          if-no-files-found: ignore
+
   # Optional parity check: rebuild the WASM module through the full C++/Emscripten
   # path (cpp/src/noise_module.cpp) instead of the hand-written WAT source, so a
   # regression in the C++ implementation doesn't go unnoticed. Not required for

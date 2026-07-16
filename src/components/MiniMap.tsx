@@ -1,9 +1,14 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import * as Cesium from 'cesium';
-import 'cesium/Build/Cesium/Widgets/widgets.css';
+import { loadCesiumSDK } from '../hooks/useGlobeMode';
 
 // Import crypto companies config
 import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
+
+// Cesium is loaded from CDN at runtime (see loadCesiumSDK), not bundled —
+// keeps the ~4MB globe stack out of the main chunk for users who never
+// switch to globe view.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+declare const Cesium: any;
 
 interface MiniMapProps {
     apiKey: string;
@@ -27,12 +32,12 @@ const MiniMap: React.FC<MiniMapProps> = ({
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
-    const [cesiumViewer, setCesiumViewer] = useState<Cesium.Viewer | null>(null);
+    const [cesiumViewer, setCesiumViewer] = useState<any>(null);
     const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
-    const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | Cesium.Entity)[]>([]);
+    const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | any)[]>([]);
 
     /** Create a heading-aware marker element */
     const createMarkerContent = (rotation: number): HTMLElement => {
@@ -168,6 +173,9 @@ const MiniMap: React.FC<MiniMapProps> = ({
             if (viewMode !== 'globe' || !cesiumRef.current || cesiumViewer) return;
 
             try {
+                await loadCesiumSDK();
+                if (viewMode !== 'globe' || !cesiumRef.current) return; // bailed out while loading
+
                 Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || '';
 
                 const viewer = new Cesium.Viewer(cesiumRef.current, {
