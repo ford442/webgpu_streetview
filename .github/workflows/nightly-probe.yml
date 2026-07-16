@@ -1,0 +1,49 @@
+name: Nightly hold-pause probe
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  hold-pause-probe:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'ford442/webgpu_streetview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Start dev server
+        run: npm start &
+        env:
+          REACT_APP_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
+          BROWSER: none
+
+      - name: Wait for dev server
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000 > /dev/null && exit 0
+            sleep 2
+          done
+          echo "Dev server did not become ready in time" >&2
+          exit 1
+
+      - name: Run hold-pause probe
+        run: npm run probe:hold-pause
+        env:
+          REACT_APP_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
+
+      - name: Upload probe screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hold-pause-probe-screenshots
+          path: repro-screenshots/hold-pause-probe/
+          retention-days: 14
