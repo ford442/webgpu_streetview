@@ -62,6 +62,18 @@ export {
   useAllLoadingStates,
 } from './useLoadingIntegrations';
 
+// Shared Exploration Sessions (multiplayer road trips)
+export {
+  useSharedSession,
+  encodeSignal,
+  decodeSignal,
+  shouldApplyIncomingState,
+  type SessionState,
+  type SharedSessionRole,
+  type SharedSessionStatus,
+  type UseSharedSessionResult,
+} from './useSharedSession';
+
 // Performance monitoring hook
 export {
   usePerformanceMonitor,
