@@ -15,9 +15,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - run: npm ci
+      # No package-lock.json is committed (see .gitignore), so `npm ci` and
+      # setup-node's built-in `cache: npm` (which requires a lockfile to hash)
+      # aren't usable here.
+      - run: npm install
       - run: npx playwright install --with-deps chromium
 
       - name: Start dev server

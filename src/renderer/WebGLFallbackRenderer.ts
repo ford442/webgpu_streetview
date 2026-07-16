@@ -367,6 +367,11 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         this.weatherParams.set(params.subarray(0, Math.min(6, params.length)), 0);
     }
 
+    public updateNoiseBuffer(_tile: Float32Array): void {
+        // The WebGL fallback pipeline doesn't sample the WASM noise tile —
+        // it's a WebGPU-only enhancement layered on weather-post.wgsl.
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherParams[6] = ((Date.now() - this.startTime) / 1000) % 10000.0;
         if (this.lastSource) {

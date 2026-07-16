@@ -135,25 +135,49 @@ docker run --rm -v "$(pwd):/src" -w /src \
 
 ## Integration with the Render Pipeline
 
-The WASM module is designed to run on the **CPU** and feed results into the
-**WebGPU GPU pipeline**:
+The WASM module runs on the **CPU** and feeds results into the **WebGPU GPU
+pipeline** to drive the ambient dust-mote effect in `weather-post.wgsl`:
 
 ```
-WASM fillNoiseBuffer()
-  → Float32Array
-    → device.queue.writeBuffer(gpuBuffer, ...)
-      → WGSL shader reads buffer
+WasmNoiseFeeder.sampleTile()      (src/wasm/wasmNoiseFeeder.ts)
+  → loadWasmModule().fillNoiseBuffer()   [every 30 frames, 64x64 tile]
+    → renderer.updateNoiseBuffer(tile)
+      → WeatherPostProcessor: device.queue.writeBuffer(noiseBuffer, ...)
+        → weather-post.wgsl: sampleWasmNoiseTile() (binding 3, storage buffer)
+          → applyDustParticles() cloud-density modulation
 ```
 
-Example — update weather noise every N frames:
+`WebGPUCanvas.tsx` owns a `WasmNoiseFeeder` instance and calls
+`sampleTile(frameCount, time)` once per frame; it returns a fresh tile only on
+the update cadence (otherwise `null`, so no GPU upload happens that frame).
+The tile refreshing only every ~30 frames — instead of every frame — is
+deliberate: it reads as slow, organic turbulence distinct from the per-pixel
+GPU hash noise used everywhere else in the shader, and it keeps the CPU cost
+negligible.
+
+**Dev toggle**: append `?wasmNoise=off` to the URL (or `?wasmNoise=on` to
+force it back on over a stored preference) to compare the WASM-driven dust
+effect against it being fully disabled — see `getWasmNoisePreference()` in
+`src/wasm/wasmNoiseFeeder.ts`. When disabled, dust intensity is driven to 0
+and the noise tile is never uploaded.
+
+### haversine's host math imports
+
+WASM has no built-in transcendental functions, so `haversine()` in
+`streetview-wasm.wat` imports `sin`/`cos`/`atan2` from the host — the
+loader in `src/wasm/index.ts` supplies `Math.sin`/`Math.cos`/`Math.atan2` at
+instantiation time:
 
 ```typescript
-// In WebGPUCanvas.tsx render loop
-if (frameCount % 30 === 0 && wasmModule) {
-  wasmModule.fillNoiseBuffer(noiseBuffer, 64, 64, 200, time, 0);
-  device.queue.writeBuffer(noiseGpuBuffer, 0, noiseBuffer);
-}
+const importObject = { env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 } };
+const { instance } = await WebAssembly.instantiate(bytes, importObject);
 ```
+
+This gives the WAT build the same double-precision result as the JS fallback
+formula (bit-for-bit, verified in `src/wasm/__tests__/wasmCompiled.test.ts`,
+which instantiates the real compiled binary directly instead of only testing
+the JS fallback). The Emscripten build (`cpp/src/noise_module.cpp`) already
+had exact haversine via libm — this closes the same gap for the WAT path.
 
 ---
 

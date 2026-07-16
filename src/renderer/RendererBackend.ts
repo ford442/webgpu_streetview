@@ -37,6 +37,13 @@ export interface StreetViewRenderer {
     updateWeatherParams(params: Float32Array): void;
     updateCameraParams(heading: number, pitch: number): void;
     updateColorParams(params: Float32Array): void;
+    /**
+     * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts) for
+     * shaders to sample as CPU-driven turbulence. `tile` must have
+     * `NOISE_TILE_SIZE * NOISE_TILE_SIZE` elements, row-major. No-op on
+     * backends that don't support it (e.g. the WebGL fallback).
+     */
+    updateNoiseBuffer(tile: Float32Array): void;
     updateWeatherAnimation(): void;
     renderWeatherOnly(): void;
     beginTransition(mode?: string): void;

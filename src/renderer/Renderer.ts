@@ -363,6 +363,10 @@ export class Renderer implements StreetViewRenderer {
         this.weatherPostProcessor?.updateColorParams(params);
     }
 
+    public updateNoiseBuffer(tile: Float32Array): void {
+        this.weatherPostProcessor?.updateNoiseBuffer(tile);
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherPostProcessor?.updateWeatherAnimation();
     }

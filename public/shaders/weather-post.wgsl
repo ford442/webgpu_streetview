@@ -47,7 +47,7 @@ struct WeatherParams {
     // 33-35: Camera view parameters (NEW - for world-space effects)
     cameraHeading     : f32,  // normalized camera heading (0-1, same as panX)
     cameraPitch       : f32,  // normalized camera pitch (0-1, same as panY)
-    _pad0             : f32,  // padding to maintain alignment
+    wasmNoiseEnabled  : f32,  // 1.0 = sample the WASM-computed noise tile (dust turbulence), 0.0 = off
     // 36: sunrise
     sunrise           : f32,  // 0.0 = no sunrise, 1.0 = full sunrise
     // 37: anamorphic lens flare streak width (0 = off, 0.5 = moderate)
@@ -60,6 +60,10 @@ struct WeatherParams {
 @group(0) @binding(0) var<uniform> p: WeatherParams;
 @group(0) @binding(1) var sceneTex: texture_2d<f32>;
 @group(0) @binding(2) var linearSampler: sampler;
+// CPU-computed Perlin noise tile (src/wasm/wasmNoiseFeeder.ts), refreshed
+// every ~30 frames via device.queue.writeBuffer — a coarser, more organic
+// alternative to the per-pixel GPU hash noise used elsewhere in this file.
+@group(0) @binding(3) var<storage, read> wasmNoiseTile: array<f32, 4096>;
 
 // Vertex shader - full screen triangle
 @vertex
@@ -493,12 +497,31 @@ fn applyVignette(col: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
     return col * vignette;
 }
 
+// Bilinear sample of the 64x64 WASM-computed Perlin noise tile (binding 3).
+// Refreshed roughly every 30 frames on the CPU — a coarser, slower-drifting
+// alternative to the per-pixel GPU hash noise used elsewhere in this file.
+fn sampleWasmNoiseTile(uv: vec2<f32>) -> f32 {
+    let tileSize = 64.0;
+    let scaled = fract(uv) * tileSize;
+    let x0 = i32(floor(scaled.x)) & 63;
+    let y0 = i32(floor(scaled.y)) & 63;
+    let x1 = (x0 + 1) & 63;
+    let y1 = (y0 + 1) & 63;
+    let fx = fract(scaled.x);
+    let fy = fract(scaled.y);
+    let v00 = wasmNoiseTile[y0 * 64 + x0];
+    let v10 = wasmNoiseTile[y0 * 64 + x1];
+    let v01 = wasmNoiseTile[y1 * 64 + x0];
+    let v11 = wasmNoiseTile[y1 * 64 + x1];
+    return mix(mix(v00, v10, fx), mix(v01, v11, fx), fy);
+}
+
 // === 5. DUST/POLLEN PARTICLES (Camera-Aware) ===
 fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> vec3<f32> {
     if (intensity < 0.001) { return col; }
-    
+
     var dustAccum = vec3<f32>(0.0);
-    
+
     // Pre-calculate sun screen position for sparkle effect
     let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
     let dSunX = normalizedDistance(uv.x, sunScreenX);
@@ -506,26 +529,36 @@ fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> 
     let sunDist = length(vec2<f32>(dSunX * 2.0, uv.y - sunUvY));
     let sunVisible = smoothstep(0.0, 0.1, p.sunAltitude);
     let towardSun = smoothstep(0.5, 0.0, sunDist);
-    
+
+    // WASM-driven cloud density: slow drifting turbulence sampled from the
+    // CPU-computed noise tile, so dust motes clump into organic patches
+    // instead of being uniformly distributed. Disable with ?wasmNoise=off
+    // to compare against the plain per-pixel randomness below.
+    var cloudDensity = 1.0;
+    if (p.wasmNoiseEnabled > 0.5) {
+        let cloudUV = uv * 1.5 + vec2<f32>(t * 0.015, t * 0.008);
+        cloudDensity = 0.35 + 0.65 * (0.5 + 0.5 * sampleWasmNoiseTile(cloudUV));
+    }
+
     for (var i: i32 = 0; i < 3; i = i + 1) {
         let layer = f32(i);
-        
+
         var particleUV = uv * (15.0 + layer * 10.0);
         particleUV.x = particleUV.x + p.wind * (0.2 + layer * 0.1) + t * (0.1 + layer * 0.05);
         particleUV.y = particleUV.y + t * (0.05 + layer * 0.03);
-        
+
         let id = floor(particleUV);
         let rnd = hash(id + vec2<f32>(layer * 13.0));
-        
+
         if (rnd > 0.7) {
             let pos = fract(particleUV) - vec2<f32>(0.5);
             let dist = length(pos);
-            
-            let particle = smoothstep(0.15, 0.0, dist) * (0.5 + rnd * 0.5);
-            
+
+            let particle = smoothstep(0.15, 0.0, dist) * (0.5 + rnd * 0.5) * cloudDensity;
+
             let sparklePhase = t * (3.0 + rnd * 2.0) + layer * 5.0;
             let sparkle = pow(sin(sparklePhase) * 0.5 + 0.5, 10.0) * towardSun * sunVisible;
-            
+
             let dustColor = vec3<f32>(0.9, 0.85, 0.7) + vec3<f32>(0.3, 0.25, 0.1) * sparkle;
             dustAccum = dustAccum + dustColor * particle * (0.3 + sparkle * 0.7);
         }
