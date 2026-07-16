@@ -16,8 +16,12 @@ export interface RendererDebugOptions {
     wireframe: boolean;
 }
 
+export type WeatherPostProcessMode = 'fragment' | 'compute';
+
 export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
+    /** WebGPU only — WebGL2 fallback stays fragment-only. See docs/RENDERER_FALLBACK.md. */
+    weatherPostProcessMode?: WeatherPostProcessMode;
 }
 
 export interface StreetViewRenderer {
@@ -67,10 +71,13 @@ export interface StreetViewRenderer {
         zoom?: number
     ): void;
     setDebugOptions?(options: Partial<RendererDebugOptions>): void;
+    /** WebGPU only — returns which weather post-process pipeline is active. */
+    getWeatherPostProcessMode?(): WeatherPostProcessMode;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);
 const VALID_EFFECTS = new Set(['all', 'raw', 'color', 'weather', 'fog', 'night', 'lighting']);
+const VALID_WEATHER_MODES = new Set(['fragment', 'compute']);
 
 function readSearchParams(): URLSearchParams {
     if (typeof window === 'undefined') return new URLSearchParams();
@@ -120,11 +127,38 @@ export function getRendererDebugOptions(): RendererDebugOptions {
     return { effectIsolation, wireframe };
 }
 
+/**
+ * Resolve the weather post-processing pipeline: `?weather=compute` or
+ * `?weather=fragment` in the URL wins, then a persisted `localStorage`
+ * choice, then `fallback` (typically the current visual quality preset's
+ * default — see src/config/visualPresets.ts). WebGPU-only; the WebGL2
+ * fallback renderer always uses its fragment-only SDR approximation.
+ */
+export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fragment'): WeatherPostProcessMode {
+    const params = readSearchParams();
+    const explicit = params.get('weather')?.toLowerCase();
+    if (explicit && VALID_WEATHER_MODES.has(explicit)) {
+        return explicit as WeatherPostProcessMode;
+    }
+
+    try {
+        const stored = window.localStorage.getItem('streetview.weatherMode');
+        if (stored && VALID_WEATHER_MODES.has(stored)) {
+            return stored as WeatherPostProcessMode;
+        }
+    } catch {
+        // Storage may be unavailable in hardened browsers.
+    }
+
+    return fallback;
+}
+
 export function exposeRendererDebugGlobals(
     backendType: RendererBackendType,
     fallbackReason: string | undefined,
     debugOptions: RendererDebugOptions,
-    applyDebugOptions: (options: Partial<RendererDebugOptions>) => void
+    applyDebugOptions: (options: Partial<RendererDebugOptions>) => void,
+    weatherPostProcessMode?: WeatherPostProcessMode
 ): void {
     if (typeof window === 'undefined') return;
 
@@ -132,6 +166,7 @@ export function exposeRendererDebugGlobals(
     window.usingWebGPU = backendType === 'webgpu';
     window.usingWebGL = backendType === 'webgl';
     window.rendererFallbackReason = fallbackReason || '';
+    window.weatherPostProcessMode = weatherPostProcessMode || 'fragment';
 
     window.streetViewRendererDebug = {
         getBackend: () => ({
@@ -154,5 +189,11 @@ export function exposeRendererDebugGlobals(
             applyDebugOptions({ wireframe: enabled });
         },
         getDebugOptions: () => ({ ...debugOptions }),
+        getWeatherMode: () => window.weatherPostProcessMode || 'fragment',
+        setWeatherMode: (mode: WeatherPostProcessMode) => {
+            if (!VALID_WEATHER_MODES.has(mode)) return;
+            window.localStorage.setItem('streetview.weatherMode', mode);
+            window.location.reload();
+        },
     };
 }

@@ -38,6 +38,16 @@ export interface VisualPreset {
   depthOfFieldEnabled: boolean;
   motionBlurEnabled: boolean;
 
+  /**
+   * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
+   * -> weather-post.wgsl) or 'compute' (weather-post-compute.wgsl, storage-buffer
+   * based — see docs/RENDERER_FALLBACK.md and ComputeWeatherPostProcessor.ts).
+   * A `?weather=compute`/`?weather=fragment` URL flag or persisted
+   * localStorage choice always overrides this default. Ignored by the
+   * WebGL2 fallback renderer, which is fragment-only.
+   */
+  weatherPostProcessMode: 'fragment' | 'compute';
+
   // Lighting
   maxLights: number;
   ambientOcclusion: boolean;
@@ -61,6 +71,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
   low: {
     name: 'Low',
     quality: 'low',
+    weatherPostProcessMode: 'fragment',
 
     textureResolution: 64,
     anisotropy: 1,
@@ -97,6 +108,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
   medium: {
     name: 'Medium',
     quality: 'medium',
+    weatherPostProcessMode: 'fragment',
 
     textureResolution: 128,
     anisotropy: 4,
@@ -133,6 +145,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
   high: {
     name: 'High',
     quality: 'high',
+    weatherPostProcessMode: 'fragment',
 
     textureResolution: 256,
     anisotropy: 8,
@@ -169,6 +182,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
   ultra: {
     name: 'Ultra',
     quality: 'ultra',
+    weatherPostProcessMode: 'compute',
 
     textureResolution: 512,
     anisotropy: 16,

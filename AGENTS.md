@@ -293,7 +293,7 @@ App.tsx
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-A compute variant `weather-post-compute.wgsl` exists for potential compute-pipeline integration. It uses an `extraBuffer` storage array (index 0–36) mapped to the same weather parameters and exposes additional bindings for depth textures and data textures.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `ultra` visual quality preset. Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array — currently bound to 1x1 dummy resources, reserved for future WASM-fed noise tiles (#128), volumetric fog, and GPU particles. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 ### WebGL2 Fallback / Debug Renderer
 
@@ -440,7 +440,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 **Never** rely on a single baked key for multiple hosts with different restrictions. Always prefer the runtime override for the official demo. Do not commit new keys.
 
 ### 6. Shader Uniform Layouts
-`weather-post.wgsl` expects a 40-float (160-byte) uniform buffer:
+`weather-post.wgsl` (fragment pass, active by default) and `weather-post-compute.wgsl` (compute pass, opt-in via `?weather=compute` — see `docs/RENDERER_FALLBACK.md`) both expect the same 40-float (160-byte) parameter layout. The single source of truth is `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) — both `WeatherPostProcessor.ts` and `ComputeWeatherPostProcessor.ts` import it instead of hardcoding indices:
 ```
 [0-5]   vibrance, saturation, contrast, exposure, temperature, tint
 [6-10]  time, rainIntensity, snowIntensity, wind, speed
@@ -450,7 +450,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 [22-31] fogIntensity, fogDensity, fogHeight, fogColorIndex, lightShaftsIntensity, heatShimmerIntensity, lensFlareIntensity, chromaticAberration, dustIntensity, humidityHaze
 [32]    shaderEffectsEnabled
 [33-34] cameraHeading, cameraPitch
-[35]    padding
+[35]    wasmNoiseEnabled
 [36]    sunrise
 [37]    anamorphicStreak
 [38-39] padding
@@ -465,7 +465,7 @@ The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
 [7]     padding
 ```
 
-Changing either layout without updating both `Renderer.ts`, `WebGPUCanvas.tsx`, and the WGSL files will break rendering.
+Changing either layout without updating `weatherUniformLayout.ts`, `Renderer.ts`, `WebGPUCanvas.tsx`, and both weather WGSL files will break rendering.
 
 ### 7. Google Maps Canvas Opacity Requirement
 The hidden Street View container must maintain `opacity: 1`. Google Maps stops updating its internal render canvas when opacity is low. Visibility is controlled via `zIndex` and `pointerEvents`, never `opacity`.

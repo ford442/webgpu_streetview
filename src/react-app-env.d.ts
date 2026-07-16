@@ -1,7 +1,7 @@
 /// <reference types="react-scripts" />
 /// <reference types="@webgpu/types" />
 
-import type { RendererBackendPreference, RendererEffectIsolation } from './renderer/RendererBackend';
+import type { RendererBackendPreference, RendererEffectIsolation, WeatherPostProcessMode } from './renderer/RendererBackend';
 
 declare global {
   interface Window {
@@ -9,6 +9,7 @@ declare global {
     usingWebGPU?: boolean;
     usingWebGL?: boolean;
     rendererFallbackReason?: string;
+    weatherPostProcessMode?: WeatherPostProcessMode;
     streetViewRendererDebug?: {
       getBackend: () => {
         rendererType?: 'webgpu' | 'webgl';
@@ -23,6 +24,8 @@ declare global {
         effectIsolation: RendererEffectIsolation;
         wireframe: boolean;
       };
+      getWeatherMode: () => WeatherPostProcessMode;
+      setWeatherMode: (mode: WeatherPostProcessMode) => void;
     };
   }
 }
