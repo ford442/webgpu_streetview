@@ -11,6 +11,13 @@ export { useBookmarks } from './useBookmarks';
 export { useLocationHistory } from './useLocationHistory';
 export { useSnapshots } from './useSnapshots';
 export { useVehicleSettings } from './useVehicleSettings';
+export {
+  useTours,
+  type Tour,
+  type TourWaypoint,
+  type TourTransitionType,
+  type CurrentPOV,
+} from './useTours';
 
 // Mobile responsiveness hooks
 export { useTouchControls, type UseTouchControlsOptions, type TouchGestureState } from './useTouchControls';

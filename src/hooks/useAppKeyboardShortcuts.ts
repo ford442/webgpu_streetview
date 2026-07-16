@@ -22,6 +22,8 @@ export interface UseAppKeyboardShortcutsOptions {
   setIsAccessibilityPanelOpen: (v: boolean) => void;
   isWeatherPanelOpen: boolean;
   setIsWeatherPanelOpen: (v: boolean) => void;
+  isTourPanelOpen: boolean;
+  setIsTourPanelOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   rainIntensity: number;
@@ -65,6 +67,8 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     setIsAccessibilityPanelOpen,
     isWeatherPanelOpen,
     setIsWeatherPanelOpen,
+    isTourPanelOpen,
+    setIsTourPanelOpen,
     viewMode,
     toggleViewMode,
     rainIntensity,
@@ -171,6 +175,14 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       },
     },
     {
+      key: 't',
+      description: 'Toggle tour panel',
+      action: () => {
+        setIsTourPanelOpen(!isTourPanelOpen);
+        announce(`Tour panel ${!isTourPanelOpen ? 'opened' : 'closed'}`);
+      },
+    },
+    {
       key: 'c',
       description: 'Toggle car mode',
       action: () => {
@@ -237,6 +249,7 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
         else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
         else if (isSnapshotGalleryOpen) setIsSnapshotGalleryOpen(false);
         else if (isColorGradingPanelOpen) setIsColorGradingPanelOpen(false);
+        else if (isTourPanelOpen) setIsTourPanelOpen(false);
         else if (isMapOpen) setIsMapOpen(false);
       },
       preventDefault: false,

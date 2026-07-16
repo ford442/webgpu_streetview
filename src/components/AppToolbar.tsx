@@ -18,6 +18,8 @@ export interface AppToolbarProps {
   setIsWeatherPanelOpen: (v: boolean) => void;
   isHistoricalTimelineOpen: boolean;
   setIsHistoricalTimelineOpen: (v: boolean) => void;
+  isTourPanelOpen: boolean;
+  setIsTourPanelOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -41,6 +43,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   setIsWeatherPanelOpen,
   isHistoricalTimelineOpen,
   setIsHistoricalTimelineOpen,
+  isTourPanelOpen,
+  setIsTourPanelOpen,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
@@ -117,6 +121,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); setIsHistoricalTimelineOpen(!isHistoricalTimelineOpen); }}
       >
         🕰 Time Travel
+      </button>
+      <button
+        className={`control-btn${isTourPanelOpen ? ' disconnect' : ''}`}
+        style={{ minWidth: 110 }}
+        onClick={e => { e.stopPropagation(); setIsTourPanelOpen(!isTourPanelOpen); }}
+      >
+        🗺 Tours
       </button>
       <button
         className="control-btn"
