@@ -68,6 +68,36 @@ window.streetViewRendererDebug.getDebugOptions();
 
 The isolation value is stored in `localStorage` as `streetview.effect`. `wireframe` is a screen-space UV/grid overlay because the Street View renderer is a fullscreen pass, not a mesh renderer.
 
+## Weather Post-Process: Fragment vs Compute
+
+The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:
+
+- **Fragment** (default): `src/renderer/WeatherPostProcessor.ts` + `public/shaders/weather-post.wgsl`. A single fullscreen-triangle render pass sampling the HDR intermediate texture.
+- **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array — currently bound to 1x1 dummy resources, reserved for future WASM-fed noise tiles (#128), volumetric fog, and GPU particles that want storage-buffer access a fragment pass can't offer efficiently.
+
+Both read the same `40-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
+
+Select the pipeline with:
+
+```text
+?weather=compute
+?weather=fragment
+```
+
+or persist a choice from DevTools:
+
+```js
+window.streetViewRendererDebug.setWeatherMode('compute');
+window.streetViewRendererDebug.setWeatherMode('fragment');
+window.streetViewRendererDebug.getWeatherMode();
+```
+
+Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weatherMode`) and reloads the page. With no explicit URL flag or stored preference, the mode falls back to the detected visual quality preset's `weatherPostProcessMode` (`src/config/visualPresets.ts`) — every preset defaults to `'fragment'` except `ultra`, which defaults to `'compute'`.
+
+**This is WebGPU-only.** The WebGL2 fallback renderer remains fragment-only (a single-pass SDR approximation) — there is no WebGL2 compute path, and `?weather=compute` has no effect when the WebGL2 backend is active.
+
+Known gap: the compute path does not yet sample the WASM-computed 64x64 noise tile (`wasmNoiseTile` in `weather-post.wgsl`) that the fragment path uses for dust-cloud turbulence — `wasmNoiseEnabled` is read but has no visual effect in the compute shader yet. Rain, snow, fog, color grading, night/headlight lighting, and astronomical effects are otherwise at parity between the two paths.
+
 ## Parity Notes
 
 The WebGL2 backend is intentionally approximate. It is meant for debugging panorama sampling, weather parameter wiring, color grading controls, and car overlay compositing in environments where WebGPU is unavailable or too opaque for automation.

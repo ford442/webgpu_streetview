@@ -1,3 +1,5 @@
+import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from './weatherUniformLayout';
+
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
 const NOISE_TILE_SIZE = 64;
@@ -12,7 +14,7 @@ export class WeatherPostProcessor {
     private weatherParamsBuffer!: GPUBuffer;
     private weatherSampler!: GPUSampler;
     private noiseBuffer!: GPUBuffer;
-    private weatherParams: Float32Array = new Float32Array(40);
+    private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
 
@@ -112,7 +114,7 @@ export class WeatherPostProcessor {
         });
     }
 
-    public updateWeatherBindGroup(intermediateTextureView: GPUTextureView): void {
+    public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, _width?: number, _height?: number): void {
         if (!this.weatherPipeline || !intermediateTextureView || !this.weatherSampler) return;
 
         this.weatherBindGroup = this.device.createBindGroup({
@@ -138,15 +140,15 @@ export class WeatherPostProcessor {
     public setShaderEffects(enabled: boolean): void {
         this.shaderEffectsEnabled = enabled;
         if (this.weatherParamsBuffer && this.device) {
-            this.weatherParams[32] = enabled ? 1.0 : 0.0;
+            this.weatherParams[WeatherParamIndex.shaderEffectsEnabled] = enabled ? 1.0 : 0.0;
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         }
     }
 
     public getCameraParams(): { heading: number; pitch: number } {
         return {
-            heading: this.weatherParams[33]!,
-            pitch: this.weatherParams[34]!
+            heading: this.weatherParams[WeatherParamIndex.cameraHeading]!,
+            pitch: this.weatherParams[WeatherParamIndex.cameraPitch]!
         };
     }
 
@@ -163,8 +165,8 @@ export class WeatherPostProcessor {
 
     public updateCameraParams(heading: number, pitch: number): void {
         if (this.weatherParamsBuffer && this.device) {
-            this.weatherParams[33] = heading;
-            this.weatherParams[34] = pitch;
+            this.weatherParams[WeatherParamIndex.cameraHeading] = heading;
+            this.weatherParams[WeatherParamIndex.cameraPitch] = pitch;
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         }
     }
@@ -180,7 +182,7 @@ export class WeatherPostProcessor {
         if (!this.device || !this.weatherParamsBuffer) return;
         try {
             const time = (Date.now() - this.startTime) / 1000;
-            this.weatherParams[6] = time % 10000.0;
+            this.weatherParams[WeatherParamIndex.time] = time % 10000.0;
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         } catch (e) {
             // Ignore errors during weather-only updates

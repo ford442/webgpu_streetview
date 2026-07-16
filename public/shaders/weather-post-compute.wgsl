@@ -2,14 +2,21 @@
 // Compatible with image_video_effects WGSL compute pipeline
 // Maps original WeatherParams into extraBuffer for cross-shader portability
 //
-// extraBuffer layout (indices):
+// extraBuffer layout (indices) — must match src/renderer/weatherUniformLayout.ts,
+// the WeatherParams struct in weather-post.wgsl, and WeatherPostProcessor.ts:
 // 0:vibrance 1:saturation 2:contrast 3:exposure 4:temperature 5:tint
 // 6:time 7:rainIntensity 8:snowIntensity 9:wind 10:speed
 // 11:nightIntensity 12:headlightsOn 13:highBeam 14:headlightHeading 15:headlightPitch
 // 16:domeLightOn 17:domeLightIntensity 18:sunAzimuth 19:sunAltitude 20:moonAzimuth 21:moonAltitude
 // 22:fogIntensity 23:fogDensity 24:fogHeight 25:fogColorIndex 26:lightShaftsIntensity
 // 27:heatShimmerIntensity 28:lensFlareIntensity 29:chromaticAberration 30:dustIntensity
-// 31:humidityHaze 32:shaderEffectsEnabled 33:cameraHeading 34:cameraPitch 35:sunrise 36:anamorphicStreak
+// 31:humidityHaze 32:shaderEffectsEnabled 33:cameraHeading 34:cameraPitch 35:wasmNoiseEnabled
+// 36:sunrise 37:anamorphicStreak 38-39:padding
+//
+// NOTE: the compute path does not currently bind the 64x64 WASM noise tile
+// (see weather-post.wgsl's `wasmNoiseTile` storage buffer / #128), so
+// wasmNoiseEnabled is read but has no effect here yet — dust cloud density
+// stays uniform instead of following WASM-driven turbulence.
 
 // --- STANDARD image_video_effects HEADER ---
 @group(0) @binding(0) var u_sampler: sampler;
@@ -74,8 +81,9 @@ fn p_humidityHaze() -> f32    { return ep(31); }
 fn p_shaderEffectsEnabled() -> f32 { return ep(32); }
 fn p_cameraHeading() -> f32   { return ep(33); }
 fn p_cameraPitch() -> f32     { return ep(34); }
-fn p_sunrise() -> f32         { return ep(35); }
-fn p_anamorphicStreak() -> f32 { return ep(36); }
+fn p_wasmNoiseEnabled() -> f32 { return ep(35); }
+fn p_sunrise() -> f32         { return ep(36); }
+fn p_anamorphicStreak() -> f32 { return ep(37); }
 
 // ============================================================================
 // NOISE AND UTILITY FUNCTIONS

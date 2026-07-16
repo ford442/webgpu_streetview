@@ -4,11 +4,13 @@ import {
     exposeRendererDebugGlobals,
     getRendererDebugOptions,
     getRendererPreference,
+    getWeatherPostProcessMode,
     RendererBackendType,
     RendererDebugOptions,
     RendererInitOptions,
     StreetViewRenderer,
 } from './RendererBackend';
+import { getPreset, detectRecommendedQuality } from '../config/visualPresets';
 
 export interface RendererCreateResult {
     renderer: StreetViewRenderer | null;
@@ -30,13 +32,19 @@ export async function createStreetViewRenderer(
             : ['webgpu', 'webgl'];
 
     let fallbackReason: string | undefined;
+    const presetDefaultWeatherMode = getPreset(detectRecommendedQuality()).weatherPostProcessMode;
+    const weatherPostProcessMode = getWeatherPostProcessMode(presetDefaultWeatherMode);
 
     for (const backend of attempts) {
-        const renderer = backend === 'webgpu'
+        const renderer: StreetViewRenderer = backend === 'webgpu'
             ? new Renderer(canvas)
             : new WebGLFallbackRenderer(canvas, debugOptions, fallbackReason || 'WebGPU unavailable or disabled');
 
-        const success = await renderer.init(options);
+        const initOptions: RendererInitOptions = backend === 'webgpu'
+            ? { ...options, weatherPostProcessMode }
+            : options || {};
+
+        const success = await renderer.init(initOptions);
         if (success) {
             exposeRendererDebugGlobals(
                 backend,
@@ -45,7 +53,8 @@ export async function createStreetViewRenderer(
                 (nextDebugOptions) => {
                     Object.assign(debugOptions, nextDebugOptions);
                     renderer.setDebugOptions?.(debugOptions);
-                }
+                },
+                renderer.getWeatherPostProcessMode?.()
             );
             renderer.setDebugOptions?.(debugOptions);
             return {

@@ -1,9 +1,27 @@
 import { RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
+import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
 import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import { RendererDebugOptions, StreetViewRenderer } from './RendererBackend';
+import { RendererDebugOptions, RendererInitOptions, StreetViewRenderer, WeatherPostProcessMode } from './RendererBackend';
+
+/** Common surface shared by WeatherPostProcessor and ComputeWeatherPostProcessor. */
+interface WeatherPostProcessorLike {
+    init(presentationFormat: GPUTextureFormat): Promise<void>;
+    updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
+    updateNoiseBuffer(tile: Float32Array): void;
+    setShaderEffects(enabled: boolean): void;
+    getCameraParams(): { heading: number; pitch: number };
+    getShaderEffectsEnabled(): boolean;
+    updateWeatherParams(params: Float32Array): void;
+    updateCameraParams(heading: number, pitch: number): void;
+    updateColorParams(params: Float32Array): void;
+    updateWeatherAnimation(): void;
+    renderWeatherOnly(intermediateTextureView: GPUTextureView): void;
+    renderPass(commandEncoder: GPUCommandEncoder): void;
+    dispose(): void;
+}
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
@@ -42,7 +60,8 @@ export class Renderer implements StreetViewRenderer {
 
     // Sub-systems
     private transitionManager!: TransitionManager;
-    private weatherPostProcessor!: WeatherPostProcessor;
+    private weatherPostProcessor!: WeatherPostProcessorLike;
+    private weatherPostProcessMode: WeatherPostProcessMode = 'fragment';
 
     // World-space pan tracking
     private capturePanX: number = 0.5;
@@ -56,8 +75,9 @@ export class Renderer implements StreetViewRenderer {
         this.canvas = canvas;
     }
 
-    public async init(options?: { onLost?: (info: GPUDeviceLostInfo) => void }): Promise<boolean> {
+    public async init(options?: RendererInitOptions): Promise<boolean> {
         this.onLostCallback = options?.onLost;
+        this.weatherPostProcessMode = options?.weatherPostProcessMode || 'fragment';
         if (!navigator.gpu) {
             console.warn('WebGPU not supported. Using StreetView fallback.');
             return false;
@@ -117,7 +137,9 @@ export class Renderer implements StreetViewRenderer {
 
             await this.createPipeline();
 
-            this.weatherPostProcessor = new WeatherPostProcessor(this.device, this.context, this.canvas);
+            this.weatherPostProcessor = this.weatherPostProcessMode === 'compute'
+                ? new ComputeWeatherPostProcessor(this.device, this.context, this.canvas)
+                : new WeatherPostProcessor(this.device, this.context, this.canvas);
             await this.weatherPostProcessor.init(this.presentationFormat);
 
             this.transitionManager = new TransitionManager(this.device, this.sampler);
@@ -155,7 +177,11 @@ export class Renderer implements StreetViewRenderer {
         });
 
         this.intermediateTextureView = this.intermediateTexture.createView();
-        this.weatherPostProcessor.updateWeatherBindGroup(this.intermediateTextureView);
+        this.weatherPostProcessor.updateWeatherBindGroup(this.intermediateTextureView, width, height);
+    }
+
+    public getWeatherPostProcessMode(): WeatherPostProcessMode {
+        return this.weatherPostProcessMode;
     }
 
     private createTexture(width: number, height: number) {
