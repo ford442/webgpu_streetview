@@ -3,6 +3,7 @@ import { SnapshotMetadata } from '../hooks/useSnapshots';
 
 interface SnapshotGalleryProps {
     snapshots: SnapshotMetadata[];
+    isOffline?: boolean;
     onRemoveSnapshot: (id: string) => void;
     onUpdateName: (id: string, name: string) => void;
     onDownload: (snapshot: SnapshotMetadata) => void;
@@ -14,6 +15,7 @@ interface SnapshotGalleryProps {
 
 const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
     snapshots,
+    isOffline = false,
     onRemoveSnapshot,
     onUpdateName,
     onDownload,
@@ -178,6 +180,9 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                 <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>
                     📸 Snapshots ({snapshots.length})
                 </h3>
+                {isOffline && (
+                    <span style={{ fontSize: 11, color: '#ffb74d', marginLeft: 8 }}>Offline</span>
+                )}
                 <div style={{ display: 'flex', gap: '10px' }}>
                     {snapshots.length > 0 && (
                         <button

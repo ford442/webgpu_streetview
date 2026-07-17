@@ -9,7 +9,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 
 ### Live Deployment
 - **URL**: https://test.1ink.us/streetview
-- **Deployment Target**: 1ink.us server via SFTP (`deploy.py`)
+- **Deployment Target**: 1ink.us via Contabo bundle API (`deploy.py` + `DEPLOY_TOKEN`)
 
 ---
 
@@ -63,9 +63,10 @@ npm run eject
 # 1. Build production bundle
 npm run build
 
-# 2. Deploy to server (requires Python + paramiko)
-python deploy.py
-# - Uploads build/ to test.1ink.us/streetview via SFTP
+# 2. Deploy (credentials from environment — never commit)
+export DEPLOY_TOKEN='...'
+MAPS_API_KEY='AIzaSy...' python deploy.py
+# Uploads build/ via Contabo storage manager → test.1ink.us or go.1ink.us
 ```
 
 ---
@@ -86,7 +87,24 @@ webgpu_streetview/
 │       ├── texture.wgsl             # Debug passthrough
 │       └── transition-*.wgsl        # GPU panorama transitions (fade, zoom, zoom-blur, zoom-chromatic)
 ├── src/
-│   ├── App.tsx                      # Central controller. Renders providers + InnerApp.
+│   ├── App.tsx                      # Thin root: AppProviders + AppShell (<200 LOC)
+│   ├── app/                         # App composition layer (extracted from App.tsx)
+│   │   ├── AppProviders.tsx         # StreetView + ViewMode + Environment provider stack
+│   │   ├── AppShell.tsx             # Layout, toolbar, panels, scraper, WebGPU mount
+│   │   ├── useAppPanels.ts          # Panel open/close state
+│   │   ├── useAppTelemetry.ts       # Performance overlay + memory profiler sampling
+│   │   ├── useMapsBootstrap.ts      # Maps key resolution, auth recovery, gm-err suppressor
+│   │   ├── mapsKeyUtils.ts          # Pure Maps key normalization / resolution helpers
+│   │   ├── mapsLoadingOverlay.ts    # Pure LoadingOverlay state derivation
+│   │   └── index.ts                 # Barrel exports
+│   ├── offline/                     # PWA shell + IndexedDB metadata (Phase 1–3 offline mode)
+│   │   ├── serviceWorkerRegistration.ts
+│   │   ├── swPolicy.ts              # Cache rules (never cache Google imagery)
+│   │   ├── offlineStore.ts          # IndexedDB stores
+│   │   ├── offlinePersistence.ts    # localStorage ↔ IndexedDB mirror
+│   │   ├── storageEstimate.ts       # navigator.storage.estimate helpers
+│   │   ├── routePrefetch.ts         # Phase 3 route graph scaffold
+│   │   └── index.ts
 │   ├── index.tsx                    # React 18+ createRoot entry point
 │   ├── style.css                    # Global styles
 │   ├── views/                       # Top-level view routing
@@ -215,7 +233,7 @@ webgpu_streetview/
 │       ├── memoryProfiler.ts        # Heap usage tracking
 │       └── index.ts
 ├── build/                           # Production build output
-├── deploy.py                        # SFTP deployment script
+├── deploy.py                        # Contabo bundle deploy (reads DEPLOY_TOKEN from env)
 ├── package.json
 ├── tsconfig.json
 ├── .env                             # REACT_APP_* environment variables
@@ -231,7 +249,7 @@ webgpu_streetview/
 
 ### State Management: Provider Pattern
 
-State is no longer owned solely by `App.tsx`. Three React Context providers wrap the app:
+State is no longer owned solely by `App.tsx`. Three React Context providers wrap the app via `src/app/AppProviders.tsx`:
 
 1. **`StreetViewProvider`** (`src/hooks/useStreetView.tsx`)
    - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, heading, pitch, zoom, position, and `isTransitioning`.
@@ -258,8 +276,11 @@ State is no longer owned solely by `App.tsx`. Three React Context providers wrap
 
 ```
 App.tsx
-├── Providers (StreetViewProvider, ViewModeProvider, EnvironmentSettingsProvider)
-└── InnerApp
+├── AppProviders (src/app/AppProviders.tsx)
+│   ├── StreetViewProvider
+│   ├── ViewModeProvider
+│   └── EnvironmentSettingsProvider
+└── AppShell (src/app/AppShell.tsx)
     └── MainView
         ├── FreeLookView (when viewMode === 'freelook')
         └── CarModeView (when viewMode === 'car')
@@ -271,7 +292,7 @@ App.tsx
 
 1. **Google Maps API** loads in `StreetView.tsx` via dynamically injected `<script>` tag with `callback=initGoogleMaps`.
 2. `MutationObserver` watches the panorama container, collects all `<canvas>` elements, sorts by pixel area, and selects the largest one ≥256×256 pixels.
-3. The canvas ref flows: `StreetView.tsx` → `StreetViewProvider` (via `setCanvas`) → `App.tsx` → `WebGPUCanvas.tsx` → `Renderer.ts`.
+3. The canvas ref flows: `StreetView.tsx` → `StreetViewProvider` (via `setCanvas`) → `AppShell.tsx` → `WebGPUCanvas.tsx` → `Renderer.ts`.
 4. `Renderer.ts` uploads the canvas every frame with `device.queue.copyExternalImageToTexture`.
 5. The dual-pass pipeline renders to screen.
 
@@ -481,7 +502,7 @@ The project uses Create React App's default testing setup:
 - **Setup file**: `src/setupTests.ts` — imports `@testing-library/jest-dom` matchers and polyfills `TextDecoder`/`TextEncoder` from Node's `util` module onto `global`. jsdom does not implement either; Cesium pulls in `protobufjs`, which requires `TextDecoder` at module-load time, so **any** test that imports anything from `src/components/index.ts` (directly or transitively, e.g. via `App.tsx` → `MiniMap.tsx` → `cesium`) fails to load without this polyfill. All 15 test suites run under this single setup file — there is no per-suite Cesium mocking and no deferred/lazy import of `GlobeView`/`MiniMap` needed; the polyfill alone is sufficient because the tests never need Cesium to actually *do* anything, just to finish importing.
 
 ### Unit tests (Jest/jsdom) vs. browser verification (Playwright / manual)
-- **Jest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
+- **Jest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
 - **Playwright / manual browser verification covers** anything that needs a real GPU or real DOM behavior jsdom can't fake: WebGPU device init and the dual-pass shader pipeline, actual Google Maps canvas scraping via `MutationObserver`, the hold-pause GPU snapshot/crossfade (`scripts/hold-pause-probe.mjs`, see *Hold-Pause Manual Checklist* below), Three.js car interior rendering, and Cesium globe/terrain rendering. There is no Playwright *test suite* (no `.spec.ts`/`playwright.config.*`) in this repo today — Playwright is used as a scripted browser driver (`npm run probe:hold-pause`) plus the manual checklists documented below, not via `npx playwright test`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Jest test. If it requires an actual WebGPU/WebGL context, real Google Maps canvas, or visual crossfade timing, it belongs in the manual/Playwright-script category — don't try to fake a GPU in jsdom.
 
@@ -575,10 +596,11 @@ When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
 
 ```bash
 npm run build        # outputs to build/
-python deploy.py     # SFTP upload to test.1ink.us/streetview
+export DEPLOY_TOKEN='...'
+MAPS_API_KEY='...' python deploy.py
 ```
 
-`deploy.py` uses `paramiko` to connect to `ford442@1ink.us` and recursively uploads `build/`. **Security note**: the script currently contains a hardcoded password. In a production environment this should be replaced with environment variables or key-based authentication.
+`deploy.py` POSTs a zip of `build/` to the Contabo storage manager API. **Never commit `DEPLOY_TOKEN` or SFTP passwords** — use environment variables or GitHub Actions secrets (see `.env.deploy.example` and `.github/workflows/deploy.yml`).
 
 ---
 
@@ -598,8 +620,8 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 
 ## Security Considerations
 
-1. **API Key Exposure**: A Google Maps API key is hardcoded in `src/App.tsx` (`GOOGLE_MAPS_KEY`). The `.env` file supports `REACT_APP_MAPS_API_KEY` but the fallback is visible in source. Never commit additional keys.
-2. **Deployment Credentials**: `deploy.py` contains a hardcoded SFTP password (`GoogleBez12!`). This should be moved to environment variables or replaced with SSH key auth immediately.
+1. **API Key Exposure**: Maps API key resolution lives in `src/app/mapsKeyUtils.ts` and `src/app/useMapsBootstrap.ts`. The `.env` file supports `REACT_APP_MAPS_API_KEY` but production keys should be injected at deploy time. Never commit additional keys.
+2. **Deployment Credentials**: `DEPLOY_TOKEN` must be supplied via environment variable or GitHub Actions secret. Legacy `deploy_old.py` (hardcoded SFTP password) has been removed.
 3. **CORS Audio**: The radio stream uses `crossOrigin = "anonymous"` on the HTMLAudioElement.
 4. **Local Storage**: Accessibility settings, bookmarks, and snapshots are stored in `localStorage`. No encryption is applied.
 5. **Script Injection**: `StreetView.tsx` dynamically injects a `<script>` tag for the Google Maps API. The URL is constructed with a template literal containing the API key.
@@ -612,8 +634,8 @@ python deploy.py     # SFTP upload to test.1ink.us/streetview
 2. **Canvas Scraping Fragility**: Any Google Maps DOM restructure will silently break the canvas feed.
 3. **Mobile**: WebGPU on mobile is limited; a touch-friendly `MobileUI.tsx` fallback is active but car mode is desktop-focused.
 4. **Accessibility**: Keyboard navigation works globally; screen-reader support is present via `useAnnouncer` and ARIA live regions but can be enhanced.
-5. **Offline**: No offline mode. Requires continuous internet for Map tiles and Street View imagery.
-6. **API Key Exposure**: Fallback key is visible in `App.tsx` source.
+5. **Offline**: Limited offline mode — app shell + saved snapshots/metadata via service worker and IndexedDB. Google Street View tiles are **not** cached (Maps ToS). See README § Offline Mode.
+6. **API Key Exposure**: Fallback key may be visible in build-time env; prefer runtime `config.js` for production.
 7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
 8. **Build Tool Lock-in**: Create React App 5.0.1 is used; ejecting is irreversible.
 9. **Cesium ESM in IIFE bundles**: Cesium 1.140.0 ships code that uses `import.meta.url` and `__webpack_module__`, which are invalid in CRA's default IIFE bundle output. The built `main.*.js` must be post-processed before deployment or local testing (see *Local Testing with Headless Chrome* above).

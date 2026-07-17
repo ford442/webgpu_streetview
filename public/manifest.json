@@ -1,0 +1,26 @@
+{
+  "name": "1ink.us Streetview",
+  "short_name": "Streetview",
+  "description": "WebGPU-accelerated Google Maps Street View with offline shell and saved snapshots",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#4CAF50",
+  "categories": ["navigation", "travel"],
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

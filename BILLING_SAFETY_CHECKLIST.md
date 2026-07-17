@@ -21,8 +21,17 @@
   - Production: Your actual domain only
 - [ ] API-specific restrictions applied (Maps JS, not all APIs)
 - [ ] Key labeled with purpose: `app-name-env-domain`
-- [ ] Key added to `.env` file (NOT hardcoded in source)
-- [ ] `.env` file is in `.gitignore` (don't commit)
+- [ ] Key added to `.env.local` or passed via `MAPS_API_KEY=... python deploy.py` (NOT hardcoded in source)
+- [ ] `.env.local` file is in `.gitignore` (don't commit)
+
+---
+
+## When Deploying
+
+- [ ] `DEPLOY_TOKEN` exported from secure storage (never committed to git)
+- [ ] `./scripts/check-deploy-secrets.sh` passes (no hardcoded deploy credentials in repo)
+- [ ] Production Maps key passed via `MAPS_API_KEY` env var or GitHub Actions secret
+- [ ] See `docs/DEPLOY_CHECKLIST.md` for full pre/post deploy steps
 
 ---
 
@@ -70,15 +79,19 @@
 - [ ] API usage spike with no code changes
 - [ ] Same key used in development and production
 - [ ] API key in git history
+- [ ] `DEPLOY_TOKEN` or SFTP password committed to Python/shell deploy scripts
+- [ ] `deploy_old.py` present in the repository
 
 ---
 
 ## Reference Files
 
 📄 **Read these before deploying**:
+- [`docs/DEPLOY_CHECKLIST.md`](./docs/DEPLOY_CHECKLIST.md) - Production deploy + credential hygiene
+- [`.env.deploy.example`](./.env.deploy.example) - Required deploy environment variables
 - [`BILLING_WARNINGS.md`](./BILLING_WARNINGS.md) - Full incident report
 - [`docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md`](./docs/GOOGLE_CLOUD_API_SETUP_GUIDE.md) - Complete setup steps
-- [`CLAUDE.md`](./CLAUDE.md) - Section: "Hardcoded API Key" (security issue)
+- [`CLAUDE.md`](./CLAUDE.md) - Maps key recovery behaviors
 
 ---
 

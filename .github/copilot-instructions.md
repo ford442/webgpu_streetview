@@ -8,7 +8,8 @@ npm start                          # dev server → http://localhost:3000
 CI=false npm run build             # production build → build/  (CI=true fails on pre-existing ESLint warnings)
 npm test -- --watchAll=false       # run all tests once (CI mode)
 npm test -- --testPathPattern=navigation   # run a single test file
-python deploy.py                   # SFTP upload build/ to test.1ink.us/streetview
+export DEPLOY_TOKEN='...'
+MAPS_API_KEY='...' python deploy.py   # Contabo bundle upload → test.1ink.us/streetview
 ```
 
 ## Architecture

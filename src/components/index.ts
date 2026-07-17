@@ -42,3 +42,4 @@ export { default as TourPanel } from './TourPanel';
 export { default as TourRecorder } from './TourRecorder';
 export { default as TourPlayer } from './TourPlayer';
 export { default as SharedSessionPanel } from './SharedSessionPanel';
+export { default as StorageManagementPanel } from './StorageManagementPanel';

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 
 export interface SnapshotMetadata {
     id: string;
@@ -13,27 +14,29 @@ export interface SnapshotMetadata {
     locationName?: string;
 }
 
-const STORAGE_KEY = 'webgpu_streetview_snapshots';
 const MAX_SNAPSHOTS = 20; // Limit stored snapshots to avoid storage quota issues
 
 export function useSnapshots() {
     const [snapshots, setSnapshots] = useState<SnapshotMetadata[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // Load snapshots from localStorage on mount
+    // Load snapshots from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    setSnapshots(parsed);
+        let cancelled = false;
+        (async () => {
+            try {
+                const stored = await loadMirroredJson<SnapshotMetadata[]>('snapshots');
+                if (!cancelled && Array.isArray(stored)) {
+                    setSnapshots(stored);
                 }
+            } catch (error) {
+                console.error('Failed to load snapshots:', error);
             }
-        } catch (error) {
-            console.error('Failed to load snapshots:', error);
-        }
-        setIsLoaded(true);
+            if (!cancelled) setIsLoaded(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     // Save snapshots to localStorage whenever they change
@@ -44,21 +47,17 @@ export function useSnapshots() {
 
         // Debounce the save operation by 1000ms
         const debounceTimer = setTimeout(() => {
-            const saveOperation = () => {
+            const saveOperation = async () => {
                 try {
-                    const serialized = JSON.stringify(snapshots);
-                    localStorage.setItem(STORAGE_KEY, serialized);
+                    await saveMirroredJson('snapshots', snapshots);
                 } catch (error) {
                     console.error('Failed to save snapshots:', error);
-                    // If storage quota exceeded, remove oldest and try again
                     if (error instanceof DOMException && error.name === 'QuotaExceededError') {
                         setSnapshots(prev => {
-                            const reduced = prev.slice(0, -5); // Remove 5 oldest
-                            try {
-                                localStorage.setItem(STORAGE_KEY, JSON.stringify(reduced));
-                            } catch (e) {
+                            const reduced = prev.slice(0, -5);
+                            void saveMirroredJson('snapshots', reduced).catch(() => {
                                 console.error('Still exceeded quota after reduction');
-                            }
+                            });
                             return reduced;
                         });
                     }

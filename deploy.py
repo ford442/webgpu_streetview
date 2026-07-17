@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
-project_deploy_template.py
-
-Copy this file into your project as `deploy.py` (or deploy_contabo.py).
-Customize the constants at the top for your project.
+Deploy WebGPU StreetView to test.1ink.us / go.1ink.us via the Contabo storage
+manager bundle API. Credentials are read from environment variables only —
+never commit DEPLOY_TOKEN or MAPS_API_KEY to the repository.
 
 Usage:
-  1. Build your project:  npm run build   (or python build, etc.)
-  2. python deploy.py
+  npm run build   # or let deploy.py run it when build/ is missing
+  export DEPLOY_TOKEN='...'   # from VPS / storage manager config
+  MAPS_API_KEY='AIzaSy...' python deploy.py
 
-This script contacts https://storage.noahcohn.com (your Contabo storage manager)
-to upload your entire build as a single zip archive.  The server extracts it and
-pushes all files over one persistent SFTP connection — much faster than uploading
-files individually.
-
-Actual FTP/SFTP credentials never leave the VPS.
+Environment variables:
+  DEPLOY_TOKEN       (required) Auth token for the bundle upload API
+  MAPS_API_KEY       (recommended) Baked into static/js/*.js at deploy time
+  DEPLOY_TARGET      test (default) | go
+  CONTABO_BASE_URL   https://storage.noahcohn.com (default)
+  PROJECT_NAME       streetview (default)
+  BUILD_DIR          build (default)
+  DEPLOY_FOLDER      Remote folder override (default: PROJECT_NAME)
 
 Requirements:
   pip install requests
 """
+
+from __future__ import annotations
 
 import io
 import os
@@ -26,20 +30,53 @@ import re
 import subprocess
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import requests
 
-# Patterns that identify placeholder / template values — not real keys.
+MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
+
+# Patterns that identify placeholder / template Maps keys — not real keys.
 _PLACEHOLDER_PATTERNS = [
-    re.compile(r'^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key', re.I),
-    re.compile(r'^YOUR_MAPS_API_KEY$'),
-    re.compile(r'^placeholder', re.I),
-    re.compile(r'^<.*>$'),
-    re.compile(r'replace', re.I),
-    re.compile(r'^AIzaSy-placeholder', re.I),
+    re.compile(r"^your[_-]?(google[_-]?)?maps[_-]?api[_-]?key", re.I),
+    re.compile(r"^YOUR_MAPS_API_KEY$"),
+    re.compile(r"^placeholder", re.I),
+    re.compile(r"^<.*>$"),
+    re.compile(r"replace", re.I),
+    re.compile(r"^AIzaSy-placeholder", re.I),
 ]
+
+# Committed-source patterns scanned by scripts/check-deploy-secrets.sh (not duplicated here).
+
+
+def refuse_if_secrets_in_source(repo_root: Path | None = None) -> None:
+    """Fail fast if known deploy credentials appear in tracked source files."""
+    root = repo_root or Path(__file__).resolve().parent
+    script = root / "scripts" / "check-deploy-secrets.sh"
+    if not script.is_file():
+        print("Warning: scripts/check-deploy-secrets.sh missing — skipping credential self-test.")
+        return
+
+    result = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr.rstrip())
+        sys.exit(1)
+
+
+@dataclass(frozen=True)
+class DeployConfig:
+    project_name: str
+    build_dir: str
+    contabo_base_url: str
+    deploy_folder: str
+    deploy_target: str
+    deploy_token: str
+    maps_api_key: Optional[str]
 
 
 def _is_placeholder(key: str) -> bool:
@@ -48,8 +85,56 @@ def _is_placeholder(key: str) -> bool:
     return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
 
 
+def load_deploy_config() -> DeployConfig:
+    """Load deploy settings from environment variables."""
+    deploy_token = os.environ.get("DEPLOY_TOKEN", "").strip()
+    if not deploy_token:
+        print("\nERROR: DEPLOY_TOKEN environment variable is required.")
+        print("  The Contabo bundle upload API authenticates with this token.")
+        print("  Obtain it from your VPS / storage manager configuration.")
+        print("\n  Example:")
+        print("    export DEPLOY_TOKEN='your_token_from_vps_env'")
+        print("    MAPS_API_KEY='AIzaSy...' python deploy.py")
+        print("\n  For GitHub Actions, store DEPLOY_TOKEN as a repository secret.")
+        sys.exit(1)
+
+    deploy_target = os.environ.get("DEPLOY_TARGET", "test").strip().lower()
+    if deploy_target not in ("test", "go"):
+        print(f"\nERROR: DEPLOY_TARGET must be 'test' or 'go' (got {deploy_target!r}).")
+        sys.exit(1)
+
+    maps_key = os.environ.get("MAPS_API_KEY", "").strip() or None
+
+    return DeployConfig(
+        project_name=os.environ.get("PROJECT_NAME", "streetview").strip() or "streetview",
+        build_dir=os.environ.get("BUILD_DIR", "build").strip() or "build",
+        contabo_base_url=os.environ.get("CONTABO_BASE_URL", "https://storage.noahcohn.com").strip()
+        or "https://storage.noahcohn.com",
+        deploy_folder=os.environ.get("DEPLOY_FOLDER", "").strip(),
+        deploy_target=deploy_target,
+        deploy_token=deploy_token,
+        maps_api_key=maps_key,
+    )
+
+
+def refuse_if_secrets_in_source(repo_root: Path | None = None) -> None:
+    """Fail fast if known deploy credentials appear in tracked source files."""
+    root = repo_root or Path(__file__).resolve().parent
+    script = root / "scripts" / "check-deploy-secrets.sh"
+    if not script.is_file():
+        print("Warning: scripts/check-deploy-secrets.sh missing — skipping credential self-test.")
+        return
+
+    result = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr.rstrip())
+        sys.exit(1)
+
+
 def _build_index_problems(build_path: Path) -> list[str]:
-    """Return deploy-blocking problems with build/index.html, if any."""
     index_html = build_path / "index.html"
     if not index_html.is_file():
         return ["build/index.html is missing"]
@@ -66,7 +151,6 @@ def _build_index_problems(build_path: Path) -> list[str]:
 
 
 def _ensure_production_build(build_path: Path) -> None:
-    """Run npm run build when build/ is missing or still looks like public/ template."""
     repo_root = Path(__file__).resolve().parent
     needs_build = not build_path.is_dir()
     problems: list[str] = []
@@ -81,20 +165,14 @@ def _ensure_production_build(build_path: Path) -> None:
     reason = problems[0] if problems else "build/ directory is missing"
     print(f"\n  build/ is not deployable ({reason}).")
     print("  Running 'npm run build' to produce a production bundle...\n")
-    result = subprocess.run(
-        ["npm", "run", "build"],
-        cwd=repo_root,
-        env=os.environ.copy(),
-    )
+    result = subprocess.run(["npm", "run", "build"], cwd=repo_root, env=os.environ.copy())
     if result.returncode != 0:
         print("\nERROR: 'npm run build' failed. Fix build errors, then run deploy again.")
         sys.exit(1)
-
     print("\n  npm run build completed successfully.\n")
 
 
 def _validate_build_index(build_path: Path) -> None:
-    """Reject builds whose index.html looks like an unprocessed CRA template."""
     problems = _build_index_problems(build_path)
     if problems:
         print("\n" + "!" * 70)
@@ -104,12 +182,10 @@ def _validate_build_index(build_path: Path) -> None:
         print("  Fix: run 'npm run build' and deploy the build/ directory output.")
         print("!" * 70 + "\n")
         sys.exit(1)
-
     print("  build/index.html looks valid (main JS bundle present, no %PUBLIC_URL%).")
 
 
 def _validate_maps_key(key: str) -> None:
-    """Warn loudly if key looks wrong; optionally do a live probe."""
     if not key or _is_placeholder(key):
         print("\n" + "!" * 70)
         print("  WARNING: MAPS_API_KEY is empty or a placeholder value.")
@@ -118,15 +194,11 @@ def _validate_maps_key(key: str) -> None:
         print("!" * 70 + "\n")
         return
 
-    if not re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', key):
+    if not re.match(r"^AIzaSy[A-Za-z0-9_-]{33}$", key):
         print(f"\nWARNING: MAPS_API_KEY doesn't match the expected AIzaSy... format (length {len(key)}).")
         print("  Double-check the key is correct before deploying.\n")
         return
 
-    # Quick live probe: fetch the Maps JS bootstrap and look for auth error markers.
-    # This catches: billing disabled, API not enabled, key entirely invalid.
-    # It does NOT catch referrer restrictions (those only fire in a browser with
-    # a matching Origin/Referer header) — verify those manually in GCP Console.
     print(f"  Probing Maps JS API with key {key[:8]}...{key[-4:]} (checks billing & API-enabled)…", end=" ", flush=True)
     try:
         resp = requests.get(
@@ -142,7 +214,6 @@ def _validate_maps_key(key: str) -> None:
         elif any(marker in body for marker in ("InvalidKey", "MapsInvalidKey", "AuthFailure", "ApiNotActivatedMapError")):
             print("FAIL (auth/activation error in response)")
             print("  WARNING: Maps JS API returned an auth or activation error.")
-            print("  Check: key validity, Maps JS API enabled, billing active.")
         else:
             print("OK")
             print("  NOTE: Referrer restrictions cannot be verified from a script.")
@@ -150,41 +221,8 @@ def _validate_maps_key(key: str) -> None:
     except Exception as exc:
         print(f"SKIP (network error: {exc})")
 
-# ============================================================
-# PER-PROJECT CONFIGURATION - EDIT THESE
-# ============================================================
-PROJECT_NAME: str = 'streetview'
-BUILD_DIR: str = 'build'
-CONTABO_BASE_URL: str = "https://storage.noahcohn.com"
-DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NAME
-
-# Optional deploy token (recommended for security).
-# Set via environment: export DEPLOY_TOKEN="your_long_token_from_vps_env"
-DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6da4a1c2a9d9cadc0"
-
-# Optional deploy target: "test" (default → test.1ink.us) or "go" (→ go.1ink.us)
-# Set via environment: export DEPLOY_TARGET=go
-DEPLOY_TARGET: str = os.getenv("DEPLOY_TARGET", "test")
-
-# Maps API key injection for runtime config (supports "MAPS_API_KEY=... python deploy.py"
-# even with the current bundle-upload mechanism). This directly addresses repeated
-# map loading failures after deploys (see #89, #84).
-MAPS_API_KEY: Optional[str] = os.environ.get("MAPS_API_KEY", "").strip() or None
-# Sentinel string in src/App.tsx — deploy.py replaces it inside static/js/*.js bundles
-# (same delivery model as go.1ink.us, which bakes the key into main.js).
-MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
-# ============================================================
-
 
 def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
-    """Replace quoted deploy sentinel literals with the real Maps API key.
-
-    IMPORTANT: only replace quoted strings like "__RUNTIME_MAPS_KEY_SENTINEL__".
-    A global replace also corrupts the placeholder regex /^__RUNTIME_MAPS_KEY_SENTINEL__$/
-    into /^AIzaSy...$/ which then rejects the real key as a 'placeholder'.
-    Also ensure a window.MAPS_API_KEY assignment exists near the top for
-    maximum compatibility (belt-and-suspenders).
-    """
     quoted = (
         f'"{MAPS_KEY_SENTINEL}"'.encode("utf-8"),
         f"'{MAPS_KEY_SENTINEL}'".encode("utf-8"),
@@ -197,10 +235,7 @@ def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
             patched = patched.replace(needle, replacement)
             changed = True
 
-    # Belt-and-suspenders: also inject an early window assignment if not already present.
-    # This makes the key visible to the top-level INITIAL_MAPS_KEY evaluation even
-    # if the sentinel replacement site was inlined/mangled by the minifier.
-    if changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched:  # if we patched or no sentinel left
+    if changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched:
         key_assignment = f'window.MAPS_API_KEY="{key}";'.encode("utf-8")
         if key_assignment not in patched:
             patched = key_assignment + b"\n" + patched
@@ -209,7 +244,6 @@ def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
 
 
 def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
-    """Ensure index.html references the CRA main.js bundle (not just public/ template)."""
     text = index_html.decode("utf-8", errors="replace")
     changed = False
     if "%PUBLIC_URL%" in text:
@@ -250,11 +284,7 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     return repaired.encode("utf-8")
 
 
-def build_zip(build_path: Path) -> bytes:
-    """Zip the contents of build_path into an in-memory archive.
-    If MAPS_API_KEY env is set, bake it into static/js/*.js by replacing
-    __RUNTIME_MAPS_KEY_SENTINEL__ (go.1ink.us style — key lives in main.js).
-    """
+def build_zip(build_path: Path, maps_api_key: Optional[str]) -> bytes:
     buf = io.BytesIO()
     bundle_patched = False
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -262,7 +292,6 @@ def build_zip(build_path: Path) -> bytes:
             if file.is_dir():
                 continue
             rel = file.relative_to(build_path)
-            # Skip common junk
             parts = rel.parts
             if any(p in (".git", "node_modules", "__pycache__") for p in parts):
                 continue
@@ -273,13 +302,13 @@ def build_zip(build_path: Path) -> bytes:
                 file_data = _repair_index_html(file_data, build_path)
 
             if (
-                MAPS_API_KEY
+                maps_api_key
                 and len(parts) >= 2
                 and parts[0] == "static"
                 and parts[1] == "js"
                 and str(rel).endswith(".js")
             ):
-                patched = _inject_maps_key_into_bundle(file_data, MAPS_API_KEY)
+                patched = _inject_maps_key_into_bundle(file_data, maps_api_key)
                 if patched != file_data:
                     print(f"  + {rel} (Maps API key baked into bundle)")
                     zf.writestr(str(rel), patched)
@@ -289,33 +318,33 @@ def build_zip(build_path: Path) -> bytes:
             zf.writestr(str(rel), file_data)
             print(f"  + {rel}")
 
-    if MAPS_API_KEY:
+    if maps_api_key:
         if not bundle_patched:
             print("\n" + "!" * 70)
             print(f"  ERROR: MAPS_API_KEY provided but '{MAPS_KEY_SENTINEL}' was not found")
             print("  in build/static/js/*.js. Run 'npm run build' first, then deploy again.")
             print("!" * 70 + "\n")
             sys.exit(1)
-        print(f"\n[deploy] Maps API key baked into JS bundle (length {len(MAPS_API_KEY)}).")
-        print("         Same delivery as go.1ink.us — no config.js required.")
+        print(f"\n[deploy] Maps API key baked into JS bundle (length {len(maps_api_key)}).")
         print("         Ensure the key's referrer allowlist covers test.1ink.us and go.1ink.us.")
     return buf.getvalue()
 
 
-def deploy_bundle(build_path: Path) -> bool:
-    """Zip the build and upload it as a single bundle."""
-    target_folder = DEPLOY_FOLDER or PROJECT_NAME
-    url = f"{CONTABO_BASE_URL}/api/deploy/{PROJECT_NAME}/bundle"
-    headers = {}
-    if DEPLOY_TOKEN:
-        headers["X-Deploy-Token"] = DEPLOY_TOKEN
+def deploy_bundle(config: DeployConfig, build_path: Path) -> bool:
+    target_folder = config.deploy_folder or config.project_name
+    url = f"{config.contabo_base_url.rstrip('/')}/api/deploy/{config.project_name}/bundle"
+    headers = {"X-Deploy-Token": config.deploy_token}
 
     print("Building zip archive...")
-    if MAPS_API_KEY:
-        print(f"  MAPS_API_KEY provided (masked: {MAPS_API_KEY[:8]}...{MAPS_API_KEY[-4:]}) — will bake into JS bundle")
+    if config.maps_api_key:
+        print(
+            f"  MAPS_API_KEY provided (masked: {config.maps_api_key[:8]}...{config.maps_api_key[-4:]}) "
+            "— will bake into JS bundle"
+        )
     else:
         print("  No MAPS_API_KEY env — bundle must already contain a key (REACT_APP_MAPS_API_KEY at build time)")
-    zip_bytes = build_zip(build_path)
+
+    zip_bytes = build_zip(build_path, config.maps_api_key)
     print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
 
     print("Uploading bundle...")
@@ -323,60 +352,62 @@ def deploy_bundle(build_path: Path) -> bool:
         response = requests.post(
             url,
             files={"bundle": ("build.zip", zip_bytes, "application/zip")},
-            data={"target_folder": target_folder, "target_site": DEPLOY_TARGET},
+            data={"target_folder": target_folder, "target_site": config.deploy_target},
             headers=headers,
             timeout=300,
         )
     except Exception as exc:
-        print(f"  \u2717 Upload exception: {exc}")
+        print(f"  ✗ Upload exception: {exc}")
         return False
 
     if response.status_code == 200:
         data = response.json()
-        print(f"  \u2713 {data.get('uploaded', 0)} files uploaded")
+        print(f"  ✓ {data.get('uploaded', 0)} files uploaded")
         if data.get("failed"):
             print("  Failures:")
             for f in data["failed"]:
-                print(f"    \u2717 {f['path']}: {f['error']}")
+                print(f"    ✗ {f['path']}: {f['error']}")
         return not data.get("failed")
-    else:
-        print(f"  \u2717 {response.status_code}: {response.text[:400]}")
-        return False
+
+    print(f"  ✗ {response.status_code}: {response.text[:400]}")
+    if response.status_code in (401, 403):
+        print("  Hint: check DEPLOY_TOKEN — it must match the value configured on the storage manager VPS.")
+    return False
 
 
-def main():
-    _site_host = "go.1ink.us" if DEPLOY_TARGET == "go" else "test.1ink.us"
-    print(f"\n=== Deploying '{PROJECT_NAME}' via Contabo -> {_site_host} (target={DEPLOY_TARGET}) ===\n")
+def main() -> None:
+    refuse_if_secrets_in_source()
+    config = load_deploy_config()
+    site_host = "go.1ink.us" if config.deploy_target == "go" else "test.1ink.us"
 
-    build_path = Path(BUILD_DIR)
+    print(f"\n=== Deploying '{config.project_name}' via Contabo -> {site_host} (target={config.deploy_target}) ===\n")
 
-    # --- Pre-deploy build + Maps key validation ---
+    build_path = Path(config.build_dir)
     _ensure_production_build(build_path)
     print("Checking build/index.html...")
     _validate_build_index(build_path)
     print("Checking Maps API key...")
-    _validate_maps_key(MAPS_API_KEY or "")
-    # ----------------------------------------
+    _validate_maps_key(config.maps_api_key or "")
 
     try:
-        health = requests.get(f"{CONTABO_BASE_URL}/api/deploy/health", timeout=10)
+        health = requests.get(f"{config.contabo_base_url.rstrip('/')}/api/deploy/health", timeout=10)
         if health.status_code == 200:
             print(f"Contabo deploy service: {health.json().get('status', 'unknown')}")
     except Exception:
-        print("Warning: Could not contact storage.noahcohn.com (continuing anyway).")
+        print("Warning: Could not contact storage manager (continuing anyway).")
 
     print()
-    success = deploy_bundle(build_path)
+    success = deploy_bundle(config, build_path)
 
     print(f"\n=== {'Deployment complete' if success else 'Deployment finished with errors'} ===")
     if success:
         print("Post-deploy verification (do this now):")
-        print(f"  1. curl -s https://{_site_host}/streetview/static/js/main.*.js | grep -o 'AIzaSy[^\"]*' | head -1")
+        print(f"  1. curl -s https://{site_host}/streetview/static/js/main.*.js | grep -o 'AIzaSy[^\"]*' | head -1")
         print("  2. Hard refresh the demo; no 'This page can't load Google Maps correctly'")
         print("  3. Check GCP: key has referrers for both hosts + billing + JS API + Directions enabled")
-        print(f"  4. curl -sI https://{_site_host}/streetview/ | grep -i cross-origin-embedder")
-        print("     Expect 'credentialless' (NOT 'require-corp') — require-corp blocks Google Maps sub-requests and causes flicker.")
-        print("See docs/DEPLOY_CHECKLIST.md and GitHub issues #84 #89.")
+        print(f"  4. curl -sI https://{site_host}/streetview/ | grep -i cross-origin-embedder")
+        print("     Expect 'credentialless' (NOT 'require-corp').")
+        print("See docs/DEPLOY_CHECKLIST.md")
     sys.exit(0 if success else 1)
 
 

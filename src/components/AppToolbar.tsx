@@ -23,6 +23,8 @@ export interface AppToolbarProps {
   isSharedSessionPanelOpen: boolean;
   setIsSharedSessionPanelOpen: (v: boolean) => void;
   isSharedSessionActive: boolean;
+  isStoragePanelOpen: boolean;
+  setIsStoragePanelOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -51,6 +53,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   isSharedSessionPanelOpen,
   setIsSharedSessionPanelOpen,
   isSharedSessionActive,
+  isStoragePanelOpen,
+  setIsStoragePanelOpen,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
@@ -141,6 +145,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); setIsSharedSessionPanelOpen(!isSharedSessionPanelOpen); }}
       >
         🧑‍🤝‍🧑 Road Trip
+      </button>
+      <button
+        className={`control-btn${isStoragePanelOpen ? ' disconnect' : ''}`}
+        style={{ minWidth: 110 }}
+        onClick={e => { e.stopPropagation(); setIsStoragePanelOpen(!isStoragePanelOpen); }}
+      >
+        💾 Offline
       </button>
       <button
         className="control-btn"

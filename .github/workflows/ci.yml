@@ -30,6 +30,12 @@ jobs:
       - name: Run tests
         run: npm test -- --watchAll=false
 
+      - name: Check for committed deploy secrets
+        run: bash scripts/check-deploy-secrets.sh
+
+      - name: Deploy script config tests
+        run: python3 deploy_secrets.test.py
+
       - name: Build
         # CRA fails on pre-existing ESLint warnings when CI=true, so override
         # the runner's default CI=true just for this step (build/build:wasm,

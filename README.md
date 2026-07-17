@@ -68,9 +68,37 @@ Composite Browser Output
 - **Accessibility panel** — UI zoom, high-contrast, reduced motion toggles
 - **Welcome modal** — first-run control reference
 - **Loading overlay** — granular loading states via `useLoadingState`
-- **Snapshot gallery** — capture WebGPU canvas as PNG with metadata sidecar
+- **Snapshot gallery** — capture WebGPU canvas as PNG with metadata sidecar; browsable offline after first visit
+- **Offline shell (PWA)** — service worker caches app shell, WGSL shaders, and WASM loader; IndexedDB stores bookmarks, history, tours, and snapshots metadata
+- **Storage management** — quota meter and cache controls via the **Offline** toolbar panel
 - **Performance stats overlay** — live FPS, GPU frame time, texture upload time (press **P**)
 - **Mobile UI** — touch-friendly fallback layout via `useDeviceDetection`
+
+---
+
+## Offline Mode
+
+Limited offline exploration is supported in three phases (see `docs/feature_expansion_plan.md` §8):
+
+| Phase | Status | What works offline |
+|---|---|---|
+| **1 — App shell** | ✅ | React bundle, WGSL shaders, WASM loader (`public/service-worker.js`) |
+| **2 — Metadata** | ✅ | Bookmarks, history, tours, snapshot gallery (IndexedDB + localStorage mirror) |
+| **3 — Route prefetch** | 🚧 Scaffold | Pano link graph storage API (`src/offline/routePrefetch.ts`); UI wiring pending #134 |
+
+After one online visit, the app shell loads without network. Open **Offline** in the toolbar to view storage quota, clear cached shell assets, or wipe offline metadata.
+
+### Google Maps Platform Terms — caching constraints
+
+**Do not cache Google Street View tile imagery or panorama pixels.** The Maps Platform Terms of Service prohibit storing or redistributing Google-hosted map and Street View content outside the permitted API use cases.
+
+This app intentionally:
+
+- **Caches only** same-origin assets (JS/CSS bundles, WGSL, WASM) via the service worker
+- **Stores only** user-generated snapshots (canvas captures you take) and app metadata (`panoId`, lat/lng, `imageDate`, tour waypoints, bookmarks)
+- **Never caches** responses from `maps.googleapis.com`, `maps.gstatic.com`, or other Google imagery hosts (enforced in `src/offline/swPolicy.ts`)
+
+Live Street View navigation, cruise mode, and route planning still require an internet connection and a valid Maps API key.
 
 ---
 
@@ -106,8 +134,13 @@ REACT_APP_MAPS_API_KEY=your_dev_key_here
 ```bash
 npm run build          # production bundle → build/
 npm test               # run test suite
-python deploy.py       # SFTP upload to test.1ink.us (prompts for password)
+
+# Deploy via Contabo bundle API (credentials from environment — never commit them)
+export DEPLOY_TOKEN='...'   # from VPS / storage manager config
+MAPS_API_KEY='AIzaSy...' python deploy.py
 ```
+
+See `.env.deploy.example` for all supported environment variables and `docs/DEPLOY_CHECKLIST.md` for the full pre/post deploy checklist.
 
 ---
 
@@ -152,20 +185,24 @@ The app supports **two ways** to provide the key (priority order):
 
 ```bash
 # From the repo root, after `npm run build`
+export DEPLOY_TOKEN='...'   # required — from VPS / storage manager (never commit)
 MAPS_API_KEY="AIzaSy...your_production_key..." python deploy.py
 ```
 
 `deploy.py` will:
-- Overwrite `build/config.js` with `window.MAPS_API_KEY = "..."` (JSON-safe)
-- Upload everything (including the fresh config.js)
-- Print diagnostics about what key source is being used
+- Run `scripts/check-deploy-secrets.sh` (refuses deploy if credentials are committed to source)
+- Bake the Maps key into `build/static/js/main.*.js` when `MAPS_API_KEY` is set
+- Upload the production bundle via the Contabo storage manager API
+
+**GitHub Actions (optional):** trigger **Deploy** workflow manually. Configure repository secrets `DEPLOY_TOKEN` and `MAPS_API_KEY`.
 
 **Alternative (bake at build time):**
 
 ```bash
 export REACT_APP_MAPS_API_KEY="AIzaSy...your_production_key..."
 npm run build
-python deploy.py   # still recommended to also provide MAPS_API_KEY for the runtime file
+export DEPLOY_TOKEN='...'
+python deploy.py
 ```
 
 ### After Deploy — Verification Checklist
@@ -191,7 +228,7 @@ See also:
 - `BILLING_SAFETY_CHECKLIST.md`
 - `public/config.js.example`
 
-**Security note**: Never commit real API keys to the repository. The current mechanism (runtime `config.js` + deploy.py override + build-time env var) is designed to keep keys out of git while making production deploys reliable.
+**Security note**: Never commit real API keys or `DEPLOY_TOKEN` to the repository. Use environment variables locally and GitHub Actions secrets for CI deploys. See `.env.deploy.example`.
 
 ---
 
@@ -317,7 +354,7 @@ webgpu_streetview/
 │       ├── navigation.ts          # findBestLink() algorithm
 │       ├── performance.ts
 │       └── memoryProfiler.ts
-├── deploy.py                      # SFTP deploy script
+├── deploy.py                      # Contabo bundle deploy (env vars only — see .env.deploy.example)
 ├── package.json
 ├── CLAUDE.md                      # AI agent guide — danger zones and conventions
 ├── DEVELOPER_CONTEXT.md           # Architecture deep-dive
@@ -430,8 +467,8 @@ Index  Field            Range / Notes
 | Canvas scraping fragility | Google Maps DOM changes will silently break the canvas feed. |
 | Input hijacking | `InputHandler` is window-scoped. All UI overlays must call `e.stopPropagation()`. |
 | Mobile | WebGPU on mobile is limited; full car mode requires desktop or high-end tablet. |
-| No offline mode | Requires internet for Map tiles and Street View imagery. |
-| API key exposure | Key hardcoded in `App.tsx`. Use env var + HTTP referrer restriction in production. |
+| No live Street View offline | Panorama tiles are not cached (Maps ToS). Offline mode covers the app shell, saved snapshots, and metadata only. |
+| API key exposure | Prefer runtime `public/config.js` + deploy-time injection. Never commit real keys. |
 | API rate limits | Google Directions API has quotas; heavy route planning may trigger throttling. |
 
 ---

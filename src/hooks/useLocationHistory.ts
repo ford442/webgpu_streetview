@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 
 export interface HistoryEntry {
     id: string;
@@ -10,37 +11,37 @@ export interface HistoryEntry {
     timestamp: string;
 }
 
-const STORAGE_KEY = 'webgpu_streetview_history';
 const MAX_HISTORY_ITEMS = 50; // Keep last 50 locations
 
 export function useLocationHistory() {
     const [history, setHistory] = useState<HistoryEntry[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // Load history from localStorage on mount
+    // Load history from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    setHistory(parsed);
+        let cancelled = false;
+        (async () => {
+            try {
+                const stored = await loadMirroredJson<HistoryEntry[]>('history');
+                if (!cancelled && Array.isArray(stored)) {
+                    setHistory(stored);
                 }
+            } catch (error) {
+                console.error('Failed to load location history:', error);
             }
-        } catch (error) {
-            console.error('Failed to load location history:', error);
-        }
-        setIsLoaded(true);
+            if (!cancelled) setIsLoaded(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    // Save history to localStorage whenever it changes
+    // Save history to IndexedDB + localStorage whenever it changes
     useEffect(() => {
         if (isLoaded) {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
-            } catch (error) {
+            void saveMirroredJson('history', history).catch((error) => {
                 console.error('Failed to save location history:', error);
-            }
+            });
         }
     }, [history, isLoaded]);
 

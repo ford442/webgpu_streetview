@@ -6,6 +6,7 @@ import {
     updateLocationInCloud,
     SaveLocationRequest,
 } from '../services/storageApi';
+import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 
 export interface Bookmark {
     id: string;
@@ -19,38 +20,37 @@ export interface Bookmark {
     isCloudSyncing?: boolean;
 }
 
-const STORAGE_KEY = 'webgpu_streetview_bookmarks';
-
 export function useBookmarks() {
     const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
 
-    // Load bookmarks from localStorage on mount
+    // Load bookmarks from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    setBookmarks(parsed);
+        let cancelled = false;
+        (async () => {
+            try {
+                const stored = await loadMirroredJson<Bookmark[]>('bookmarks');
+                if (!cancelled && Array.isArray(stored)) {
+                    setBookmarks(stored);
                 }
+            } catch (error) {
+                console.error('Failed to load bookmarks:', error);
             }
-        } catch (error) {
-            console.error('Failed to load bookmarks:', error);
-        }
-        setIsLoaded(true);
+            if (!cancelled) setIsLoaded(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    // Save bookmarks to localStorage whenever they change
+    // Save bookmarks to IndexedDB + localStorage whenever they change
     useEffect(() => {
         if (isLoaded) {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
-            } catch (error) {
+            void saveMirroredJson('bookmarks', bookmarks).catch((error) => {
                 console.error('Failed to save bookmarks:', error);
-            }
+            });
         }
     }, [bookmarks, isLoaded]);
 

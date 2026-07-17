@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Deploy target site
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - go
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Optional: only run on the canonical repo; remove or adjust for forks.
+    if: github.repository == 'ford442/webgpu_streetview'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test -- --watchAll=false
+
+      - name: Check for committed deploy secrets
+        run: bash scripts/check-deploy-secrets.sh
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          CI: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy dependencies
+        run: pip install requests
+
+      - name: Deploy via Contabo bundle API
+        run: python deploy.py
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          DEPLOY_TARGET: ${{ inputs.target }}

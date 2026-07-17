@@ -645,13 +645,15 @@ interface TourWaypoint {
 ---
 
 ### 8. Offline Mode
-**Complexity: High** | **Impact: Medium**
+**Complexity: High** | **Impact: Medium** | **Status: Phase 1–2 implemented, Phase 3 scaffold**
 
-#### 8.1 Cache Management ⬜
+#### 8.1 Cache Management ✅ (partial)
 **Storage Strategy:**
-- **Panorama Images:** Cache tiles as they are viewed
-- **Route Data:** Pre-cache all panoramas along a planned route
-- **Metadata:** Store pano IDs, coordinates, and imagery dates
+- **Panorama Images:** ❌ Not cached (Maps Platform ToS) — metadata + link graph only
+- **Route Data:** 🚧 Phase 3 scaffold (`src/offline/routePrefetch.ts`)
+- **Metadata:** ✅ IndexedDB stores bookmarks, history, tours, snapshots, pano metadata
+
+**Implementation:** `public/service-worker.js` + `src/offline/` (see README § Offline Mode)
 
 **Quota Management:**
 ```typescript
@@ -668,18 +670,18 @@ const estimateStorage = async () => {
 - Priority levels: Favorites > Recent > Route > General
 - Manual cache cleanup UI
 
-#### 8.2 Offline Snapshot Gallery ⬜
-- All snapshots available offline (already stored locally)
+#### 8.2 Offline Snapshot Gallery ✅
+- All snapshots available offline (IndexedDB + localStorage mirror)
 - Thumbnail regeneration on demand
 - Metadata search/filtering
 
-#### 8.3 Downloadable Route Data ⬜
+#### 8.3 Downloadable Route Data 🚧
 **Pre-download Workflow:**
 1. User plots a route
 2. System identifies all panoramas within X meters of route
 3. Shows download size estimate
 4. Downloads in background with progress indicator
-5. Stores in IndexedDB with route association
+5. Stores in IndexedDB with route association (link graph scaffold landed; UI pending #134)
 
 #### 8.4 Offline POI Data ⬜
 - Wikipedia articles for landmarks (offline package)

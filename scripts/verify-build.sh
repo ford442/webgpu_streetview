@@ -104,6 +104,12 @@ fi
 BUNDLE_SIZE=$(du -sm "$BUILD_DIR" | cut -f1)
 echo "ℹ️  Build size: ${BUNDLE_SIZE} MB"
 
+# 7. Refuse committed deploy credentials (passwords, tokens)
+SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" ]; then
+  bash "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" || ERRORS=$((ERRORS+1))
+fi
+
 if [ $ERRORS -gt 0 ]; then
   echo ""
   echo "❌ VERIFICATION FAILED with $ERRORS error(s). DO NOT DEPLOY THIS BUILD."

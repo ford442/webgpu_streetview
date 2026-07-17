@@ -20,17 +20,20 @@ Use this before every production deploy to `test.1ink.us` or `go.1ink.us`. Most 
 
 Current deploy = `python deploy.py` (builds a zip and POSTs to the Contabo storage manager).
 
-Options (in order of preference for prod):
+**Required environment variable:**
+- [ ] `DEPLOY_TOKEN` is set in your shell or CI secrets (never committed to git). Without it, `deploy.py` exits immediately.
 
-- [ ] `MAPS_API_KEY=AIzaSy...real... python deploy.py`  ← now supported (patches config.js inside the zip at deploy time, no rebuild needed).
-- [ ] `export REACT_APP_MAPS_API_KEY=AIzaSy...real...` then `npm run build` then `python deploy.py` (bakes the key; less flexible).
-- [ ] After a deploy, manually edit the deployed `/streetview/config.js` on the origin server (works because it's a plain static asset loaded before the bundle).
+Options for the Maps key (in order of preference for prod):
+
+- [ ] `MAPS_API_KEY=AIzaSy...real... python deploy.py`  ← bakes key into `static/js/main.*.js` at deploy time.
+- [ ] `export REACT_APP_MAPS_API_KEY=AIzaSy...real...` then `npm run build` then `python deploy.py`.
+- [ ] After a deploy, manually edit the deployed `/streetview/config.js` on the origin server (emergency only).
 
 Never commit a real key to `public/config.js` or `.env`.
 
 Run the build-time validator:
 ```bash
-npm run build   # runs prebuild warning + scripts/verify-build.sh automatically
+npm run build   # runs prebuild warning + scripts/verify-build.sh + check-deploy-secrets.sh
 ```
 
 ## 3. Build & verification (local)
@@ -45,13 +48,17 @@ npm run build   # runs prebuild warning + scripts/verify-build.sh automatically
 ## 4. The deploy command
 
 ```bash
-# Best: runtime injection (works with current deploy.py)
+# Required: deploy API token (from VPS / storage manager config)
+export DEPLOY_TOKEN='your_token_here'
+
+# Best: bake Maps key at deploy time
 MAPS_API_KEY="AIzaSyYourRealKeyForBothHosts" python deploy.py
 
-# Alternative: bake at build
-REACT_APP_MAPS_API_KEY="AIzaSy..." npm run build
-python deploy.py
+# Target go.1ink.us instead of test.1ink.us
+DEPLOY_TARGET=go MAPS_API_KEY="AIzaSy..." python deploy.py
 ```
+
+`deploy.py` runs `scripts/check-deploy-secrets.sh` first — it **refuses to deploy** if hardcoded passwords or tokens are found in `deploy.py` / `scripts/*.sh`, or if `deploy_old.py` still exists.
 
 After the script says "complete", immediately do the post-deploy checks below.
 
@@ -91,14 +98,24 @@ These open issues capture the symptoms and remaining engineering work:
 
 See the comments on each for the latest codebase status and partial fixes (reactive key poller, init guard reset, deploy.py injection support, etc.).
 
-## 8. CI (GitHub Actions)
+## 8. CI & GitHub Actions
 
-- `.github/workflows/ci.yml` runs on every push/PR to `main`: `npm ci`, `npm test -- --watchAll=false`, then `npm run build` (which chains `build:wasm`, `patch-cesium-bundle.sh`, and `verify-build.sh`). No secrets are required for this job — it never touches a real Maps key.
-- `.github/workflows/nightly-probe.yml` runs `npm run probe:hold-pause` against a real dev server on a daily schedule (and via manual dispatch). This job needs a repository secret:
-  - **`REACT_APP_MAPS_API_KEY`** — a Maps key with `http://localhost:3000/*` (or whatever CI runner host) in its referrer allowlist. Without it the probe reports "Street View imagery did not render" rather than false-passing (see `scripts/hold-pause-probe.mjs`).
+- `.github/workflows/ci.yml` runs on every push/PR to `main`: typecheck, tests, **deploy secret scan** (`scripts/check-deploy-secrets.sh`), `deploy_secrets.test.py`, then `npm run build`. No deploy secrets required for CI.
+- `.github/workflows/deploy.yml` — optional manual deploy (`workflow_dispatch`). Requires repository secrets:
+  - **`DEPLOY_TOKEN`** — Contabo bundle upload auth token
+  - **`MAPS_API_KEY`** — production Maps key (referrer-restricted)
+- `.github/workflows/nightly-probe.yml` runs `npm run probe:hold-pause` against a real dev server on a daily schedule (and via manual dispatch). Requires:
+  - **`REACT_APP_MAPS_API_KEY`** — a Maps key with `http://localhost:3000/*` in its referrer allowlist.
 - Configure secrets under Settings → Secrets and variables → Actions on the repo.
 
-## 9. One-time / periodic
+## 9. Deploy credential hygiene
+
+- [ ] **Never** commit `DEPLOY_TOKEN`, SFTP passwords, or production Maps keys to git.
+- [ ] `deploy_old.py` (legacy SFTP script with hardcoded password) must stay deleted.
+- [ ] Run `./scripts/check-deploy-secrets.sh` before every deploy (also runs automatically via `verify-build.sh` and `deploy.py`).
+- [ ] Copy `.env.deploy.example` to your local shell profile or password manager — not into the repo.
+
+## 10. One-time / periodic
 
 - [ ] Rotate the production key every 90 days (create new restricted key, deploy with it, delete old).
 - [ ] Review the GCP project's enabled APIs and billing monthly.

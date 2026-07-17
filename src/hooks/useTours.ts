@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 
 export interface TourWaypoint {
     id: string;
@@ -29,7 +30,6 @@ export interface CurrentPOV {
     pov: { heading: number; pitch: number; zoom: number };
 }
 
-const STORAGE_KEY = 'webgpu_streetview_tours';
 const DEFAULT_DWELL_MS = 4000;
 const MIN_WAYPOINT_INTERVAL_MS = 3000;
 
@@ -74,27 +74,28 @@ export function useTours() {
     const getCurrentPOVRef = useRef<(() => CurrentPOV | null) | null>(null);
 
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    setTours(parsed.filter(isValidTour));
+        let cancelled = false;
+        (async () => {
+            try {
+                const stored = await loadMirroredJson<Tour[]>('tours');
+                if (!cancelled && Array.isArray(stored)) {
+                    setTours(stored.filter(isValidTour));
                 }
+            } catch (error) {
+                console.error('Failed to load tours:', error);
             }
-        } catch (error) {
-            console.error('Failed to load tours:', error);
-        }
-        setIsLoaded(true);
+            if (!cancelled) setIsLoaded(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     useEffect(() => {
         if (isLoaded) {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(tours));
-            } catch (error) {
+            void saveMirroredJson('tours', tours).catch((error) => {
                 console.error('Failed to save tours:', error);
-            }
+            });
         }
     }, [tours, isLoaded]);
 
