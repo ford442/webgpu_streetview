@@ -39,7 +39,8 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 ## Build, Test, and Deploy Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (local). CI / deploy use `npm ci` on Node 20.
+# package-lock.json is committed — always include lockfile changes in dependency PRs.
 npm install
 
 # Start development server (port 3000)
@@ -53,6 +54,10 @@ npm test
 
 # Run tests once (CI mode)
 npm test -- --watchAll=false
+
+# Playwright E2E (keyless smoke vs full/keyed — see Testing Strategy)
+npm run test:e2e:smoke
+# REACT_APP_MAPS_API_KEY=... npm run test:e2e:keyed
 
 # Eject from react-scripts (irreversible)
 npm run eject
@@ -90,10 +95,23 @@ webgpu_streetview/
 │   ├── App.tsx                      # Thin root: AppProviders + AppShell (<200 LOC)
 │   ├── app/                         # App composition layer (extracted from App.tsx)
 │   │   ├── AppProviders.tsx         # StreetView + ViewMode + Environment provider stack
-│   │   ├── AppShell.tsx             # Layout, toolbar, panels, scraper, WebGPU mount
+│   │   ├── AppShell.tsx             # Layout + mount composition only (≤~350 LOC)
+│   │   ├── shell/                   # Colocated chrome / stage UI modules
+│   │   │   ├── ConnectedChrome.tsx  # Toolbar + feature panels + globe (when connected)
+│   │   │   ├── MapsAuthModal.tsx    # Hard Maps auth-failure alertdialog
+│   │   │   ├── OfflineStatusToast.tsx
+│   │   │   └── StreetViewStage.tsx  # Scraper + WebGPU + MainView + loading overlay
 │   │   ├── useAppPanels.ts          # Panel open/close state
 │   │   ├── useAppTelemetry.ts       # Performance overlay + memory profiler sampling
 │   │   ├── useMapsBootstrap.ts      # Maps key resolution, auth recovery, gm-err suppressor
+│   │   ├── useSharedSessionSync.ts  # Host 10Hz broadcast + guest teleport/POV apply
+│   │   ├── useRadioAudio.ts         # Free-look radio Audio + Web Audio graph
+│   │   ├── useHistoricalExperience.ts # Timeline + comparison wiring
+│   │   ├── useTourBindings.ts       # getCurrentPOV + TourPanel prop bag
+│   │   ├── useAppAccessibility.ts   # A11y settings + body class toggles
+│   │   ├── useAppConnection.ts      # Welcome/connected + canvas/WebGPU readiness
+│   │   ├── sharedSessionSync.ts     # Pure host snapshot / guest-apply helpers
+│   │   ├── historicalExperience.ts  # Pure historical after-label helper
 │   │   ├── mapsKeyUtils.ts          # Pure Maps key normalization / resolution helpers
 │   │   ├── mapsLoadingOverlay.ts    # Pure LoadingOverlay state derivation
 │   │   └── index.ts                 # Barrel exports
@@ -495,16 +513,24 @@ The hidden Street View container must maintain `opacity: 1`. Google Maps stops u
 
 ## Testing Strategy
 
-The project uses Create React App's default testing setup:
-- **Framework**: Jest
-- **Utilities**: React Testing Library, jest-dom
-- **Run**: `npm test` (watch mode) or `npm test -- --watchAll=false` (CI)
-- **Setup file**: `src/setupTests.ts` — imports `@testing-library/jest-dom` matchers and polyfills `TextDecoder`/`TextEncoder` from Node's `util` module onto `global`. jsdom does not implement either; Cesium pulls in `protobufjs`, which requires `TextDecoder` at module-load time, so **any** test that imports anything from `src/components/index.ts` (directly or transitively, e.g. via `App.tsx` → `MiniMap.tsx` → `cesium`) fails to load without this polyfill. All 15 test suites run under this single setup file — there is no per-suite Cesium mocking and no deferred/lazy import of `GlobeView`/`MiniMap` needed; the polyfill alone is sufficient because the tests never need Cesium to actually *do* anything, just to finish importing.
+The project uses Create React App's default testing setup plus a side-by-side Playwright E2E suite:
 
-### Unit tests (Jest/jsdom) vs. browser verification (Playwright / manual)
-- **Jest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
-- **Playwright / manual browser verification covers** anything that needs a real GPU or real DOM behavior jsdom can't fake: WebGPU device init and the dual-pass shader pipeline, actual Google Maps canvas scraping via `MutationObserver`, the hold-pause GPU snapshot/crossfade (`scripts/hold-pause-probe.mjs`, see *Hold-Pause Manual Checklist* below), Three.js car interior rendering, and Cesium globe/terrain rendering. There is no Playwright *test suite* (no `.spec.ts`/`playwright.config.*`) in this repo today — Playwright is used as a scripted browser driver (`npm run probe:hold-pause`) plus the manual checklists documented below, not via `npx playwright test`.
-- **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Jest test. If it requires an actual WebGPU/WebGL context, real Google Maps canvas, or visual crossfade timing, it belongs in the manual/Playwright-script category — don't try to fake a GPU in jsdom.
+- **Framework (unit)**: Jest + React Testing Library + jest-dom
+- **Run unit**: `npm test` (watch) or `npm test -- --watchAll=false` (CI)
+- **Setup file**: `src/setupTests.ts` — imports `@testing-library/jest-dom` matchers and polyfills `TextDecoder`/`TextEncoder` from Node's `util` module onto `global`. jsdom does not implement either; Cesium pulls in `protobufjs`, which requires `TextDecoder` at module-load time, so **any** test that imports anything from `src/components/index.ts` (directly or transitively, e.g. via `App.tsx` → `MiniMap.tsx` → `cesium`) fails to load without this polyfill.
+- **Framework (E2E)**: Playwright (`@playwright/test`, aligned with the `playwright` driver used by `scripts/hold-pause-probe.mjs`)
+- **Config**: `playwright.config.ts` + specs under `e2e/`
+- **Run E2E**:
+  - `npm run test:e2e:smoke` — keyless UI shell (PR CI); skips `@keyed` tests
+  - `npm run test:e2e:keyed` / `npm run test:e2e` — full suite; Maps-dependent cases need `REACT_APP_MAPS_API_KEY`
+  - Optional: start `npm start` yourself and set `E2E_SKIP_WEBSERVER=1`
+- **Artifacts**: traces / screenshots / video under `test-results/` and `playwright-report/` (gitignored); CI uploads them on failure
+
+### Unit tests (Jest/jsdom) vs. browser E2E (Playwright)
+- **Jest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
+- **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
+- **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
+- **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Jest test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests
 - `src/utils/navigation.test.ts` — Unit tests for `findBestLink`, angle math (`normalizeAngle`, `signedAngleDiff`, `absoluteAngleDiff`), and `haversineDistance`.
@@ -516,13 +542,15 @@ The project uses Create React App's default testing setup:
 - `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts` — Backend preference/debug-flag parsing and the WebGPU→WebGL2→raw fallback chain.
+- `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
+- `src/app/historicalExperience.test.ts` — Historical comparison after-label derivation.
+- `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 
 ### Manual Testing Requirements
-WebGPU rendering and canvas detection cannot be reliably tested in Jest. Any changes to the following require manual browser verification:
+WebGPU rendering and canvas detection cannot be reliably tested in Jest. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
 - `StreetView.tsx` canvas scraping
 - `Renderer.ts` WebGPU pipeline
-- `car/` Three.js scene
-- Input handlers and UI overlay interactions
+- `car/` Three.js scene (WebGPU-only asserts may skip in headless without GPU)
 - Cruise mode navigation loops
 - GPU panorama transitions
 
@@ -536,7 +564,7 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 2. During a hop (while held), click-drag the mouse to look around. The frozen pano should pan with the drag; rain/snow/fog should keep animating. Releasing the mouse should not change which way you're facing once the new pano loads.
 3. Click a MiniMap point (or trigger an autopilot waypoint / globe Orbital Drop) far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
 4. Optional deeper check: `window.__STREETVIEW_PROBE__.enablePixelWatch()` in DevTools, then repeat step 1. Inspect `window.__STREETVIEW_PROBE__.getWarnings()` afterward — should be empty.
-5. Automated version of the above: `npm start` in one terminal, then `npm run probe:hold-pause -- --hops=10` (requires a real Maps key — a placeholder key will load the app but report "no hold was armed" since there are no panorama links to follow). Non-zero exit / `FAIL` in the output means either a probe warning fired or an intra-hold screenshot comparison detected a sudden jump.
+5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
@@ -546,6 +574,7 @@ When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
    npm run build   # outputs to build/
    cd build && python3 -m http.server 80
    ```
+   For Playwright against that server: `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:80 npx playwright test`.
 
 2. **Cesium post-build patches (CRITICAL)**
    Cesium 1.140.0 bundles ESM-only code (`import.meta.url`, `__webpack_module__`) that crashes in CRA's IIFE output. After every `npm run build`, patch `build/static/js/main.*.js`:
@@ -588,7 +617,7 @@ When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
      ]
    });
    ```
-   Note: WebGPU adapter availability varies by headless Chrome version and OS. The app falls back to standard Street View rendering if WebGPU is unavailable.
+   Note: WebGPU adapter availability varies by headless Chrome version and OS. The app falls back to standard Street View rendering if WebGPU is unavailable. Playwright's `playwright.config.ts` enables a lighter SwiftShader-oriented flag set suitable for CI smoke; use the stronger GPU flags above (or the hold-pause probe) when verifying WebGPU dual-pass rendering on a real GPU host.
 
 ---
 
@@ -662,7 +691,7 @@ Single-product Create React App project; `npm install` is the only dependency st
 - **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key. CRA bakes `REACT_APP_*` at dev-server start, so **restart `npm start` after editing `.env.local`**.
 - **Symptom → cause: stuck at "Connecting to Google Maps... 15%" with a black canvas and NO error banner.** This means the key string is valid enough to load the Maps JS library (`window.__mapsApiLoadState.status === 'ready'`) but Google fires `gm_authFailure` when the Street View panorama actually renders, so no `<canvas>` is ever produced and the loading gate never advances. The usual cause is the key's **HTTP-referrer restriction not allowing the current origin** (e.g. a key scoped to `test.1ink.us`/`go.1ink.us` will fail on `http://localhost:3000`), or disabled billing / Maps JavaScript API. Fix it in Google Cloud Console (add `http://localhost:3000/*` to the key's allowlist); it is not a code or VM bug. Note the dev server is plain **http**, so the allowlist entry must be `http://localhost:3000/*` — an `https://localhost:3000/*` entry will NOT match and still fails. To see the exact reason, capture full browser console output while loading a minimal panorama page: Google logs the precise error (`RefererNotAllowedMapError`, `ApiNotActivatedMapError`, `BillingNotEnabledMapError`, or `InvalidKeyMapError`) plus the exact "site URL to be authorized". Referrer changes can take several minutes to propagate.
 - **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the renderer falls back to WebGL2 → raw. Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
-- No committed lockfile (`package-lock.json` is gitignored), so `npm install` resolves fresh each run.
+- `package-lock.json` is tracked. Prefer `npm ci` in automation (CI already does); always commit lockfile updates with dependency changes.
 
 ---
 

@@ -7,12 +7,15 @@ node_modules/
 .env.*.local
 .env.*
 
-# npm lockfile
-package-lock.json
-
 # Build artifacts
 build/
 .aider*
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/repro-screenshots/
 
 # C++ / Emscripten build artifacts
 cpp/build-emscripten/

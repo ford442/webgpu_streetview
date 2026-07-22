@@ -18,11 +18,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      # No package-lock.json is committed (see .gitignore), so `npm ci` and
-      # setup-node's built-in `cache: npm` (which requires a lockfile to hash)
-      # aren't usable here.
-      - run: npm install
+      - run: npm ci
+
+      - name: Lockfile must stay clean
+        run: git diff --exit-code package-lock.json
 
       - name: Typecheck
         run: npm run typecheck
@@ -81,7 +82,40 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - run: npm install
+      - run: npm ci
 
       - run: npm run build:wasm
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E smoke (keyless)
+        run: npm run test:e2e:smoke
+        env:
+          CI: true
+          # Explicitly keyless — missing-key banner + UI shell coverage.
+          REACT_APP_MAPS_API_KEY: ''
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14

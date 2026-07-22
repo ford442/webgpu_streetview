@@ -32,6 +32,9 @@
     "eject": "react-scripts eject",
     "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\"",
     "probe:hold-pause": "node scripts/hold-pause-probe.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep-invert @keyed",
+    "test:e2e:keyed": "playwright test",
     "analyze": "source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html"
   },
   "eslintConfig": {
@@ -53,10 +56,11 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/google.maps": "^3.58.1",
     "@types/suncalc": "^1.9.2",
     "@types/three": "^0.160.0",
-    "playwright": "^1.60.0",
+    "playwright": "1.61.1",
     "source-map-explorer": "^2.5.3",
     "typescript": "^4.9.5",
     "wabt": "^1.0.39"

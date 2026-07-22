@@ -119,6 +119,8 @@ npm install
 npm start          # dev server at http://localhost:3000
 ```
 
+`package-lock.json` is committed. Local setup uses `npm install`; CI and deploy use `npm ci` on Node 20. When changing dependencies, regenerate the lockfile on Node 20 and commit it with the PR.
+
 The Google Maps API key is resolved at runtime from `window.MAPS_API_KEY` (via `public/config.js`) with a build-time fallback from `REACT_APP_MAPS_API_KEY`.
 
 **For local development**, create `.env.local` (gitignored):
