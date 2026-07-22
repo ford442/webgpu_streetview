@@ -18,7 +18,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GlobeTransition } from '../hooks/useGlobeMode';
-import { useBookmarks } from '../hooks/useBookmarks';
+import { resolveGlobeBaseLayer } from '../utils/cesiumImagery';
 import ScoutCard from './ScoutCard';
 
 // Cesium is loaded from CDN at runtime, not bundled.
@@ -124,6 +124,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     currentLng,
     currentHeading,
     pois,
+    bookmarks,
     mapsApiKey,
     onTeleportRequest,
     onEnterComplete,
@@ -168,8 +169,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
     // Snapshot coords when entering
     const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });
-
-    const { bookmarks: liveBookmarks } = useBookmarks();
 
     // ---- Handle ScoutCard engage (Orbital Drop) ----
     const handleScoutEngage = useCallback((lat: number, lng: number) => {
@@ -232,8 +231,15 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         entryCoords.current = { lat: currentLat, lng: currentLng, heading: currentHeading };
 
-        // Suppress Ion token console noise — we use OSM which needs no Ion token
-        Cesium.Ion.defaultAccessToken = '';
+        // Cesium ≥1.107: use `baseLayer` (ImageryLayer). The removed `imageryProvider`
+        // option only disables default Ion imagery and never adds tiles → blank sphere.
+        let baseLayer: any;
+        try {
+            baseLayer = resolveGlobeBaseLayer(Cesium);
+        } catch (err) {
+            console.warn('[GlobeView] Base layer resolve failed; Viewer will use ellipsoid only:', err);
+            baseLayer = false;
+        }
 
         let viewer: any;
         try {
@@ -251,11 +257,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 navigationInstructionsInitiallyVisible: false,
                 skyAtmosphere: new Cesium.SkyAtmosphere(),
                 terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-                imageryProvider: new Cesium.UrlTemplateImageryProvider({
-                    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    credit: '© OpenStreetMap contributors',
-                    maximumLevel: 19,
-                }),
+                baseLayer,
             });
         } catch (err) {
             console.error('[GlobeView] Failed to create Cesium Viewer (WebGL context?):', err);
@@ -459,7 +461,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         };
     }, []);
 
-    // ---- Reactive bookmark entities (populates from useBookmarks hook) ----
+    // ---- Reactive bookmark entities (from ConnectedChrome bookmarks prop) ----
     useEffect(() => {
         const viewer = viewerRef.current;
         if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
@@ -469,13 +471,13 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             try { viewer.entities.remove(e); } catch { /* noop */ }
         });
 
-        if (liveBookmarks.length === 0) {
+        if (bookmarks.length === 0) {
             bookmarkEntitiesRef.current = [];
             return;
         }
 
         const bookmarkImage = makeBookmarkCanvas();
-        bookmarkEntitiesRef.current = liveBookmarks.slice(0, MAX_VISIBLE_BOOKMARKS).map(bm =>
+        bookmarkEntitiesRef.current = bookmarks.slice(0, MAX_VISIBLE_BOOKMARKS).map(bm =>
             viewer.entities.add({
                 name: bm.name,
                 position: Cesium.Cartesian3.fromDegrees(bm.lng, bm.lat, 70),
@@ -505,7 +507,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 },
             })
         );
-    }, [liveBookmarks]);
+    }, [bookmarks]);
 
     // ---- Update waypoint visuals on globe ----
     useEffect(() => {

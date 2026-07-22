@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#4CAF50" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <title>1ink.us Streetview</title>
+    <meta name="description" content="WebGPU Street View Experience" />
+    <style>
+      body { margin: 0; background-color: #000; overflow: hidden; }
+    </style>
+    <script>
+      (function loadRuntimeMapsConfig() {
+        var script = document.createElement('script');
+        script.src = './config.js';
+        script.onload = function () {
+          window.dispatchEvent(new CustomEvent('maps-api-key-ready'));
+        };
+        script.onerror = function () {
+          console.warn('[WebGPU StreetView] Runtime config.js failed to load');
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
+    <script>
+      // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(type, options) {
+        if (type === 'webgl' || type === 'webgl2') {
+          options = options || {};
+          options.preserveDrawingBuffer = true;
+        }
+        return originalGetContext.call(this, type, options);
+      };
+    </script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

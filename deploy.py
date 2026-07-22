@@ -12,6 +12,7 @@ Usage:
 Environment variables:
   DEPLOY_TOKEN       (required) Auth token for the bundle upload API
   MAPS_API_KEY       (recommended) Baked into static/js/*.js at deploy time
+                     (Vite emits build/static/js/main.[hash].js — same layout as former CRA)
   DEPLOY_TARGET      test (default) | go
   CONTABO_BASE_URL   https://storage.noahcohn.com (default)
   PROJECT_NAME       streetview (default)

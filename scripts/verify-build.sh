@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/verify-build.sh
 # Post-build safety verification for WebGPU StreetView.
-# Run automatically via "npm run build" (after react-scripts) or manually:
+# Run automatically via "npm run build" (after vite build) or manually:
 #   ./scripts/verify-build.sh
 #
 # Exits non-zero if the build looks unsafe to deploy (real keys, bad config, etc.).
@@ -19,23 +19,17 @@ if [ ! -d "$BUILD_DIR" ]; then
   exit 1
 fi
 
-# 1. (Historical key block removed per maintainer decision)
-#    The previous hard block on the old production key (AIzaSyBNfAGRfS1TNlH0EmxNfegqTsiwzYk6reM)
-#    was intended to prevent unrestricted usage. With proper HTTP referrer restrictions
-#    (test.1ink.us/* + go.1ink.us/*) this key is now intentionally used for the live demo.
-#    We no longer treat its presence as a build error.
 echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
 
 # 2. Verify config.js exists and is safe (empty or placeholder, never a real key)
 CONFIG_JS="$BUILD_DIR/config.js"
 if [ ! -f "$CONFIG_JS" ]; then
-  echo "❌ ERROR: $CONFIG_JS is missing (CRA should have copied it from public/)."
+  echo "❌ ERROR: $CONFIG_JS is missing (Vite should have copied it from public/)."
   ERRORS=$((ERRORS+1))
 else
   if grep -q 'window.MAPS_API_KEY = ""' "$CONFIG_JS" || grep -q 'PLACEHOLDER' "$CONFIG_JS" || grep -q 'YOUR_REAL' "$CONFIG_JS"; then
     echo "✅ config.js is safe (empty/placeholder as expected)"
   else
-    # If it contains a real-looking key, that's bad for a committed build
     if grep -q 'AIzaSy' "$CONFIG_JS"; then
       echo "❌ WARNING: config.js appears to contain a real API key. This should only happen via MAPS_API_KEY=... during deploy.py"
       ERRORS=$((ERRORS+1))
@@ -49,33 +43,33 @@ fi
 MAIN_JS=$(find "$BUILD_DIR/static/js" -name 'main.*.js' | head -1)
 if [ -n "$MAIN_JS" ]; then
   if grep -q 'AIzaSy' "$MAIN_JS"; then
-    # This is expected to be the *current* build-time key if someone did export REACT_APP_... before npm run build,
-    # or the key baked by deploy.py (MAPS_API_KEY=...).
     echo "ℹ️  Note: Main bundle contains an 'AIzaSy...' string (this is the build-time or deploy-baked key)."
-    echo "    This is acceptable when using REACT_APP_MAPS_API_KEY at build time or MAPS_API_KEY with deploy.py."
-    echo "    The old hard block on the historical key has been removed (referrer restrictions are now enforced on the key itself)."
+    echo "    This is acceptable when using REACT_APP_MAPS_API_KEY / VITE_MAPS_API_KEY at build time or MAPS_API_KEY with deploy.py."
   elif grep -q '__RUNTIME_MAPS_KEY_SENTINEL__' "$MAIN_JS"; then
     echo "✅ Deploy sentinel present in main bundle (deploy.py will bake MAPS_API_KEY)"
   else
     echo "❌ ERROR: main bundle has no API key and no deploy sentinel — Maps will not load"
     ERRORS=$((ERRORS+1))
   fi
+else
+  echo "❌ ERROR: no main.*.js under $BUILD_DIR/static/js"
+  ERRORS=$((ERRORS+1))
 fi
 
-# 4. index.html deploy sanity (catches public/ template uploaded instead of build/)
+# 4. index.html deploy sanity
 INDEX_HTML="$BUILD_DIR/index.html"
 if [ ! -f "$INDEX_HTML" ]; then
   echo "❌ ERROR: $INDEX_HTML is missing."
   ERRORS=$((ERRORS+1))
 else
   if grep -q '%PUBLIC_URL%' "$INDEX_HTML"; then
-    echo "❌ ERROR: build/index.html still contains %PUBLIC_URL% (unprocessed CRA template)."
+    echo "❌ ERROR: build/index.html still contains %PUBLIC_URL% (unprocessed template)."
     ERRORS=$((ERRORS+1))
   else
     echo "✅ index.html has no unprocessed %PUBLIC_URL% placeholders"
   fi
 
-  if ! grep -q 'static/js/main' "$INDEX_HTML"; then
+  if ! grep -qE 'static/js/main[^"]*\.js' "$INDEX_HTML"; then
     echo "❌ ERROR: build/index.html does not reference static/js/main.*.js"
     ERRORS=$((ERRORS+1))
   else
@@ -87,25 +81,25 @@ else
   else
     echo "✅ index.html uses bundle-only Maps key delivery (go.1ink.us style)"
   fi
-fi
 
-# 5. Cesium / CRA IIFE: main bundle must not contain raw import.meta
-MAIN_JS=$(find "$BUILD_DIR/static/js" -name 'main.*.js' | head -1)
-if [ -n "$MAIN_JS" ]; then
-  if grep -q 'import\.meta' "$MAIN_JS"; then
-    echo "❌ ERROR: $MAIN_JS still contains import.meta — run ./scripts/patch-cesium-bundle.sh"
-    ERRORS=$((ERRORS+1))
+  # Vite emits native ES modules — import.meta is valid (no Cesium IIFE sed patch).
+  if grep -q 'type="module"' "$INDEX_HTML"; then
+    echo "✅ index.html loads the bundle as type=module (import.meta OK)"
   else
-    echo "✅ No raw import.meta in main bundle (Cesium patch OK)"
+    echo "⚠️  WARNING: index.html does not mark the main script as type=module"
   fi
 fi
 
-# 6. Optional: size sanity (warn only)
-BUNDLE_SIZE=$(du -sm "$BUILD_DIR" | cut -f1)
-echo "ℹ️  Build size: ${BUNDLE_SIZE} MB"
-
-# 7. Refuse committed deploy credentials (passwords, tokens)
+# 5. Bundle size + Cesium-in-main budgets (hard fail)
 SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$SCRIPT_ROOT/scripts/check-bundle-budget.sh" ]; then
+  bash "$SCRIPT_ROOT/scripts/check-bundle-budget.sh" "$BUILD_DIR" || ERRORS=$((ERRORS+1))
+else
+  echo "❌ ERROR: scripts/check-bundle-budget.sh missing"
+  ERRORS=$((ERRORS+1))
+fi
+
+# 6. Refuse committed deploy credentials (passwords, tokens)
 if [ -f "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" ]; then
   bash "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" || ERRORS=$((ERRORS+1))
 fi

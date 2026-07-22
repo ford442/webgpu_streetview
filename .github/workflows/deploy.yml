@@ -34,6 +34,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       - name: Run tests
         run: npm test -- --watchAll=false
 
@@ -42,8 +45,6 @@ jobs:
 
       - name: Build production bundle
         run: npm run build
-        env:
-          CI: false
 
       - uses: actions/setup-python@v5
         with:

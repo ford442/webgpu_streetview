@@ -28,8 +28,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       - name: Run tests
-        run: npm test -- --watchAll=false
+        run: npm test
 
       - name: Check for committed deploy secrets
         run: bash scripts/check-deploy-secrets.sh
@@ -38,18 +41,13 @@ jobs:
         run: python3 deploy_secrets.test.py
 
       - name: Build
-        # CRA fails on pre-existing ESLint warnings when CI=true, so override
-        # the runner's default CI=true just for this step (build/build:wasm,
-        # patch-cesium-bundle.sh, and verify-build.sh all run as part of
-        # `npm run build` and any failure here blocks the merge).
+        # Vite build + wasm + verify-build (bundle budget). Lint is a separate step above.
         run: npm run build
-        env:
-          CI: false
 
       - name: Bundle size report
-        # Visibility only — does not fail the build. Watches for regressions
-        # like Cesium (or another heavy dep) creeping back into main.js; see
-        # docs/DEVELOPER_CONTEXT.md#6-chunk-strategy-bundle-size.
+        # Visibility / SME artifact. Hard fail thresholds live in
+        # scripts/check-bundle-budget.sh (invoked by verify-build.sh).
+        # See docs/DEVELOPER_CONTEXT.md#6-chunk-strategy-bundle-size.
         run: |
           echo "### JS bundle sizes (gzip)" | tee -a "$GITHUB_STEP_SUMMARY"
           npx --no-install source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html || true

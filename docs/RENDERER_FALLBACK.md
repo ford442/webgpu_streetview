@@ -120,7 +120,20 @@ Known differences:
 
 When an effect is first debugged in WebGL2 and then ported to WGSL:
 
-1. Keep parameter indices aligned with the 40-float weather layout in `WebGPUCanvas.tsx`, `WeatherPostProcessor.ts`, `weather-post.wgsl`, and `WebGLFallbackRenderer.ts`.
+1. Keep parameter indices aligned with the 40-float weather layout in `src/renderer/weatherUniformLayout.ts`, `packWeatherParams.ts`, both weather processors (`WeatherPostProcessor.ts` / `ComputeWeatherPostProcessor.ts`), both WGSL files, `WebGPUCanvas.tsx` (caller), and `WebGLFallbackRenderer.ts`.
 2. Add the WebGL branch as a readable approximation first, then port the exact math to WGSL after the control behavior is verified.
 3. Preserve effect isolation where possible. If WGSL support is added, route it through the same `RendererDebugOptions` contract rather than adding backend-specific URL flags.
 4. Treat WebGL screenshots as reference/debug evidence, not proof of HDR parity.
+
+## Changing weather uniforms
+
+The three post-process paths (fragment WebGPU, compute WebGPU, WebGL debug) must stay lockstep on the same 40-float layout. When adding, renaming, or reordering a weather parameter:
+
+1. Update `WeatherParamIndex` and `WEATHER_PARAMS_FLOAT_COUNT` in `src/renderer/weatherUniformLayout.ts`.
+2. Update `packWeatherParams` / `createDefaultWeatherParams` in `src/renderer/packWeatherParams.ts`.
+3. Update both WGSL headers and accessors: `public/shaders/weather-post.wgsl` (`struct WeatherParams`) and `public/shaders/weather-post-compute.wgsl` (`extraBuffer` comment + `p_*` helpers).
+4. Confirm both `WeatherPostProcessor` and `ComputeWeatherPostProcessor` still satisfy the exported `WeatherPostProcessorLike` interface (`src/renderer/weatherPostProcessorTypes.ts`).
+5. Update WebGL GLSL `uWeather[...]` reads and any TS index access in `WebGLFallbackRenderer.ts`.
+6. Update the hard-assert name→index table in `src/renderer/weatherUniformLayout.test.ts` and packing fixtures in `packWeatherParams.test.ts`.
+7. Run `CI=true npm test -- --watchAll=false` (these suites do not require a real GPU).
+

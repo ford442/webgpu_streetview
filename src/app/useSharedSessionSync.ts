@@ -32,19 +32,26 @@ export function useSharedSessionSync({
 }: UseSharedSessionSyncParams): void {
   const lastAppliedPanoRef = useRef<string | null>(null);
 
+  const {
+    role: sessionRole,
+    isConnected: sessionConnected,
+    broadcastState,
+    latestState,
+  } = sharedSession;
+
   // Host broadcasts POV at 10Hz to connected guests.
   useEffect(() => {
-    if (sharedSession.role !== 'host' || !sharedSession.isConnected) return;
+    if (sessionRole !== 'host' || !sessionConnected) return;
     const interval = setInterval(() => {
       const payload = buildHostBroadcastPayload(panorama, { heading, pitch, zoom }, viewMode);
       if (!payload) return;
-      sharedSession.broadcastState(payload);
+      broadcastState(payload);
     }, 100);
     return () => clearInterval(interval);
   }, [
-    sharedSession.role,
-    sharedSession.isConnected,
-    sharedSession.broadcastState,
+    sessionRole,
+    sessionConnected,
+    broadcastState,
     panorama,
     heading,
     pitch,
@@ -54,21 +61,20 @@ export function useSharedSessionSync({
 
   // Guests follow the host's POV as it arrives.
   useEffect(() => {
-    if (sharedSession.role !== 'guest') return;
-    const state = sharedSession.latestState;
-    if (!state) return;
+    if (sessionRole !== 'guest') return;
+    if (!latestState) return;
 
     const currentPanoId = panorama?.getPano();
-    if (shouldTeleportGuestToPano(state.panoId, currentPanoId, lastAppliedPanoRef.current)) {
-      lastAppliedPanoRef.current = state.panoId;
-      void teleportToPanoSafe(state.panoId);
+    if (shouldTeleportGuestToPano(latestState.panoId, currentPanoId, lastAppliedPanoRef.current)) {
+      lastAppliedPanoRef.current = latestState.panoId;
+      void teleportToPanoSafe(latestState.panoId);
     }
-    setHeading(state.pov.heading);
-    setPitch(state.pov.pitch);
-    setZoom(state.pov.zoom);
+    setHeading(latestState.pov.heading);
+    setPitch(latestState.pov.pitch);
+    setZoom(latestState.pov.zoom);
   }, [
-    sharedSession.role,
-    sharedSession.latestState,
+    sessionRole,
+    latestState,
     panorama,
     teleportToPanoSafe,
     setHeading,

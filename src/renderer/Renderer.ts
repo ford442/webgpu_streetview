@@ -2,26 +2,10 @@ import { RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
+import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { RendererDebugOptions, RendererInitOptions, StreetViewRenderer, WeatherPostProcessMode } from './RendererBackend';
-
-/** Common surface shared by WeatherPostProcessor and ComputeWeatherPostProcessor. */
-interface WeatherPostProcessorLike {
-    init(presentationFormat: GPUTextureFormat): Promise<void>;
-    updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
-    updateNoiseBuffer(tile: Float32Array): void;
-    setShaderEffects(enabled: boolean): void;
-    getCameraParams(): { heading: number; pitch: number };
-    getShaderEffectsEnabled(): boolean;
-    updateWeatherParams(params: Float32Array): void;
-    updateCameraParams(heading: number, pitch: number): void;
-    updateColorParams(params: Float32Array): void;
-    updateWeatherAnimation(): void;
-    renderWeatherOnly(intermediateTextureView: GPUTextureView): void;
-    renderPass(commandEncoder: GPUCommandEncoder): void;
-    dispose(): void;
-}
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
@@ -618,7 +602,7 @@ export class Renderer implements StreetViewRenderer {
 
         try {
             this.device.queue.copyExternalImageToTexture(
-                { source: source },
+                { source: source as GPUCopyExternalImageSource },
                 { texture: this.videoTexture! },
                 [srcWidth, srcHeight]
             );

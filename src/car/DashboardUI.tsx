@@ -315,14 +315,14 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
           <div className={styles.gaugeRow}>
             <SpeedGauge
               value={Math.round(displaySpeedMph)}
-              size={120}
+              size={72}
               unit="MPH"
               nightGlow={nightIntensity}
             />
-            <GearIndicator gear={displayGear} size={36} />
+            <GearIndicator gear={displayGear} size={28} />
             <RpmGauge
               value={Math.round(displayRpm)}
-              size={120}
+              size={72}
               nightGlow={nightIntensity}
             />
           </div>
@@ -398,6 +398,16 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
         <ZoneRight>
           {/* Light-control row */}
           <div className={styles.lightGrid}>
+            {onToggleWipers && (
+              <ControlButton
+                active={wipersEnabled}
+                onClick={onToggleWipers}
+                ariaLabel="Toggle Wipers"
+              >
+                <IconSvg path={WIPER_ICON} size={20} fill={wipersEnabled ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Wipers</Label>
+              </ControlButton>
+            )}
             {onToggleHeadlights && (
               <ControlButton
                 active={headlightsOn}
@@ -426,16 +436,6 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
               >
                 <IconSvg path={DOME_ICON} size={20} fill={domeLightOn ? '#fff' : 'rgba(255,255,255,0.7)'} />
                 <Label>Dome</Label>
-              </ControlButton>
-            )}
-            {onToggleWipers && (
-              <ControlButton
-                active={wipersEnabled}
-                onClick={onToggleWipers}
-                ariaLabel="Toggle Wipers"
-              >
-                <IconSvg path={WIPER_ICON} size={20} fill={wipersEnabled ? '#fff' : 'rgba(255,255,255,0.7)'} />
-                <Label>Wipers</Label>
               </ControlButton>
             )}
           </div>

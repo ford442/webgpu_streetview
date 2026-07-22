@@ -12,21 +12,21 @@ describe('createStreetViewRenderer (real backends, no GPU in jsdom)', () => {
 
   it('resolves gracefully with no renderer when neither backend can initialize', async () => {
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.renderer).toBeNull();
-    expect(result.backendType).toBeNull();
-    expect(result.fallbackReason).toBe('WebGL2 renderer failed to initialize');
-    expect(result.debugOptions).toEqual({ effectIsolation: 'all', wireframe: false });
+    expect(created.renderer).toBeNull();
+    expect(created.backendType).toBeNull();
+    expect(created.fallbackReason).toBe('WebGL2 renderer failed to initialize');
+    expect(created.debugOptions).toEqual({ effectIsolation: 'all', wireframe: false });
   });
 
   it('does not throw and resolves a default debugOptions object even with URL overrides', async () => {
     window.history.pushState({}, '', '/?renderer=webgl&effect=fog&wireframe');
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.renderer).toBeNull();
-    expect(result.backendType).toBeNull();
-    expect(result.debugOptions).toEqual({ effectIsolation: 'fog', wireframe: true });
+    expect(created.renderer).toBeNull();
+    expect(created.backendType).toBeNull();
+    expect(created.debugOptions).toEqual({ effectIsolation: 'fog', wireframe: true });
   });
 });

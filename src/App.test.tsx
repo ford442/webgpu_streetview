@@ -1,57 +1,64 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
+import React from 'react';
+import { vi } from 'vitest';
 import App from './App';
 import type { MapsLoadStatus } from './components/StreetView';
 
 const streetViewApiKeys: string[] = [];
 const mockMapsAuthListeners: Array<(event: { key: string; currentKey: string; source: string }) => void> = [];
-const mockLoadMapsApi = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
-const mockRemoveFailedBootstrap = jest.fn<void, []>();
-const mockClearAuthFailure = jest.fn<void, [string?]>();
+const mockLoadMapsApi = vi.fn((_apiKey: string) => Promise.resolve());
+const mockRemoveFailedBootstrap = vi.fn();
+const mockClearAuthFailure = vi.fn((_forKey?: string) => undefined);
 let mockLatestStreetViewStatusChange: ((status: MapsLoadStatus) => void) | undefined;
 let mockLatestStreetViewCanvasReady: ((canvas: HTMLCanvasElement) => void) | undefined;
 
-jest.mock('./components/StreetView', () => {
-  return function MockStreetView({
-    apiKey,
-    onStatusChange,
-    onCanvasReady,
-  }: {
-    apiKey: string;
-    onStatusChange?: (status: MapsLoadStatus) => void;
-    onCanvasReady?: (canvas: HTMLCanvasElement) => void;
-  }) {
-    streetViewApiKeys.push(apiKey);
-    mockLatestStreetViewStatusChange = onStatusChange;
-    mockLatestStreetViewCanvasReady = onCanvasReady;
-    return <div data-testid="mock-street-view" data-api-key={apiKey} />;
+vi.mock('./components/StreetView', () => {
+  return {
+    __esModule: true,
+    default: function MockStreetView({
+      apiKey,
+      onStatusChange,
+      onCanvasReady,
+    }: {
+      apiKey: string;
+      onStatusChange?: (status: MapsLoadStatus) => void;
+      onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+    }) {
+      streetViewApiKeys.push(apiKey);
+      mockLatestStreetViewStatusChange = onStatusChange;
+      mockLatestStreetViewCanvasReady = onCanvasReady;
+      return <div data-testid="mock-street-view" data-api-key={apiKey} />;
+    },
   };
 });
 
-jest.mock('./components/WebGPUCanvas', () => {
-  const React = require('react');
-  return function MockWebGPUCanvas({
-    onWebGPUStatus,
-    onBackendInfo,
-  }: {
-    onWebGPUStatus?: (available: boolean) => void;
-    onBackendInfo?: (info: { backendType: 'webgpu' | 'webgl' | null; fallbackReason?: string }) => void;
-  }) {
-    React.useEffect(() => {
-      onWebGPUStatus?.(true);
-      onBackendInfo?.({ backendType: 'webgpu' });
-    }, [onWebGPUStatus, onBackendInfo]);
-    return <div data-testid="mock-webgpu-canvas" />;
+vi.mock('./components/WebGPUCanvas', () => {
+  return {
+    __esModule: true,
+    default: function MockWebGPUCanvas({
+      onWebGPUStatus,
+      onBackendInfo,
+    }: {
+      onWebGPUStatus?: (available: boolean) => void;
+      onBackendInfo?: (info: { backendType: 'webgpu' | 'webgl' | null; fallbackReason?: string }) => void;
+    }) {
+      React.useEffect(() => {
+        onWebGPUStatus?.(true);
+        onBackendInfo?.({ backendType: 'webgpu' });
+      }, [onWebGPUStatus, onBackendInfo]);
+      return <div data-testid="mock-webgpu-canvas" />;
+    },
   };
 });
 
-jest.mock('./car', () => ({
-  initCarMode: jest.fn(() => null),
-  toggleCarMode: jest.fn(),
-  disposeCarMode: jest.fn(),
+vi.mock('./car', () => ({
+  initCarMode: vi.fn(() => null),
+  toggleCarMode: vi.fn(),
+  disposeCarMode: vi.fn(),
 }));
 
-jest.mock('./services/maps/loader', () => ({
+vi.mock('./services/maps/loader', () => ({
   clearAuthFailure: (forKey?: string) => mockClearAuthFailure(forKey),
   loadMapsApi: (apiKey: string) => mockLoadMapsApi(apiKey),
   removeFailedBootstrap: () => mockRemoveFailedBootstrap(),

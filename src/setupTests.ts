@@ -1,11 +1,11 @@
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
+// Vitest + Testing Library matchers (CRA used Jest automatically via setupTests).
+import '@testing-library/jest-dom/vitest';
+import { vi } from 'vitest';
+import { TextDecoder, TextEncoder } from 'util';
+
+// CRA-era suites call jest.fn / jest.mock — alias to Vitest's vi.
+(globalThis as unknown as { jest: typeof vi }).jest = vi;
 
 // jsdom does not implement TextEncoder/TextDecoder. Cesium pulls in protobufjs,
 // which expects both to be present on the global object.
-import { TextDecoder, TextEncoder } from 'util';
-
-Object.assign(global, { TextDecoder, TextEncoder });
+Object.assign(globalThis, { TextDecoder, TextEncoder });

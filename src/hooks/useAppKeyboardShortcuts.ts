@@ -26,7 +26,6 @@ export interface UseAppKeyboardShortcutsOptions {
   setIsTourPanelOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
-  rainIntensity: number;
   wipersEnabled: boolean;
   toggleWipers: () => void;
   headlightsOn: boolean;
@@ -71,7 +70,6 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     setIsTourPanelOpen,
     viewMode,
     toggleViewMode,
-    rainIntensity,
     wipersEnabled,
     toggleWipers,
     toggleHeadlights,
@@ -194,10 +192,10 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       key: 'w',
       description: 'Toggle wipers',
       action: () => {
-        if (rainIntensity > 0 || wipersEnabled) {
-          toggleWipers();
-          announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
-        }
+        // Always allow — blades animate even with rain at 0. (Car drive also
+        // uses W; prefer the dashboard Wipers button or stalk when steering.)
+        toggleWipers();
+        announce(`Wipers ${!wipersEnabled ? 'on' : 'off'}`);
       },
     },
     {

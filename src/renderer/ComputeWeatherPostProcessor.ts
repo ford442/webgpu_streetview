@@ -1,4 +1,10 @@
-import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from './weatherUniformLayout';
+import {
+    WEATHER_PARAMS_BYTE_SIZE,
+    WEATHER_PARAMS_FLOAT_COUNT,
+    WeatherParamIndex,
+} from './weatherUniformLayout';
+import { createDefaultWeatherParams } from './packWeatherParams';
+import type { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // storage buffer declared in weather-post.wgsl. The compute variant does
@@ -47,33 +53,33 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
  * particles, all of which want storage-buffer access that a fragment pass
  * can't offer efficiently. See docs/RENDERER_FALLBACK.md.
  */
-export class ComputeWeatherPostProcessor {
+export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private device: GPUDevice;
     private context: GPUCanvasContext;
 
-    private computePipeline!: GPUComputePipeline;
-    private computeBindGroup!: GPUBindGroup;
-    private blitPipeline!: GPURenderPipeline;
-    private blitBindGroup!: GPUBindGroup;
+    private computePipeline: GPUComputePipeline | null = null;
+    private computeBindGroup: GPUBindGroup | null = null;
+    private blitPipeline: GPURenderPipeline | null = null;
+    private blitBindGroup: GPUBindGroup | null = null;
 
-    private extraBuffer!: GPUBuffer;
-    private computeUniformsBuffer!: GPUBuffer;
-    private noiseBuffer!: GPUBuffer;
-    private writeTexture!: GPUTexture;
+    private extraBuffer: GPUBuffer | null = null;
+    private computeUniformsBuffer: GPUBuffer | null = null;
+    private noiseBuffer: GPUBuffer | null = null;
+    private writeTexture: GPUTexture | null = null;
     private writeWidth: number = 0;
     private writeHeight: number = 0;
 
     // Dummy 1x1 resources for image_video_effects bindings this shader
     // doesn't use yet (depth, data textures, plasma buffer).
-    private filteringSampler!: GPUSampler;
-    private nonFilteringSampler!: GPUSampler;
-    private comparisonSampler!: GPUSampler;
-    private dummyReadDepthTexture!: GPUTexture;
-    private dummyWriteDepthTexture!: GPUTexture;
-    private dummyDataTextureA!: GPUTexture;
-    private dummyDataTextureB!: GPUTexture;
-    private dummyDataTextureC!: GPUTexture;
-    private dummyPlasmaBuffer!: GPUBuffer;
+    private filteringSampler: GPUSampler | null = null;
+    private nonFilteringSampler: GPUSampler | null = null;
+    private comparisonSampler: GPUSampler | null = null;
+    private dummyReadDepthTexture: GPUTexture | null = null;
+    private dummyWriteDepthTexture: GPUTexture | null = null;
+    private dummyDataTextureA: GPUTexture | null = null;
+    private dummyDataTextureB: GPUTexture | null = null;
+    private dummyDataTextureC: GPUTexture | null = null;
+    private dummyPlasmaBuffer: GPUBuffer | null = null;
 
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
@@ -98,7 +104,7 @@ export class ComputeWeatherPostProcessor {
         });
 
         this.extraBuffer = this.device.createBuffer({
-            size: WEATHER_PARAMS_FLOAT_COUNT * 4,
+            size: WEATHER_PARAMS_BYTE_SIZE,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         this.computeUniformsBuffer = this.device.createBuffer({
@@ -140,17 +146,7 @@ export class ComputeWeatherPostProcessor {
             usage: GPUTextureUsage.STORAGE_BINDING,
         });
 
-        this.weatherParams.set([
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 1.0,
-            0.0, 0.0, 0.0, 0.5, 0.5,
-            0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            1.0,
-            0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0
-        ]);
+        this.weatherParams.set(createDefaultWeatherParams());
         this.device.queue.writeBuffer(this.extraBuffer, 0, this.weatherParams);
     }
 
@@ -221,9 +217,27 @@ export class ComputeWeatherPostProcessor {
     }
 
     public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void {
-        if (!this.computePipeline || !intermediateTextureView) return;
+        if (
+            !this.computePipeline
+            || !this.blitPipeline
+            || !intermediateTextureView
+            || !this.extraBuffer
+            || !this.computeUniformsBuffer
+            || !this.filteringSampler
+            || !this.nonFilteringSampler
+            || !this.comparisonSampler
+            || !this.dummyReadDepthTexture
+            || !this.dummyWriteDepthTexture
+            || !this.dummyDataTextureA
+            || !this.dummyDataTextureB
+            || !this.dummyDataTextureC
+            || !this.dummyPlasmaBuffer
+        ) {
+            return;
+        }
 
         this.ensureWriteTexture(width || 1, height || 1);
+        if (!this.writeTexture) return;
 
         this.computeBindGroup = this.device.createBindGroup({
             layout: this.computePipeline.getBindGroupLayout(0),
@@ -278,7 +292,7 @@ export class ComputeWeatherPostProcessor {
 
     public updateWeatherParams(params: Float32Array): void {
         if (this.extraBuffer && this.device) {
-            this.weatherParams.set(params);
+            this.weatherParams.set(params.subarray(0, Math.min(WEATHER_PARAMS_FLOAT_COUNT, params.length)));
             this.device.queue.writeBuffer(this.extraBuffer, 0, this.weatherParams);
         }
     }
@@ -310,7 +324,15 @@ export class ComputeWeatherPostProcessor {
     }
 
     private dispatch(commandEncoder: GPUCommandEncoder): void {
-        if (!this.computeBindGroup || this.writeWidth <= 0 || this.writeHeight <= 0) return;
+        if (
+            !this.computeBindGroup
+            || !this.computePipeline
+            || !this.computeUniformsBuffer
+            || this.writeWidth <= 0
+            || this.writeHeight <= 0
+        ) {
+            return;
+        }
 
         this.device.queue.writeBuffer(
             this.computeUniformsBuffer,
@@ -329,7 +351,7 @@ export class ComputeWeatherPostProcessor {
     }
 
     private blit(commandEncoder: GPUCommandEncoder): void {
-        if (!this.blitBindGroup) return;
+        if (!this.blitBindGroup || !this.blitPipeline) return;
         const finalTextureView = this.context.getCurrentTexture().createView();
         const blitPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
@@ -392,13 +414,22 @@ export class ComputeWeatherPostProcessor {
         } catch (e) {
             // ignore cleanup errors
         }
-        this.extraBuffer = undefined as any;
-        this.computeUniformsBuffer = undefined as any;
-        this.noiseBuffer = undefined as any;
-        this.writeTexture = undefined as any;
-        this.computePipeline = undefined as any;
-        this.computeBindGroup = undefined as any;
-        this.blitPipeline = undefined as any;
-        this.blitBindGroup = undefined as any;
+        this.extraBuffer = null;
+        this.computeUniformsBuffer = null;
+        this.noiseBuffer = null;
+        this.writeTexture = null;
+        this.computePipeline = null;
+        this.computeBindGroup = null;
+        this.blitPipeline = null;
+        this.blitBindGroup = null;
+        this.filteringSampler = null;
+        this.nonFilteringSampler = null;
+        this.comparisonSampler = null;
+        this.dummyReadDepthTexture = null;
+        this.dummyWriteDepthTexture = null;
+        this.dummyDataTextureA = null;
+        this.dummyDataTextureB = null;
+        this.dummyDataTextureC = null;
+        this.dummyPlasmaBuffer = null;
     }
 }

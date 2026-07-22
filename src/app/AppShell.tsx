@@ -194,7 +194,6 @@ export function AppShell() {
       setIsTourPanelOpen: panels.setIsTourPanelOpen,
       viewMode,
       toggleViewMode,
-      rainIntensity: env.rainIntensity,
       wipersEnabled: env.wipersEnabled,
       toggleWipers: env.toggleWipers,
       headlightsOn: env.headlightsOn,
@@ -219,6 +218,7 @@ export function AppShell() {
     isCanvasReady: connection.isCanvasReady,
     canvasError: maps.canvasError,
     mapsAuthError: maps.mapsAuthError,
+    scraperHealth: maps.scraperHealth,
     handleRetryMapsAuth: maps.handleRetryMapsAuth,
   });
 
@@ -243,6 +243,10 @@ export function AppShell() {
         showAuthFailedBanner={maps.showAuthFailedBanner}
         setShowAuthFailedBanner={maps.setShowAuthFailedBanner}
         isRecoveringMapsAuth={maps.isRetryingMapsAuth}
+        scrapeLost={
+          maps.scraperHealth.everStable && maps.scraperHealth.status === 'lost'
+        }
+        scrapeLostDetail={maps.scraperHealth.lastErrorDetail}
       />
 
       <OfflineStatusToast visible={connection.isConnected && !isOnline} />

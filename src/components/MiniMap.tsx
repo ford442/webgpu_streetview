@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { loadCesiumSDK } from '../hooks/useGlobeMode';
+import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 
 // Import crypto companies config
 import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
@@ -176,10 +177,11 @@ const MiniMap: React.FC<MiniMapProps> = ({
                 await loadCesiumSDK();
                 if (viewMode !== 'globe' || !cesiumRef.current) return; // bailed out while loading
 
-                Cesium.Ion.defaultAccessToken = process.env.REACT_APP_CESIUM_ION_TOKEN || '';
+                const { terrainProvider, baseLayer } = await resolveMiniMapLayerOptions(Cesium);
 
                 const viewer = new Cesium.Viewer(cesiumRef.current, {
-                    terrainProvider: await Cesium.createWorldTerrainAsync(),
+                    terrainProvider,
+                    baseLayer,
                     baseLayerPicker: false,
                     geocoder: false,
                     homeButton: false,

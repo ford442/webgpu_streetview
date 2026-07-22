@@ -644,6 +644,11 @@ export class CarInterior {
 
     }
 
+    /** Wiper sweep rate multiplier (0.5 slow … 2.0 fast). */
+    public setWiperSpeed(speed: number): void {
+        this.animator.setWiperSpeed(speed);
+    }
+
     /**
      * Update window tint darkness dynamically.
      * @param val - Tint value from 0.0 (clear) to 1.0 (dark)

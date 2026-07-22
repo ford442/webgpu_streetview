@@ -2,46 +2,52 @@
   "name": "webgpu-react-app",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "homepage": ".",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
-    "@types/jest": "^27.5.2",
-    "@types/node": "^16.18.126",
+    "@types/node": "^20.17.0",
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.8",
     "@webgpu/types": "^0.1.64",
     "ajv": "^8.18.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-scripts": "^5.0.1",
     "suncalc": "^1.9.0",
     "three": "^0.160.0",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "prebuild": "node -e \"\nconst key = process.env.REACT_APP_MAPS_API_KEY || '';\nconst isBad = !key || /placeholder|your_|replace|example/i.test(key);\nif (isBad) {\n  console.warn('\\n⚠️  WARNING: REACT_APP_MAPS_API_KEY is missing or looks like a placeholder.');\n  console.warn('   The production bundle will contain a non-working key.\\n' +\n  '   For live deploys, either:\\n' +\n  '     1. export REACT_APP_MAPS_API_KEY=... before npm run build, OR\\n' +\n  '     2. Run with MAPS_API_KEY=... python deploy.py (it can override at deploy time).\\n');\n} else {\n  console.log('✅ Maps API key present at build time (length ' + key.length + '). Remember to also set referrer restrictions for all target hosts (test.1ink.us, go.1ink.us, localhost).');\n}\nconst {execSync}=require('child_process');\nconst hash=execSync('git rev-parse --short HEAD').toString().trim();\nconst ts=new Date().toISOString().replace('T',' ').substring(0,16)+' UTC';\nprocess.env.REACT_APP_BUILD_VERSION=hash;\nprocess.env.REACT_APP_BUILD_TIME=ts;\nconst fs=require('fs');\nlet e=fs.existsSync('.env.local')?fs.readFileSync('.env.local','utf8'):'';\ne=e.replace(/^REACT_APP_BUILD_VERSION=.*$/m,'').replace(/^REACT_APP_BUILD_TIME=.*$/m,'').trim();\nfs.writeFileSync('.env.local',(e?e+'\\n':'')+'REACT_APP_BUILD_VERSION='+hash+'\\nREACT_APP_BUILD_TIME='+ts+'\\n');\nconsole.log('Build: '+hash+' @ '+ts);\n\"",
-    "build": "react-scripts build && npm run build:wasm && ./scripts/patch-cesium-bundle.sh && ./scripts/verify-build.sh",
-    "build:wasm": "bash scripts/build-wasm.sh",
+    "start": "vite",
+    "dev": "vite",
+    "prebuild": "node scripts/prebuild-env.mjs",
+    "build": "vite build && npm run build:wasm && ./scripts/verify-build.sh",
+    "build:wasm": "bash scripts/build-wasm.sh --wat-only",
+    "build:wasm:emscripten": "bash scripts/build-wasm.sh",
     "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",
-    "test": "react-scripts test",
-    "typecheck": "tsc --noEmit",
-    "eject": "react-scripts eject",
-    "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src --ext .ts,.tsx,.js,.jsx --max-warnings 0",
+    "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||process.env.VITE_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\"",
     "probe:hold-pause": "node scripts/hold-pause-probe.mjs",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --grep-invert @keyed",
     "test:e2e:keyed": "playwright test",
-    "analyze": "source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html"
+    "analyze": "source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html",
+    "preview": "vite preview"
   },
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "settings": {
+      "testing-library/custom-renders": "off"
+    }
   },
   "browserslist": {
     "production": [
@@ -60,9 +66,16 @@
     "@types/google.maps": "^3.58.1",
     "@types/suncalc": "^1.9.2",
     "@types/three": "^0.160.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^8.57.1",
+    "eslint-config-react-app": "^7.0.1",
+    "jsdom": "^25.0.1",
     "playwright": "1.61.1",
     "source-map-explorer": "^2.5.3",
-    "typescript": "^4.9.5",
+    "typescript": "~5.4.5",
+    "vite": "^5.4.11",
+    "vite-plugin-checker": "^0.8.0",
+    "vitest": "^2.1.8",
     "wabt": "^1.0.39"
   }
 }

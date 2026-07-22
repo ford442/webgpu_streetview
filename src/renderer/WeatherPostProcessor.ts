@@ -1,19 +1,25 @@
-import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from './weatherUniformLayout';
+import {
+    WEATHER_PARAMS_BYTE_SIZE,
+    WEATHER_PARAMS_FLOAT_COUNT,
+    WeatherParamIndex,
+} from './weatherUniformLayout';
+import { createDefaultWeatherParams } from './packWeatherParams';
+import type { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
 const NOISE_TILE_SIZE = 64;
 const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
 
-export class WeatherPostProcessor {
+export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private device: GPUDevice;
     private context: GPUCanvasContext;
 
-    private weatherPipeline!: GPURenderPipeline;
-    private weatherBindGroup!: GPUBindGroup;
-    private weatherParamsBuffer!: GPUBuffer;
-    private weatherSampler!: GPUSampler;
-    private noiseBuffer!: GPUBuffer;
+    private weatherPipeline: GPURenderPipeline | null = null;
+    private weatherBindGroup: GPUBindGroup | null = null;
+    private weatherParamsBuffer: GPUBuffer | null = null;
+    private weatherSampler: GPUSampler | null = null;
+    private noiseBuffer: GPUBuffer | null = null;
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -30,7 +36,7 @@ export class WeatherPostProcessor {
         });
 
         this.weatherParamsBuffer = this.device.createBuffer({
-            size: 160,
+            size: WEATHER_PARAMS_BYTE_SIZE,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -41,17 +47,7 @@ export class WeatherPostProcessor {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        this.weatherParams.set([
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 1.0,
-            0.0, 0.0, 0.0, 0.5, 0.5,
-            0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            1.0,
-            0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0
-        ]);
+        this.weatherParams.set(createDefaultWeatherParams());
     }
 
     public async init(presentationFormat: GPUTextureFormat): Promise<void> {
@@ -115,7 +111,9 @@ export class WeatherPostProcessor {
     }
 
     public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, _width?: number, _height?: number): void {
-        if (!this.weatherPipeline || !intermediateTextureView || !this.weatherSampler) return;
+        if (!this.weatherPipeline || !intermediateTextureView || !this.weatherSampler || !this.weatherParamsBuffer || !this.noiseBuffer) {
+            return;
+        }
 
         this.weatherBindGroup = this.device.createBindGroup({
             layout: this.weatherPipeline.getBindGroupLayout(0),
@@ -158,7 +156,7 @@ export class WeatherPostProcessor {
 
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
-            this.weatherParams.set(params);
+            this.weatherParams.set(params.subarray(0, Math.min(WEATHER_PARAMS_FLOAT_COUNT, params.length)));
             this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
         }
     }
@@ -190,7 +188,7 @@ export class WeatherPostProcessor {
     }
 
     public renderWeatherOnly(intermediateTextureView: GPUTextureView): void {
-        if (!this.device || !this.weatherPipeline) return;
+        if (!this.device || !this.weatherPipeline || !this.weatherBindGroup) return;
 
         try {
             this.updateWeatherAnimation();
@@ -229,6 +227,7 @@ export class WeatherPostProcessor {
     }
 
     public renderPass(commandEncoder: GPUCommandEncoder): void {
+        if (!this.weatherPipeline || !this.weatherBindGroup) return;
         const finalTextureView = this.context.getCurrentTexture().createView();
         const postPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
@@ -251,9 +250,10 @@ export class WeatherPostProcessor {
         } catch (e) {
             // ignore cleanup errors
         }
-        this.weatherParamsBuffer = undefined as any;
-        this.noiseBuffer = undefined as any;
-        this.weatherPipeline = undefined as any;
-        this.weatherBindGroup = undefined as any;
+        this.weatherParamsBuffer = null;
+        this.noiseBuffer = null;
+        this.weatherPipeline = null;
+        this.weatherBindGroup = null;
+        this.weatherSampler = null;
     }
 }

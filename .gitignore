@@ -1,28 +1,25 @@
-# Node modules
-node_modules/
-
-# Local environment files with real secrets (never commit)
-.env
-.env.local
-.env.*.local
-.env.*
 
 # Build artifacts
-build/
-.aider*
-
-# Playwright
-/test-results/
-/playwright-report/
-/blob-report/
-/repro-screenshots/
-
 # C++ / Emscripten build artifacts
-cpp/build-emscripten/
-cpp/**/*.o
-cpp/**/*.d
-
+# Emscripten-generated JS glue is NOT committed (rebuild with: npm run build:wasm)
+# Local environment files with real secrets (never commit)
+# Node modules
+# Playwright
 # WASM build artifacts (keep the pre-built binary, exclude intermediate files)
 # public/wasm/*.wasm is committed as a pre-built artifact
-# Emscripten-generated JS glue is NOT committed (rebuild with: npm run build:wasm)
+.aider*
+.env
+.env.*
+.env.*.local
+.env.local
+.vite
+/blob-report/
+/playwright-report/
+/repro-screenshots/
+/test-results/
+build/
+cpp/**/*.d
+cpp/**/*.o
+cpp/build-emscripten/
+node_modules/
 public/wasm/*.js

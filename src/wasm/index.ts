@@ -204,8 +204,8 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   }
 
   try {
-    // Resolve the WASM URL relative to the public base (Create React App serves
-    // public/ at the root, so the file is at /wasm/streetview-wasm.wasm).
+    // Resolve the WASM URL relative to the public base (Vite serves
+    // public/ at the root, so the file is at ./wasm/streetview-wasm.wasm).
     const wasmUrl = `${process.env.PUBLIC_URL || ''}/wasm/streetview-wasm.wasm`;
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

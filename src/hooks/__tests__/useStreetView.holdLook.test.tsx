@@ -1,5 +1,5 @@
-import React from 'react';
-import { renderHook, act } from '@testing-library/react';
+import React, { act } from 'react';
+import { renderHook } from '@testing-library/react';
 import { StreetViewProvider, useStreetView } from '../useStreetView';
 
 const mockBeginHoldTransition = jest.fn();

@@ -6,6 +6,9 @@ export interface AppBannersProps {
   showAuthFailedBanner: boolean;
   setShowAuthFailedBanner: (v: boolean) => void;
   isRecoveringMapsAuth?: boolean;
+  /** Mid-session canvas scrape loss (distinct from Maps auth failure). */
+  scrapeLost?: boolean;
+  scrapeLostDetail?: string | null;
 }
 
 const AppBanners: React.FC<AppBannersProps> = ({
@@ -14,11 +17,17 @@ const AppBanners: React.FC<AppBannersProps> = ({
   showAuthFailedBanner,
   setShowAuthFailedBanner,
   isRecoveringMapsAuth = false,
+  scrapeLost = false,
+  scrapeLostDetail = null,
 }) => {
   const currentHost =
     typeof window !== 'undefined' && window.location?.hostname
       ? window.location.hostname
       : 'this host';
+
+  const topOffset =
+    (showMissingKeyBanner ? 44 : 0) +
+    (isRecoveringMapsAuth || (showAuthFailedBanner && !isRecoveringMapsAuth) ? 48 : 0);
 
   return (
     <>
@@ -97,6 +106,38 @@ const AppBanners: React.FC<AppBannersProps> = ({
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* Mid-session scrape loss — distinct from auth / key failure */}
+      {scrapeLost && !showAuthFailedBanner && !isRecoveringMapsAuth && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            top: topOffset || (showMissingKeyBanner ? 44 : 0),
+            left: 0,
+            right: 0,
+            zIndex: 1990,
+            background: 'rgba(90,70,20,0.96)',
+            color: '#fff',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: 14,
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          <span style={{ flex: 1 }}>
+            <strong>Street View canvas scrape interrupted.</strong>{' '}
+            {scrapeLostDetail ||
+              'Google may have replaced the panorama canvas — reconnecting automatically.'}{' '}
+            This is not an API key error. Check <code>window.__STREETVIEW_PROBE__.getScraperHealth()</code> for details.
+          </span>
         </div>
       )}
     </>

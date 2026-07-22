@@ -7,6 +7,12 @@ import {
   removeFailedBootstrap,
 } from '../services/maps/loader';
 import { getConfiguredMapsKey, INITIAL_MAPS_KEY } from './mapsKeyUtils';
+import {
+  createInitialScraperHealth,
+  reduceScraperHealth,
+  type ScraperHealth,
+} from '../utils/scraperHealth';
+import { streetViewProbe } from '../utils/streetViewProbe';
 
 const GM_ERR_SELECTOR =
   '.streetview-scraper [class*="gm-err"], .streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message, .streetview-scraper [aria-label*="Google Maps" i]';
@@ -45,6 +51,8 @@ export interface MapsBootstrapState {
   setShowAuthFailedBanner: (show: boolean) => void;
   canvasError: string | null;
   setCanvasError: (error: string | null) => void;
+  scraperHealth: ScraperHealth;
+  setScraperHealth: (health: ScraperHealth) => void;
   scraperRef: RefObject<HTMLDivElement | null>;
   handleMapsStatusChange: (status: MapsLoadStatus) => void;
   handleRetryMapsAuth: () => void;
@@ -58,6 +66,9 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
   const { onAuthFailure } = options;
 
   const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [scraperHealth, setScraperHealthState] = useState<ScraperHealth>(() =>
+    createInitialScraperHealth(),
+  );
   const [mapsLoadStatus, setMapsLoadStatus] = useState<MapsLoadStatus>(
     INITIAL_MAPS_KEY ? 'idle' : 'api-error',
   );
@@ -72,6 +83,11 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
   const onAuthFailureRef = useRef(onAuthFailure);
   onAuthFailureRef.current = onAuthFailure;
 
+  const setScraperHealth = useCallback((health: ScraperHealth) => {
+    setScraperHealthState(health);
+    streetViewProbe.setScraperHealth(health);
+  }, []);
+
   const handleMapsStatusChange = useCallback((status: MapsLoadStatus) => {
     setMapsLoadStatus(status);
     if (status !== 'api-error' && status !== 'canvas-timeout') {
@@ -84,6 +100,13 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
       }
       if (status === 'canvas-ready' || status === 'rendering') {
         setIsRetryingMapsAuth(false);
+      }
+      if (status === 'loading-api' || status === 'api-ready' || status === 'loading-panorama') {
+        setScraperHealthState((prev) =>
+          prev.status === 'auth-blocked' || prev.status === 'timeout'
+            ? createInitialScraperHealth()
+            : prev,
+        );
       }
     }
   }, []);
@@ -108,6 +131,9 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
     setShowMissingKeyBanner(false);
     setEffectiveMapsKey(nextKey);
     removeFailedBootstrap();
+    const resetHealth = createInitialScraperHealth();
+    setScraperHealthState(resetHealth);
+    streetViewProbe.setScraperHealth(resetHealth);
 
     loadMapsApi(nextKey).catch((err) => {
       setIsRetryingMapsAuth(false);
@@ -173,6 +199,13 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
       );
       setMapsLoadStatus('api-error');
       setShowAuthFailedBanner(true);
+      const blocked = reduceScraperHealth(createInitialScraperHealth(), {
+        type: 'auth_blocked',
+        detail:
+          'Google Maps API key error — check referrer restrictions, billing, and enabled APIs in Google Cloud Console.',
+      });
+      setScraperHealthState(blocked);
+      streetViewProbe.setScraperHealth(blocked);
       onAuthFailureRef.current?.();
       suppressGmErrNodes(document, GM_ERR_SELECTOR);
       console.error('[App] Maps API auth failure — cruise mode disabled');
@@ -215,6 +248,8 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
     setShowAuthFailedBanner,
     canvasError,
     setCanvasError,
+    scraperHealth,
+    setScraperHealth,
     scraperRef,
     handleMapsStatusChange,
     handleRetryMapsAuth,

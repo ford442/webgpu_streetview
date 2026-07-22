@@ -10,7 +10,7 @@
 - **3D Graphics**: Three.js (for car interior scenes)
 - **Maps Integration**: Google Maps JavaScript API
 - **State Management**: React hooks (useState, useRef, useContext)
-- **Build Tool**: Create React App
+- **Build Tool**: Vite 5
 
 ## Project Structure
 

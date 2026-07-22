@@ -1,7 +1,7 @@
 /**
  * Dev-facing guard + timing instrumentation for the panorama hold-pause
  * feature (advance()/teleport() -> beginHoldTransition() -> ... ->
- * endHoldTransition()).
+ * endHoldTransition()), plus Street View canvas scrape health snapshots.
  *
  * The invariant this exists to protect: while a hold is active, the
  * user-visible WebGPU output must be derived only from the pre-transition
@@ -16,6 +16,9 @@
  * window.__STREETVIEW_PROBE__ for DevTools / headless scripts
  * (see scripts/hold-pause-probe.mjs).
  */
+
+import type { ScraperHealth } from './scraperHealth';
+import { createInitialScraperHealth } from './scraperHealth';
 
 export interface HoldTimelineEntry {
   armedAt: number;
@@ -79,6 +82,7 @@ class StreetViewProbe {
   private current: HoldTimelineEntry | null = null;
   private pixelWatchEnabled = false;
   private lastBrightness: number | null = null;
+  private scraperHealth: ScraperHealth = createInitialScraperHealth();
 
   holdArmed(): void {
     this.current = { armedAt: now(), firstStableAt: null, releasedAt: null, holdDurationMs: null };
@@ -110,6 +114,14 @@ class StreetViewProbe {
     this.warnings.push({ at: now(), message });
     if (this.warnings.length > MAX_WARNINGS) this.warnings.shift();
     console.warn(`[StreetViewProbe] INVARIANT VIOLATION: ${message}`);
+  }
+
+  setScraperHealth(health: ScraperHealth): void {
+    this.scraperHealth = { ...health };
+  }
+
+  getScraperHealth(): ScraperHealth {
+    return { ...this.scraperHealth };
   }
 
   /** Opt-in: tick-to-tick brightness sampling of the visible canvas while a hold is
@@ -156,6 +168,7 @@ class StreetViewProbe {
     this.warnings = [];
     this.current = null;
     this.lastBrightness = null;
+    this.scraperHealth = createInitialScraperHealth();
   }
 }
 
@@ -166,6 +179,7 @@ declare global {
     __STREETVIEW_PROBE__?: {
       getTimeline: () => HoldTimelineEntry[];
       getWarnings: () => ProbeWarning[];
+      getScraperHealth: () => ScraperHealth;
       enablePixelWatch: () => void;
       disablePixelWatch: () => void;
       clear: () => void;
@@ -178,6 +192,7 @@ export function installStreetViewProbe(): void {
   window.__STREETVIEW_PROBE__ = {
     getTimeline: () => streetViewProbe.getTimeline(),
     getWarnings: () => streetViewProbe.getWarnings(),
+    getScraperHealth: () => streetViewProbe.getScraperHealth(),
     enablePixelWatch: () => streetViewProbe.enablePixelWatch(),
     disablePixelWatch: () => streetViewProbe.disablePixelWatch(),
     clear: () => streetViewProbe.clear(),

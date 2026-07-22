@@ -44,6 +44,7 @@ export function StreetViewStage({
           onCanvasReady={setCanvas}
           onError={maps.setCanvasError}
           onStatusChange={maps.handleMapsStatusChange}
+          onScraperHealth={maps.setScraperHealth}
           onPanoramaReady={(pano) => {
             setPanorama(pano);
             maps.setCanvasError(null);

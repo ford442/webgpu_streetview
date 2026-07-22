@@ -196,9 +196,6 @@ describe('advancePanoramaStabilityTick', () => {
       }));
     }
 
-    expect(outcome.type).toBe('force-ready');
-    if (outcome.type === 'force-ready') {
-      expect(outcome.reason).toBe('timeout');
-    }
+    expect(outcome).toEqual({ type: 'force-ready', reason: 'timeout' });
   });
 });

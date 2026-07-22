@@ -5,7 +5,9 @@
 ```bash
 npm install                        # install dependencies
 npm start                          # dev server → http://localhost:3000
-CI=false npm run build             # production build → build/  (CI=true fails on pre-existing ESLint warnings)
+npm run lint                       # ESLint (max-warnings 0)
+npm run typecheck                  # tsc --noEmit
+npm run build                      # production build → build/ (CI=true fails on lint warnings; budget via verify-build.sh)
 npm test -- --watchAll=false       # run all tests once (CI mode)
 npm test -- --testPathPattern=navigation   # run a single test file
 export DEPLOY_TOKEN='...'

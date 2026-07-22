@@ -126,7 +126,7 @@ describe('exposeRendererDebugGlobals', () => {
   // so it can't be patched in place. Replace `window.location` wholesale for
   // this describe block instead — none of these tests need real URL/search
   // behavior, only a spy-able `reload()`.
-  let reloadSpy: jest.Mock;
+  let reloadSpy: ReturnType<typeof jest.fn>;
   const originalLocationDescriptor = Object.getOwnPropertyDescriptor(window, 'location')!;
 
   beforeEach(() => {

@@ -5,6 +5,14 @@ import {
   STABILITY_POLL_INTERVAL_MS,
   STABILITY_REQUIRED_STABLE_TICKS,
 } from '../utils/panoramaStability';
+import {
+  createInitialScraperHealth,
+  reduceScraperHealth,
+  SCRAPER_CONTAINER_INVARIANTS,
+  type ScraperHealth,
+  type ScraperHealthEvent,
+} from '../utils/scraperHealth';
+import { streetViewProbe } from '../utils/streetViewProbe';
 
 export type MapsLoadStatus =
     | 'idle'
@@ -23,52 +31,65 @@ interface StreetViewProps {
     onPanoramaReady?: (panorama: google.maps.StreetViewPanorama) => void;
     onError?: (message: string) => void;
     onStatusChange?: (status: MapsLoadStatus) => void;
+    /** Structured scrape health for AppShell / LoadingOverlay / probe. */
+    onScraperHealth?: (health: ScraperHealth) => void;
 }
 
-const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialPosition, onPanoramaReady, onError, onStatusChange }) => {
+function selectLargestCanvas(container: HTMLElement): {
+    best: HTMLCanvasElement | null;
+    canvasCount: number;
+    selectedArea: number;
+} {
+    const canvases = container.getElementsByTagName('canvas');
+    const canvasCount = canvases.length;
+    if (canvasCount === 0) {
+        return { best: null, canvasCount: 0, selectedArea: 0 };
+    }
+    let best = canvases[0]!;
+    let maxArea = best.width * best.height;
+    for (let i = 1; i < canvasCount; i++) {
+        const c = canvases[i]!;
+        const area = c.width * c.height;
+        if (area > maxArea) {
+            maxArea = area;
+            best = c;
+        }
+    }
+    return { best, canvasCount, selectedArea: maxArea };
+}
+
+const StreetView: React.FC<StreetViewProps> = ({
+    onCanvasReady,
+    apiKey,
+    initialPosition,
+    onPanoramaReady,
+    onError,
+    onStatusChange,
+    onScraperHealth,
+}) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const isInitializedRef = useRef(false);
     const lastKeyRef = useRef<string>('');
-
-    // P1 stability tracking: do not hand a canvas to the renderer until its *content*
-    // has produced N consecutive identical good fingerprints. This prevents flashing
-    // low-res tiles, black frames, or transient Google internal canvases during init,
-    // pano loads, or network hiccups. Cadence + tick count come from
-    // utils/panoramaStability so this poller and the pano_changed watcher in
-    // useStreetView.tsx always agree on what "stable" means.
     const lastFingerprintRef = useRef<string>('');
     const stableCountRef = useRef<number>(0);
     const everSawCandidateRef = useRef(false);
+    const everPromotedRef = useRef(false);
+    const healthRef = useRef<ScraperHealth>(createInitialScraperHealth());
+    const panoInstanceRef = useRef<google.maps.StreetViewPanorama | null>(null);
     const REQUIRED_STABLE_SAMPLES = STABILITY_REQUIRED_STABLE_TICKS;
+    const minEdge = SCRAPER_CONTAINER_INVARIANTS.minCanvasEdgePx;
 
-    // Persistent suppression of Google's "could not load Google Maps properly" / .gm-err-*
-    // error UI. Google injects these DOM nodes into the pano container (even for transient
-    // referrer/tile/auth hiccups) when it detects a problem with the key at bootstrap or
-    // during some operations. Because we keep the container at opacity:1 (required for
-    // Google to keep painting the real panorama canvas that we scrape), the error chrome
-    // can flash into view repeatedly → rapid flicker, even while actual navigation and
-    // canvas content are working fine.
-    //
-    // The CSS in style.css helps, the one-shot remove in App on gm_authFailure helps,
-    // but a live MutationObserver + sweeps from the existing canvas poller are the
-    // reliable "first step" to kill the flicker without changing the scraper architecture.
-    // (See also the sibling issues around recovery after key fixes and car mode.)
-    //
-    // This runs for the lifetime of the pano container and is independent of view mode
-    // (freelook vs car), so entering car mode shouldn't cause the streetview "to vanish"
-    // due to visible error UI.
     const errorSuppressorRef = useRef<MutationObserver | null>(null);
-
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
-    // === Live Google Maps error UI suppressor (the key anti-flicker step) ===
-    // Set up once per StreetView lifetime. Observes the exact container Google writes
-    // its error nodes into. Combined with the broadened CSS and periodic sweeps from
-    // checkForCanvas, this should stop the rapid "could not load..." popup from
-    // appearing even on hosts where a marginal key or race still triggers
-    // gm_authFailure / internal error injection (while the actual imagery canvas
-    // continues to work, as reported: navigation is possible).
+    const emitHealth = (event: ScraperHealthEvent) => {
+        healthRef.current = reduceScraperHealth(healthRef.current, event);
+        streetViewProbe.setScraperHealth(healthRef.current);
+        onScraperHealth?.(healthRef.current);
+    };
+
+    // === Live Google Maps error UI suppressor ===
     useEffect(() => {
         const SUPPRESS_SEL = '[class*="gm-err"], .gm-err-container, .gm-err-content, .gm-err-icon, .gm-err-title, .gm-err-message, .gm-err-dialog, [aria-label*="Google Maps" i], [aria-label*="This page can\'t load" i], [aria-label*="load Google" i]';
 
@@ -78,7 +99,6 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             const nodes = container.querySelectorAll(SUPPRESS_SEL);
             nodes.forEach((node) => {
                 const el = node as HTMLElement;
-                // Belt-and-suspenders: force invisible + remove from DOM when safe.
                 el.style.setProperty('display', 'none', 'important');
                 el.style.setProperty('visibility', 'hidden', 'important');
                 el.style.setProperty('opacity', '0', 'important');
@@ -90,15 +110,12 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             });
         };
 
-        // Early + delayed sweeps (bootstrap race window)
         suppress();
         const t0 = setTimeout(suppress, 80);
         const t1 = setTimeout(suppress, 280);
         const t2 = setTimeout(suppress, 900);
         const t3 = setTimeout(suppress, 1800);
 
-        // Live observer — catches injections no matter when Google decides to show them
-        // (initial bad key, during WASD hops, on car mode entry, tile auth hiccups, etc.)
         let mo: MutationObserver | null = null;
         const attachObserver = () => {
             const container = panoRef.current;
@@ -123,15 +140,12 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
     useEffect(() => {
         const trimmed = (apiKey || '').trim();
         if (!trimmed) {
-            // Do not initialize (or keep previous) with empty/placeholder key.
-            // This allows a late-arriving key (see #84) to trigger a clean init.
             onStatusChange?.('idle');
             return;
         }
         if (isInitializedRef.current && lastKeyRef.current === trimmed) {
             return;
         }
-        // Key changed (including first real key after empty start) — reset so we re-initialize.
         if (trimmed !== lastKeyRef.current) {
             isInitializedRef.current = false;
             removeFailedBootstrap();
@@ -140,6 +154,12 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
         if (isInitializedRef.current) return;
         isInitializedRef.current = true;
         onStatusChange?.('loading-api');
+        emitHealth({ type: 'reset' });
+        everPromotedRef.current = false;
+        everSawCandidateRef.current = false;
+        activeCanvasRef.current = null;
+        lastFingerprintRef.current = '';
+        stableCountRef.current = 0;
 
         let isMounted = true;
         let cleanup: (() => void) | null = null;
@@ -154,11 +174,8 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             }
 
             onStatusChange?.('loading-panorama');
+            emitHealth({ type: 'locating' });
 
-            // Off-screen container for the linked Map instance.
-            // Must have real pixel dimensions — a 0×0 or visibility:hidden div
-            // prevents Google Maps from initialising its WebGL context, which in
-            // turn stops the StreetViewPanorama from rendering its canvas (#87).
             const mapDiv = document.createElement('div');
             mapDiv.setAttribute('aria-hidden', 'true');
             mapDiv.style.position = 'fixed';
@@ -171,11 +188,6 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             document.body.appendChild(mapDiv);
 
             try {
-                // Do NOT set a mapId unless a real Cloud Map ID is configured.
-                // Any mapId (including 'DEMO_MAP_ID') causes Maps to issue a
-                // MapsConfigService request that gets blocked by the server's
-                // Cross-Origin-Embedder-Policy: require-corp header, triggering
-                // the "can't load Google Maps correctly" error UI.
                 const mapOptions: google.maps.MapOptions = {
                     center: startLocation,
                     zoom: 12,
@@ -200,39 +212,16 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     zoomControl: false,
                     linksControl: false,
                 });
+                panoInstanceRef.current = panoInstance;
 
                 mapInstance.setStreetView(panoInstance);
 
-                // Listen for panorama status changes (e.g. imagery unavailable)
-                panoInstance.addListener('status_changed', () => {
-                    const status = panoInstance.getStatus();
-                    if (status !== google.maps.StreetViewStatus.OK) {
-                        console.warn('[StreetView] Panorama status:', status);
-                        onStatusChange?.('canvas-timeout');
-                        onError?.(`Street View unavailable: ${status}`);
-                    }
-                });
-
-                if (onPanoramaReady) onPanoramaReady(panoInstance);
-
-                // Canvas detection with retry + P1 stability gate (see repro + analysis for "map API loading error flickering").
-                // We only promote a canvas (and thus feed it to WebGPU copyExternalImageToTexture + the render loop)
-                // after it has shown the same usable fingerprint for REQUIRED_STABLE_SAMPLES consecutive checks.
-                // This stops the renderer from ever seeing a partially decoded tile, a black/near-black frame,
-                // or a short-lived internal Google canvas during initial load, pano transitions, cruise jumps,
-                // or transient network / tile errors.
-                const checkForCanvas = () => {
+                const suppressErrorChrome = () => {
                     if (!panoRef.current) return;
-
-                    // Extra sweep for error UI on every stability poll. The dedicated
-                    // MutationObserver (above) does the heavy lifting for live injection,
-                    // but this catches early bootstrap cases + gives belt-and-suspenders
-                    // during the exact windows when flicker was reported (initial load,
-                    // rapid advances, car mode toggle).
-                    // We deliberately do a broad query here too.
                     try {
-                        const container = panoRef.current;
-                        const bad = container.querySelectorAll('[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]');
+                        const bad = panoRef.current.querySelectorAll(
+                            '[class*="gm-err"], .gm-err-container, [aria-label*="Google" i]'
+                        );
                         bad.forEach((n) => {
                             const e = n as HTMLElement;
                             e.style.setProperty('display', 'none', 'important');
@@ -241,88 +230,192 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                             if (e.parentNode) { try { e.parentNode.removeChild(e); } catch {} }
                         });
                     } catch {}
+                };
 
-                    const canvases = panoRef.current.getElementsByTagName('canvas');
-                    const len = canvases.length;
-                    if (len === 0) return;
+                const checkForCanvas = () => {
+                    if (!panoRef.current) return;
+                    suppressErrorChrome();
 
-                    // len === 0 already returned above, so index 0 is always present.
-                    let bestCanvas = canvases[0]!;
-                    let maxArea = bestCanvas.width * bestCanvas.height;
+                    const { best, canvasCount, selectedArea } = selectLargestCanvas(panoRef.current);
+                    const active = activeCanvasRef.current;
 
-                    for (let i = 1; i < len; i++) {
-                        // i is bounded by len === canvases.length.
-                        const canvas = canvases[i]!;
-                        const area = canvas.width * canvas.height;
-                        if (area > maxArea) {
-                            maxArea = area;
-                            bestCanvas = canvas;
-                        }
+                    if (active && (!active.isConnected || !panoRef.current.contains(active))) {
+                        console.warn('[StreetView] Active canvas detached — re-acquiring');
+                        activeCanvasRef.current = null;
+                        lastFingerprintRef.current = '';
+                        stableCountRef.current = 0;
+                        emitHealth({
+                            type: 'lost',
+                            reason: 'detached',
+                            canvasCount,
+                            selectedArea,
+                        });
                     }
 
-                    if (bestCanvas.width < 256 || bestCanvas.height < 256) {
-                        // Too small — Google is probably still creating/replacing it.
+                    if (!best) {
+                        emitHealth({
+                            type: 'scan',
+                            canvasCount: 0,
+                            selectedArea: 0,
+                            hasCandidate: false,
+                            fingerprintOk: false,
+                            rejectReason: 'no-canvas',
+                        });
+                        return;
+                    }
+
+                    const hasCandidate = best.width >= minEdge && best.height >= minEdge;
+                    if (!hasCandidate) {
                         stableCountRef.current = 0;
+                        emitHealth({
+                            type: 'scan',
+                            canvasCount,
+                            selectedArea,
+                            hasCandidate: false,
+                            fingerprintOk: false,
+                            rejectReason: 'zero-size',
+                        });
                         return;
                     }
 
                     everSawCandidateRef.current = true;
-
-                    const fp = getCanvasFingerprint(bestCanvas);
+                    const fp = getCanvasFingerprint(best);
                     if (!fp) {
-                        // Content not usable yet (black, low-res preview, still decoding, noisy).
                         stableCountRef.current = 0;
                         lastFingerprintRef.current = '';
+                        emitHealth({
+                            type: 'scan',
+                            canvasCount,
+                            selectedArea,
+                            hasCandidate: true,
+                            fingerprintOk: false,
+                            rejectReason: 'near-black',
+                        });
                         return;
                     }
 
-                    const sameElement = bestCanvas === activeCanvasRef.current;
+                    emitHealth({
+                        type: 'scan',
+                        canvasCount,
+                        selectedArea,
+                        hasCandidate: true,
+                        fingerprintOk: true,
+                    });
+
+                    const sameElement = best === activeCanvasRef.current;
                     const sameFp = fp === lastFingerprintRef.current;
 
                     if (!sameFp) {
                         lastFingerprintRef.current = fp;
                         stableCountRef.current = 1;
                     } else {
-                        stableCountRef.current = Math.min(stableCountRef.current + 1, REQUIRED_STABLE_SAMPLES + 1);
+                        stableCountRef.current = Math.min(
+                            stableCountRef.current + 1,
+                            REQUIRED_STABLE_SAMPLES + 1
+                        );
                     }
+
+                    emitHealth({
+                        type: 'tick',
+                        sameFingerprint: sameFp,
+                        canvasCount,
+                        selectedArea,
+                        requiredStableTicks: REQUIRED_STABLE_SAMPLES,
+                    });
 
                     const isStable = stableCountRef.current >= REQUIRED_STABLE_SAMPLES;
 
                     if (isStable) {
                         if (!sameElement) {
-                            console.log(`[StreetView] Canvas stable (${stableCountRef.current} samples): ${bestCanvas.width}×${bestCanvas.height} fp=${fp}`);
-                            activeCanvasRef.current = bestCanvas;
+                            console.log(
+                                `[StreetView] Canvas stable (${stableCountRef.current} samples): ${best.width}×${best.height} fp=${fp}`
+                            );
+                            activeCanvasRef.current = best;
+                            everPromotedRef.current = true;
                             onStatusChange?.('canvas-ready');
-                            onCanvasReady(bestCanvas);
+                            onCanvasReady(best);
+                            emitHealth({ type: 'promoted', canvasCount, selectedArea });
                         } else if (!sameFp) {
-                            // Same canvas element, but content fingerprint changed and is now stable again
-                            // (e.g. Google finished loading better tiles into the existing canvas).
-                            console.log(`[StreetView] Canvas content restabilized: ${bestCanvas.width}×${bestCanvas.height}`);
-                            onCanvasReady(bestCanvas);
+                            console.log(
+                                `[StreetView] Canvas content restabilized: ${best.width}×${best.height}`
+                            );
+                            onCanvasReady(best);
+                            emitHealth({ type: 'promoted', canvasCount, selectedArea });
                         }
-                    } else {
-                        // Candidate seen but not yet stable — do not promote.
-                        if (stableCountRef.current === 1) {
-                            console.log(`[StreetView] Canvas candidate ${bestCanvas.width}×${bestCanvas.height} (waiting for stability, fp=${fp})`);
-                        }
+                    } else if (stableCountRef.current === 1) {
+                        console.log(
+                            `[StreetView] Canvas candidate ${best.width}×${best.height} (waiting for stability, fp=${fp})`
+                        );
                     }
                 };
 
-                // Initial check with delay
-                const initialTimeout = setTimeout(checkForCanvas, 500);
-                
-                // Retry/polling window for canvas + stability. Extended so we can wait for
-                // fingerprint stability instead of promoting the first 256px canvas we see.
-                const retryInterval = setInterval(checkForCanvas, STABILITY_POLL_INTERVAL_MS);
-                const retryTimeout = setTimeout(() => clearInterval(retryInterval), 6000);
+                panoInstance.addListener('status_changed', () => {
+                    const status = panoInstance.getStatus();
+                    if (status !== google.maps.StreetViewStatus.OK) {
+                        console.warn('[StreetView] Panorama status:', status);
+                        onStatusChange?.('canvas-timeout');
+                        onError?.(`Street View unavailable: ${status}`);
+                        emitHealth({
+                            type: 'timeout',
+                            sawCandidates: everSawCandidateRef.current,
+                            detail: `Street View unavailable: ${status}`,
+                        });
+                    }
+                });
 
-                // Hard timeout: if we never managed to promote a *stable* canvas, surface an error.
-                // We give it a bit longer than before because we now require content stability.
+                panoInstance.addListener('pano_changed', () => {
+                    checkForCanvas();
+                });
+
+                if (onPanoramaReady) onPanoramaReady(panoInstance);
+
+                /** Lightweight idle self-check: Maps still painting + canvas still attached. */
+                const selfCheck = () => {
+                    if (!panoRef.current) return;
+                    const active = activeCanvasRef.current;
+                    const { best, canvasCount, selectedArea } = selectLargestCanvas(panoRef.current);
+                    const attached = !!(
+                        active &&
+                        active.isConnected &&
+                        panoRef.current.contains(active)
+                    );
+                    let fingerprintChanged = false;
+                    if (attached && active) {
+                        const fp = getCanvasFingerprint(active);
+                        if (fp && lastFingerprintRef.current && fp !== lastFingerprintRef.current) {
+                            fingerprintChanged = true;
+                            lastFingerprintRef.current = fp;
+                        }
+                    }
+                    emitHealth({
+                        type: 'self_check',
+                        canvasAttached: attached || (!everPromotedRef.current && !!best),
+                        canvasCount,
+                        selectedArea,
+                        fingerprintChanged,
+                    });
+                    // If we lost the canvas or never had one, drive re-acquisition.
+                    if (!attached || healthRef.current.status === 'lost' || healthRef.current.status === 'promoting') {
+                        checkForCanvas();
+                    }
+                };
+
+                const initialTimeout = setTimeout(checkForCanvas, 500);
+                // Fast poll until first promote; continues as recovery when lost.
+                const retryInterval = setInterval(checkForCanvas, STABILITY_POLL_INTERVAL_MS);
+                // After the cold-start window, drop to a slower poll but never stop
+                // (Google may replace the canvas node mid-session).
+                let steadyInterval: ReturnType<typeof setInterval> | null = null;
+                const switchToSteady = setTimeout(() => {
+                    clearInterval(retryInterval);
+                    steadyInterval = setInterval(selfCheck, 2000);
+                }, 6000);
+
                 const canvasTimeout = setTimeout(() => {
                     if (!activeCanvasRef.current) {
                         const found = panoRef.current
                             ? Array.from(panoRef.current.getElementsByTagName('canvas'))
-                                  .map(c => `${c.width}×${c.height}`)
+                                  .map((c) => `${c.width}×${c.height}`)
                                   .join(', ') || 'none'
                             : 'pano div missing';
                         const sawCandidates = everSawCandidateRef.current;
@@ -332,36 +425,47 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                         console.error('[StreetView]', msg);
                         onStatusChange?.('canvas-timeout');
                         onError?.(msg);
+                        emitHealth({
+                            type: 'timeout',
+                            sawCandidates,
+                            detail: msg,
+                        });
                     }
                 }, 6500);
 
                 observer = new MutationObserver(() => {
                     checkForCanvas();
                 });
+                observer.observe(panoRef.current, { childList: true, subtree: true });
 
-                observer.observe(panoRef.current, {
-                    childList: true,
-                    subtree: true
-                });
-
-                // Remove Google's injected error overlay (.gm-err-*) to stop flicker.
                 const suppressGmErr = () => {
                     if (!panoRef.current) return;
                     panoRef.current.querySelectorAll(
                         '[class*="gm-err"], .gm-err-container, [aria-label*="Google Maps" i], [aria-label*="This page can\'t load" i]'
-                    ).forEach(el => el.remove());
+                    ).forEach((el) => el.remove());
                 };
                 suppressGmErr();
                 const errObserver = new MutationObserver(suppressGmErr);
                 errObserver.observe(panoRef.current, { childList: true, subtree: true });
-                const errCleanup = () => errObserver.disconnect();
+
+                // Re-acquire after tab focus / visibility return (Maps often rebuilds WebGL).
+                const onVisibilityOrFocus = () => {
+                    if (document.visibilityState === 'hidden') return;
+                    checkForCanvas();
+                };
+                document.addEventListener('visibilitychange', onVisibilityOrFocus);
+                window.addEventListener('focus', onVisibilityOrFocus);
 
                 return () => {
                     clearTimeout(initialTimeout);
                     clearInterval(retryInterval);
-                    clearTimeout(retryTimeout);
+                    clearTimeout(switchToSteady);
+                    if (steadyInterval) clearInterval(steadyInterval);
                     clearTimeout(canvasTimeout);
-                    errCleanup();
+                    errObserver.disconnect();
+                    document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+                    window.removeEventListener('focus', onVisibilityOrFocus);
+                    panoInstanceRef.current = null;
                     if (mapDiv.parentElement) {
                         mapDiv.parentElement.removeChild(mapDiv);
                     }
@@ -376,7 +480,6 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
             }
         };
 
-        // Load Google Maps API via singleton loader (idempotent, no callback, no libraries)
         loadMapsApi(apiKey).then(() => {
             if (isMounted) {
                 onStatusChange?.('api-ready');
@@ -387,6 +490,10 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 console.error('[StreetView] Maps API load failed:', err);
                 onStatusChange?.('api-error');
                 onError?.('Failed to load Google Maps API. Please check your API key and network connection.');
+                emitHealth({
+                    type: 'auth_blocked',
+                    detail: 'Failed to load Google Maps API. Please check your API key and network connection.',
+                });
             }
         });
 
@@ -399,7 +506,7 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                 cleanup();
             }
         };
-    }, [apiKey]); // eslint-disable-line react-hooks/exhaustive-deps -- onCanvasReady, onPanoramaReady, and startLocation are intentionally omitted: the Google Maps instance should only be created once per apiKey, not recreated on every parent render
+    }, [apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="streetview-scraper" style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -411,8 +518,8 @@ const StreetView: React.FC<StreetViewProps> = ({ onCanvasReady, apiKey, initialP
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    opacity: 1,
-                    pointerEvents: 'none',
+                    opacity: SCRAPER_CONTAINER_INVARIANTS.opacity,
+                    pointerEvents: SCRAPER_CONTAINER_INVARIANTS.pointerEvents as React.CSSProperties['pointerEvents'],
                     backgroundColor: '#000',
                 }}
             />

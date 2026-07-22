@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
 import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
+import { packWeatherParams } from '../renderer/packWeatherParams';
+import { WeatherParamIndex } from '../renderer/weatherUniformLayout';
 import { usePerformanceMonitor, useEnvironmentSettings, useStreetView } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
@@ -258,81 +260,23 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             if (currentRendererRef.current) {
                 // Build and upload weather params every frame BEFORE rendering
                 const e = envRef.current;
-                const params = new Float32Array(40);
-
-                // [0-5]: Color grading
-                params[0] = e.vibrance - 1.0;
-                params[1] = e.saturation - 1.0;
-                params[2] = e.contrast - 1.0;
-                params[3] = e.exposure;
-                params[4] = e.temperature;
-                params[5] = e.tint;
-
-                // [6-10]: Animation time, rain, snow, wind, speed
-                params[6] = (Date.now() - timeRef.current) / 1000.0;
-                params[7] = (e.rainIntensity / 100.0) * 2.0;   // UI 0-100 -> shader 0-2
-                params[8] = (e.snowIntensity / 100.0) * 2.0;   // UI 0-100 -> shader 0-2
-                params[9] = (e.wind / 100.0) * 2.0 - 1.0;      // UI 0-100 -> shader -1 to +1
-                params[10] = 1.0;
-
-                // [11-15]: Night mode and headlights
-                params[11] = e.nightIntensity;
-                params[12] = e.headlightsOn ? 1.0 : 0.0;
-                params[13] = e.highBeam ? 1.0 : 0.0;
-                params[14] = 0.5;
-                params[15] = 0.5;
-
-                // [16-17]: Dome light
-                params[16] = e.domeLightOn ? 1.0 : 0.0;
-                params[17] = e.domeLightOn ? 0.5 : 0.0;
-
-                // [18-21]: Astronomy
-                params[18] = e.sunAzimuth;
-                params[19] = e.sunAltitude;
-                params[20] = e.moonAzimuth;
-                params[21] = e.moonAltitude;
-
-                // [22-31]: Atmospheric effects
-                params[22] = e.fogDensity / 100.0;        // fog intensity (same as density, from single fog slider)
-                params[23] = e.fogDensity / 100.0;        // fog density (0-1)
-                params[24] = 0.0;                         // fog height
-                params[25] = 0.0;                         // fog color index
-                // Light shafts and lens flare activate when the sun is above the horizon
-                const sunVisible = e.sunAltitude > 0 ? Math.min(e.sunAltitude / 0.3, 1.0) : 0.0;
-                params[26] = sunVisible * 0.5;            // light shafts intensity
-                params[27] = 0.0;                         // heat shimmer intensity
-                params[28] = sunVisible * 0.4;            // lens flare intensity
-                params[29] = 0.0;                         // chromatic aberration
-
-                // Ambient dust motes are driven entirely by the WASM noise tile —
-                // no dust renders unless that feature is enabled and loaded, which
-                // makes the wasmNoise dev flag a clean visible on/off toggle.
                 const wasmNoiseActive = wasmNoiseEnabledRef.current && noiseFeederRef.current.isReady;
-                params[30] = wasmNoiseActive ? 0.3 : 0.0; // dust intensity
-                params[31] = 0.0;                         // humidity haze
-
-                // [32]: Shader effects enabled flag
-                params[32] = e.shaderEffectsEnabled ? 1.0 : 0.0;
-
-                // [33-35]: Camera params and WASM noise toggle
-                params[33] = weatherHeading;
-                params[34] = weatherPitch;
-                params[35] = wasmNoiseActive ? 1.0 : 0.0;
-
-                // [36]: Sunrise flag
-                params[36] = e.timeOfDay === 'sunrise' ? 1.0 : 0.0;
-
-                // [37]: anamorphicStreak — activates with lens flare when sun is visible
-                params[37] = sunVisible * 0.5;
-                // [38-39]: padding
-                params[38] = 0.0;
-                params[39] = 0.0;
+                const params = packWeatherParams({
+                    env: e,
+                    timeSeconds: (Date.now() - timeRef.current) / 1000.0,
+                    cameraHeading: weatherHeading,
+                    cameraPitch: weatherPitch,
+                    wasmNoiseActive,
+                });
 
                 currentRendererRef.current.updateWeatherParams(params);
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
 
                 if (wasmNoiseEnabledRef.current) {
-                    const tile = noiseFeederRef.current.sampleTile(frameCountRef.current, params[6]);
+                    const tile = noiseFeederRef.current.sampleTile(
+                        frameCountRef.current,
+                        params[WeatherParamIndex.time]!
+                    );
                     if (tile) currentRendererRef.current.updateNoiseBuffer(tile);
                 }
             }

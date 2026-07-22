@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  * - Keyed (nightly): full suite including hold-pause — needs REACT_APP_MAPS_API_KEY
  *
  * Web server: prefers an already-running `npm start` / static server when
- * `reuseExistingServer` allows it; otherwise starts CRA with BROWSER=none.
+ * `reuseExistingServer` allows it; otherwise starts Vite with host binding.
  */
 const PORT = Number(process.env.E2E_PORT || 3000);
 const BASE_URL = process.env.E2E_BASE_URL || `http://127.0.0.1:${PORT}`;

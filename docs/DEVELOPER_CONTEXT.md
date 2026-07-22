@@ -9,7 +9,7 @@ This application is a WebGPU-accelerated Street View viewer. It acts as a wrappe
 *   **Frontend Framework:** React 19 (TypeScript)
 *   **Rendering:** WebGPU (via `navigator.gpu`) with WGSL shaders.
 *   **Maps Integration:** Google Maps JavaScript API (Street View Service, Directions Service).
-*   **Build Tooling:** Create React App (`react-scripts`).
+*   **Build Tooling:** Vite 5 + Vitest (`base: './'` for Contabo subpath deploys).
 *   **State Management:** React `useState`/`useEffect` (Local component state).
 
 ### Design Patterns
@@ -100,6 +100,10 @@ globe stack. Two rules keep it that way:
     `import * as Cesium from 'cesium'` anywhere puts the whole globe stack back
     into `main.js` for every user, because webpack has no `"sideEffects": false`
     hint to safely tree-shake an unused-but-imported module.
+*   **Imagery** is resolved by `src/utils/cesiumImagery.ts`: Ion world imagery when
+    `REACT_APP_CESIUM_ION_TOKEN` is set at build time, otherwise CartoCDN Voyager
+    via Viewer `baseLayer` (Cesium ≥1.107; do not pass the removed `imageryProvider`
+    option — it blanks the globe). Never use `tile.openstreetmap.org` (blocked for apps).
 *   **`GlobeView` is deliberately not re-exported from `src/components/index.ts`.**
     `App.tsx` imports it as `const GlobeView = lazy(() => import('./components/GlobeView'));`
     and renders it inside `<Suspense fallback={null}>`, so it ships as its own
@@ -111,9 +115,15 @@ globe stack. Two rules keep it that way:
     zero imports anywhere in `src/` — pure dead weight on every `npm install`).
     Re-add it only alongside the feature that actually uses it, pinned to a
     real version (never `"latest"`).
-*   **Checking for regressions:** run `npm run build`, then either grep the
-    output for stack-specific tokens (`grep -c Cesium build/static/js/main.*.js`
-    should be ~0-1, just the CDN URL string) or run
-    `npx source-map-explorer 'build/static/js/*.js'` for a visual breakdown.
-    `npm run analyze` wraps the latter.
-6.  `Renderer.ts` uploads the new pixels in the next render pass.
+*   **Enforced budgets** (`scripts/check-bundle-budget.sh`, run from
+    `scripts/verify-build.sh` at the end of `npm run build`):
+    - Gzipped `main.*.js` ≤ **409600 bytes (400 KiB)** — ~16% headroom over the
+      July 2026 baseline (~353 KiB gzip / ~1.19 MB raw).
+    - `grep -c Cesium build/static/js/main.*.js` ≤ **1** (the CDN loader URL
+      string from `loadCesiumSDK`; a higher count means Cesium leaked into main).
+    - Each lazy `*.chunk.js` gzip ≤ **51200 bytes (50 KiB)** — catches Cesium
+      (or another heavy dep) landing in a code-split chunk.
+    Override via env for local experiments: `MAIN_GZIP_BUDGET_BYTES`,
+    `CESIUM_MAX_HITS`, `CHUNK_GZIP_BUDGET_BYTES`.
+*   **Manual inspection:** `npm run analyze` wraps `source-map-explorer` for a
+    visual breakdown of `build/static/js/*.js`.

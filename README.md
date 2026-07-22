@@ -127,7 +127,11 @@ The Google Maps API key is resolved at runtime from `window.MAPS_API_KEY` (via `
 
 ```bash
 REACT_APP_MAPS_API_KEY=your_dev_key_here
+# Optional — Cesium Ion world imagery for Globe / MiniMap globe (otherwise CartoCDN Voyager)
+REACT_APP_CESIUM_ION_TOKEN=your_cesium_ion_token_here
 ```
+
+Globe View loads Cesium from a CDN on first open. With `REACT_APP_CESIUM_ION_TOKEN` set at build time you get Ion satellite imagery; without it the app falls back to free CartoCDN tiles (never `tile.openstreetmap.org`, which blocks apps).
 
 **For production deploys to test.1ink.us / go.1ink.us**, see the full "Production Deployment & Google Maps API Key Setup" section below. The recommended path uses the `MAPS_API_KEY` environment variable with `python deploy.py` so you never need to bake the production key into a commit.
 
@@ -153,7 +157,7 @@ See `.env.deploy.example` for all supported environment variables and `docs/DEPL
 The app supports **two ways** to provide the key (priority order):
 
 1. **Runtime (preferred for deploys)**: `window.MAPS_API_KEY` set by `public/config.js` (loaded before the bundle via a `<script>` tag in `index.html`). Change this file on the server or let `deploy.py` generate it — **no rebuild required**.
-2. **Build-time fallback**: `REACT_APP_MAPS_API_KEY` baked into the JS bundle by Create React App during `npm run build`.
+2. **Build-time fallback**: `REACT_APP_MAPS_API_KEY` or `VITE_MAPS_API_KEY` baked into the JS bundle by Vite during `npm run build`.
 
 ### Step-by-step: Creating a Production-Ready Key
 
@@ -545,7 +549,8 @@ Index  Field            Range / Notes
 | @webgpu/types | 0.1.64 | WebGPU TypeScript types |
 | @xenova/transformers | latest | ML utilities (experimental) |
 | typescript | 4.9.5 | Type checking |
-| react-scripts | 5.0.1 | Build tooling (Create React App) |
+| Vite | 5.x | Build tooling (replaces Create React App) |
+| Vitest | 2.x | Unit tests |
 
 Dev: `@types/google.maps`, `@types/three`
 

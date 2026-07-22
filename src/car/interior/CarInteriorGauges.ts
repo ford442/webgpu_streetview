@@ -5,6 +5,26 @@ export const TACHO_DIAL_MAX_RPM = 8000;
 export const TACHO_REDLINE_RPM = 6500;
 
 /**
+ * Instrument-cluster layout (metres, driver-camera local space).
+ * Kept compact so dials sit under the windshield beltline instead of filling FOV.
+ * Dashboard bezel/rings in CarInteriorDashboardBuilder must stay in sync.
+ */
+export const GAUGE_LAYOUT = {
+  speed: { x: -0.48, y: 0.88, z: -0.76 },
+  tacho: { x: -0.18, y: 0.88, z: -0.76 },
+  fuel: { x: -0.42, y: 0.74, z: -0.76 },
+  temp: { x: -0.24, y: 0.74, z: -0.76 },
+  dialRadius: 0.10,
+  needleLength: 0.078,
+  coverRadius: 0.105,
+  hubRadius: 0.008,
+  /** Face / needle / hub / cover z offsets relative to dial z */
+  needleZ: 0.006,
+  hubZ: 0.009,
+  coverZ: 0.017,
+} as const;
+
+/**
  * Map a 0..1 dial fraction to needle rotation.z.
  * Dials sweep 270° clockwise from lower-left (7:30) to lower-right (4:30);
  * a needle mesh pointing +Y at rotation 0 therefore starts at +135°.
@@ -223,6 +243,7 @@ export class CarInteriorGauges {
         const anisotropy = gpuProfile.name === 'high' ? 8 : 4;
         const dialMaterials: THREE.MeshStandardMaterial[] = [];
         const needleMaterials: THREE.MeshStandardMaterial[] = [];
+        const L = GAUGE_LAYOUT;
 
         const speedLabels: string[] = [];
         for (let v = 0; v <= SPEED_DIAL_MAX_KMH; v += 30) speedLabels.push(String(v));
@@ -233,14 +254,14 @@ export class CarInteriorGauges {
                 minorTicksPerMajor: 5,
                 unit: 'km/h',
             }),
-            0.15, 0x002211, anisotropy
+            L.dialRadius, 0x002211, anisotropy
         );
-        speedDial.mesh.position.set(-0.5, 0.95, -0.712);
+        speedDial.mesh.position.set(L.speed.x, L.speed.y, L.speed.z);
         interiorGroup.add(speedDial.mesh);
         dialMaterials.push(speedDial.material);
 
-        const speedNeedle = CarInteriorGauges.buildNeedle(0.115, 0xff5030);
-        speedNeedle.mesh.position.set(-0.5, 0.95, -0.706);
+        const speedNeedle = CarInteriorGauges.buildNeedle(L.needleLength, 0xff5030);
+        speedNeedle.mesh.position.set(L.speed.x, L.speed.y, L.speed.z + L.needleZ);
         speedNeedle.mesh.rotation.z = needleAngle(0);
         interiorGroup.add(speedNeedle.mesh);
         needleMaterials.push(speedNeedle.material);
@@ -255,14 +276,14 @@ export class CarInteriorGauges {
                 unit: 'x1000',
                 redlineFrac: TACHO_REDLINE_RPM / TACHO_DIAL_MAX_RPM,
             }),
-            0.15, 0x220800, anisotropy
+            L.dialRadius, 0x220800, anisotropy
         );
-        tachoDial.mesh.position.set(-0.15, 0.95, -0.712);
+        tachoDial.mesh.position.set(L.tacho.x, L.tacho.y, L.tacho.z);
         interiorGroup.add(tachoDial.mesh);
         dialMaterials.push(tachoDial.material);
 
-        const tachoNeedle = CarInteriorGauges.buildNeedle(0.115, 0xff5030);
-        tachoNeedle.mesh.position.set(-0.15, 0.95, -0.706);
+        const tachoNeedle = CarInteriorGauges.buildNeedle(L.needleLength, 0xff5030);
+        tachoNeedle.mesh.position.set(L.tacho.x, L.tacho.y, L.tacho.z + L.needleZ);
         tachoNeedle.mesh.rotation.z = needleAngle(0);
         interiorGroup.add(tachoNeedle.mesh);
         needleMaterials.push(tachoNeedle.material);
@@ -272,6 +293,8 @@ export class CarInteriorGauges {
         let tempNeedleMesh: THREE.Mesh | null = null;
         if (quality !== 'low') {
             const miniSize = dialSize / 2;
+            const miniRadius = L.dialRadius * 0.38;
+            const miniNeedle = L.needleLength * 0.38;
             const fuelDial = CarInteriorGauges.buildDialMesh(
                 CarInteriorGauges.buildDialCanvas(miniSize, {
                     emissiveColor: '#ffaa00',
@@ -279,14 +302,14 @@ export class CarInteriorGauges {
                     minorTicksPerMajor: 2,
                     unit: 'FUEL',
                 }),
-                0.05, 0x221400, anisotropy
+                miniRadius, 0x221400, anisotropy
             );
-            fuelDial.mesh.position.set(-0.43, 0.78, -0.712);
+            fuelDial.mesh.position.set(L.fuel.x, L.fuel.y, L.fuel.z);
             interiorGroup.add(fuelDial.mesh);
             dialMaterials.push(fuelDial.material);
 
-            const fuelNeedle = CarInteriorGauges.buildNeedle(0.038, 0xffaa30);
-            fuelNeedle.mesh.position.set(-0.43, 0.78, -0.706);
+            const fuelNeedle = CarInteriorGauges.buildNeedle(miniNeedle, 0xffaa30);
+            fuelNeedle.mesh.position.set(L.fuel.x, L.fuel.y, L.fuel.z + L.needleZ);
             fuelNeedle.mesh.rotation.z = needleAngle(0.85);
             interiorGroup.add(fuelNeedle.mesh);
             needleMaterials.push(fuelNeedle.material);
@@ -300,14 +323,14 @@ export class CarInteriorGauges {
                     unit: 'TEMP',
                     redlineFrac: 0.86,
                 }),
-                0.05, 0x081422, anisotropy
+                miniRadius, 0x081422, anisotropy
             );
-            tempDial.mesh.position.set(-0.22, 0.78, -0.712);
+            tempDial.mesh.position.set(L.temp.x, L.temp.y, L.temp.z);
             interiorGroup.add(tempDial.mesh);
             dialMaterials.push(tempDial.material);
 
-            const tempNeedle = CarInteriorGauges.buildNeedle(0.038, 0x60b8ff);
-            tempNeedle.mesh.position.set(-0.22, 0.78, -0.706);
+            const tempNeedle = CarInteriorGauges.buildNeedle(miniNeedle, 0x60b8ff);
+            tempNeedle.mesh.position.set(L.temp.x, L.temp.y, L.temp.z + L.needleZ);
             tempNeedle.mesh.rotation.z = needleAngle(0.05);
             interiorGroup.add(tempNeedle.mesh);
             needleMaterials.push(tempNeedle.material);
@@ -319,10 +342,10 @@ export class CarInteriorGauges {
             color: 0xd8d8dc, metalness: 1, roughness: 0.12,
             clearcoat: 1, clearcoatRoughness: 0.08,
         });
-        const hubGeo = new THREE.CircleGeometry(0.012, 24);
-        for (const pos of [[-0.5, 0.95, -0.703], [-0.15, 0.95, -0.703]] as const) {
+        const hubGeo = new THREE.CircleGeometry(L.hubRadius, 24);
+        for (const pos of [L.speed, L.tacho] as const) {
             const hub = new THREE.Mesh(hubGeo, hubMat);
-            hub.position.set(pos[0], pos[1], pos[2]);
+            hub.position.set(pos.x, pos.y, pos.z + L.hubZ);
             interiorGroup.add(hub);
         }
 
@@ -339,14 +362,14 @@ export class CarInteriorGauges {
             clearcoat: 1.0,
             clearcoatRoughness: 0.06,
         });
-        const coverGeo = new THREE.CircleGeometry(0.155, 32);
+        const coverGeo = new THREE.CircleGeometry(L.coverRadius, 32);
         const speedoCover = new THREE.Mesh(coverGeo, coverMat);
         speedoCover.name = 'gaugeCoverSpeedo';
-        speedoCover.position.set(-0.5, 0.95, -0.695);
+        speedoCover.position.set(L.speed.x, L.speed.y, L.speed.z + L.coverZ);
         interiorGroup.add(speedoCover);
         const tachoCover = new THREE.Mesh(coverGeo, coverMat);
         tachoCover.name = 'gaugeCoverTacho';
-        tachoCover.position.set(-0.15, 0.95, -0.695);
+        tachoCover.position.set(L.tacho.x, L.tacho.y, L.tacho.z + L.coverZ);
         interiorGroup.add(tachoCover);
 
         return {

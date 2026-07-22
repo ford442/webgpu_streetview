@@ -217,12 +217,14 @@ export function setCarZoomFOV(zoom: number): void {
 }
 
 /**
- * Toggle windshield wipers on/off.
+ * Toggle windshield wipers on/off (matches headlights/dome: mutates animator immediately).
  */
 export function toggleWipers(): boolean {
     if (!carModeState) return false;
-    carModeState.wipersEnabled = !carModeState.wipersEnabled;
-    return carModeState.wipersEnabled;
+    const next = !carModeState.wipersEnabled;
+    carModeState.wipersEnabled = next;
+    carModeState.interior.setWipersActive(next);
+    return next;
 }
 
 /**
@@ -231,6 +233,7 @@ export function toggleWipers(): boolean {
 export function setWiperSpeed(speed: number): void {
     if (!carModeState) return;
     carModeState.wiperSpeed = Math.max(0.5, Math.min(2.0, speed));
+    carModeState.interior.setWiperSpeed(carModeState.wiperSpeed);
 }
 
 /**
@@ -301,6 +304,7 @@ export function setCarSteering(steeringInput: number): void {
  */
 export function setCarWipers(active: boolean): void {
     if (!carModeState) return;
+    carModeState.wipersEnabled = active;
     carModeState.interior.setWipersActive(active);
 }
 

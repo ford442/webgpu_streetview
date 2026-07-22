@@ -5,6 +5,11 @@ import {
     StreetViewRenderer,
 } from './RendererBackend';
 import { getCanvasFingerprint } from '../utils/panoramaStability';
+import {
+    WEATHER_PARAMS_FLOAT_COUNT,
+    WeatherParamIndex,
+} from './weatherUniformLayout';
+import { createDefaultWeatherParams } from './packWeatherParams';
 
 const VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -29,7 +34,7 @@ const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
 uniform sampler2D uScene;
-uniform float uWeather[40];
+uniform float uWeather[40]; // WEATHER_PARAMS_FLOAT_COUNT — keep in sync with weatherUniformLayout.ts
 uniform vec4 uView;
 uniform int uEffectIsolation;
 uniform bool uWireframe;
@@ -243,7 +248,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
     private program: WebGLProgram | null = null;
     private texture: WebGLTexture | null = null;
     private vao: WebGLVertexArrayObject | null = null;
-    private weatherParams = new Float32Array(40);
+    private weatherParams = createDefaultWeatherParams();
     private startTime = Date.now();
     private shaderEffectsEnabled = true;
     private debugOptions: RendererDebugOptions;
@@ -264,10 +269,6 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         this.canvas = canvas;
         this.debugOptions = debugOptions;
         this.fallbackReason = fallbackReason;
-        this.weatherParams[10] = 1.0;
-        this.weatherParams[14] = 0.5;
-        this.weatherParams[15] = 0.5;
-        this.weatherParams[32] = 1.0;
     }
 
     public async init(): Promise<boolean> {
@@ -331,7 +332,8 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
 
     public updateEffects(effectsData: Float32Array): void {
         if (effectsData.length > 8) {
-            this.weatherParams[32] = effectsData[8]! || this.weatherParams[32]!;
+            this.weatherParams[WeatherParamIndex.shaderEffectsEnabled] =
+                effectsData[8]! || this.weatherParams[WeatherParamIndex.shaderEffectsEnabled]!;
         }
     }
 
@@ -341,7 +343,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
 
     public setShaderEffects(enabled: boolean): void {
         this.shaderEffectsEnabled = enabled;
-        this.weatherParams[32] = enabled ? 1.0 : 0.0;
+        this.weatherParams[WeatherParamIndex.shaderEffectsEnabled] = enabled ? 1.0 : 0.0;
     }
 
     public getCameraParams(): { heading: number; pitch: number } {
@@ -353,13 +355,13 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
     }
 
     public updateWeatherParams(params: Float32Array): void {
-        this.weatherParams.set(params.subarray(0, Math.min(40, params.length)));
-        this.shaderEffectsEnabled = this.weatherParams[32]! >= 0.5;
+        this.weatherParams.set(params.subarray(0, Math.min(WEATHER_PARAMS_FLOAT_COUNT, params.length)));
+        this.shaderEffectsEnabled = this.weatherParams[WeatherParamIndex.shaderEffectsEnabled]! >= 0.5;
     }
 
     public updateCameraParams(heading: number, pitch: number): void {
-        this.weatherParams[33] = heading;
-        this.weatherParams[34] = pitch;
+        this.weatherParams[WeatherParamIndex.cameraHeading] = heading;
+        this.weatherParams[WeatherParamIndex.cameraPitch] = pitch;
         this.cameraParams = { heading, pitch };
     }
 
@@ -373,7 +375,7 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
     }
 
     public updateWeatherAnimation(): void {
-        this.weatherParams[6] = ((Date.now() - this.startTime) / 1000) % 10000.0;
+        this.weatherParams[WeatherParamIndex.time] = ((Date.now() - this.startTime) / 1000) % 10000.0;
         if (this.lastSource) {
             this.draw(1.0, 0.5, 0.5);
         } else {

@@ -1,25 +1,22 @@
-// Mock-prefixed names are required here: jest hoists jest.mock() factories above
-// imports, so any out-of-scope variable referenced inside a factory must start
-// with "mock" or Jest throws an out-of-scope-variable error.
-const mockRendererInit = jest.fn();
-const mockRendererDestroy = jest.fn();
-const mockWebglInit = jest.fn();
-const mockWebglDestroy = jest.fn();
-const mockCallOrder: Array<'webgpu' | 'webgl'> = [];
-
-// CRA's jest preset sets `resetMocks: true`, which calls jest.resetAllMocks()
-// before every test and wipes out any `.mockImplementation()` configured here
-// at factory-eval time. So the factories just install bare jest.fn()s, and the
-// real per-backend behavior is (re-)installed in beforeEach below.
-jest.mock('./Renderer', () => ({ Renderer: jest.fn() }));
-jest.mock('./WebGLFallbackRenderer', () => ({ WebGLFallbackRenderer: jest.fn() }));
-
 import { createStreetViewRenderer } from './createStreetViewRenderer';
 import { Renderer } from './Renderer';
 import { WebGLFallbackRenderer } from './WebGLFallbackRenderer';
+import { vi, type Mock } from 'vitest';
 
-const MockedRenderer = Renderer as unknown as jest.Mock;
-const MockedWebGLFallbackRenderer = WebGLFallbackRenderer as unknown as jest.Mock;
+// Mock-prefixed names are required: vitest hoists vi.mock() factories above
+// imports, so any out-of-scope variable referenced inside a factory must start
+// with "mock".
+const mockRendererInit = vi.fn();
+const mockRendererDestroy = vi.fn();
+const mockWebglInit = vi.fn();
+const mockWebglDestroy = vi.fn();
+const mockCallOrder: Array<'webgpu' | 'webgl'> = [];
+
+vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
+vi.mock('./WebGLFallbackRenderer', () => ({ WebGLFallbackRenderer: vi.fn() }));
+
+const MockedRenderer = Renderer as unknown as Mock;
+const MockedWebGLFallbackRenderer = WebGLFallbackRenderer as unknown as Mock;
 
 describe('createStreetViewRenderer (mocked backend constructors)', () => {
   const resetSearch = () => window.history.pushState({}, '', '/');
@@ -43,7 +40,7 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
       this.fallbackReason = undefined;
       this.init = mockRendererInit;
       this.destroy = mockRendererDestroy;
-      this.setDebugOptions = jest.fn();
+      this.setDebugOptions = vi.fn();
     });
 
     MockedWebGLFallbackRenderer.mockReset().mockImplementation(function (
@@ -58,7 +55,7 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
       this.fallbackReason = fallbackReason;
       this.init = mockWebglInit;
       this.destroy = mockWebglDestroy;
-      this.setDebugOptions = jest.fn();
+      this.setDebugOptions = vi.fn();
     });
   });
 
@@ -66,9 +63,9 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
 
   it('short-circuits on a successful WebGPU init without ever constructing WebGL', async () => {
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.backendType).toBe('webgpu');
+    expect(created.backendType).toBe('webgpu');
     expect(MockedRenderer).toHaveBeenCalledTimes(1);
     expect(MockedWebGLFallbackRenderer).not.toHaveBeenCalled();
   });
@@ -76,9 +73,9 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
   it('falls back to WebGL and destroys the failed WebGPU renderer when WebGPU init fails', async () => {
     mockRendererInit.mockResolvedValue(false);
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.backendType).toBe('webgl');
+    expect(created.backendType).toBe('webgl');
     expect(mockRendererDestroy).toHaveBeenCalledTimes(1);
     expect(mockCallOrder).toEqual(['webgpu', 'webgl']);
   });
@@ -86,9 +83,9 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
   it('reverses attempt order to try WebGL first when ?renderer=webgl is set', async () => {
     window.history.pushState({}, '', '/?renderer=webgl');
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.backendType).toBe('webgl');
+    expect(created.backendType).toBe('webgl');
     expect(mockCallOrder[0]).toBe('webgl');
     expect(MockedRenderer).not.toHaveBeenCalled();
   });
@@ -97,10 +94,10 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
     mockRendererInit.mockResolvedValue(false);
     mockWebglInit.mockResolvedValue(false);
     const canvas = document.createElement('canvas');
-    const result = await createStreetViewRenderer(canvas);
+    const created = await createStreetViewRenderer(canvas);
 
-    expect(result.renderer).toBeNull();
-    expect(result.backendType).toBeNull();
+    expect(created.renderer).toBeNull();
+    expect(created.backendType).toBeNull();
     expect(mockRendererDestroy).toHaveBeenCalledTimes(1);
     expect(mockWebglDestroy).toHaveBeenCalledTimes(1);
   });

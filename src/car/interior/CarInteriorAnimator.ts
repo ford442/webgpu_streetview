@@ -27,6 +27,7 @@ export class CarInteriorAnimator {
   private steeringAngle: number = 0;
   private isWiperActive: boolean = false;
   private wiperAnimationTime: number = 0;
+  private wiperSpeed: number = 1.0;
   private speedometer: number = 0;
   private tachometer: number = 0;
   private isActive: boolean = true;
@@ -141,7 +142,7 @@ export class CarInteriorAnimator {
     }
 
     if (this.isWiperActive && this.quality !== 'low') {
-      this.wiperAnimationTime += clampedDelta;
+      this.wiperAnimationTime += clampedDelta * this.wiperSpeed;
       const wiperCycle = this.wiperAnimationTime % 1.0;
       const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4);
       if (this.wiperLeft) this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
@@ -258,6 +259,11 @@ export class CarInteriorAnimator {
       if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
       if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
     }
+  }
+
+  /** Sweep rate multiplier (0.5 = slow, 1 = normal, 2 = fast). */
+  public setWiperSpeed(speed: number): void {
+    this.wiperSpeed = Math.max(0.5, Math.min(2.0, speed));
   }
 
   public setGaugeValues(speed: number, rpm: number): void {
