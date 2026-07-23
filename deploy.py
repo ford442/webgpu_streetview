@@ -148,6 +148,10 @@ def _build_index_problems(build_path: Path) -> list[str]:
         )
     if "static/js/main" not in content:
         problems.append("does not reference static/js/main.*.js (React bundle will never load)")
+    if 'type="module"' not in content:
+        problems.append(
+            'main script is missing type="module" (Vite ESM bundle will throw on import.meta)'
+        )
     return problems
 
 
@@ -271,7 +275,7 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     if main_css and main_css not in text:
         insert += f'<link href="{main_css}" rel="stylesheet">'
     if main_js not in text:
-        insert += f'<script defer="defer" src="{main_js}"></script>'
+        insert += f'<script type="module" crossorigin src="{main_js}"></script>'
 
     if not insert:
         return text.encode("utf-8") if changed else index_html
