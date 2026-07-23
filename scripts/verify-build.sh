@@ -82,11 +82,12 @@ else
     echo "✅ index.html uses bundle-only Maps key delivery (go.1ink.us style)"
   fi
 
-  # Vite emits native ES modules — import.meta is valid (no Cesium IIFE sed patch).
+  # Vite emits native ES modules — import.meta requires type=module on the script tag.
   if grep -q 'type="module"' "$INDEX_HTML"; then
     echo "✅ index.html loads the bundle as type=module (import.meta OK)"
   else
-    echo "⚠️  WARNING: index.html does not mark the main script as type=module"
+    echo "❌ ERROR: index.html does not mark the main script as type=module (import.meta will throw)"
+    ERRORS=$((ERRORS+1))
   fi
 fi
 
