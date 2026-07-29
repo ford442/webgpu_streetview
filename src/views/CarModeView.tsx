@@ -41,6 +41,11 @@ interface CarModeViewProps {
   mapsApiKey: string;
 }
 
+type HudMode = 'full' | 'compact' | 'immersive';
+
+const HUD_MODE_STORAGE_KEY = 'webgpu_streetview_car_hud_mode';
+const HUD_LONG_PRESS_MS = 500;
+
 /**
  * CarModeView - The car interior driving experience.
  * 
@@ -102,9 +107,49 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const carModeStateRef = useRef<CarModeState | null>(null);
   
-  // Dashboard visibility state
-  const [isDashboardVisible, setIsDashboardVisible] = useState(true);
-  const toggleDashboard = useCallback(() => setIsDashboardVisible(prev => !prev), []);
+  const [hudMode, setHudMode] = useState<HudMode>(() => {
+    if (typeof window === 'undefined') return 'compact';
+    const saved = window.localStorage.getItem(HUD_MODE_STORAGE_KEY);
+    if (saved === 'full' || saved === 'compact' || saved === 'immersive') return saved;
+    return 'compact';
+  });
+  const hudLongPressTimerRef = useRef<number | null>(null);
+  const hudLongPressTriggeredRef = useRef(false);
+  const setHudModeAndPersist = useCallback((nextMode: HudMode) => {
+    setHudMode(nextMode);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(HUD_MODE_STORAGE_KEY, nextMode);
+    }
+  }, []);
+  const toggleDashboard = useCallback(() => {
+    setHudModeAndPersist(hudMode === 'full' ? 'compact' : 'full');
+  }, [hudMode, setHudModeAndPersist]);
+  const handleHudShortToggle = useCallback(() => {
+    if (hudMode === 'immersive') {
+      setHudModeAndPersist('compact');
+      return;
+    }
+    setHudModeAndPersist(hudMode === 'full' ? 'compact' : 'full');
+  }, [hudMode, setHudModeAndPersist]);
+  const handleHudKeyDown = useCallback(() => {
+    if (hudLongPressTimerRef.current !== null) return;
+    hudLongPressTriggeredRef.current = false;
+    hudLongPressTimerRef.current = window.setTimeout(() => {
+      hudLongPressTriggeredRef.current = true;
+      setHudModeAndPersist('immersive');
+      hudLongPressTimerRef.current = null;
+    }, HUD_LONG_PRESS_MS);
+  }, [setHudModeAndPersist]);
+  const handleHudKeyUp = useCallback(() => {
+    if (hudLongPressTimerRef.current !== null) {
+      window.clearTimeout(hudLongPressTimerRef.current);
+      hudLongPressTimerRef.current = null;
+    }
+    if (!hudLongPressTriggeredRef.current) {
+      handleHudShortToggle();
+    }
+    hudLongPressTriggeredRef.current = false;
+  }, [handleHudShortToggle]);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
@@ -457,6 +502,13 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     }
   }, [controlMode]);
 
+  useEffect(() => () => {
+    if (hudLongPressTimerRef.current !== null) {
+      window.clearTimeout(hudLongPressTimerRef.current);
+      hudLongPressTimerRef.current = null;
+    }
+  }, []);
+
   // Cleanup audio analyzer on unmount
   useEffect(() => {
     return () => {
@@ -517,7 +569,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         isSteeringWheelAtPoint={isSteeringWheelAtPoint}
         onThrust={handleThrust}
         onSteeringDelta={handleSteeringDelta}
-        onToggleHud={toggleDashboard}
+        onHudKeyDown={handleHudKeyDown}
+        onHudKeyUp={handleHudKeyUp}
         onInteriorPointerDown={(x, y, edit) => handleCarInteriorPointerDown(x, y, edit)}
         onInteriorPointerMove={(x, y) => handleCarInteriorPointerMove(x, y)}
         onInteriorPointerUp={() => handleCarInteriorPointerUp()}
@@ -526,7 +579,8 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       
       {/* Premium Car Dashboard */}
       <DashboardUI
-        isVisible={isDashboardVisible}
+        isVisible
+        hudMode={hudMode}
         isRadioPlaying={isRadioPlaying}
         isMapOpen={isMapOpen}
         onNavigate={handleNavigate}
@@ -672,22 +726,22 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
           </button>
         </div>
         <button
-          onClick={toggleDashboard}
-          title="Toggle dashboard HUD (U)"
+          onClick={hudMode === 'immersive' ? () => setHudModeAndPersist('compact') : toggleDashboard}
+          title="Toggle dashboard HUD (U), hold U for immersive mode"
           style={{
             width: '100%',
             marginTop: '4px',
             padding: '4px 8px',
-            background: isDashboardVisible ? 'rgba(255,255,255,0.05)' : 'rgba(0,212,255,0.2)',
+            background: hudMode === 'full' ? 'rgba(255,255,255,0.05)' : 'rgba(0,212,255,0.2)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '6px',
-            color: isDashboardVisible ? 'rgba(255,255,255,0.6)' : '#00d4ff',
+            color: hudMode === 'full' ? 'rgba(255,255,255,0.6)' : '#00d4ff',
             cursor: 'pointer',
             fontSize: '10px',
             transition: 'all 0.2s',
           }}
         >
-          {isDashboardVisible ? 'Hide HUD (U)' : 'Show HUD (U)'}
+          {hudMode === 'immersive' ? 'Exit Immersive' : hudMode === 'full' ? 'Compact HUD (U)' : 'Full HUD (U)'}
         </button>
       </div>
       
