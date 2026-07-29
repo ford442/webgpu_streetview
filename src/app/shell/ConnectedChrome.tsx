@@ -3,7 +3,8 @@ import type { TimeOfDay } from '../../hooks';
 import type { AccessibilitySettings } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../hooks/useBookmarks';
 import type { HistoryEntry } from '../../hooks/useLocationHistory';
-import type { SnapshotMetadata } from '../../hooks/useSnapshots';
+import type { SnapshotMetadata, SnapshotShareResult } from '../../hooks/useSnapshots';
+import type { ImageExportFormat } from '../../utils/imageExport';
 import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
@@ -71,8 +72,12 @@ export interface ConnectedChromeSnapshots {
   hasServiceWorker: boolean;
   removeSnapshot: (id: string) => void;
   updateSnapshotName: (id: string, name: string) => void;
-  downloadSnapshot: (snapshot: SnapshotMetadata) => void;
+  downloadSnapshot: (snapshot: SnapshotMetadata, format: ImageExportFormat) => void;
   clearAllSnapshots: () => void;
+  getSnapshotDeepLink: (snapshot: SnapshotMetadata) => string;
+  shareSnapshot: (snapshot: SnapshotMetadata, format?: ImageExportFormat) => Promise<SnapshotShareResult>;
+  onTeleport: (lat: number, lng: number, heading: number, pitch: number, panoId?: string) => void;
+  onTakeSnapshot: () => void;
 }
 
 export interface ConnectedChromeEnvironment {
@@ -254,6 +259,7 @@ export function ConnectedChrome({
         toggleRadio={toggleRadio}
         isSnapshotGalleryOpen={isSnapshotGalleryOpen}
         setIsSnapshotGalleryOpen={setIsSnapshotGalleryOpen}
+        onTakeSnapshot={snaps.onTakeSnapshot}
         isBookmarkPanelOpen={isBookmarkPanelOpen}
         setIsBookmarkPanelOpen={setIsBookmarkPanelOpen}
         isHistoryPanelOpen={isHistoryPanelOpen}
@@ -333,9 +339,9 @@ export function ConnectedChrome({
           onRemoveSnapshot={snaps.removeSnapshot}
           onUpdateName={snaps.updateSnapshotName}
           onDownload={snaps.downloadSnapshot}
-          onTeleport={(lat, lng, h, p) => {
-            console.log('Teleport to:', lat, lng, h, p);
-          }}
+          onShare={snaps.shareSnapshot}
+          onCopyLink={snaps.getSnapshotDeepLink}
+          onTeleport={snaps.onTeleport}
           onClose={() => setIsSnapshotGalleryOpen(false)}
           onClearAll={snaps.clearAllSnapshots}
           isOpen={isSnapshotGalleryOpen}

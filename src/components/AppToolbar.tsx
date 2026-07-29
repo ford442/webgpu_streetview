@@ -8,6 +8,7 @@ export interface AppToolbarProps {
   toggleRadio: () => void;
   isSnapshotGalleryOpen: boolean;
   setIsSnapshotGalleryOpen: (v: boolean) => void;
+  onTakeSnapshot: () => void;
   isBookmarkPanelOpen: boolean;
   setIsBookmarkPanelOpen: (v: boolean) => void;
   isHistoryPanelOpen: boolean;
@@ -38,6 +39,7 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   toggleRadio,
   isSnapshotGalleryOpen,
   setIsSnapshotGalleryOpen,
+  onTakeSnapshot,
   isBookmarkPanelOpen,
   setIsBookmarkPanelOpen,
   isHistoryPanelOpen,
@@ -89,6 +91,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); toggleRadio(); }}
       >
         Radio: {isRadioPlaying ? 'ON' : 'OFF'}
+      </button>
+      <button
+        className="control-btn"
+        style={{ minWidth: 110 }}
+        onClick={e => { e.stopPropagation(); onTakeSnapshot(); }}
+      >
+        📸 Snapshot
       </button>
       <button
         className="control-btn"
