@@ -324,32 +324,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             },
         });
 
-        // POI beacons (location history)
-        const poiImage = makePoiCanvas();
-        poiEntitiesRef.current = pois.slice(0, MAX_VISIBLE_POIS).map(poi =>
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(poi.lng, poi.lat, 60),
-                billboard: {
-                    image: poiImage,
-                    scale: 0.85,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                label: {
-                    text: poi.label,
-                    font: '12px sans-serif',
-                    fillColor: Cesium.Color.fromCssColorString('#FFB400'),
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 1,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    pixelOffset: new Cesium.Cartesian2(0, -42),
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.65)'),
-                    backgroundPadding: new Cesium.Cartesian2(6, 3),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-            })
-        );
-
         // --- Event handlers ---
 
         const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -460,6 +434,46 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             cleanupViewer();
         };
     }, []);
+
+    // ---- Reactive POI entities (location history from ConnectedChrome) ----
+    useEffect(() => {
+        const viewer = viewerRef.current;
+        if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+
+        poiEntitiesRef.current.forEach(e => {
+            try { viewer.entities.remove(e); } catch { /* noop */ }
+        });
+
+        if (pois.length === 0) {
+            poiEntitiesRef.current = [];
+            return;
+        }
+
+        const poiImage = makePoiCanvas();
+        poiEntitiesRef.current = pois.slice(0, MAX_VISIBLE_POIS).map(poi =>
+            viewer.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(poi.lng, poi.lat, 60),
+                billboard: {
+                    image: poiImage,
+                    scale: 0.85,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+                label: {
+                    text: poi.label,
+                    font: '12px sans-serif',
+                    fillColor: Cesium.Color.fromCssColorString('#FFB400'),
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 1,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -42),
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.65)'),
+                    backgroundPadding: new Cesium.Cartesian2(6, 3),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+            })
+        );
+    }, [pois]);
 
     // ---- Reactive bookmark entities (from ConnectedChrome bookmarks prop) ----
     useEffect(() => {
