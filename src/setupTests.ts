@@ -6,6 +6,6 @@ import { TextDecoder, TextEncoder } from 'util';
 // CRA-era suites call jest.fn / jest.mock — alias to Vitest's vi.
 (globalThis as unknown as { jest: typeof vi }).jest = vi;
 
-// jsdom does not implement TextEncoder/TextDecoder. Cesium pulls in protobufjs,
-// which expects both to be present on the global object.
+// jsdom does not implement TextEncoder/TextDecoder. Keep both on the global
+// object for suites whose transitive deps expect them at module-load time.
 Object.assign(globalThis, { TextDecoder, TextEncoder });

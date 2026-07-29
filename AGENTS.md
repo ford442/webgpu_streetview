@@ -25,9 +25,9 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Shader Language | WGSL | WebGPU Shading Language |
 | Maps Integration | Google Maps JavaScript API | Weekly |
 | State Management | React Context + Hooks | Provider pattern |
-| Testing | Jest + React Testing Library | CRA defaults |
-| Globe Integration | Cesium | 1.140.0 |
-| Additional | suncalc, @xenova/transformers, ajv, web-vitals | Various |
+| Testing | Vitest + React Testing Library | jest-dom |
+| Globe Integration | Cesium (CDN-loaded, no npm dep) | 1.140.0 |
+| Additional | suncalc, ajv, web-vitals | Various |
 
 ### Browser Support
 - **Production**: `>0.2%, not dead, not op_mini all`
@@ -247,6 +247,7 @@ webgpu_streetview/
 │       ├── navigation.ts            # findBestLink() + angle math + haversine
 │       ├── navigation.test.ts       # Unit tests for navigation math
 │       ├── geoTimeUtils.ts          # Sun/moon position, time-of-day colors
+│       ├── cesiumImagery.ts         # Globe imagery/terrain resolution (Ion token → CartoCDN fallback)
 │       ├── performance.ts           # Performance helpers
 │       ├── memoryProfiler.ts        # Heap usage tracking
 │       └── index.ts
@@ -523,7 +524,7 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 
 - **Framework (unit)**: Vitest + React Testing Library + jest-dom (`jest` is aliased to `vi` in `setupTests.ts` for CRA-era suites; prefer `vi.mock` for new mocks)
 - **Run unit**: `npm test` (CI) or `npm run test:watch`
-- **Setup file**: `src/setupTests.ts` — imports `@testing-library/jest-dom/vitest` and polyfills `TextDecoder`/`TextEncoder` from Node's `util` module onto `globalThis`. jsdom does not implement either; Cesium pulls in `protobufjs`, which requires `TextDecoder` at module-load time, so **any** test that imports anything from `src/components/index.ts` (directly or transitively, e.g. via `App.tsx` → `MiniMap.tsx` → `cesium`) fails to load without this polyfill.
+- **Setup file**: `src/setupTests.ts` — imports `@testing-library/jest-dom/vitest` and polyfills `TextDecoder`/`TextEncoder` from Node's `util` module onto `globalThis`. jsdom does not implement either; the polyfill protects suites whose transitive deps expect them at module-load time.
 - **Framework (E2E)**: Playwright (`@playwright/test`, aligned with the `playwright` driver used by `scripts/hold-pause-probe.mjs`)
 - **Config**: `playwright.config.ts` + specs under `e2e/`
 - **Run E2E**:
@@ -536,12 +537,12 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
-- **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Jest test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
+- **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests
 - `src/utils/navigation.test.ts` — Unit tests for `findBestLink`, angle math (`normalizeAngle`, `signedAngleDiff`, `absoluteAngleDiff`), and `haversineDistance`.
 - `src/hooks/__tests__/mobile.test.tsx` — Mobile hook behavior tests (`useTouchControls` gesture state, `useDeviceDetection` quality settings, battery save mode).
-- `src/App.test.tsx` — Default CRA smoke test (renders without crashing, welcome modal visible).
+- `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
 - `src/utils/panoramaLookAround.test.ts` — Pure math for the hold-pause look-around UV shift (`wrapPanDelta`, `heldLookAroundUvDelta`, zoom scaling).
@@ -554,7 +555,7 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 
 ### Manual Testing Requirements
-WebGPU rendering and canvas detection cannot be reliably tested in Jest. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
+WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
 - `StreetView.tsx` canvas scraping
 - `Renderer.ts` WebGPU pipeline
 - `car/` Three.js scene (WebGPU-only asserts may skip in headless without GPU)
@@ -583,7 +584,7 @@ When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
    ```
    For Playwright against that server: `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:80 npx playwright test`.
 
-2. **Cesium is CDN-loaded** for GlobeView — no post-build `import.meta` sed patch is required (Vite emits native ES modules).
+2. **Cesium is CDN-loaded** for GlobeView — no post-build `import.meta` sed patch is required (Vite emits native ES modules). `loadCesiumSDK()` in `src/hooks/useGlobeMode.ts` injects the jsDelivr `cesium@1.140.0` build on first globe entry; imagery/terrain is resolved by `src/utils/cesiumImagery.ts` (Ion token → CartoCDN fallback). The no-static-`import 'cesium'` rule and bundle budgets are documented in `docs/DEVELOPER_CONTEXT.md` § "Chunk Strategy".
 3. **Google Maps API key for local testing**
    The production key has referrer restrictions. For local testing, either:
    - Add your localhost origin to the key's allowlist in Google Cloud Console, **or**
@@ -684,7 +685,7 @@ Single-product Vite + React project; `npm install` / `npm ci` is the only depend
 
 - **Run the app**: `npm start` (Vite on `http://localhost:3000`). Use `npm run lint` before pushing; CI runs lint then `npm run build`. Bundle gzip / Cesium-in-main budgets are enforced by `scripts/check-bundle-budget.sh` via `verify-build.sh`.
 - **Type check**: `npm run typecheck` (`tsc --noEmit`).
-- **Tests**: `npm test` (Vitest). `src/setupTests.ts` polyfills `TextDecoder`/`TextEncoder` so Cesium's `protobufjs` dependency loads under jsdom.
+- **Tests**: `npm test` (Vitest). `src/setupTests.ts` polyfills `TextDecoder`/`TextEncoder`, which jsdom does not implement (some transitive deps expect them at module-load time).
 - **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
 - **Symptom → cause: stuck at "Connecting to Google Maps... 15%" with a black canvas and NO error banner.** This means the key string is valid enough to load the Maps JS library (`window.__mapsApiLoadState.status === 'ready'`) but Google fires `gm_authFailure` when the Street View panorama actually renders, so no `<canvas>` is ever produced and the loading gate never advances. The usual cause is the key's **HTTP-referrer restriction not allowing the current origin** (e.g. a key scoped to `test.1ink.us`/`go.1ink.us` will fail on `http://localhost:3000`), or disabled billing / Maps JavaScript API. Fix it in Google Cloud Console (add `http://localhost:3000/*` to the key's allowlist); it is not a code or VM bug. Note the dev server is plain **http**, so the allowlist entry must be `http://localhost:3000/*` — an `https://localhost:3000/*` entry will NOT match and still fails. To see the exact reason, capture full browser console output while loading a minimal panorama page: Google logs the precise error (`RefererNotAllowedMapError`, `ApiNotActivatedMapError`, `BillingNotEnabledMapError`, or `InvalidKeyMapError`) plus the exact "site URL to be authorized". Referrer changes can take several minutes to propagate.
 - **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the renderer falls back to WebGL2 → raw. Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.

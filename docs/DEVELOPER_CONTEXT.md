@@ -98,8 +98,8 @@ globe stack. Two rules keep it that way:
     pointed at the jsDelivr CDN build of Cesium, loaded on first entry into
     Globe View (or the mini-map's globe toggle), never before. Re-introducing
     `import * as Cesium from 'cesium'` anywhere puts the whole globe stack back
-    into `main.js` for every user, because webpack has no `"sideEffects": false`
-    hint to safely tree-shake an unused-but-imported module.
+    into `main.js` for every user — the bundler (Vite/Rollup) has no
+    `"sideEffects": false` hint to safely tree-shake an unused-but-imported module.
 *   **Imagery + terrain** are resolved by `src/utils/cesiumImagery.ts`'s
     `resolveMiniMapLayerOptions()`, used by both `GlobeView` and `MiniMap`: Ion
     world terrain + world imagery when a Cesium Ion token resolves (build-time
@@ -109,7 +109,7 @@ globe stack. Two rules keep it that way:
     Viewer `baseLayer` (Cesium ≥1.107; do not pass the removed `imageryProvider`
     option — it blanks the globe). Never use `tile.openstreetmap.org` (blocked for apps).
 *   **`GlobeView` is deliberately not re-exported from `src/components/index.ts`.**
-    `App.tsx` imports it as `const GlobeView = lazy(() => import('./components/GlobeView'));`
+    `src/app/shell/ConnectedChrome.tsx` imports it as `const GlobeView = lazy(() => import('../../components/GlobeView'));`
     and renders it inside `<Suspense fallback={null}>`, so it ships as its own
     chunk (`729.*.chunk.js` at last measurement, a few KB gzipped since it has
     no bundled Cesium code) instead of inline in `main.js`. Re-exporting it from

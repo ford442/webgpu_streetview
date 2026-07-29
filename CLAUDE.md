@@ -118,11 +118,6 @@ src/
 
 **Best Practice**: Always wrap `device.queue.copyExternalImageToTexture()` in try-catch; validate source dimensions before upload
 
-### 🔴 Ghost Documentation in AGENTS.md
-**Known Issue**: Documents non-existent "Fluid Simulation" feature. RenderMode only supports `'streetview'`.
-
-**Action**: Ignore "Fluid Simulation" sections unless explicitly tasked to re-implement.
-
 ### 🔴 Input Event Hijacking
 **Issue**: `InputHandler` attaches to `window` globally, so UI overlays hijack events unless `e.stopPropagation()` is called.
 
@@ -245,7 +240,7 @@ npm run build  # Creates optimized bundle in build/
 ```
 
 ### Environment Variables
-Create `.env` file (not committed):
+Create `.env.local` file (gitignored):
 ```
 REACT_APP_MAPS_API_KEY=<your-key>
 ```
