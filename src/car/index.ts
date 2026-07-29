@@ -41,6 +41,16 @@ export {
     getPreviousVehicle,
 } from './VehicleManager';
 export {
+    resolveGaugeLayout,
+    resolveSteeringWheel,
+    resolveCameraFov,
+    zoomToVerticalFov,
+    DEFAULT_GAUGE_LAYOUT,
+    DEFAULT_STEERING_WHEEL,
+    DEFAULT_CAMERA_FOV,
+} from './vehicleLayout';
+export type { GaugeLayoutConfig, SteeringWheelConfig, CameraFovConfig, GaugeLayoutOverrides, SteeringWheelOverrides, Vec3 } from './vehicleLayout';
+export {
     ConvertibleMode,
     WindParticleSystem,
     SportDashboard,

@@ -1,28 +1,29 @@
 import * as THREE from 'three';
+import type { VehicleConfig } from '../VehicleManager';
+import { resolveGaugeLayout, type GaugeLayoutConfig } from '../vehicleLayout';
 
 export const SPEED_DIAL_MAX_KMH = 180;
 export const TACHO_DIAL_MAX_RPM = 8000;
 export const TACHO_REDLINE_RPM = 6500;
 
 /**
- * Instrument-cluster layout (metres, driver-camera local space).
- * Kept compact so dials sit under the windshield beltline instead of filling FOV.
+ * Default instrument-cluster layout (metres, driver-camera local space).
+ * Prefer `resolveGaugeLayout(vehicleConfig)` at build time for per-vehicle placement.
  * Dashboard bezel/rings in CarInteriorDashboardBuilder must stay in sync.
  */
-export const GAUGE_LAYOUT = {
-  speed: { x: -0.48, y: 0.88, z: -0.76 },
-  tacho: { x: -0.18, y: 0.88, z: -0.76 },
-  fuel: { x: -0.42, y: 0.74, z: -0.76 },
-  temp: { x: -0.24, y: 0.74, z: -0.76 },
-  dialRadius: 0.10,
-  needleLength: 0.078,
-  coverRadius: 0.105,
-  hubRadius: 0.008,
-  /** Face / needle / hub / cover z offsets relative to dial z */
+export const GAUGE_LAYOUT: GaugeLayoutConfig = {
+  speed: { x: -0.48, y: 0.70, z: -0.84 },
+  tacho: { x: -0.18, y: 0.70, z: -0.84 },
+  fuel: { x: -0.42, y: 0.58, z: -0.84 },
+  temp: { x: -0.24, y: 0.58, z: -0.84 },
+  dialRadius: 0.085,
+  needleLength: 0.066,
+  coverRadius: 0.09,
+  hubRadius: 0.007,
   needleZ: 0.006,
   hubZ: 0.009,
   coverZ: 0.017,
-} as const;
+};
 
 /**
  * Map a 0..1 dial fraction to needle rotation.z.
@@ -74,11 +75,12 @@ export class CarInteriorGauges {
     static build(
         interiorGroup: THREE.Group,
         _metalMaterial: THREE.MeshStandardMaterial,
-        vehicleConfig: { accentColor: string },
+        vehicleConfig: VehicleConfig,
         gpuProfile: { name: string },
         quality: 'high' | 'medium' | 'low'
     ): CarInteriorGaugeResult {
-        const result = CarInteriorGauges.buildGauges(interiorGroup, vehicleConfig, gpuProfile, quality);
+        const layout = resolveGaugeLayout(vehicleConfig);
+        const result = CarInteriorGauges.buildGauges(interiorGroup, vehicleConfig, gpuProfile, quality, layout);
         if (quality !== 'low') {
             const clock = CarInteriorGauges.buildDigitalClock(interiorGroup, vehicleConfig, gpuProfile);
             return {
@@ -237,13 +239,14 @@ export class CarInteriorGauges {
         interiorGroup: THREE.Group,
         _vehicleConfig: { accentColor: string },
         gpuProfile: { name: string },
-        quality: 'high' | 'medium' | 'low'
+        quality: 'high' | 'medium' | 'low',
+        layout: GaugeLayoutConfig,
     ): { speedometerNeedle: THREE.Mesh; tachometerNeedle: THREE.Mesh; gaugeRig: GaugeRig } {
         const dialSize = gpuProfile.name === 'high' ? 512 : 256;
         const anisotropy = gpuProfile.name === 'high' ? 8 : 4;
         const dialMaterials: THREE.MeshStandardMaterial[] = [];
         const needleMaterials: THREE.MeshStandardMaterial[] = [];
-        const L = GAUGE_LAYOUT;
+        const L = layout;
 
         const speedLabels: string[] = [];
         for (let v = 0; v <= SPEED_DIAL_MAX_KMH; v += 30) speedLabels.push(String(v));
