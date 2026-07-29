@@ -7,8 +7,10 @@ interface CarInputHandlerProps {
   isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
   onThrust?: (direction: 'forward' | 'backward') => void;
   onSteeringDelta?: (delta: number) => void;
-  /** Toggle the 2D dashboard HUD (bound to the `U` key) so the cockpit can be seen unobstructed. */
-  onToggleHud?: () => void;
+  /** Notifies when the U key is pressed (used for long-press immersive HUD handling). */
+  onHudKeyDown?: () => void;
+  /** Notifies when the U key is released (used for long-press immersive HUD handling). */
+  onHudKeyUp?: () => void;
   onInteriorPointerDown?: (clientX: number, clientY: number, editMode: boolean) => boolean;
   onInteriorPointerMove?: (clientX: number, clientY: number) => boolean;
   onInteriorPointerUp?: () => void;
@@ -26,7 +28,8 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   isSteeringWheelAtPoint,
   onThrust,
   onSteeringDelta,
-  onToggleHud,
+  onHudKeyDown,
+  onHudKeyUp,
   onInteriorPointerDown,
   onInteriorPointerMove,
   onInteriorPointerUp,
@@ -61,8 +64,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const keysPressedRef = useRef<Set<string>>(new Set());
   const onThrustRef = useRef(onThrust);
   useEffect(() => { onThrustRef.current = onThrust; }, [onThrust]);
-  const onToggleHudRef = useRef(onToggleHud);
-  useEffect(() => { onToggleHudRef.current = onToggleHud; }, [onToggleHud]);
+  const onHudKeyDownRef = useRef(onHudKeyDown);
+  useEffect(() => { onHudKeyDownRef.current = onHudKeyDown; }, [onHudKeyDown]);
+  const onHudKeyUpRef = useRef(onHudKeyUp);
+  useEffect(() => { onHudKeyUpRef.current = onHudKeyUp; }, [onHudKeyUp]);
   const onInteriorPointerDownRef = useRef(onInteriorPointerDown);
   useEffect(() => { onInteriorPointerDownRef.current = onInteriorPointerDown; }, [onInteriorPointerDown]);
   const onInteriorPointerMoveRef = useRef(onInteriorPointerMove);
@@ -267,12 +272,15 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           toggleControlMode();
           break;
         case 'u':
-          onToggleHudRef.current?.();
+          if (!e.repeat) onHudKeyDownRef.current?.();
           break;
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'u') {
+        onHudKeyUpRef.current?.();
+      }
       keysPressedRef.current.delete(e.key.toLowerCase());
       keysPressedRef.current.delete(e.key);
     };

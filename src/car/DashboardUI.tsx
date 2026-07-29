@@ -45,6 +45,7 @@ import {
 
 export interface DashboardUIProps {
   isVisible: boolean;
+  hudMode?: 'full' | 'compact' | 'immersive';
   isRadioPlaying: boolean;
   isMapOpen?: boolean;
   onNavigate?: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
@@ -197,6 +198,7 @@ const DirectionPad: React.FC<DirectionPadProps> = ({ onNavigate }) => {
 
 export const DashboardUI: React.FC<DashboardUIProps> = ({
   isVisible,
+  hudMode = 'compact',
   isRadioPlaying,
   isMapOpen = false,
   onNavigate,
@@ -275,9 +277,64 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
       onMouseMove={stopProp}
       onClick={stopProp}
       onWheel={stopProp}
+      onKeyDown={stopProp}
+      onKeyUp={stopProp}
       role="region"
       aria-label="Car Dashboard Controls"
     >
+      {hudMode === 'immersive' ? (
+        <div className={styles.immersiveChip}>
+          <span className={styles.immersiveValue}>{Math.round(displaySpeedKmh)}</span>
+          <span className={styles.immersiveUnit}>km/h</span>
+        </div>
+      ) : hudMode === 'compact' ? (
+        <div className={styles.compactChip}>
+          <TelemetryChip
+            speedKmh={displaySpeedKmh}
+            rpm={displayRpm}
+            gear={displayGear}
+            nightGlow={nightIntensity}
+          />
+          <div className={styles.compactButtons}>
+            <ControlButton
+              active={isMapOpen}
+              onClick={onToggleGPS}
+              ariaLabel="Toggle GPS"
+            >
+              <IconSvg path={GPS_ICON} size={18} fill={isMapOpen ? '#fff' : 'rgba(255,255,255,0.7)'} />
+              <Label>GPS</Label>
+            </ControlButton>
+            <ControlButton
+              active={isRadioPlaying}
+              onClick={onToggleRadio}
+              ariaLabel="Toggle Radio"
+            >
+              <IconSvg path={RADIO_ICON} size={18} fill={isRadioPlaying ? '#fff' : 'rgba(255,255,255,0.7)'} />
+              <Label>Radio</Label>
+            </ControlButton>
+            {onToggleHeadlights && (
+              <ControlButton
+                active={headlightsOn}
+                onClick={onToggleHeadlights}
+                ariaLabel="Toggle Headlights"
+              >
+                <IconSvg path={HEADLIGHT_ICON} size={18} fill={headlightsOn ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Lights</Label>
+              </ControlButton>
+            )}
+            {onToggleWipers && (
+              <ControlButton
+                active={wipersEnabled}
+                onClick={onToggleWipers}
+                ariaLabel="Toggle Wipers"
+              >
+                <IconSvg path={WIPER_ICON} size={18} fill={wipersEnabled ? '#fff' : 'rgba(255,255,255,0.7)'} />
+                <Label>Wipers</Label>
+              </ControlButton>
+            )}
+          </div>
+        </div>
+      ) : (
       <DashboardContainer style={themeStyle}>
         {/* =====================================================================
             ZONE LEFT – Driving HUD
@@ -461,6 +518,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
           </select>
         </ZoneRight>
       </DashboardContainer>
+      )}
     </div>
   );
 };
