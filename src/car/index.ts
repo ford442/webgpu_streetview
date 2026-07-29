@@ -80,7 +80,8 @@ export {
 export { 
     SpeedGauge, 
     RpmGauge, 
-    GearIndicator 
+    GearIndicator,
+    TelemetryChip,
 } from './Gauges';
 export { 
     IconButton, 

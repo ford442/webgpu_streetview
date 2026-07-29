@@ -293,12 +293,12 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       // Update steering wheel
       setCarSteering(steeringInputRef.current);
       
-      // Vehicle dynamics → 3D cluster needles + React dashboard gauges
+      // Vehicle dynamics → 3D cluster needles + compact DOM telemetry chip
       const telem = dynamicsRef.current!.update(deltaTime);
       carSpeedRef.current = telem.speedKmh;
       carRPMRef.current = telem.rpm;
       updateCarGauges(telem.speedKmh, telem.rpm);
-      // Throttle React state pushes; the HUD gauges spring-animate between them.
+      // Throttle React state pushes for the compact HUD telemetry chip.
       if (now - lastTelemetryPushRef.current > 150) {
         lastTelemetryPushRef.current = now;
         setTelemetry(telem);
