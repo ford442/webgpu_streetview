@@ -3,6 +3,10 @@
  * Defines vehicle types, their configurations, and manages vehicle switching
  */
 
+import type { CameraFovConfig, GaugeLayoutOverrides, SteeringWheelOverrides } from './vehicleLayout';
+
+export type { Vec3, GaugeLayoutOverrides, SteeringWheelOverrides } from './vehicleLayout';
+
 /**
  * Vehicle type definitions
  * Future additions: 'streetcar' | 'trolley' - for urban transit-style interiors
@@ -24,7 +28,16 @@ export interface VehicleConfig {
     hasWipers: boolean;
     hasDashboard: boolean;
     hasGauges: boolean;
+    /** Driver eye anchor in cabin local space (metres). */
     cameraPosition: { x: number; y: number; z: number };
+    /** Recommended seat-slider default (metres back from cameraPosition.z). */
+    defaultSeatOffset: number;
+    /** Vertical FOV endpoints for zoom sync with Street View. */
+    cameraFov: CameraFovConfig;
+    /** Partial overrides for instrument-cluster placement (see vehicleLayout.ts). */
+    gaugeLayout?: GaugeLayoutOverrides;
+    /** Partial overrides for steering wheel mesh placement. */
+    steeringWheel?: SteeringWheelOverrides;
     dashboardLayout: 'standard' | 'minimal' | 'lab' | 'luxury';
     accentColor: string;
     theme: 'dark' | 'light' | 'neon' | 'clinical';
@@ -45,7 +58,9 @@ export const VEHICLES: Record<VehicleType, VehicleConfig> = {
         hasWipers: true,
         hasDashboard: true,
         hasGauges: true,
-        cameraPosition: { x: -0.3, y: 1.2, z: 0.0 },
+        cameraPosition: { x: -0.3, y: 1.24, z: 0.08 },
+        defaultSeatOffset: 0.28,
+        cameraFov: { base: 58, min: 30, max: 88 },
         dashboardLayout: 'standard',
         accentColor: '#4CAF50',
         theme: 'dark',
@@ -64,7 +79,22 @@ export const VEHICLES: Record<VehicleType, VehicleConfig> = {
         hasWipers: true,
         hasDashboard: true,
         hasGauges: true,
-        cameraPosition: { x: -0.35, y: 1.15, z: 0.05 },
+        cameraPosition: { x: -0.35, y: 1.18, z: 0.06 },
+        defaultSeatOffset: 0.22,
+        cameraFov: { base: 60, min: 32, max: 90 },
+        gaugeLayout: {
+            speed: { y: 0.68, z: -0.82 },
+            tacho: { y: 0.68, z: -0.82 },
+            fuel: { y: 0.56, z: -0.82 },
+            temp: { y: 0.56, z: -0.82 },
+            dialRadius: 0.08,
+            needleLength: 0.062,
+            coverRadius: 0.085,
+        },
+        steeringWheel: {
+            position: { y: 0.84, z: -0.48 },
+            rimRadius: 0.14,
+        },
         dashboardLayout: 'minimal',
         accentColor: '#FF5722',
         theme: 'dark',
@@ -83,7 +113,13 @@ export const VEHICLES: Record<VehicleType, VehicleConfig> = {
         hasWipers: true,
         hasDashboard: true,
         hasGauges: false,
-        cameraPosition: { x: -0.3, y: 1.25, z: -0.1 },
+        cameraPosition: { x: -0.3, y: 1.28, z: -0.05 },
+        defaultSeatOffset: 0.24,
+        cameraFov: { base: 62, min: 34, max: 92 },
+        steeringWheel: {
+            position: { y: 0.88, z: -0.50 },
+            rimRadius: 0.14,
+        },
         dashboardLayout: 'lab',
         accentColor: '#00BCD4',
         theme: 'clinical',
@@ -102,7 +138,21 @@ export const VEHICLES: Record<VehicleType, VehicleConfig> = {
         hasWipers: true,
         hasDashboard: true,
         hasGauges: true,
-        cameraPosition: { x: -0.4, y: 1.3, z: 0.2 },
+        cameraPosition: { x: -0.38, y: 1.32, z: 0.18 },
+        defaultSeatOffset: 0.32,
+        cameraFov: { base: 56, min: 28, max: 86 },
+        gaugeLayout: {
+            speed: { x: -0.50, y: 0.72, z: -0.80 },
+            tacho: { x: -0.16, y: 0.72, z: -0.80 },
+            fuel: { y: 0.60, z: -0.80 },
+            temp: { y: 0.60, z: -0.80 },
+            dialRadius: 0.09,
+        },
+        steeringWheel: {
+            position: { x: -0.38, y: 0.90, z: -0.48 },
+            columnPosition: { x: -0.38, y: 0.74, z: -0.58 },
+            rimRadius: 0.16,
+        },
         dashboardLayout: 'luxury',
         accentColor: '#FFD700',
         theme: 'light',

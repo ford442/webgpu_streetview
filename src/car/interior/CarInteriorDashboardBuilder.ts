@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
+import { resolveGaugeLayout } from '../vehicleLayout';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
-import { GAUGE_LAYOUT } from './CarInteriorGauges';
 
 export class CarInteriorDashboardBuilder {
     /** Radial/tubular segment counts scale with quality tier. */
@@ -22,6 +22,7 @@ export class CarInteriorDashboardBuilder {
     }
 
     public build(): { instrumentClusterMat: THREE.MeshStandardMaterial; centerDisplayMat: THREE.MeshStandardMaterial } {
+        const gaugeLayout = resolveGaugeLayout(this.vehicleConfig);
         const dashGeo = new THREE.BoxGeometry(2.0, 0.4, 0.5);
         const dash = new THREE.Mesh(dashGeo, this.materials.dashboard);
         dash.position.set(0, 0.8, -1.0);
@@ -36,13 +37,13 @@ export class CarInteriorDashboardBuilder {
         // Instrument cluster: emissive panel recessed into a chamfered bezel hood.
         const clusterMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x001100, emissiveIntensity: 0.5 });
         const clusterW =
-            Math.abs(GAUGE_LAYOUT.tacho.x - GAUGE_LAYOUT.speed.x) + GAUGE_LAYOUT.dialRadius * 2 + 0.06;
-        const clusterH = GAUGE_LAYOUT.dialRadius * 2 + 0.06;
+            Math.abs(gaugeLayout.tacho.x - gaugeLayout.speed.x) + gaugeLayout.dialRadius * 2 + 0.06;
+        const clusterH = gaugeLayout.dialRadius * 2 + 0.06;
         const cluster = new THREE.Mesh(new THREE.BoxGeometry(clusterW, clusterH, 0.04), clusterMat);
         cluster.position.set(
-            (GAUGE_LAYOUT.speed.x + GAUGE_LAYOUT.tacho.x) / 2,
-            GAUGE_LAYOUT.speed.y,
-            GAUGE_LAYOUT.speed.z - 0.02,
+            (gaugeLayout.speed.x + gaugeLayout.tacho.x) / 2,
+            gaugeLayout.speed.y,
+            gaugeLayout.speed.z - 0.02,
         );
         this.interiorGroup.add(cluster);
 
@@ -58,16 +59,16 @@ export class CarInteriorDashboardBuilder {
             // Bezels sit just proud of each panel face so the chamfered lip catches light.
             // Cluster frame tracks GAUGE_LAYOUT (compact dials under the beltline).
             const clusterW =
-                Math.abs(GAUGE_LAYOUT.tacho.x - GAUGE_LAYOUT.speed.x) + GAUGE_LAYOUT.dialRadius * 2 + 0.08;
-            const clusterH = GAUGE_LAYOUT.dialRadius * 2 + 0.08;
+                Math.abs(gaugeLayout.tacho.x - gaugeLayout.speed.x) + gaugeLayout.dialRadius * 2 + 0.08;
+            const clusterH = gaugeLayout.dialRadius * 2 + 0.08;
             const clusterBezel = new THREE.Mesh(
                 this.makeBezelFrameGeometry(clusterW, clusterH, 0.024),
                 this.materials.dashboard,
             );
             clusterBezel.position.set(
-                (GAUGE_LAYOUT.speed.x + GAUGE_LAYOUT.tacho.x) / 2,
-                GAUGE_LAYOUT.speed.y,
-                GAUGE_LAYOUT.speed.z - 0.016,
+                (gaugeLayout.speed.x + gaugeLayout.tacho.x) / 2,
+                gaugeLayout.speed.y,
+                gaugeLayout.speed.z - 0.016,
             );
             this.interiorGroup.add(clusterBezel);
 
@@ -89,12 +90,12 @@ export class CarInteriorDashboardBuilder {
 
             const ringMat = createAccentMaterial(this.vehicleConfig, 0.45);
             const ringGeo = new THREE.TorusGeometry(
-                GAUGE_LAYOUT.dialRadius + 0.008,
+                gaugeLayout.dialRadius + 0.008,
                 0.006,
                 12,
                 this.segments,
             );
-            for (const pos of [GAUGE_LAYOUT.speed, GAUGE_LAYOUT.tacho]) {
+            for (const pos of [gaugeLayout.speed, gaugeLayout.tacho]) {
                 const bezelRing = new THREE.Mesh(ringGeo, ringMat);
                 bezelRing.position.set(pos.x, pos.y, pos.z + 0.004);
                 this.interiorGroup.add(bezelRing);

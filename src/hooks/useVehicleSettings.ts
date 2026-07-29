@@ -11,8 +11,8 @@ const STORAGE_KEY = 'webgpu_streetview_vehicle';
 const TINT_STORAGE_KEY = 'webgpu_streetview_window_tint';
 const SEAT_STORAGE_KEY = 'webgpu_streetview_seat_distance';
 
-/** Default pullback (metres) off the dashboard for a roomier default driving posture. */
-const DEFAULT_SEAT_DISTANCE = 0.25;
+/** Fallback seat pullback when a vehicle config omits defaultSeatOffset. */
+const FALLBACK_SEAT_DISTANCE = 0.25;
 /** Max seat pullback — keeps the eye ahead of the rear-seat/console geometry. */
 export const MAX_SEAT_DISTANCE = 0.6;
 
@@ -66,7 +66,14 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
                 if (!isNaN(parsed)) return Math.max(0, Math.min(MAX_SEAT_DISTANCE, parsed));
             }
         }
-        return DEFAULT_SEAT_DISTANCE;
+        const vehicle = typeof window !== 'undefined'
+            ? (() => {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored && isValidVehicleType(stored)) return stored;
+                return vehicleManager.getCurrentVehicle();
+            })()
+            : vehicleManager.getCurrentVehicle();
+        return getVehicleConfig(vehicle).defaultSeatOffset ?? FALLBACK_SEAT_DISTANCE;
     });
 
     // Sync with vehicle manager

@@ -1,17 +1,30 @@
 import * as THREE from 'three';
 import { PostProcessingManager } from './PostProcessingManager';
+import { CameraFovConfig, zoomToVerticalFov } from '../vehicleLayout';
 
 export class CarInteriorRenderer {
     /** Post-FX (bloom/SMAA/OutputPass) breaks alpha compositing over the WebGPU panorama. */
     private postProcessingActive = false;
+    private cameraFov: CameraFovConfig;
 
     constructor(
         private renderer: THREE.WebGLRenderer,
         private camera: THREE.PerspectiveCamera,
         private scene: THREE.Scene,
         private postProcessing: PostProcessingManager | undefined,
-        private canvas: HTMLCanvasElement
-    ) {}
+        private canvas: HTMLCanvasElement,
+        cameraFov: CameraFovConfig,
+    ) {
+        this.cameraFov = cameraFov;
+        this.camera.fov = cameraFov.base;
+        this.camera.updateProjectionMatrix();
+    }
+
+    public setCameraFov(fov: CameraFovConfig): void {
+        this.cameraFov = fov;
+        this.camera.fov = fov.base;
+        this.camera.updateProjectionMatrix();
+    }
 
     public render(): void {
         if (this.postProcessing && this.postProcessingActive) {
@@ -36,9 +49,7 @@ export class CarInteriorRenderer {
     }
 
     public setZoomFOV(zoom: number): void {
-        const minFOV = 30;
-        const maxFOV = 90;
-        this.camera.fov = maxFOV - (zoom * (maxFOV - minFOV));
+        this.camera.fov = zoomToVerticalFov(zoom, this.cameraFov);
         this.camera.updateProjectionMatrix();
     }
 

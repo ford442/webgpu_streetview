@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
+import { resolveSteeringWheel } from '../vehicleLayout';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { CarInteriorDashboardBuilder } from './CarInteriorDashboardBuilder';
@@ -83,8 +84,13 @@ export class CarInteriorBuilder {
     }
 
     private buildSteeringWheel(): void {
+        const wheelCfg = resolveSteeringWheel(this.vehicleConfig);
         this.result.steeringWheelGroup = new THREE.Group();
-        this.result.steeringWheelGroup.position.set(-0.35, 0.95, -0.6);
+        this.result.steeringWheelGroup.position.set(
+            wheelCfg.position.x,
+            wheelCfg.position.y,
+            wheelCfg.position.z,
+        );
         this.interiorGroup.add(this.result.steeringWheelGroup);
 
         const wheelRimMat = new THREE.MeshStandardMaterial({
@@ -95,29 +101,33 @@ export class CarInteriorBuilder {
             side: THREE.DoubleSide,
         });
 
-        const wheelGeo = new THREE.TorusGeometry(0.18, 0.022, 12, 32);
+        const wheelGeo = new THREE.TorusGeometry(wheelCfg.rimRadius, wheelCfg.rimRadius * 0.12, 12, 32);
         const wheel = new THREE.Mesh(wheelGeo, wheelRimMat);
-        wheel.rotation.set(Math.PI * 0.35, 0, 0);
+        wheel.rotation.set(wheelCfg.tilt, 0, 0);
         this.result.steeringWheelGroup.add(wheel);
 
-        const hubGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16);
+        const hubGeo = new THREE.CylinderGeometry(wheelCfg.rimRadius * 0.33, wheelCfg.rimRadius * 0.33, 0.02, 16);
         const hub = new THREE.Mesh(hubGeo, this.materials.dashboard);
-        hub.rotation.set(Math.PI * 0.35, 0, 0);
+        hub.rotation.set(wheelCfg.tilt, 0, 0);
         this.result.steeringWheelGroup.add(hub);
 
         for (let i = 0; i < 3; i++) {
-            const spokeGeo = new THREE.BoxGeometry(0.015, 0.16, 0.015);
+            const spokeGeo = new THREE.BoxGeometry(0.015, wheelCfg.rimRadius * 0.88, 0.015);
             const spoke = new THREE.Mesh(spokeGeo, this.materials.metal);
-            const angle = (i * Math.PI * 2) / 3 + Math.PI * 0.35;
-            spoke.position.set(Math.cos(angle) * 0.12, Math.sin(angle) * 0.12, 0);
-            spoke.rotation.set(Math.PI * 0.35, 0, angle);
+            const angle = (i * Math.PI * 2) / 3 + wheelCfg.tilt;
+            spoke.position.set(Math.cos(angle) * wheelCfg.rimRadius * 0.67, Math.sin(angle) * wheelCfg.rimRadius * 0.67, 0);
+            spoke.rotation.set(wheelCfg.tilt, 0, angle);
             this.result.steeringWheelGroup.add(spoke);
         }
 
         const columnGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.4, 8);
         const column = new THREE.Mesh(columnGeo, this.materials.metal);
-        column.position.set(-0.35, 0.78, -0.7);
-        column.rotation.set(Math.PI * 0.35, 0, 0);
+        column.position.set(
+            wheelCfg.columnPosition.x,
+            wheelCfg.columnPosition.y,
+            wheelCfg.columnPosition.z,
+        );
+        column.rotation.set(wheelCfg.tilt, 0, 0);
         this.interiorGroup.add(column);
     }
 

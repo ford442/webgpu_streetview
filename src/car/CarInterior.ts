@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleType, VehicleConfig, getVehicleConfig } from './VehicleManager';
+import { resolveCameraFov } from './vehicleLayout';
 import { 
   setupVehicleInteriorLOD, 
   VehicleLODConfig, 
@@ -145,11 +146,15 @@ export class CarInterior {
             interiorDetails: true
         };
 
-        // Camera at driver seat eye level (~1.2m), slightly angled toward center console.
-        // FOV is set to 60° vertical which corresponds to ~88° horizontal at 16:9 aspect —
-        // this matches Google Maps Street View zoom=1 (~90° horizontal FOV) so the 3D car
-        // interior window openings stay aligned with the background panorama.
-        this.camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 100);
+        // FOV is tuned per vehicle; zoom=1 maps to cameraFov.base so window openings
+        // stay aligned with the Street View panorama behind the glass.
+        const initialFov = resolveCameraFov(this.vehicleConfig);
+        this.camera = new THREE.PerspectiveCamera(
+            initialFov.base,
+            container.clientWidth / container.clientHeight,
+            0.01,
+            100,
+        );
         // Camera starts at origin of driverSeatGroup (position set via driverSeatGroup below)
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.order = 'YXZ';
@@ -288,7 +293,8 @@ export class CarInterior {
             this.camera,
             this.scene,
             this.postProcessing,
-            this.canvas
+            this.canvas,
+            resolveCameraFov(this.vehicleConfig),
         );
         // Post-FX OutputPass forces opaque alpha and blocks the WebGPU panorama through glass.
         this.rendererDelegate.setPostProcessingEnabled(this.postProcessingEnabled);
@@ -533,6 +539,7 @@ export class CarInterior {
         
         // Update camera anchor position for the new vehicle (preserving seat offset)
         this.applySeatPosition();
+        this.rendererDelegate?.setCameraFov(resolveCameraFov(this.vehicleConfig));
         
         // Recreate materials and rebuild
         const mats = createMaterials(this.vehicleConfig, this.gpuProfile);
