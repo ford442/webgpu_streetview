@@ -84,9 +84,11 @@ Limited offline exploration is supported in three phases (see `docs/feature_expa
 |---|---|---|
 | **1 — App shell** | ✅ | React bundle, WGSL shaders, WASM loader (`public/service-worker.js`) |
 | **2 — Metadata** | ✅ | Bookmarks, history, tours, snapshot gallery (IndexedDB + localStorage mirror) |
-| **3 — Route prefetch** | 🚧 Scaffold | Pano link graph storage API (`src/offline/routePrefetch.ts`); UI wiring pending #134 |
+| **3 — Route prefetch** | ✅ | Prepare a tour's panorama link graph while online (`src/offline/routePrefetch.ts`); browse/delete it from the Tours and Offline panels |
 
-After one online visit, the app shell loads without network. Open **Offline** in the toolbar to view storage quota, clear cached shell assets, or wipe offline metadata.
+After one online visit, the app shell loads without network. Open **Offline** in the toolbar to view storage quota, clear cached shell assets, wipe offline metadata, or manage prepared route graphs.
+
+Open a saved tour in the **Tours** panel and click **Prepare offline graph** (while online) to walk its waypoints via `StreetViewService`, collect each panorama's link IDs, and persist them to IndexedDB. Cruise mode and tour playback consult this graph (see `src/offline/routeGraphNavigation.ts`) to pre-warm the likely next panorama when the connection is flaky — the graph never substitutes for a live connection, and no imagery is ever cached. Once offline, the app still shows which panos/links are known; it never fabricates a panorama.
 
 ### Google Maps Platform Terms — caching constraints
 

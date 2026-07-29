@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Tour } from '../hooks/useTours';
+import type { RouteGraphNode } from '../offline';
+import { findPathBetweenPanos } from '../offline';
 
 interface TourPlayerProps {
     tour: Tour;
@@ -8,6 +10,10 @@ interface TourPlayerProps {
     setPitch: (pitch: number) => void;
     setZoom: (zoom: number) => void;
     isPanoramaReady: boolean;
+    /** Loads this tour's prefetched pano link graph, if one was prepared (see useRoutePrefetch). */
+    getRouteGraph?: (routeId: string) => Promise<RouteGraphNode[]>;
+    /** Pre-warms the panorama cache for a lat/lng, used to smooth hops the offline graph knows about. */
+    prewarmPanoCache?: (lat: number, lng: number) => Promise<unknown>;
 }
 
 const btnStyle: React.CSSProperties = {
@@ -29,6 +35,8 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
     setPitch,
     setZoom,
     isPanoramaReady,
+    getRouteGraph,
+    prewarmPanoCache,
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -38,6 +46,7 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
     const speedRef = useRef(speed);
     speedRef.current = speed;
     const runTokenRef = useRef(0);
+    const routeGraphNodesRef = useRef<RouteGraphNode[]>([]);
 
     // Reset playback position whenever a different tour is loaded.
     useEffect(() => {
@@ -45,14 +54,44 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
         setIsPlaying(false);
     }, [tour.id]);
 
+    // Load this tour's prefetched link graph (if any) once per tour, so
+    // playback can use known link edges to pre-warm upcoming hops.
+    useEffect(() => {
+        routeGraphNodesRef.current = [];
+        if (!getRouteGraph) return;
+        let cancelled = false;
+        getRouteGraph(tour.id)
+            .then((nodes) => {
+                if (!cancelled) routeGraphNodesRef.current = nodes;
+            })
+            .catch((err) => console.warn('[TourPlayer] Failed to load offline route graph', err));
+        return () => {
+            cancelled = true;
+        };
+    }, [tour.id, getRouteGraph]);
+
     const visitWaypoint = useCallback(async (index: number) => {
         const wp = tour.waypoints[index];
         if (!wp) return;
+
+        // If we know a prefetched link path from the previous waypoint to this
+        // one, pre-warm those intermediate panos — smooths playback online,
+        // never used to alter where we actually teleport.
+        const prevWp = tour.waypoints[index - 1];
+        if (prewarmPanoCache && prevWp && routeGraphNodesRef.current.length > 0) {
+            const path = findPathBetweenPanos(routeGraphNodesRef.current, prevWp.panoId, wp.panoId);
+            if (path) {
+                for (const node of path) {
+                    void prewarmPanoCache(node.lat, node.lng);
+                }
+            }
+        }
+
         await teleportToPano(wp.panoId);
         setHeading(wp.pov.heading);
         setPitch(wp.pov.pitch);
         setZoom(wp.pov.zoom);
-    }, [tour.waypoints, teleportToPano, setHeading, setPitch, setZoom]);
+    }, [tour.waypoints, teleportToPano, setHeading, setPitch, setZoom, prewarmPanoCache]);
 
     // Playback loop: advances through waypoints from currentIndex while isPlaying.
     useEffect(() => {

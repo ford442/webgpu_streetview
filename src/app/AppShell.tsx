@@ -5,6 +5,7 @@ import {
   useViewMode,
   useEnvironmentSettings,
   useAdvanceSafe,
+  useRoutePrefetch,
 } from '../hooks';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
 import { useSharedSession } from '../hooks/useSharedSession';
@@ -54,6 +55,7 @@ export function AppShell() {
     setZoom,
   } = useStreetView();
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
+  const routePrefetch = useRoutePrefetch();
   const { viewMode, toggleViewMode } = useViewMode();
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
@@ -122,6 +124,8 @@ export function AppShell() {
     setPitch,
     setZoom,
     isPanoramaReady,
+    routePrefetch,
+    panoCacheFetch: panoCache.fetch,
   });
 
   const { isCruiseMode, setIsCruiseMode } = useCruiseMode({
@@ -131,6 +135,7 @@ export function AppShell() {
     heading,
     isTransitioning,
     setNavPending: connection.setNavPending,
+    loadOfflineRouteGraphNodes: routePrefetch.loadAllCachedNodes,
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
 
@@ -318,6 +323,11 @@ export function AppShell() {
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,
+          }}
+          offlineRoutes={{
+            summaries: routePrefetch.summaries,
+            onDelete: (routeId) => void routePrefetch.deleteRouteGraph(routeId),
+            onRefresh: () => void routePrefetch.refreshSummaries(),
           }}
         />
       )}

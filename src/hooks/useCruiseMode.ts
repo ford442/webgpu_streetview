@@ -1,4 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
+import { findBestOfflineLink } from '../offline';
+import type { RouteGraphNode } from '../offline';
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
@@ -7,6 +9,15 @@ export interface UseCruiseModeOptions {
   heading: number;
   isTransitioning: boolean;
   setNavPending: (pending: boolean) => void;
+  /**
+   * Optional loader for previously-prefetched route-graph nodes (see
+   * `useRoutePrefetch`). When provided, cruise mode loads them once per
+   * cruise session and uses them to pre-warm the likely next panorama —
+   * useful when the connection is flaky and a live `getLinks()` round trip
+   * is slow. Purely a pre-fetch hint; the live link lookup still decides
+   * the actual hop.
+   */
+  loadOfflineRouteGraphNodes?: () => Promise<RouteGraphNode[]>;
 }
 
 /** Initial bearing (degrees, 0–360) from point A to point B. */
@@ -31,8 +42,10 @@ export function useCruiseMode({
   heading,
   isTransitioning,
   setNavPending,
+  loadOfflineRouteGraphNodes,
 }: UseCruiseModeOptions) {
   const [isCruiseMode, setIsCruiseMode] = useState(false);
+  const offlineNodesRef = useRef<RouteGraphNode[]>([]);
 
   // Live view heading — tracks head-look every render but is NOT the travel
   // direction. Used only to seed the committed heading when cruise starts.
@@ -61,6 +74,16 @@ export function useCruiseMode({
     // Commit the current view heading as the travel direction the moment cruise
     // engages. From here it evolves only from real movement, not head-look.
     cruiseHeadingRef.current = liveHeadingRef.current;
+    // Load any previously-prefetched route graphs once per cruise session so a
+    // flaky connection doesn't pay an IndexedDB round trip on every hop.
+    offlineNodesRef.current = [];
+    if (loadOfflineRouteGraphNodes) {
+      loadOfflineRouteGraphNodes()
+        .then((nodes) => {
+          offlineNodesRef.current = nodes;
+        })
+        .catch((err) => console.warn('[CruiseMode] Failed to load offline route graph nodes', err));
+    }
     const hop = async () => {
       if (useTransitionRef.current) {
         console.log('[CruiseMode] Skipping hop - still transitioning');
@@ -72,9 +95,17 @@ export function useCruiseMode({
       }
       const panoIdBefore = panorama.getPano();
       const posBefore = panorama.getPosition() ?? null;
+      // Prefer a known next pano from a prefetched route graph, if we have
+      // one for the current location — pre-warms the pano cache so the hop
+      // stays smooth even when the live `getLinks()` round trip is slow.
+      let targetHint: { lat: number; lng: number } | undefined;
+      if (panoIdBefore && offlineNodesRef.current.length > 0) {
+        const bestOffline = findBestOfflineLink(offlineNodesRef.current, panoIdBefore, cruiseHeadingRef.current);
+        if (bestOffline) targetHint = { lat: bestOffline.lat, lng: bestOffline.lng };
+      }
       setNavPending(true);
       try {
-        await advanceSafe('forward', undefined, cruiseHeadingRef.current);
+        await advanceSafe('forward', targetHint, cruiseHeadingRef.current);
       } finally {
         setNavPending(false);
       }

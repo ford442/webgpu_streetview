@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Tour, TourWaypoint, CurrentPOV, TourTransitionType } from '../hooks/useTours';
+import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '../offline';
 import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
 import TourRecorder from './TourRecorder';
 import TourPlayer from './TourPlayer';
@@ -33,6 +34,16 @@ interface TourPanelProps {
     setPitch: (pitch: number) => void;
     setZoom: (zoom: number) => void;
     isPanoramaReady: boolean;
+
+    /** Offline route-graph prefetch (Phase 3) — pano link graph, no imagery. */
+    routeGraphSummaries?: RouteGraphSummary[];
+    routeGraphBusyId?: string | null;
+    routeGraphProgress?: Record<string, RoutePrefetchProgress>;
+    routeGraphError?: string | null;
+    onPrepareOfflineGraph?: (tour: Tour) => void;
+    onDeleteRouteGraph?: (routeId: string) => void;
+    getRouteGraph?: (routeId: string) => Promise<RouteGraphNode[]>;
+    panoCacheFetch?: (lat: number, lng: number) => Promise<unknown>;
 }
 
 type TabKey = 'library' | 'record' | 'play';
@@ -74,6 +85,14 @@ const TourPanel: React.FC<TourPanelProps> = ({
     setPitch,
     setZoom,
     isPanoramaReady,
+    routeGraphSummaries = [],
+    routeGraphBusyId = null,
+    routeGraphProgress = {},
+    routeGraphError = null,
+    onPrepareOfflineGraph,
+    onDeleteRouteGraph,
+    getRouteGraph,
+    panoCacheFetch,
 }) => {
     const panelRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -259,9 +278,54 @@ const TourPanel: React.FC<TourPanelProps> = ({
                                                 ×
                                             </button>
                                         </div>
+
+                                        {onPrepareOfflineGraph && (() => {
+                                            const summary = routeGraphSummaries.find(s => s.routeId === tour.id);
+                                            const progress = routeGraphProgress[tour.id];
+                                            const isBusy = routeGraphBusyId === tour.id;
+                                            return (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', color: '#9ccc65' }}>
+                                                    <button
+                                                        onClick={() => onPrepareOfflineGraph(tour)}
+                                                        disabled={isBusy || tour.waypoints.length === 0}
+                                                        title="Prefetch this tour's panorama link graph (pano IDs only, no imagery) for offline browsing"
+                                                        style={{ padding: '4px 8px', backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '4px', cursor: isBusy ? 'default' : 'pointer', fontSize: '11px' }}
+                                                    >
+                                                        {isBusy
+                                                            ? `Preparing… ${progress ? `${progress.completedSteps}/${progress.totalSteps}` : ''}`
+                                                            : summary
+                                                                ? '↻ Refresh offline graph'
+                                                                : '📡 Prepare offline graph'}
+                                                    </button>
+                                                    {summary && !isBusy && (
+                                                        <>
+                                                            <span>✓ {summary.nodeCount} pano{summary.nodeCount === 1 ? '' : 's'} cached</span>
+                                                            {onDeleteRouteGraph && (
+                                                                <button
+                                                                    onClick={() => onDeleteRouteGraph(tour.id)}
+                                                                    aria-label={`Delete offline graph for ${tour.name}`}
+                                                                    style={{ background: 'none', border: 'none', color: '#ff8a8a', cursor: 'pointer', fontSize: '11px', padding: 0 }}
+                                                                >
+                                                                    remove
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>
+                        )}
+                        {routeGraphError && (
+                            <div style={{ color: '#ff8a8a', fontSize: '12px' }}>⚠️ {routeGraphError}</div>
+                        )}
+                        {(onPrepareOfflineGraph) && (
+                            <p style={{ margin: 0, fontSize: '11px', color: '#777', lineHeight: 1.4 }}>
+                                Offline graphs store panorama IDs and link connections only — imagery still
+                                requires a network connection (Google Maps Platform Terms).
+                            </p>
                         )}
                     </div>
                 )}
@@ -289,6 +353,8 @@ const TourPanel: React.FC<TourPanelProps> = ({
                         setPitch={setPitch}
                         setZoom={setZoom}
                         isPanoramaReady={isPanoramaReady}
+                        getRouteGraph={getRouteGraph}
+                        prewarmPanoCache={panoCacheFetch}
                     />
                 )}
             </div>
