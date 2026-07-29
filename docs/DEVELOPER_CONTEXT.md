@@ -100,9 +100,13 @@ globe stack. Two rules keep it that way:
     `import * as Cesium from 'cesium'` anywhere puts the whole globe stack back
     into `main.js` for every user, because webpack has no `"sideEffects": false`
     hint to safely tree-shake an unused-but-imported module.
-*   **Imagery** is resolved by `src/utils/cesiumImagery.ts`: Ion world imagery when
-    `REACT_APP_CESIUM_ION_TOKEN` is set at build time, otherwise CartoCDN Voyager
-    via Viewer `baseLayer` (Cesium ≥1.107; do not pass the removed `imageryProvider`
+*   **Imagery + terrain** are resolved by `src/utils/cesiumImagery.ts`'s
+    `resolveMiniMapLayerOptions()`, used by both `GlobeView` and `MiniMap`: Ion
+    world terrain + world imagery when a Cesium Ion token resolves (build-time
+    `REACT_APP_CESIUM_ION_TOKEN`, a `deploy.py`-baked sentinel, or runtime
+    `window.CESIUM_ION_TOKEN` from `public/config.js` — same precedence as the
+    Maps API key), otherwise `EllipsoidTerrainProvider` + CartoCDN Voyager via
+    Viewer `baseLayer` (Cesium ≥1.107; do not pass the removed `imageryProvider`
     option — it blanks the globe). Never use `tile.openstreetmap.org` (blocked for apps).
 *   **`GlobeView` is deliberately not re-exported from `src/components/index.ts`.**
     `App.tsx` imports it as `const GlobeView = lazy(() => import('./components/GlobeView'));`

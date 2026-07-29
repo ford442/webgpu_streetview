@@ -13,6 +13,9 @@ Environment variables:
   DEPLOY_TOKEN       (required) Auth token for the bundle upload API
   MAPS_API_KEY       (recommended) Baked into static/js/*.js at deploy time
                      (Vite emits build/static/js/main.[hash].js — same layout as former CRA)
+  CESIUM_ION_TOKEN   (optional) Baked into static/js/*.js the same way, so full-screen
+                     GlobeView + MiniMap use real Ion world terrain/imagery instead of
+                     the flat ellipsoid + CartoCDN fallback
   DEPLOY_TARGET      test (default) | go
   CONTABO_BASE_URL   https://storage.noahcohn.com (default)
   PROJECT_NAME       streetview (default)
@@ -38,6 +41,7 @@ from typing import Optional
 import requests
 
 MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
+CESIUM_ION_TOKEN_SENTINEL = "__RUNTIME_CESIUM_ION_TOKEN_SENTINEL__"
 
 # Patterns that identify placeholder / template Maps keys — not real keys.
 _PLACEHOLDER_PATTERNS = [
@@ -78,6 +82,7 @@ class DeployConfig:
     deploy_target: str
     deploy_token: str
     maps_api_key: Optional[str]
+    cesium_ion_token: Optional[str]
 
 
 def _is_placeholder(key: str) -> bool:
@@ -105,6 +110,7 @@ def load_deploy_config() -> DeployConfig:
         sys.exit(1)
 
     maps_key = os.environ.get("MAPS_API_KEY", "").strip() or None
+    cesium_ion_token = os.environ.get("CESIUM_ION_TOKEN", "").strip() or None
 
     return DeployConfig(
         project_name=os.environ.get("PROJECT_NAME", "streetview").strip() or "streetview",
@@ -115,6 +121,7 @@ def load_deploy_config() -> DeployConfig:
         deploy_target=deploy_target,
         deploy_token=deploy_token,
         maps_api_key=maps_key,
+        cesium_ion_token=cesium_ion_token,
     )
 
 
@@ -227,25 +234,36 @@ def _validate_maps_key(key: str) -> None:
         print(f"SKIP (network error: {exc})")
 
 
-def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
+def _inject_sentinel_into_bundle(data: bytes, sentinel: str, value: str, window_var: str) -> bytes:
+    """Replace a baked `__RUNTIME_..._SENTINEL__` placeholder with a real secret,
+    or prepend a `window.<var>=...` assignment if the sentinel isn't present
+    (e.g. the value was never referenced at build time)."""
     quoted = (
-        f'"{MAPS_KEY_SENTINEL}"'.encode("utf-8"),
-        f"'{MAPS_KEY_SENTINEL}'".encode("utf-8"),
+        f'"{sentinel}"'.encode("utf-8"),
+        f"'{sentinel}'".encode("utf-8"),
     )
     patched = data
     changed = False
     for needle in quoted:
         if needle in patched:
-            replacement = f'"{key}"'.encode("utf-8") if needle.startswith(b'"') else f"'{key}'".encode("utf-8")
+            replacement = f'"{value}"'.encode("utf-8") if needle.startswith(b'"') else f"'{value}'".encode("utf-8")
             patched = patched.replace(needle, replacement)
             changed = True
 
-    if changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched:
-        key_assignment = f'window.MAPS_API_KEY="{key}";'.encode("utf-8")
-        if key_assignment not in patched:
-            patched = key_assignment + b"\n" + patched
+    if changed or sentinel.encode("utf-8") not in patched:
+        assignment = f'window.{window_var}="{value}";'.encode("utf-8")
+        if assignment not in patched:
+            patched = assignment + b"\n" + patched
 
-    return patched if (changed or MAPS_KEY_SENTINEL.encode("utf-8") not in patched) else data
+    return patched if (changed or sentinel.encode("utf-8") not in patched) else data
+
+
+def _inject_maps_key_into_bundle(data: bytes, key: str) -> bytes:
+    return _inject_sentinel_into_bundle(data, MAPS_KEY_SENTINEL, key, "MAPS_API_KEY")
+
+
+def _inject_cesium_ion_token_into_bundle(data: bytes, token: str) -> bytes:
+    return _inject_sentinel_into_bundle(data, CESIUM_ION_TOKEN_SENTINEL, token, "CESIUM_ION_TOKEN")
 
 
 def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
@@ -289,9 +307,13 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     return repaired.encode("utf-8")
 
 
-def build_zip(build_path: Path, maps_api_key: Optional[str]) -> bytes:
+def build_zip(
+    build_path: Path,
+    maps_api_key: Optional[str],
+    cesium_ion_token: Optional[str] = None,
+) -> bytes:
     buf = io.BytesIO()
-    bundle_patched = False
+    maps_key_patched = False
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(build_path.rglob("*")):
             if file.is_dir():
@@ -306,25 +328,30 @@ def build_zip(build_path: Path, maps_api_key: Optional[str]) -> bytes:
             if str(rel) == "index.html":
                 file_data = _repair_index_html(file_data, build_path)
 
-            if (
-                maps_api_key
-                and len(parts) >= 2
+            is_js_bundle = (
+                len(parts) >= 2
                 and parts[0] == "static"
                 and parts[1] == "js"
                 and str(rel).endswith(".js")
-            ):
-                patched = _inject_maps_key_into_bundle(file_data, maps_api_key)
+            )
+            if is_js_bundle and (maps_api_key or cesium_ion_token):
+                patched = file_data
+                if maps_api_key:
+                    patched = _inject_maps_key_into_bundle(patched, maps_api_key)
+                    if patched != file_data:
+                        maps_key_patched = True
+                if cesium_ion_token:
+                    patched = _inject_cesium_ion_token_into_bundle(patched, cesium_ion_token)
                 if patched != file_data:
-                    print(f"  + {rel} (Maps API key baked into bundle)")
+                    print(f"  + {rel} (secrets baked into bundle)")
                     zf.writestr(str(rel), patched)
-                    bundle_patched = True
                     continue
 
             zf.writestr(str(rel), file_data)
             print(f"  + {rel}")
 
     if maps_api_key:
-        if not bundle_patched:
+        if not maps_key_patched:
             print("\n" + "!" * 70)
             print(f"  ERROR: MAPS_API_KEY provided but '{MAPS_KEY_SENTINEL}' was not found")
             print("  in build/static/js/*.js. Run 'npm run build' first, then deploy again.")
@@ -332,6 +359,10 @@ def build_zip(build_path: Path, maps_api_key: Optional[str]) -> bytes:
             sys.exit(1)
         print(f"\n[deploy] Maps API key baked into JS bundle (length {len(maps_api_key)}).")
         print("         Ensure the key's referrer allowlist covers test.1ink.us and go.1ink.us.")
+
+    if cesium_ion_token:
+        print(f"[deploy] Cesium Ion token baked into JS bundle (length {len(cesium_ion_token)}).")
+
     return buf.getvalue()
 
 
@@ -349,7 +380,15 @@ def deploy_bundle(config: DeployConfig, build_path: Path) -> bool:
     else:
         print("  No MAPS_API_KEY env — bundle must already contain a key (REACT_APP_MAPS_API_KEY at build time)")
 
-    zip_bytes = build_zip(build_path, config.maps_api_key)
+    if config.cesium_ion_token:
+        print(
+            f"  CESIUM_ION_TOKEN provided (masked: {config.cesium_ion_token[:6]}...) "
+            "— will bake into JS bundle for Ion world terrain/imagery"
+        )
+    else:
+        print("  No CESIUM_ION_TOKEN env — GlobeView/MiniMap use the CartoCDN + ellipsoid fallback")
+
+    zip_bytes = build_zip(build_path, config.maps_api_key, config.cesium_ion_token)
     print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
 
     print("Uploading bundle...")

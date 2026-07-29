@@ -271,6 +271,21 @@ Before deploying to production:
 
 ---
 
+## Part 9a: Cesium Ion Token (Optional, for World Terrain)
+
+Separate from Google Maps, Globe View / MiniMap optionally use a [Cesium Ion](https://ion.cesium.com/tokens) token for real world terrain + satellite imagery instead of the free flat-ellipsoid + CartoCDN fallback.
+
+1. Sign up at https://ion.cesium.com/tokens (free tier covers world terrain + imagery).
+2. Create a token; optionally restrict it to your production domain(s) under token settings.
+3. Provide it the same two ways as `MAPS_API_KEY`:
+   - **Runtime (preferred)**: `CESIUM_ION_TOKEN=... python deploy.py` bakes it into the deployed bundle, no rebuild needed.
+   - **Build-time**: `REACT_APP_CESIUM_ION_TOKEN=...` in `.env.local` for local dev.
+4. This token is optional — omitting it just means Globe View renders a flat ellipsoid, it does not block Street View or any Google Maps feature.
+
+See the README's "Cesium Ion World Terrain (Optional)" section for the full setup + verification steps.
+
+---
+
 ## Part 10: Key Rotation (Quarterly)
 
 ### Schedule: Every 90 Days

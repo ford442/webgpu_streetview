@@ -276,6 +276,39 @@ See also:
 
 ---
 
+## Cesium Ion World Terrain (Optional)
+
+Full-screen **Globe View** and the **MiniMap** globe both use [Cesium](https://cesium.com/) (loaded from a CDN, never npm-bundled). Without a Cesium Ion token, they render a flat ellipsoid globe with free CartoCDN imagery — this always works, no key required. With a token, both switch to real Ion **world terrain** (actual elevation data) and Ion world imagery (satellite photography).
+
+The app supports the **same two ways** to provide the token as the Maps API key (priority order):
+
+1. **Runtime (preferred for deploys)**: `window.CESIUM_ION_TOKEN` set by `public/config.js` — no rebuild required. Edit the file on the server, or let `deploy.py` bake it in via the `CESIUM_ION_TOKEN` environment variable.
+2. **Build-time fallback**: `REACT_APP_CESIUM_ION_TOKEN` baked into the JS bundle by Vite during `npm run build`.
+
+### Getting a token
+
+1. Sign up at [ion.cesium.com](https://ion.cesium.com/tokens) (free tier is sufficient for world terrain + imagery).
+2. Create a token, optionally restricted to your production domain(s).
+
+### Deploying the token
+
+```bash
+# From the repo root, after `npm run build`
+export DEPLOY_TOKEN='...'
+CESIUM_ION_TOKEN="your_ion_token..." python deploy.py
+```
+
+`deploy.py` bakes the token into `build/static/js/main.*.js` the same way it does for `MAPS_API_KEY` — this is non-fatal if omitted (Globe View simply falls back to the ellipsoid/CartoCDN combination).
+
+**GitHub Actions**: the **Deploy** workflow already passes through a `CESIUM_ION_TOKEN` repository secret if one is configured; add it under repo Settings → Secrets to enable Ion terrain on deploys without any other changes.
+
+### Verifying it worked
+
+- Open **Globe View** (🌍 button) — mountains/valleys should have visible relief instead of a smooth sphere.
+- Check the browser console for `[cesiumImagery] Ion terrain/imagery failed` warnings, which indicate the token was rejected and the app fell back to ellipsoid + CartoCDN.
+
+See also `src/utils/cesiumImagery.ts` (token resolution + fallback logic) and `docs/DEVELOPER_CONTEXT.md` (why Cesium is CDN-loaded, not npm-bundled).
+
 ---
 
 ## Controls

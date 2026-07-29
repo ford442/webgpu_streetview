@@ -1,10 +1,11 @@
 import {
   CARTO_VOYAGER_URL,
+  CESIUM_ION_TOKEN_DEPLOY_SENTINEL,
   applyCesiumIonToken,
   createCartoBaseLayer,
   createIonWorldBaseLayer,
   getCesiumIonToken,
-  resolveGlobeBaseLayer,
+  getConfiguredCesiumIonTokenFromEnv,
   resolveGlobeImagerySource,
   resolveMiniMapLayerOptions,
 } from './cesiumImagery';
@@ -66,49 +67,6 @@ describe('cesiumImagery', () => {
     expect(layer.provider.opts.url).toBe(CARTO_VOYAGER_URL);
   });
 
-  it('resolveGlobeBaseLayer uses Ion when token env is set', () => {
-    const Cesium = makeMockCesium();
-    const prev = process.env.REACT_APP_CESIUM_ION_TOKEN;
-    process.env.REACT_APP_CESIUM_ION_TOKEN = 'ion-token';
-    try {
-      const layer = resolveGlobeBaseLayer(Cesium);
-      expect(layer).toEqual({ kind: 'ion-world' });
-      expect(Cesium.Ion.defaultAccessToken).toBe('ion-token');
-    } finally {
-      if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-      else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
-    }
-  });
-
-  it('resolveGlobeBaseLayer falls back to Carto when no token', () => {
-    const Cesium = makeMockCesium();
-    const prev = process.env.REACT_APP_CESIUM_ION_TOKEN;
-    delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-    try {
-      const layer = resolveGlobeBaseLayer(Cesium) as { provider: { opts: { url: string } } };
-      expect(layer.provider.opts.url).toBe(CARTO_VOYAGER_URL);
-    } finally {
-      if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-      else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
-    }
-  });
-
-  it('resolveGlobeBaseLayer falls back to Carto if Ion construction throws', () => {
-    const Cesium = makeMockCesium({ ionThrows: true });
-    const prev = process.env.REACT_APP_CESIUM_ION_TOKEN;
-    process.env.REACT_APP_CESIUM_ION_TOKEN = 'bad-token';
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const layer = resolveGlobeBaseLayer(Cesium) as { provider: { opts: { url: string } } };
-      expect(layer.provider.opts.url).toBe(CARTO_VOYAGER_URL);
-      expect(warn).toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-      if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-      else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
-    }
-  });
-
   it('createIonWorldBaseLayer delegates to ImageryLayer.fromWorldImagery', () => {
     const Cesium = makeMockCesium();
     expect(createIonWorldBaseLayer(Cesium)).toEqual({ kind: 'ion-world' });
@@ -146,5 +104,30 @@ describe('cesiumImagery', () => {
       if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
       else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
     }
+  });
+
+  describe('getConfiguredCesiumIonTokenFromEnv', () => {
+    it('prefers the build-time env token over the deploy sentinel and runtime token', () => {
+      expect(
+        getConfiguredCesiumIonTokenFromEnv('build-token', CESIUM_ION_TOKEN_DEPLOY_SENTINEL, 'runtime-token'),
+      ).toBe('build-token');
+    });
+
+    it('falls through to the deploy sentinel once deploy.py has patched it', () => {
+      expect(
+        getConfiguredCesiumIonTokenFromEnv(undefined, 'baked-deploy-token', 'runtime-token'),
+      ).toBe('baked-deploy-token');
+    });
+
+    it('falls through to the runtime window.CESIUM_ION_TOKEN when env and sentinel are unset', () => {
+      expect(
+        getConfiguredCesiumIonTokenFromEnv(undefined, CESIUM_ION_TOKEN_DEPLOY_SENTINEL, 'late-runtime-token'),
+      ).toBe('late-runtime-token');
+    });
+
+    it('returns empty when every source is missing or a placeholder', () => {
+      expect(getConfiguredCesiumIonTokenFromEnv(undefined, CESIUM_ION_TOKEN_DEPLOY_SENTINEL, '')).toBe('');
+      expect(getConfiguredCesiumIonTokenFromEnv('your-cesium-ion-token-here', CESIUM_ION_TOKEN_DEPLOY_SENTINEL, undefined)).toBe('');
+    });
   });
 });

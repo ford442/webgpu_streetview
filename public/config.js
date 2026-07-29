@@ -17,6 +17,14 @@
 // See README "Production Deployment", docs/DEPLOY_CHECKLIST.md, and #89.
 window.MAPS_API_KEY = "";
 
+// Cesium Ion token for full-screen GlobeView + MiniMap world terrain/imagery
+// (optional — without it, both fall back to a flat ellipsoid + free CartoCDN
+// tiles). Same runtime-first convention as MAPS_API_KEY above: leave blank in
+// git, bake via REACT_APP_CESIUM_ION_TOKEN at build time, deploy via
+// CESIUM_ION_TOKEN=... python deploy.py, or edit here after a bundle deploy.
+// Get a token at https://ion.cesium.com/tokens.
+window.CESIUM_ION_TOKEN = "";
+
 // Supabase project used ONLY as a signaling relay for Shared Exploration
 // Sessions (multiplayer road trips) — short room codes instead of pasting
 // SDP blobs. The anon/publishable key is safe to expose client-side (that's

@@ -18,7 +18,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GlobeTransition } from '../hooks/useGlobeMode';
-import { resolveGlobeBaseLayer } from '../utils/cesiumImagery';
+import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 import ScoutCard from './ScoutCard';
 
 // Cesium is loaded from CDN at runtime, not bundled.
@@ -231,15 +231,25 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         entryCoords.current = { lat: currentLat, lng: currentLng, heading: currentHeading };
 
+        let cancelled = false;
+
+        (async () => {
         // Cesium ≥1.107: use `baseLayer` (ImageryLayer). The removed `imageryProvider`
         // option only disables default Ion imagery and never adds tiles → blank sphere.
+        // resolveMiniMapLayerOptions prefers real Ion world terrain + imagery when a
+        // token is configured, falling back to ellipsoid + CartoCDN on failure so the
+        // full-screen globe is never blank (same fallback MiniMap already relies on).
+        let terrainProvider: any;
         let baseLayer: any;
         try {
-            baseLayer = resolveGlobeBaseLayer(Cesium);
+            ({ terrainProvider, baseLayer } = await resolveMiniMapLayerOptions(Cesium));
         } catch (err) {
-            console.warn('[GlobeView] Base layer resolve failed; Viewer will use ellipsoid only:', err);
+            console.warn('[GlobeView] Layer options resolve failed; using ellipsoid fallback:', err);
+            terrainProvider = new Cesium.EllipsoidTerrainProvider();
             baseLayer = false;
         }
+
+        if (cancelled || viewerRef.current || !containerRef.current) return;
 
         let viewer: any;
         try {
@@ -256,7 +266,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 navigationHelpButton: false,
                 navigationInstructionsInitiallyVisible: false,
                 skyAtmosphere: new Cesium.SkyAtmosphere(),
-                terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+                terrainProvider,
                 baseLayer,
             });
         } catch (err) {
@@ -446,11 +456,17 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK, Cesium.KeyboardEventModifier.SHIFT);
 
         handlerRef.current = handler;
+        })();
 
-        // NOTE: We intentionally do NOT return a cleanup here.
-        // This effect depends on [transition]; if we destroyed the viewer
-        // in cleanup, transition changes (entering -> active) would wipe
-        // the globe. Cleanup is handled in a dedicated unmount effect.
+        // NOTE: We intentionally do NOT destroy the viewer in this cleanup —
+        // only guard against the async layer-resolution race above resolving
+        // after the effect re-runs. This effect depends on [transition]; if we
+        // destroyed the viewer here, transition changes (entering -> active)
+        // would wipe the globe. Viewer teardown is handled in a dedicated
+        // unmount effect.
+        return () => {
+            cancelled = true;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [transition]);
 

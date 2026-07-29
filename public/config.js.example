@@ -16,3 +16,8 @@
 // for the exact Google Cloud Console steps (required APIs, billing alerts, restrictions).
 
 window.MAPS_API_KEY = "YOUR_REAL_API_KEY_HERE";
+
+// Optional: enables Cesium Ion world terrain/imagery on GlobeView + MiniMap.
+// Get a token at https://ion.cesium.com/tokens. Leave empty to use the free
+// CartoCDN + flat ellipsoid fallback.
+window.CESIUM_ION_TOKEN = "";

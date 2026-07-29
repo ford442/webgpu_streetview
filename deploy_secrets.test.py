@@ -49,6 +49,7 @@ class DeploySecretsTest(unittest.TestCase):
                 "DEPLOY_TOKEN": "test-token",
                 "DEPLOY_TARGET": "go",
                 "MAPS_API_KEY": "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+                "CESIUM_ION_TOKEN": "test-ion-token",
             },
             clear=True,
         ):
@@ -56,6 +57,28 @@ class DeploySecretsTest(unittest.TestCase):
             self.assertEqual(config.deploy_token, "test-token")
             self.assertEqual(config.deploy_target, "go")
             self.assertEqual(config.maps_api_key, "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
+            self.assertEqual(config.cesium_ion_token, "test-ion-token")
+
+    def test_load_deploy_config_cesium_ion_token_optional(self):
+        deploy = _load_deploy_module()
+        env = {k: v for k, v in os.environ.items() if k != "CESIUM_ION_TOKEN"}
+        env["DEPLOY_TOKEN"] = "test-token"
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = deploy.load_deploy_config()
+            self.assertIsNone(config.cesium_ion_token)
+
+    def test_inject_cesium_ion_token_replaces_sentinel(self):
+        deploy = _load_deploy_module()
+        bundle = f'const t="{deploy.CESIUM_ION_TOKEN_SENTINEL}";'.encode("utf-8")
+        patched = deploy._inject_cesium_ion_token_into_bundle(bundle, "real-ion-token")
+        self.assertIn(b'"real-ion-token"', patched)
+        self.assertNotIn(deploy.CESIUM_ION_TOKEN_SENTINEL.encode("utf-8"), patched)
+
+    def test_inject_cesium_ion_token_prepends_when_sentinel_absent(self):
+        deploy = _load_deploy_module()
+        bundle = b"console.log('no sentinel here');"
+        patched = deploy._inject_cesium_ion_token_into_bundle(bundle, "real-ion-token")
+        self.assertIn(b'window.CESIUM_ION_TOKEN="real-ion-token";', patched)
 
 
 if __name__ == "__main__":
