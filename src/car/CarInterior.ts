@@ -26,7 +26,15 @@ import { RainSystem } from './interior/RainSystem';
 import { DustMoteSystem } from './interior/DustMoteSystem';
 import { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
 import { InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
-import { CarInteriorDetailProps } from './interior/CarInteriorDetailProps';
+import { CarInteriorDetailProps, CabinLeverCallbacks } from './interior/CarInteriorDetailProps';
+import {
+    GEAR_POSITIONS,
+    SHIFTER_KNOB_MESH,
+    WIPER_STALK_MESH,
+    WIPER_STALK_POSITIONS,
+    type GearPosition,
+    type WiperStalkPosition,
+} from './interior/CabinControls';
 import { VanityMirror } from './interior/VanityMirror';
 import { CenterDisplay } from './interior/CenterDisplay';
 import { SunShafts } from './interior/SunShafts';
@@ -103,6 +111,7 @@ export class CarInterior {
     private dustMoteSystem?: DustMoteSystem;
     private windowWeatherOverlay?: WindowWeatherOverlay;
     private microInteractions: InteriorMicroInteractions;
+    private leverCallbacks: CabinLeverCallbacks = {};
     private cupLiquidMaterial?: THREE.ShaderMaterial;
     private vanityMirror?: VanityMirror;
     private vanityMirrorMesh?: THREE.Mesh;
@@ -490,7 +499,13 @@ export class CarInterior {
                     accent: this.accentMaterial,
                     chrome: (this.chromeMaterial as any) || (this.metalMaterial as any),
                 } as any,
-                this.quality
+                this.quality,
+                // Indirected through the field so callbacks registered before or
+                // after a cabin rebuild both keep working.
+                {
+                    onWiperStalk: (position) => this.leverCallbacks.onWiperStalk?.(position),
+                    onGear: (gear) => this.leverCallbacks.onGear?.(gear),
+                }
             );
             this.cupLiquidMaterial = detail.cupLiquidMaterial;
             this.microInteractions.register(detail.interactives);
@@ -654,6 +669,35 @@ export class CarInterior {
     /** Wiper sweep rate multiplier (0.5 slow … 2.0 fast). */
     public setWiperSpeed(speed: number): void {
         this.animator.setWiperSpeed(speed);
+    }
+
+    /** Pause at the park position between sweeps (intermittent stalk detent). */
+    public setWiperIntermittent(intermittent: boolean): void {
+        this.animator.setWiperIntermittent(intermittent);
+    }
+
+    /** Register handlers for driver-initiated stalk / shifter moves. */
+    public setLeverCallbacks(callbacks: CabinLeverCallbacks): void {
+        this.leverCallbacks = callbacks;
+    }
+
+    /**
+     * Move the wiper stalk mesh to match externally-set state (HUD button,
+     * keyboard shortcut). Does not re-fire the lever callback.
+     */
+    public syncWiperStalkMesh(position: WiperStalkPosition): void {
+        this.microInteractions.setLeverIndexByName(
+            WIPER_STALK_MESH,
+            WIPER_STALK_POSITIONS.indexOf(position)
+        );
+    }
+
+    /** Move the shifter mesh to match externally-set gear state. */
+    public syncShifterMesh(gear: GearPosition): void {
+        this.microInteractions.setLeverIndexByName(
+            SHIFTER_KNOB_MESH,
+            GEAR_POSITIONS.indexOf(gear)
+        );
     }
 
     /**

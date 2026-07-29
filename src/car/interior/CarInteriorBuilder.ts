@@ -30,6 +30,9 @@ export interface CarInteriorBuildResult {
     centerDisplayMat: THREE.MeshStandardMaterial;
     domeLightFixtureMesh: THREE.Mesh;
     domeSwitchMesh: THREE.Mesh;
+    /** Wiper stalk lever (absent on vehicles without a steering wheel). */
+    wiperStalkMesh?: THREE.Mesh;
+    wiperStalkPivot?: THREE.Group;
 }
 
 export class CarInteriorBuilder {
@@ -129,6 +132,36 @@ export class CarInteriorBuilder {
         );
         column.rotation.set(wheelCfg.tilt, 0, 0);
         this.interiorGroup.add(column);
+
+        this.buildWiperStalk(wheelCfg.columnPosition, wheelCfg.tilt);
+    }
+
+    /**
+     * Wiper stalk on the right of the steering column. The pivot group carries
+     * the column tilt so the detent rotation applied by the micro-interaction
+     * layer reads as a clean up/down flick.
+     */
+    private buildWiperStalk(columnPosition: { x: number; y: number; z: number }, tilt: number): void {
+        const pivot = new THREE.Group();
+        pivot.position.set(columnPosition.x + 0.055, columnPosition.y + 0.12, columnPosition.z + 0.02);
+        pivot.rotation.set(tilt, 0, 0);
+        this.interiorGroup.add(pivot);
+
+        const stalkGeo = new THREE.CylinderGeometry(0.008, 0.01, 0.16, 8);
+        const stalk = new THREE.Mesh(stalkGeo, this.materials.metal);
+        // Lay the cylinder along +X so it cantilevers out of the column.
+        stalk.geometry.rotateZ(Math.PI / 2);
+        stalk.geometry.translate(0.08, 0, 0);
+        stalk.name = 'wiperStalk';
+        pivot.add(stalk);
+
+        const tipGeo = new THREE.SphereGeometry(0.012, 10, 8);
+        const tip = new THREE.Mesh(tipGeo, this.materials.accent);
+        tip.position.set(0.165, 0, 0);
+        stalk.add(tip);
+
+        this.result.wiperStalkMesh = stalk;
+        this.result.wiperStalkPivot = pivot;
     }
 
     private buildDoorPanels(): void {

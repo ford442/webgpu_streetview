@@ -10,6 +10,13 @@ import {
 import {
     ConvertibleMode,
 } from './variants';
+import {
+    WIPER_STALK_POSITIONS,
+    WIPER_STALK_SPEEDS,
+    gearHopCount,
+    type GearPosition,
+    type WiperStalkPosition,
+} from './interior/CabinControls';
 
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
@@ -25,6 +32,15 @@ export { RainSystem } from './interior/RainSystem';
 export { DustMoteSystem } from './interior/DustMoteSystem';
 export { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
 export { InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
+export {
+    WIPER_STALK_POSITIONS,
+    WIPER_STALK_SPEEDS,
+    GEAR_POSITIONS,
+    GEAR_HOP_COUNTS,
+    gearHopCount,
+    isGearParked,
+} from './interior/CabinControls';
+export type { WiperStalkPosition, GearPosition } from './interior/CabinControls';
 export { VanityMirror } from './interior/VanityMirror';
 export { PerformanceProfiler } from './interior/PerformanceProfiler';
 export { buildInteriorLighting } from './interior/LightingBuilder';
@@ -123,7 +139,19 @@ export interface CarModeState {
     wipersEnabled: boolean;
     wiperSpeed: number;
     currentVehicle: VehicleType;
+    /** Physical wiper stalk detent. */
+    wiperStalk: WiperStalkPosition;
+    /** Physical gear selector position. */
+    gear: GearPosition;
 }
+
+/** Fired when the driver moves a cabin lever in the 3D scene. */
+export interface CabinLeverHandlers {
+    onWiperStalk?: (position: WiperStalkPosition) => void;
+    onGear?: (gear: GearPosition) => void;
+}
+
+let leverHandlers: CabinLeverHandlers = {};
 
 let carModeState: CarModeState | null = null;
 let lastTimestamp = 0;
@@ -165,7 +193,18 @@ export function initCarMode(container: HTMLElement, initialVehicle: VehicleType 
         wipersEnabled: false,
         wiperSpeed: 1.0,
         currentVehicle: initialVehicle,
+        wiperStalk: 'off',
+        gear: 'D',
     };
+
+    interior.setLeverCallbacks({
+        onWiperStalk: applyWiperStalk,
+        onGear: (gear) => {
+            if (!carModeState || carModeState.gear === gear) return;
+            carModeState.gear = gear;
+            leverHandlers.onGear?.(gear);
+        },
+    });
 
     // Sync with vehicle manager
     vehicleManager.setVehicle(initialVehicle);
@@ -229,17 +268,84 @@ export function setCarZoomFOV(zoom: number): void {
 
 /**
  * Toggle windshield wipers on/off (matches headlights/dome: mutates animator immediately).
+ * Off ↔ low, keeping the physical stalk in step.
  */
 export function toggleWipers(): boolean {
     if (!carModeState) return false;
     const next = !carModeState.wipersEnabled;
-    carModeState.wipersEnabled = next;
-    carModeState.interior.setWipersActive(next);
+    setWiperStalkPosition(next ? 'low' : 'off');
     return next;
 }
 
 /**
- * Set wiper speed (0.5 = slow, 1.0 = normal, 2.0 = fast).
+ * Drive the animator from a stalk detent (shared by mesh + HUD paths) and
+ * notify listeners so the HUD mirrors whichever path moved the stalk.
+ */
+function applyWiperStalk(position: WiperStalkPosition): void {
+    if (!carModeState) return;
+    if (carModeState.wiperStalk === position) return;
+    const active = position !== 'off';
+    carModeState.wiperStalk = position;
+    carModeState.wipersEnabled = active;
+    carModeState.wiperSpeed = WIPER_STALK_SPEEDS[position];
+    carModeState.interior.setWiperSpeed(carModeState.wiperSpeed);
+    carModeState.interior.setWiperIntermittent(position === 'intermittent');
+    carModeState.interior.setWipersActive(active);
+    leverHandlers.onWiperStalk?.(position);
+}
+
+/**
+ * Set the wiper stalk detent from outside the 3D scene (HUD fallback,
+ * keyboard shortcut). Moves the stalk mesh to match.
+ */
+export function setWiperStalkPosition(position: WiperStalkPosition): void {
+    if (!carModeState) return;
+    applyWiperStalk(position);
+    carModeState.interior.syncWiperStalkMesh(position);
+}
+
+/** Advance the wiper stalk one detent, wrapping High → Off. */
+export function cycleWiperStalk(): WiperStalkPosition {
+    if (!carModeState) return 'off';
+    const next = WIPER_STALK_POSITIONS[
+        (WIPER_STALK_POSITIONS.indexOf(carModeState.wiperStalk) + 1) % WIPER_STALK_POSITIONS.length
+    ]!;
+    setWiperStalkPosition(next);
+    return next;
+}
+
+export function getWiperStalkPosition(): WiperStalkPosition {
+    return carModeState?.wiperStalk ?? 'off';
+}
+
+/** Set the gear selector from outside the 3D scene; moves the shifter mesh. */
+export function setCarGear(gear: GearPosition): void {
+    if (!carModeState || carModeState.gear === gear) return;
+    carModeState.gear = gear;
+    carModeState.interior.syncShifterMesh(gear);
+    leverHandlers.onGear?.(gear);
+}
+
+export function getCarGear(): GearPosition {
+    return carModeState?.gear ?? 'D';
+}
+
+/** Panorama hops the current gear consumes per forward input / cruise tick. */
+export function getGearHopCount(): number {
+    return gearHopCount(getCarGear());
+}
+
+/**
+ * Register handlers for driver-initiated stalk / shifter moves so the HUD and
+ * app state can mirror the physical controls.
+ */
+export function setCabinLeverHandlers(handlers: CabinLeverHandlers): void {
+    leverHandlers = handlers;
+}
+
+/**
+ * Set wiper speed directly (0.5 = slow, 1.0 = normal, 2.0 = fast).
+ * Prefer `setWiperStalkPosition` so the stalk mesh stays in sync.
  */
 export function setWiperSpeed(speed: number): void {
     if (!carModeState) return;
@@ -315,8 +421,8 @@ export function setCarSteering(steeringInput: number): void {
  */
 export function setCarWipers(active: boolean): void {
     if (!carModeState) return;
-    carModeState.wipersEnabled = active;
-    carModeState.interior.setWipersActive(active);
+    if (active === carModeState.wipersEnabled) return;
+    setWiperStalkPosition(active ? 'low' : 'off');
 }
 
 /**

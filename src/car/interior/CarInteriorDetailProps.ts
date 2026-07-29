@@ -2,6 +2,22 @@ import * as THREE from 'three';
 import { createCupLiquidMaterial } from '../../shaders/cupLiquid';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 import type { InteriorInteractive } from './InteriorMicroInteractions';
+import {
+  GEAR_POSITIONS,
+  SHIFTER_DETENTS,
+  SHIFTER_KNOB_MESH,
+  WIPER_STALK_DETENTS,
+  WIPER_STALK_MESH,
+  WIPER_STALK_POSITIONS,
+  type GearPosition,
+  type WiperStalkPosition,
+} from './CabinControls';
+
+/** Callbacks fired when the driver moves a physical cabin lever. */
+export interface CabinLeverCallbacks {
+  onWiperStalk?: (position: WiperStalkPosition) => void;
+  onGear?: (gear: GearPosition) => void;
+}
 
 export interface CarInteriorDetailBuildResult {
   interactives: InteriorInteractive[];
@@ -17,7 +33,8 @@ export class CarInteriorDetailProps {
   static build(
     interiorGroup: THREE.Group,
     materials: CarInteriorMaterials,
-    quality: 'high' | 'medium' | 'low'
+    quality: 'high' | 'medium' | 'low',
+    leverCallbacks: CabinLeverCallbacks = {}
   ): CarInteriorDetailBuildResult {
     if (quality === 'low') {
       return { interactives: [] };
@@ -45,15 +62,24 @@ export class CarInteriorDetailProps {
     const knobGeo = new THREE.SphereGeometry(0.028, 12, 10);
     const knob = new THREE.Mesh(knobGeo, materials.accent);
     knob.position.y = 0.2;
-    knob.name = 'shifterKnob';
+    knob.name = SHIFTER_KNOB_MESH;
     shifterGroup.add(knob);
 
+    // The knob is the raycast target so the driver grabs the ball, but the
+    // whole shifter group swings so shaft and boot follow the gate.
     interactives.push({
       mesh: knob,
-      kind: 'knob',
-      minRotation: -0.45,
-      maxRotation: 0.45,
+      kind: 'lever',
+      pivot: shifterGroup,
       axis: 'x',
+      detents: SHIFTER_DETENTS,
+      initialDetent: GEAR_POSITIONS.indexOf('D'),
+      dragAxis: 'y',
+      dragPixelsPerDetent: 22,
+      onDetent: (index) => {
+        const gear = GEAR_POSITIONS[index];
+        if (gear) leverCallbacks.onGear?.(gear);
+      },
     });
 
     // --- Pedal set ---
@@ -137,6 +163,23 @@ export class CarInteriorDetailProps {
         sunVisorGroup!.rotation.x += sunVisorGroup!.rotation.x < -0.2 ? 0.35 : -0.35;
       },
     });
+
+    // Wiper stalk (built with the steering column) → Off / Int / Low / High
+    const wiperStalk = interiorGroup.getObjectByName(WIPER_STALK_MESH) as THREE.Mesh | undefined;
+    if (wiperStalk) {
+      interactives.push({
+        mesh: wiperStalk,
+        kind: 'lever',
+        axis: 'x',
+        detents: WIPER_STALK_DETENTS,
+        dragAxis: 'y',
+        dragPixelsPerDetent: 18,
+        onDetent: (index) => {
+          const position = WIPER_STALK_POSITIONS[index];
+          if (position) leverCallbacks.onWiperStalk?.(position);
+        },
+      });
+    }
 
     // Hazard button on dash (micro-interaction)
     const hazardBtn = interiorGroup.getObjectByName('hazardBtn') as THREE.Mesh | undefined;
