@@ -19,10 +19,15 @@ export {
   offlineUpsertPanoMetadata,
   offlineGetRouteGraph,
   offlineSaveRouteGraph,
+  offlineGetAllRouteGraphNodes,
+  offlineListRouteGraphs,
+  offlineDeleteRouteGraph,
   type PanoMetadata,
   type RouteGraphNode,
+  type RouteGraphSummary,
   type OfflineStoreName,
 } from './offlineStore';
+export { findBestOfflineLink, findPathBetweenPanos } from './routeGraphNavigation';
 export {
   migrateLocalStorageToIndexedDB,
   loadMirroredJson,
@@ -42,7 +47,11 @@ export {
   buildRouteGraphNodes,
   savePrefetchedRoute,
   prefetchRouteGraph,
+  createStreetViewLinkCollector,
   type RoutePrefetchPlan,
+  type RoutePrefetchWaypoint,
+  type RoutePrefetchProgress,
   type PanoLinkSnapshot,
+  type StreetViewServiceLike,
 } from './routePrefetch';
 export { registerServiceWorker, unregisterServiceWorker } from './serviceWorkerRegistration';

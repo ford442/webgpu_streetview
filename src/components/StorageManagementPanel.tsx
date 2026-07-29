@@ -6,6 +6,7 @@ import {
   readStorageEstimate,
   requestPersistentStorage,
   type StorageEstimateSummary,
+  type RouteGraphSummary,
 } from '../offline';
 
 interface StorageManagementPanelProps {
@@ -13,6 +14,10 @@ interface StorageManagementPanelProps {
   onClose: () => void;
   isOnline: boolean;
   hasServiceWorker: boolean;
+  /** Offline route-graph prefetch (Phase 3) — optional so panel still works without it wired up. */
+  routeGraphSummaries?: RouteGraphSummary[];
+  onDeleteRouteGraph?: (routeId: string) => void;
+  onRefreshRouteGraphs?: () => void;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -38,6 +43,9 @@ const StorageManagementPanel: React.FC<StorageManagementPanelProps> = ({
   onClose,
   isOnline,
   hasServiceWorker,
+  routeGraphSummaries = [],
+  onDeleteRouteGraph,
+  onRefreshRouteGraphs,
 }) => {
   const panelRef = React.useRef<HTMLDivElement>(null);
   const [estimate, setEstimate] = useState<StorageEstimateSummary | null>(null);
@@ -48,7 +56,8 @@ const StorageManagementPanel: React.FC<StorageManagementPanelProps> = ({
 
   const refresh = useCallback(async () => {
     setEstimate(await readStorageEstimate());
-  }, []);
+    onRefreshRouteGraphs?.();
+  }, [onRefreshRouteGraphs]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -224,6 +233,45 @@ const StorageManagementPanel: React.FC<StorageManagementPanelProps> = ({
             </div>
           </div>
         )}
+
+        <div style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>Prepared route graphs ({routeGraphSummaries.length})</h3>
+          <p style={{ margin: '0 0 10px', fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>
+            Pano IDs and link connections for tours prepared via "Prepare offline graph" in the Tours panel.
+            Imagery still requires a network connection — these store link IDs only, never tile pixels.
+          </p>
+          {routeGraphSummaries.length === 0 ? (
+            <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>None prepared yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {routeGraphSummaries.map((summary) => (
+                <div
+                  key={summary.routeId}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.06)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    fontSize: 13,
+                  }}
+                >
+                  <span>{summary.nodeCount} pano{summary.nodeCount === 1 ? '' : 's'} cached</span>
+                  {onDeleteRouteGraph && (
+                    <button
+                      onClick={() => onDeleteRouteGraph(summary.routeId)}
+                      aria-label={`Delete route graph ${summary.routeId}`}
+                      style={{ background: 'none', border: 'none', color: '#ff8a8a', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button

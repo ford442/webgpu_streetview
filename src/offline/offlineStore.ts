@@ -180,3 +180,44 @@ export async function offlineSaveRouteGraph(routeId: string, nodes: Omit<RouteGr
     ),
   );
 }
+
+/** All prefetched route-graph nodes across every route, deduplicated by their storage key. */
+export async function offlineGetAllRouteGraphNodes(): Promise<RouteGraphNode[]> {
+  const allKeys = await offlineListKeys('routeGraph');
+  const nodes: RouteGraphNode[] = [];
+  for (const key of allKeys) {
+    const node = await offlineGet<RouteGraphNode>('routeGraph', key);
+    if (node) nodes.push(node);
+  }
+  return nodes;
+}
+
+export interface RouteGraphSummary {
+  routeId: string;
+  nodeCount: number;
+  cachedAt: string;
+}
+
+/** One summary row per prepared route graph, for storage-management UI. */
+export async function offlineListRouteGraphs(): Promise<RouteGraphSummary[]> {
+  const nodes = await offlineGetAllRouteGraphNodes();
+  const summaries = new Map<string, RouteGraphSummary>();
+  for (const node of nodes) {
+    const existing = summaries.get(node.routeId);
+    if (existing) {
+      existing.nodeCount += 1;
+      if (node.cachedAt > existing.cachedAt) existing.cachedAt = node.cachedAt;
+    } else {
+      summaries.set(node.routeId, { routeId: node.routeId, nodeCount: 1, cachedAt: node.cachedAt });
+    }
+  }
+  return Array.from(summaries.values());
+}
+
+/** Delete every node belonging to one prepared route graph. */
+export async function offlineDeleteRouteGraph(routeId: string): Promise<void> {
+  const allKeys = await offlineListKeys('routeGraph');
+  const prefix = `${routeId}:`;
+  const keysToDelete = allKeys.filter((key) => key.startsWith(prefix));
+  await Promise.all(keysToDelete.map((key) => offlineDelete('routeGraph', key)));
+}

@@ -12,6 +12,7 @@ import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
 import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
 import type { MemoryStats } from '../../utils/memoryProfiler';
+import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
 import {
   BookmarkPanel,
@@ -113,6 +114,12 @@ export interface ConnectedChromeGlobe {
   handleStartJourney: (waypoints: { lat: number; lng: number }[]) => void | Promise<void>;
 }
 
+export interface ConnectedChromeOfflineRoutes {
+  summaries: RouteGraphSummary[];
+  onDelete: (routeId: string) => void;
+  onRefresh: () => void;
+}
+
 export interface ConnectedChromeOverlays {
   showPerformanceStats: boolean;
   setShowPerformanceStats: (show: boolean) => void;
@@ -136,6 +143,7 @@ export interface ConnectedChromeProps {
   tourPanelProps: TourPanelBindings;
   globe: ConnectedChromeGlobe;
   overlays: ConnectedChromeOverlays;
+  offlineRoutes: ConnectedChromeOfflineRoutes;
 }
 
 /** Toolbar + feature panels + globe, shown once the user is connected. */
@@ -152,6 +160,7 @@ export function ConnectedChrome({
   tourPanelProps,
   globe,
   overlays,
+  offlineRoutes,
 }: ConnectedChromeProps) {
   const {
     viewMode,
@@ -413,6 +422,9 @@ export function ConnectedChrome({
           onClose={() => setIsStoragePanelOpen(false)}
           isOnline={snaps.isOnline}
           hasServiceWorker={snaps.hasServiceWorker}
+          routeGraphSummaries={offlineRoutes.summaries}
+          onDeleteRouteGraph={offlineRoutes.onDelete}
+          onRefreshRouteGraphs={offlineRoutes.onRefresh}
         />
       )}
 

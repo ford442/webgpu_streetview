@@ -675,13 +675,14 @@ const estimateStorage = async () => {
 - Thumbnail regeneration on demand
 - Metadata search/filtering
 
-#### 8.3 Downloadable Route Data 🚧
-**Pre-download Workflow:**
-1. User plots a route
-2. System identifies all panoramas within X meters of route
-3. Shows download size estimate
-4. Downloads in background with progress indicator
-5. Stores in IndexedDB with route association (link graph scaffold landed; UI pending #134)
+#### 8.3 Downloadable Route Data ✅
+**Pre-download workflow (implemented via the Tours panel's "Prepare offline graph"):**
+1. User selects a saved tour (its waypoints double as the route)
+2. `prefetchRouteGraph` walks each waypoint via `StreetViewService`, snapping to the nearest panorama
+3. Progress is reported per waypoint (`RoutePrefetchProgress`) and shown in the Tours panel
+4. Pano IDs + link IDs (never imagery) are stored in IndexedDB under `routeGraph`, keyed by `${routeId}:${panoId}`
+5. The Offline storage panel lists prepared graphs by node count and supports deleting them
+6. Cruise mode and tour playback consult the graph (`src/offline/routeGraphNavigation.ts`) to pre-warm the likely next panorama when online but flaky; no fake panoramas are shown when truly offline
 
 #### 8.4 Offline POI Data ⬜
 - Wikipedia articles for landmarks (offline package)
