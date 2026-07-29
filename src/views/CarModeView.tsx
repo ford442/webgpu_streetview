@@ -32,7 +32,14 @@ import {
   isCarCenterDisplayHit,
   cycleCarDisplayPage,
   setCarWeather,
-  CarModeState
+  setCabinLeverHandlers,
+  cycleWiperStalk,
+  setCarGear,
+  gearHopCount,
+  GEAR_POSITIONS,
+  CarModeState,
+  type GearPosition,
+  type WiperStalkPosition,
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
 import { VehicleDynamics, VehicleTelemetry } from '../car/VehicleDynamics';
@@ -45,6 +52,8 @@ type HudMode = 'full' | 'compact' | 'immersive';
 
 const HUD_MODE_STORAGE_KEY = 'webgpu_streetview_car_hud_mode';
 const HUD_LONG_PRESS_MS = 500;
+/** Spacing between the extra panorama hops a 2/3 gear queues. */
+const GEAR_HOP_INTERVAL_MS = 550;
 
 /**
  * CarModeView - The car interior driving experience.
@@ -68,7 +77,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   
   const {
     wipersEnabled,
-    toggleWipers,
+    setWipers,
     headlightsOn,
     toggleHeadlights,
     highBeam,
@@ -161,7 +170,21 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   
   // GPS/Map state
   const [isMapOpen, setIsMapOpen] = useState(false);
-  
+
+  // Physical cabin levers: the 3D stalk/shifter own this state, the HUD rows
+  // below are thin fallbacks for keyboard users and non-raycastable modes.
+  const [wiperStalk, setWiperStalkState] = useState<WiperStalkPosition>('off');
+  const [gear, setGearState] = useState<GearPosition>('D');
+  const gearRef = useRef<GearPosition>('D');
+  gearRef.current = gear;
+  /** Timers for the extra hops a 2/3 gear queues after the first advance. */
+  const pendingHopsRef = useRef<number[]>([]);
+
+  const cancelPendingHops = useCallback(() => {
+    for (const id of pendingHopsRef.current) window.clearTimeout(id);
+    pendingHopsRef.current = [];
+  }, []);
+
   // Car state refs — carHeading, heading, pitch come from hooks; kept in sync for animate loop
   const carHeadingRef = useRef(carHeading);
   carHeadingRef.current = carHeading;
@@ -424,6 +447,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   // Handle thrust from W/S keys for body pitch effect
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
     if (controlMode === 'freeLook') return; // Car is locked when looking around
+    if (gearHopCount(gearRef.current) === 0) return; // Parked in P/N
     pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
     dynamicsRef.current?.noteThrust(direction);
     triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
@@ -439,9 +463,66 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     setIsMapOpen(prev => !prev);
   }, []);
 
+  /**
+   * Gear-aware movement: P/N hold the car still, R flips forward/backward, and
+   * D/2/3 consume 1/2/3 panorama hops per input. The extra hops are queued
+   * rather than fired at once so each one starts from the panorama the
+   * previous hop landed on.
+   */
   const handleNavigate = useCallback((direction: 'forward' | 'backward' | 'left' | 'right') => {
-    advance(direction, carHeading);
-  }, [advance, carHeading]);
+    const selected = gearRef.current;
+    const hops = gearHopCount(selected);
+    if (hops === 0) return;
+
+    let resolved = direction;
+    if (selected === 'R') {
+      if (direction === 'forward') resolved = 'backward';
+      else if (direction === 'backward') resolved = 'forward';
+    }
+
+    cancelPendingHops();
+    advance(resolved, carHeading);
+    // Only forward/backward travel multiplies; turns stay a single hop.
+    if (resolved !== 'forward' && resolved !== 'backward') return;
+    for (let i = 1; i < hops; i++) {
+      const id = window.setTimeout(() => {
+        if (gearRef.current !== selected) return;
+        advance(resolved, carHeadingRef.current);
+      }, i * GEAR_HOP_INTERVAL_MS);
+      pendingHopsRef.current.push(id);
+    }
+  }, [advance, carHeading, cancelPendingHops]);
+
+  // Keep the HUD, app state and 3D levers in step when the driver grabs a
+  // stalk or the shifter in the cabin.
+  useEffect(() => {
+    setCabinLeverHandlers({
+      onWiperStalk: (position) => {
+        setWiperStalkState(position);
+        setWipers(position !== 'off');
+      },
+      onGear: (next) => {
+        cancelPendingHops();
+        setGearState(next);
+      },
+    });
+    return () => setCabinLeverHandlers({});
+  }, [setWipers, cancelPendingHops]);
+
+  useEffect(() => cancelPendingHops, [cancelPendingHops]);
+
+  // HUD fallbacks — drive the same API the physical levers do.
+  const handleCycleWipers = useCallback(() => {
+    const next = cycleWiperStalk();
+    setWiperStalkState(next);
+    setWipers(next !== 'off');
+  }, [setWipers]);
+
+  const handleSelectGear = useCallback((next: GearPosition) => {
+    cancelPendingHops();
+    setGearState(next);
+    setCarGear(next);
+  }, [cancelPendingHops]);
   
   const handleToggleRadio = useCallback(async () => {
     const newState = !isRadioPlaying;
@@ -591,7 +672,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         onWind={setWind}
         onTimeOfDay={handleTimeOfDayChange}
         onToggleRoof={toggleRoof}
-        onToggleWipers={toggleWipers}
+        onToggleWipers={handleCycleWipers}
         onToggleVehicle={handleToggleVehicle}
         onToggleHeadlights={toggleHeadlights}
         onToggleHighBeam={toggleHighBeam}
@@ -619,7 +700,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         stationTags={stationTags}
         speedKmh={telemetry.speedKmh}
         rpm={telemetry.rpm}
-        gear={telemetry.gear}
+        gear={gear === 'D' || gear === '2' || gear === '3' ? telemetry.gear : gear}
       />
       
       {/* Control Mode Indicator (small overlay) */}
@@ -745,6 +826,78 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         </button>
       </div>
       
+      {/* Lever fallbacks — the cabin stalk/shifter are the primary controls, but
+          free-look and keyboard-only users still need to reach them. */}
+      {hudMode !== 'immersive' && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onMouseMove={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            padding: '8px 10px',
+            background: 'rgba(15, 20, 25, 0.8)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '12px',
+            color: '#fff',
+            fontFamily: "'SF Pro Display', system-ui, sans-serif",
+            fontSize: '10px',
+            zIndex: 101,
+            userSelect: 'none',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ opacity: 0.7 }}>Gear</div>
+          <div role="group" aria-label="Gear selector" style={{ display: 'flex', gap: '3px' }}>
+            {GEAR_POSITIONS.map((option) => (
+              <button
+                key={option}
+                onClick={() => handleSelectGear(option)}
+                aria-pressed={gear === option}
+                aria-label={`Select gear ${option}`}
+                style={{
+                  width: '22px',
+                  padding: '4px 0',
+                  background: gear === option ? 'rgba(0,212,255,0.25)' : 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  color: gear === option ? '#00d4ff' : 'rgba(255,255,255,0.6)',
+                  cursor: 'pointer',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleCycleWipers}
+            aria-label={`Wiper stalk: ${wiperStalk}. Activate to cycle.`}
+            title="Wiper stalk — Off / Int / Low / High"
+            style={{
+              padding: '4px 8px',
+              background: wiperStalk === 'off' ? 'rgba(255,255,255,0.05)' : 'rgba(0,212,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '6px',
+              color: wiperStalk === 'off' ? 'rgba(255,255,255,0.6)' : '#00d4ff',
+              cursor: 'pointer',
+              fontSize: '10px',
+              textTransform: 'capitalize',
+            }}
+          >
+            {`Wipers: ${wiperStalk}`}
+          </button>
+        </div>
+      )}
+
       {/* Steering wheel overlay - shows when steering */}
       <div style={{
         position: 'absolute',

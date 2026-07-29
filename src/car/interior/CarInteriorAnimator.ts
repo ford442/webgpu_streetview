@@ -23,11 +23,17 @@ export interface CarInteriorAmbientState {
   convertibleOpen: boolean;
 }
 
+/** Parked pause between intermittent wiper sweeps (seconds). */
+const INTERMITTENT_DWELL_S = 2.5;
+
 export class CarInteriorAnimator {
   private steeringAngle: number = 0;
   private isWiperActive: boolean = false;
   private wiperAnimationTime: number = 0;
   private wiperSpeed: number = 1.0;
+  private wiperIntermittent: boolean = false;
+  /** Seconds left of the parked pause between intermittent sweeps. */
+  private wiperDwell: number = 0;
   private speedometer: number = 0;
   private tachometer: number = 0;
   private isActive: boolean = true;
@@ -142,11 +148,22 @@ export class CarInteriorAnimator {
     }
 
     if (this.isWiperActive && this.quality !== 'low') {
-      this.wiperAnimationTime += clampedDelta * this.wiperSpeed;
-      const wiperCycle = this.wiperAnimationTime % 1.0;
-      const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4);
-      if (this.wiperLeft) this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
-      if (this.wiperRight) this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
+      if (this.wiperDwell > 0) {
+        this.wiperDwell -= clampedDelta;
+        this.parkWipers();
+      } else {
+        const before = this.wiperAnimationTime;
+        this.wiperAnimationTime += clampedDelta * this.wiperSpeed;
+        if (this.wiperIntermittent && Math.floor(this.wiperAnimationTime) > Math.floor(before)) {
+          // Land exactly on the park position, then pause before the next sweep.
+          this.wiperAnimationTime = Math.floor(this.wiperAnimationTime);
+          this.wiperDwell = INTERMITTENT_DWELL_S;
+        }
+        const wiperCycle = this.wiperAnimationTime % 1.0;
+        const wiperAngle = Math.sin(wiperCycle * Math.PI) * (Math.PI / 4);
+        if (this.wiperLeft) this.wiperLeft.rotation.z = -wiperAngle - Math.PI / 6;
+        if (this.wiperRight) this.wiperRight.rotation.z = wiperAngle + Math.PI / 6;
+      }
     }
 
     if (this.quality !== 'low') this.updateGauges(clampedDelta);
@@ -256,14 +273,26 @@ export class CarInteriorAnimator {
     if (this.rainSystem) this.rainSystem.setWipersActive(active);
     if (!active) {
       this.wiperAnimationTime = 0;
-      if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
-      if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
+      this.wiperDwell = 0;
+      this.parkWipers();
     }
   }
 
   /** Sweep rate multiplier (0.5 = slow, 1 = normal, 2 = fast). */
   public setWiperSpeed(speed: number): void {
     this.wiperSpeed = Math.max(0.5, Math.min(2.0, speed));
+  }
+
+  /** Intermittent mode pauses at the park position between single sweeps. */
+  public setWiperIntermittent(intermittent: boolean): void {
+    if (this.wiperIntermittent === intermittent) return;
+    this.wiperIntermittent = intermittent;
+    this.wiperDwell = 0;
+  }
+
+  private parkWipers(): void {
+    if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
+    if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
   }
 
   public setGaugeValues(speed: number, rpm: number): void {
