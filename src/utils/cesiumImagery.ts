@@ -17,8 +17,44 @@ export const CARTO_CREDIT = '© OpenStreetMap contributors, © CARTO';
 
 export type GlobeImagerySource = 'ion' | 'carto';
 
+/** Baked into the JS bundle by deploy.py the same way MAPS_KEY_DEPLOY_SENTINEL works. */
+export const CESIUM_ION_TOKEN_DEPLOY_SENTINEL = '__RUNTIME_CESIUM_ION_TOKEN_SENTINEL__';
+
+const PLACEHOLDER_ION_TOKEN_PATTERNS: RegExp[] = [
+  /^your[_-]?cesium[_-]?ion[_-]?token[_-]?(here)?$/i,
+  /^__RUNTIME_CESIUM_ION_TOKEN_SENTINEL__$/,
+  /^placeholder/i,
+  /^<.*>$/,
+];
+
+function normalizeIonToken(value: string | undefined): string {
+  const trimmed = value?.trim() || '';
+  return PLACEHOLDER_ION_TOKEN_PATTERNS.some((re) => re.test(trimmed)) ? '' : trimmed;
+}
+
+/** Build-time env → deploy-time baked sentinel → runtime `window.CESIUM_ION_TOKEN` (config.js). */
+export function getConfiguredCesiumIonTokenFromEnv(
+  reactAppToken: string | undefined,
+  deploySentinel: string,
+  runtimeToken: string | undefined,
+): string {
+  return (
+    normalizeIonToken(reactAppToken) ||
+    normalizeIonToken(deploySentinel) ||
+    normalizeIonToken(runtimeToken)
+  );
+}
+
+export function getConfiguredCesiumIonToken(): string {
+  return getConfiguredCesiumIonTokenFromEnv(
+    process.env.REACT_APP_CESIUM_ION_TOKEN,
+    CESIUM_ION_TOKEN_DEPLOY_SENTINEL,
+    typeof window !== 'undefined' ? window.CESIUM_ION_TOKEN : undefined,
+  );
+}
+
 export function getCesiumIonToken(
-  envToken: string | undefined = process.env.REACT_APP_CESIUM_ION_TOKEN,
+  envToken: string | undefined = getConfiguredCesiumIonToken(),
 ): string {
   return (envToken ?? '').trim();
 }
@@ -49,23 +85,6 @@ export function createIonWorldBaseLayer(Cesium: any): any {
   return Cesium.ImageryLayer.fromWorldImagery();
 }
 
-/**
- * Resolve the Viewer `baseLayer` for full-screen GlobeView.
- * Prefers Ion world imagery when `REACT_APP_CESIUM_ION_TOKEN` is set; otherwise CartoCDN.
- * On Ion construction failure, falls back to Carto so Orbital Drop still works on a mapped globe.
- */
-export function resolveGlobeBaseLayer(Cesium: any): any {
-  const token = applyCesiumIonToken(Cesium);
-  if (resolveGlobeImagerySource(token) === 'ion') {
-    try {
-      return createIonWorldBaseLayer(Cesium);
-    } catch (err) {
-      console.warn('[cesiumImagery] Ion world imagery failed, falling back to CartoCDN:', err);
-    }
-  }
-  return createCartoBaseLayer(Cesium);
-}
-
 export interface CesiumViewerLayerOptions {
   terrainProvider: any;
   baseLayer: any;
@@ -73,8 +92,9 @@ export interface CesiumViewerLayerOptions {
 }
 
 /**
- * MiniMap globe options: Ion terrain + world imagery when token works;
- * otherwise ellipsoid + CartoCDN so the mini globe is never blank.
+ * Shared Cesium Viewer options for both MiniMap and full-screen GlobeView:
+ * Ion world terrain + world imagery when a token works; otherwise ellipsoid +
+ * CartoCDN so the globe is never blank.
  */
 export async function resolveMiniMapLayerOptions(Cesium: any): Promise<CesiumViewerLayerOptions> {
   const token = applyCesiumIonToken(Cesium);
@@ -88,7 +108,7 @@ export async function resolveMiniMapLayerOptions(Cesium: any): Promise<CesiumVie
       };
     } catch (err) {
       console.warn(
-        '[cesiumImagery] Ion terrain/imagery failed for MiniMap, using Carto ellipsoid:',
+        '[cesiumImagery] Ion terrain/imagery failed, using Carto ellipsoid:',
         err,
       );
     }

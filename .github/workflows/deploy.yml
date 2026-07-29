@@ -58,4 +58,5 @@ jobs:
         env:
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
           DEPLOY_TARGET: ${{ inputs.target }}

@@ -32,6 +32,7 @@ interface ImportMeta {
 declare global {
   interface Window {
     MAPS_API_KEY?: string;
+    CESIUM_ION_TOKEN?: string;
     rendererType?: 'webgpu' | 'webgl';
     usingWebGPU?: boolean;
     usingWebGL?: boolean;
