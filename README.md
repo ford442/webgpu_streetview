@@ -104,6 +104,42 @@ Live Street View navigation, cruise mode, and route planning still require an in
 
 ---
 
+## Shared Exploration Sessions (Road Trip)
+
+Open **Road Trip** in the toolbar to explore Street View together: a host drives, guests follow the host's pano + heading/pitch/zoom in real time.
+
+- **Host**: "Start Session (Host)" generates a 6-character room code. Share it (voice, chat, whatever) with guests.
+- **Guest**: enter the code and "Join Session (Guest)".
+- The room roster (who's in the room) updates live as people join/leave.
+- Media is **peer-to-peer WebRTC** — POV state flows directly host→guest over a data channel, never through a server.
+
+### How the room code replaces SDP copy-paste
+
+Earlier versions of this feature required manually copy-pasting base64 SDP blobs between host and guest. That's gone: a short-lived [Supabase Realtime](https://supabase.com/docs/guides/realtime) channel, named after the room code, now carries only the WebRTC *signaling* handshake (SDP offer/answer + trickle ICE candidates) between participants — see `src/services/signaling/signalingClient.ts` and `src/hooks/useSharedSession.ts`. Rooms are pure Realtime channels: nothing is persisted server-side, so a room "expires" the instant everyone leaves it — there's nothing left to clean up.
+
+**What crosses the signaling channel:** SDP + ICE metadata and each participant's `clientId`/`role` only.
+**What never crosses it (or the data channel):** Street View tile imagery — only `panoId`, lat/lng, and view angles are synced, consistent with the Maps Platform Terms constraints described above.
+
+### STUN/TURN and connection failures
+
+WebRTC needs to traverse NAT to connect two browsers directly. This app currently configures **STUN only** (`stun:stun.l.google.com:19302`, see `ICE_SERVERS` in `useSharedSession.ts`) — no TURN relay yet. STUN is enough for most home/mobile networks, but two participants both behind symmetric NATs or restrictive corporate firewalls may fail to connect a data channel even though signaling succeeds. When that happens:
+
+- The affected connection retries automatically (up to 5 attempts, ~2s apart) as long as both sides are still in the room.
+- After exhausting retries, an error banner explains a TURN server is likely needed.
+
+To add TURN, extend `ICE_SERVERS` in `src/hooks/useSharedSession.ts` with a `urls`/`username`/`credential` entry (a free/open TURN provider, or a self-hosted [coturn](https://github.com/coturn/coturn)) — no other code changes are required.
+
+### Configuring the signaling backend
+
+The Supabase project used for signaling needs its URL + anon/publishable key available at runtime, following the same pattern as the Maps API key:
+
+- Build-time: set `REACT_APP_SUPABASE_URL` / `REACT_APP_SUPABASE_ANON_KEY` (or `VITE_...`) in `.env.local` and rebuild.
+- Runtime (no rebuild): edit `window.SUPABASE_URL` / `window.SUPABASE_ANON_KEY` in `public/config.js` on the deployed server.
+
+If neither is configured, "Road Trip" surfaces a clear "signaling connection is not configured" error instead of silently failing — the rest of the app is unaffected either way.
+
+---
+
 ## Quick Start
 
 ### Requirements

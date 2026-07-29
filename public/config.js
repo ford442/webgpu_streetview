@@ -16,3 +16,14 @@
 //
 // See README "Production Deployment", docs/DEPLOY_CHECKLIST.md, and #89.
 window.MAPS_API_KEY = "";
+
+// Supabase project used ONLY as a signaling relay for Shared Exploration
+// Sessions (multiplayer road trips) — short room codes instead of pasting
+// SDP blobs. The anon/publishable key is safe to expose client-side (that's
+// what it's for), but following the same convention as MAPS_API_KEY above,
+// this stays blank in git and is supplied via REACT_APP_SUPABASE_URL /
+// REACT_APP_SUPABASE_ANON_KEY at build time, or edited here after a bundle
+// deploy. No Street View imagery ever touches this channel — see
+// src/hooks/useSharedSession.ts and README "Shared Exploration Sessions".
+window.SUPABASE_URL = "";
+window.SUPABASE_ANON_KEY = "";
