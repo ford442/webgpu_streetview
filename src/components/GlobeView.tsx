@@ -159,6 +159,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     // WebGL context failure state
     const [contextFailed, setContextFailed] = useState(false);
 
+    // Set once the async Cesium Viewer is created so POI/bookmark effects can sync.
+    const [viewerReady, setViewerReady] = useState(false);
+
     // Transient toast for "No Street View here"
     const [toast, setToast] = useState<string | null>(null);
     const showToast = useCallback((msg: string) => {
@@ -277,6 +280,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         }
 
         viewerRef.current = viewer;
+        setViewerReady(true);
 
         // Note: The mts1.googleapis.com/vt Street View coverage overlay has been
         // removed — it is an undocumented endpoint that can 403 silently, causing
@@ -489,7 +493,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 },
             })
         );
-    }, [pois]);
+    }, [pois, viewerReady]);
 
     // ---- Reactive bookmark entities (from ConnectedChrome bookmarks prop) ----
     useEffect(() => {
@@ -537,7 +541,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 },
             })
         );
-    }, [bookmarks]);
+    }, [bookmarks, viewerReady]);
 
     // ---- Update waypoint visuals on globe ----
     useEffect(() => {
@@ -594,7 +598,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 },
             });
         }
-    }, [waypoints]);
+    }, [waypoints, viewerReady]);
 
     // ---- update beacon when street view position changes ---------------------
     useEffect(() => {
@@ -641,6 +645,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         const v = viewerRef.current;
         if (v && !v.isDestroyed()) v.destroy();
         viewerRef.current = null;
+        setViewerReady(false);
         setContextFailed(false);
         setScoutTarget(null);
         setWaypoints([]);

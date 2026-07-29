@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import type { TimeOfDay } from '../../hooks';
 import type { AccessibilitySettings } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../hooks/useBookmarks';
@@ -182,6 +182,29 @@ export function ConnectedChrome({
     teleportToPanoSafe,
   } = session;
   const { globeMode, effectiveMapsKey, handleGlobeTeleport, handleStartJourney } = globe;
+
+  const globePois = useMemo(
+    () =>
+      hist.history.map((h) => ({
+        lat: h.lat,
+        lng: h.lng,
+        label: h.locationName || `${h.lat.toFixed(2)}, ${h.lng.toFixed(2)}`,
+      })),
+    [hist.history],
+  );
+
+  const globeBookmarks = useMemo(
+    () =>
+      bm.bookmarks.map((b) => ({
+        id: b.id,
+        name: b.name,
+        lat: b.lat,
+        lng: b.lng,
+        heading: b.heading,
+        pitch: b.pitch,
+      })),
+    [bm.bookmarks],
+  );
 
   const {
     isBookmarkPanelOpen,
@@ -478,19 +501,8 @@ export function ConnectedChrome({
             currentLat={panorama?.getPosition()?.lat() ?? 39.2575}
             currentLng={panorama?.getPosition()?.lng() ?? -121.0218}
             currentHeading={heading}
-            pois={hist.history.map((h) => ({
-              lat: h.lat,
-              lng: h.lng,
-              label: h.locationName || `${h.lat.toFixed(2)}, ${h.lng.toFixed(2)}`,
-            }))}
-            bookmarks={bm.bookmarks.map((b) => ({
-              id: b.id,
-              name: b.name,
-              lat: b.lat,
-              lng: b.lng,
-              heading: b.heading,
-              pitch: b.pitch,
-            }))}
+            pois={globePois}
+            bookmarks={globeBookmarks}
             mapsApiKey={effectiveMapsKey}
             onTeleportRequest={handleGlobeTeleport}
             onEnterComplete={globeMode.onEnterComplete}
