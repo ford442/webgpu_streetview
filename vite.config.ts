@@ -51,6 +51,18 @@ export default defineConfig(({ mode }) => {
   if (!('process.env.VITE_MAPS_API_KEY' in processEnvDefines)) {
     processEnvDefines['process.env.VITE_MAPS_API_KEY'] = JSON.stringify('');
   }
+  // Same reachable-define guarantee for the Supabase signaling config (Shared
+  // Exploration Sessions room-code relay) — see src/services/signaling/supabaseConfig.ts.
+  for (const key of [
+    'REACT_APP_SUPABASE_URL',
+    'VITE_SUPABASE_URL',
+    'REACT_APP_SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+  ]) {
+    if (!(`process.env.${key}` in processEnvDefines)) {
+      processEnvDefines[`process.env.${key}`] = JSON.stringify('');
+    }
+  }
 
   return {
     base: './',

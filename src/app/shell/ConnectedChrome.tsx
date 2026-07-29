@@ -283,12 +283,11 @@ export function ConnectedChrome({
           role={sharedSession.role}
           status={sharedSession.status}
           error={sharedSession.error}
-          inviteCode={sharedSession.inviteCode}
-          joinCode={sharedSession.joinCode}
+          roomCode={sharedSession.roomCode}
+          participants={sharedSession.participants}
           isConnected={sharedSession.isConnected}
-          onStartHosting={sharedSession.startHosting}
-          onAdmitGuest={sharedSession.admitGuest}
-          onJoinWithInviteCode={sharedSession.joinWithInviteCode}
+          onCreateRoom={sharedSession.createRoom}
+          onJoinRoom={sharedSession.joinRoom}
           onLeave={sharedSession.leaveSession}
         />
       )}

@@ -934,13 +934,14 @@ recognition.start();
 - Photo attachments
 - Vote system
 
-#### 14.3 Shared Exploration Sessions ⬜
-**WebRTC or WebSockets:**
-- Host creates session room
-- Guests join via code/link
-- Synchronized navigation
-- Host controls with guest following
-- Text chat overlay
+#### 14.3 Shared Exploration Sessions ✅ (text chat overlay still ⬜)
+**WebRTC signaled via Supabase Realtime:**
+- ✅ Host creates a session room — 6-character room code, no server-side persistence (rooms "expire" the moment everyone leaves)
+- ✅ Guests join via code — signaling handshake (SDP/ICE) goes through a Realtime broadcast channel keyed by the code; media stays peer-to-peer over WebRTC
+- ✅ Synchronized navigation — host broadcasts POV at 10Hz, guests apply it seq-ordered (`shouldApplyIncomingState`)
+- ✅ Host controls with guest following, live room roster via Realtime presence, multi-guest hub topology, automatic reconnect retry (capped) on a dropped peer connection
+- ⬜ Text chat overlay — not built
+- ⬜ TURN server — STUN-only for now; see README "Shared Exploration Sessions" for how to add one
 
 #### 14.4 Content Moderation ⬜
 - Report button

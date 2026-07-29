@@ -68,12 +68,11 @@ export {
 // Shared Exploration Sessions (multiplayer road trips)
 export {
   useSharedSession,
-  encodeSignal,
-  decodeSignal,
   shouldApplyIncomingState,
   type SessionState,
   type SharedSessionRole,
   type SharedSessionStatus,
+  type SharedSessionParticipant,
   type UseSharedSessionResult,
 } from './useSharedSession';
 
