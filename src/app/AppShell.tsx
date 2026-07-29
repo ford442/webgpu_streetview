@@ -1,5 +1,6 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
+import { parseDeepLinkParams } from '../utils/deepLink';
 import {
   useStreetView,
   useViewMode,
@@ -89,8 +90,16 @@ export function AppShell() {
     syncAllToCloud,
   } = useBookmarks();
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
-  const { snapshots, removeSnapshot, updateSnapshotName, downloadSnapshot, clearAllSnapshots } =
-    useSnapshots();
+  const {
+    snapshots,
+    addSnapshot,
+    removeSnapshot,
+    updateSnapshotName,
+    downloadSnapshot,
+    clearAllSnapshots,
+    getSnapshotDeepLink,
+    shareSnapshot,
+  } = useSnapshots();
   const globeMode = useGlobeMode();
 
   const historical = useHistoricalExperience({
@@ -154,6 +163,71 @@ export function AppShell() {
     },
     [panorama, addBookmark, heading, pitch],
   );
+
+  const handleTakeSnapshot = useCallback(() => {
+    if (!panorama || !renderer) return;
+    const position = panorama.getPosition();
+    if (!position) return;
+    addSnapshot({
+      name: locationName || `Snapshot ${new Date().toLocaleString()}`,
+      dataUrl: renderer.getCanvasDataURL(),
+      lat: position.lat(),
+      lng: position.lng(),
+      heading,
+      pitch,
+      zoom,
+      locationName,
+      panoId: panorama.getPano() || undefined,
+    });
+  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName]);
+
+  const handleSnapshotTeleport = useCallback(
+    async (lat: number, lng: number, targetHeading: number, targetPitch: number, panoId?: string) => {
+      if (panoId) {
+        await teleportToPanoSafe(panoId);
+      } else {
+        await teleportSafe(lat, lng, targetHeading, targetPitch);
+      }
+      setHeading(targetHeading);
+      setPitch(targetPitch);
+    },
+    [teleportToPanoSafe, teleportSafe, setHeading, setPitch],
+  );
+
+  // Consume `?lat=&lng=&heading=&pitch=&zoom=&pano=` deep-link params once Maps/panorama are ready.
+  const deepLinkConsumedRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkConsumedRef.current) return;
+    if (!connection.isConnected || !panorama || !isPanoramaReady) return;
+    deepLinkConsumedRef.current = true;
+
+    const params = parseDeepLinkParams();
+    if (!params) return;
+
+    (async () => {
+      try {
+        if (params.panoId) {
+          await teleportToPanoSafe(params.panoId);
+        } else {
+          await teleportSafe(params.lat, params.lng, params.heading, params.pitch);
+        }
+        setHeading(params.heading);
+        setPitch(params.pitch);
+        setZoom(params.zoom);
+      } catch (error) {
+        console.warn('[deepLink] Failed to apply deep link params:', error);
+      }
+    })();
+  }, [
+    connection.isConnected,
+    panorama,
+    isPanoramaReady,
+    teleportToPanoSafe,
+    teleportSafe,
+    setHeading,
+    setPitch,
+    setZoom,
+  ]);
 
   const handleGlobeTeleport = useGlobeTeleport({
     teleportSafe,
@@ -303,6 +377,10 @@ export function AppShell() {
             updateSnapshotName,
             downloadSnapshot,
             clearAllSnapshots,
+            getSnapshotDeepLink,
+            shareSnapshot,
+            onTeleport: handleSnapshotTeleport,
+            onTakeSnapshot: handleTakeSnapshot,
           }}
           environment={env}
           historical={historical}

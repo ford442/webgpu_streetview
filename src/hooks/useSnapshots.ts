@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
+import { buildDeepLinkUrl } from '../utils/deepLink';
+import {
+    ImageExportFormat,
+    convertDataUrlFormat,
+    blobToDataUrl,
+    formatExtension,
+} from '../utils/imageExport';
+import { embedExifGps } from '../utils/exifGps';
 
 export interface SnapshotMetadata {
     id: string;
@@ -12,9 +20,40 @@ export interface SnapshotMetadata {
     pitch: number;
     zoom: number;
     locationName?: string;
+    panoId?: string;
 }
 
+export type SnapshotShareResult = 'share' | 'clipboard' | 'cancelled';
+
+/** Attribution text required alongside any shared Google Maps-derived imagery. */
+const MAPS_ATTRIBUTION = 'Imagery © Google';
+
 const MAX_SNAPSHOTS = 20; // Limit stored snapshots to avoid storage quota issues
+
+async function prepareExport(
+    snapshot: SnapshotMetadata,
+    format: ImageExportFormat,
+): Promise<{ dataUrl: string; extension: string; mimeType: string }> {
+    if (format === 'jpeg') {
+        const jpegBlob = await convertDataUrlFormat(snapshot.dataUrl, 'jpeg');
+        const jpegDataUrl = await blobToDataUrl(jpegBlob);
+        const withExif = embedExifGps(jpegDataUrl, {
+            lat: snapshot.lat,
+            lng: snapshot.lng,
+            heading: snapshot.heading,
+            pitch: snapshot.pitch,
+            zoom: snapshot.zoom,
+            panoId: snapshot.panoId,
+            timestamp: snapshot.timestamp,
+        });
+        return { dataUrl: withExif, extension: formatExtension(format), mimeType: 'image/jpeg' };
+    }
+    if (format === 'webp') {
+        const blob = await convertDataUrlFormat(snapshot.dataUrl, 'webp');
+        return { dataUrl: await blobToDataUrl(blob), extension: formatExtension(format), mimeType: 'image/webp' };
+    }
+    return { dataUrl: snapshot.dataUrl, extension: formatExtension('png'), mimeType: 'image/png' };
+}
 
 export function useSnapshots() {
     const [snapshots, setSnapshots] = useState<SnapshotMetadata[]>([]);
@@ -112,13 +151,64 @@ export function useSnapshots() {
         }
     }, []);
 
-    const downloadSnapshot = useCallback((snapshot: SnapshotMetadata) => {
+    const downloadSnapshot = useCallback(async (snapshot: SnapshotMetadata, format: ImageExportFormat = 'png') => {
+        const { dataUrl, extension } = await prepareExport(snapshot, format);
         const link = document.createElement('a');
-        link.download = `${snapshot.name || 'snapshot'}.png`;
-        link.href = snapshot.dataUrl;
+        link.download = `${snapshot.name || 'snapshot'}.${extension}`;
+        link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    }, []);
+
+    const getSnapshotDeepLink = useCallback((snapshot: SnapshotMetadata) => {
+        return buildDeepLinkUrl({
+            lat: snapshot.lat,
+            lng: snapshot.lng,
+            heading: snapshot.heading,
+            pitch: snapshot.pitch,
+            zoom: snapshot.zoom,
+            panoId: snapshot.panoId,
+        });
+    }, []);
+
+    const shareSnapshot = useCallback(async (
+        snapshot: SnapshotMetadata,
+        format: ImageExportFormat = 'jpeg',
+    ): Promise<SnapshotShareResult> => {
+        const link = buildDeepLinkUrl({
+            lat: snapshot.lat,
+            lng: snapshot.lng,
+            heading: snapshot.heading,
+            pitch: snapshot.pitch,
+            zoom: snapshot.zoom,
+            panoId: snapshot.panoId,
+        });
+        const shareText = `${snapshot.locationName || `${snapshot.lat.toFixed(4)}, ${snapshot.lng.toFixed(4)}`} — captured in WebGPU StreetView\n${MAPS_ATTRIBUTION}`;
+
+        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+            try {
+                const { dataUrl, extension, mimeType } = await prepareExport(snapshot, format);
+                const blob = await (await fetch(dataUrl)).blob();
+                const file = new File([blob], `${snapshot.name || 'snapshot'}.${extension}`, { type: mimeType });
+                const canShareFiles = typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] });
+
+                await navigator.share(
+                    canShareFiles
+                        ? { title: snapshot.name || 'Street View Snapshot', text: shareText, url: link, files: [file] }
+                        : { title: snapshot.name || 'Street View Snapshot', text: shareText, url: link },
+                );
+                return 'share';
+            } catch (error) {
+                if (error instanceof DOMException && error.name === 'AbortError') {
+                    return 'cancelled';
+                }
+                console.error('Share failed, falling back to clipboard:', error);
+            }
+        }
+
+        await navigator.clipboard.writeText(link);
+        return 'clipboard';
     }, []);
 
     return {
@@ -129,5 +219,7 @@ export function useSnapshots() {
         updateSnapshotName,
         clearAllSnapshots,
         downloadSnapshot,
+        getSnapshotDeepLink,
+        shareSnapshot,
     };
 }

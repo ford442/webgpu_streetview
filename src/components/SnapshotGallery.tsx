@@ -1,17 +1,26 @@
 import React, { useState } from 'react';
-import { SnapshotMetadata } from '../hooks/useSnapshots';
+import { SnapshotMetadata, SnapshotShareResult } from '../hooks/useSnapshots';
+import { ImageExportFormat } from '../utils/imageExport';
 
 interface SnapshotGalleryProps {
     snapshots: SnapshotMetadata[];
     isOffline?: boolean;
     onRemoveSnapshot: (id: string) => void;
     onUpdateName: (id: string, name: string) => void;
-    onDownload: (snapshot: SnapshotMetadata) => void;
-    onTeleport: (lat: number, lng: number, heading: number, pitch: number) => void;
+    onDownload: (snapshot: SnapshotMetadata, format: ImageExportFormat) => void;
+    onShare: (snapshot: SnapshotMetadata, format: ImageExportFormat) => Promise<SnapshotShareResult>;
+    onCopyLink: (snapshot: SnapshotMetadata) => string;
+    onTeleport: (lat: number, lng: number, heading: number, pitch: number, panoId?: string) => void;
     onClose: () => void;
     onClearAll: () => void;
     isOpen: boolean;
 }
+
+const FORMAT_OPTIONS: { value: ImageExportFormat; label: string }[] = [
+    { value: 'png', label: 'PNG' },
+    { value: 'jpeg', label: 'JPEG (+GPS EXIF)' },
+    { value: 'webp', label: 'WebP' },
+];
 
 const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
     snapshots,
@@ -19,6 +28,8 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
     onRemoveSnapshot,
     onUpdateName,
     onDownload,
+    onShare,
+    onCopyLink,
     onTeleport,
     onClose,
     onClearAll,
@@ -27,8 +38,29 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
     const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotMetadata | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
+    const [exportFormat, setExportFormat] = useState<ImageExportFormat>('png');
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
     if (!isOpen) return null;
+
+    const handleCopyLink = async (snapshot: SnapshotMetadata) => {
+        const link = onCopyLink(snapshot);
+        try {
+            await navigator.clipboard.writeText(link);
+            setStatusMessage('Link copied to clipboard');
+        } catch (error) {
+            console.error('Failed to copy link:', error);
+            setStatusMessage('Could not copy link');
+        }
+        setTimeout(() => setStatusMessage(null), 2500);
+    };
+
+    const handleShare = async (snapshot: SnapshotMetadata) => {
+        const result = await onShare(snapshot, exportFormat === 'png' ? 'jpeg' : exportFormat);
+        if (result === 'clipboard') setStatusMessage('Web Share unavailable — link copied to clipboard');
+        else if (result === 'share') setStatusMessage('Shared successfully');
+        if (result !== 'cancelled') setTimeout(() => setStatusMessage(null), 2500);
+    };
 
     const formatDate = (timestamp: string) => {
         const date = new Date(timestamp);
@@ -99,9 +131,27 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                         <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px' }}>
                             {formatDate(selectedSnapshot.timestamp)} | {selectedSnapshot.lat.toFixed(4)}, {selectedSnapshot.lng.toFixed(4)}
                         </div>
-                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                        <div style={{ marginBottom: '10px' }}>
+                            <select
+                                value={exportFormat}
+                                onChange={(e) => setExportFormat(e.target.value as ImageExportFormat)}
+                                style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    border: '1px solid #555',
+                                    backgroundColor: '#222',
+                                    color: '#fff',
+                                    fontSize: '12px',
+                                }}
+                            >
+                                {FORMAT_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                             <button
-                                onClick={() => onTeleport(selectedSnapshot.lat, selectedSnapshot.lng, selectedSnapshot.heading, selectedSnapshot.pitch)}
+                                onClick={() => onTeleport(selectedSnapshot.lat, selectedSnapshot.lng, selectedSnapshot.heading, selectedSnapshot.pitch, selectedSnapshot.panoId)}
                                 style={{
                                     padding: '8px 16px',
                                     backgroundColor: '#2196F3',
@@ -115,7 +165,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 🚀 Go to Location
                             </button>
                             <button
-                                onClick={() => onDownload(selectedSnapshot)}
+                                onClick={() => onDownload(selectedSnapshot, exportFormat)}
                                 style={{
                                     padding: '8px 16px',
                                     backgroundColor: '#4CAF50',
@@ -127,6 +177,34 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 }}
                             >
                                 💾 Download
+                            </button>
+                            <button
+                                onClick={() => handleShare(selectedSnapshot)}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: '#9c27b0',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                }}
+                            >
+                                📤 Share
+                            </button>
+                            <button
+                                onClick={() => handleCopyLink(selectedSnapshot)}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: '#607d8b',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                }}
+                            >
+                                🔗 Copy Link
                             </button>
                             <button
                                 onClick={() => setSelectedSnapshot(null)}
@@ -143,6 +221,11 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 Close
                             </button>
                         </div>
+                        {statusMessage && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#8bc34a' }}>
+                                {statusMessage}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -183,7 +266,26 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                 {isOffline && (
                     <span style={{ fontSize: 11, color: '#ffb74d', marginLeft: 8 }}>Offline</span>
                 )}
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {snapshots.length > 0 && (
+                        <select
+                            value={exportFormat}
+                            onChange={(e) => setExportFormat(e.target.value as ImageExportFormat)}
+                            title="Export format"
+                            style={{
+                                padding: '2px 4px',
+                                borderRadius: '3px',
+                                border: '1px solid #555',
+                                backgroundColor: '#222',
+                                color: '#fff',
+                                fontSize: '10px',
+                            }}
+                        >
+                            {FORMAT_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    )}
                     {snapshots.length > 0 && (
                         <button
                             onClick={onClearAll}
@@ -214,6 +316,12 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                     </button>
                 </div>
             </div>
+
+            {statusMessage && (
+                <div style={{ padding: '6px 15px', fontSize: '11px', color: '#8bc34a', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                    {statusMessage}
+                </div>
+            )}
 
             {/* Snapshots Grid */}
             <div style={{
@@ -309,7 +417,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                         </span>
                                         <div style={{ display: 'flex', gap: '4px' }}>
                                             <button
-                                                onClick={() => onDownload(snapshot)}
+                                                onClick={() => onDownload(snapshot, exportFormat)}
                                                 title="Download"
                                                 style={{
                                                     padding: '2px 6px',
@@ -322,6 +430,36 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                                 }}
                                             >
                                                 ⬇
+                                            </button>
+                                            <button
+                                                onClick={() => handleShare(snapshot)}
+                                                title="Share"
+                                                style={{
+                                                    padding: '2px 6px',
+                                                    backgroundColor: '#9c27b0',
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '10px',
+                                                }}
+                                            >
+                                                📤
+                                            </button>
+                                            <button
+                                                onClick={() => handleCopyLink(snapshot)}
+                                                title="Copy link"
+                                                style={{
+                                                    padding: '2px 6px',
+                                                    backgroundColor: '#607d8b',
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '10px',
+                                                }}
+                                            >
+                                                🔗
                                             </button>
                                             <button
                                                 onClick={() => onRemoveSnapshot(snapshot.id)}
