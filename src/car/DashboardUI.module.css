@@ -17,13 +17,12 @@
 }
 
 /* --------------------------------------------------------------------------
-   Gauge row (left zone inner layout)
+   Telemetry chip zone (left zone inner layout)
    -------------------------------------------------------------------------- */
 .gaugeRow {
   display: flex;
   align-items: center;
-  gap: 4px;
-  justify-content: center;
+  justify-content: flex-start;
   height: 100%;
 }
 

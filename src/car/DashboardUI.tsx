@@ -7,7 +7,7 @@
  * only dashboard-specific composition, logic, and event handling.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import styles from './DashboardUI.module.css';
 import { darkTheme, applyTheme } from './theme';
 
@@ -24,7 +24,7 @@ import {
 } from './DashboardLayout';
 
 // Gauge components
-import { SpeedGauge, RpmGauge, GearIndicator } from './Gauges';
+import { TelemetryChip } from './Gauges';
 
 // Icons + audio visualizer
 import {
@@ -236,39 +236,10 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   rpm,
   gear,
 }) => {
-  // Demo gauge simulation — used only when no live telemetry props arrive.
   const hasTelemetry = speedKmh !== undefined;
-  const [simulatedSpeed, setSimulatedSpeed] = useState(45);
-  const [simulatedRpm, setSimulatedRpm] = useState(2500);
-  const [simulatedGear, setSimulatedGear] = useState('D');
-
-  useEffect(() => {
-    if (hasTelemetry) return;
-    const interval = setInterval(() => {
-      const targetSpeed = Math.floor(Math.random() * 40) + 25;
-      setSimulatedSpeed((prev) => {
-        const diff = targetSpeed - prev;
-        return prev + diff * 0.3;
-      });
-
-      const targetRpm = 1500 + (targetSpeed / 65) * 2500;
-      setSimulatedRpm((prev) => {
-        const diff = targetRpm - prev;
-        return prev + diff * 0.3;
-      });
-
-      if (Math.random() > 0.9) {
-        setSimulatedGear((prev) => (prev === 'D' ? (Math.random() > 0.5 ? '3' : 'D') : 'D'));
-      }
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [hasTelemetry]);
-
-  // SpeedGauge displays MPH; live telemetry arrives in km/h.
-  const displaySpeedMph = hasTelemetry ? speedKmh! * 0.621371 : simulatedSpeed;
-  const displayRpm = hasTelemetry ? rpm ?? 0 : simulatedRpm;
-  const displayGear = hasTelemetry ? gear ?? 'D' : simulatedGear;
+  const displaySpeedKmh = hasTelemetry ? speedKmh! : 0;
+  const displayRpm = hasTelemetry ? rpm ?? 0 : 0;
+  const displayGear = hasTelemetry ? gear ?? 'D' : 'P';
 
   // Event handlers – prevent propagation to underlying canvas
   const stopProp = useCallback((e: React.SyntheticEvent) => {
@@ -312,20 +283,12 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
             ZONE LEFT – Driving HUD
         ===================================================================== */}
         <ZoneLeft>
-          <div className={styles.gaugeRow}>
-            <SpeedGauge
-              value={Math.round(displaySpeedMph)}
-              size={72}
-              unit="MPH"
-              nightGlow={nightIntensity}
-            />
-            <GearIndicator gear={displayGear} size={28} />
-            <RpmGauge
-              value={Math.round(displayRpm)}
-              size={72}
-              nightGlow={nightIntensity}
-            />
-          </div>
+          <TelemetryChip
+            speedKmh={displaySpeedKmh}
+            rpm={displayRpm}
+            gear={displayGear}
+            nightGlow={nightIntensity}
+          />
         </ZoneLeft>
 
         {/* =====================================================================

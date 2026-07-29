@@ -90,6 +90,79 @@
 }
 
 /* --------------------------------------------------------------------------
+   Telemetry chip (compact HUD — no duplicate circular dials)
+   -------------------------------------------------------------------------- */
+.telemetryChip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 12px;
+  min-width: 88px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  user-select: none;
+}
+
+.telemetryPrimary {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.telemetrySpeed {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.telemetryUnit {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.telemetrySecondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.telemetryGear {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.telemetryDivider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.telemetryRpm {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
    Gauge dashboard (combined view)
    -------------------------------------------------------------------------- */
 .gaugeDashboard {
