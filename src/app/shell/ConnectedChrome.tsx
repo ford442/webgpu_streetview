@@ -478,7 +478,7 @@ export function ConnectedChrome({
             currentLat={panorama?.getPosition()?.lat() ?? 39.2575}
             currentLng={panorama?.getPosition()?.lng() ?? -121.0218}
             currentHeading={heading}
-            pois={hist.history.slice(0, 30).map((h) => ({
+            pois={hist.history.map((h) => ({
               lat: h.lat,
               lng: h.lng,
               label: h.locationName || `${h.lat.toFixed(2)}, ${h.lng.toFixed(2)}`,
