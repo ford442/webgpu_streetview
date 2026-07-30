@@ -18,7 +18,16 @@ export interface UseCruiseModeOptions {
    * the actual hop.
    */
   loadOfflineRouteGraphNodes?: () => Promise<RouteGraphNode[]>;
+  /**
+   * Panorama hops to consume per cruise tick, read fresh on every tick so a
+   * mid-cruise gear change takes effect immediately. `0` (P/N) parks the car:
+   * cruise stays engaged but no hop is issued. Defaults to a single hop.
+   */
+  hopsPerTick?: () => number;
 }
+
+/** Spacing between the extra hops a 2/3 gear queues within one cruise tick. */
+export const CRUISE_CHAINED_HOP_INTERVAL_MS = 550;
 
 /** Initial bearing (degrees, 0–360) from point A to point B. */
 function bearingBetween(
@@ -43,6 +52,7 @@ export function useCruiseMode({
   isTransitioning,
   setNavPending,
   loadOfflineRouteGraphNodes,
+  hopsPerTick,
 }: UseCruiseModeOptions) {
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const offlineNodesRef = useRef<RouteGraphNode[]>([]);
@@ -61,6 +71,10 @@ export function useCruiseMode({
   const useTransitionRef = useRef(isTransitioning);
   useTransitionRef.current = isTransitioning;
   const cruiseFailCountRef = useRef(0);
+  // A multi-hop tick can outlast the tick interval; this keeps ticks serial.
+  const hopInFlightRef = useRef(false);
+  const hopsPerTickRef = useRef(hopsPerTick);
+  hopsPerTickRef.current = hopsPerTick;
 
   useEffect(() => {
     if (!isCruiseMode || !panorama || !advanceSafe) {
@@ -69,6 +83,7 @@ export function useCruiseMode({
         cruiseIntervalRef.current = null;
       }
       cruiseFailCountRef.current = 0;
+      hopInFlightRef.current = false;
       return;
     }
     // Commit the current view heading as the travel direction the moment cruise
@@ -84,15 +99,12 @@ export function useCruiseMode({
         })
         .catch((err) => console.warn('[CruiseMode] Failed to load offline route graph nodes', err));
     }
-    const hop = async () => {
-      if (useTransitionRef.current) {
-        console.log('[CruiseMode] Skipping hop - still transitioning');
-        return;
-      }
-      if (mapsAuthFailed) {
-        setIsCruiseMode(false);
-        return;
-      }
+    /**
+     * One panorama hop along the committed travel heading. Returns true when
+     * the panorama actually changed, and self-corrects the travel heading to
+     * the direction we really moved so the next hop follows the road.
+     */
+    const singleHop = async (): Promise<boolean> => {
       const panoIdBefore = panorama.getPano();
       const posBefore = panorama.getPosition() ?? null;
       // Prefer a known next pano from a prefetched route graph, if we have
@@ -112,13 +124,54 @@ export function useCruiseMode({
       await new Promise(r => setTimeout(r, 1500));
       const panoIdAfter = panorama.getPano();
       if (panoIdAfter && panoIdAfter !== panoIdBefore) {
-        cruiseFailCountRef.current = 0;
         // Follow the road: steer future hops along the direction actually
         // travelled, independent of where the head is looking.
         const posAfter = panorama.getPosition() ?? null;
         if (posBefore && posAfter) {
           cruiseHeadingRef.current = bearingBetween(posBefore, posAfter);
         }
+        return true;
+      }
+      return false;
+    };
+
+    const hop = async () => {
+      if (hopInFlightRef.current) return;
+      if (useTransitionRef.current) {
+        console.log('[CruiseMode] Skipping hop - still transitioning');
+        return;
+      }
+      if (mapsAuthFailed) {
+        setIsCruiseMode(false);
+        return;
+      }
+
+      // Gear decides how far one tick travels: P/N park, D one hop, 2/3 chain
+      // two or three. Read fresh each tick so shifting takes effect at once.
+      const hops = hopsPerTickRef.current ? hopsPerTickRef.current() : 1;
+      if (hops <= 0) return;
+
+      hopInFlightRef.current = true;
+      let movedAny = false;
+      try {
+        for (let i = 0; i < hops; i++) {
+          // Re-read the gear between chained hops so shifting into P/N (or
+          // disengaging cruise) stops the chain instead of finishing it.
+          if (i > 0) {
+            await new Promise(r => setTimeout(r, CRUISE_CHAINED_HOP_INTERVAL_MS));
+            if (hopsPerTickRef.current && hopsPerTickRef.current() <= 0) break;
+          }
+          const moved = await singleHop();
+          movedAny = movedAny || moved;
+          // Dead end: no point spending the remaining hops of this tick.
+          if (!moved) break;
+        }
+      } finally {
+        hopInFlightRef.current = false;
+      }
+
+      if (movedAny) {
+        cruiseFailCountRef.current = 0;
       } else {
         cruiseFailCountRef.current += 1;
         console.warn(`[CruiseMode] Hop did not advance (${cruiseFailCountRef.current}/3)`);
@@ -133,6 +186,7 @@ export function useCruiseMode({
     return () => {
       if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
       cruiseIntervalRef.current = null;
+      hopInFlightRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCruiseMode, panorama, advanceSafe, mapsAuthFailed]);
