@@ -179,10 +179,13 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   gearRef.current = gear;
   /** Timers for the extra hops a 2/3 gear queues after the first advance. */
   const pendingHopsRef = useRef<number[]>([]);
+  /** Hop multiplier currently being served (0 when not multi-hopping). */
+  const [chainingHops, setChainingHops] = useState(0);
 
   const cancelPendingHops = useCallback(() => {
     for (const id of pendingHopsRef.current) window.clearTimeout(id);
     pendingHopsRef.current = [];
+    setChainingHops(0);
   }, []);
 
   // Car state refs — carHeading, heading, pitch come from hooks; kept in sync for animate loop
@@ -483,11 +486,14 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     cancelPendingHops();
     advance(resolved, carHeading);
     // Only forward/backward travel multiplies; turns stay a single hop.
-    if (resolved !== 'forward' && resolved !== 'backward') return;
+    if ((resolved !== 'forward' && resolved !== 'backward') || hops < 2) return;
+
+    setChainingHops(hops);
     for (let i = 1; i < hops; i++) {
       const id = window.setTimeout(() => {
         if (gearRef.current !== selected) return;
         advance(resolved, carHeadingRef.current);
+        if (i === hops - 1) setChainingHops(0);
       }, i * GEAR_HOP_INTERVAL_MS);
       pendingHopsRef.current.push(id);
     }
@@ -703,6 +709,36 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         gear={gear === 'D' || gear === '2' || gear === '3' ? telemetry.gear : gear}
       />
       
+      {/* Multi-hop chip — shows the gear's hop multiplier while a 2/3 gear is
+          working through the extra panorama hops it queued. */}
+      {chainingHops > 1 && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label={`Advancing ${chainingHops} panoramas`}
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '4px 12px',
+            background: 'rgba(0, 212, 255, 0.18)',
+            border: '1px solid rgba(0,212,255,0.5)',
+            borderRadius: '999px',
+            color: '#00d4ff',
+            fontFamily: "'SF Pro Display', system-ui, sans-serif",
+            fontSize: '13px',
+            fontWeight: 700,
+            letterSpacing: '0.5px',
+            zIndex: 102,
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        >
+          ×{chainingHops}
+        </div>
+      )}
+
       {/* Control Mode Indicator (small overlay) */}
       <div
         onMouseDown={(e) => e.stopPropagation()}

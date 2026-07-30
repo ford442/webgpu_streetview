@@ -16,6 +16,7 @@ import { useSnapshots } from '../hooks/useSnapshots';
 import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useKeyboardShortcuts, useAnnouncer, SkipLink } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
+import { getGearHopCount } from '../car';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
@@ -58,6 +59,9 @@ export function AppShell() {
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const routePrefetch = useRoutePrefetch();
   const { viewMode, toggleViewMode } = useViewMode();
+  // Read by the cruise tick, which must see the live mode without re-arming.
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
@@ -145,6 +149,10 @@ export function AppShell() {
     isTransitioning,
     setNavPending: connection.setNavPending,
     loadOfflineRouteGraphNodes: routePrefetch.loadAllCachedNodes,
+    // In car mode the gearshift is the speed selector: P/N park cruise, D
+    // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
+    // has no gearbox, so it always cruises one hop at a time.
+    hopsPerTick: () => (viewModeRef.current === 'car' ? getGearHopCount() : 1),
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
 
