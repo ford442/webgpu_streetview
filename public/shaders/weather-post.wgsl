@@ -625,48 +625,48 @@ fn nightSky(uv: vec2<f32>, t: f32) -> vec3<f32> {
     return stars * starColor * skyMask;
 }
 
-// === REALISTIC DARK NIGHT ===
-// Simulates true night vision - very dark with only minimal ambient light
+// === READABLE NIGHT (epic #171) ===
+// Dark enough to read as night, but road + UI stay visible with headlights/dome.
+// Floors match src/car/carSpatialModel.ts (NIGHT_BASE_FLOOR / NIGHT_SKY_FLOOR).
 fn applyNight(col: vec3<f32>, night: f32, uv: vec2<f32>, t: f32) -> vec3<f32> {
     if (night < 0.001) { return col; }
     var c = col;
-    
-    // Much darker base - real night is ~0.5-1% of daylight (was 25%)
-    let darkeningCurve = night * night * (3.0 - 2.0 * night); // Smoothstep curve
-    c = c * mix(1.0, 0.03, darkeningCurve);
-    
-    // Enhanced desaturation for moonlight appearance
+
+    // Smoothstep curve toward a readable floor (~14% daylight), not crushed black.
+    let darkeningCurve = night * night * (3.0 - 2.0 * night);
+    c = c * mix(1.0, 0.14, darkeningCurve);
+
+    // Mild desaturation for moonlight (was 0.7 — too grey/flat).
     let gray = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    c = mix(c, vec3<f32>(gray), night * 0.7);
-    
+    c = mix(c, vec3<f32>(gray), night * 0.55);
+
     // Cool blue moonlight tint
-    let moonTint = vec3<f32>(0.08, 0.12, 0.28);
-    c = c + moonTint * night * 0.08;
-    
-    // Aggressive sky darkening - upper hemisphere goes nearly black
+    let moonTint = vec3<f32>(0.10, 0.14, 0.28);
+    c = c + moonTint * night * 0.10;
+
+    // Sky darkens more than the road, but stays above a readable floor (~18%).
     let skyDarken = smoothstep(0.55, 0.05, uv.y);
-    c = c * mix(1.0, 0.02, skyDarken * night);
-    
-    // Preserve only bright lights (streetlights, windows)
+    c = c * mix(1.0, 0.18, skyDarken * night);
+
+    // Preserve bright lights (streetlights, windows, signs)
     let lum = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let lightMask = smoothstep(0.35, 0.9, lum);
-    // Bloom around bright lights at night
-    c = c + col * lightMask * night * 0.5;
-    
-    // Add stars - more visible with darker sky
-    let starBrightness = night * 2.0; // Stars brighter against dark sky
+    let lightMask = smoothstep(0.28, 0.85, lum);
+    c = c + col * lightMask * night * 0.65;
+
+    // Stars against the darker sky
+    let starBrightness = night * 1.6;
     c = c + nightSky(uv, t) * starBrightness;
-    
-    // Subtle vignette for night vision effect
+
+    // Gentle vignette (was 0.4 — too heavy with the old crush)
     let centerDist = length((uv - vec2<f32>(0.5)) * vec2<f32>(1.3, 1.0));
-    let nightVignette = 1.0 - smoothstep(0.3, 1.0, centerDist) * night * 0.4;
+    let nightVignette = 1.0 - smoothstep(0.35, 1.05, centerDist) * night * 0.28;
     c = c * nightVignette;
-    
-    // Slight blue noise for night vision grain
+
     let noise = hash(uv * 500.0 + t * 0.1);
-    c = c + (noise - 0.5) * 0.01 * night;
-    
-    return max(c, vec3<f32>(0.001)); // Prevent pure black
+    c = c + (noise - 0.5) * 0.008 * night;
+
+    // Floor prevents pure black even without headlights
+    return max(c, vec3<f32>(0.008));
 }
 
 fn headlightCone(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32) -> vec3<f32> {
@@ -904,27 +904,28 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = applyNight(col, p.nightIntensity, uv, t);
 
     // === HEADLIGHTS ===
+    // Boosted contribution so night + headlights keeps the road readable (#171).
     if (p.headlightsOn > 0.5) {
         let hlCone = headlightCone(uv, p.headlightHeading, p.headlightPitch, p.highBeam);
-        let nightMul = mix(0.4, 1.0, p.nightIntensity);
-        col = col + hlCone * nightMul * 0.6;
-        col = col * (1.0 + hlCone * nightMul * 0.3);
+        let nightMul = mix(0.55, 1.15, p.nightIntensity);
+        col = col + hlCone * nightMul * 0.85;
+        col = col * (1.0 + hlCone * nightMul * 0.4);
 
         let beams = headlightBeams(uv, p.headlightHeading, p.headlightPitch, p.highBeam, t);
-        col = col + vec3<f32>(1.0, 0.95, 0.82) * beams * nightMul;
+        col = col + vec3<f32>(1.0, 0.95, 0.82) * beams * nightMul * 1.25;
 
         var fdx = uv.x - p.headlightHeading;
         if (fdx > 0.5) { fdx = fdx - 1.0; }
         if (fdx < -0.5) { fdx = fdx + 1.0; }
         let fdy = uv.y - p.headlightPitch;
         let flareDist = length(vec2<f32>(fdx, fdy));
-        let flare = exp(-flareDist * flareDist * 120.0) * 0.15 * nightMul;
+        let flare = exp(-flareDist * flareDist * 120.0) * 0.2 * nightMul;
         col = col + vec3<f32>(1.0, 0.97, 0.88) * flare;
     }
 
     // === INTERIOR CABIN LIGHTING ===
-    col = col + headlightInteriorBounce(uv, p.headlightsOn, p.nightIntensity);
-    col = col + domeLightCabinGlow(uv, p.domeLightOn, p.domeLightIntensity);
+    col = col + headlightInteriorBounce(uv, p.headlightsOn, p.nightIntensity) * 1.4;
+    col = col + domeLightCabinGlow(uv, p.domeLightOn, p.domeLightIntensity) * 1.35;
 
     // === ASTRONOMICAL LIGHTING ===
     col = col + sunsetHorizonGlow(uv, p.sunAzimuth, p.sunAltitude, p.nightIntensity);

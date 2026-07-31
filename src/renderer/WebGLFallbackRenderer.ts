@@ -87,24 +87,31 @@ vec3 applyColorGrade(vec3 col) {
     return max(col, vec3(0.0));
 }
 
+// Readable night SDR approx — floors align with carSpatialModel / weather-post.wgsl (#171)
 vec3 applyNight(vec3 col, vec2 uv) {
     float night = clamp(uWeather[11], 0.0, 1.0);
-    vec3 nightColor = col * vec3(0.34, 0.42, 0.58);
-    col = mix(col, nightColor, night);
+    float curve = night * night * (3.0 - 2.0 * night);
+    // Base floor ~0.14 of daylight with cool moonlight tint (was 0.34/0.42/0.58 mix only).
+    vec3 nightColor = col * vec3(0.42, 0.50, 0.64) * mix(1.0, 0.85, curve);
+    col = mix(col, nightColor, curve);
+
+    // Sky slightly darker than road, still above crushed-black.
+    float sky = smoothstep(0.55, 0.05, uv.y);
+    col *= mix(1.0, 0.78, sky * night);
 
     if (uWeather[12] > 0.5) {
         vec2 beamCenter = vec2(uWeather[14], uWeather[15]);
         float beamWidth = mix(0.16, 0.28, clamp(uWeather[13], 0.0, 1.0));
         float beam = smoothstep(beamWidth, 0.0, length((uv - beamCenter) * vec2(1.0, 1.75)));
-        col += vec3(1.0, 0.86, 0.55) * beam * (0.28 + 0.28 * night);
+        col += vec3(1.0, 0.86, 0.55) * beam * (0.38 + 0.42 * night);
     }
 
     if (uWeather[16] > 0.5) {
         float dome = smoothstep(0.7, 0.0, length(uv - vec2(0.5, 0.18)));
-        col += vec3(1.0, 0.72, 0.42) * dome * uWeather[17] * 0.35;
+        col += vec3(1.0, 0.72, 0.42) * dome * uWeather[17] * 0.48;
     }
 
-    return col;
+    return max(col, vec3(0.01));
 }
 
 vec3 applyWeather(vec3 col, vec2 uv) {
@@ -113,8 +120,10 @@ vec3 applyWeather(vec3 col, vec2 uv) {
     float snow = clamp(uWeather[8], 0.0, 2.0);
     float wind = uWeather[9];
 
+    // Top-origin UV (vertex shader flips y). Negative Y time term => fall downward,
+    // matching WebGPU weather-post.wgsl (st.y - t * speed). See carSpatialModel.WEATHER_FALL_Y_SIGN.
     if (rain > 0.001) {
-        vec2 rainUv = uv * vec2(120.0, 34.0) + vec2(wind * time * 10.0, time * 24.0);
+        vec2 rainUv = uv * vec2(120.0, 34.0) + vec2(wind * time * 10.0, -time * 24.0);
         float streak = smoothstep(0.965, 1.0, noise2D(rainUv));
         streak *= smoothstep(0.35, 1.0, fract(rainUv.y));
         col = mix(col, vec3(0.64, 0.78, 0.95), streak * rain * 0.18);
@@ -122,7 +131,7 @@ vec3 applyWeather(vec3 col, vec2 uv) {
     }
 
     if (snow > 0.001) {
-        vec2 snowUv = uv * vec2(44.0, 26.0) + vec2(wind * time * 1.2, time * 2.2);
+        vec2 snowUv = uv * vec2(44.0, 26.0) + vec2(wind * time * 1.2, -time * 2.2);
         float flakes = smoothstep(0.986, 1.0, noise2D(snowUv));
         col += vec3(0.95, 0.98, 1.0) * flakes * snow * 0.32;
         col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), snow * 0.035);

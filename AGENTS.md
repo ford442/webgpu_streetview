@@ -577,6 +577,37 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 4. Optional deeper check: `window.__STREETVIEW_PROBE__.enablePixelWatch()` in DevTools, then repeat step 1. Inspect `window.__STREETVIEW_PROBE__.getWarnings()` afterward — should be empty.
 5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
+### Car Spatial Correctness Manual Checklist
+Run this after touching `RearviewMirror.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `WebGLFallbackRenderer.ts` (epic #171):
+
+**World model** (`src/car/carSpatialModel.ts`): car body yaw = `carHeading`; head look = Street View `heading`/`pitch`. Free-look pans the head only. Chassis steers only in `carSteer`, temp-steer (steering-wheel grab), or explicit steer keys.
+
+1. **Free-look vs chassis**
+   - Enter car mode (default control mode is free-look). Left-drag to look around the cabin and out the side windows.
+   - **Pass**: dashboard / A-pillars / steering wheel stay fixed; only the outside panorama and head camera move. `carHeading` must not change.
+   - **Fail**: chassis yaws while looking around; feeling of "fighting" the car body.
+   - Grab the steering wheel and drag — chassis may yaw (temp-steer). Release — back to head-only look.
+   - Press `H` into `carSteer`, drag — chassis yaws with mouse X. RMB/Shift in free-look must **not** steer.
+
+2. **Rearview mirror (honest unavailable until true rear feed)**
+   - Look up at the interior rearview glass.
+   - **Pass**: dark glass with a dim center band (unavailable state). It must **not** show a UV-shifted crop of the forward Street View canvas.
+   - A future true-rear path (second panorama / Static API at `heading+180`, billing-aware) should call `setRearAvailable(true)` once a real feed is bound.
+
+3. **Night exposure**
+   - Apply the Night time-of-day preset (or max night slider). Toggle headlights and dome light.
+   - **Pass**: scene reads as night but road + cabin UI remain readable; headlights clearly lift the forward road; not crushed near-black.
+   - Repeat with `?renderer=webgl&effect=night` and (WebGPU) default + `?weather=compute` — all three backends should stay in the same ballpark.
+
+4. **Snow / rain fall direction (`?effect=weather`)**
+   - Set snow (and rain) above 0. WebGPU default: confirm flakes fall **downward**.
+   - `?renderer=webgl&effect=weather`: same downward fall (top-origin UV; negative Y time term).
+   - Optional: `?weather=compute` on WebGPU — same direction as fragment pass.
+
+5. **Wipers / quality gate**
+   - Medium or High quality: toggle wipers from the HUD (or stalk). Blades must sweep; HUD active state matches animator (`getWiperState().enabled`).
+   - Low quality: toggle still flips HUD state and blades jump to a raised static "on" pose (no full sweep animation — documented tradeoff). Off returns to park.
+
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
 

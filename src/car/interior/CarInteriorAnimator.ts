@@ -11,6 +11,7 @@ import {
     TACHO_DIAL_MAX_RPM,
 } from './CarInteriorGauges';
 import { getWindAudio } from '../../effects/WindAudio';
+import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
 
 export interface CarInteriorAmbientState {
   rainNorm: number;
@@ -121,10 +122,9 @@ export class CarInteriorAnimator {
       if (this.steeringWheelGroup) {
         this.steeringWheelGroup.rotation.z = this.steeringAngle;
       }
-      if (this.isWiperActive && this.quality !== 'low') {
-        this.wiperLeft && (this.wiperLeft.rotation.z = -Math.PI / 6);
-        this.wiperRight && (this.wiperRight.rotation.z = Math.PI / 6);
-      }
+      // Reduced-motion: still show a distinct static "on" pose so the toggle
+      // is visible (park pose alone looked identical to off).
+      this.syncStaticWiperPose();
       if (this.quality !== 'low') this.updateGauges(deltaTime);
       if (this.lodUpdateFn) this.lodUpdateFn();
       this.lodManager.updateLOD(this.camera);
@@ -147,8 +147,12 @@ export class CarInteriorAnimator {
       this.steeringWheelGroup.rotation.z += shortestDiff * Math.min(clampedDelta * 5, 1);
     }
 
-    if (this.isWiperActive && this.quality !== 'low') {
-      if (this.wiperDwell > 0) {
+    if (this.isWiperActive) {
+      if (this.quality === 'low') {
+        // Low quality: no blade animation, but hold a raised "on" pose so the
+        // HUD/stalk toggle is still visibly reflected in the cabin.
+        this.syncStaticWiperPose();
+      } else if (this.wiperDwell > 0) {
         this.wiperDwell -= clampedDelta;
         this.parkWipers();
       } else {
@@ -275,7 +279,15 @@ export class CarInteriorAnimator {
       this.wiperAnimationTime = 0;
       this.wiperDwell = 0;
       this.parkWipers();
+    } else if (this.quality === 'low' || this.reducedMotion) {
+      // Immediately reflect "on" for quality gates that skip the sweep animation.
+      this.syncStaticWiperPose();
     }
+  }
+
+  /** Whether blades are currently requested on (HUD/stalk SSOT). */
+  public getWipersActive(): boolean {
+    return this.isWiperActive;
   }
 
   /** Sweep rate multiplier (0.5 = slow, 1 = normal, 2 = fast). */
@@ -291,8 +303,23 @@ export class CarInteriorAnimator {
   }
 
   private parkWipers(): void {
-    if (this.wiperLeft) this.wiperLeft.rotation.z = -Math.PI / 6;
-    if (this.wiperRight) this.wiperRight.rotation.z = Math.PI / 6;
+    const pose = wiperParkPose();
+    if (this.wiperLeft) this.wiperLeft.rotation.z = pose.left;
+    if (this.wiperRight) this.wiperRight.rotation.z = pose.right;
+  }
+
+  /**
+   * Static pose for low-quality / reduced-motion: raised "on" when active so
+   * the toggle is visible without running the sweep animation; park when off.
+   */
+  private syncStaticWiperPose(): void {
+    if (!this.isWiperActive) {
+      this.parkWipers();
+      return;
+    }
+    const pose = wiperLowQualityOnPose();
+    if (this.wiperLeft) this.wiperLeft.rotation.z = pose.left;
+    if (this.wiperRight) this.wiperRight.rotation.z = pose.right;
   }
 
   public setGaugeValues(speed: number, rpm: number): void {

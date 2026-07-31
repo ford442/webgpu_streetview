@@ -488,28 +488,29 @@ fn nightSky(uv: vec2<f32>, t: f32) -> vec3<f32> {
     return stars * starColor * skyMask;
 }
 
+// Readable night floors — keep in sync with weather-post.wgsl + carSpatialModel.ts (#171)
 fn applyNight(col: vec3<f32>, night: f32, uv: vec2<f32>, t: f32) -> vec3<f32> {
     if (night < 0.001) { return col; }
     var c = col;
     let darkeningCurve = night * night * (3.0 - 2.0 * night);
-    c = c * mix(1.0, 0.03, darkeningCurve);
+    c = c * mix(1.0, 0.14, darkeningCurve);
     let gray = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    c = mix(c, vec3<f32>(gray), night * 0.7);
-    let moonTint = vec3<f32>(0.08, 0.12, 0.28);
-    c = c + moonTint * night * 0.08;
+    c = mix(c, vec3<f32>(gray), night * 0.55);
+    let moonTint = vec3<f32>(0.10, 0.14, 0.28);
+    c = c + moonTint * night * 0.10;
     let skyDarken = smoothstep(0.55, 0.05, uv.y);
-    c = c * mix(1.0, 0.02, skyDarken * night);
+    c = c * mix(1.0, 0.18, skyDarken * night);
     let lum = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let lightMask = smoothstep(0.35, 0.9, lum);
-    c = c + col * lightMask * night * 0.5;
-    let starBrightness = night * 2.0;
+    let lightMask = smoothstep(0.28, 0.85, lum);
+    c = c + col * lightMask * night * 0.65;
+    let starBrightness = night * 1.6;
     c = c + nightSky(uv, t) * starBrightness;
     let centerDist = length((uv - vec2<f32>(0.5)) * vec2<f32>(1.3, 1.0));
-    let nightVignette = 1.0 - smoothstep(0.3, 1.0, centerDist) * night * 0.4;
+    let nightVignette = 1.0 - smoothstep(0.35, 1.05, centerDist) * night * 0.28;
     c = c * nightVignette;
     let noise = hash(uv * 500.0 + t * 0.1);
-    c = c + (noise - 0.5) * 0.01 * night;
-    return max(c, vec3<f32>(0.001));
+    c = c + (noise - 0.5) * 0.008 * night;
+    return max(c, vec3<f32>(0.008));
 }
 
 fn headlightCone(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32) -> vec3<f32> {
@@ -700,26 +701,26 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Nighttime
     col = applyNight(col, p_nightIntensity(), uv, t);
 
-    // Headlights
+    // Headlights — boosted for readable night (#171; match weather-post.wgsl)
     if (p_headlightsOn() > 0.5) {
         let hlCone = headlightCone(uv, p_headlightHeading(), p_headlightPitch(), p_highBeam());
-        let nightMul = mix(0.4, 1.0, p_nightIntensity());
-        col = col + hlCone * nightMul * 0.6;
-        col = col * (1.0 + hlCone * nightMul * 0.3);
+        let nightMul = mix(0.55, 1.15, p_nightIntensity());
+        col = col + hlCone * nightMul * 0.85;
+        col = col * (1.0 + hlCone * nightMul * 0.4);
         let beams = headlightBeams(uv, p_headlightHeading(), p_headlightPitch(), p_highBeam(), t);
-        col = col + vec3<f32>(1.0, 0.95, 0.82) * beams * nightMul;
+        col = col + vec3<f32>(1.0, 0.95, 0.82) * beams * nightMul * 1.25;
         var fdx = uv.x - p_headlightHeading();
         if (fdx > 0.5) { fdx = fdx - 1.0; }
         if (fdx < -0.5) { fdx = fdx + 1.0; }
         let fdy = uv.y - p_headlightPitch();
         let flareDist = length(vec2<f32>(fdx, fdy));
-        let flare = exp(-flareDist * flareDist * 120.0) * 0.15 * nightMul;
+        let flare = exp(-flareDist * flareDist * 120.0) * 0.2 * nightMul;
         col = col + vec3<f32>(1.0, 0.97, 0.88) * flare;
     }
 
     // Interior cabin lighting
-    col = col + headlightInteriorBounce(uv, p_headlightsOn(), p_nightIntensity());
-    col = col + domeLightCabinGlow(uv, p_domeLightOn(), p_domeLightIntensity());
+    col = col + headlightInteriorBounce(uv, p_headlightsOn(), p_nightIntensity()) * 1.4;
+    col = col + domeLightCabinGlow(uv, p_domeLightOn(), p_domeLightIntensity()) * 1.35;
 
     // Astronomical lighting
     col = col + sunsetHorizonGlow(uv, p_sunAzimuth(), p_sunAltitude(), p_nightIntensity());

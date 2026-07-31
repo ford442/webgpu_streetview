@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
+import { freeLookDragShouldSteer } from '../car/carSpatialModel';
 
 interface CarInputHandlerProps {
   targetRef: React.RefObject<HTMLElement | null>;
@@ -19,9 +20,13 @@ interface CarInputHandlerProps {
 
 /**
  * CarInputHandler - Routes input by control mode:
- * - freeLook: click-drag = head look, A/D = head turn, car stays put (no W/S drive)
+ * - freeLook: click-drag = head look only; chassis stays put unless the user
+ *   grabs the steering wheel (temp-steer → carSteer). RMB/Shift do NOT steer.
+ *   A/D = head turn. No W/S drive.
  * - uiMouse: dashboard/menus only, right-drag = steer
  * - carSteer: click-drag X = steer car heading, drag Y = pitch, W/S = drive
+ *
+ * World model (car body vs head): see `src/car/carSpatialModel.ts`.
  */
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
@@ -175,7 +180,13 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       }
 
       if (currentMode === 'freeLook') {
-        const steeringDrag = isSteeringWheelDragRef.current || isRightMouseRef.current || e.shiftKey;
+        // Chassis steers only during steering-wheel grab (temp-steer handoff
+        // frames before controlMode flips to carSteer). RMB/Shift do not steer.
+        const steeringDrag = freeLookDragShouldSteer({
+          isSteeringWheelDrag: isSteeringWheelDragRef.current,
+          isRightMouse: isRightMouseRef.current,
+          shiftKey: e.shiftKey,
+        });
         if (steeringDrag) {
           applySteering(e.movementX * 0.3);
           setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
