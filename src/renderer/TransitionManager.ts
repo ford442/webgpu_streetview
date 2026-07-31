@@ -20,13 +20,19 @@ export class TransitionManager {
     // === INLINE TRANSITION SYSTEM ===
     private previousFrameTexture?: GPUTexture;
     private inlineTransitionProgress: number = 0.0;
+    private legacyTransitionsEnabled: boolean = false;
 
     constructor(device: GPUDevice, sampler: GPUSampler) {
         this.device = device;
         this.sampler = sampler;
     }
 
-    public async init(): Promise<void> {
+    public async init(enableLegacyTransitions: boolean = false): Promise<void> {
+        this.legacyTransitionsEnabled = enableLegacyTransitions;
+        if (!this.legacyTransitionsEnabled) {
+            return;
+        }
+
         const baseUrl = process.env.PUBLIC_URL || '/';
 
         this.transitionBindGroupLayout = this.device.createBindGroupLayout({
@@ -89,6 +95,7 @@ export class TransitionManager {
     }
 
     public beginTransition(mode: string = 'zoom'): void {
+        if (!this.legacyTransitionsEnabled) return;
         if (!this.device) return;
         if (!this.transitionPipelines.has(mode)) {
             console.warn(`[Renderer] Unknown transition mode "${mode}" — skipping`);
@@ -99,6 +106,7 @@ export class TransitionManager {
     }
 
     public capturePanorama(_movementHeading: number, videoTexture: GPUTexture): void {
+        if (!this.legacyTransitionsEnabled) return;
         if (!this.device || !videoTexture) return;
 
         if (!this.prevTexture ||
@@ -123,6 +131,7 @@ export class TransitionManager {
     }
 
     public updateTransitionProgress(progress: number): void {
+        if (!this.legacyTransitionsEnabled) return;
         this.transitionProgress = Math.max(0.0, Math.min(1.0, progress));
         if (!this.transitionUniformBuffer || !this.device || !this.activeTransition) return;
 
@@ -137,11 +146,13 @@ export class TransitionManager {
     }
 
     public endTransition(): void {
+        if (!this.legacyTransitionsEnabled) return;
         this.activeTransition   = null;
         this.transitionProgress = 0.0;
     }
 
     public isInTransition(): boolean {
+        if (!this.legacyTransitionsEnabled) return false;
         return this.activeTransition !== null;
     }
 
@@ -150,6 +161,7 @@ export class TransitionManager {
     }
 
     public getTransitionDuration(mode?: string): number {
+        if (!this.legacyTransitionsEnabled) return 450;
         const key = mode ?? this.activeTransition ?? 'zoom';
         return this.transitionDefaults[key]?.duration ?? 450;
     }

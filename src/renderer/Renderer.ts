@@ -155,7 +155,7 @@ export class Renderer implements StreetViewRenderer {
 
             this.transitionManager = new TransitionManager(this.device, this.sampler);
             try {
-                await this.transitionManager.init();
+                await this.transitionManager.init(!!options?.legacyTransitions);
             } catch (e) {
                 console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
             }
