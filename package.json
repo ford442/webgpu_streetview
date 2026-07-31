@@ -26,7 +26,7 @@
     "start": "vite",
     "dev": "vite",
     "prebuild": "node scripts/prebuild-env.mjs",
-    "build": "vite build && npm run build:wasm && ./scripts/verify-build.sh",
+    "build": "npm run build:wasm && vite build && ./scripts/verify-build.sh",
     "build:wasm": "bash scripts/build-wasm.sh --wat-only",
     "build:wasm:emscripten": "bash scripts/build-wasm.sh",
     "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",

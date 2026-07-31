@@ -11,6 +11,7 @@ set -euo pipefail
 
 BUILD_DIR="${1:-build}"
 ERRORS=0
+SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "🔍 Verifying build in ${BUILD_DIR}/ ..."
 
@@ -20,6 +21,45 @@ if [ ! -d "$BUILD_DIR" ]; then
 fi
 
 echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
+
+# ---------------------------------------------------------------------------
+# 1a. WASM binary: must exist, be non-empty, and not be stale vs WAT source.
+# ---------------------------------------------------------------------------
+WASM_FILE="$BUILD_DIR/wasm/streetview-wasm.wasm"
+WAT_SRC="$SCRIPT_ROOT/cpp/src/streetview-wasm.wat"
+WASM_HASH_FILE="$SCRIPT_ROOT/public/wasm/streetview-wasm.wasm.sha256"
+
+if [ ! -f "$WASM_FILE" ]; then
+  echo "❌ ERROR: $WASM_FILE is missing."
+  echo "   Run 'npm run build:wasm' then 'vite build' (or simply 'npm run build')."
+  ERRORS=$((ERRORS+1))
+else
+  WASM_BYTES=$(wc -c < "$WASM_FILE")
+  if [ "$WASM_BYTES" -eq 0 ]; then
+    echo "❌ ERROR: $WASM_FILE is empty (0 bytes). WASM build may have failed silently."
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ build/wasm/streetview-wasm.wasm present (${WASM_BYTES} bytes)"
+  fi
+
+  # Staleness check: compare the WAT source hash recorded at build time against
+  # the current WAT source.  A mismatch means the WAT was modified after the
+  # last 'npm run build:wasm' — the committed binary may be out of date.
+  if [ -f "$WASM_HASH_FILE" ] && [ -f "$WAT_SRC" ] && command -v sha256sum &>/dev/null; then
+    RECORDED_HASH=$(cat "$WASM_HASH_FILE")
+    CURRENT_HASH=$(sha256sum "$WAT_SRC" | awk '{print $1}')
+    if [ "$RECORDED_HASH" != "$CURRENT_HASH" ]; then
+      echo "❌ ERROR: WAT source has changed since the last WASM build."
+      echo "   Run 'npm run build:wasm' to regenerate the binary, then rebuild."
+      ERRORS=$((ERRORS+1))
+    else
+      echo "✅ WASM binary is up-to-date with WAT source (hash match)"
+    fi
+  elif [ ! -f "$WASM_HASH_FILE" ]; then
+    echo "⚠️  WASM source hash file missing ($WASM_HASH_FILE)."
+    echo "   Run 'npm run build:wasm' to generate it."
+  fi
+fi
 
 # 2. Verify config.js exists and is safe (empty or placeholder, never a real key)
 CONFIG_JS="$BUILD_DIR/config.js"
@@ -92,7 +132,6 @@ else
 fi
 
 # 5. Bundle size + Cesium-in-main budgets (hard fail)
-SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "$SCRIPT_ROOT/scripts/check-bundle-budget.sh" ]; then
   bash "$SCRIPT_ROOT/scripts/check-bundle-budget.sh" "$BUILD_DIR" || ERRORS=$((ERRORS+1))
 else

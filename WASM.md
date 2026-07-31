@@ -11,10 +11,10 @@ WebGPU StreetView for high-performance CPU-side computation.
 # Install dependencies (includes wabt for WAT→WASM compilation)
 npm install
 
-# Rebuild the .wasm binary from the WAT source
+# Rebuild the .wasm binary from the WAT source (always run BEFORE vite build)
 npm run build:wasm
 
-# Full app build (uses the pre-built .wasm in public/wasm/)
+# Full app build — correct order: WASM first, then Vite copies it into build/
 npm run build
 ```
 
@@ -48,30 +48,70 @@ function WeatherComponent() {
 }
 ```
 
+> **Note**: `useWasmModule` and `useNoiseFunction` currently have no active app
+> consumers. The live integration path is `WasmNoiseFeeder` (called imperatively
+> from `WebGPUCanvas.tsx`). These hooks are retained for future React-based
+> consumers (WeatherPanel, WindAudio, particle DSP etc.).
+
 ---
 
 ## Directory Structure
 
 ```
 cpp/
-├── CMakeLists.txt              Emscripten CMake build
+├── CMakeLists.txt              Emscripten CMake build (raw-export / STANDALONE_WASM mode)
 ├── include/
-│   └── streetview_wasm.h       C public API
+│   └── streetview_wasm.h       C public API (sw_* internal names)
 └── src/
     ├── noise_module.cpp        Core implementation (Perlin noise, haversine, …)
-    ├── bindings.cpp            Emscripten embind JS bindings
-    └── streetview-wasm.wat     Hand-crafted WAT source (no Emscripten needed)
+    ├── bindings.cpp            Canonical raw-export wrappers (seed, noise2d, …)
+    └── streetview-wasm.wat     Hand-crafted WAT source — canonical ABI reference
 
 public/wasm/
-└── streetview-wasm.wasm        Pre-built binary (commit this; rebuild with npm run build:wasm)
+├── streetview-wasm.wasm        Pre-built binary (commit this; rebuild with npm run build:wasm)
+└── streetview-wasm.wasm.sha256 SHA-256 of the WAT source at the last build (staleness guard)
 
 scripts/
 └── build-wasm.sh               Build script (auto-detects emcc vs wabt)
 
 src/wasm/
 ├── index.ts                    TypeScript wrapper + pure-JS fallback
-└── useWasmModule.ts            React hooks (useWasmModule, useNoiseFunction)
+├── useWasmModule.ts            React hooks (useWasmModule, useNoiseFunction)
+└── wasmNoiseFeeder.ts          Imperative render-loop bridge (WebGPUCanvas.tsx)
 ```
+
+---
+
+## Single ABI — Canonical Export Names
+
+Both build paths must produce a binary with **identical export names** so
+`src/wasm/index.ts` can instantiate either without a loader branch:
+
+| Export name | WAT | Emscripten (via bindings.cpp) |
+|---|---|---|
+| `seed` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE void seed(…)` |
+| `noise2d` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float noise2d(…)` |
+| `fill_noise_buffer` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE void fill_noise_buffer(…)` |
+| `haversine` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE double haversine(…)` |
+| `normalize_angle` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float normalize_angle(…)` |
+| `signed_angle_diff` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float signed_angle_diff(…)` |
+| `memory` | ✅ exported | ✅ exported |
+
+The internal C++ functions (`sw_seed`, `sw_noise2d`, …) are NOT exported — only
+the thin canonical wrappers in `bindings.cpp` are. The
+`EXPORTED_FUNCTIONS` list in `CMakeLists.txt` uses `_seed`, `_noise2d` etc.
+(Emscripten's underscore convention maps `_seed` → export name `seed`).
+
+### Math imports: WAT vs Emscripten
+
+- **WAT**: imports `env.sin`, `env.cos`, `env.atan2` from the host (WASM has no
+  built-in transcendental functions). The TS loader supplies `Math.sin/cos/atan2`.
+- **Emscripten STANDALONE_WASM**: links math statically using musl. No host math
+  imports. The TS loader's extra `env.*` keys are silently ignored.
+
+Both binaries may produce slightly different floating-point results for
+`haversine` due to different math library precision paths; the unit tests
+use `toBeCloseTo(…, 6)` (six decimal places) to accommodate this.
 
 ---
 
@@ -93,7 +133,7 @@ JS fallback.
 
 ## Build Paths
 
-### Path A — WAT → WASM (no Emscripten, recommended for development)
+### Path A — WAT → WASM (no Emscripten, canonical / recommended)
 
 Uses the hand-crafted WAT source in `cpp/src/streetview-wasm.wat` and the
 [wabt](https://github.com/AssemblyScript/wabt) Node.js package.
@@ -102,12 +142,30 @@ Uses the hand-crafted WAT source in `cpp/src/streetview-wasm.wat` and the
 npm run build:wasm          # or: bash scripts/build-wasm.sh --wat-only
 ```
 
-Output: `public/wasm/streetview-wasm.wasm`
+Output:
+- `public/wasm/streetview-wasm.wasm` — compiled WASM binary
+- `public/wasm/streetview-wasm.wasm.sha256` — SHA-256 of the WAT source (staleness guard)
 
-### Path B — C++ → WASM via Emscripten (full production build)
+This is the **canonical path** used in CI. The WAT source is the single source
+of truth; both the pre-built binary and its hash file should be committed.
 
-The C++ implementation (`cpp/src/noise_module.cpp`) uses `libm` for exact
-haversine and enables link-time optimisation.
+### Path B — C++ → WASM via Emscripten
+
+The C++ implementation (`cpp/src/noise_module.cpp` + `bindings.cpp`) uses libm
+for exact `haversine` and enables link-time optimisation.
+
+**Emscripten flags used (see `CMakeLists.txt`):**
+```
+-s STANDALONE_WASM=1   # link math statically; no JS glue file required
+--no-entry             # suppress WASI _start; pure compute module
+-s ALLOW_MEMORY_GROWTH=1
+-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer',
+                        '_haversine','_normalize_angle','_signed_angle_diff',
+                        '_malloc','_free']
+```
+
+**No `MODULARIZE`, no `EXPORT_ES6`, no `--bind`** — these flags would produce a
+JS-module wrapper incompatible with the TS loader's direct `WebAssembly.instantiate()`.
 
 ```bash
 # Install Emscripten SDK
@@ -116,13 +174,11 @@ git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
 /opt/emsdk/emsdk activate latest
 source /opt/emsdk/emsdk_env.sh
 
-# Build
+# Build (auto-detected if emcc is on PATH)
 npm run build:wasm
 ```
 
-Output:
-- `public/wasm/streetview-wasm.wasm` — the WASM binary
-- `public/wasm/streetview-wasm.js`   — Emscripten JS glue (not committed)
+Output: `public/wasm/streetview-wasm.wasm` — the WASM binary (no `.js` glue file)
 
 #### Docker alternative
 
@@ -130,6 +186,33 @@ Output:
 docker run --rm -v "$(pwd):/src" -w /src \
   emscripten/emsdk bash scripts/build-wasm.sh
 ```
+
+#### Emscripten SDK version pinning
+
+Pin the Emscripten SDK version in CI to avoid binary drift:
+```bash
+/opt/emsdk/emsdk install 3.1.55
+/opt/emsdk/emsdk activate 3.1.55
+```
+Update the version in `scripts/build-wasm.sh` when upgrading.
+
+---
+
+## Build Order (Critical)
+
+```
+npm run build:wasm   →   public/wasm/streetview-wasm.wasm  (WAT or Emscripten)
+vite build           →   build/ (copies public/ into it, including the fresh .wasm)
+./scripts/verify-build.sh   →   asserts build/wasm/streetview-wasm.wasm exists + size > 0
+```
+
+The `"build"` script in `package.json` enforces this order:
+```json
+"build": "npm run build:wasm && vite build && ./scripts/verify-build.sh"
+```
+
+**Previously broken**: the order was `vite build && npm run build:wasm`, so Vite
+copied the *old* binary before the WASM rebuild, silently shipping stale code.
 
 ---
 
@@ -161,7 +244,7 @@ effect against it being fully disabled — see `getWasmNoisePreference()` in
 `src/wasm/wasmNoiseFeeder.ts`. When disabled, dust intensity is driven to 0
 and the noise tile is never uploaded.
 
-### haversine's host math imports
+### haversine's host math imports (WAT build only)
 
 WASM has no built-in transcendental functions, so `haversine()` in
 `streetview-wasm.wat` imports `sin`/`cos`/`atan2` from the host — the
@@ -169,15 +252,17 @@ loader in `src/wasm/index.ts` supplies `Math.sin`/`Math.cos`/`Math.atan2` at
 instantiation time:
 
 ```typescript
-const importObject = { env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 } };
+const importObject = {
+  env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 },
+  wasi_snapshot_preview1: { /* stubs for Emscripten STANDALONE_WASM */ },
+};
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
 ```
 
-This gives the WAT build the same double-precision result as the JS fallback
-formula (bit-for-bit, verified in `src/wasm/__tests__/wasmCompiled.test.ts`,
-which instantiates the real compiled binary directly instead of only testing
-the JS fallback). The Emscripten build (`cpp/src/noise_module.cpp`) already
-had exact haversine via libm — this closes the same gap for the WAT path.
+The Emscripten STANDALONE_WASM build links math statically, so it does NOT use
+these host imports. Extra keys in the import object are silently ignored.
+The WASI stubs handle any `wasi_snapshot_preview1.*` imports Emscripten may
+emit even with `--no-entry`.
 
 ---
 
@@ -188,11 +273,26 @@ implementation when:
 
 - `WebAssembly` is not available in the browser.
 - The `.wasm` file fetch returns a non-OK HTTP status.
-- Any other error occurs during instantiation.
+- Any other error occurs during instantiation (including missing imports).
 
 The fallback mirrors the WASM algorithm exactly, so behaviour is identical
 (minus the performance advantage). The `isWasm` flag lets you distinguish the
 two at runtime.
+
+---
+
+## Staleness Guard (`verify-build.sh`)
+
+`scripts/verify-build.sh` (called at the end of `npm run build`) checks:
+
+1. `build/wasm/streetview-wasm.wasm` **exists** and **size > 0**.
+2. **Source hash**: the SHA-256 of `cpp/src/streetview-wasm.wat` recorded at
+   the last `npm run build:wasm` must match the current WAT source. A mismatch
+   means the WAT was edited without a WASM rebuild — the deploy artifact would
+   be stale.
+
+The hash file lives at `public/wasm/streetview-wasm.wasm.sha256` and is
+committed alongside the binary so CI can verify it without rebuilding.
 
 ---
 
@@ -205,18 +305,23 @@ two at runtime.
   `Uint8Array` tile data before uploading to WebGPU.
 - **Offline tile processing** — custom Street View tile decoding/stitching.
 - **ONNX Runtime Web** — custom ops implemented in C++ via the WASM backend.
+- **SharedArrayBuffer worker** — run `fillNoiseBuffer` off the main thread so
+  it never touches frame budget.
 
 ---
 
 ## Testing
 
-Unit tests for the WASM wrapper live in `src/wasm/__tests__/wasm.test.ts`.
-They run against the pure-JS fallback (no browser/WASM required in Jest):
-
 ```bash
-npm test -- --testPathPattern=wasm
+# JS fallback + compiled WASM binary (wasmCompiled.test.ts loads public/wasm/*.wasm directly)
+npm test -- --reporter=verbose
 ```
+
+- `src/wasm/__tests__/wasm.test.ts` — JS fallback parity (no WASM required).
+- `src/wasm/__tests__/wasmCompiled.test.ts` — compiled binary ABI, memory layout,
+  haversine host-import wiring. Loads the file directly via `fs.readFileSync`.
+- `src/wasm/__tests__/wasmNoiseFeeder.test.ts` — `WasmNoiseFeeder` cadence and buffer reuse.
 
 ---
 
-*Last updated: 2026-05-26*
+*Last updated: 2026-07-31*
