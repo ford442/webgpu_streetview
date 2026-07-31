@@ -84,6 +84,16 @@ window.streetViewRendererDebug.getDebugOptions();
 
 The isolation value is stored in `localStorage` as `streetview.effect`. `wireframe` is a screen-space UV/grid overlay because the Street View renderer is a fullscreen pass, not a mesh renderer.
 
+### `?effect=weather` visual checklist (epic #171)
+
+Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-post-compute.wgsl`, or `WebGLFallbackRenderer.ts`:
+
+1. Raise snow (and rain) intensity above 0 in the Weather panel.
+2. **WebGPU default** — flakes/streaks must fall **downward** (top-origin UV; `st.y - t * …`).
+3. **`?renderer=webgl&effect=weather`** — same downward direction. The WebGL vertex shader flips `vUv.y` to top-origin; particle Y time terms must stay **negative** (`WEATHER_FALL_Y_SIGN = -1` in `src/car/carSpatialModel.ts`).
+4. Optional: **`?weather=compute`** on WebGPU — match fragment fall direction.
+5. **`?renderer=webgl&effect=night`** (and WebGPU night preset) — road readable with headlights; not crushed black. Floors live in `carSpatialModel.ts` (`NIGHT_BASE_FLOOR` / `NIGHT_SKY_FLOOR`).
+
 ## Weather Post-Process: Fragment vs Compute
 
 The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:

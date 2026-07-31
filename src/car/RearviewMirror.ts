@@ -1,60 +1,39 @@
 import * as THREE from 'three';
 
 /**
- * RearviewMirror - Functional rearview mirror that shows actual Street View from behind.
- * 
- * Implementation: Samples from the Street View canvas (which contains the 360° panorama)
- * and renders it to the mirror plane with:
- * - 180° rotation (shows what's behind the car)
- * - Horizontal flip (mirror reflection)
- * - Chromatic aberration for realism
- * - Frame skipping for performance (renders every 2nd frame)
+ * RearviewMirror — cabin rear-view glass.
+ *
+ * The live Google Maps canvas is a forward-facing *perspective* Street View
+ * capture, not an equirectangular pano. UV-offsetting that canvas by +180°
+ * therefore cannot show what is behind the car (it just crops the forward
+ * view). Until a second rear-facing Street View / Static API sample is wired
+ * (billing-aware, throttled), the glass shows an honest "unavailable" state
+ * rather than a fake forward crop.
+ *
+ * World model: the mirror mesh is parented in car-body space; head free-look
+ * does not reorient it. `updateOrientation` remains a no-op by design until a
+ * true rear feed exists.
  */
 export class RearviewMirror {
-    private mirrorCamera: THREE.PerspectiveCamera;
-    private renderTarget: THREE.WebGLRenderTarget;
     private mirrorPlane: THREE.Mesh;
     private mirrorMaterial: THREE.ShaderMaterial;
-    private frameCount: number = 0;
     private isNightMode: boolean = false;
-    private streetViewTexture: THREE.CanvasTexture | null = null;
+    private rearAvailable: boolean = false;
+
+    // Kept so a future true-rear feed can plug in without reshaping the API.
     private streetViewCanvas: HTMLCanvasElement | null = null;
-
-    // Persistent resources for the mirror scene (performance optimization)
-    private mirrorScreenScene: THREE.Scene;
-    private mirrorScreenMesh: THREE.Mesh;
-    private mirrorScreenGeo: THREE.PlaneGeometry;
-    private mirrorScreenMat: THREE.MeshBasicMaterial;
-
-    // Mirror dimensions (0.5x resolution for performance)
-    private static readonly MIRROR_WIDTH = 512;
-    private static readonly MIRROR_HEIGHT = 256;
 
     constructor(
         scene: THREE.Scene,
         private renderer: THREE.WebGLRenderer
     ) {
-        // Create render target for the mirror
-        this.renderTarget = new THREE.WebGLRenderTarget(
-            RearviewMirror.MIRROR_WIDTH,
-            RearviewMirror.MIRROR_HEIGHT,
-            {
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.LinearFilter,
-                format: THREE.RGBAFormat,
-            }
-        );
-
-        // Create a simple scene for the mirror that contains a plane with the Street View texture
-        this.mirrorCamera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
-        this.mirrorCamera.position.set(0, 0, 1);
-
-        // Chromatic aberration shader material for mirror
+        // Honest unavailable glass: dark tint + soft vignette + label cue.
+        // No sampling of the forward Street View canvas.
         this.mirrorMaterial = new THREE.ShaderMaterial({
             uniforms: {
-                tDiffuse: { value: this.renderTarget.texture },
-                aberrationStrength: { value: 0.003 },
                 nightMode: { value: 0.0 },
+                rearAvailable: { value: 0.0 },
+                time: { value: 0.0 },
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -64,49 +43,54 @@ export class RearviewMirror {
                 }
             `,
             fragmentShader: `
-                uniform sampler2D tDiffuse;
-                uniform float aberrationStrength;
                 uniform float nightMode;
+                uniform float rearAvailable;
+                uniform float time;
                 varying vec2 vUv;
-                
+
                 void main() {
-                    vec2 uv = vUv;
-                    // Mirror (flip horizontally for correct mirror reflection)
-                    uv.x = 1.0 - uv.x;
-                    
-                    // Chromatic aberration
-                    float r = texture2D(tDiffuse, uv + vec2(aberrationStrength, 0.0)).r;
-                    float g = texture2D(tDiffuse, uv).g;
-                    float b = texture2D(tDiffuse, uv - vec2(aberrationStrength, 0.0)).b;
-                    
-                    vec3 color = vec3(r, g, b);
-                    
-                    // Night mode: green tint like night vision
+                    // Base glass — cool dark mirror when rear feed is unavailable.
+                    vec3 glass = vec3(0.06, 0.07, 0.09);
                     if (nightMode > 0.5) {
-                        float luminance = dot(color, vec3(0.299, 0.587, 0.114));
-                        color = vec3(luminance * 0.3, luminance * 1.2, luminance * 0.3);
+                        glass = vec3(0.03, 0.06, 0.04);
                     }
-                    
-                    // Slight vignette on mirror edges
+
+                    // Soft edge vignette so it still reads as a mirror bezel.
                     float dist = distance(vUv, vec2(0.5));
-                    float vignette = 1.0 - smoothstep(0.3, 0.7, dist);
-                    color *= mix(0.7, 1.0, vignette);
-                    
-                    // Mirror tint (slightly blue/grey)
-                    color = mix(color, color * vec3(0.85, 0.9, 1.0), 0.3);
-                    
-                    gl_FragColor = vec4(color, 1.0);
+                    float vignette = 1.0 - smoothstep(0.25, 0.72, dist);
+                    glass *= mix(0.55, 1.0, vignette);
+
+                    // Subtle horizontal scan / frost so the glass does not look broken-black.
+                    float frost = 0.02 + 0.015 * sin(vUv.y * 40.0 + time * 0.4);
+                    glass += vec3(frost);
+
+                    // Center band label cue ("no rear feed") via luminance dip.
+                    // Readable as a dim horizontal readout without textured fonts.
+                    float band = smoothstep(0.42, 0.48, vUv.y) * (1.0 - smoothstep(0.52, 0.58, vUv.y));
+                    float bandX = smoothstep(0.18, 0.28, vUv.x) * (1.0 - smoothstep(0.72, 0.82, vUv.x));
+                    float label = band * bandX;
+                    vec3 labelColor = nightMode > 0.5
+                        ? vec3(0.15, 0.45, 0.18)
+                        : vec3(0.35, 0.38, 0.42);
+                    glass = mix(glass, labelColor, label * 0.85);
+
+                    // When a true rear feed is eventually attached, rearAvailable
+                    // flips and the glass brightens as a placeholder until textured.
+                    if (rearAvailable > 0.5) {
+                        glass = mix(glass, vec3(0.12, 0.13, 0.15), 0.5);
+                    }
+
+                    gl_FragColor = vec4(glass, 1.0);
                 }
             `,
         });
 
-        // Mirror plane geometry positioned at rearview mirror location
         const mirrorGeo = new THREE.PlaneGeometry(0.28, 0.1);
         this.mirrorPlane = new THREE.Mesh(mirrorGeo, this.mirrorMaterial);
         this.mirrorPlane.position.set(0, 1.42, -0.83);
         this.mirrorPlane.rotation.set(-0.1, 0, 0);
+        this.mirrorPlane.name = 'rearviewMirror';
 
-        // Mirror frame
         const frameGeo = new THREE.BoxGeometry(0.32, 0.14, 0.02);
         const frameMat = new THREE.MeshStandardMaterial({
             color: 0x333333,
@@ -116,122 +100,79 @@ export class RearviewMirror {
         const frame = new THREE.Mesh(frameGeo, frameMat);
         frame.position.set(0, 1.42, -0.84);
         frame.rotation.set(-0.1, 0, 0);
+        frame.name = 'rearviewMirrorFrame';
 
         scene.add(frame);
         scene.add(this.mirrorPlane);
 
-        // Initialize persistent resources for the mirror scene
-        this.mirrorScreenScene = new THREE.Scene();
-        this.mirrorScreenGeo = new THREE.PlaneGeometry(2, 1);
-        this.mirrorScreenMat = new THREE.MeshBasicMaterial({
-            side: THREE.DoubleSide
-        });
-        this.mirrorScreenMesh = new THREE.Mesh(this.mirrorScreenGeo, this.mirrorScreenMat);
-        this.mirrorScreenScene.add(this.mirrorScreenMesh);
+        // Renderer kept for API parity with a future rear-facing RT path.
+        void this.renderer;
     }
 
     /**
-     * Set the Street View canvas source for the mirror.
-     * The mirror will sample from this canvas to show the view from behind.
+     * Optionally attach a Street View canvas. The current implementation does
+     * **not** sample it (forward perspective ≠ rear view). Reserved for a
+     * future true-rear feed (second panorama / Static API at heading+180).
      */
     public setStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
-        if (canvas === this.streetViewCanvas) return;
-        
         this.streetViewCanvas = canvas;
-        
-        if (canvas) {
-            // Create or update the texture from the Street View canvas
-            if (!this.streetViewTexture) {
-                this.streetViewTexture = new THREE.CanvasTexture(canvas);
-                this.streetViewTexture.minFilter = THREE.LinearFilter;
-                this.streetViewTexture.magFilter = THREE.LinearFilter;
-                // Performance optimization: use texture transforms instead of manual UV modification
-                this.streetViewTexture.wrapS = THREE.RepeatWrapping;
-                this.streetViewTexture.repeat.set(-1, 1);
-                this.mirrorScreenMat.map = this.streetViewTexture;
-            } else {
-                this.streetViewTexture.image = canvas;
-                this.streetViewTexture.needsUpdate = true;
-            }
+        // Keep unavailable until a real rear source is provided explicitly.
+        if (!canvas) {
+            this.setRearAvailable(false);
         }
     }
 
     /**
-     * Update mirror view based on car heading.
-     * The mirror shows the view 180° behind the car.
+     * Mark whether a true rear-facing feed is bound. Default is false so the
+     * glass stays in the honest unavailable state.
+     */
+    public setRearAvailable(available: boolean): void {
+        this.rearAvailable = available;
+        this.mirrorMaterial.uniforms.rearAvailable!.value = available ? 1.0 : 0.0;
+    }
+
+    public isRearAvailable(): boolean {
+        return this.rearAvailable;
+    }
+
+    /**
+     * Orientation hook for a future true-rear camera. No-op while the glass is
+     * in the unavailable state — rotating a fake crop would reintroduce the bug.
      */
     public updateOrientation(_carHeading: number, _headPitch: number): void {
-        // Mirror shows the view from behind the car (180° offset)
-        // We don't actually rotate the camera - we just use the texture offset
-        // The mirror always shows "behind" relative to car heading
+        // Intentionally empty until a rear-facing source exists.
     }
 
     /**
-     * Render the mirror texture.
-     * Samples from the Street View canvas and applies the mirror shader effects.
-     * For performance, only updates every 2nd frame.
-     * 
-     * @param carHeading - Current car heading in degrees (to calculate rear view)
-     * @param skipFrame - If true, only render every other frame
+     * Per-frame tick. Advances the subtle frost animation; does not sample the
+     * forward Street View canvas.
      */
-    public update(carHeading: number, skipFrame: boolean = false): void {
-        this.frameCount++;
-        if (skipFrame && this.frameCount % 2 !== 0) return;
-
-        if (!this.streetViewCanvas || !this.streetViewTexture) return;
-
-        // Update the texture from the Street View canvas
-        this.streetViewTexture.needsUpdate = true;
-
-        // Calculate UV offset based on car heading to show what's behind
-        // 180° = 0.5 in UV space (horizontal panoramic offset)
-        const rearHeadingOffset = ((carHeading + 180) % 360) / 360;
-        
-        // Performance optimization: use texture transforms (GPU-side) instead of manual UV modification
-        // Horizontal flip (1.0 - u) and offset are combined here:
-        // u_transformed = u * repeat + offset
-        // Since repeat.x = -1.0, u_transformed = -u + offset
-        // We want (1.0 - u) + rearHeadingOffset = -u + 1.0 + rearHeadingOffset
-        // So offset.x = 1.0 + rearHeadingOffset
-        this.streetViewTexture.offset.x = 1.0 + rearHeadingOffset;
-
-        // Render to the mirror's render target
-        const currentTarget = this.renderer.getRenderTarget();
-        this.renderer.setRenderTarget(this.renderTarget);
-        this.renderer.clear();
-        this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
-        this.renderer.setRenderTarget(currentTarget);
+    public update(_carHeading: number, _skipFrame: boolean = false): void {
+        const u = this.mirrorMaterial.uniforms.time;
+        if (u) {
+            u.value = performance.now() * 0.001;
+        }
     }
 
-    /**
-     * Toggle night vision mode on the mirror.
-     */
     public toggleNightMode(): void {
         this.isNightMode = !this.isNightMode;
         this.mirrorMaterial.uniforms.nightMode!.value = this.isNightMode ? 1.0 : 0.0;
     }
 
-    /**
-     * Get the mirror plane mesh for raycasting/click detection.
-     */
     public getMirrorMesh(): THREE.Mesh {
         return this.mirrorPlane;
     }
 
-    /**
-     * Clean up resources.
-     */
+    /** Test/diagnostic: whether the glass is currently sampling a rear feed. */
+    public getStatus(): { rearAvailable: boolean; hasCanvas: boolean } {
+        return {
+            rearAvailable: this.rearAvailable,
+            hasCanvas: this.streetViewCanvas !== null,
+        };
+    }
+
     public dispose(): void {
-        this.renderTarget.dispose();
         this.mirrorMaterial.dispose();
         this.mirrorPlane.geometry.dispose();
-
-        // Dispose of persistent rendering resources
-        this.mirrorScreenGeo.dispose();
-        this.mirrorScreenMat.dispose();
-
-        if (this.streetViewTexture) {
-            this.streetViewTexture.dispose();
-        }
     }
 }
