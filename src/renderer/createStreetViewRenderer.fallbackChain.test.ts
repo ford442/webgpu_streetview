@@ -11,6 +11,7 @@ const mockRendererDestroy = vi.fn();
 const mockWebglInit = vi.fn();
 const mockWebglDestroy = vi.fn();
 const mockCallOrder: Array<'webgpu' | 'webgl'> = [];
+let mockWebgpuFallbackReason: string | undefined;
 
 vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
 vi.mock('./WebGLFallbackRenderer', () => ({ WebGLFallbackRenderer: vi.fn() }));
@@ -27,6 +28,7 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
     delete (window as any).rendererType;
     delete (window as any).streetViewRendererDebug;
     mockCallOrder.length = 0;
+    mockWebgpuFallbackReason = undefined;
 
     mockRendererInit.mockReset().mockResolvedValue(true);
     mockRendererDestroy.mockReset();
@@ -37,7 +39,7 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
       mockCallOrder.push('webgpu');
       this.canvas = canvas;
       this.backendType = 'webgpu';
-      this.fallbackReason = undefined;
+      this.fallbackReason = mockWebgpuFallbackReason;
       this.init = mockRendererInit;
       this.destroy = mockRendererDestroy;
       this.setDebugOptions = vi.fn();
@@ -72,10 +74,12 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
 
   it('falls back to WebGL and destroys the failed WebGPU renderer when WebGPU init fails', async () => {
     mockRendererInit.mockResolvedValue(false);
+    mockWebgpuFallbackReason = 'Adapter limit maxTextureDimension2D=2048 below required 4096';
     const canvas = document.createElement('canvas');
     const created = await createStreetViewRenderer(canvas);
 
     expect(created.backendType).toBe('webgl');
+    expect(created.fallbackReason).toBe('Adapter limit maxTextureDimension2D=2048 below required 4096');
     expect(mockRendererDestroy).toHaveBeenCalledTimes(1);
     expect(mockCallOrder).toEqual(['webgpu', 'webgl']);
   });

@@ -460,10 +460,13 @@ Google Maps does **not** expose a public canvas API. The implementation uses `Mu
 Listeners are attached to `window`. Every UI overlay (panels, modals, inputs, dashboard buttons) **must** call `e.stopPropagation()` on mouse and keyboard events, or the panorama will spin when users type or click buttons.
 
 ### 3. WebGPU Texture Lifecycle (`Renderer.ts`)
+- Adapter requests use an explicit power policy (`?gpu=low|high`, then battery heuristic, then high-performance default).
+- `GPUCanvasContext.configure(...)` is explicit: `alphaMode: 'opaque'`, `colorSpace: 'srgb'`, `usage: RENDER_ATTACHMENT | COPY_SRC`.
 - `ensureIntermediateTexture()` lazily creates/resizes the HDR texture.
 - `videoTexture` is recreated when the scraped canvas changes dimensions.
 - `copyExternalImageToTexture` is wrapped in try-catch to survive transient resize errors.
 - Do not cache `GPUTextureView` across frames — the underlying texture may be recreated.
+- Device loss teardown must unconfigure the canvas context before reinit (`WebGPUCanvas` handles fresh renderer creation via `reinitCounter`).
 
 ### 4. Hold-Pause / `isTransitioning` + `isPanoramaReady` Coordination
 `StreetViewProvider` sets `isTransitioning = true` and `isPanoramaReady = false` when `advance()`/`teleport()` arm the hold (see *Hold-Pause Transition* above), and only flips `isPanoramaReady` back to `true` once the new hidden canvas passes the shared stability check — not a fixed delay. `WebGPUCanvas.tsx` reads `isPanoramaUpdatePaused` (`isTransitioning && !isPanoramaReady`) to render the frozen GPU snapshot (`renderHeldFrame`) instead of uploading the live (still-loading) canvas, and forces full fps during the hold/release. If this wiring breaks — the `holdActive` guard in `Renderer.renderStreetView()`/`uploadLiveSource()`, or the `isPanoramaUpdatePaused` check in `WebGPUCanvas.tsx` — cruise mode will flash blurry/low-res tiles on every hop. `window.__STREETVIEW_PROBE__` (`src/utils/streetViewProbe.ts`) is the regression guard for exactly this: it warns loudly if the live canvas is ever uploaded while a hold is active.

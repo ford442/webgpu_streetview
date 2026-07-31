@@ -22,6 +22,8 @@ export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
     /** WebGPU only — WebGL2 fallback stays fragment-only. See docs/RENDERER_FALLBACK.md. */
     weatherPostProcessMode?: WeatherPostProcessMode;
+    /** WebGPU only — overrides URL/battery power preference policy when provided. */
+    powerPreference?: GPUPowerPreference;
 }
 
 export interface StreetViewRenderer {
@@ -82,6 +84,36 @@ const VALID_WEATHER_MODES = new Set(['fragment', 'compute']);
 function readSearchParams(): URLSearchParams {
     if (typeof window === 'undefined') return new URLSearchParams();
     return new URLSearchParams(window.location.search);
+}
+
+export interface AdapterPowerPreferencePolicy {
+    powerPreference?: GPUPowerPreference;
+    source: 'override' | 'url' | 'default';
+}
+
+export function getAdapterPowerPreferencePolicy(options?: RendererInitOptions): AdapterPowerPreferencePolicy {
+    if (options?.powerPreference) {
+        return {
+            powerPreference: options.powerPreference,
+            source: 'override',
+        };
+    }
+
+    const params = readSearchParams();
+    const gpuParam = params.get('gpu')?.toLowerCase();
+    if (gpuParam === 'low' || gpuParam === 'low-power') {
+        return { powerPreference: 'low-power', source: 'url' };
+    }
+    if (gpuParam === 'high' || gpuParam === 'high-performance') {
+        return { powerPreference: 'high-performance', source: 'url' };
+    }
+
+    return { source: 'default' };
+}
+
+export function getAdapterRequestOptions(options?: RendererInitOptions): GPURequestAdapterOptions {
+    const policy = getAdapterPowerPreferencePolicy(options);
+    return policy.powerPreference ? { powerPreference: policy.powerPreference } : {};
 }
 
 export function getRendererPreference(): RendererBackendPreference {

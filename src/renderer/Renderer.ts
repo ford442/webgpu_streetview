@@ -5,11 +5,21 @@ import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
 import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import { RendererDebugOptions, RendererInitOptions, StreetViewRenderer, WeatherPostProcessMode } from './RendererBackend';
+import {
+    getAdapterPowerPreferencePolicy,
+    getAdapterRequestOptions as getRequestedAdapterOptions,
+    RendererDebugOptions,
+    RendererInitOptions,
+    StreetViewRenderer,
+    WeatherPostProcessMode,
+} from './RendererBackend';
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
-    public readonly fallbackReason?: string;
+    private _fallbackReason?: string;
+    public get fallbackReason(): string | undefined {
+        return this._fallbackReason;
+    }
     public canvas: HTMLCanvasElement;
     private device!: GPUDevice;
     private context!: GPUCanvasContext;
@@ -24,9 +34,6 @@ export class Renderer implements StreetViewRenderer {
     private videoTextureWidth: number = 0;
     private videoTextureHeight: number = 0;
     private uniformBuffer!: GPUBuffer;
-
-    // Car mode effects
-    private effectsBuffer?: GPUBuffer;
 
     // === INLINE TRANSITION SYSTEM ===
     // The main shader (streetview.wgsl) mixes between previous and current
@@ -53,6 +60,7 @@ export class Renderer implements StreetViewRenderer {
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
+    private isDisposed: boolean = false;
     private startTime: number = Date.now();
 
     constructor(canvas: HTMLCanvasElement) {
@@ -62,15 +70,30 @@ export class Renderer implements StreetViewRenderer {
     public async init(options?: RendererInitOptions): Promise<boolean> {
         this.onLostCallback = options?.onLost;
         this.weatherPostProcessMode = options?.weatherPostProcessMode || 'fragment';
+        this._fallbackReason = undefined;
+        this.isDestroyed = false;
+        this.isDisposed = false;
         if (!navigator.gpu) {
+            this._fallbackReason = 'WebGPU is not supported in this browser';
             console.warn('WebGPU not supported. Using StreetView fallback.');
             return false;
         }
 
         try {
-            const adapter = await navigator.gpu.requestAdapter();
+            const adapterOptions = await this.getAdapterRequestOptions(options);
+            const adapter = await navigator.gpu.requestAdapter(adapterOptions);
             if (!adapter) {
+                this._fallbackReason = 'No compatible WebGPU adapter found';
                 console.warn('No WebGPU adapter found. Fallback active.');
+                return false;
+            }
+
+            this.logAdapterCapabilities(adapter, adapterOptions.powerPreference);
+
+            const limitCheck = this.getRequiredLimits(adapter);
+            if (!limitCheck.ok) {
+                this._fallbackReason = limitCheck.reason;
+                console.warn('[Renderer] WebGPU adapter limits are insufficient:', limitCheck.reason);
                 return false;
             }
 
@@ -79,16 +102,20 @@ export class Renderer implements StreetViewRenderer {
                 requiredFeatures.push('float32-filterable');
             }
 
-            this.device = await adapter.requestDevice({ requiredFeatures });
+            this.device = await adapter.requestDevice({
+                requiredFeatures,
+                requiredLimits: limitCheck.requiredLimits,
+            });
 
             this.device.lost.then((info) => {
                 console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
-                this.dispose();
+                this.dispose({ destroyDevice: false, unconfigureContext: true, markDestroyed: true });
                 this.onLostCallback?.(info);
             });
 
             const context = this.canvas.getContext('webgpu');
             if (!context) {
+                this._fallbackReason = 'Could not acquire a WebGPU canvas context';
                 console.warn('Could not get WebGPU context. Fallback active.');
                 return false;
             }
@@ -100,6 +127,11 @@ export class Renderer implements StreetViewRenderer {
             this.sampler = this.device.createSampler({
                 magFilter: 'linear',
                 minFilter: 'linear',
+                mipmapFilter: 'linear',
+                addressModeU: 'clamp-to-edge',
+                addressModeV: 'clamp-to-edge',
+                addressModeW: 'clamp-to-edge',
+                maxAnisotropy: 1,
             });
 
             this.createTexture(1, 1);
@@ -111,11 +143,6 @@ export class Renderer implements StreetViewRenderer {
             // [6-7]: capturePanX, capturePanY at snapshot time (look-around delta)
             this.uniformBuffer = this.device.createBuffer({
                 size: 32,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-
-            this.effectsBuffer = this.device.createBuffer({
-                size: 48,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -135,8 +162,88 @@ export class Renderer implements StreetViewRenderer {
 
             return true;
         } catch (e) {
+            this._fallbackReason = e instanceof Error ? e.message : String(e);
             console.warn('WebGPU init failed:', e instanceof Error ? e.message : String(e));
             return false;
+        }
+    }
+
+    private async getAdapterRequestOptions(options?: RendererInitOptions): Promise<GPURequestAdapterOptions> {
+        const policy = getAdapterPowerPreferencePolicy(options);
+        if (policy.source !== 'default') {
+            return getRequestedAdapterOptions(options);
+        }
+
+        const batteryApi = (navigator as Navigator & {
+            getBattery?: () => Promise<{ charging: boolean; level: number }>;
+        }).getBattery;
+        if (typeof batteryApi !== 'function') {
+            return { powerPreference: 'high-performance' };
+        }
+
+        try {
+            const battery = await batteryApi.call(navigator);
+            if (!battery.charging && battery.level <= 0.2) {
+                return { powerPreference: 'low-power' };
+            }
+        } catch {
+            // Ignore battery API failures and fall back to high-performance.
+        }
+
+        return { powerPreference: 'high-performance' };
+    }
+
+    private getRequiredLimits(adapter: GPUAdapter): {
+        ok: boolean;
+        reason?: string;
+        requiredLimits?: Record<string, number>;
+    } {
+        const limits = adapter.limits;
+        const required: Partial<Record<keyof GPUSupportedLimits, number>> = {
+            maxTextureDimension2D: 4096,
+        };
+        if (this.weatherPostProcessMode === 'compute') {
+            required.maxStorageBufferBindingSize = 65536;
+            required.maxBufferSize = 65536;
+        }
+
+        for (const [name, minimum] of Object.entries(required) as Array<[keyof GPUSupportedLimits, number]>) {
+            const supported = Number(limits[name]);
+            if (!Number.isFinite(supported) || supported < minimum) {
+                return {
+                    ok: false,
+                    reason: `Adapter limit ${String(name)}=${supported} below required ${minimum}`,
+                };
+            }
+        }
+
+        return {
+            ok: true,
+            requiredLimits: required as Record<string, number>,
+        };
+    }
+
+    private logAdapterCapabilities(adapter: GPUAdapter, powerPreference?: GPUPowerPreference): void {
+        const adapterInfo = (adapter as GPUAdapter & {
+            info?: { vendor?: string; architecture?: string; device?: string; description?: string };
+        }).info;
+        const summary = {
+            powerPreference: powerPreference || 'unspecified',
+            weatherMode: this.weatherPostProcessMode,
+            vendor: adapterInfo?.vendor || 'unknown',
+            architecture: adapterInfo?.architecture || 'unknown',
+            device: adapterInfo?.device || 'unknown',
+            description: adapterInfo?.description || 'unknown',
+            limits: {
+                maxTextureDimension2D: Number(adapter.limits.maxTextureDimension2D),
+                maxStorageBufferBindingSize: Number(adapter.limits.maxStorageBufferBindingSize),
+                maxBufferSize: Number(adapter.limits.maxBufferSize),
+            },
+        };
+
+        console.info('[Renderer] WebGPU adapter capabilities:', summary);
+        if (typeof window !== 'undefined') {
+            (window as any).rendererAdapterInfo = summary;
         }
     }
 
@@ -280,6 +387,8 @@ export class Renderer implements StreetViewRenderer {
             device: this.device,
             format: this.presentationFormat,
             alphaMode: 'opaque',
+            colorSpace: 'srgb',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
         });
     }
 
@@ -289,20 +398,37 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public destroy() {
-        this.isDestroyed = true;
-        this.dispose();
+        this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
     }
 
-    private dispose() {
+    private dispose({
+        destroyDevice,
+        unconfigureContext,
+        markDestroyed,
+    }: {
+        destroyDevice: boolean;
+        unconfigureContext: boolean;
+        markDestroyed: boolean;
+    }) {
+        if (this.isDisposed) {
+            if (markDestroyed) this.isDestroyed = true;
+            return;
+        }
+        if (markDestroyed) this.isDestroyed = true;
+        this.isDisposed = true;
         try {
             if (this.texture) this.texture.destroy();
             if (this.videoTexture) this.videoTexture.destroy();
             if (this.intermediateTexture) this.intermediateTexture.destroy();
             if (this.uniformBuffer) this.uniformBuffer.destroy();
-            if (this.effectsBuffer) this.effectsBuffer.destroy();
             this.transitionManager?.dispose();
             this.weatherPostProcessor?.dispose();
-            this.device?.destroy();
+            if (unconfigureContext) {
+                this.context?.unconfigure();
+            }
+            if (destroyDevice) {
+                this.device?.destroy();
+            }
         } catch (e) {
             // ignore cleanup errors
         }
@@ -310,7 +436,6 @@ export class Renderer implements StreetViewRenderer {
         this.videoTexture = undefined as any;
         this.intermediateTexture = undefined as any;
         this.uniformBuffer = undefined as any;
-        this.effectsBuffer = undefined as any;
         this.pipeline = undefined as any;
         this.bindGroup = undefined as any;
     }
@@ -319,13 +444,8 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public updateEffects(effectsData: Float32Array): void {
-        if (this.effectsBuffer && this.device) {
-            const fullEffects = new Float32Array(12);
-            fullEffects.set(effectsData);
-            if (fullEffects[8] === 0) {
-                fullEffects[8] = this.weatherPostProcessor?.getShaderEffectsEnabled() ? 1.0 : 0.0;
-            }
-            this.device.queue.writeBuffer(this.effectsBuffer, 0, fullEffects);
+        if (effectsData.length > 8) {
+            this.setShaderEffects(!!effectsData[8]);
         }
     }
 
