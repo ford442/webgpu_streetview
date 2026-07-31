@@ -50,7 +50,6 @@ CPP_DIR="$REPO_ROOT/cpp"
 WAT_SRC="$CPP_DIR/src/streetview-wasm.wat"
 OUT_DIR="$REPO_ROOT/public/wasm"
 WASM_OUT="$OUT_DIR/streetview-wasm.wasm"
-JS_OUT="$OUT_DIR/streetview-wasm.js"
 
 mkdir -p "$OUT_DIR"
 
@@ -88,9 +87,16 @@ if ! $USE_WAT_ONLY && command -v emcc &>/dev/null; then
 
   emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
+  # Record the WAT source hash so verify-build.sh can detect staleness.
+  # (The Emscripten build is independent of WAT, but we still pin the hash so
+  # CI can flag when WAT and C++ diverge.)
+  if command -v sha256sum &>/dev/null && [ -f "$WAT_SRC" ]; then
+    sha256sum "$WAT_SRC" | awk '{print $1}' > "$OUT_DIR/streetview-wasm.wasm.sha256"
+    echo "==> WAT source hash written (staleness check reference)"
+  fi
+
   echo "==> Emscripten build done."
   echo "    WASM: $WASM_OUT"
-  echo "    JS glue: $JS_OUT"
   exit 0
 fi
 
@@ -105,14 +111,16 @@ if ! command -v node &>/dev/null; then
 fi
 
 node - "$REPO_ROOT" <<'NODE_EOF'
-const wabt = require('wabt');
-const fs   = require('fs');
-const path = require('path');
+const wabt   = require('wabt');
+const fs     = require('fs');
+const path   = require('path');
+const crypto = require('crypto');
 
-const repoRoot = process.argv[2];
-const watSrc   = path.join(repoRoot, 'cpp', 'src', 'streetview-wasm.wat');
-const outDir   = path.join(repoRoot, 'public', 'wasm');
-const wasmOut  = path.join(outDir, 'streetview-wasm.wasm');
+const repoRoot  = process.argv[2];
+const watSrc    = path.join(repoRoot, 'cpp', 'src', 'streetview-wasm.wat');
+const outDir    = path.join(repoRoot, 'public', 'wasm');
+const wasmOut   = path.join(outDir, 'streetview-wasm.wasm');
+const hashOut   = path.join(outDir, 'streetview-wasm.wasm.sha256');
 
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -123,7 +131,14 @@ wabt().then(w => {
   const { buffer } = module.toBinary({});
   fs.writeFileSync(wasmOut, buffer);
   module.destroy();
+
+  // Record the SHA-256 of the WAT source so verify-build.sh can detect
+  // when the source has changed since the last build.
+  const watHash = crypto.createHash('sha256').update(source).digest('hex');
+  fs.writeFileSync(hashOut, watHash + '\n');
+
   console.log(`==> Written ${buffer.byteLength} bytes to ${wasmOut}`);
+  console.log(`==> WAT source hash: ${watHash}`);
 }).catch(err => {
   console.error('wabt compilation failed:', err.message);
   process.exit(1);

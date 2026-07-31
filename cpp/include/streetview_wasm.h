@@ -1,10 +1,19 @@
 #pragma once
 /**
  * streetview_wasm.h
- * Public API for the WebGPU StreetView WASM module.
+ * Public API for the WebGPU StreetView WASM module (internal sw_* names).
  *
- * Compiled with Emscripten:
- *   emcc -O3 -s WASM=1 -s MODULARIZE=1 -s EXPORT_ES6=1 ...
+ * The canonical external ABI (exported from both the WAT module and the
+ * Emscripten build) uses plain names without the sw_ prefix:
+ *   seed, noise2d, fill_noise_buffer, haversine,
+ *   normalize_angle, signed_angle_diff
+ *
+ * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
+ * canonical names for Emscripten EXPORTED_FUNCTIONS.
+ *
+ * Build with Emscripten (standalone raw-WASM mode, no JS glue):
+ *   emcmake cmake ... && emmake make
+ *   Flags: -s STANDALONE_WASM=1 --no-entry (see CMakeLists.txt)
  */
 
 #ifdef __cplusplus

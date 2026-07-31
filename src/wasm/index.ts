@@ -213,7 +213,38 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     // The WAT module has no built-in transcendental functions, so haversine()
     // imports sin/cos/atan2 from the host — this gives it the same
     // double-precision result as the JS fallback formula.
-    const importObject = { env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 } };
+    //
+    // Both the WAT and the Emscripten STANDALONE_WASM builds are supported
+    // with the same importObject:
+    //
+    //  • WAT build (canonical, built via wabt): imports env.sin/cos/atan2
+    //    for haversine — exactly what we supply below.
+    //
+    //  • Emscripten STANDALONE_WASM build (--no-entry, no MODULARIZE):
+    //    links math statically, so it does NOT import env.sin/cos/atan2.
+    //    Extra keys in the importObject are silently ignored by the runtime.
+    //    It may import wasi_snapshot_preview1 functions (memory/fd helpers);
+    //    these are stubbed out below so the binary instantiates cleanly.
+    //
+    // If the binary imports something not covered here it will throw and we
+    // fall back to the JS implementation.
+    const noopI32 = (): number => 0;
+    const importObject = {
+      env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 },
+      // WASI stubs — Emscripten STANDALONE_WASM may import these even for
+      // pure-compute modules compiled with --no-entry.
+      wasi_snapshot_preview1: {
+        proc_exit: (_code: number): never => { throw new Error('proc_exit'); },
+        fd_write: noopI32,
+        fd_seek: noopI32,
+        fd_close: noopI32,
+        fd_read: noopI32,
+        environ_get: noopI32,
+        environ_sizes_get: noopI32,
+        args_get: noopI32,
+        args_sizes_get: noopI32,
+      },
+    };
     const { instance } = await WebAssembly.instantiate(bytes, importObject);
     const exp = instance.exports as Record<string, WebAssembly.ExportValue>;
 

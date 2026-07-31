@@ -3,7 +3,7 @@
  * React hook for lazy-loading the StreetView WASM module.
  *
  * Usage:
- *   const { wasm, loading, error } = useWasmModule();
+ *   const { wasm, loading } = useWasmModule();
  *   if (wasm) {
  *     wasm.seed(Date.now());
  *     const n = wasm.noise2d(x, y);
@@ -11,6 +11,11 @@
  *
  * The hook is safe to call in multiple components – the module is
  * loaded only once and the same instance is shared across all consumers.
+ *
+ * @remarks These hooks have no current app consumers; the active WASM integration
+ * path is WasmNoiseFeeder (src/wasm/wasmNoiseFeeder.ts) which is called
+ * imperatively from WebGPUCanvas.tsx.  These hooks are kept for future
+ * React-based consumers (WeatherPanel, WindAudio, particle DSP etc.).
  */
 
 import { useState, useEffect, useCallback } from 'react';
