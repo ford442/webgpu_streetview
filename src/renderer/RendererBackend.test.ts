@@ -1,4 +1,6 @@
 import {
+  getAdapterPowerPreferencePolicy,
+  getAdapterRequestOptions,
   exposeRendererDebugGlobals,
   getRendererDebugOptions,
   getRendererPreference,
@@ -82,6 +84,32 @@ describe('getRendererDebugOptions', () => {
 
   it('defaults to all/no-wireframe with no params or storage', () => {
     expect(getRendererDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: false });
+  });
+
+  describe('getAdapterRequestOptions', () => {
+    beforeEach(resetGlobals);
+    afterEach(resetGlobals);
+
+    it('defaults to empty options when no override or URL policy is present', () => {
+      expect(getAdapterRequestOptions()).toEqual({});
+      expect(getAdapterPowerPreferencePolicy().source).toBe('default');
+    });
+
+    it('maps ?gpu=low and ?gpu=high to WebGPU power preferences', () => {
+      setSearch('?gpu=low');
+      expect(getAdapterRequestOptions()).toEqual({ powerPreference: 'low-power' });
+
+      setSearch('?gpu=high');
+      expect(getAdapterRequestOptions()).toEqual({ powerPreference: 'high-performance' });
+    });
+
+    it('prefers init-option override over URL policy', () => {
+      setSearch('?gpu=low');
+      expect(getAdapterRequestOptions({ powerPreference: 'high-performance' })).toEqual({
+        powerPreference: 'high-performance',
+      });
+      expect(getAdapterPowerPreferencePolicy({ powerPreference: 'high-performance' }).source).toBe('override');
+    });
   });
 
   it('reads ?effect=', () => {

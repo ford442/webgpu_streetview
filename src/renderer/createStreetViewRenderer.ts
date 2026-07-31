@@ -67,9 +67,9 @@ export async function createStreetViewRenderer(
 
         renderer.destroy();
         if (backend === 'webgpu') {
-            fallbackReason = preference === 'webgpu'
+            fallbackReason = renderer.fallbackReason || (preference === 'webgpu'
                 ? 'Requested WebGPU renderer failed to initialize'
-                : 'WebGPU renderer failed to initialize';
+                : 'WebGPU renderer failed to initialize');
         } else {
             fallbackReason = 'WebGL2 renderer failed to initialize';
         }
