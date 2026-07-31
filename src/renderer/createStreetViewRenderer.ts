@@ -2,6 +2,7 @@ import { Renderer } from './Renderer';
 import { WebGLFallbackRenderer } from './WebGLFallbackRenderer';
 import {
     exposeRendererDebugGlobals,
+    getLegacyTransitionsEnabled,
     getRendererDebugOptions,
     getRendererPreference,
     getWeatherPostProcessMode,
@@ -34,6 +35,7 @@ export async function createStreetViewRenderer(
     let fallbackReason: string | undefined;
     const presetDefaultWeatherMode = getPreset(detectRecommendedQuality()).weatherPostProcessMode;
     const weatherPostProcessMode = getWeatherPostProcessMode(presetDefaultWeatherMode);
+    const legacyTransitions = getLegacyTransitionsEnabled(false);
 
     for (const backend of attempts) {
         const renderer: StreetViewRenderer = backend === 'webgpu'
@@ -41,7 +43,7 @@ export async function createStreetViewRenderer(
             : new WebGLFallbackRenderer(canvas, debugOptions, fallbackReason || 'WebGPU unavailable or disabled');
 
         const initOptions: RendererInitOptions = backend === 'webgpu'
-            ? { ...options, weatherPostProcessMode }
+            ? { ...options, weatherPostProcessMode, legacyTransitions }
             : options || {};
 
         const success = await renderer.init(initOptions);

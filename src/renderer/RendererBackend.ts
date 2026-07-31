@@ -22,6 +22,8 @@ export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
     /** WebGPU only — WebGL2 fallback stays fragment-only. See docs/RENDERER_FALLBACK.md. */
     weatherPostProcessMode?: WeatherPostProcessMode;
+    /** WebGPU only — legacy zoom/fade transition shaders are opt-in (`?legacyTransitions=1`). */
+    legacyTransitions?: boolean;
     /** WebGPU only — overrides URL/battery power preference policy when provided. */
     powerPreference?: GPUPowerPreference;
 }
@@ -182,6 +184,14 @@ export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fr
         // Storage may be unavailable in hardened browsers.
     }
 
+    return fallback;
+}
+
+export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean {
+    const params = readSearchParams();
+    const explicit = params.get('legacyTransitions')?.toLowerCase();
+    if (explicit === '1' || explicit === 'true') return true;
+    if (explicit === '0' || explicit === 'false') return false;
     return fallback;
 }
 

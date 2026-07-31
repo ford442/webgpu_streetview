@@ -2,6 +2,7 @@ import {
   getAdapterPowerPreferencePolicy,
   getAdapterRequestOptions,
   exposeRendererDebugGlobals,
+  getLegacyTransitionsEnabled,
   getRendererDebugOptions,
   getRendererPreference,
   RendererDebugOptions,
@@ -84,6 +85,29 @@ describe('getRendererDebugOptions', () => {
 
   it('defaults to all/no-wireframe with no params or storage', () => {
     expect(getRendererDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: false });
+  });
+
+  describe('getLegacyTransitionsEnabled', () => {
+    beforeEach(resetGlobals);
+    afterEach(resetGlobals);
+
+    it('defaults to false when no query flag is set', () => {
+      expect(getLegacyTransitionsEnabled(false)).toBe(false);
+    });
+
+    it('honors ?legacyTransitions=1 and ?legacyTransitions=true', () => {
+      setSearch('?legacyTransitions=1');
+      expect(getLegacyTransitionsEnabled(false)).toBe(true);
+      setSearch('?legacyTransitions=true');
+      expect(getLegacyTransitionsEnabled(false)).toBe(true);
+    });
+
+    it('honors explicit false values', () => {
+      setSearch('?legacyTransitions=0');
+      expect(getLegacyTransitionsEnabled(true)).toBe(false);
+      setSearch('?legacyTransitions=false');
+      expect(getLegacyTransitionsEnabled(true)).toBe(false);
+    });
   });
 
   describe('getAdapterRequestOptions', () => {

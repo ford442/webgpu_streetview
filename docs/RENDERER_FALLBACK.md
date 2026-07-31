@@ -16,6 +16,7 @@ Use URL flags:
 ?renderer=webgl
 ?webgpu
 ?webgl
+?legacyTransitions=1
 ```
 
 `?renderer=webgl` tries WebGL2 first and falls back to WebGPU if WebGL2 cannot initialize. `?renderer=webgpu` tries WebGPU first and falls back to WebGL2 if WebGPU cannot initialize. With no flag, the app tries WebGPU first, then WebGL2, then the raw Street View DOM fallback.
@@ -39,6 +40,8 @@ window.streetViewRendererDebug.getBackend();
 ```
 
 The backend preference is stored in `localStorage` as `streetview.renderer`.
+
+Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chromatic.wgsl`) are **opt-in** and only loaded when `?legacyTransitions=1` (or `?legacyTransitions=true`) is set. By default, production navigation uses the hold-pause path only.
 
 ## WebGPU Init Contract
 
@@ -124,6 +127,8 @@ Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weat
 
 Known gap: the compute path does not yet sample the WASM-computed 64x64 noise tile (`wasmNoiseTile` in `weather-post.wgsl`) that the fragment path uses for dust-cloud turbulence — `wasmNoiseEnabled` is read but has no visual effect in the compute shader yet. Rain, snow, fog, color grading, night/headlight lighting, and astronomical effects are otherwise at parity between the two paths.
 
+Compute bindings `readDepthTexture` / `writeDepthTexture` / `dataTextureA/B/C` / `plasmaBuffer` are intentionally backed by 1x1 dummy resources today. They are reserved extension points for WASM-fed noise tiles, volumetric fog, and GPU particles.
+
 ## Parity Notes
 
 The WebGL2 backend is intentionally approximate. It is meant for debugging panorama sampling, weather parameter wiring, color grading controls, and car overlay compositing in environments where WebGPU is unavailable or too opaque for automation.
@@ -141,6 +146,17 @@ Known differences:
 - WebGPU keeps the HDR two-pass `rgba16float` path; WebGL2 applies an SDR single-pass approximation.
 - WebGPU transition snapshots use GPU textures. WebGL2 relies on the existing CPU-side `transitionSource` supplied by `StreetViewProvider` and does not yet maintain its own previous-frame texture.
 - Some atmospheric effects in `weather-post.wgsl` are simplified in GLSL to keep the fallback inspectable and robust.
+
+### Backend parity checklist (debug matrix)
+
+| Effect | WebGPU fragment | WebGPU compute | WebGL fallback |
+| --- | --- | --- | --- |
+| Rain direction | Downward | Downward | Downward |
+| Snow direction | Downward | Downward | Downward |
+| Night readability | Road/UI readable with headlights | Same target as fragment | Approximate, same readability target |
+| Fog/headlights controls | Full | Full | Approximate |
+
+`src/renderer/weatherShaderParity.test.ts` is a CI guard for WGSL drift: it compares `applyNight` and normalized `snow(...)` math between `weather-post.wgsl` and `weather-post-compute.wgsl` and fails if they diverge.
 
 ## WebGL to WebGPU Porting Notes
 

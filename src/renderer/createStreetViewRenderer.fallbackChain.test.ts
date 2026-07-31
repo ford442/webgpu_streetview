@@ -114,4 +114,19 @@ describe('createStreetViewRenderer (mocked backend constructors)', () => {
     expect(window.streetViewRendererDebug).toBeDefined();
     expect(window.streetViewRendererDebug?.getBackend().rendererType).toBe('webgpu');
   });
+
+  it('passes legacyTransitions=false by default and true when URL flag is enabled', async () => {
+    const canvas = document.createElement('canvas');
+
+    await createStreetViewRenderer(canvas);
+    expect(mockRendererInit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legacyTransitions: false })
+    );
+
+    window.history.pushState({}, '', '/?legacyTransitions=1');
+    await createStreetViewRenderer(canvas);
+    expect(mockRendererInit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legacyTransitions: true })
+    );
+  });
 });
