@@ -7,6 +7,7 @@ import { usePanoInfoPanel } from '../hooks/usePanoInfoPanel';
 import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
 import CarInputHandler from '../components/CarInputHandler';
 import { AudioAnalyzer } from '../audio/AudioAnalyzer';
+import { publishCameraSpeed, resetCameraSpeed } from '../renderer/cameraMotionSignal';
 import { getTopStationForLocation } from '../services/radioBrowserService';
 import {
   initCarMode,
@@ -369,6 +370,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
       carSpeedRef.current = telem.speedKmh;
       carRPMRef.current = telem.rpm;
       updateCarGauges(telem.speedKmh, telem.rpm);
+      // Feed the WebGPU post pass so speed-coupled motion blur can react
+      // without re-rendering the canvas at frame rate.
+      publishCameraSpeed(telem.speedKmh);
       // Throttle React state pushes for the compact HUD telemetry chip.
       if (now - lastTelemetryPushRef.current > 150) {
         lastTelemetryPushRef.current = now;
@@ -581,6 +585,7 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
   useEffect(() => {
     if (controlMode === 'freeLook') {
       dynamicsRef.current?.stop();
+      resetCameraSpeed();
       carSpeedRef.current = 0;
       pitchImpulseRef.current = 0;
       steeringInputRef.current = 0;

@@ -50,6 +50,18 @@ function normalizeSnowBody(code: string): string {
     .replace(/p\.snowIntensity/g, 'snowInt');
 }
 
+/**
+ * Compute-path helpers read uniforms through `p_name()` accessors where the
+ * fragment path uses `p.name`. Normalize that difference so shared bodies can
+ * be compared verbatim.
+ */
+function normalizeAccessors(code: string): string {
+  return normalizeWgsl(code)
+    .replace(/p_([A-Za-z0-9]+)\(\)/g, 'p.$1')
+    .replace(/readTexture/g, 'sceneTex')
+    .replace(/u_sampler/g, 'linearSampler');
+}
+
 describe('weather shader parity guard', () => {
   it('keeps applyNight identical between fragment and compute paths', () => {
     const fragment = readShader('weather-post.wgsl');
@@ -69,6 +81,64 @@ describe('weather shader parity guard', () => {
     const computeSnow = normalizeSnowBody(extractFunctionBody(compute, 'snow'));
 
     expect(computeSnow).toBe(fragmentSnow);
+  });
+
+  it.each(['viewHorizonY', 'viewDepthProxy', 'fogHeightFalloff'])(
+    'keeps the %s depth-proxy helper identical between fragment and compute paths',
+    (fnName) => {
+      const fragment = readShader('weather-post.wgsl');
+      const compute = readShader('weather-post-compute.wgsl');
+
+      expect(normalizeWgsl(extractFunctionBody(compute, fnName)))
+        .toBe(normalizeWgsl(extractFunctionBody(fragment, fnName)));
+    }
+  );
+
+  it.each([
+    'fogAmountAt',
+    'applyFog',
+    'applySunrise',
+    'applyCameraFX',
+    'applyDustParticles',
+    'applyVolumetricLightShafts',
+  ])(
+    'keeps %s aligned between fragment and compute paths',
+    (fnName) => {
+      const fragment = readShader('weather-post.wgsl');
+      const compute = readShader('weather-post-compute.wgsl');
+
+      expect(normalizeAccessors(extractFunctionBody(compute, fnName)))
+        .toBe(normalizeAccessors(extractFunctionBody(fragment, fnName)));
+    }
+  );
+
+  it('binds the WASM noise tile in both paths (no compute-only dust regression)', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    // Both must sample the tile for dust cloud density.
+    for (const source of [fragment, compute]) {
+      expect(source).toContain('fn sampleWasmNoiseTile(');
+      expect(source).toMatch(/cloudDensity = 0\.35 \+ 0\.65 \* \(0\.5 \+ 0\.5 \* sampleWasmNoiseTile\(cloudUV\)\)/);
+    }
+
+    // The compute path reads it through the plasmaBuffer slot (binding 12).
+    expect(compute).toMatch(/@group\(0\) @binding\(12\) var<storage, read> plasmaBuffer/);
+    expect(compute).toContain('plasmaBuffer[i / 4]');
+  });
+
+  it('writes the depth proxy into the compute pass storage texture', () => {
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(compute).toMatch(/textureStore\(\s*writeDepthTexture/);
+  });
+
+  it('keeps precipitation fog attenuation aligned across WGSL paths', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    for (const source of [fragment, compute]) {
+      expect(source).toContain('let precipVisibility = 1.0 - fogMask * 0.75;');
+    }
   });
 
   it('keeps night headlight multipliers aligned across WGSL paths', () => {

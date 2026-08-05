@@ -62,9 +62,10 @@ export const WeatherParamIndex = {
     // 36-37
     sunrise: 36,
     anamorphicStreak: 37,
-    // 38-39: padding to reach 40 floats (160 bytes total)
-    _pad2: 38,
-    _pad3: 39,
+    // 38-39: cinematic camera FX (gated by quality >= high + reduced motion,
+    // see src/renderer/cinematicCameraFx.ts). Total stays 40 floats / 160 bytes.
+    dofStrength: 38,
+    motionBlurStrength: 39,
 } as const;
 
 export type WeatherParamName = keyof typeof WeatherParamIndex;

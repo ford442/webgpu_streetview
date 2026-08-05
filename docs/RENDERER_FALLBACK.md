@@ -102,7 +102,7 @@ Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-
 The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:
 
 - **Fragment** (default): `src/renderer/WeatherPostProcessor.ts` + `public/shaders/weather-post.wgsl`. A single fullscreen-triangle render pass sampling the HDR intermediate texture.
-- **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array — currently bound to 1x1 dummy resources, reserved for future WASM-fed noise tiles (#128), volumetric fog, and GPU particles that want storage-buffer access a fragment pass can't offer efficiently.
+- **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Two of those are now backed by real resources: `writeDepthTexture` (binding 6) receives a full-res `r32float` view-depth proxy every dispatch, and `plasmaBuffer` (binding 12) carries the WASM-fed 64x64 noise tile (#128) as 1024 `vec4`s. The rest remain 1x1 dummies, reserved for GPU particles and temporal effects that want storage-buffer access a fragment pass can't offer efficiently.
 
 Both read the same `40-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
 
@@ -125,9 +125,9 @@ Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weat
 
 **This is WebGPU-only.** The WebGL2 fallback renderer remains fragment-only (a single-pass SDR approximation) — there is no WebGL2 compute path, and `?weather=compute` has no effect when the WebGL2 backend is active.
 
-Known gap: the compute path does not yet sample the WASM-computed 64x64 noise tile (`wasmNoiseTile` in `weather-post.wgsl`) that the fragment path uses for dust-cloud turbulence — `wasmNoiseEnabled` is read but has no visual effect in the compute shader yet. Rain, snow, fog, color grading, night/headlight lighting, and astronomical effects are otherwise at parity between the two paths.
+Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, WASM dust turbulence, and the cinematic camera FX are at parity between the two paths; shared helper bodies are enforced identical by `src/renderer/weatherShaderParity.test.ts`.
 
-Compute bindings `readDepthTexture` / `writeDepthTexture` / `dataTextureA/B/C` / `plasmaBuffer` are intentionally backed by 1x1 dummy resources today. They are reserved extension points for WASM-fed noise tiles, volumetric fog, and GPU particles.
+Compute bindings still backed by 1x1 dummies: `readDepthTexture` (needs a ping-pong to read last frame's depth), `dataTextureA/B` (reserved for GPU particle state), and `dataTextureC`. See `docs/GRAPHICS.md` §5 for the current status table.
 
 ## Parity Notes
 

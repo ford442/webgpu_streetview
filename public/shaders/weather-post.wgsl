@@ -52,9 +52,10 @@ struct WeatherParams {
     sunrise           : f32,  // 0.0 = no sunrise, 1.0 = full sunrise
     // 37: anamorphic lens flare streak width (0 = off, 0.5 = moderate)
     anamorphicStreak  : f32,
-    // 38-39: padding to reach 40 floats (160 bytes total)
-    _pad2             : f32,
-    _pad3             : f32,
+    // 38-39: cinematic camera FX — gated on CPU by quality >= high and
+    // prefers-reduced-motion (src/renderer/cinematicCameraFx.ts). 0 = off.
+    dofStrength        : f32,  // 0.0-1.0 far-field lens defocus
+    motionBlurStrength : f32,  // 0.0-1.0 radial speed blur (car/cruise coupled)
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -100,6 +101,41 @@ fn normalizedDistance(a: f32, b: f32) -> f32 {
     if (d > 0.5) { d = d - 1.0; }
     if (d < -0.5) { d = d + 1.0; }
     return d;
+}
+
+// ============================================================================
+// CHEAP DEPTH PROXY (no depth buffer — Street View gives us none)
+// ============================================================================
+// The panorama is a sphere around the eye, so screen Y alone tells us a lot:
+// everything above the horizon line is effectively at infinity (sky/skyline),
+// and ground pixels below it get closer as they approach the bottom of the
+// frame. `viewHorizonY` tracks where that line sits as the camera pitches.
+//
+// Kept byte-identical with weather-post-compute.wgsl — see the parity guard in
+// src/renderer/weatherShaderParity.test.ts.
+
+// Screen-space Y (top-origin, 0-1) of the horizon for a normalized camera
+// pitch (0.5 = level). ~90 degree vertical FOV => 1 pitch unit ~ 2 screens.
+fn viewHorizonY(cameraPitchNorm: f32) -> f32 {
+    return clamp(0.5 + (cameraPitchNorm - 0.5) * 2.0, -0.75, 1.75);
+}
+
+// Normalized view distance: 0 = right in front of the camera, 1 = horizon or
+// beyond. Hyperbolic falloff below the horizon approximates eyeHeight/tan(angle).
+fn viewDepthProxy(uv: vec2<f32>, horizonY: f32) -> f32 {
+    let below = uv.y - horizonY;
+    if (below <= 0.0) { return 1.0; }
+    return clamp(0.06 / max(below, 0.0025), 0.0, 1.0);
+}
+
+// Vertical density profile of a fog layer. `height` 0 keeps the bank hugging
+// the ground (dense at the horizon line, thinning upward); 1 lifts it into an
+// elevated haze band that leaves the road clear.
+fn fogHeightFalloff(uv: vec2<f32>, horizonY: f32, height: f32) -> f32 {
+    let altitude = clamp((horizonY - uv.y) / max(horizonY, 0.15), 0.0, 1.0);
+    let ground   = exp(-altitude * 3.2);
+    let elevated = smoothstep(0.0, 0.5, altitude) * exp(-max(altitude - 0.5, 0.0) * 2.4);
+    return mix(ground, elevated, clamp(height, 0.0, 1.0));
 }
 
 // ============================================================================
@@ -312,33 +348,46 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
     return grayFog;
 }
 
-fn applyFog(col: vec3<f32>, uv: vec2<f32>, intensity: f32, density: f32, height: f32, colorIdx: f32, night: f32) -> vec3<f32> {
-    if (intensity < 0.001 && density < 0.001) { return col; }
-    
-    let horizonDist = abs(uv.y - 0.5);
-    let groundProximity = smoothstep(0.35, 0.0, horizonDist);
-    
-    var fogAmount = density * groundProximity;
-    fogAmount = fogAmount + intensity * (0.2 + groundProximity * 0.8);
+// Fog coverage at a pixel, 0-1. Split out from applyFog so the same value can
+// attenuate rain, snow and dust — particles seen *through* fog have to fade
+// with it, otherwise streaks punch through a wall of mist (the single biggest
+// cohesion break in the old presets).
+//
+// `density` is an extinction coefficient integrated along the depth proxy
+// (Beer-Lambert), `intensity` is a flat screen-wide aerial wash. packWeatherParams
+// now feeds those two different numbers instead of the same slider twice.
+fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32) -> f32 {
+    if (intensity < 0.001 && density < 0.001) { return 0.0; }
+
+    let horizonY = viewHorizonY(p.cameraPitch);
+    let depth = viewDepthProxy(uv, horizonY);
+    let profile = fogHeightFalloff(uv, horizonY, height);
 
     // Animated fractal fog: two fbm layers scrolling at different speeds/directions
     // create a "rolling" volumetric appearance instead of a static wash
-    let t = p.time * p.speed;
     let fogUV1 = vec3<f32>(uv * 4.0 + vec2<f32>(t * 0.07, t * 0.04), t * 0.05);
     let fogUV2 = vec3<f32>(uv * 8.0 - vec2<f32>(t * 0.05, t * 0.03), t * 0.08);
     let roll = fbm(fogUV1, 2) * 0.18 + fbm(fogUV2, 2) * 0.08;
-    fogAmount = fogAmount * (0.75 + roll);
-    
+
+    let sigma = density * 2.6 * profile * (0.78 + roll);
+    var fogAmount = 1.0 - exp(-sigma * (0.12 + depth * 1.9));
+    fogAmount = fogAmount + intensity * (0.25 + profile * 0.75) * (0.78 + roll);
+    return clamp(fogAmount, 0.0, 0.95);
+}
+
+fn applyFog(col: vec3<f32>, fogAmount: f32, colorIdx: f32, night: f32) -> vec3<f32> {
+    if (fogAmount < 0.001) { return col; }
+
     // Day fog: #b5c1c8, Night fog: dark blue
     let dayFog = vec3<f32>(0.71, 0.76, 0.78);
     let nightFog = vec3<f32>(0.08, 0.12, 0.22);
     var fogColor = mix(dayFog, nightFog, clamp(night, 0.0, 1.0));
-    
+
     // Override with indexed fog color if non-zero index
     let indexedColor = getFogColor(colorIdx);
-    if (colorIdx > 0.5) { fogColor = indexedColor; }
-    
-    return mix(col, fogColor, clamp(fogAmount, 0.0, 0.95));
+    if (colorIdx > 0.5) { fogColor = mix(indexedColor, nightFog, clamp(night, 0.0, 1.0) * 0.6); }
+
+    return mix(col, fogColor, fogAmount);
 }
 
 // === 2. VOLUMETRIC LIGHT SHAFTS (Camera-Aware) ===
@@ -750,22 +799,33 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
     return glow * (1.0 + glow * 0.5) + glow * 0.2;
 }
 
+// Sunrise wash. Anchored to the *tracked* horizon line and the sun's actual
+// screen azimuth so it pans with the camera exactly like sunsetHorizonGlow —
+// previously it was pinned to uv.y 0.5 and ignored heading entirely, which made
+// dawn light stay glued to the same corner of the screen while you turned.
 fn applySunrise(col: vec3<f32>, uv: vec2<f32>, sunrise: f32) -> vec3<f32> {
     if (sunrise < 0.001) { return col; }
-    
-    let horizonGlow = smoothstep(0.5, 0.0, uv.y);
-    let warmHighlight = vec3<f32>(1.0, 0.65, 0.35) * horizonGlow * sunrise * 0.4;
-    
+
+    let horizonY = viewHorizonY(p.cameraPitch);
+    let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
+
+    // Warm light concentrates around the sun's bearing, cool shadow fills the
+    // opposite half of the sky.
+    let towardSun = smoothstep(0.45, 0.0, abs(dSunX));
+    let horizonGlow = smoothstep(horizonY + 0.12, horizonY - 0.38, uv.y);
+    let warmHighlight = vec3<f32>(1.0, 0.65, 0.35) * horizonGlow * towardSun * sunrise * 0.42;
+
     let shadowTint = mix(vec3<f32>(0.72, 0.58, 0.85), vec3<f32>(0.35, 0.45, 0.82), uv.y);
-    let shadowMask = (1.0 - horizonGlow) * sunrise * 0.18;
-    
+    let shadowMask = (1.0 - horizonGlow * towardSun) * sunrise * 0.14;
+
     var result = col + warmHighlight;
     result = result + shadowTint * shadowMask;
-    
-    // Pink/gold color grading boost
-    let goldBoost = vec3<f32>(0.15, 0.05, -0.05) * horizonGlow * sunrise;
+
+    // Pink/gold color grading boost, strongest looking into the dawn
+    let goldBoost = vec3<f32>(0.15, 0.05, -0.05) * horizonGlow * towardSun * sunrise;
     result = result + goldBoost;
-    
+
     return result;
 }
 
@@ -845,6 +905,50 @@ fn applyLensDroplets(col: vec3<f32>, uv: vec2<f32>, t: f32, intensity: f32) -> v
 }
 
 // ============================================================================
+// CINEMATIC CAMERA FX (depth of field + speed blur)
+// ============================================================================
+// Both are off unless the CPU gate in src/renderer/cinematicCameraFx.ts opens
+// them (quality >= high, prefers-reduced-motion off), so the default fragment
+// path costs exactly one early-out branch.
+//
+// DOF focuses the mid-ground and defocuses the far field using the same depth
+// proxy the fog uses — no depth buffer needed. Motion blur streaks radially
+// away from the screen centre, which reads as forward travel, and its strength
+// is already speed-scaled on the CPU.
+
+const DOF_FOCUS_DEPTH: f32 = 0.45;
+
+fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f32> {
+    if (dof < 0.001 && mblur < 0.001) { return col; }
+
+    let horizonY = viewHorizonY(p.cameraPitch);
+    let depth = viewDepthProxy(uv, horizonY);
+
+    // Circle of confusion: sharp at the focus plane, widening toward infinity.
+    let coc = smoothstep(DOF_FOCUS_DEPTH, 1.0, depth) * dof;
+    // Radial offset direction for the speed streak.
+    let toCenter = uv - vec2<f32>(0.5, 0.5);
+
+    var accum = col;
+    var weight = 1.0;
+    for (var i: i32 = 0; i < 6; i = i + 1) {
+        let fi = f32(i);
+        let angle = fi * 1.0471975 + 0.3;
+        let ring = vec2<f32>(cos(angle), sin(angle)) * coc * 0.012;
+        let streak = -toCenter * mblur * 0.09 * ((fi + 1.0) / 6.0);
+        let tapUV = clamp(uv + ring + streak, vec2<f32>(0.001), vec2<f32>(0.999));
+        accum = accum + textureSampleLevel(sceneTex, linearSampler, tapUV, 0.0).rgb;
+        weight = weight + 1.0;
+    }
+    let blurred = accum / weight;
+
+    // Blend by whichever effect is asking for more softening at this pixel.
+    let edgeBias = smoothstep(0.05, 0.55, length(toCenter));
+    let blend = clamp(max(coc, mblur * edgeBias), 0.0, 0.85);
+    return mix(col, blurred, blend);
+}
+
+// ============================================================================
 // HDR TONEMAPPING
 // ============================================================================
 
@@ -889,7 +993,10 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     
     // === CHROMATIC ABERRATION ===
     var col = applyChromaticAberration(uv, p.chromaticAberration);
-    
+
+    // === CINEMATIC CAMERA FX (DOF + speed blur; no-op unless gated on) ===
+    col = applyCameraFX(col, uv, p.dofStrength, p.motionBlurStrength);
+
     // === HEAT SHIMMER ===
     col = applyHeatShimmer(col, uv, p.heatShimmerIntensity, t);
     
@@ -933,23 +1040,32 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = directionalMoonlight(col, uv, p.moonAzimuth, p.moonAltitude, p.nightIntensity);
 
     // === ATMOSPHERIC EFFECTS ===
-    col = applyFog(col, uv, p.fogIntensity, p.fogDensity, p.fogHeight, p.fogColorIndex, p.nightIntensity);
+    // Fog coverage is computed once and reused: it tints the scene *and*
+    // attenuates everything suspended in it (dust, rain, snow).
+    let fogMask = fogAmountAt(uv, p.fogIntensity, p.fogDensity, p.fogHeight, t);
+    col = applyFog(col, fogMask, p.fogColorIndex, p.nightIntensity);
     col = applyVolumetricLightShafts(col, uv, p.lightShaftsIntensity, t);
     col = applyHumidityHaze(col, uv, p.humidityHaze, t);
-    col = applyDustParticles(col, uv, p.dustIntensity, t);
+    col = applyDustParticles(col, uv, p.dustIntensity * (1.0 - fogMask * 0.8), t);
     col = applyLensFlare(col, uv, p.lensFlareIntensity);
     col = applyVignette(col, uv);
 
     // === WEATHER EFFECTS (RAIN/SNOW with world-space camera offset) ===
+    // Precipitation sits in the same volume as the fog, so it fades into it
+    // rather than punching through, and its scene darkening eases off at night
+    // to keep the readable-night floor from #171 intact.
+    let precipVisibility = 1.0 - fogMask * 0.75;
     if (p.rainIntensity > 0.001) {
-        let r = rain(uv, t, panX, panY) * p.rainIntensity;
-        col = col + r * vec3<f32>(0.78, 0.88, 1.15);
-        col = col * (1.0 - p.rainIntensity * 0.22);
+        let r = rain(uv, t, panX, panY) * p.rainIntensity * precipVisibility;
+        let rainTint = mix(vec3<f32>(0.78, 0.88, 1.15), vec3<f32>(0.60, 0.70, 1.02), p.nightIntensity);
+        col = col + r * rainTint * (1.0 + p.headlightsOn * p.nightIntensity * 0.5);
+        col = col * (1.0 - p.rainIntensity * mix(0.22, 0.10, p.nightIntensity));
     }
-    
+
     if (p.snowIntensity > 0.001) {
-        let s = snow(uv, t, panX, panY) * p.snowIntensity;
-        col = col + s * vec3<f32>(1.15, 1.18, 1.22);
+        let s = snow(uv, t, panX, panY) * p.snowIntensity * precipVisibility;
+        let snowLit = 1.0 + p.headlightsOn * p.nightIntensity * 0.35;
+        col = col + s * vec3<f32>(1.15, 1.18, 1.22) * snowLit;
     }
 
     // === REFRACTIVE LENS DROPLETS ===
