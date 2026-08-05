@@ -53,10 +53,56 @@ export interface StreetViewWasmAPI {
   ): void;
 
   /**
+   * Fractal Brownian motion over {@link noise2d}.
+   *
+   * @param octaves    Octaves to sum (<= 0 returns 0).
+   * @param lacunarity Frequency multiplier per octave (2 is the usual value).
+   * @param gain       Amplitude multiplier per octave (0.5 is the usual value).
+   * @returns Value in [-1, 1] — normalised by the accumulated amplitude so the
+   *          range does not depend on the octave count.
+   */
+  fbm2d(x: number, y: number, octaves: number, lacunarity: number, gain: number): number;
+
+  /**
+   * Fill a Float32Array with fBm samples. Same tile layout as
+   * {@link fillNoiseBuffer}; each sample is an fBm stack instead of one octave.
+   */
+  fillFbmBuffer(
+    out: Float32Array,
+    width: number,
+    height: number,
+    scale: number,
+    offsetX: number,
+    offsetY: number,
+    octaves: number,
+    lacunarity: number,
+    gain: number,
+  ): void;
+
+  /**
+   * Fill a Float32Array with deterministic particle spawn seeds — 4 floats per
+   * particle: x [0,1), y [0,1), speed [0.5,1.5), phase [0, 2π).
+   * The array must have `count * 4` elements.
+   */
+  fillParticleSeeds(out: Float32Array, count: number, seed: number): void;
+
+  /**
    * Haversine great-circle distance between two WGS-84 coordinates.
    * @returns Distance in metres.
    */
   haversine(lat1: number, lon1: number, lat2: number, lon2: number): number;
+
+  /**
+   * Haversine distance for a whole polyline in one call — one WASM boundary
+   * crossing instead of one per segment.
+   *
+   * @param points       `count * 2` doubles: lat, lon, lat, lon, …
+   * @param segmentsOut  Receives the `count - 1` per-segment distances in
+   *                     metres. Must have at least `count - 1` elements;
+   *                     untouched when fewer than two points are supplied.
+   * @returns Total distance in metres (0 for fewer than two points).
+   */
+  batchHaversine(points: Float64Array, segmentsOut: Float64Array): number;
 
   /** Normalise an angle to [0, 360). */
   normalizeAngle(angle: number): number;
@@ -153,6 +199,74 @@ function _jsFillNoiseBuffer(
   }
 }
 
+function _jsFbm2d(
+  x: number,
+  y: number,
+  octaves: number,
+  lacunarity: number,
+  gain: number,
+): number {
+  let sum = 0;
+  let norm = 0;
+  let amp = 1;
+  let freq = 1;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * _jsNoise2d(x * freq, y * freq);
+    norm += amp;
+    amp *= gain;
+    freq *= lacunarity;
+  }
+  return norm > 0 ? sum / norm : 0;
+}
+
+function _jsFillFbmBuffer(
+  out: Float32Array,
+  width: number,
+  height: number,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+  octaves: number,
+  lacunarity: number,
+  gain: number,
+): void {
+  const invScale = 1 / scale;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      out[row * width + col] = _jsFbm2d(
+        (col + offsetX) * invScale,
+        (row + offsetY) * invScale,
+        octaves,
+        lacunarity,
+        gain,
+      );
+    }
+  }
+}
+
+/** 2π as an f32, matching the literal in the WAT/C++ particle-seed code. */
+const _TWO_PI_F32 = Math.fround(6.2831853);
+
+function _jsFillParticleSeeds(out: Float32Array, count: number, seed: number): void {
+  // Same LCG and bit slice as the WAT/C++ implementations so a given seed
+  // produces the same particle set on every backend.
+  let state = seed >>> 0;
+  const nextUnit = (): number => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return ((state >>> 8) & 0xffffff) / 16777216;
+  };
+  for (let i = 0; i < count; i++) {
+    const base = i * 4;
+    out[base] = nextUnit();
+    out[base + 1] = nextUnit();
+    out[base + 2] = 0.5 + nextUnit();
+    // Single-precision multiply (fround of both operand and product) so the
+    // phase matches the WAT/C++ f32 arithmetic exactly rather than rounding
+    // twice through a double intermediate.
+    out[base + 3] = Math.fround(nextUnit() * _TWO_PI_F32);
+  }
+}
+
 function _jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const toRad = Math.PI / 180;
@@ -162,6 +276,22 @@ function _jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): n
     Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function _jsBatchHaversine(points: Float64Array, segmentsOut: Float64Array): number {
+  let total = 0;
+  const count = Math.floor(points.length / 2);
+  for (let i = 0; i < count - 1; i++) {
+    const d = _jsHaversine(
+      points[i * 2]!,
+      points[i * 2 + 1]!,
+      points[i * 2 + 2]!,
+      points[i * 2 + 3]!,
+    );
+    segmentsOut[i] = d;
+    total += d;
+  }
+  return total;
 }
 
 function _jsNormalizeAngle(a: number): number {
@@ -177,7 +307,11 @@ const JS_FALLBACK: StreetViewWasmAPI = {
   seed: _jsSeed,
   noise2d: _jsNoise2d,
   fillNoiseBuffer: _jsFillNoiseBuffer,
+  fbm2d: _jsFbm2d,
+  fillFbmBuffer: _jsFillFbmBuffer,
+  fillParticleSeeds: _jsFillParticleSeeds,
   haversine: _jsHaversine,
+  batchHaversine: _jsBatchHaversine,
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
   isWasm: false,
@@ -255,15 +389,38 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       ptr: number, w: number, h: number,
       scale: number, ox: number, oy: number
     ) => void;
+    const fill_fbm_buffer = exp['fill_fbm_buffer'] as (
+      ptr: number, w: number, h: number,
+      scale: number, ox: number, oy: number,
+      octaves: number, lacunarity: number, gain: number
+    ) => void;
+    const fill_particle_seeds = exp['fill_particle_seeds'] as (
+      ptr: number, count: number, seed: number
+    ) => void;
     const normalize_angle = exp['normalize_angle'] as (a: number) => number;
     const signed_angle_diff = exp['signed_angle_diff'] as (f: number, t: number) => number;
     const haversine_wasm = exp['haversine'] as (
       lat1: number, lon1: number, lat2: number, lon2: number
     ) => number;
+    const fbm2d_wasm = exp['fbm2d'] as (
+      x: number, y: number, octaves: number, lacunarity: number, gain: number
+    ) => number;
+    const batch_haversine = exp['batch_haversine'] as (
+      ptr: number, count: number, out: number
+    ) => number;
 
-    // WASM memory starts at byte 512 (after the permutation table).
-    // We use a fixed scratch region for fillNoiseBuffer transfers.
+    // WASM memory starts at byte 512 (after the permutation table); everything
+    // from there on is a scratch region for buffer transfers. 512 is a multiple
+    // of 8, so f64 views placed at the base stay naturally aligned.
     const SCRATCH_OFFSET = 512;
+
+    /** Grow linear memory until `bytes` are available past SCRATCH_OFFSET. */
+    const reserveScratch = (bytes: number): void => {
+      const available = wasmMemory.buffer.byteLength - SCRATCH_OFFSET;
+      if (available < bytes) {
+        wasmMemory.grow(Math.ceil((bytes - available) / 65536));
+      }
+    };
 
     const fillNoiseBuffer = (
       out: Float32Array,
@@ -273,23 +430,65 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       offsetX: number,
       offsetY: number,
     ): void => {
-      const needed = width * height * 4; // bytes
-      // Grow memory if the scratch area is too small.
-      const available = wasmMemory.buffer.byteLength - SCRATCH_OFFSET;
-      if (available < needed) {
-        const extraPages = Math.ceil((needed - available) / 65536);
-        wasmMemory.grow(extraPages);
-      }
+      reserveScratch(width * height * 4);
       fill_noise_buffer(SCRATCH_OFFSET, width, height, scale, offsetX, offsetY);
       const view = new Float32Array(wasmMemory.buffer, SCRATCH_OFFSET, width * height);
       out.set(view);
+    };
+
+    const fillFbmBuffer = (
+      out: Float32Array,
+      width: number,
+      height: number,
+      scale: number,
+      offsetX: number,
+      offsetY: number,
+      octaves: number,
+      lacunarity: number,
+      gain: number,
+    ): void => {
+      reserveScratch(width * height * 4);
+      fill_fbm_buffer(
+        SCRATCH_OFFSET, width, height, scale, offsetX, offsetY,
+        octaves, lacunarity, gain,
+      );
+      const view = new Float32Array(wasmMemory.buffer, SCRATCH_OFFSET, width * height);
+      out.set(view);
+    };
+
+    const fillParticleSeeds = (out: Float32Array, count: number, seedValue: number): void => {
+      if (count <= 0) return;
+      reserveScratch(count * 16);
+      fill_particle_seeds(SCRATCH_OFFSET, count, seedValue);
+      const view = new Float32Array(wasmMemory.buffer, SCRATCH_OFFSET, count * 4);
+      out.set(view.subarray(0, Math.min(out.length, count * 4)));
+    };
+
+    const batchHaversine = (points: Float64Array, segmentsOut: Float64Array): number => {
+      const count = Math.floor(points.length / 2);
+      if (count < 2) return 0;
+      const inBytes = count * 16;
+      const outBytes = (count - 1) * 8;
+      reserveScratch(inBytes + outBytes);
+      const outOffset = SCRATCH_OFFSET + inBytes; // count*16 keeps this 8-aligned
+      new Float64Array(wasmMemory.buffer, SCRATCH_OFFSET, count * 2).set(
+        points.subarray(0, count * 2),
+      );
+      const total = batch_haversine(SCRATCH_OFFSET, count, outOffset);
+      const view = new Float64Array(wasmMemory.buffer, outOffset, count - 1);
+      segmentsOut.set(view.subarray(0, Math.min(segmentsOut.length, count - 1)));
+      return total;
     };
 
     _cachedModule = {
       seed,
       noise2d,
       fillNoiseBuffer,
+      fbm2d: fbm2d_wasm,
+      fillFbmBuffer,
+      fillParticleSeeds,
       haversine: haversine_wasm,
+      batchHaversine,
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       isWasm: true,

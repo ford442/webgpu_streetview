@@ -5,7 +5,8 @@
  *
  * The canonical external ABI (exported from both the WAT module and the
  * Emscripten build) uses plain names without the sw_ prefix:
- *   seed, noise2d, fill_noise_buffer, haversine,
+ *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
+ *   fill_particle_seeds, haversine, batch_haversine,
  *   normalize_angle, signed_angle_diff
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
@@ -50,10 +51,50 @@ void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY);
 
 /**
+ * Fractal Brownian motion over sw_noise2d.
+ *
+ * @param octaves    Number of octaves to sum (<= 0 returns 0).
+ * @param lacunarity Frequency multiplier per octave (2.0 is the usual value).
+ * @param gain       Amplitude multiplier per octave (0.5 is the usual value).
+ * @return           Value in [-1, 1] — the sum is divided by the accumulated
+ *                   amplitude so the range is octave-count independent.
+ */
+float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
+
+/**
+ * Fill a Float32 buffer with fBm samples.  Same tile layout as
+ * sw_fill_noise_buffer; every sample is an fBm stack instead of one octave.
+ */
+void sw_fill_fbm_buffer(float* buf, int width, int height,
+                        float scale, float offsetX, float offsetY,
+                        int octaves, float lacunarity, float gain);
+
+/**
+ * Generate deterministic particle spawn seeds: 4 floats per particle —
+ * x [0,1), y [0,1), speed [0.5,1.5), phase [0, 2π).
+ *
+ * @param buf    Caller-owned float array of size (count * 4).
+ * @param count  Number of particles.
+ * @param seed   Any 32-bit integer; the same seed always yields the same set.
+ */
+void sw_fill_particle_seeds(float* buf, int count, unsigned int seed);
+
+/**
  * Haversine great-circle distance between two WGS-84 points.
  * @return Distance in metres.
  */
 double sw_haversine(double lat1, double lon1, double lat2, double lon2);
+
+/**
+ * Haversine distance for a whole polyline in one call.
+ *
+ * @param points  `count` consecutive [lat, lon] pairs (2 doubles each).
+ * @param count   Number of points.
+ * @param out     Caller-owned array of at least (count - 1) doubles; receives
+ *                the per-segment distances in metres.  Untouched when count < 2.
+ * @return        Sum of the segment distances in metres (0 when count < 2).
+ */
+double sw_batch_haversine(const double* points, int count, double* out);
 
 /**
  * Normalise an angle to [0, 360).

@@ -12,13 +12,13 @@
  * The hook is safe to call in multiple components – the module is
  * loaded only once and the same instance is shared across all consumers.
  *
- * @remarks These hooks have no current app consumers; the active WASM integration
- * path is WasmNoiseFeeder (src/wasm/wasmNoiseFeeder.ts) which is called
- * imperatively from WebGPUCanvas.tsx.  These hooks are kept for future
- * React-based consumers (WeatherPanel, WindAudio, particle DSP etc.).
+ * @remarks `useWasmModule` backs the tour route-length labels in
+ * src/components/TourPanel.tsx (via src/utils/routeStats.ts).  The render-loop
+ * integration does not go through React at all — WasmNoiseFeeder
+ * (src/wasm/wasmNoiseFeeder.ts) is driven imperatively from WebGPUCanvas.tsx.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { loadWasmModule, type StreetViewWasmAPI } from './index';
 
 export interface UseWasmModuleResult {
@@ -46,24 +46,4 @@ export function useWasmModule(): UseWasmModuleResult {
   }, []);
 
   return { wasm, loading };
-}
-
-/**
- * Hook that provides a noise2d sampler function that is stable across renders.
- * The sampler returns 0 until the WASM module has loaded.
- *
- * Example – drive rain variation from WASM noise:
- *   const noise = useNoiseFunction();
- *   const variation = noise(time * 0.1, longitude * 0.01); // [-1, 1]
- */
-export function useNoiseFunction(): (x: number, y: number) => number {
-  const { wasm } = useWasmModule();
-
-  return useCallback(
-    (x: number, y: number): number => {
-      if (!wasm) return 0;
-      return wasm.noise2d(x, y);
-    },
-    [wasm],
-  );
 }

@@ -45,10 +45,46 @@ void fill_noise_buffer(float* buf, int w, int h,
     sw_fill_noise_buffer(buf, w, h, scale, ox, oy);
 }
 
+/** fBm over noise2d, normalised to [-1, 1]. Matches WAT export: 'fbm2d'. */
+EMSCRIPTEN_KEEPALIVE
+float fbm2d(float x, float y, int octaves, float lacunarity, float gain) {
+    return sw_fbm2d(x, y, octaves, lacunarity, gain);
+}
+
+/**
+ * Fill a Float32 buffer with fBm samples (row-major).
+ * Matches WAT export: 'fill_fbm_buffer'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void fill_fbm_buffer(float* buf, int w, int h,
+                     float scale, float ox, float oy,
+                     int octaves, float lacunarity, float gain) {
+    sw_fill_fbm_buffer(buf, w, h, scale, ox, oy, octaves, lacunarity, gain);
+}
+
+/**
+ * Write 4 floats per particle (x, y, speed, phase).
+ * Matches WAT export: 'fill_particle_seeds'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void fill_particle_seeds(float* buf, int count, unsigned int s) {
+    sw_fill_particle_seeds(buf, count, s);
+}
+
 /** Haversine great-circle distance in metres. Matches WAT export: 'haversine'. */
 EMSCRIPTEN_KEEPALIVE
 double haversine(double lat1, double lon1, double lat2, double lon2) {
     return sw_haversine(lat1, lon1, lat2, lon2);
+}
+
+/**
+ * Per-segment haversine over a polyline of `count` [lat, lon] pairs.
+ * Writes count-1 segment distances to `out` and returns the total.
+ * Matches WAT export: 'batch_haversine'.
+ */
+EMSCRIPTEN_KEEPALIVE
+double batch_haversine(const double* points, int count, double* out) {
+    return sw_batch_haversine(points, count, out);
 }
 
 /** Normalize angle to [0, 360). Matches WAT export: 'normalize_angle'. */

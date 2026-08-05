@@ -1,7 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Tour, TourWaypoint, CurrentPOV, TourTransitionType } from '../hooks/useTours';
 import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '../offline';
 import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
+import { useWasmModule } from '../wasm/useWasmModule';
+import { computeRouteStats, formatDistanceMetric } from '../utils/routeStats';
 import TourRecorder from './TourRecorder';
 import TourPlayer from './TourPlayer';
 
@@ -99,6 +101,25 @@ const TourPanel: React.FC<TourPanelProps> = ({
     const [tab, setTab] = useState<TabKey>('library');
     const [selectedTourId, setSelectedTourId] = useState<string | null>(null);
     const [importError, setImportError] = useState<string | null>(null);
+
+    // Route length per tour, measured by the WASM batch_haversine export (one
+    // call per tour rather than one per segment). Falls back to the pure-JS
+    // implementation inside the module wrapper when the binary is unavailable,
+    // so the labels appear either way.
+    const { wasm } = useWasmModule();
+    const routeLabels = useMemo(() => {
+        const labels: Record<string, { total: string; longest: string }> = {};
+        if (!wasm) return labels;
+        for (const tour of tours) {
+            if (tour.waypoints.length < 2) continue;
+            const stats = computeRouteStats(wasm, tour.waypoints.map((wp) => wp.position));
+            labels[tour.id] = {
+                total: formatDistanceMetric(stats.totalMeters),
+                longest: formatDistanceMetric(stats.longestSegmentMeters),
+            };
+        }
+        return labels;
+    }, [wasm, tours]);
 
     useFocusTrap(panelRef, isOpen);
 
@@ -229,7 +250,15 @@ const TourPanel: React.FC<TourPanelProps> = ({
                                                 aria-label={`Tour name: ${tour.name}`}
                                                 style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
                                             />
-                                            <span style={{ color: '#888', fontSize: '11px' }}>{tour.waypoints.length} pts</span>
+                                            <span
+                                                style={{ color: '#888', fontSize: '11px', whiteSpace: 'nowrap' }}
+                                                title={routeLabels[tour.id]
+                                                    ? `Route length ${routeLabels[tour.id]!.total} · longest hop ${routeLabels[tour.id]!.longest}`
+                                                    : undefined}
+                                            >
+                                                {tour.waypoints.length} pts
+                                                {routeLabels[tour.id] ? ` · ${routeLabels[tour.id]!.total}` : ''}
+                                            </span>
                                         </div>
 
                                         <div style={{ display: 'flex', gap: '8px', margin: '6px 0', fontSize: '12px', color: '#aaa', flexWrap: 'wrap' }}>

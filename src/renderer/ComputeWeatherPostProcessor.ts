@@ -50,7 +50,9 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
  *
  * Two of the image_video_effects storage surfaces carry real data: binding 6
  * receives a full-res view-depth proxy each dispatch, and binding 12 carries
- * the WASM noise tile (#128) that drives dust turbulence. The remaining
+ * the WASM noise tile (#128) that drives dust turbulence — an fBm tile on this
+ * path, where the fragment path gets a single octave (see
+ * src/wasm/wasmNoiseFeeder.ts and docs/WASM_BRIDGE.md). The remaining
  * surfaces are still 1x1 dummies reserved for GPU particles and temporal
  * effects. See docs/RENDERER_FALLBACK.md and docs/GRAPHICS.md.
  */

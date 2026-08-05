@@ -110,6 +110,53 @@ void sw_fill_noise_buffer(float* buf, int width, int height,
     }
 }
 
+float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain) {
+    float sum = 0.0f;
+    float norm = 0.0f;
+    float amp = 1.0f;
+    float freq = 1.0f;
+    for (int o = 0; o < octaves; ++o) {
+        sum += amp * sw_noise2d(x * freq, y * freq);
+        norm += amp;
+        amp *= gain;
+        freq *= lacunarity;
+    }
+    // Normalising by the accumulated amplitude keeps the range at [-1, 1]
+    // regardless of how many octaves were summed.
+    return norm > 0.0f ? sum / norm : 0.0f;
+}
+
+void sw_fill_fbm_buffer(float* buf, int width, int height,
+                        float scale, float offsetX, float offsetY,
+                        int octaves, float lacunarity, float gain) {
+    const float inv_scale = 1.0f / scale;
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            float nx = ((float)col + offsetX) * inv_scale;
+            float ny = ((float)row + offsetY) * inv_scale;
+            buf[row * width + col] = sw_fbm2d(nx, ny, octaves, lacunarity, gain);
+        }
+    }
+}
+
+void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
+    // Same LCG as sw_seed's shuffle; the top 24 bits of the low word give a
+    // uniform [0, 1) float. Mirrored bit-for-bit by the WAT module and the
+    // JS fallback in src/wasm/index.ts.
+    uint32_t state = seed;
+    auto next_unit = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
+    };
+    for (int i = 0; i < count; ++i) {
+        float* p = buf + (size_t)i * 4;
+        p[0] = next_unit();                    // x     [0, 1)
+        p[1] = next_unit();                    // y     [0, 1)
+        p[2] = 0.5f + next_unit();             // speed [0.5, 1.5)
+        p[3] = next_unit() * 6.2831853f;       // phase [0, 2π)
+    }
+}
+
 // Haversine formula, result in metres.
 double sw_haversine(double lat1, double lon1, double lat2, double lon2) {
     static const double R = 6371000.0; // Earth radius in metres
@@ -120,6 +167,17 @@ double sw_haversine(double lat1, double lon1, double lat2, double lon2) {
              + cos(lat1 * DEG_TO_RAD) * cos(lat2 * DEG_TO_RAD)
              * sin(dlon * 0.5) * sin(dlon * 0.5);
     return R * 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+}
+
+double sw_batch_haversine(const double* points, int count, double* out) {
+    double total = 0.0;
+    for (int i = 0; i < count - 1; ++i) {
+        double d = sw_haversine(points[i * 2], points[i * 2 + 1],
+                                points[i * 2 + 2], points[i * 2 + 3]);
+        out[i] = d;
+        total += d;
+    }
+    return total;
 }
 
 float sw_normalize_angle(float angle) {
