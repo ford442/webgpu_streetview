@@ -114,11 +114,50 @@ vec3 applyNight(vec3 col, vec2 uv) {
     return max(col, vec3(0.01));
 }
 
+// SDR approximations of viewHorizonY / viewDepthProxy / fogHeightFalloff from
+// weather-post.wgsl. Same shape, no fbm rolling layer (cost) — see docs/GRAPHICS.md.
+float viewHorizonY() {
+    return clamp(0.5 + (uWeather[34] - 0.5) * 2.0, -0.75, 1.75);
+}
+
+float viewDepthProxy(vec2 uv, float horizonY) {
+    float below = uv.y - horizonY;
+    if (below <= 0.0) return 1.0;
+    return clamp(0.06 / max(below, 0.0025), 0.0, 1.0);
+}
+
+float fogHeightFalloff(vec2 uv, float horizonY) {
+    float height = clamp(uWeather[24], 0.0, 1.0);
+    float altitude = clamp((horizonY - uv.y) / max(horizonY, 0.15), 0.0, 1.0);
+    float ground = exp(-altitude * 3.2);
+    float elevated = smoothstep(0.0, 0.5, altitude) * exp(-max(altitude - 0.5, 0.0) * 2.4);
+    return mix(ground, elevated, height);
+}
+
+// Beer-Lambert fog coverage along the depth proxy, matching fogAmountAt().
+float fogAmountAt(vec2 uv) {
+    float intensity = uWeather[22];
+    float density = uWeather[23];
+    if (intensity < 0.001 && density < 0.001) return 0.0;
+    float horizonY = viewHorizonY();
+    float depth = viewDepthProxy(uv, horizonY);
+    float profile = fogHeightFalloff(uv, horizonY);
+    float sigma = density * 2.6 * profile * 0.78;
+    float fogAmount = 1.0 - exp(-sigma * (0.12 + depth * 1.9));
+    fogAmount += intensity * (0.25 + profile * 0.75) * 0.78;
+    return clamp(fogAmount, 0.0, 0.95);
+}
+
 vec3 applyWeather(vec3 col, vec2 uv) {
     float time = uWeather[6] * max(uWeather[10], 0.2);
     float rain = clamp(uWeather[7], 0.0, 2.0);
     float snow = clamp(uWeather[8], 0.0, 2.0);
     float wind = uWeather[9];
+    float night = clamp(uWeather[11], 0.0, 1.0);
+
+    // Precipitation fades into the fog volume instead of punching through it,
+    // matching the WebGPU paths' precipVisibility term.
+    float precipVisibility = 1.0 - fogAmountAt(uv) * 0.75;
 
     // Top-origin UV (vertex shader flips y). Negative Y time term => fall downward,
     // matching WebGPU weather-post.wgsl (st.y - t * speed). See carSpatialModel.WEATHER_FALL_Y_SIGN.
@@ -126,14 +165,17 @@ vec3 applyWeather(vec3 col, vec2 uv) {
         vec2 rainUv = uv * vec2(120.0, 34.0) + vec2(wind * time * 10.0, -time * 24.0);
         float streak = smoothstep(0.965, 1.0, noise2D(rainUv));
         streak *= smoothstep(0.35, 1.0, fract(rainUv.y));
-        col = mix(col, vec3(0.64, 0.78, 0.95), streak * rain * 0.18);
-        col *= 1.0 - rain * 0.045;
+        vec3 rainTint = mix(vec3(0.64, 0.78, 0.95), vec3(0.50, 0.62, 0.90), night);
+        col = mix(col, rainTint, streak * rain * 0.18 * precipVisibility);
+        // Ease the wet-scene darkening at night so the #171 readable floor holds.
+        col *= 1.0 - rain * mix(0.045, 0.020, night);
     }
 
     if (snow > 0.001) {
         vec2 snowUv = uv * vec2(44.0, 26.0) + vec2(wind * time * 1.2, -time * 2.2);
         float flakes = smoothstep(0.986, 1.0, noise2D(snowUv));
-        col += vec3(0.95, 0.98, 1.0) * flakes * snow * 0.32;
+        float snowLit = 1.0 + uWeather[12] * night * 0.35;
+        col += vec3(0.95, 0.98, 1.0) * flakes * snow * 0.32 * precipVisibility * snowLit;
         col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), snow * 0.035);
     }
 
@@ -141,10 +183,13 @@ vec3 applyWeather(vec3 col, vec2 uv) {
 }
 
 vec3 applyFogAndLighting(vec3 col, vec2 uv) {
-    float fog = clamp(uWeather[22] + uWeather[23] * 0.65, 0.0, 1.0);
-    float horizon = smoothstep(1.0, 0.2, abs(uv.y - 0.5));
-    col = mix(col, vec3(0.72, 0.76, 0.8), fog * (0.35 + horizon * 0.3));
+    float fog = fogAmountAt(uv);
+    float night = clamp(uWeather[11], 0.0, 1.0);
+    vec3 fogColor = mix(vec3(0.72, 0.76, 0.8), vec3(0.08, 0.12, 0.22), night);
+    col = mix(col, fogColor, fog);
 
+    // Overcast suppression already applied on the CPU (weatherCohesion.ts), so
+    // the sun terms below just follow the packed shaft/flare intensities.
     float sunVisible = clamp(uWeather[19] / 0.3, 0.0, 1.0);
     float sunX = fract((uWeather[18] + 3.14159265) / 6.2831853 - uWeather[33] + 0.5);
     vec2 sunPos = vec2(sunX, clamp(0.5 - uWeather[19] * 0.9, 0.02, 0.98));

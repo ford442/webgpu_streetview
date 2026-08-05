@@ -8,6 +8,9 @@ import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
+import { getActiveQualityLevel } from '../config/visualPresets';
+import { resolveCinematicCameraFx, prefersReducedMotion } from '../renderer/cinematicCameraFx';
+import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
@@ -65,6 +68,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
     const noiseFeederRef = useRef<WasmNoiseFeeder>(new WasmNoiseFeeder());
     const wasmNoiseEnabledRef = useRef<boolean>(getWasmNoisePreference());
+
+    // Cinematic camera FX gate (DOF + motion blur). Quality and the reduced-motion
+    // preference are read once — both require a reload to change — while speed is
+    // polled per frame from the car/cruise loops. See cinematicCameraFx.ts.
+    const qualityRef = useRef(getActiveQualityLevel());
+    const reducedMotionRef = useRef(prefersReducedMotion());
 
     const currentRendererRef = internalRendererRef;
 
@@ -267,6 +276,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                     cameraHeading: weatherHeading,
                     cameraPitch: weatherPitch,
                     wasmNoiseActive,
+                    cinematic: resolveCinematicCameraFx({
+                        quality: qualityRef.current,
+                        reducedMotion: reducedMotionRef.current,
+                        speedNormalized: getCameraSpeedNormalized(),
+                    }),
                 });
 
                 currentRendererRef.current.updateWeatherParams(params);

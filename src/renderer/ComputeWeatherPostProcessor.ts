@@ -6,11 +6,10 @@ import {
 import { createDefaultWeatherParams } from './packWeatherParams';
 import type { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 
-// Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
-// storage buffer declared in weather-post.wgsl. The compute variant does
-// not yet bind this tile to the shader (see weather-post-compute.wgsl
-// header) — the buffer is kept here only so the public API matches
-// WeatherPostProcessor and callers don't need to branch.
+// Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the storage
+// buffer declared in weather-post.wgsl. The compute variant binds this tile at
+// binding 12 (the image_video_effects `plasmaBuffer` slot), where the shader
+// reads it as 1024 vec4s — 4096 floats, exactly one 64x64 tile.
 const NOISE_TILE_SIZE = 64;
 const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
 
@@ -49,9 +48,11 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
  * texture to the canvas. Exposes the same public API as
  * WeatherPostProcessor so Renderer.ts can use either interchangeably.
  *
- * Foundation for WASM noise buffers (#128), volumetric fog, and GPU
- * particles, all of which want storage-buffer access that a fragment pass
- * can't offer efficiently. See docs/RENDERER_FALLBACK.md.
+ * Two of the image_video_effects storage surfaces carry real data: binding 6
+ * receives a full-res view-depth proxy each dispatch, and binding 12 carries
+ * the WASM noise tile (#128) that drives dust turbulence. The remaining
+ * surfaces are still 1x1 dummies reserved for GPU particles and temporal
+ * effects. See docs/RENDERER_FALLBACK.md and docs/GRAPHICS.md.
  */
 export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private device: GPUDevice;
@@ -66,20 +67,21 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private computeUniformsBuffer: GPUBuffer | null = null;
     private noiseBuffer: GPUBuffer | null = null;
     private writeTexture: GPUTexture | null = null;
+    /** Full-res r32float view-depth proxy written by the compute pass. */
+    private depthProxyTexture: GPUTexture | null = null;
     private writeWidth: number = 0;
     private writeHeight: number = 0;
 
-    // Dummy 1x1 resources for image_video_effects bindings this shader
-    // doesn't use yet (depth, data textures, plasma buffer).
     private filteringSampler: GPUSampler | null = null;
     private nonFilteringSampler: GPUSampler | null = null;
     private comparisonSampler: GPUSampler | null = null;
+    // Dummy 1x1 resources for image_video_effects bindings this shader still
+    // doesn't use (depth read-back, scratch data textures). Bindings 6 and 12
+    // are now backed by real resources — see the shader header.
     private dummyReadDepthTexture: GPUTexture | null = null;
-    private dummyWriteDepthTexture: GPUTexture | null = null;
     private dummyDataTextureA: GPUTexture | null = null;
     private dummyDataTextureB: GPUTexture | null = null;
     private dummyDataTextureC: GPUTexture | null = null;
-    private dummyPlasmaBuffer: GPUBuffer | null = null;
 
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
@@ -115,10 +117,6 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             size: NOISE_BUFFER_BYTES,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
-        this.dummyPlasmaBuffer = this.device.createBuffer({
-            size: 16,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
 
         this.dummyReadDepthTexture = this.device.createTexture({
             size: [1, 1],
@@ -129,11 +127,6 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             size: [1, 1],
             format: 'rgba8unorm',
             usage: GPUTextureUsage.TEXTURE_BINDING,
-        });
-        this.dummyWriteDepthTexture = this.device.createTexture({
-            size: [1, 1],
-            format: 'r32float',
-            usage: GPUTextureUsage.STORAGE_BINDING,
         });
         this.dummyDataTextureA = this.device.createTexture({
             size: [1, 1],
@@ -206,12 +199,21 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private ensureWriteTexture(width: number, height: number): void {
         if (this.writeTexture && this.writeWidth === width && this.writeHeight === height) return;
         if (this.writeTexture) this.writeTexture.destroy();
+        if (this.depthProxyTexture) this.depthProxyTexture.destroy();
 
         this.writeWidth = width;
         this.writeHeight = height;
+        const size: [number, number] = [Math.max(1, width), Math.max(1, height)];
         this.writeTexture = this.device.createTexture({
-            size: [Math.max(1, width), Math.max(1, height)],
+            size,
             format: 'rgba32float',
+            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+        });
+        // Real view-depth proxy target (was a 1x1 dummy). TEXTURE_BINDING keeps
+        // it readable by future passes / debug probes without another resize path.
+        this.depthProxyTexture = this.device.createTexture({
+            size,
+            format: 'r32float',
             usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
         });
     }
@@ -227,17 +229,16 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             || !this.nonFilteringSampler
             || !this.comparisonSampler
             || !this.dummyReadDepthTexture
-            || !this.dummyWriteDepthTexture
             || !this.dummyDataTextureA
             || !this.dummyDataTextureB
             || !this.dummyDataTextureC
-            || !this.dummyPlasmaBuffer
+            || !this.noiseBuffer
         ) {
             return;
         }
 
         this.ensureWriteTexture(width || 1, height || 1);
-        if (!this.writeTexture) return;
+        if (!this.writeTexture || !this.depthProxyTexture) return;
 
         this.computeBindGroup = this.device.createBindGroup({
             layout: this.computePipeline.getBindGroupLayout(0),
@@ -248,13 +249,15 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 { binding: 3, resource: { buffer: this.computeUniformsBuffer } },
                 { binding: 4, resource: this.dummyReadDepthTexture.createView() },
                 { binding: 5, resource: this.nonFilteringSampler },
-                { binding: 6, resource: this.dummyWriteDepthTexture.createView() },
+                { binding: 6, resource: this.depthProxyTexture.createView() },
                 { binding: 7, resource: this.dummyDataTextureA.createView() },
                 { binding: 8, resource: this.dummyDataTextureB.createView() },
                 { binding: 9, resource: this.dummyDataTextureC.createView() },
                 { binding: 10, resource: { buffer: this.extraBuffer } },
                 { binding: 11, resource: this.comparisonSampler },
-                { binding: 12, resource: { buffer: this.dummyPlasmaBuffer } },
+                // The image_video_effects "plasma" slot carries the real WASM
+                // noise tile here (4096 floats read as 1024 vec4s).
+                { binding: 12, resource: { buffer: this.noiseBuffer } },
             ],
         });
 
@@ -404,10 +407,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             if (this.extraBuffer) this.extraBuffer.destroy();
             if (this.computeUniformsBuffer) this.computeUniformsBuffer.destroy();
             if (this.noiseBuffer) this.noiseBuffer.destroy();
-            if (this.dummyPlasmaBuffer) this.dummyPlasmaBuffer.destroy();
             if (this.writeTexture) this.writeTexture.destroy();
+            if (this.depthProxyTexture) this.depthProxyTexture.destroy();
             if (this.dummyReadDepthTexture) this.dummyReadDepthTexture.destroy();
-            if (this.dummyWriteDepthTexture) this.dummyWriteDepthTexture.destroy();
             if (this.dummyDataTextureA) this.dummyDataTextureA.destroy();
             if (this.dummyDataTextureB) this.dummyDataTextureB.destroy();
             if (this.dummyDataTextureC) this.dummyDataTextureC.destroy();
@@ -418,6 +420,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.computeUniformsBuffer = null;
         this.noiseBuffer = null;
         this.writeTexture = null;
+        this.depthProxyTexture = null;
         this.computePipeline = null;
         this.computeBindGroup = null;
         this.blitPipeline = null;
@@ -426,10 +429,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.nonFilteringSampler = null;
         this.comparisonSampler = null;
         this.dummyReadDepthTexture = null;
-        this.dummyWriteDepthTexture = null;
         this.dummyDataTextureA = null;
         this.dummyDataTextureB = null;
         this.dummyDataTextureC = null;
-        this.dummyPlasmaBuffer = null;
     }
 }

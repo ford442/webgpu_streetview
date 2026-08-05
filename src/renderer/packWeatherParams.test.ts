@@ -69,12 +69,14 @@ describe('packWeatherParams', () => {
         expect(params[I.cameraPitch]).toBeCloseTo(0.5);
         expect(params[I.wasmNoiseEnabled]).toBe(0);
         expect(params[I.dustIntensity]).toBe(0);
-        // sunAltitude 0.6 → sunVisible = 1 → shafts 0.5, flare 0.4, streak 0.5
-        expect(params[I.lightShaftsIntensity]).toBeCloseTo(0.5);
+        // sunAltitude 0.6, clear sky → sunVisibility 1. Shafts need something to
+        // scatter in, so with zero haze they sit at their 0.35 floor.
+        expect(params[I.lightShaftsIntensity]).toBeCloseTo(0.35);
         expect(params[I.lensFlareIntensity]).toBeCloseTo(0.4);
         expect(params[I.anamorphicStreak]).toBeCloseTo(0.5);
-        expect(params[I._pad2]).toBe(0);
-        expect(params[I._pad3]).toBe(0);
+        // Cinematic FX default off when no gate result is supplied
+        expect(params[I.dofStrength]).toBe(0);
+        expect(params[I.motionBlurStrength]).toBe(0);
     });
 
     it('packs a night preset with headlights and dome light', () => {
@@ -122,11 +124,52 @@ describe('packWeatherParams', () => {
         expect(params[I.rainIntensity]).toBeCloseTo(1.0); // 50/100*2
         expect(params[I.snowIntensity]).toBeCloseTo(0.5); // 25/100*2
         expect(params[I.wind]).toBeCloseTo(1.0); // 100/100*2-1
-        expect(params[I.fogIntensity]).toBeCloseTo(0.4);
-        expect(params[I.fogDensity]).toBeCloseTo(0.4);
+        // Fog now splits into an ambient wash + a depth-integrated ground bank,
+        // and rain contributes its own low mist (see weatherCohesion.ts).
+        expect(params[I.fogIntensity]).toBeCloseTo(0.22);
+        expect(params[I.fogDensity]).toBeCloseTo(0.6);
         expect(params[I.sunrise]).toBe(1);
         expect(params[I.wasmNoiseEnabled]).toBe(1);
-        expect(params[I.dustIntensity]).toBeCloseTo(0.3);
+        // Rain washes dust out of the air: 0.3 * (1 - 0.5) * (1 - 0.25*0.5)
+        expect(params[I.dustIntensity]).toBeCloseTo(0.13125);
+        expect(params[I.humidityHaze]).toBeGreaterThan(0);
+    });
+
+    it('couples atmospheric channels: rain implies overcast and wet air', () => {
+        const clear = packWeatherParams({
+            env: baseEnv({ sunAltitude: 0.6 }),
+            timeSeconds: 0,
+            cameraHeading: 0,
+            cameraPitch: 0.5,
+            wasmNoiseActive: true,
+        });
+        const storm = packWeatherParams({
+            env: baseEnv({ sunAltitude: 0.6, rainIntensity: 100, wind: 90 }),
+            timeSeconds: 0,
+            cameraHeading: 0,
+            cameraPitch: 0.5,
+            wasmNoiseActive: true,
+        });
+        const I = WeatherParamIndex;
+
+        expect(storm[I.lensFlareIntensity]!).toBeLessThan(clear[I.lensFlareIntensity]!);
+        expect(storm[I.anamorphicStreak]!).toBeLessThan(clear[I.anamorphicStreak]!);
+        expect(storm[I.humidityHaze]!).toBeGreaterThan(clear[I.humidityHaze]!);
+        expect(storm[I.dustIntensity]!).toBeLessThan(clear[I.dustIntensity]!);
+        expect(storm[I.fogDensity]!).toBeGreaterThan(0);
+    });
+
+    it('passes resolved cinematic camera FX through to slots 38/39', () => {
+        const params = packWeatherParams({
+            env: baseEnv(),
+            timeSeconds: 0,
+            cameraHeading: 0,
+            cameraPitch: 0.5,
+            wasmNoiseActive: false,
+            cinematic: { dofStrength: 0.55, motionBlurStrength: 0.42 },
+        });
+        expect(params[WeatherParamIndex.dofStrength]).toBeCloseTo(0.55);
+        expect(params[WeatherParamIndex.motionBlurStrength]).toBeCloseTo(0.42);
     });
 
     it('createDefaultWeatherParams matches historical processor defaults', () => {

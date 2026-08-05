@@ -57,8 +57,8 @@ const DOCUMENTED_LAYOUT: ReadonlyArray<[WeatherParamName, number]> = [
     ['wasmNoiseEnabled', 35],
     ['sunrise', 36],
     ['anamorphicStreak', 37],
-    ['_pad2', 38],
-    ['_pad3', 39],
+    ['dofStrength', 38],
+    ['motionBlurStrength', 39],
 ];
 
 describe('weatherUniformLayout', () => {

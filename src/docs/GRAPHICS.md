@@ -1,5 +1,10 @@
 # Graphics & Rendering Pipeline
 
+> **Weather & atmosphere look targets live in [`docs/GRAPHICS.md`](../../docs/GRAPHICS.md)** —
+> preset intent, the CPU cohesion model, the view-depth proxy, before/after
+> tuning notes, and the cinematic camera FX gate. This file covers the broader
+> pipeline and material system.
+
 ## Architecture Overview
 
 The WebGPU StreetView application uses a **dual-renderer architecture**:

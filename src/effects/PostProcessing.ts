@@ -165,15 +165,21 @@ export interface PostProcessingConfig {
     filmGrainIntensity: number;
     chromaticAberrationEnabled: boolean;
     chromaticAberrationStrength: number;
-    /** Reserved for future implementation. */
+    /**
+     * Depth of field and motion blur ship in the WebGPU weather post pass, not
+     * in this Three.js car-interior pipeline — see applyCameraFX in
+     * public/shaders/weather-post.wgsl, gated by
+     * src/renderer/cinematicCameraFx.ts (quality >= high + reduced motion off).
+     *
+     * These fields mirror VisualPreset so a preset can be spread into this
+     * config without losing keys; the passes below ignore them. Wiring a
+     * Three-side equivalent needs a depth texture on the scene render target,
+     * which this pipeline does not currently allocate.
+     */
     depthOfFieldEnabled: boolean;
-    /** Reserved for future implementation. */
     depthOfFieldFocalLength: number;
-    /** Reserved for future implementation. */
     depthOfFieldBokehScale: number;
-    /** Reserved for future implementation. */
     motionBlurEnabled: boolean;
-    /** Reserved for future implementation. */
     motionBlurStrength: number;
 }
 

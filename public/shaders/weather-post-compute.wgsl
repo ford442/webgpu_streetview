@@ -11,12 +11,16 @@
 // 22:fogIntensity 23:fogDensity 24:fogHeight 25:fogColorIndex 26:lightShaftsIntensity
 // 27:heatShimmerIntensity 28:lensFlareIntensity 29:chromaticAberration 30:dustIntensity
 // 31:humidityHaze 32:shaderEffectsEnabled 33:cameraHeading 34:cameraPitch 35:wasmNoiseEnabled
-// 36:sunrise 37:anamorphicStreak 38-39:padding
+// 36:sunrise 37:anamorphicStreak 38:dofStrength 39:motionBlurStrength (padding slots reclaimed)
 //
-// NOTE: the compute path does not currently bind the 64x64 WASM noise tile
-// (see weather-post.wgsl's `wasmNoiseTile` storage buffer / #128), so
-// wasmNoiseEnabled is read but has no effect here yet — dust cloud density
-// stays uniform instead of following WASM-driven turbulence.
+// STORAGE SURFACES IN USE (formerly 1x1 dummies):
+//  - binding 6  writeDepthTexture : full-res r32float view-depth proxy, written
+//    every dispatch so later passes / probes can read the same depth the fog
+//    and DOF use. See viewDepthProxy() below.
+//  - binding 12 plasmaBuffer : the real 64x64 WASM Perlin tile (#128/#189),
+//    packed as 1024 vec4s, driving dust turbulence exactly like the fragment
+//    path's `wasmNoiseTile`.
+// Still dummies: readDepthTexture (4), dataTextureA/B (7/8), dataTextureC (9).
 
 // --- STANDARD image_video_effects HEADER ---
 @group(0) @binding(0) var u_sampler: sampler;
@@ -84,6 +88,36 @@ fn p_cameraPitch() -> f32     { return ep(34); }
 fn p_wasmNoiseEnabled() -> f32 { return ep(35); }
 fn p_sunrise() -> f32         { return ep(36); }
 fn p_anamorphicStreak() -> f32 { return ep(37); }
+fn p_dofStrength() -> f32     { return ep(38); }
+fn p_motionBlurStrength() -> f32 { return ep(39); }
+
+// ============================================================================
+// WASM noise tile (binding 12) — 64x64 f32 tile packed as 1024 vec4s.
+// Uploaded by src/wasm/wasmNoiseFeeder.ts via ComputeWeatherPostProcessor.
+// ============================================================================
+fn wasmNoiseAt(index: i32) -> f32 {
+    let i = clamp(index, 0, 4095);
+    let packed = plasmaBuffer[i / 4];
+    return packed[u32(i % 4)];
+}
+
+// Bilinear sample of the WASM tile — same filtering as weather-post.wgsl's
+// sampleWasmNoiseTile, reading through the vec4 packing.
+fn sampleWasmNoiseTile(uv: vec2<f32>) -> f32 {
+    let tileSize = 64.0;
+    let scaled = fract(uv) * tileSize;
+    let x0 = i32(floor(scaled.x)) & 63;
+    let y0 = i32(floor(scaled.y)) & 63;
+    let x1 = (x0 + 1) & 63;
+    let y1 = (y0 + 1) & 63;
+    let fx = fract(scaled.x);
+    let fy = fract(scaled.y);
+    let v00 = wasmNoiseAt(y0 * 64 + x0);
+    let v10 = wasmNoiseAt(y0 * 64 + x1);
+    let v01 = wasmNoiseAt(y1 * 64 + x0);
+    let v11 = wasmNoiseAt(y1 * 64 + x1);
+    return mix(mix(v00, v10, fx), mix(v01, v11, fx), fy);
+}
 
 // ============================================================================
 // NOISE AND UTILITY FUNCTIONS
@@ -154,6 +188,36 @@ fn normalizedDistance(a: f32, b: f32) -> f32 {
     if (d > 0.5) { d = d - 1.0; }
     if (d < -0.5) { d = d + 1.0; }
     return d;
+}
+
+// ============================================================================
+// CHEAP DEPTH PROXY — bodies kept byte-identical with weather-post.wgsl
+// (guarded by src/renderer/weatherShaderParity.test.ts). The result is also
+// stored into writeDepthTexture (binding 6) each dispatch.
+// ============================================================================
+
+// Screen-space Y (top-origin, 0-1) of the horizon for a normalized camera
+// pitch (0.5 = level). ~90 degree vertical FOV => 1 pitch unit ~ 2 screens.
+fn viewHorizonY(cameraPitchNorm: f32) -> f32 {
+    return clamp(0.5 + (cameraPitchNorm - 0.5) * 2.0, -0.75, 1.75);
+}
+
+// Normalized view distance: 0 = right in front of the camera, 1 = horizon or
+// beyond. Hyperbolic falloff below the horizon approximates eyeHeight/tan(angle).
+fn viewDepthProxy(uv: vec2<f32>, horizonY: f32) -> f32 {
+    let below = uv.y - horizonY;
+    if (below <= 0.0) { return 1.0; }
+    return clamp(0.06 / max(below, 0.0025), 0.0, 1.0);
+}
+
+// Vertical density profile of a fog layer. `height` 0 keeps the bank hugging
+// the ground (dense at the horizon line, thinning upward); 1 lifts it into an
+// elevated haze band that leaves the road clear.
+fn fogHeightFalloff(uv: vec2<f32>, horizonY: f32, height: f32) -> f32 {
+    let altitude = clamp((horizonY - uv.y) / max(horizonY, 0.15), 0.0, 1.0);
+    let ground   = exp(-altitude * 3.2);
+    let elevated = smoothstep(0.0, 0.5, altitude) * exp(-max(altitude - 0.5, 0.0) * 2.4);
+    return mix(ground, elevated, clamp(height, 0.0, 1.0));
 }
 
 // ============================================================================
@@ -286,30 +350,41 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
     return grayFog;
 }
 
-fn applyFog(col: vec3<f32>, uv: vec2<f32>, night: f32) -> vec3<f32> {
-    let intensity = p_fogIntensity();
-    let density = p_fogDensity();
-    if (intensity < 0.001 && density < 0.001) { return col; }
-    let horizonDist = abs(uv.y - 0.5);
-    let groundProximity = smoothstep(0.35, 0.0, horizonDist);
-    var fogAmount = density * groundProximity;
-    fogAmount = fogAmount + intensity * (0.2 + groundProximity * 0.8);
-    let t = p_time() * p_speed();
+// Fog coverage at a pixel, 0-1 — reused to attenuate dust/rain/snow so nothing
+// suspended in the fog punches through it. `density` is a Beer-Lambert
+// extinction coefficient integrated along the depth proxy; `intensity` is the
+// flat aerial wash. Mirrors fogAmountAt() in weather-post.wgsl.
+fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32) -> f32 {
+    if (intensity < 0.001 && density < 0.001) { return 0.0; }
+
+    let horizonY = viewHorizonY(p_cameraPitch());
+    let depth = viewDepthProxy(uv, horizonY);
+    let profile = fogHeightFalloff(uv, horizonY, height);
+
     let fogUV1 = vec3<f32>(uv * 4.0 + vec2<f32>(t * 0.07, t * 0.04), t * 0.05);
     let fogUV2 = vec3<f32>(uv * 8.0 - vec2<f32>(t * 0.05, t * 0.03), t * 0.08);
     let roll = fbm(fogUV1, 2) * 0.18 + fbm(fogUV2, 2) * 0.08;
-    fogAmount = fogAmount * (0.75 + roll);
+
+    let sigma = density * 2.6 * profile * (0.78 + roll);
+    var fogAmount = 1.0 - exp(-sigma * (0.12 + depth * 1.9));
+    fogAmount = fogAmount + intensity * (0.25 + profile * 0.75) * (0.78 + roll);
+    return clamp(fogAmount, 0.0, 0.95);
+}
+
+fn applyFog(col: vec3<f32>, fogAmount: f32, colorIdx: f32, night: f32) -> vec3<f32> {
+    if (fogAmount < 0.001) { return col; }
     let dayFog = vec3<f32>(0.71, 0.76, 0.78);
     let nightFog = vec3<f32>(0.08, 0.12, 0.22);
     var fogColor = mix(dayFog, nightFog, clamp(night, 0.0, 1.0));
-    let colorIdx = p_fogColorIndex();
     let indexedColor = getFogColor(colorIdx);
-    if (colorIdx > 0.5) { fogColor = indexedColor; }
-    return mix(col, fogColor, clamp(fogAmount, 0.0, 0.95));
+    if (colorIdx > 0.5) { fogColor = mix(indexedColor, nightFog, clamp(night, 0.0, 1.0) * 0.6); }
+    return mix(col, fogColor, fogAmount);
 }
 
-fn applyVolumetricLightShafts(col: vec3<f32>, uv: vec2<f32>, t: f32) -> vec3<f32> {
-    let intensity = p_lightShaftsIntensity();
+// Signature matches weather-post.wgsl (intensity passed in, not read from the
+// uniform block) — main() was already calling it with four arguments, which
+// meant this whole module failed to compile and ?weather=compute never ran.
+fn applyVolumetricLightShafts(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> vec3<f32> {
     if (intensity < 0.001) { return col; }
     let sunScreenX = worldAzimuthToScreenX(p_sunAzimuth(), p_cameraHeading());
     let dSunX = normalizedDistance(uv.x, sunScreenX);
@@ -419,6 +494,16 @@ fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> 
     let sunDist = length(vec2<f32>(dSunX * 2.0, uv.y - sunUvY));
     let sunVisible = smoothstep(0.0, 0.1, p_sunAltitude());
     let towardSun = smoothstep(0.5, 0.0, sunDist);
+
+    // WASM-driven cloud density from the real noise tile at binding 12, so dust
+    // clumps into drifting patches instead of uniform speckle — parity with the
+    // fragment path. ?wasmNoise=off zeroes wasmNoiseEnabled and falls back to 1.
+    var cloudDensity = 1.0;
+    if (p_wasmNoiseEnabled() > 0.5) {
+        let cloudUV = uv * 1.5 + vec2<f32>(t * 0.015, t * 0.008);
+        cloudDensity = 0.35 + 0.65 * (0.5 + 0.5 * sampleWasmNoiseTile(cloudUV));
+    }
+
     for (var i: i32 = 0; i < 3; i = i + 1) {
         let layer = f32(i);
         var particleUV = uv * (15.0 + layer * 10.0);
@@ -429,7 +514,7 @@ fn applyDustParticles(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> 
         if (rnd > 0.7) {
             let pos = fract(particleUV) - vec2<f32>(0.5);
             let dist = length(pos);
-            let particle = smoothstep(0.15, 0.0, dist) * (0.5 + rnd * 0.5);
+            let particle = smoothstep(0.15, 0.0, dist) * (0.5 + rnd * 0.5) * cloudDensity;
             let sparklePhase = t * (3.0 + rnd * 2.0) + layer * 5.0;
             let sparkle = pow(sin(sparklePhase) * 0.5 + 0.5, 10.0) * towardSun * sunVisible;
             let dustColor = vec3<f32>(0.9, 0.85, 0.7) + vec3<f32>(0.3, 0.25, 0.1) * sparkle;
@@ -580,15 +665,21 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
     return glow * (1.0 + glow * 0.5) + glow * 0.2;
 }
 
+// Camera-aware sunrise wash — anchored to the tracked horizon and the sun's
+// screen azimuth so dawn light pans with the view (matches weather-post.wgsl).
 fn applySunrise(col: vec3<f32>, uv: vec2<f32>, sunrise: f32) -> vec3<f32> {
     if (sunrise < 0.001) { return col; }
-    let horizonGlow = smoothstep(0.5, 0.0, uv.y);
-    let warmHighlight = vec3<f32>(1.0, 0.65, 0.35) * horizonGlow * sunrise * 0.4;
+    let horizonY = viewHorizonY(p_cameraPitch());
+    let sunScreenX = worldAzimuthToScreenX(p_sunAzimuth(), p_cameraHeading());
+    let dSunX = normalizedDistance(uv.x, sunScreenX);
+    let towardSun = smoothstep(0.45, 0.0, abs(dSunX));
+    let horizonGlow = smoothstep(horizonY + 0.12, horizonY - 0.38, uv.y);
+    let warmHighlight = vec3<f32>(1.0, 0.65, 0.35) * horizonGlow * towardSun * sunrise * 0.42;
     let shadowTint = mix(vec3<f32>(0.72, 0.58, 0.85), vec3<f32>(0.35, 0.45, 0.82), uv.y);
-    let shadowMask = (1.0 - horizonGlow) * sunrise * 0.18;
+    let shadowMask = (1.0 - horizonGlow * towardSun) * sunrise * 0.14;
     var result = col + warmHighlight;
     result = result + shadowTint * shadowMask;
-    let goldBoost = vec3<f32>(0.15, 0.05, -0.05) * horizonGlow * sunrise;
+    let goldBoost = vec3<f32>(0.15, 0.05, -0.05) * horizonGlow * towardSun * sunrise;
     result = result + goldBoost;
     return result;
 }
@@ -643,6 +734,41 @@ fn applyLensDroplets(col: vec3<f32>, uv: vec2<f32>, t: f32, intensity: f32) -> v
 }
 
 // ============================================================================
+// CINEMATIC CAMERA FX (depth of field + speed blur)
+// ============================================================================
+// Off unless src/renderer/cinematicCameraFx.ts opens the gate (quality >= high,
+// prefers-reduced-motion off). Mirrors applyCameraFX in weather-post.wgsl.
+
+const DOF_FOCUS_DEPTH: f32 = 0.45;
+
+fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f32> {
+    if (dof < 0.001 && mblur < 0.001) { return col; }
+
+    let horizonY = viewHorizonY(p_cameraPitch());
+    let depth = viewDepthProxy(uv, horizonY);
+
+    let coc = smoothstep(DOF_FOCUS_DEPTH, 1.0, depth) * dof;
+    let toCenter = uv - vec2<f32>(0.5, 0.5);
+
+    var accum = col;
+    var weight = 1.0;
+    for (var i: i32 = 0; i < 6; i = i + 1) {
+        let fi = f32(i);
+        let angle = fi * 1.0471975 + 0.3;
+        let ring = vec2<f32>(cos(angle), sin(angle)) * coc * 0.012;
+        let streak = -toCenter * mblur * 0.09 * ((fi + 1.0) / 6.0);
+        let tapUV = clamp(uv + ring + streak, vec2<f32>(0.001), vec2<f32>(0.999));
+        accum = accum + textureSampleLevel(readTexture, u_sampler, tapUV, 0.0).rgb;
+        weight = weight + 1.0;
+    }
+    let blurred = accum / weight;
+
+    let edgeBias = smoothstep(0.05, 0.55, length(toCenter));
+    let blend = clamp(max(coc, mblur * edgeBias), 0.0, 0.85);
+    return mix(col, blurred, blend);
+}
+
+// ============================================================================
 // HDR TONEMAPPING
 // ============================================================================
 
@@ -668,6 +794,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let uv = vec2<f32>(global_id.xy) / resolution;
     let t = p_time() * p_speed();
 
+    // View-depth proxy for this pixel, published to the r32float storage
+    // texture at binding 6 (replaces the old 1x1 dummy) and reused below for
+    // height fog and depth of field.
+    let horizonY = viewHorizonY(p_cameraPitch());
+    let viewDepth = viewDepthProxy(uv, horizonY);
+    textureStore(writeDepthTexture, vec2<i32>(global_id.xy), vec4<f32>(viewDepth, 0.0, 0.0, 1.0));
+
     // Bypass mode
     if (p_shaderEffectsEnabled() < 0.5) {
         let raw = textureSampleLevel(readTexture, u_sampler, uv, 0.0).rgb;
@@ -680,6 +813,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Chromatic aberration
     var col = applyChromaticAberration(uv, p_chromaticAberration());
+
+    // Cinematic camera FX (DOF + speed blur; no-op unless gated on)
+    col = applyCameraFX(col, uv, p_dofStrength(), p_motionBlurStrength());
 
     // Heat shimmer
     let heatOffset = getHeatShimmerOffset(uv, p_heatShimmerIntensity(), t);
@@ -727,23 +863,28 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     col = applySunrise(col, uv, p_sunrise());
     col = directionalMoonlight(col, uv, p_moonAzimuth(), p_moonAltitude(), p_nightIntensity());
 
-    // Atmospheric effects
-    col = applyFog(col, uv, p_nightIntensity());
+    // Atmospheric effects — fog coverage computed once, reused to attenuate
+    // everything suspended in it (dust, rain, snow).
+    let fogMask = fogAmountAt(uv, p_fogIntensity(), p_fogDensity(), p_fogHeight(), t);
+    col = applyFog(col, fogMask, p_fogColorIndex(), p_nightIntensity());
     col = applyVolumetricLightShafts(col, uv, p_lightShaftsIntensity(), t);
     col = applyHumidityHaze(col, uv, p_humidityHaze(), t);
-    col = applyDustParticles(col, uv, p_dustIntensity(), t);
+    col = applyDustParticles(col, uv, p_dustIntensity() * (1.0 - fogMask * 0.8), t);
     col = applyLensFlare(col, uv, p_lensFlareIntensity());
     col = applyVignette(col, uv);
 
-    // Weather effects (rain/snow)
+    // Weather effects (rain/snow) — fog-attenuated, night-aware darkening
+    let precipVisibility = 1.0 - fogMask * 0.75;
     if (p_rainIntensity() > 0.001) {
-        let r = rain(uv, t, panX, panY) * p_rainIntensity();
-        col = col + r * vec3<f32>(0.78, 0.88, 1.15);
-        col = col * (1.0 - p_rainIntensity() * 0.22);
+        let r = rain(uv, t, panX, panY) * p_rainIntensity() * precipVisibility;
+        let rainTint = mix(vec3<f32>(0.78, 0.88, 1.15), vec3<f32>(0.60, 0.70, 1.02), p_nightIntensity());
+        col = col + r * rainTint * (1.0 + p_headlightsOn() * p_nightIntensity() * 0.5);
+        col = col * (1.0 - p_rainIntensity() * mix(0.22, 0.10, p_nightIntensity()));
     }
     if (p_snowIntensity() > 0.001) {
-        let s = snow(uv, t, panX, panY) * p_snowIntensity();
-        col = col + s * vec3<f32>(1.15, 1.18, 1.22);
+        let s = snow(uv, t, panX, panY) * p_snowIntensity() * precipVisibility;
+        let snowLit = 1.0 + p_headlightsOn() * p_nightIntensity() * 0.35;
+        col = col + s * vec3<f32>(1.15, 1.18, 1.22) * snowLit;
     }
 
     // Refractive lens droplets

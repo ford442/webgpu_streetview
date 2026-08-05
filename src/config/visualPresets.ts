@@ -246,6 +246,34 @@ export function createCustomPreset(
 // Auto-Detection
 // ============================================================
 
+const VALID_QUALITY_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'ultra']);
+
+/**
+ * The quality level actually in force: `?quality=` URL flag wins, then a
+ * persisted `streetview.quality` preference, then hardware auto-detection.
+ * Used by gates that must agree with what the renderer is doing (e.g. the
+ * cinematic camera FX in src/renderer/cinematicCameraFx.ts).
+ */
+export function getActiveQualityLevel(): QualityLevel {
+  if (typeof window === 'undefined') return DEFAULT_QUALITY;
+
+  try {
+    const param = new URLSearchParams(window.location.search).get('quality')?.toLowerCase();
+    if (param && VALID_QUALITY_LEVELS.has(param)) return param as QualityLevel;
+  } catch {
+    // Malformed URL — fall through to storage / detection.
+  }
+
+  try {
+    const stored = window.localStorage.getItem('streetview.quality');
+    if (stored && VALID_QUALITY_LEVELS.has(stored)) return stored as QualityLevel;
+  } catch {
+    // Storage may be unavailable in hardened browsers.
+  }
+
+  return detectRecommendedQuality();
+}
+
 export function detectRecommendedQuality(): QualityLevel {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') {
     return DEFAULT_QUALITY;
