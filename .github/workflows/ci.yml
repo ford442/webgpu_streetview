@@ -25,6 +25,12 @@ jobs:
       - name: Lockfile must stay clean
         run: git diff --exit-code package-lock.json
 
+      # A partial install shows up as dozens of unrelated-looking type errors
+      # (missing vite/vitest ambient types cascade into every *.module.css
+      # import and every jest-dom matcher), so assert it before typecheck runs.
+      - name: Verify install is complete
+        run: node scripts/check-install.mjs --verbose
+
       - name: Typecheck
         run: npm run typecheck
 

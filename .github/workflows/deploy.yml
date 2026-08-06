@@ -31,14 +31,20 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify install is complete
+        run: node scripts/check-install.mjs --verbose
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
 
+      # `--watchAll` is a CRA/Jest flag; vitest rejects unknown options and this
+      # step failed unconditionally with CACError. `npm test` is already
+      # non-watching (`vitest run`).
       - name: Run tests
-        run: npm test -- --watchAll=false
+        run: npm test
 
       - name: Check for committed deploy secrets
         run: bash scripts/check-deploy-secrets.sh

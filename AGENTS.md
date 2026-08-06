@@ -38,10 +38,24 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 
 ## Build, Test, and Deploy Commands
 
+> **Always `npm ci` in a clean or unfamiliar environment — never `npm install`.**
+> A partial install does not fail loudly; it fails as dozens of type errors that
+> look like application bugs. Missing `vite`/`vitest` removes the ambient types
+> that declare the `*.module.css` wildcard and the jest-dom matchers, so `tsc`
+> reports hundreds of errors across unrelated files (verified: deleting `vitest`
+> alone takes `npm run typecheck` from 0 errors to ~1370). `npm run check:install`
+> diagnoses this in one line, and runs automatically before `typecheck` and `test`.
+
 ```bash
-# Install dependencies (local). CI / deploy use `npm ci` on Node 20.
+# Clean-environment install — exactly the lockfile, stale trees removed.
+npm ci
+
+# Local incremental install. CI / deploy always use `npm ci` on Node 20.
 # package-lock.json is committed — always include lockfile changes in dependency PRs.
 npm install
+
+# Verify node_modules matches package.json (auto-runs before typecheck/test)
+npm run check:install
 
 # Start development server (port 3000)
 npm start
