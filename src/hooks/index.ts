@@ -12,6 +12,12 @@ export { useLocationHistory } from './useLocationHistory';
 export { useSnapshots } from './useSnapshots';
 export { useVehicleSettings } from './useVehicleSettings';
 export {
+  useRearViewFeed,
+  type UseRearViewFeedParams,
+  type UseRearViewFeedResult,
+  type RearViewFeedPose,
+} from './useRearViewFeed';
+export {
   useTours,
   type Tour,
   type TourWaypoint,

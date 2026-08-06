@@ -61,6 +61,13 @@ src/
   - Functional windshield wipers (animated sweep, toggle control)
   - Live dashboard gauges (speedometer 0-100 km/h, tachometer 0-8000 RPM)
   - Side mirrors (positioned for realistic viewing)
+  - Rearview mirror with optional **true rear imagery** (`car/rearViewFeed.ts`): a
+    Street View Static sample at `carHeading + 180`, bound via
+    `RearviewMirror.setRearSample()`. The Static API is **billable**, so the feed is
+    opt-in (dashboard **Rear** button), throttled, deduped, session-budgeted, and
+    killable via `window.__REARVIEW_FEED__.kill()`. With no sample bound the glass
+    shows an honest "unavailable" state — never a fake crop of the forward canvas.
+    Read `BILLING_SAFETY_CHECKLIST.md` § "Billable In-App Features" before changing it.
   - Toggleable headlights with spotlight effects
   - Dashboard UI in React (`DashboardUI.tsx`)
 - **Control Restrictions**: Only WASD/Arrow keys affect car heading; no mouse steering

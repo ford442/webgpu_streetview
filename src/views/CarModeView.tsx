@@ -5,6 +5,7 @@ import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
 import { useVehicleSettings, MAX_SEAT_DISTANCE } from '../hooks/useVehicleSettings';
 import { usePanoInfoPanel } from '../hooks/usePanoInfoPanel';
 import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
+import { useRearViewFeed } from '../hooks/useRearViewFeed';
 import CarInputHandler from '../components/CarInputHandler';
 import { AudioAnalyzer } from '../audio/AudioAnalyzer';
 import { publishCameraSpeed, resetCameraSpeed } from '../renderer/cameraMotionSignal';
@@ -66,7 +67,7 @@ const GEAR_HOP_INTERVAL_MS = 550;
  * - Dashboard UI with gauges, wipers, lights controls
  * - Head look independent of car steering
  */
-const CarModeView: React.FC<CarModeViewProps> = () => {
+const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const { heading, pitch, panorama, advance, canvas, zoom, position } = useStreetView();
   const {
     controlMode,
@@ -113,6 +114,10 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
 
   // Cabin lighting from the surrounding panorama (IBL) + the real sun.
   useCabinEnvironment(panorama, position);
+
+  // True rear-view imagery for the mirror. Opt-in and billable — see
+  // `rearViewFeed.ts` and BILLING_SAFETY_CHECKLIST.md before touching this.
+  const rearFeed = useRearViewFeed({ apiKey: mapsApiKey, active: true });
   
   const containerRef = useRef<HTMLDivElement>(null);
   const carModeStateRef = useRef<CarModeState | null>(null);
@@ -300,11 +305,28 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
     setCarMediaInfo(stationName, stationTags, isRadioPlaying);
   }, [stationName, stationTags, isRadioPlaying]);
 
-  // Keep rearview mirror fed from the scraped Street View canvas
+  // Keep rearview mirror fed from the scraped Street View canvas. The mirror
+  // does not sample it (forward perspective ≠ rear view) — this only keeps the
+  // canvas-tracking hook and the vanity mirror in step.
   useEffect(() => {
     setMirrorStreetViewCanvas(canvas);
     return () => setMirrorStreetViewCanvas(null);
   }, [canvas]);
+
+  // Offer the current pose to the rear-view feed. Fires only on panorama hops
+  // and heading changes, and the feed itself throttles/dedupes on top of that,
+  // so a stationary car spends nothing.
+  const { enabled: rearFeedEnabled, notifyPose: notifyRearPose } = rearFeed;
+  useEffect(() => {
+    if (!rearFeedEnabled || !position) return;
+    const panoId = panorama?.getPano?.();
+    notifyRearPose({
+      lat: position.lat(),
+      lng: position.lng(),
+      carHeading,
+      ...(panoId ? { panoId } : {}),
+    });
+  }, [rearFeedEnabled, notifyRearPose, position, panorama, carHeading]);
 
   // Sync Three.js camera FOV with WebGPU zoom so window frames line up with the panorama
   useEffect(() => {
@@ -688,6 +710,9 @@ const CarModeView: React.FC<CarModeViewProps> = () => {
         onToggleHeadlights={toggleHeadlights}
         onToggleHighBeam={toggleHighBeam}
         onToggleDomeLight={toggleDomeLight}
+        onToggleRearFeed={rearFeed.toggle}
+        rearFeedEnabled={rearFeed.enabled}
+        rearFeedStatus={rearFeed.status}
         isRoofOpen={isRoofOpen}
         wipersEnabled={wipersEnabled}
         headlightsOn={headlightsOn}

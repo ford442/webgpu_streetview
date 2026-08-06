@@ -37,6 +37,7 @@ import {
   HIGHBEAM_ICON,
   DOME_ICON,
   VEHICLE_ICON,
+  REAR_MIRROR_ICON,
 } from './Controls';
 
 // ============================================================================
@@ -61,6 +62,8 @@ export interface DashboardUIProps {
   onToggleHeadlights?: () => void;
   onToggleHighBeam?: () => void;
   onToggleDomeLight?: () => void;
+  /** Toggle the billable rear-view Static imagery feed. Omit to hide the row. */
+  onToggleRearFeed?: () => void;
   onWindowTint?: (value: number) => void;
   onSeatDistance?: (value: number) => void;
   isRoofOpen: boolean;
@@ -68,6 +71,10 @@ export interface DashboardUIProps {
   headlightsOn?: boolean;
   highBeam?: boolean;
   domeLightOn?: boolean;
+  /** Whether the rear-view Static imagery feed is opted in. */
+  rearFeedEnabled?: boolean;
+  /** Human-readable feed state (off / paused / request count) for the row. */
+  rearFeedStatus?: string;
   currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
   rainIntensity: number;
   snowIntensity?: number;
@@ -214,6 +221,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   onToggleHeadlights,
   onToggleHighBeam,
   onToggleDomeLight,
+  onToggleRearFeed,
   onWindowTint,
   onSeatDistance,
   isRoofOpen,
@@ -221,6 +229,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   headlightsOn = false,
   highBeam = false,
   domeLightOn = false,
+  rearFeedEnabled = false,
+  rearFeedStatus,
   currentVehicle = 'sedan',
   rainIntensity,
   snowIntensity = 0,
@@ -458,7 +468,37 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                 <Label>Dome</Label>
               </ControlButton>
             )}
+            {onToggleRearFeed && (
+              <ControlButton
+                active={rearFeedEnabled}
+                onClick={onToggleRearFeed}
+                ariaLabel={
+                  'Toggle rear-view mirror imagery (uses billable Street View Static API requests)' +
+                  (rearFeedStatus ? ` — ${rearFeedStatus}` : '')
+                }
+              >
+                <IconSvg
+                  path={REAR_MIRROR_ICON}
+                  size={20}
+                  fill={rearFeedEnabled ? '#fff' : 'rgba(255,255,255,0.7)'}
+                />
+                <Label>Rear</Label>
+              </ControlButton>
+            )}
           </div>
+
+          {/* Billing note — the rear feed is the only control here that spends
+              Google API quota, so it says so rather than hiding the cost. */}
+          {onToggleRearFeed && (
+            <div className={styles.rearFeedNote} role="note">
+              <strong>Rear mirror imagery</strong>
+              <span>
+                {rearFeedStatus ??
+                  (rearFeedEnabled ? 'On' : 'Off — no Street View Static requests')}
+              </span>
+              <span>Uses billable Street View Static requests (throttled, cached in memory only).</span>
+            </div>
+          )}
 
           {/* Weather sliders */}
           <div className={styles.weatherSliders}>

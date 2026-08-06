@@ -1,5 +1,6 @@
 import { CarInterior } from './CarInterior';
 import { RearviewMirror } from './RearviewMirror';
+import type { RearViewSample } from './rearViewFeed';
 import { SelectivePostProcessing } from './SelectivePostProcessing';
 import { PanoLocationInfo } from '../utils/panoLocation';
 import {
@@ -20,6 +21,24 @@ import {
 
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
+export {
+    RearViewFeed,
+    REAR_VIEW_DEFAULTS,
+    buildRearViewUrl,
+    rearViewCacheKey,
+    normalizeDeg,
+    signedHeadingDelta,
+} from './rearViewFeed';
+export type {
+    RearViewSample,
+    RearViewRequest,
+    RearViewResult,
+    RearViewResultStatus,
+    RearViewBlockReason,
+    RearViewBlocker,
+    RearViewFeedOptions,
+    RearViewFeedStats,
+} from './rearViewFeed';
 export { SelectivePostProcessing } from './SelectivePostProcessing';
 export { createMaterials } from './interior/MaterialFactory';
 export type { MaterialSet } from './interior/MaterialFactory';
@@ -124,7 +143,8 @@ export {
     SNOW_ICON,
     RAIN_ICON,
     WIND_ICON,
-    VEHICLE_ICON
+    VEHICLE_ICON,
+    REAR_MIRROR_ICON
 } from './Controls';
 
 /**
@@ -260,6 +280,24 @@ export function setMirrorStreetViewCanvas(canvas: HTMLCanvasElement | null): voi
     carModeState.interior.setVanityStreetViewCanvas(canvas);
 }
 
+/**
+ * Bind a true rear-facing Street View Static sample to the rearview glass, or
+ * pass null to return it to the honest unavailable state.
+ *
+ * Sourced by `useRearViewFeed` from `rearViewFeed.ts` — see that module before
+ * calling this on any new path, the imagery is billable.
+ */
+export function setMirrorRearSample(sample: RearViewSample | null): void {
+    if (!carModeState) return;
+    carModeState.mirror.setRearSample(sample);
+}
+
+/** Diagnostic snapshot of the rearview glass (bound sample, pan, fade). */
+export function getMirrorStatus(): ReturnType<RearviewMirror['getStatus']> | null {
+    if (!carModeState) return null;
+    return carModeState.mirror.getStatus();
+}
+
 /** Sync Three.js camera FOV with WebGPU shader zoom for window alignment. */
 export function setCarZoomFOV(zoom: number): void {
     if (!carModeState) return;
@@ -393,9 +431,10 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     // Head can look freely without affecting outside view
     carModeState.interior.setHeadOrientation(headYawOffset, headPitch);
 
-    // Update mirror with the rear view (180° behind car heading)
-    // The mirror shows what's actually behind the car based on Street View
-    carModeState.mirror.update(mirrorHeading ?? carHeading, true); // skipFrame = true for performance
+    // Re-register any bound rear sample against the *car body* heading — the
+    // mirror lives in car-body space, so the head's view heading must not move
+    // it (that was the epic #171 spatial bug).
+    carModeState.mirror.update(carHeading, true); // skipFrame = true for performance
 
     carModeState.interior.updateVanityMirror(mirrorHeading ?? carHeading, headPitch);
 

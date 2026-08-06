@@ -54,6 +54,7 @@ export {
   POWER_ICON,
   FAN_ICON,
   TEMP_ICON,
+  REAR_MIRROR_ICON,
 } from './ui/icons';
 
 const controlsUI = {

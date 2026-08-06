@@ -15,3 +15,5 @@ export const VOLUME_ICON = 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.
 export const POWER_ICON = 'M16.56 13.66a8 8 0 0 1-11.32 0L7.3 11.6a5.33 5.33 0 0 0 7.54 0l1.72 2.06zM13.5 5.5v6h-3v-6h3z';
 export const FAN_ICON = 'M12 12c0-3 2.5-5.5 5.5-5.5S23 9 23 12H12zm0 0c0 3-2.5 5.5-5.5 5.5S1 15 1 12h11zm0 0c-3 0-5.5-2.5-5.5-5.5S9 1 12 1v11zm0 0c3 0 5.5 2.5 5.5 5.5S15 23 12 23V12z';
 export const TEMP_ICON = 'M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-2V5c0-.55.45-1 1-1s1 .45 1 1v1h-1v1h1v2h-1v1h1v1h-2z';
+/** Rearview mirror glass — used by the rear-imagery feed toggle. */
+export const REAR_MIRROR_ICON = 'M4 7c0-.9.6-1.7 1.5-1.9l6-1.3c.3-.1.7-.1 1 0l6 1.3c.9.2 1.5 1 1.5 1.9v6c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2V7zm2 0v6h12V7l-6-1.3L6 7zm1 10h10v2H7v-2z';
