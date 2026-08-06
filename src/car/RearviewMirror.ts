@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { RearViewSample } from './rearViewFeed';
+import { signedHeadingDelta } from './rearViewFeed';
 
 /**
  * RearviewMirror — cabin rear-view glass.
@@ -6,13 +8,23 @@ import * as THREE from 'three';
  * The live Google Maps canvas is a forward-facing *perspective* Street View
  * capture, not an equirectangular pano. UV-offsetting that canvas by +180°
  * therefore cannot show what is behind the car (it just crops the forward
- * view). Until a second rear-facing Street View / Static API sample is wired
- * (billing-aware, throttled), the glass shows an honest "unavailable" state
- * rather than a fake forward crop.
+ * view), so the forward canvas is never sampled here.
+ *
+ * A **true** rear feed comes from `rearViewFeed.ts`: a throttled, budgeted
+ * Street View Static API sample taken at `carHeading + 180`. When one is bound
+ * via `setRearSample()`, the glass shows that imagery, horizontally flipped the
+ * way a real mirror is. With no sample bound — feature off, offline, Low
+ * quality, no key, or no imagery at this pano — the glass falls back to an
+ * honest "unavailable" state rather than a fake forward crop.
+ *
+ * Because a Static sample is a still taken at one instant, `updateOrientation()`
+ * re-registers it as the car turns: the UV pan compensates for the heading
+ * delta since capture, and the imagery fades out once the car has rotated past
+ * what the sample's FOV can cover. That is registration of real imagery, not an
+ * invented crop.
  *
  * World model: the mirror mesh is parented in car-body space; head free-look
- * does not reorient it. `updateOrientation` remains a no-op by design until a
- * true rear feed exists.
+ * does not reorient it (head pitch is deliberately ignored).
  */
 export class RearviewMirror {
     private mirrorPlane: THREE.Mesh;
@@ -20,8 +32,14 @@ export class RearviewMirror {
     private isNightMode: boolean = false;
     private rearAvailable: boolean = false;
 
-    // Kept so a future true-rear feed can plug in without reshaping the API.
+    // Retained for API parity only — the forward canvas is never sampled.
     private streetViewCanvas: HTMLCanvasElement | null = null;
+
+    /** Currently bound true-rear Static sample, if any. */
+    private rearSample: RearViewSample | null = null;
+    private rearTexture: THREE.Texture | null = null;
+    /** Signed car-heading rotation since the bound sample was captured. */
+    private headingDeltaDeg: number = 0;
 
     constructor(
         scene: THREE.Scene,
@@ -34,6 +52,12 @@ export class RearviewMirror {
                 nightMode: { value: 0.0 },
                 rearAvailable: { value: 0.0 },
                 time: { value: 0.0 },
+                // True-rear Static sample, horizontally flipped at sample time.
+                rearTex: { value: null },
+                // UV pan (in texture units) compensating car rotation since capture.
+                rearPan: { value: 0.0 },
+                // 0..1 confidence — decays as the car rotates out of the sample's FOV.
+                rearFade: { value: 0.0 },
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -46,6 +70,9 @@ export class RearviewMirror {
                 uniform float nightMode;
                 uniform float rearAvailable;
                 uniform float time;
+                uniform sampler2D rearTex;
+                uniform float rearPan;
+                uniform float rearFade;
                 varying vec2 vUv;
 
                 void main() {
@@ -74,10 +101,24 @@ export class RearviewMirror {
                         : vec3(0.35, 0.38, 0.42);
                     glass = mix(glass, labelColor, label * 0.85);
 
-                    // When a true rear feed is eventually attached, rearAvailable
-                    // flips and the glass brightens as a placeholder until textured.
+                    // True-rear Static sample. A real mirror reverses left/right,
+                    // hence the 1.0 - x; rearPan re-registers the still against how
+                    // far the car has turned since it was captured.
                     if (rearAvailable > 0.5) {
-                        glass = mix(glass, vec3(0.12, 0.13, 0.15), 0.5);
+                        vec2 rearUv = vec2(1.0 - vUv.x + rearPan, vUv.y);
+
+                        // Outside the sample's coverage there is no honest imagery
+                        // to show, so let the unavailable glass through instead of
+                        // smearing clamped edge texels.
+                        vec2 inside = step(vec2(0.0), rearUv) * step(rearUv, vec2(1.0));
+                        float coverage = inside.x * inside.y;
+
+                        vec3 rear = texture2D(rearTex, clamp(rearUv, 0.0, 1.0)).rgb;
+                        // Mirror glass: slightly dimmed, much dimmer at night.
+                        rear *= mix(0.92, 0.42, nightMode);
+                        rear *= mix(0.6, 1.0, vignette);
+
+                        glass = mix(glass, rear, clamp(rearFade, 0.0, 1.0) * coverage);
                     }
 
                     gl_FragColor = vec4(glass, 1.0);
@@ -110,25 +151,59 @@ export class RearviewMirror {
     }
 
     /**
-     * Optionally attach a Street View canvas. The current implementation does
-     * **not** sample it (forward perspective ≠ rear view). Reserved for a
-     * future true-rear feed (second panorama / Static API at heading+180).
+     * Attach the forward Street View canvas. The mirror does **not** sample it
+     * (forward perspective ≠ rear view); the hook exists so callers that track
+     * the scraped canvas keep a single place to notify. Detaching it does not
+     * disturb a bound rear sample, which comes from a separate source.
      */
     public setStreetViewCanvas(canvas: HTMLCanvasElement | null): void {
         this.streetViewCanvas = canvas;
-        // Keep unavailable until a real rear source is provided explicitly.
-        if (!canvas) {
+    }
+
+    /**
+     * Bind (or clear) a true rear-facing Static API sample. Passing null returns
+     * the glass to the honest unavailable state and releases the GPU texture.
+     */
+    public setRearSample(sample: RearViewSample | null): void {
+        if (sample === this.rearSample) return;
+
+        this.releaseRearTexture();
+        this.rearSample = sample;
+
+        if (!sample) {
+            this.headingDeltaDeg = 0;
+            this.applyRearRegistration();
             this.setRearAvailable(false);
+            return;
         }
+
+        const texture = new THREE.Texture(sample.image as TexImageSource);
+        // Static samples are non-power-of-two and never tiled — clamp + linear.
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+
+        this.rearTexture = texture;
+        this.mirrorMaterial.uniforms.rearTex!.value = texture;
+        this.headingDeltaDeg = 0;
+        this.applyRearRegistration();
+        this.setRearAvailable(true);
     }
 
     /**
      * Mark whether a true rear-facing feed is bound. Default is false so the
-     * glass stays in the honest unavailable state.
+     * glass stays in the honest unavailable state. Marking available without a
+     * bound sample is refused — an "available" mirror with nothing to show would
+     * render clamped garbage rather than an honest unavailable state.
      */
     public setRearAvailable(available: boolean): void {
-        this.rearAvailable = available;
-        this.mirrorMaterial.uniforms.rearAvailable!.value = available ? 1.0 : 0.0;
+        const effective = available && this.rearTexture !== null;
+        this.rearAvailable = effective;
+        this.mirrorMaterial.uniforms.rearAvailable!.value = effective ? 1.0 : 0.0;
     }
 
     public isRearAvailable(): boolean {
@@ -136,21 +211,69 @@ export class RearviewMirror {
     }
 
     /**
-     * Orientation hook for a future true-rear camera. No-op while the glass is
-     * in the unavailable state — rotating a fake crop would reintroduce the bug.
+     * Re-register the bound rear sample against the car's current heading.
+     *
+     * The sample is a still taken at one instant. As the car turns, the world it
+     * captured slides across the glass; panning the UVs by the heading delta
+     * over the sample FOV keeps it lined up. Head pitch is ignored on purpose —
+     * the mirror lives in car-body space, so free-look must not move it.
+     *
+     * No-op with no sample bound: rotating an absent feed is exactly the fake
+     * crop this class exists to avoid.
      */
-    public updateOrientation(_carHeading: number, _headPitch: number): void {
-        // Intentionally empty until a rear-facing source exists.
+    public updateOrientation(carHeading: number, _headPitch: number): void {
+        if (!this.rearSample) return;
+        this.headingDeltaDeg = signedHeadingDelta(carHeading, this.rearSample.carHeading);
+        this.applyRearRegistration();
+    }
+
+    /** Push `headingDeltaDeg` into the pan/fade uniforms. */
+    private applyRearRegistration(): void {
+        const sample = this.rearSample;
+        const uniforms = this.mirrorMaterial.uniforms;
+
+        if (!sample) {
+            uniforms.rearPan!.value = 0;
+            uniforms.rearFade!.value = 0;
+            return;
+        }
+
+        const fov = sample.fov > 0 ? sample.fov : 90;
+        uniforms.rearPan!.value = this.headingDeltaDeg / fov;
+
+        // Full confidence while the car is still inside the captured cone; fade
+        // to nothing by the time it has turned a full FOV away.
+        const turned = Math.abs(this.headingDeltaDeg);
+        const fadeStart = fov * 0.35;
+        const fadeEnd = fov;
+        const fade =
+            turned <= fadeStart
+                ? 1
+                : turned >= fadeEnd
+                  ? 0
+                  : 1 - (turned - fadeStart) / (fadeEnd - fadeStart);
+        uniforms.rearFade!.value = fade;
+    }
+
+    private releaseRearTexture(): void {
+        if (this.rearTexture) {
+            this.rearTexture.dispose();
+            this.rearTexture = null;
+        }
+        this.mirrorMaterial.uniforms.rearTex!.value = null;
     }
 
     /**
-     * Per-frame tick. Advances the subtle frost animation; does not sample the
-     * forward Street View canvas.
+     * Per-frame tick. Advances the frost animation and keeps a bound rear sample
+     * registered against the live car heading. Never samples the forward canvas.
      */
-    public update(_carHeading: number, _skipFrame: boolean = false): void {
+    public update(carHeading: number, _skipFrame: boolean = false): void {
         const u = this.mirrorMaterial.uniforms.time;
         if (u) {
             u.value = performance.now() * 0.001;
+        }
+        if (this.rearSample) {
+            this.updateOrientation(carHeading, 0);
         }
     }
 
@@ -164,14 +287,27 @@ export class RearviewMirror {
     }
 
     /** Test/diagnostic: whether the glass is currently sampling a rear feed. */
-    public getStatus(): { rearAvailable: boolean; hasCanvas: boolean } {
+    public getStatus(): {
+        rearAvailable: boolean;
+        hasCanvas: boolean;
+        hasRearSample: boolean;
+        headingDeltaDeg: number;
+        rearPan: number;
+        rearFade: number;
+    } {
         return {
             rearAvailable: this.rearAvailable,
             hasCanvas: this.streetViewCanvas !== null,
+            hasRearSample: this.rearSample !== null,
+            headingDeltaDeg: this.headingDeltaDeg,
+            rearPan: this.mirrorMaterial.uniforms.rearPan!.value as number,
+            rearFade: this.mirrorMaterial.uniforms.rearFade!.value as number,
         };
     }
 
     public dispose(): void {
+        this.releaseRearTexture();
+        this.rearSample = null;
         this.mirrorMaterial.dispose();
         this.mirrorPlane.geometry.dispose();
     }

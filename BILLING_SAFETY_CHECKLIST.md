@@ -55,6 +55,45 @@
 
 ---
 
+## Billable In-App Features
+
+Most of the app runs on the Maps **JavaScript** API (one panorama session). These
+features spend *additional* per-request quota and each ships its own guard rails.
+
+### Rear-view mirror imagery (Street View **Static** API)
+
+`src/car/rearViewFeed.ts` fetches a rear-facing still at `carHeading + 180` so
+the cabin mirror can show what is actually behind the car.
+
+| Guard | Default | Where |
+|-------|---------|-------|
+| Opt-in toggle (persisted, **off** by default) | off | Car dashboard → **Rear**; `useRearViewFeed` |
+| Throttle between network requests | 3000 ms | `REAR_VIEW_DEFAULTS.minIntervalMs` |
+| Movement gate before a pose is even offered | 12 m / 20° / new pano | `useRearViewFeed` |
+| Session request budget (hard stop) | 200 | `REAR_VIEW_DEFAULTS.maxSessionRequests` |
+| Consecutive-failure circuit breaker | 5 | `REAR_VIEW_DEFAULTS.maxConsecutiveErrors` |
+| Blocked entirely | offline, Maps auth failure, Low quality, no key | `RearViewFeed.setBlocked()` |
+| Cache | session memory only, 48 entries, never persisted | `RearViewFeed` LRU |
+
+**Kill switch** — from DevTools on any page running car mode:
+
+```js
+window.__REARVIEW_FEED__.kill();   // aborts in-flight, drops cache, permanent
+window.__REARVIEW_FEED__.getStats(); // networkRequests, budgetRemaining, blockReason
+```
+
+`kill()` is permanent for the life of the page; re-enabling the toggle will not
+resurrect it. Reload after the underlying billing issue is resolved.
+
+**Checks before shipping a change to this feature**:
+
+- [ ] Toggle still defaults **off** for a fresh profile (`localStorage` cleared)
+- [ ] With the toggle off, DevTools → Network shows **zero** `maps/api/streetview` requests
+- [ ] Throttle/dedupe unit tests pass: `npx vitest run src/car/__tests__/rearViewFeed.test.ts`
+- [ ] Google imagery is still `network-only` in `src/offline/swPolicy.ts` (never SW-cached)
+
+---
+
 ## Emergency (Unexpected Costs)
 
 **DO THIS IMMEDIATELY** (within 5 minutes):

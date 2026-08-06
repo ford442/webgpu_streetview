@@ -174,7 +174,8 @@ webgpu_streetview/
 │   │   ├── DashboardLayout.tsx      # Dashboard zone layout primitives
 │   │   ├── Gauges.tsx               # Speedometer / tachometer
 │   │   ├── Controls.tsx             # Dashboard buttons / sliders
-│   │   ├── RearviewMirror.ts        # Reflective mirror rendering
+│   │   ├── RearviewMirror.ts        # Rear-view glass (true Static feed, else honest unavailable)
+│   │   ├── rearViewFeed.ts          # Throttled/budgeted Street View Static rear imagery (billable)
 │   │   ├── SelectivePostProcessing.ts # Post-process settings manager
 │   │   ├── VehicleManager.ts        # Vehicle configs (sedan, convertible, science-lab, limousine)
 │   │   ├── theme.ts                 # Car interior theme tokens
@@ -411,7 +412,8 @@ Browser Output (top to bottom)
 
 - **`CarInterior.ts`** builds all geometry procedurally using `THREE.BoxGeometry`, `THREE.CylinderGeometry`, and custom `THREE.Shape` extrusions — no external GLTF/OBJ files.
 - **`DashboardUI.tsx`** is a React overlay; its buttons call functions exported from `src/car/index.ts` directly (not through React state).
-- **`RearviewMirror.ts`** renders a 180° behind view into the mirror surface using the Street View canvas.
+- **`RearviewMirror.ts`** renders the cabin rear-view glass. It never samples the forward Street View canvas (a forward *perspective* capture cannot be UV-shifted into a rear view). With a true rear sample bound via `setRearSample()` it shows that imagery, mirror-flipped and UV-registered against the car heading; with none it shows the honest "unavailable" glass.
+- **`rearViewFeed.ts`** is the only source of true rear imagery: a Street View **Static API** sample at `carHeading + 180`. The Static API is **billable per request**, so the feed is opt-in, throttled, deduped, session-budgeted, and killable — see `BILLING_SAFETY_CHECKLIST.md` § "Billable In-App Features" before changing any default. Driven by `useRearViewFeed`; toggled from the car dashboard's **Rear** button.
 - **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
 - **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
 - **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
@@ -570,6 +572,8 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts` — Backend preference/debug-flag parsing and the WebGPU→WebGL2→raw fallback chain.
 - `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
 - `src/app/historicalExperience.test.ts` — Historical comparison after-label derivation.
+- `src/car/__tests__/rearViewFeed.test.ts` — Static-API URL/cache-key builders and the cost-control policy: throttle, dedupe, blockers, session budget, failure circuit breaker, kill switch.
+- `src/car/__tests__/RearviewMirror.test.ts` — Honest-unavailable fallback plus the true-rear path (bind/clear, UV pan registration, coverage fade, head-pitch independence).
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 
 ### Manual Testing Requirements
@@ -593,7 +597,7 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
 ### Car Spatial Correctness Manual Checklist
-Run this after touching `RearviewMirror.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `WebGLFallbackRenderer.ts` (epic #171):
+Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `WebGLFallbackRenderer.ts` (epic #171):
 
 **World model** (`src/car/carSpatialModel.ts`): car body yaw = `carHeading`; head look = Street View `heading`/`pitch`. Free-look pans the head only. Chassis steers only in `carSteer`, temp-steer (steering-wheel grab), or explicit steer keys.
 
@@ -604,22 +608,33 @@ Run this after touching `RearviewMirror.ts`, `CarInputHandler.tsx`, `CarInterior
    - Grab the steering wheel and drag — chassis may yaw (temp-steer). Release — back to head-only look.
    - Press `H` into `carSteer`, drag — chassis yaws with mouse X. RMB/Shift in free-look must **not** steer.
 
-2. **Rearview mirror (honest unavailable until true rear feed)**
-   - Look up at the interior rearview glass.
+2. **Rearview mirror — feed OFF (default)**
+   - Look up at the interior rearview glass with the dashboard **Rear** button unlit.
    - **Pass**: dark glass with a dim center band (unavailable state). It must **not** show a UV-shifted crop of the forward Street View canvas.
-   - A future true-rear path (second panorama / Static API at `heading+180`, billing-aware) should call `setRearAvailable(true)` once a real feed is bound.
+   - **Billing gate**: open DevTools → Network, filter `maps/api/streetview`, and drive/cruise 10+ hops. **Zero** requests must appear while the toggle is off. Any request here is a release blocker.
 
-3. **Night exposure**
+3. **Rearview mirror — feed ON** (`rearViewFeed.ts`, **billable** — read `BILLING_SAFETY_CHECKLIST.md` first)
+   - Click **Rear** on the dashboard. The billing note under the light row should switch to `On — N requests this session`.
+   - **Pass**: the glass shows real imagery of the road *behind* the car, left/right reversed like a real mirror. Driving forward should push scenery away from you in the glass, not toward you.
+   - Steer left/right without hopping: the imagery should pan to stay world-locked, then fade back to the unavailable glass once you have turned roughly a full 90° FOV away — it must not smear clamped edge texels.
+   - Free-look around the cabin: the mirror must **not** move with your head (car-body space).
+   - **Throttle**: watch the Network panel while cruising. Requests must be spaced ≥3s apart and must stop entirely when parked.
+   - **Dedupe**: hop forward a few panoramas then back. Returning to a visited pose must be served from memory with no new request.
+   - **Blockers**: toggle DevTools offline → the note reads `Paused — offline` and requests stop. Restore the network and they resume. Reload with `?quality=low` → the note reads `Unavailable at Low quality` and the glass stays in the unavailable state.
+   - **Kill switch**: run `window.__REARVIEW_FEED__.kill()` in the console. Requests must stop permanently; re-clicking **Rear** must not resurrect the feed until reload.
+   - **No persistence**: Application → Cache Storage must contain no `maps.googleapis.com` entries (`swPolicy` forces `network-only` for Google hosts).
+
+4. **Night exposure**
    - Apply the Night time-of-day preset (or max night slider). Toggle headlights and dome light.
    - **Pass**: scene reads as night but road + cabin UI remain readable; headlights clearly lift the forward road; not crushed near-black.
    - Repeat with `?renderer=webgl&effect=night` and (WebGPU) default + `?weather=compute` — all three backends should stay in the same ballpark.
 
-4. **Snow / rain fall direction (`?effect=weather`)**
+5. **Snow / rain fall direction (`?effect=weather`)**
    - Set snow (and rain) above 0. WebGPU default: confirm flakes fall **downward**.
    - `?renderer=webgl&effect=weather`: same downward fall (top-origin UV; negative Y time term).
    - Optional: `?weather=compute` on WebGPU — same direction as fragment pass.
 
-5. **Wipers / quality gate**
+6. **Wipers / quality gate**
    - Medium or High quality: toggle wipers from the HUD (or stalk). Blades must sweep; HUD active state matches animator (`getWiperState().enabled`).
    - Low quality: toggle still flips HUD state and blades jump to a raised static "on" pose (no full sweep animation — documented tradeoff). Off returns to park.
 
