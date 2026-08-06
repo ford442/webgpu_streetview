@@ -17,6 +17,11 @@
 /playwright-report/
 /repro-screenshots/
 /test-results/
+*.tar.gz
+test-screenshot*.png
+reproduce-flicker.*
+*.patch
+EOF
 build/
 cpp/**/*.d
 cpp/**/*.o
