@@ -197,6 +197,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             if (result.renderer) {
                 activeRenderer = result.renderer;
                 internalRendererRef.current = result.renderer;
+                // The compute weather path gets the fBm turbulence tile
+                // (WASM fill_fbm_buffer); the fragment default keeps the
+                // single-octave tile so its output is unchanged.
+                noiseFeederRef.current.setDetail(
+                    result.renderer.getWeatherPostProcessMode?.() === 'compute' ? 'fbm' : 'classic'
+                );
                 setRenderer(result.renderer);  // Register with StreetView context
                 onWebGPUStatusRef.current?.(true);
                 onBackendInfoRef.current?.({ backendType: result.backendType, fallbackReason: result.fallbackReason });

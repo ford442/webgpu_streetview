@@ -246,6 +246,7 @@ webgpu_streetview/
 │   └── utils/
 │       ├── navigation.ts            # findBestLink() + angle math + haversine
 │       ├── navigation.test.ts       # Unit tests for navigation math
+│       ├── routeStats.ts            # Route length stats via WASM batch_haversine
 │       ├── geoTimeUtils.ts          # Sun/moon position, time-of-day colors
 │       ├── cesiumImagery.ts         # Globe imagery/terrain resolution (Ion token → CartoCDN fallback)
 │       ├── performance.ts           # Performance helpers
@@ -333,7 +334,7 @@ App.tsx
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `ultra` visual quality preset. Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array — currently bound to 1x1 dummy resources, reserved for future WASM-fed noise tiles (#128), volumetric fog, and GPU particles. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight` and `snow(...)` drift between fragment and compute. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `ultra` visual quality preset. Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Two of those carry real data: `writeDepthTexture` (binding 6) gets a full-res `r32float` view-depth proxy each dispatch, and `plasmaBuffer` (binding 12) carries the WASM-fed 64x64 noise tile (#128) as 1024 `vec4`s — an fBm tile here versus the fragment path's single octave, see `docs/WASM_BRIDGE.md`. The rest stay 1x1 dummies, reserved for volumetric fog and GPU particles. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 ### WebGL2 Fallback / Debug Renderer
 

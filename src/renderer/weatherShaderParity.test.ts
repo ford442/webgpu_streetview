@@ -127,6 +127,31 @@ describe('weather shader parity guard', () => {
     expect(compute).toContain('plasmaBuffer[i / 4]');
   });
 
+  it('keeps sampleWasmNoiseTile filtering identical across the vec4 packing', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    // The compute path reads the same 64x64 f32 tile through a vec4 view, so
+    // its taps go via wasmNoiseAt(i) where the fragment path indexes the flat
+    // array directly. Everything else — wrap, bilinear weights, mix order —
+    // must match, or dust clumping would differ between the two pipelines.
+    const normalizeTileSampler = (code: string): string =>
+      normalizeWgsl(code).replace(/wasmNoiseAt\(([^)]*)\)/g, 'wasmNoiseTile[$1]');
+
+    expect(normalizeTileSampler(extractFunctionBody(compute, 'sampleWasmNoiseTile')))
+      .toBe(normalizeTileSampler(extractFunctionBody(fragment, 'sampleWasmNoiseTile')));
+  });
+
+  it('sizes the compute tile view to exactly one 64x64 tile', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    // Fragment path: 4096 flat floats. Compute path: the same 4096 values read
+    // as 1024 vec4s, clamped to the last valid element.
+    expect(fragment).toMatch(/wasmNoiseTile:\s*array<f32,\s*4096>/);
+    expect(compute).toContain('clamp(index, 0, 4095)');
+  });
+
   it('writes the depth proxy into the compute pass storage texture', () => {
     const compute = readShader('weather-post-compute.wgsl');
     expect(compute).toMatch(/textureStore\(\s*writeDepthTexture/);

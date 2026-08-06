@@ -13,10 +13,20 @@
 ;;   noise2d(x: f32, y: f32)                         → f32  [-1, 1]
 ;;   fill_noise_buffer(ptr: i32, w: i32, h: i32,
 ;;                     scale: f32, ox: f32, oy: f32)  → void
+;;   fbm2d(x: f32, y: f32, octaves: i32,
+;;         lacunarity: f32, gain: f32)                → f32  [-1, 1]
+;;   fill_fbm_buffer(ptr: i32, w: i32, h: i32,
+;;                   scale: f32, ox: f32, oy: f32,
+;;                   octaves: i32, lacunarity: f32,
+;;                   gain: f32)                       → void
+;;   fill_particle_seeds(ptr: i32, count: i32,
+;;                       seed: i32)                   → void
 ;;   normalize_angle(a: f32)                          → f32  [0, 360)
 ;;   signed_angle_diff(from: f32, to: f32)            → f32  (-180, 180]
 ;;   haversine(lat1: f64, lon1: f64,
 ;;             lat2: f64, lon2: f64)                  → f64  metres
+;;   batch_haversine(ptr: i32, count: i32,
+;;                   out: i32)                        → f64  total metres
 ;;
 ;; haversine relies on "env.sin"/"env.cos"/"env.atan2" host imports (WASM has
 ;; no built-in transcendental functions) — the TypeScript wrapper
@@ -265,6 +275,149 @@
         (br $rl)))
   )
 
+  ;; ---- Internal: fractal Brownian motion over $noise2d_internal ----
+  ;; Sums `octaves` octaves, each `lacunarity`x the previous frequency and
+  ;; `gain`x the previous amplitude, then divides by the accumulated amplitude
+  ;; so the result stays in [-1, 1] regardless of octave count.
+  (func $fbm2d_internal
+    (param $x f32) (param $y f32)
+    (param $octaves i32) (param $lacunarity f32) (param $gain f32)
+    (result f32)
+    (local $sum f32) (local $norm f32)
+    (local $amp f32) (local $freq f32) (local $o i32)
+
+    (local.set $sum  (f32.const 0.0))
+    (local.set $norm (f32.const 0.0))
+    (local.set $amp  (f32.const 1.0))
+    (local.set $freq (f32.const 1.0))
+    (local.set $o    (i32.const 0))
+
+    (block $ob
+      (loop $ol
+        (br_if $ob (i32.ge_s (local.get $o) (local.get $octaves)))
+        (local.set $sum
+          (f32.add
+            (local.get $sum)
+            (f32.mul
+              (local.get $amp)
+              (call $noise2d_internal
+                (f32.mul (local.get $x) (local.get $freq))
+                (f32.mul (local.get $y) (local.get $freq))))))
+        (local.set $norm (f32.add (local.get $norm) (local.get $amp)))
+        (local.set $amp  (f32.mul (local.get $amp)  (local.get $gain)))
+        (local.set $freq (f32.mul (local.get $freq) (local.get $lacunarity)))
+        (local.set $o    (i32.add (local.get $o)    (i32.const 1)))
+        (br $ol)))
+
+    (if (result f32) (f32.gt (local.get $norm) (f32.const 0.0))
+      (then (f32.div (local.get $sum) (local.get $norm)))
+      (else (f32.const 0.0)))
+  )
+
+  ;; ---- fbm2d(x, y, octaves, lacunarity, gain) → f32  [-1, 1] ----
+  (func (export "fbm2d")
+    (param $x f32) (param $y f32)
+    (param $octaves i32) (param $lacunarity f32) (param $gain f32)
+    (result f32)
+    (call $fbm2d_internal
+      (local.get $x) (local.get $y)
+      (local.get $octaves) (local.get $lacunarity) (local.get $gain))
+  )
+
+  ;; ---- fill_fbm_buffer(ptr, w, h, scale, ox, oy, octaves, lacunarity, gain) ----
+  ;; Same tile layout as fill_noise_buffer, but every sample is an fBm stack —
+  ;; used for the richer dust turbulence tile on the compute weather path.
+  (func (export "fill_fbm_buffer")
+    (param $ptr i32) (param $w i32) (param $h i32)
+    (param $scale f32) (param $ox f32) (param $oy f32)
+    (param $octaves i32) (param $lacunarity f32) (param $gain f32)
+    (local $row i32) (local $col i32)
+    (local $nx f32)  (local $ny f32)
+    (local $inv_scale f32)
+    (local $wp i32)
+
+    (local.set $inv_scale (f32.div (f32.const 1.0) (local.get $scale)))
+    (local.set $wp (local.get $ptr))
+
+    (local.set $row (i32.const 0))
+    (block $rb
+      (loop $rl
+        (br_if $rb (i32.ge_s (local.get $row) (local.get $h)))
+        (local.set $col (i32.const 0))
+        (block $cb
+          (loop $cl
+            (br_if $cb (i32.ge_s (local.get $col) (local.get $w)))
+            (local.set $nx
+              (f32.mul
+                (f32.add (f32.convert_i32_s (local.get $col)) (local.get $ox))
+                (local.get $inv_scale)))
+            (local.set $ny
+              (f32.mul
+                (f32.add (f32.convert_i32_s (local.get $row)) (local.get $oy))
+                (local.get $inv_scale)))
+            (f32.store
+              (local.get $wp)
+              (call $fbm2d_internal
+                (local.get $nx) (local.get $ny)
+                (local.get $octaves) (local.get $lacunarity) (local.get $gain)))
+            (local.set $wp (i32.add (local.get $wp) (i32.const 4)))
+            (local.set $col (i32.add (local.get $col) (i32.const 1)))
+            (br $cl)))
+        (local.set $row (i32.add (local.get $row) (i32.const 1)))
+        (br $rl)))
+  )
+
+  ;; ---- Internal: LCG step (same constants as $seed's shuffle) ----
+  (func $lcg_next (param $s i32) (result i32)
+    (i32.add (i32.mul (local.get $s) (i32.const 1664525)) (i32.const 1013904223))
+  )
+
+  ;; ---- Internal: LCG state → f32 in [0, 1) (top 24 bits of the low word) ----
+  (func $lcg_unit (param $s i32) (result f32)
+    (f32.div
+      (f32.convert_i32_u
+        (i32.and (i32.shr_u (local.get $s) (i32.const 8)) (i32.const 0xffffff)))
+      (f32.const 16777216.0))
+  )
+
+  ;; ---- fill_particle_seeds(ptr, count, seed) → void ----
+  ;; Writes 4 floats per particle: x [0,1), y [0,1), speed [0.5,1.5),
+  ;; phase [0, 2π).  Deterministic for a given seed so GPU particle systems can
+  ;; be replayed frame-for-frame.
+  (func (export "fill_particle_seeds")
+    (param $ptr i32) (param $count i32) (param $seed i32)
+    (local $i i32) (local $state i32) (local $wp i32)
+
+    (local.set $state (local.get $seed))
+    (local.set $wp (local.get $ptr))
+    (local.set $i (i32.const 0))
+
+    (block $b
+      (loop $l
+        (br_if $b (i32.ge_s (local.get $i) (local.get $count)))
+
+        ;; x
+        (local.set $state (call $lcg_next (local.get $state)))
+        (f32.store (local.get $wp) (call $lcg_unit (local.get $state)))
+        ;; y
+        (local.set $state (call $lcg_next (local.get $state)))
+        (f32.store offset=4 (local.get $wp) (call $lcg_unit (local.get $state)))
+        ;; speed = 0.5 + unit
+        (local.set $state (call $lcg_next (local.get $state)))
+        (f32.store offset=8
+          (local.get $wp)
+          (f32.add (f32.const 0.5) (call $lcg_unit (local.get $state))))
+        ;; phase = unit * 2π
+        (local.set $state (call $lcg_next (local.get $state)))
+        (f32.store offset=12
+          (local.get $wp)
+          (f32.mul (call $lcg_unit (local.get $state)) (f32.const 6.2831853)))
+
+        (local.set $wp (i32.add (local.get $wp) (i32.const 16)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+  )
+
   ;; ---- normalize_angle(a: f32) → f32  [0, 360) ----
   (func (export "normalize_angle") (param $a f32) (result f32)
     (f32.sub
@@ -286,10 +439,10 @@
           (f32.div (f32.add (local.get $d) (f32.const 180.0)) (f32.const 360.0)))))
   )
 
-  ;; ---- haversine(lat1, lon1, lat2, lon2) → f64 metres (exported) ----
+  ;; ---- Internal haversine (shared by the scalar and batch exports) ----
   ;; Great-circle distance via the haversine formula, using the host sin/cos/
   ;; atan2 imports above for exact double-precision transcendentals.
-  (func (export "haversine")
+  (func $haversine_internal
     (param $lat1 f64) (param $lon1 f64) (param $lat2 f64) (param $lon2 f64) (result f64)
     (local $deg2rad f64)
     (local $lat1r f64) (local $lat2r f64)
@@ -328,5 +481,45 @@
     (f64.mul
       (f64.const 6371000.0)
       (f64.mul (f64.const 2.0) (call $env_atan2 (local.get $y) (local.get $x))))
+  )
+
+  ;; ---- haversine(lat1, lon1, lat2, lon2) → f64 metres ----
+  (func (export "haversine")
+    (param $lat1 f64) (param $lon1 f64) (param $lat2 f64) (param $lon2 f64) (result f64)
+    (call $haversine_internal
+      (local.get $lat1) (local.get $lon1) (local.get $lat2) (local.get $lon2))
+  )
+
+  ;; ---- batch_haversine(ptr, count, out) → f64 total metres ----
+  ;; `ptr` points at `count` consecutive f64 [lat, lon] pairs (16 bytes each).
+  ;; Writes the `count - 1` consecutive segment distances (f64 metres) to `out`
+  ;; and returns their sum, so a whole polyline costs one call instead of one
+  ;; boundary crossing per segment.  Both pointers must be 8-byte aligned.
+  (func (export "batch_haversine")
+    (param $ptr i32) (param $count i32) (param $out i32) (result f64)
+    (local $i i32) (local $p i32) (local $total f64) (local $d f64)
+
+    (local.set $total (f64.const 0.0))
+    (local.set $i (i32.const 0))
+    (block $b
+      (loop $l
+        (br_if $b
+          (i32.ge_s (local.get $i) (i32.sub (local.get $count) (i32.const 1))))
+        (local.set $p
+          (i32.add (local.get $ptr) (i32.mul (local.get $i) (i32.const 16))))
+        (local.set $d
+          (call $haversine_internal
+            (f64.load          (local.get $p))
+            (f64.load offset=8  (local.get $p))
+            (f64.load offset=16 (local.get $p))
+            (f64.load offset=24 (local.get $p))))
+        (f64.store
+          (i32.add (local.get $out) (i32.mul (local.get $i) (i32.const 8)))
+          (local.get $d))
+        (local.set $total (f64.add (local.get $total) (local.get $d)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+
+    (local.get $total)
   )
 )

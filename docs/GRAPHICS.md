@@ -176,14 +176,31 @@ header. Status of each reserved surface:
 | Binding | Resource | Status |
 |---------|----------|--------|
 | 6 `writeDepthTexture` | full-res `r32float` | **real** — view-depth proxy, written every dispatch |
-| 12 `plasmaBuffer` | 64×64 WASM Perlin tile as 1024 `vec4`s | **real** — drives dust turbulence |
+| 12 `plasmaBuffer` | 64×64 WASM noise tile as 1024 `vec4`s | **real** — drives dust turbulence (fBm detail, see below) |
 | 4 `readDepthTexture` | 1×1 `rgba8unorm` | dummy — needs a ping-pong to be useful |
 | 7/8 `dataTextureA/B` | 1×1 `rgba32float` | dummy — reserved for GPU particle state |
 | 9 `dataTextureC` | 1×1 `rgba8unorm` | dummy |
 
 Still open: GPU-simulated precipitation particles (would use 7/8 for
 position/velocity state across frames) and reading last frame's depth from
-binding 4 for temporal effects.
+binding 4 for temporal effects. The WASM module already exports
+`fill_particle_seeds` for that work — see `docs/WASM_BRIDGE.md`.
+
+### Noise tile detail differs by path
+
+Both paths read the same 64×64 CPU tile through the same bilinear sampler
+(`weatherShaderParity.test.ts` enforces the filtering math across the `vec4`
+packing), but they are fed different tiles:
+
+| Path | Tile source | Why |
+|---|---|---|
+| fragment (default) | `fill_noise_buffer` — one Perlin octave | keeps the default look byte-identical |
+| compute (`?weather=compute`, Ultra preset) | `fill_fbm_buffer` — 4 octaves, lacunarity 2.0, gain 0.5 | dust clumps gain structure at several scales |
+
+`WebGPUCanvas` picks the mode from `renderer.getWeatherPostProcessMode()` and
+calls `WasmNoiseFeeder.setDetail()`; the tile still refreshes every 30 frames in
+both cases. `?wasmNoise=off` disables the upload entirely and the shader reverts
+to uniform dust density.
 
 ---
 
@@ -219,3 +236,6 @@ The WebGL2 fallback does not implement either — it ignores slots 38/39.
 - Preset retune? Put the intended look in §3 above and the measured delta in §4.
 - Coupling between channels belongs in `weatherCohesion.ts` (CPU, testable),
   not duplicated into three shaders.
+- Changing what the CPU noise tile contains? The fragment path is the default
+  look — put new detail behind the compute path unless the change is intended to
+  be visible everywhere. See `docs/WASM_BRIDGE.md` §3.

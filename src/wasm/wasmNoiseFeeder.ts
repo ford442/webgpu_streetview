@@ -5,6 +5,8 @@
  * Usage (see src/components/WebGPUCanvas.tsx):
  *   const feeder = new WasmNoiseFeeder();
  *   feeder.ensureLoaded();
+ *   // once the renderer reports its weather path:
+ *   feeder.setDetail(mode === 'compute' ? 'fbm' : 'classic');
  *   // every frame:
  *   const tile = feeder.sampleTile(frameCount, time);
  *   if (tile) renderer.updateNoiseBuffer(tile);
@@ -17,6 +19,25 @@ export const NOISE_TILE_SIZE = 64;
 
 /** Refresh the tile this often (in frames) — cheap enough to not affect frame time, coarse enough to feel like drifting CPU turbulence rather than per-pixel GPU noise. */
 export const NOISE_UPDATE_INTERVAL_FRAMES = 30;
+
+/** Spatial frequency of the dust turbulence tile (both detail modes). */
+export const NOISE_TILE_SCALE = 12;
+
+/**
+ * Tile detail level.
+ *
+ * `'classic'` is the single-octave Perlin tile the fragment weather path has
+ * always been fed — it stays the default so `?weather=fragment` output is
+ * unchanged.  `'fbm'` stacks octaves via the WASM `fill_fbm_buffer` export for
+ * turbulence with visible structure at several scales; the compute path opts
+ * into it because that pipeline exists to carry the richer effects.
+ */
+export type NoiseTileDetail = 'classic' | 'fbm';
+
+/** fBm parameters for the `'fbm'` detail mode. */
+export const FBM_TILE_OCTAVES = 4;
+export const FBM_TILE_LACUNARITY = 2.0;
+export const FBM_TILE_GAIN = 0.5;
 
 /**
  * Dev toggle for the WASM-driven noise effect: `?wasmNoise=off` (or a stored
@@ -44,6 +65,24 @@ export class WasmNoiseFeeder {
   private wasm: StreetViewWasmAPI | null = null;
   private loading: Promise<void> | null = null;
   private readonly buffer = new Float32Array(NOISE_TILE_SIZE * NOISE_TILE_SIZE);
+  private detail: NoiseTileDetail = 'classic';
+
+  constructor(detail: NoiseTileDetail = 'classic') {
+    this.detail = detail;
+  }
+
+  /**
+   * Switch detail level. Safe to call every frame — the next tile refresh picks
+   * the new mode up. Callers set `'fbm'` once the renderer reports the compute
+   * weather path (see WebGPUCanvas).
+   */
+  public setDetail(detail: NoiseTileDetail): void {
+    this.detail = detail;
+  }
+
+  public getDetail(): NoiseTileDetail {
+    return this.detail;
+  }
 
   /** Kick off (or continue) loading the WASM module. Safe to call every frame. */
   public ensureLoaded(): void {
@@ -80,7 +119,28 @@ export class WasmNoiseFeeder {
     if (!this.wasm) return null;
     if (frameCount % NOISE_UPDATE_INTERVAL_FRAMES !== 0) return null;
 
-    this.wasm.fillNoiseBuffer(this.buffer, NOISE_TILE_SIZE, NOISE_TILE_SIZE, 12, time * 2.0, 0);
+    if (this.detail === 'fbm') {
+      this.wasm.fillFbmBuffer(
+        this.buffer,
+        NOISE_TILE_SIZE,
+        NOISE_TILE_SIZE,
+        NOISE_TILE_SCALE,
+        time * 2.0,
+        0,
+        FBM_TILE_OCTAVES,
+        FBM_TILE_LACUNARITY,
+        FBM_TILE_GAIN,
+      );
+    } else {
+      this.wasm.fillNoiseBuffer(
+        this.buffer,
+        NOISE_TILE_SIZE,
+        NOISE_TILE_SIZE,
+        NOISE_TILE_SCALE,
+        time * 2.0,
+        0,
+      );
+    }
     return this.buffer;
   }
 }

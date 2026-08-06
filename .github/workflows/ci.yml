@@ -84,7 +84,17 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build:wasm
+      # build:wasm is pinned to --wat-only; this job exists to exercise the C++
+      # toolchain, so it must use the Emscripten entry point explicitly.
+      - name: Build C++ → WASM via Emscripten
+        run: npm run build:wasm:emscripten
+
+      # Catch C++/WAT ABI drift: the Emscripten binary must export every name
+      # the canonical WAT source declares (missing wrapper in bindings.cpp or a
+      # forgotten EXPORTED_FUNCTIONS entry would otherwise only show up as a
+      # silent JS-fallback at runtime).
+      - name: Verify Emscripten build exports the full ABI
+        run: node scripts/check-wasm-abi.mjs
 
   e2e-smoke:
     runs-on: ubuntu-latest
