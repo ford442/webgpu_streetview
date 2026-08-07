@@ -1,12 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import {
-  toggleWipers,
-  setCarWipers,
-  toggleCarHeadlights,
-  toggleCarDomeLight,
-  setCarHeadlights,
-  setCarDomeLight,
-} from '../car';
+import { loadCarRuntime } from '../car/carRuntimeLoader';
 
 // Types
 export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
@@ -141,26 +134,29 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   
   // Wipers
   const toggleWipersCallback = useCallback(() => {
-    const newState = toggleWipers();
-    setWipersEnabledState(newState);
-    setCarWipers(newState);
+    void loadCarRuntime().then(({ toggleWipers, setCarWipers }) => {
+      const newState = toggleWipers();
+      setWipersEnabledState(newState);
+      setCarWipers(newState);
+    });
   }, []);
-  
+
   const setWipers = useCallback((enabled: boolean) => {
     setWipersEnabledState(enabled);
-    setCarWipers(enabled);
+    void loadCarRuntime().then(({ setCarWipers }) => setCarWipers(enabled));
   }, []);
-  
+
   // Headlights
   const toggleHeadlights = useCallback((): boolean => {
-    const newState = toggleCarHeadlights();
+    const newState = !headlightsOn;
     setHeadlightsOnState(newState);
+    void loadCarRuntime().then(({ setCarHeadlights }) => setCarHeadlights(newState));
     return newState;
-  }, []);
-  
+  }, [headlightsOn]);
+
   const setHeadlights = useCallback((enabled: boolean) => {
     setHeadlightsOnState(enabled);
-    setCarHeadlights(enabled);
+    void loadCarRuntime().then(({ setCarHeadlights }) => setCarHeadlights(enabled));
   }, []);
   
   // High beam
@@ -170,14 +166,15 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   
   // Dome light
   const toggleDomeLightCallback = useCallback((): boolean => {
-    const newState = toggleCarDomeLight();
+    const newState = !domeLightOn;
     setDomeLightOnState(newState);
+    void loadCarRuntime().then(({ setCarDomeLight }) => setCarDomeLight(newState));
     return newState;
-  }, []);
-  
+  }, [domeLightOn]);
+
   const setDomeLight = useCallback((enabled: boolean) => {
     setDomeLightOnState(enabled);
-    setCarDomeLight(enabled);
+    void loadCarRuntime().then(({ setCarDomeLight }) => setCarDomeLight(enabled));
   }, []);
   
   // Roof
