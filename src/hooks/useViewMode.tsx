@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import { initCarMode, toggleCarMode, disposeCarMode, CarModeState } from '../car';
+import { loadCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
 
 // Types
 export type ViewMode = 'freelook' | 'car';
@@ -109,11 +109,15 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   const initCarModeForContainer = useCallback((container: HTMLElement) => {
     if (!carModeStateRef.current && container) {
       containerRef.current = container;
-      try {
-        carModeStateRef.current = initCarMode(container);
-      } catch (err) {
-        console.error('[ViewModeProvider] Failed to initialize car mode:', err);
-      }
+      void loadCarRuntime()
+        .then(({ initCarMode }) => {
+          if (!carModeStateRef.current && containerRef.current === container) {
+            carModeStateRef.current = initCarMode(container);
+          }
+        })
+        .catch((err) => {
+          console.error('[ViewModeProvider] Failed to initialize car mode:', err);
+        });
     }
   }, []);
 
@@ -126,31 +130,30 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   // Handle mode switching side effects
   useEffect(() => {
     if (prevViewMode === viewMode) return;
-    
+
     console.log(`[ViewMode] Switching: ${prevViewMode} → ${viewMode}`);
-    
-    // Cleanup previous mode
-    if (prevViewMode === 'car') {
-      toggleCarMode(false);
-    }
-    
-    // Initialize new mode
-    if (viewMode === 'car') {
-      if (carModeStateRef.current && containerRef.current) {
+
+    void loadCarRuntime().then(({ toggleCarMode }) => {
+      if (prevViewMode === 'car') {
+        toggleCarMode(false);
+      }
+
+      if (viewMode === 'car' && carModeStateRef.current && containerRef.current) {
         toggleCarMode(true);
-        // Reset car control mode to default when entering car mode
         setControlMode('freeLook');
         previousControlModeRef.current = 'freeLook';
       }
-    }
+    });
   }, [viewMode, prevViewMode]);
-  
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (carModeStateRef.current) {
-        disposeCarMode();
-        carModeStateRef.current = null;
+        void loadCarRuntime().then(({ disposeCarMode }) => {
+          disposeCarMode();
+          carModeStateRef.current = null;
+        });
       }
     };
   }, []);

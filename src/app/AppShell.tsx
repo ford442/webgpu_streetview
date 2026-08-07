@@ -16,7 +16,7 @@ import { useSnapshots } from '../hooks/useSnapshots';
 import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useKeyboardShortcuts, useAnnouncer, SkipLink } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
-import { getGearHopCount } from '../car';
+import { loadCarRuntime } from '../car/carRuntimeLoader';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
@@ -36,6 +36,12 @@ import { ConnectedChrome } from './shell/ConnectedChrome';
 import { MapsAuthModal } from './shell/MapsAuthModal';
 import { OfflineStatusToast } from './shell/OfflineStatusToast';
 import { StreetViewStage } from './shell/StreetViewStage';
+
+/** Cached car runtime for sync cruise gear hops once car mode has loaded. */
+let carRuntimeModule: typeof import('../car/carModeRuntime') | null = null;
+void loadCarRuntime().then((module) => {
+  carRuntimeModule = module;
+});
 
 /** Main app layout: composition shell for feature controllers + chrome. */
 export function AppShell() {
@@ -152,7 +158,7 @@ export function AppShell() {
     // In car mode the gearshift is the speed selector: P/N park cruise, D
     // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
     // has no gearbox, so it always cruises one hop at a time.
-    hopsPerTick: () => (viewModeRef.current === 'car' ? getGearHopCount() : 1),
+    hopsPerTick: () => (viewModeRef.current === 'car' ? (carRuntimeModule?.getGearHopCount() ?? 1) : 1),
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
 

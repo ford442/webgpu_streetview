@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useViewMode } from '../hooks/useViewMode';
 import FreeLookView from './FreeLookView';
-import CarModeView from './CarModeView';
+
+const CarModeView = lazy(() => import('./CarModeView'));
 
 interface MainViewProps {
   mapsApiKey: string;
@@ -19,7 +20,11 @@ const MainView: React.FC<MainViewProps> = ({ mapsApiKey }) => {
   return (
     <>
       {viewMode === 'freelook' && <FreeLookView mapsApiKey={mapsApiKey} />}
-      {viewMode === 'car' && <CarModeView mapsApiKey={mapsApiKey} />}
+      {viewMode === 'car' && (
+        <Suspense fallback={null}>
+          <CarModeView mapsApiKey={mapsApiKey} />
+        </Suspense>
+      )}
     </>
   );
 };
