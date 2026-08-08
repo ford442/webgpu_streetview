@@ -149,6 +149,9 @@ export function bootstrapCarInterior(
     scene.add(roofGroup);
 
     const driverSeatGroup = new THREE.Group();
+    // Host must know driverSeatGroup before applySeatPosition() — CarInterior reads
+    // this.driverSeatGroup.position during the bootstrap callback.
+    host.driverSeatGroup = driverSeatGroup;
     applySeatPosition();
     interiorGroup.add(driverSeatGroup);
     driverSeatGroup.add(camera);
