@@ -420,6 +420,9 @@ export class CarInterior implements CarInteriorAssemblyHost {
     }
 
     public applySeatPosition(): void {
+        if (!this.driverSeatGroup || !this.vehicleConfig?.cameraPosition) {
+            return;
+        }
         const { x, y, z } = this.vehicleConfig.cameraPosition;
         this.driverSeatGroup.position.set(x, y, z + this.seatOffset);
     }

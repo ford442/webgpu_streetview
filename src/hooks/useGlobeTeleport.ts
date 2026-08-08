@@ -40,7 +40,11 @@ export function useGlobeTeleport({
 
     getTopStationForLocation(lat, lng).then(station => {
       if (station && audioRef.current) {
-        audioRef.current.src = station.urlResolved || station.url;
+        let streamUrl = station.urlResolved || station.url;
+        if (streamUrl.startsWith('http://')) {
+          streamUrl = `https://${streamUrl.slice(7)}`;
+        }
+        audioRef.current.src = streamUrl;
         audioRef.current.play().catch(() => {});
         setIsRadioPlaying(true);
         console.log(`[GlobeTeleport] Tuned to: ${station.name} (${station.country})`);
