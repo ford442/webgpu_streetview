@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
+import {
+    buildDirectorKeyframe,
+    isValidDirectorKeyframe,
+    shouldRecordDirectorKeyframe,
+    type DirectorSnapshot,
+    type TourDirectorKeyframe,
+} from '../utils/tourDirector';
 
 export interface TourWaypoint {
     id: string;
@@ -18,6 +25,8 @@ export interface Tour {
     name: string;
     description?: string;
     waypoints: TourWaypoint[];
+    /** Weather / vehicle keyframes recorded alongside waypoints (director track). */
+    directorTrack?: TourDirectorKeyframe[];
     transitionType: TourTransitionType;
     autoPlaySpeed: number;
     createdAt: string;
@@ -32,6 +41,9 @@ export interface CurrentPOV {
 
 const DEFAULT_DWELL_MS = 4000;
 const MIN_WAYPOINT_INTERVAL_MS = 3000;
+const DIRECTOR_MIN_INTERVAL_MS = 2000;
+
+export type { TourDirectorKeyframe, DirectorSnapshot };
 
 function makeId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -57,7 +69,9 @@ function isValidTour(value: unknown): value is Tour {
             );
         }) &&
         (t.transitionType === 'hold-pause' || t.transitionType === 'fade') &&
-        typeof t.autoPlaySpeed === 'number'
+        typeof t.autoPlaySpeed === 'number' &&
+        (t.directorTrack === undefined ||
+            (Array.isArray(t.directorTrack) && t.directorTrack.every(isValidDirectorKeyframe)))
     );
 }
 
@@ -70,8 +84,12 @@ export function useTours() {
     const [isPaused, setIsPaused] = useState(false);
     const [draftName, setDraftName] = useState('');
     const [draftWaypoints, setDraftWaypoints] = useState<TourWaypoint[]>([]);
+    const [draftDirectorTrack, setDraftDirectorTrack] = useState<TourDirectorKeyframe[]>([]);
     const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const directorIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const recordingStartedAtRef = useRef<number>(0);
     const getCurrentPOVRef = useRef<(() => CurrentPOV | null) | null>(null);
+    const getDirectorSnapshotRef = useRef<(() => DirectorSnapshot | null) | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -117,10 +135,31 @@ export function useTours() {
         });
     }, []);
 
-    const startRecording = useCallback((name: string, getCurrentPOV: () => CurrentPOV | null, intervalMs: number = 0) => {
+    const sampleDirectorKeyframe = useCallback(() => {
+        const snap = getDirectorSnapshotRef.current?.();
+        if (!snap) return;
+        const elapsedMs = performance.now() - recordingStartedAtRef.current;
+        setDraftDirectorTrack((prev) => {
+            const last = prev[prev.length - 1] ?? null;
+            if (!shouldRecordDirectorKeyframe(last, snap, elapsedMs, DIRECTOR_MIN_INTERVAL_MS)) {
+                return prev;
+            }
+            return [...prev, buildDirectorKeyframe(elapsedMs, snap)];
+        });
+    }, []);
+
+    const startRecording = useCallback((
+        name: string,
+        getCurrentPOV: () => CurrentPOV | null,
+        intervalMs: number = 0,
+        getDirectorSnapshot?: () => DirectorSnapshot | null,
+    ) => {
         setDraftName(name);
         setDraftWaypoints([]);
+        setDraftDirectorTrack([]);
         getCurrentPOVRef.current = getCurrentPOV;
+        getDirectorSnapshotRef.current = getDirectorSnapshot ?? null;
+        recordingStartedAtRef.current = performance.now();
         setIsRecording(true);
         setIsPaused(false);
 
@@ -128,14 +167,22 @@ export function useTours() {
             clearInterval(recordingIntervalRef.current);
             recordingIntervalRef.current = null;
         }
+        if (directorIntervalRef.current) {
+            clearInterval(directorIntervalRef.current);
+            directorIntervalRef.current = null;
+        }
         if (intervalMs >= MIN_WAYPOINT_INTERVAL_MS) {
             recordingIntervalRef.current = setInterval(() => {
                 addWaypointFromCurrent(DEFAULT_DWELL_MS);
             }, intervalMs);
         }
+        if (getDirectorSnapshot) {
+            directorIntervalRef.current = setInterval(sampleDirectorKeyframe, DIRECTOR_MIN_INTERVAL_MS);
+        }
         // Capture the starting position immediately.
         addWaypointFromCurrent(DEFAULT_DWELL_MS);
-    }, [addWaypointFromCurrent]);
+        sampleDirectorKeyframe();
+    }, [addWaypointFromCurrent, sampleDirectorKeyframe]);
 
     const pauseRecording = useCallback(() => {
         setIsPaused(true);
@@ -143,21 +190,34 @@ export function useTours() {
             clearInterval(recordingIntervalRef.current);
             recordingIntervalRef.current = null;
         }
+        if (directorIntervalRef.current) {
+            clearInterval(directorIntervalRef.current);
+            directorIntervalRef.current = null;
+        }
     }, []);
 
     const resumeRecording = useCallback(() => {
         setIsPaused(false);
-    }, []);
+        if (getDirectorSnapshotRef.current && !directorIntervalRef.current) {
+            directorIntervalRef.current = setInterval(sampleDirectorKeyframe, DIRECTOR_MIN_INTERVAL_MS);
+        }
+    }, [sampleDirectorKeyframe]);
 
     const cancelRecording = useCallback(() => {
         if (recordingIntervalRef.current) {
             clearInterval(recordingIntervalRef.current);
             recordingIntervalRef.current = null;
         }
+        if (directorIntervalRef.current) {
+            clearInterval(directorIntervalRef.current);
+            directorIntervalRef.current = null;
+        }
         getCurrentPOVRef.current = null;
+        getDirectorSnapshotRef.current = null;
         setIsRecording(false);
         setIsPaused(false);
         setDraftWaypoints([]);
+        setDraftDirectorTrack([]);
         setDraftName('');
     }, []);
 
@@ -166,12 +226,19 @@ export function useTours() {
             clearInterval(recordingIntervalRef.current);
             recordingIntervalRef.current = null;
         }
+        if (directorIntervalRef.current) {
+            clearInterval(directorIntervalRef.current);
+            directorIntervalRef.current = null;
+        }
+        sampleDirectorKeyframe();
         getCurrentPOVRef.current = null;
+        getDirectorSnapshotRef.current = null;
         setIsRecording(false);
         setIsPaused(false);
 
         if (draftWaypoints.length === 0) {
             setDraftWaypoints([]);
+            setDraftDirectorTrack([]);
             setDraftName('');
             return null;
         }
@@ -181,6 +248,7 @@ export function useTours() {
             id: makeId(),
             name: (finalName ?? draftName).trim() || `Tour ${new Date().toLocaleDateString()}`,
             waypoints: draftWaypoints,
+            ...(draftDirectorTrack.length > 0 ? { directorTrack: draftDirectorTrack } : {}),
             transitionType: 'hold-pause',
             autoPlaySpeed: 1,
             createdAt: now,
@@ -188,9 +256,10 @@ export function useTours() {
         };
         setTours(prev => [newTour, ...prev]);
         setDraftWaypoints([]);
+        setDraftDirectorTrack([]);
         setDraftName('');
         return newTour.id;
-    }, [draftName, draftWaypoints]);
+    }, [draftName, draftWaypoints, draftDirectorTrack, sampleDirectorKeyframe]);
 
     const deleteTour = useCallback((id: string) => {
         setTours(prev => prev.filter(t => t.id !== id));
@@ -302,6 +371,7 @@ export function useTours() {
         isPaused,
         draftName,
         draftWaypoints,
+        draftDirectorTrack,
         startRecording,
         pauseRecording,
         resumeRecording,

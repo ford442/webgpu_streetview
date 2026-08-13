@@ -25,8 +25,7 @@ export interface SnapshotMetadata {
 
 export type SnapshotShareResult = 'share' | 'clipboard' | 'cancelled';
 
-/** Attribution text required alongside any shared Google Maps-derived imagery. */
-const MAPS_ATTRIBUTION = 'Imagery © Google';
+import { MAPS_ATTRIBUTION } from '../utils/attribution';
 
 const MAX_SNAPSHOTS = 20; // Limit stored snapshots to avoid storage quota issues
 
