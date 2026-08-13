@@ -72,6 +72,10 @@ vi.mock('./services/maps/loader', () => ({
 }));
 
 describe('App', () => {
+  const startExploring = () => {
+    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+  };
+
   beforeEach(() => {
     streetViewApiKeys.length = 0;
     mockMapsAuthListeners.length = 0;
@@ -101,6 +105,7 @@ describe('App', () => {
 
   it('shows a missing key error and picks up a late runtime key without reload', async () => {
     render(<App />);
+    startExploring();
 
     expect(screen.getByRole('alert')).toHaveTextContent('No Google Maps API key is configured');
     expect(screen.getByTestId('mock-street-view')).toHaveAttribute('data-api-key', '');
@@ -120,7 +125,7 @@ describe('App', () => {
 
   it('shows granular loading states and hides after rendering starts', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+    startExploring();
 
     window.MAPS_API_KEY = 'runtime-key';
     act(() => {
@@ -157,7 +162,7 @@ describe('App', () => {
 
   it('shows the renderer backend indicator once the backend is known', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+    startExploring();
 
     window.MAPS_API_KEY = 'runtime-key';
     act(() => {
@@ -181,7 +186,7 @@ describe('App', () => {
 
   it('distinguishes canvas timeout from API loading', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+    startExploring();
 
     window.MAPS_API_KEY = 'runtime-key';
     act(() => {
@@ -199,6 +204,7 @@ describe('App', () => {
 
   it('shows a blocking auth error overlay and retries Maps with the current runtime key', async () => {
     render(<App />);
+    startExploring();
 
     act(() => {
       mockMapsAuthListeners.forEach(listener => listener({
@@ -226,7 +232,7 @@ describe('App', () => {
   it('auto-recovers from a failed old key when a corrected runtime key is injected', async () => {
     window.MAPS_API_KEY = 'bad-runtime-key';
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Start Exploring/i }));
+    startExploring();
 
     act(() => {
       window.dispatchEvent(new CustomEvent('maps-api-key-ready'));

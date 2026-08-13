@@ -1,10 +1,14 @@
 import React from 'react';
 
+import PlaceSearchBar from './PlaceSearchBar';
+import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
+
 interface WelcomeModalProps {
     onStart: () => void;
+    search?: UsePlaceSearchResult;
 }
 
-const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart }) => {
+const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart, search }) => {
     return (
         <div 
             role="dialog"
@@ -50,10 +54,16 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart }) => {
 
                 <p 
                     id="welcome-description"
-                    style={{ fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px', color: '#555' }}
+                    style={{ fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '20px', color: '#555' }}
                 >
-                    Hey! Explore the world in a new way.
+                    Hey! Explore the world in a new way. Search a destination to drop onto Street View coverage.
                 </p>
+
+                {search && (
+                    <div style={{ marginBottom: 24, textAlign: 'left' }}>
+                        <PlaceSearchBar search={search} />
+                    </div>
+                )}
 
                 <div style={{
                     textAlign: 'left',

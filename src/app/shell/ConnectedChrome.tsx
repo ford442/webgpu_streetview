@@ -1,5 +1,9 @@
 import { lazy, Suspense, useMemo } from 'react';
 import type { TimeOfDay } from '../../hooks';
+import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
+import { nearbyPoisToGlobe } from '../../search/poiModel';
+import ScoutCard from '../../components/ScoutCard';
+import { buildBudgetedStaticPreviewUrl } from '../../search/placesClient';
 import type { AccessibilitySettings } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../hooks/useBookmarks';
 import type { HistoryEntry } from '../../hooks/useLocationHistory';
@@ -152,6 +156,7 @@ export interface ConnectedChromeProps {
   globe: ConnectedChromeGlobe;
   overlays: ConnectedChromeOverlays;
   offlineRoutes: ConnectedChromeOfflineRoutes;
+  search: UsePlaceSearchResult;
 }
 
 /** Toolbar + feature panels + globe, shown once the user is connected. */
@@ -169,6 +174,7 @@ export function ConnectedChrome({
   globe,
   overlays,
   offlineRoutes,
+  search,
 }: ConnectedChromeProps) {
   const {
     viewMode,
@@ -186,14 +192,27 @@ export function ConnectedChrome({
   } = session;
   const { globeMode, effectiveMapsKey, handleGlobeTeleport, handleStartJourney } = globe;
 
+  const selectedPoiThumb = useMemo(() => {
+    if (!search.selectedPoi) return null;
+    return (
+      buildBudgetedStaticPreviewUrl(
+        search.selectedPoi.lat,
+        search.selectedPoi.lng,
+        effectiveMapsKey,
+      ) ?? null
+    );
+  }, [search.selectedPoi, effectiveMapsKey]);
+
   const globePois = useMemo(
-    () =>
-      hist.history.map((h) => ({
+    () => [
+      ...nearbyPoisToGlobe(search.nearbyPois),
+      ...hist.history.map((h) => ({
         lat: h.lat,
         lng: h.lng,
         label: h.locationName || `${h.lat.toFixed(2)}, ${h.lng.toFixed(2)}`,
       })),
-    [hist.history],
+    ],
+    [hist.history, search.nearbyPois],
   );
 
   const globeBookmarks = useMemo(
@@ -307,6 +326,7 @@ export function ConnectedChrome({
         viewMode={viewMode}
         toggleViewMode={toggleViewMode}
         onGlobeToggle={globeMode.toggle}
+        search={search}
       />
 
       {isSharedSessionPanelOpen && (
@@ -514,6 +534,20 @@ export function ConnectedChrome({
             onStartJourney={handleStartJourney}
           />
         </Suspense>
+      )}
+
+      {search.selectedPoi && (
+        <ScoutCard
+          lat={search.selectedPoi.lat}
+          lng={search.selectedPoi.lng}
+          label={search.selectedPoi.label}
+          mapsApiKey={effectiveMapsKey}
+          thumbnailUrl={selectedPoiThumb}
+          onEngage={(lat, lng) => {
+            void search.goToPoi({ ...search.selectedPoi!, lat, lng });
+          }}
+          onClose={() => search.setSelectedPoi(null)}
+        />
       )}
     </>
   );

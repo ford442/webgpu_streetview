@@ -15,6 +15,8 @@ export interface ScoutCardProps {
     mapsApiKey: string;
     onEngage: (lat: number, lng: number) => void;
     onClose: () => void;
+    /** When omitted, skip Street View Static (billable) and show coords only. */
+    thumbnailUrl?: string | null;
 }
 
 const ScoutCard: React.FC<ScoutCardProps> = ({
@@ -24,8 +26,15 @@ const ScoutCard: React.FC<ScoutCardProps> = ({
     mapsApiKey,
     onEngage,
     onClose,
+    thumbnailUrl: thumbnailUrlProp,
 }) => {
-    const thumbnailUrl = `https://maps.googleapis.com/maps/api/streetview?size=300x200&location=${lat},${lng}&key=${mapsApiKey}`;
+    const thumbnailUrl =
+        thumbnailUrlProp === null
+            ? undefined
+            : thumbnailUrlProp ??
+              (mapsApiKey
+                  ? `https://maps.googleapis.com/maps/api/streetview?size=300x200&location=${lat},${lng}&key=${mapsApiKey}`
+                  : undefined);
 
     const handleEngage = useCallback(
         (e: React.MouseEvent) => {
@@ -77,6 +86,7 @@ const ScoutCard: React.FC<ScoutCardProps> = ({
         >
             {/* Thumbnail */}
             <div style={{ position: 'relative', width: '100%', height: 200, backgroundColor: '#111' }}>
+                {thumbnailUrl ? (
                 <img
                     src={thumbnailUrl}
                     alt={`Street View preview at ${lat.toFixed(4)}, ${lng.toFixed(4)}`}
@@ -85,6 +95,9 @@ const ScoutCard: React.FC<ScoutCardProps> = ({
                         (e.target as HTMLImageElement).style.display = 'none';
                     }}
                 />
+                ) : (
+                <div style={{ color: '#888', fontSize: 13, padding: 16 }}>Preview unavailable</div>
+                )}
                 {/* Close button */}
                 <button
                     onClick={handleClose}

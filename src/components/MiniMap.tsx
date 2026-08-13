@@ -4,6 +4,7 @@ import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 
 // Import crypto companies config
 import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
+import type { NearbyPoi } from '../search/poiModel';
 
 // Cesium is loaded from CDN at runtime (see loadCesiumSDK), not bundled —
 // keeps the ~4MB globe stack out of the main chunk for users who never
@@ -19,6 +20,9 @@ interface MiniMapProps {
     showCryptoMarkers?: boolean;
     /** Hold-pause aware teleport — must route through StreetViewProvider. */
     onTeleport?: (lat: number, lng: number) => void;
+    /** Shared nearby POI model (same as Globe). */
+    pois?: NearbyPoi[];
+    onPoiSelect?: (poi: NearbyPoi) => void;
 }
 
 const MiniMap: React.FC<MiniMapProps> = ({
@@ -28,6 +32,8 @@ const MiniMap: React.FC<MiniMapProps> = ({
     viewMode = 'map',
     showCryptoMarkers = false,
     onTeleport,
+    pois = [],
+    onPoiSelect,
 }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
@@ -38,6 +44,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
     const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | any)[]>([]);
+    const poiMarkersRef = useRef<google.maps.Marker[]>([]);
 
     /** Create a heading-aware marker element */
     const createMarkerContent = (rotation: number): HTMLElement => {
@@ -490,6 +497,25 @@ const MiniMap: React.FC<MiniMapProps> = ({
             });
         }
     }, [showCryptoMarkers, viewMode, map, cesiumViewer, teleportTo]);
+
+    useEffect(() => {
+        poiMarkersRef.current.forEach((m) => m.setMap(null));
+        poiMarkersRef.current = [];
+        if (!map || viewMode !== 'map' || pois.length === 0) return;
+        poiMarkersRef.current = pois.map((poi) => {
+            const marker = new google.maps.Marker({
+                map,
+                position: { lat: poi.lat, lng: poi.lng },
+                title: poi.label,
+            });
+            marker.addListener('click', () => onPoiSelect?.(poi));
+            return marker;
+        });
+        return () => {
+            poiMarkersRef.current.forEach((m) => m.setMap(null));
+            poiMarkersRef.current = [];
+        };
+    }, [map, viewMode, pois, onPoiSelect]);
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>

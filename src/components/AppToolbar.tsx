@@ -1,4 +1,6 @@
 import React from 'react';
+import PlaceSearchBar from './PlaceSearchBar';
+import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
 
 export interface AppToolbarProps {
   isCruiseMode: boolean;
@@ -29,6 +31,7 @@ export interface AppToolbarProps {
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
+  search?: UsePlaceSearchResult;
 }
 
 const AppToolbar: React.FC<AppToolbarProps> = ({
@@ -60,6 +63,7 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   viewMode,
   toggleViewMode,
   onGlobeToggle,
+  search,
 }) => {
   return (
     <div
@@ -77,6 +81,7 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
     >
+      {search && <PlaceSearchBar search={search} compact />}
       <button
         className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
         disabled={!isPanoramaReady}

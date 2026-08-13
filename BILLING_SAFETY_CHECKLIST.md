@@ -60,6 +60,46 @@
 Most of the app runs on the Maps **JavaScript** API (one panorama session). These
 features spend *additional* per-request quota and each ships its own guard rails.
 
+### Place search, autocomplete, and nearby POIs (Maps JS **Places** + optional Static)
+
+Destination search lives in `src/search/` and `src/hooks/usePlaceSearch.ts`.
+Autocomplete / Place Details / Nearby Search run only after **explicit typing
+or toggling Nearby POIs**. Coordinate paste and panorama-id paste never call
+Places. Nearby POIs default **off** for the session.
+
+| Guard | Default | Where |
+|-------|---------|-------|
+| Nearby POI toggle | **off** | Search bar checkbox; `PlaceSearchBudget.setNearbyEnabled` |
+| Autocomplete debounce | 350 ms | `PLACE_SEARCH_DEFAULTS.autocompleteDebounceMs` |
+| Nearby throttle | 4000 ms between batches | `PlaceSearchBudget.allow('nearby')` |
+| Session request budget (all meters) | 80 | `PLACE_SEARCH_DEFAULTS.maxSessionRequests` |
+| Consecutive-error circuit breaker | 5 | `PLACE_SEARCH_DEFAULTS.maxConsecutiveErrors` |
+| Nearby marker cap | 20 | `PLACE_SEARCH_DEFAULTS.maxNearbyMarkers` |
+| Places library load | lazy `importLibrary('places')` | `placesClient.ts` — not at Maps boot |
+| Static preview on POI ScoutCard | one-shot, budgeted | `buildBudgetedStaticPreviewUrl` |
+| Cache | recent queries in `localStorage` only (text); never Google imagery | `recentSearches.ts` / `swPolicy` |
+
+**Meters counted toward the session budget:** `autocomplete`, `placeDetails`,
+`nearby`, `geocode` (forward), `staticPreview`, `streetViewLookup` (coverage).
+
+**Kill switch** — from DevTools:
+
+```js
+window.__PLACE_SEARCH__.kill();    // refuse every subsequent Places/Static/geocode extra
+window.__PLACE_SEARCH__.getStats(); // networkRequests, byMeter, budgetRemaining, killed
+```
+
+`kill()` is permanent for the life of the page. Nearby stays off until the user
+checks the box; with the box unchecked, Network should show **zero** Places
+traffic.
+
+**Checks before shipping a change to this feature**:
+
+- [ ] Nearby toggle still defaults **off**
+- [ ] Coordinate / pano-id submit does not call Autocomplete
+- [ ] Unit tests pass: `npx vitest run src/search/parseSearchQuery.test.ts src/search/placeSearchBudget.test.ts`
+- [ ] Google imagery is still `network-only` in `src/offline/swPolicy.ts`
+
 ### Rear-view mirror imagery (Street View **Static** API)
 
 `src/car/rearViewFeed.ts` fetches a rear-facing still at `carHeading + 180` so
