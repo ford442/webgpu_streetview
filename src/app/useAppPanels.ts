@@ -11,6 +11,8 @@ export interface AppPanels {
   setIsColorGradingPanelOpen: (open: boolean) => void;
   isWeatherPanelOpen: boolean;
   setIsWeatherPanelOpen: (open: boolean) => void;
+  isLooksPanelOpen: boolean;
+  setIsLooksPanelOpen: (open: boolean) => void;
   isAccessibilityPanelOpen: boolean;
   setIsAccessibilityPanelOpen: (open: boolean) => void;
   isHistoricalTimelineOpen: boolean;
@@ -32,6 +34,7 @@ export function useAppPanels(): AppPanels {
   const [isSnapshotGalleryOpen, setIsSnapshotGalleryOpen] = useState(false);
   const [isColorGradingPanelOpen, setIsColorGradingPanelOpen] = useState(false);
   const [isWeatherPanelOpen, setIsWeatherPanelOpen] = useState(false);
+  const [isLooksPanelOpen, setIsLooksPanelOpen] = useState(false);
   const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
   const [isHistoricalTimelineOpen, setIsHistoricalTimelineOpen] = useState(false);
   const [isTourPanelOpen, setIsTourPanelOpen] = useState(false);
@@ -50,6 +53,8 @@ export function useAppPanels(): AppPanels {
     setIsColorGradingPanelOpen,
     isWeatherPanelOpen,
     setIsWeatherPanelOpen,
+    isLooksPanelOpen,
+    setIsLooksPanelOpen,
     isAccessibilityPanelOpen,
     setIsAccessibilityPanelOpen,
     isHistoricalTimelineOpen,

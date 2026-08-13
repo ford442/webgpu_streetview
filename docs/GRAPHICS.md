@@ -244,13 +244,77 @@ The WebGL2 fallback does not implement either — it ignores slots 38/39.
 
 ---
 
-## 7. Editing checklist
+## 8. Artistic looks (scene packs)
+
+Named looks live in `src/config/lookPacks.ts` and apply **weather + grading +
+time-of-day + vehicle lights** in one click. They are piecewise curves over the
+existing 6 grading uniforms (vibrance → saturation → contrast → temperature/tint
+→ exposure) with **ACES still last**. No 3D LUT texture, no extra uniform slots,
+no billable APIs.
+
+The look bible (before/after notes, curve stops, palette cards) is
+[`docs/looks/README.md`](./looks/README.md).
+
+| Id | Intent |
+|----|--------|
+| `clear` | Reset — daylight, no weather, neutral grade |
+| `noir` | Ink-black night, wet streets, headlights |
+| `teal-orange` | Travel-poster split tone at sunset |
+| `bleach-bypass` | Silver-retention newsreel, overcast sun kill |
+| `golden-hour` | Honey sunrise, soft haze |
+| `storm` | GRAPHICS.md §3 storm sliders + cool underexpose |
+| `arctic` | High-key snow, cold air |
+| `neon-rain` | Wet night, magenta/cyan, high beam |
+
+Share with location deep links:
+
+```text
+?look=noir
+?look=noir&rain=40
+?tod=night&sat=0.4&con=1.55
+```
+
+`src/utils/lookLink.ts` round-trips `look` + overrides. Reduced motion still
+applies the grade/weather; it only zeroes cinematic slots 38/39.
+
+Creator UX: **Looks** toolbar button (shortcut `K`) or the Looks strip inside
+the Weather panel. **Copy look as URL** writes the current pack + diffs.
+
+---
+
+## 9. WebGL parity budget
+
+The WebGL2 fallback is SDR and skips DOF, motion blur, fBm dust, and the 4-tap
+haze blur. Isolation flags (`?effect=weather|night|fog`) exist so look targets
+can be compared directionally.
+
+| Effect | Must match | Best effort | Skip |
+|--------|------------|-------------|------|
+| Night floor (`NIGHT_BASE_FLOOR`) | ✓ | | |
+| Precip fall Y sign (`WEATHER_FALL_Y_SIGN = −1`) | ✓ | | |
+| Overcast sun kill (CPU `weatherCohesion`) | ✓ | | |
+| Rain darken `mix(0.22, 0.10, night)` | ✓ | | |
+| Humidity haze distance + color mix | ✓ | | |
+| Humidity haze 4-tap blur | | | ✓ (WebGPU) |
+| fBm / WASM dust | | | ✓ (WebGPU) |
+| DOF / motion blur (slots 38/39) | | | ✓ (WebGPU High/Ultra) |
+| GPU particles (`?weather=compute`) | | | ✓ (compute only) |
+| Fog coverage along view-depth proxy | | ✓ SDR approx | |
+| Color grade + ACES-style tonemap | | ✓ Reinhard SDR | |
+
+Guarded by `src/renderer/webglLookParity.test.ts` and
+`src/renderer/weatherCohesion.test.ts`.
+
+---
+
+## 10. Editing checklist
 
 - Shared WGSL helper changed? Update **both** `weather-post.wgsl` and
   `weather-post-compute.wgsl`; `weatherShaderParity.test.ts` will fail otherwise.
 - New uniform? It must fit the existing 40 floats or every consumer in
   `weatherUniformLayout.ts`'s header comment changes in lockstep.
 - Preset retune? Put the intended look in §3 above and the measured delta in §4.
+  Named artistic looks go in `src/config/lookPacks.ts` + `docs/looks/README.md`.
 - Coupling between channels belongs in `weatherCohesion.ts` (CPU, testable),
   not duplicated into three shaders.
 - Changing what the CPU noise tile contains? The fragment path is the default

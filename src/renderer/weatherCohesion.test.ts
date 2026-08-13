@@ -1,4 +1,4 @@
-import { resolveWeatherCohesion, resolveSunVisibility, FogColorIndex } from './weatherCohesion';
+import { resolveWeatherCohesion, resolveSunVisibility, FogColorIndex, RAIN_DARKEN_DAY, RAIN_DARKEN_NIGHT } from './weatherCohesion';
 
 function baseInput(overrides: Partial<Parameters<typeof resolveWeatherCohesion>[0]> = {}) {
     return {
@@ -113,5 +113,13 @@ describe('resolveSunVisibility', () => {
 
     it('is fully occluded by total overcast', () => {
         expect(resolveSunVisibility(1.0, 1)).toBe(0);
+    });
+});
+
+describe('rain darken coefficients', () => {
+    it('eases toward the night floor so a storm cannot crush #171 readability', () => {
+        expect(RAIN_DARKEN_DAY).toBeGreaterThan(RAIN_DARKEN_NIGHT);
+        expect(RAIN_DARKEN_DAY).toBeCloseTo(0.22);
+        expect(RAIN_DARKEN_NIGHT).toBeCloseTo(0.10);
     });
 });

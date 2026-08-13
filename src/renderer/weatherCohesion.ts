@@ -55,6 +55,14 @@ export interface WeatherCohesionResult {
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
+/**
+ * Scene luminance scale-down under rain (shader: `1 - rainIntensity * mix(day, night, nightIntensity)`).
+ * Eases toward the night end-stop so the #171 readable floor survives a night storm.
+ * Must match weather-post.wgsl, weather-post-compute.wgsl, and WebGLFallbackRenderer.
+ */
+export const RAIN_DARKEN_DAY = 0.22;
+export const RAIN_DARKEN_NIGHT = 0.10;
+
 /** Fog colour palette indices shared with `getFogColor()` in both WGSL paths. */
 export const FogColorIndex = {
     gray: 0,

@@ -19,6 +19,8 @@ export interface AppToolbarProps {
   setIsColorGradingPanelOpen: (v: boolean) => void;
   isWeatherPanelOpen: boolean;
   setIsWeatherPanelOpen: (v: boolean) => void;
+  isLooksPanelOpen: boolean;
+  setIsLooksPanelOpen: (v: boolean) => void;
   isHistoricalTimelineOpen: boolean;
   setIsHistoricalTimelineOpen: (v: boolean) => void;
   isTourPanelOpen: boolean;
@@ -51,6 +53,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   setIsColorGradingPanelOpen,
   isWeatherPanelOpen,
   setIsWeatherPanelOpen,
+  isLooksPanelOpen,
+  setIsLooksPanelOpen,
   isHistoricalTimelineOpen,
   setIsHistoricalTimelineOpen,
   isTourPanelOpen,
@@ -138,6 +142,13 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
       >
         🌧 Weather
+      </button>
+      <button
+        className={`control-btn${isLooksPanelOpen ? ' disconnect' : ''}`}
+        style={{ minWidth: 110 }}
+        onClick={e => { e.stopPropagation(); setIsLooksPanelOpen(!isLooksPanelOpen); }}
+      >
+        🎞 Looks
       </button>
       <button
         className={`control-btn${isHistoricalTimelineOpen ? ' disconnect' : ''}`}

@@ -14,4 +14,11 @@ test.describe('boot', () => {
 
     expect(getUncaught(page)).toEqual([]);
   });
+
+  test('loads with ?look=noir without uncaught exceptions', async ({ page }) => {
+    await gotoApp(page, '/?look=noir');
+    await dismissWelcome(page);
+    expect(page.url()).toContain('look=noir');
+    expect(getUncaught(page)).toEqual([]);
+  });
 });

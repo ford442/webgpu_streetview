@@ -168,14 +168,20 @@ Known differences:
 
 ### Backend parity checklist (debug matrix)
 
-| Effect | WebGPU fragment | WebGPU compute | WebGL fallback |
-| --- | --- | --- | --- |
-| Rain direction | Downward | Downward | Downward |
-| Snow direction | Downward | Downward | Downward |
-| Night readability | Road/UI readable with headlights | Same target as fragment | Approximate, same readability target |
-| Fog/headlights controls | Full | Full | Approximate |
+| Effect | Budget | WebGPU fragment | WebGPU compute | WebGL fallback |
+| --- | --- | --- | --- | --- |
+| Rain direction | **must match** | Downward | Downward | Downward |
+| Snow direction | **must match** | Downward | Downward | Downward |
+| Night readability | **must match** | Road/UI readable with headlights | Same target as fragment | Approximate, same readability target |
+| Overcast sun kill | **must match** | CPU `weatherCohesion` | Same CPU pack | Same CPU pack (shaft/flare uniforms) |
+| Rain darken `mix(0.22, 0.10)` | **must match** | Yes | Yes | Yes (was 0.045/0.020) |
+| Humidity haze mix | **must match** | Distance + color + 4-tap blur | Same mix, `textureSampleLevel` blur | Distance + color mix, no blur |
+| Fog/headlights controls | best effort | Full | Full | Approximate |
+| fBm / WASM dust | skip | Fragment Perlin tile | fBm tile | None |
+| DOF / motion blur | skip | High / Ultra, reduced-motion gated | Same | Ignores slots 38/39 |
+| GPU particles | skip | No | High/Ultra compute | No |
 
-`src/renderer/weatherShaderParity.test.ts` is a CI guard for WGSL drift: it compares `applyNight` and normalized `snow(...)` math between `weather-post.wgsl` and `weather-post-compute.wgsl` and fails if they diverge.
+`src/renderer/weatherShaderParity.test.ts` is a CI guard for WGSL drift: it compares `applyNight` and normalized `snow(...)` math between `weather-post.wgsl` and `weather-post-compute.wgsl` and fails if they diverge. `src/renderer/webglLookParity.test.ts` locks the must-match GLSL literals (rain darken, haze color, fall Y).
 
 ## WebGL to WebGPU Porting Notes
 

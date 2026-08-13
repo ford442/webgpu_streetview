@@ -17,6 +17,8 @@ interface WeatherPanelProps {
     isOpen: boolean;
     autoNightMode?: boolean;
     onToggleAutoNight?: () => void;
+    onApplyLook?: (id: string) => void;
+    activeLookId?: string | null;
 }
 
 const WeatherPanel: React.FC<WeatherPanelProps> = ({
@@ -36,6 +38,8 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
     isOpen,
     autoNightMode = false,
     onToggleAutoNight,
+    onApplyLook,
+    activeLookId = null,
 }) => {
     if (!isOpen) return null;
 
@@ -281,6 +285,47 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                         ))}
                     </div>
                 </div>
+                {/* Looks (scene packs) */}
+                {onApplyLook && (
+                    <div style={{ marginTop: '18px' }}>
+                        <div style={{ ...labelStyle, marginBottom: '8px' }}>Looks (weather + grade):</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {[
+                                { id: 'clear', label: '☀️ Clear' },
+                                { id: 'noir', label: '🎬 Noir' },
+                                { id: 'teal-orange', label: '🧡 Teal-Orange' },
+                                { id: 'bleach-bypass', label: '📰 Bleach' },
+                                { id: 'golden-hour', label: '🌅 Golden' },
+                                { id: 'storm', label: '⛈️ Storm' },
+                                { id: 'arctic', label: '❄️ Arctic' },
+                                { id: 'neon-rain', label: '🌃 Neon Rain' },
+                            ].map((p) => {
+                                const selected = activeLookId === p.id;
+                                return (
+                                    <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => onApplyLook(p.id)}
+                                        aria-pressed={selected}
+                                        style={{
+                                            padding: '5px 9px',
+                                            margin: '1px',
+                                            border: `1px solid ${selected ? '#CE93D8' : '#2a4a6a'}`,
+                                            borderRadius: '4px',
+                                            backgroundColor: selected ? 'rgba(206,147,216,0.2)' : 'rgba(0,0,0,0.5)',
+                                            color: selected ? '#E1BEE7' : '#ccc',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontFamily: 'monospace',
+                                        }}
+                                    >
+                                        {p.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

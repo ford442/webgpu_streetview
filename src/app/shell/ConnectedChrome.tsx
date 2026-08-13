@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react';
 import type { TimeOfDay } from '../../hooks';
+import { pickLookSnapshot, type LookId } from '../../config/lookPacks';
 import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
 import { nearbyPoisToGlobe } from '../../search/poiModel';
 import ScoutCard from '../../components/ScoutCard';
@@ -27,6 +28,7 @@ import {
   SnapshotGallery,
   ColorGradingPanel,
   WeatherPanel,
+  LooksPanel,
   AccessibilityPanel,
   HistoricalTimeline,
   TourPanel,
@@ -104,6 +106,11 @@ export interface ConnectedChromeEnvironment {
   toggleHeadlights: () => void;
   setShaderEffectsEnabled: (v: boolean) => void;
   applyColorGradingPreset: (preset: string) => void;
+  applyLookPack: (id: string) => void;
+  activeLookId: LookId | null;
+  nightIntensity: number;
+  highBeam: boolean;
+  domeLightOn: boolean;
   rainIntensity: number;
   snowIntensity: number;
   wind: number;
@@ -239,6 +246,8 @@ export function ConnectedChrome({
     setIsColorGradingPanelOpen,
     isWeatherPanelOpen,
     setIsWeatherPanelOpen,
+    isLooksPanelOpen,
+    setIsLooksPanelOpen,
     isAccessibilityPanelOpen,
     setIsAccessibilityPanelOpen,
     isHistoricalTimelineOpen,
@@ -314,6 +323,8 @@ export function ConnectedChrome({
         setIsColorGradingPanelOpen={setIsColorGradingPanelOpen}
         isWeatherPanelOpen={isWeatherPanelOpen}
         setIsWeatherPanelOpen={setIsWeatherPanelOpen}
+        isLooksPanelOpen={isLooksPanelOpen}
+        setIsLooksPanelOpen={setIsLooksPanelOpen}
         isHistoricalTimelineOpen={isHistoricalTimelineOpen}
         setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
         isTourPanelOpen={isTourPanelOpen}
@@ -439,6 +450,19 @@ export function ConnectedChrome({
           onTimeOfDay={(v) => env.applyTimeOfDayPreset(v as TimeOfDay)}
           onClose={() => setIsWeatherPanelOpen(false)}
           isOpen={isWeatherPanelOpen}
+          onApplyLook={env.applyLookPack}
+          activeLookId={env.activeLookId}
+        />
+      )}
+
+      {isLooksPanelOpen && (
+        <LooksPanel
+          isOpen={isLooksPanelOpen}
+          onClose={() => setIsLooksPanelOpen(false)}
+          activeLookId={env.activeLookId}
+          onApplyLook={env.applyLookPack}
+          reducedMotion={accessibilitySettings.reducedMotion}
+          state={pickLookSnapshot(env)}
         />
       )}
 
