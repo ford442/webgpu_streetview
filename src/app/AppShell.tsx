@@ -7,6 +7,7 @@ import {
   useEnvironmentSettings,
   useAdvanceSafe,
   useRoutePrefetch,
+  usePlaceSearch,
 } from '../hooks';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
 import { useSharedSession } from '../hooks/useSharedSession';
@@ -243,6 +244,21 @@ export function AppShell() {
     setZoom,
   ]);
 
+  const getCurrentPosition = useCallback(() => {
+    const pos = panorama?.getPosition();
+    if (!pos) return null;
+    return { lat: pos.lat(), lng: pos.lng() };
+  }, [panorama]);
+
+  const placeSearch = usePlaceSearch({
+    teleportSafe,
+    teleportToPanoSafe,
+    getCurrentPosition,
+    heading,
+    pitch,
+    zoom,
+  });
+
   const handleGlobeTeleport = useGlobeTeleport({
     teleportSafe,
     applyTimeOfDayPreset: env.applyTimeOfDayPreset,
@@ -352,7 +368,7 @@ export function AppShell() {
         onDismiss={maps.dismissAuthBlock}
       />
 
-      {connection.showWelcome && <WelcomeModal onStart={connection.handleStart} />}
+      {connection.showWelcome && <WelcomeModal onStart={connection.handleStart} search={placeSearch} />}
 
       {connection.isConnected && (
         <ConnectedChrome
@@ -422,6 +438,7 @@ export function AppShell() {
             onDelete: (routeId) => void routePrefetch.deleteRouteGraph(routeId),
             onRefresh: () => void routePrefetch.refreshSummaries(),
           }}
+          search={placeSearch}
         />
       )}
 

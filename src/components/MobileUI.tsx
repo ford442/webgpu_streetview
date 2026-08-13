@@ -3,6 +3,7 @@ import { useTouchControls } from '../hooks/useTouchControls';
 import { useDeviceDetection, type QualitySettings } from '../hooks/useDeviceDetection';
 import { type VehicleType, VehicleConfig, VEHICLES } from '../car/VehicleManager';
 import type { MobileChromeContract } from '../app/shell/chromePanelContracts';
+import PlaceSearchBar from './PlaceSearchBar';
 
 export type MobileUIProps = MobileChromeContract;
 
@@ -29,6 +30,7 @@ export const MobileUI: React.FC<MobileUIProps> = ({
   isRoofOpen = false,
   heading = 0,
   zoom = 1,
+  search,
 }) => {
   const { device, quality, setBatterySaveMode, resetToOptimal } = useDeviceDetection();
   const [showSettings, setShowSettings] = useState(false);
@@ -112,18 +114,24 @@ export const MobileUI: React.FC<MobileUIProps> = ({
           <CompassIcon heading={heading} size={iconSize} />
         </div>
 
-        {/* Center: Zoom indicator */}
-        <div
-          style={{
-            padding: '6px 12px',
-            background: 'rgba(0,0,0,0.5)',
-            borderRadius: '16px',
-            color: '#fff',
-            fontSize: isSmallScreen ? '12px' : '14px',
-            fontWeight: '500',
-          }}
-        >
-          {zoom.toFixed(1)}x
+        {/* Center: destination search or zoom */}
+        <div style={{ pointerEvents: 'auto', flex: 1, display: 'flex', justifyContent: 'center', padding: '0 8px' }}>
+          {search ? (
+            <PlaceSearchBar search={search} compact />
+          ) : (
+            <div
+              style={{
+                padding: '6px 12px',
+                background: 'rgba(0,0,0,0.5)',
+                borderRadius: '16px',
+                color: '#fff',
+                fontSize: isSmallScreen ? '12px' : '14px',
+                fontWeight: '500',
+              }}
+            >
+              {zoom.toFixed(1)}x
+            </div>
+          )}
         </div>
 
         {/* Right: Settings button */}

@@ -33,9 +33,12 @@ export interface ChromeStageState {
   zoom?: number;
 }
 
+import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
+
 /** Combined contract MobileUI consumes — mirrors ConnectedChrome session toggles. */
 export interface MobileChromeContract extends ChromeStageActions, ChromeEnvironmentActions, ChromeStageState {
   isVisible: boolean;
   onPan: (deltaX: number, deltaY: number) => void;
   onZoom: (zoomDelta: number) => void;
+  search?: UsePlaceSearchResult;
 }
