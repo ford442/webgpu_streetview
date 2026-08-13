@@ -26,6 +26,9 @@ export interface UseAppKeyboardShortcutsOptions {
   setIsLooksPanelOpen: (v: boolean) => void;
   isTourPanelOpen: boolean;
   setIsTourPanelOpen: (v: boolean) => void;
+  isCinemaMode: boolean;
+  toggleCinemaMode: () => void;
+  exitCinemaMode: () => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   wipersEnabled: boolean;
@@ -72,6 +75,9 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     setIsLooksPanelOpen,
     isTourPanelOpen,
     setIsTourPanelOpen,
+    isCinemaMode,
+    toggleCinemaMode,
+    exitCinemaMode,
     viewMode,
     toggleViewMode,
     wipersEnabled,
@@ -190,6 +196,17 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       action: () => {
         setIsLooksPanelOpen(!isLooksPanelOpen);
         announce(`Looks panel ${!isLooksPanelOpen ? 'opened' : 'closed'}`);
+      key: 'F',
+      modifier: 'shift',
+      description: 'Toggle cinema mode',
+      action: () => {
+        if (isCinemaMode) {
+          exitCinemaMode();
+          announce('Cinema mode off');
+        } else {
+          toggleCinemaMode();
+          announce('Cinema mode on — Esc to exit');
+        }
       },
     },
     {
@@ -250,8 +267,9 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     },
     {
       key: 'Escape',
-      description: 'Close panels',
+      description: 'Close panels or exit cinema mode',
       action: () => {
+        if (isCinemaMode) { exitCinemaMode(); return; }
         if (globeMode.isActive) { globeMode.deactivate(); return; }
         if (isLooksPanelOpen) { setIsLooksPanelOpen(false); return; }
         if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }

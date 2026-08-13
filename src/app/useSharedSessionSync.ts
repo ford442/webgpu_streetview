@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { UseSharedSessionResult } from '../hooks/useSharedSession';
 import { buildHostBroadcastPayload, shouldTeleportGuestToPano } from './sharedSessionSync';
+import { parseWeatherPreset } from '../utils/weatherPresetSync';
+import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
 
 export interface UseSharedSessionSyncParams {
   sharedSession: UseSharedSessionResult;
@@ -13,6 +15,12 @@ export interface UseSharedSessionSyncParams {
   setHeading: (heading: number) => void;
   setPitch: (pitch: number) => void;
   setZoom: (zoom: number) => void;
+  /** Serialized weather preset broadcast by host (see weatherPresetSync). */
+  weatherPreset?: string;
+  applyTimeOfDayPreset?: (preset: TimeOfDay) => void;
+  setRainIntensity?: (v: number) => void;
+  setSnowIntensity?: (v: number) => void;
+  setFogDensity?: (v: number) => void;
 }
 
 /**
@@ -29,8 +37,14 @@ export function useSharedSessionSync({
   setHeading,
   setPitch,
   setZoom,
+  weatherPreset,
+  applyTimeOfDayPreset,
+  setRainIntensity,
+  setSnowIntensity,
+  setFogDensity,
 }: UseSharedSessionSyncParams): void {
   const lastAppliedPanoRef = useRef<string | null>(null);
+  const lastWeatherPresetRef = useRef<string | null>(null);
 
   const {
     role: sessionRole,
@@ -43,7 +57,12 @@ export function useSharedSessionSync({
   useEffect(() => {
     if (sessionRole !== 'host' || !sessionConnected) return;
     const interval = setInterval(() => {
-      const payload = buildHostBroadcastPayload(panorama, { heading, pitch, zoom }, viewMode);
+      const payload = buildHostBroadcastPayload(
+        panorama,
+        { heading, pitch, zoom },
+        viewMode,
+        weatherPreset ? { weatherPreset } : undefined,
+      );
       if (!payload) return;
       broadcastState(payload);
     }, 100);
@@ -57,6 +76,7 @@ export function useSharedSessionSync({
     pitch,
     zoom,
     viewMode,
+    weatherPreset,
   ]);
 
   // Guests follow the host's POV as it arrives.
@@ -72,6 +92,20 @@ export function useSharedSessionSync({
     setHeading(latestState.pov.heading);
     setPitch(latestState.pov.pitch);
     setZoom(latestState.pov.zoom);
+
+    if (
+      latestState.weatherPreset &&
+      latestState.weatherPreset !== lastWeatherPresetRef.current
+    ) {
+      lastWeatherPresetRef.current = latestState.weatherPreset;
+      const parsed = parseWeatherPreset(latestState.weatherPreset);
+      if (parsed) {
+        if (parsed.timeOfDay && applyTimeOfDayPreset) applyTimeOfDayPreset(parsed.timeOfDay);
+        if (parsed.rainIntensity !== undefined && setRainIntensity) setRainIntensity(parsed.rainIntensity);
+        if (parsed.snowIntensity !== undefined && setSnowIntensity) setSnowIntensity(parsed.snowIntensity);
+        if (parsed.fogDensity !== undefined && setFogDensity) setFogDensity(parsed.fogDensity);
+      }
+    }
   }, [
     sessionRole,
     latestState,
@@ -80,5 +114,9 @@ export function useSharedSessionSync({
     setHeading,
     setPitch,
     setZoom,
+    applyTimeOfDayPreset,
+    setRainIntensity,
+    setSnowIntensity,
+    setFogDensity,
   ]);
 }

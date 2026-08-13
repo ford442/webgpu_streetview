@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Tour } from '../hooks/useTours';
 import type { RouteGraphNode } from '../offline';
 import { findPathBetweenPanos } from '../offline';
+import { resolveDirectorAt, type TourDirectorKeyframe } from '../utils/tourDirector';
 
 interface TourPlayerProps {
     tour: Tour;
@@ -14,6 +15,8 @@ interface TourPlayerProps {
     getRouteGraph?: (routeId: string) => Promise<RouteGraphNode[]>;
     /** Pre-warms the panorama cache for a lat/lng, used to smooth hops the offline graph knows about. */
     prewarmPanoCache?: (lat: number, lng: number) => Promise<unknown>;
+    /** Apply director-track keyframe (weather / vehicle) during playback. */
+    applyDirectorKeyframe?: (frame: TourDirectorKeyframe) => void;
 }
 
 const btnStyle: React.CSSProperties = {
@@ -37,6 +40,7 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
     isPanoramaReady,
     getRouteGraph,
     prewarmPanoCache,
+    applyDirectorKeyframe,
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -47,6 +51,8 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
     speedRef.current = speed;
     const runTokenRef = useRef(0);
     const routeGraphNodesRef = useRef<RouteGraphNode[]>([]);
+    const playbackElapsedRef = useRef(0);
+    const playbackStartedAtRef = useRef(0);
 
     // Reset playback position whenever a different tour is loaded.
     useEffect(() => {
@@ -70,6 +76,12 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
         };
     }, [tour.id, getRouteGraph]);
 
+    const applyDirectorAt = useCallback((elapsedMs: number) => {
+        if (!tour.directorTrack?.length || !applyDirectorKeyframe) return;
+        const frame = resolveDirectorAt(tour.directorTrack, elapsedMs);
+        if (frame) applyDirectorKeyframe(frame);
+    }, [tour.directorTrack, applyDirectorKeyframe]);
+
     const visitWaypoint = useCallback(async (index: number) => {
         const wp = tour.waypoints[index];
         if (!wp) return;
@@ -91,7 +103,8 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
         setHeading(wp.pov.heading);
         setPitch(wp.pov.pitch);
         setZoom(wp.pov.zoom);
-    }, [tour.waypoints, teleportToPano, setHeading, setPitch, setZoom, prewarmPanoCache]);
+        applyDirectorAt(playbackElapsedRef.current);
+    }, [tour.waypoints, teleportToPano, setHeading, setPitch, setZoom, prewarmPanoCache, applyDirectorAt]);
 
     // Playback loop: advances through waypoints from currentIndex while isPlaying.
     useEffect(() => {
@@ -99,6 +112,9 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
         const token = ++runTokenRef.current;
 
         const run = async () => {
+            playbackStartedAtRef.current = performance.now();
+            playbackElapsedRef.current = 0;
+            applyDirectorAt(0);
             let idx = currentIndex;
             while (idx < tour.waypoints.length) {
                 if (runTokenRef.current !== token) return;
@@ -110,7 +126,14 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
                 const effectiveDwell = tour.transitionType === 'hold-pause'
                     ? wp.dwellTimeMs
                     : Math.min(wp.dwellTimeMs, 800);
-                await new Promise(resolve => setTimeout(resolve, effectiveDwell / speedRef.current));
+                const dwellMs = effectiveDwell / speedRef.current;
+                const dwellStart = performance.now();
+                while (performance.now() - dwellStart < dwellMs) {
+                    if (runTokenRef.current !== token) return;
+                    playbackElapsedRef.current = performance.now() - playbackStartedAtRef.current;
+                    applyDirectorAt(playbackElapsedRef.current);
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
                 if (runTokenRef.current !== token) return;
                 idx++;
             }
@@ -147,7 +170,22 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
     const waypointCount = tour.waypoints.length;
 
     return (
-        <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: isFullscreen ? '#111' : 'transparent', padding: isFullscreen ? '20px' : 0 }}>
+        <div
+            ref={containerRef}
+            data-testid="tour-player"
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                backgroundColor: isFullscreen ? '#111' : 'transparent',
+                padding: isFullscreen ? '20px' : 0,
+            }}
+        >
+            {tour.directorTrack && tour.directorTrack.length > 0 && (
+                <div style={{ color: '#888', fontSize: '11px' }}>
+                    Director track: {tour.directorTrack.length} keyframe{tour.directorTrack.length === 1 ? '' : 's'}
+                </div>
+            )}
             <div style={{ color: '#ccc', fontSize: '13px' }}>
                 Waypoint {waypointCount === 0 ? 0 : currentIndex + 1} / {waypointCount}
                 {tour.waypoints[currentIndex]?.annotation ? ` — ${tour.waypoints[currentIndex]!.annotation}` : ''}
