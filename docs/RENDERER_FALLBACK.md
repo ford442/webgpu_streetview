@@ -102,7 +102,7 @@ Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-
 The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:
 
 - **Fragment** (default): `src/renderer/WeatherPostProcessor.ts` + `public/shaders/weather-post.wgsl`. A single fullscreen-triangle render pass sampling the HDR intermediate texture.
-- **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Two of those are now backed by real resources: `writeDepthTexture` (binding 6) receives a full-res `r32float` view-depth proxy every dispatch, and `plasmaBuffer` (binding 12) carries the WASM-fed 64x64 noise tile (#128) as 1024 `vec4`s. The rest remain 1x1 dummies, reserved for GPU particles and temporal effects that want storage-buffer access a fragment pass can't offer efficiently.
+- **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4, view-depth ping-pong), `plasmaBuffer` (binding 12, WASM fBm tile), and — when GPU particles are on — `dataTextureA/B` (bindings 7/8, density splat + particle state). `dataTextureC` stays a 1x1 dummy. Integrate/splat live in `public/shaders/weather-particles.wgsl`.
 
 Both read the same `40-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
 
@@ -127,9 +127,9 @@ Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weat
 
 **This is WebGPU-only.** The WebGL2 fallback renderer remains fragment-only (a single-pass SDR approximation) — there is no WebGL2 compute path, and `?weather=compute` has no effect when the WebGL2 backend is active.
 
-Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, WASM dust turbulence, and the cinematic camera FX are at parity between the two paths; shared helper bodies are enforced identical by `src/renderer/weatherShaderParity.test.ts`.
+Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, WASM dust turbulence, and the cinematic camera FX are at parity between the two paths; shared helper bodies are enforced identical by `src/renderer/weatherShaderParity.test.ts`. The compute path **adds** a WASM-seeded GPU particle layer (bindings 7/8) on top of the shared procedural rain/snow; the fragment path and WebGL fallback do not.
 
-Compute bindings still backed by 1x1 dummies: `dataTextureA/B` (reserved for GPU particle state) and `dataTextureC`. Binding 4/6 are a full-res **depth ping-pong** pair (`readDepthTexture` / `writeDepthTexture`) used for temporal fog stability on the compute path only. See `docs/GRAPHICS.md` §5 for the current status table.
+Compute binding still backed by a 1x1 dummy: `dataTextureC`. Binding 4/6 are a full-res **depth ping-pong** pair. Bindings 7/8 are a half-res density splat + compact particle-state grid when GPU particles are enabled (High/Ultra compute weather). See `docs/GRAPHICS.md` §5.
 
 ## Capability matrix (WebGPU device init)
 

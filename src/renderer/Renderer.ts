@@ -356,6 +356,10 @@ export class Renderer implements StreetViewRenderer {
         this.weatherPostProcessor?.updateNoiseBuffer(tile);
     }
 
+    public updateParticleSeeds(seeds: Float32Array, width: number, height: number): void {
+        this.weatherPostProcessor?.updateParticleSeeds(seeds, width, height);
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherPostProcessor?.updateWeatherAnimation();
     }

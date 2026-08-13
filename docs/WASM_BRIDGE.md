@@ -24,6 +24,7 @@ pixels in WGSL, cabin geometry in Three.js.
 | `src/wasm/index.ts` | loader, camelCase API, **pure-JS fallback** |
 | `src/wasm/useWasmModule.ts` | React hook (`useWasmModule`) for React-side consumers |
 | `src/wasm/wasmNoiseFeeder.ts` | render-loop tile feeder |
+| `src/wasm/wasmParticleFeeder.ts` | render-loop particle-seed feeder (compute weather) |
 | `public/wasm/streetview-wasm.wasm` | committed binary (built from the WAT source) |
 
 Two build paths produce the binary, and only one runs on a given machine:
@@ -94,6 +95,7 @@ in/out — no allocator, no `malloc` on the hot path. 512 is 8-byte aligned, so
 |---|---|---|
 | `WasmNoiseFeeder` → `WeatherPostProcessor` (binding 3) | `fill_noise_buffer` | drifting dust turbulence on the fragment path |
 | `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
+| `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
@@ -103,10 +105,13 @@ compute weather path. `?wasmNoise=off` (or `localStorage streetview.wasmNoise=of
 disables the tile entirely for A/B comparison — the shader then falls back to
 uniform dust density.
 
-`fill_particle_seeds` has no production consumer yet: it exists for the GPU
-particle work that will use compute-path storage bindings 7/8 (see
-`docs/GRAPHICS.md` §5). It is fully implemented, ABI-locked and tested on all
-three backends.
+`fill_particle_seeds` is consumed by `WasmParticleFeeder` on the compute
+weather path: seeds are uploaded once (and on grid-size change or a dry→wet
+restart), then `weather-particles.wgsl` integrates and splats into storage
+textures 7/8. The JS fallback of `fillParticleSeeds` is what Vitest exercises
+when `fetch` cannot load `public/wasm/`. `?wasmParticles=off` (or stored
+`streetview.wasmParticles=off`) leaves 7/8 as 1×1 dummies so the procedural
+compute rain/snow is easy to A/B. The fragment path never calls the feeder.
 
 ---
 

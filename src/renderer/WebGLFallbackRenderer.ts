@@ -428,6 +428,10 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         // it's a WebGPU-only enhancement layered on weather-post.wgsl.
     }
 
+    public updateParticleSeeds(_seeds: Float32Array, _width: number, _height: number): void {
+        // WebGL fallback stays procedural; no compute particle textures.
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherParams[WeatherParamIndex.time] = ((Date.now() - this.startTime) / 1000) % 10000.0;
         if (this.lastSource) {

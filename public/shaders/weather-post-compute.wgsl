@@ -14,14 +14,17 @@
 // 36:sunrise 37:anamorphicStreak 38:dofStrength 39:motionBlurStrength (padding slots reclaimed)
 //
 // STORAGE SURFACES IN USE (formerly 1x1 dummies):
-//  - binding 6  writeDepthTexture : full-res r32float view-depth proxy, written
-//    every dispatch so later passes / probes can read the same depth the fog
 //  - binding 4 readDepthTexture : previous frame view-depth (ping-pong read).
 //  - binding 6 writeDepthTexture: current frame view-depth (ping-pong write).
+//  - binding 7 dataTextureA : half-res particle *density* splat (rgba32float,
+//    readable). 1x1 dummy when GPU particles are off.
+//  - binding 8 dataTextureB : compact particle *state* write target (rgba32float
+//    storage). Paired with an internal ping-pong read that lives outside this
+//    header; 1x1 dummy when GPU particles are off.
 //  - binding 12 plasmaBuffer : the real 64x64 WASM Perlin tile (#128/#189),
 //    packed as 1024 vec4s, driving dust turbulence exactly like the fragment
 //    path's `wasmNoiseTile`.
-// Still dummies: dataTextureA/B (7/8), dataTextureC (9).
+// Still dummy: dataTextureC (9).
 
 // --- STANDARD image_video_effects HEADER ---
 @group(0) @binding(0) var u_sampler: sampler;
@@ -31,7 +34,7 @@
 @group(0) @binding(4) var readDepthTexture: texture_2d<f32>;
 @group(0) @binding(5) var non_filtering_sampler: sampler;
 @group(0) @binding(6) var writeDepthTexture: texture_storage_2d<r32float, write>;
-@group(0) @binding(7) var dataTextureA: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(7) var dataTextureA: texture_2d<f32>;
 @group(0) @binding(8) var dataTextureB: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(9) var dataTextureC: texture_2d<f32>;
 @group(0) @binding(10) var<storage, read_write> extraBuffer: array<f32>;
@@ -621,6 +624,39 @@ fn headlightCone(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32) -> 
     return (warmColor * coneFinal * strength + hotSpot);
 }
 
+// GPU particle density (binding 7). Procedural rain()/snow() stay the base
+// look so weatherShaderParity still holds; this layer is compute-only.
+fn applyParticlePrecipitation(col: vec3<f32>, uv: vec2<f32>, viewDepth: f32) -> vec3<f32> {
+    let dims = vec2<i32>(textureDimensions(dataTextureA));
+    let stateDims = textureDimensions(dataTextureB);
+    if (dims.x <= 1 || dims.y <= 1 || stateDims.x <= 1) {
+        return col;
+    }
+    let rainI = p_rainIntensity();
+    let snowI = p_snowIntensity();
+    if (rainI + snowI < 0.001) {
+        return col;
+    }
+
+    let size = vec2<f32>(f32(dims.x), f32(dims.y));
+    let scaled = uv * size - vec2<f32>(0.5);
+    let i0 = vec2<i32>(floor(scaled));
+    let f = fract(scaled);
+    let s00 = textureLoad(dataTextureA, clamp(i0, vec2<i32>(0), dims - 1), 0);
+    let s10 = textureLoad(dataTextureA, clamp(i0 + vec2<i32>(1, 0), vec2<i32>(0), dims - 1), 0);
+    let s01 = textureLoad(dataTextureA, clamp(i0 + vec2<i32>(0, 1), vec2<i32>(0), dims - 1), 0);
+    let s11 = textureLoad(dataTextureA, clamp(i0 + vec2<i32>(1, 1), vec2<i32>(0), dims - 1), 0);
+    let splat = mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+
+    let alive = step(0.001, splat.a);
+    // Particle alpha is a view-depth layer; hide flakes behind the proxy.
+    let visible = step(splat.a, viewDepth + 0.08);
+    let windshield = mix(0.32, 1.0, smoothstep(0.06, 0.78, uv.y));
+    let hl = headlightCone(uv, p_headlightHeading(), p_headlightPitch(), p_highBeam());
+    let hlBoost = 1.0 + length(hl) * p_headlightsOn() * p_nightIntensity() * 2.4;
+    return col + splat.rgb * alive * visible * windshield * hlBoost;
+}
+
 fn headlightBeams(uv: vec2<f32>, hlHeading: f32, hlPitch: f32, highBeam: f32, t: f32) -> f32 {
     var dx = uv.x - hlHeading;
     if (dx > 0.5) { dx = dx - 1.0; }
@@ -889,6 +925,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let snowLit = 1.0 + p_headlightsOn() * p_nightIntensity() * 0.35;
         col = col + s * vec3<f32>(1.15, 1.18, 1.22) * snowLit;
     }
+    let particleLayer = applyParticlePrecipitation(vec3<f32>(0.0), uv, viewDepth);
+    col = col + particleLayer * precipVisibility;
 
     // Refractive lens droplets
     if (p_rainIntensity() > 0.05) {

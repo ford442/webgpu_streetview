@@ -77,6 +77,12 @@ softens the far field, and a shallow ground mist appears at the horizon line.
 Scene darkening −26% by day, easing to −12% at night so the readable-night
 floor from #171 survives. Dust drops to ~40% of its clear-day level.
 
+On the **compute** path (Ultra, or `?weather=compute` at High) a second layer
+of WASM-seeded GPU particles is splatted into bindings 7/8: streaks pick up
+the same wind, fall downward (`WEATHER_FALL_Y_SIGN = −1`), thicken toward the
+windshield, and light up in the headlight cone at night. The fragment default
+and the WebGL fallback stay on the procedural `rain()` function only.
+
 ### ⛈️ Storm (rain 100, wind 80)
 As above, pushed to a near-black sky: overcast 0.85 ⇒ lens flare 0.4 → 0.06.
 Ground mist reaches `fogDensity` 0.28 with the fog slider still at zero.
@@ -86,6 +92,13 @@ Flakes stay bright and gain a further +35% when headlights are on at night —
 they should read as *lit by the car*, not self-luminous. Snow suppresses dust
 only halfway and adds far less humidity haze than rain (cold air holds less
 water). Overcast is slightly weaker than the equivalent rain value.
+
+Compute-path GPU particles add depth-aware flakes on top of that procedural
+base (occluded by the view-depth proxy, denser near the windshield, extra
+headlight bloom). `prefers-reduced-motion` quarters the particle count rather
+than turning the layer off. `?wasmParticles=off` disables the GPU field for
+A/B against procedural-only compute rain/snow. Low/Medium quality never
+allocate the storage textures.
 
 ### 🌫️ Fog (fog slider)
 Thin fog (≤20) lifts into an elevated haze band that leaves the road clear;
@@ -164,6 +177,7 @@ argument count statically. Validate locally with
 cargo install naga-cli
 naga --validate 31 public/shaders/weather-post.wgsl
 naga --validate 31 public/shaders/weather-post-compute.wgsl
+naga --validate 31 public/shaders/weather-particles.wgsl
 ```
 
 ---
@@ -177,14 +191,17 @@ header. Status of each reserved surface:
 |---------|----------|--------|
 | 6 `writeDepthTexture` | full-res `r32float` | **real** — view-depth proxy, written every dispatch |
 | 12 `plasmaBuffer` | 64×64 WASM noise tile as 1024 `vec4`s | **real** — drives dust turbulence (fBm detail, see below) |
-| 4 `readDepthTexture` | 1×1 `rgba8unorm` | dummy — needs a ping-pong to be useful |
-| 7/8 `dataTextureA/B` | 1×1 `rgba32float` | dummy — reserved for GPU particle state |
+| 4 `readDepthTexture` | full-res `r32float` | **real** — previous-frame depth ping-pong |
+| 7 `dataTextureA` | half-res `rgba32float` | **real** when GPU particles are on — density splat (readable) |
+| 8 `dataTextureB` | compact `rgba32float` grid | **real** when GPU particles are on — particle-state write target |
 | 9 `dataTextureC` | 1×1 `rgba8unorm` | dummy |
 
-Still open: GPU-simulated precipitation particles (would use 7/8 for
-position/velocity state across frames) and reading last frame's depth from
-binding 4 for temporal effects. The WASM module already exports
-`fill_particle_seeds` for that work — see `docs/WASM_BRIDGE.md`.
+GPU precipitation (`public/shaders/weather-particles.wgsl`) is gated to the
+compute weather path at High/Ultra. `WasmParticleFeeder` calls
+`fill_particle_seeds` once (and again on count change or a dry→wet restart);
+a compute integrate pass advects with wind + gravity (`WEATHER_FALL_Y_SIGN`)
+and a splat pass writes density. The fragment path and WebGL fallback stay
+procedural. See `docs/WASM_BRIDGE.md`.
 
 ### Noise tile detail differs by path
 
