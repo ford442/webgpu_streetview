@@ -366,6 +366,35 @@ describe('signedAngleDiff', () => {
   });
 });
 
+// ---- fillEngineNoise --------------------------------------------------------
+describe('fillEngineNoise', () => {
+  test('writes samples in [-1, 1]', async () => {
+    const wasm = await getFallback();
+    const buf = new Float32Array(256);
+    wasm.fillEngineNoise(buf, 256, 2200, 0.6, 40, 0.5, 44100);
+    for (let i = 0; i < buf.length; i++) {
+      expect(buf[i]).toBeGreaterThanOrEqual(-1);
+      expect(buf[i]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('is deterministic for the same inputs', async () => {
+    const wasm = await getFallback();
+    const a = new Float32Array(64);
+    const b = new Float32Array(64);
+    wasm.fillEngineNoise(a, 64, 1800, 0.4, 30, 1.25, 48000);
+    wasm.fillEngineNoise(b, 64, 1800, 0.4, 30, 1.25, 48000);
+    expect(Array.from(a)).toEqual(Array.from(b));
+  });
+
+  test('is a no-op for a zero count', async () => {
+    const wasm = await getFallback();
+    const buf = new Float32Array(4);
+    wasm.fillEngineNoise(buf, 0, 900, 0.2, 10, 0, 44100);
+    expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
+  });
+});
+
 // ---- isWasm flag ------------------------------------------------------------
 describe('isWasm flag', () => {
   test('JS fallback has isWasm = false', async () => {

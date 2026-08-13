@@ -7,7 +7,7 @@
  * Emscripten build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine,
- *   normalize_angle, signed_angle_diff
+ *   normalize_angle, signed_angle_diff, fill_engine_noise
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
  * canonical names for Emscripten EXPORTED_FUNCTIONS.
@@ -105,6 +105,23 @@ float sw_normalize_angle(float angle);
  * Smallest signed angle difference, result in (-180, 180].
  */
 float sw_signed_angle_diff(float from, float to);
+
+/**
+ * Fill a mono PCM buffer with engine + road noise.
+ * Samples are f32 in [-1, 1]. Deterministic for a given (rpm, load, speed,
+ * time, sampleRate) so the JS fallback can match the WAT/C++ path.
+ *
+ * @param buf          Caller-owned float array of length `count`.
+ * @param count        Number of samples to write.
+ * @param rpm          Engine RPM (>= 0).
+ * @param load         Throttle/load in [0, 1].
+ * @param speed_kmh    Road speed in km/h (>= 0).
+ * @param time_sec     Stream time at sample 0 (seconds, >= 0).
+ * @param sample_rate  Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ */
+void sw_fill_engine_noise(float* buf, int count,
+                          float rpm, float load, float speed_kmh,
+                          float time_sec, float sample_rate);
 
 #ifdef __cplusplus
 } // extern "C"

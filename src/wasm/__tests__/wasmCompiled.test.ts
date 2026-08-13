@@ -28,6 +28,11 @@ interface CompiledExports {
   signed_angle_diff: (from: number, to: number) => number;
   haversine: (lat1: number, lon1: number, lat2: number, lon2: number) => number;
   batch_haversine: (ptr: number, count: number, out: number) => number;
+  fill_engine_noise: (
+    ptr: number, count: number,
+    rpm: number, load: number, speed: number,
+    time: number, sampleRate: number,
+  ) => void;
 }
 
 function jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -66,6 +71,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(typeof exp.signed_angle_diff).toBe('function');
     expect(typeof exp.haversine).toBe('function');
     expect(typeof exp.batch_haversine).toBe('function');
+    expect(typeof exp.fill_engine_noise).toBe('function');
   });
 
   test('haversine matches the JS reference formula via the host math imports', () => {
@@ -216,6 +222,27 @@ describe('compiled streetview-wasm.wasm binary', () => {
     const jsBuf = new Float32Array(count * 4);
     fallback.fillParticleSeeds(jsBuf, count, 777);
     expect(Array.from(jsBuf)).toEqual(fromWasm);
+    _resetWasmModule();
+  });
+
+  test('fill_engine_noise matches the JS fallback', async () => {
+    const { loadWasmModule, _resetWasmModule } = await import('../index');
+    _resetWasmModule();
+    const fallback = await loadWasmModule();
+    expect(fallback.isWasm).toBe(false);
+
+    const count = 48;
+    const ptr = 512;
+    const args = [2200, 0.55, 48, 0.75, 44100] as const;
+    exp.fill_engine_noise(ptr, count, ...args);
+    const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
+
+    const jsBuf = new Float32Array(count);
+    fallback.fillEngineNoise(jsBuf, count, ...args);
+    expect(fromWasm.length).toBe(count);
+    for (let i = 0; i < count; i++) {
+      expect(jsBuf[i]).toBeCloseTo(fromWasm[i]!, 4);
+    }
     _resetWasmModule();
   });
 

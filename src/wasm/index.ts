@@ -110,6 +110,20 @@ export interface StreetViewWasmAPI {
   /** Smallest signed angle difference; result in (-180, 180]. */
   signedAngleDiff(from: number, to: number): number;
 
+  /**
+   * Fill a Float32Array with mono engine+road PCM in [-1, 1].
+   * `out` must have at least `count` elements.
+   */
+  fillEngineNoise(
+    out: Float32Array,
+    count: number,
+    rpm: number,
+    load: number,
+    speedKmh: number,
+    timeSec: number,
+    sampleRate: number,
+  ): void;
+
   /** True when backed by the compiled WASM binary; false for JS fallback. */
   isWasm: boolean;
 }
@@ -303,6 +317,51 @@ function _jsSignedAngleDiff(from: number, to: number): number {
   return d - 360 * Math.floor((d + 180) / 360);
 }
 
+function _jsFillEngineNoise(
+  out: Float32Array,
+  count: number,
+  rpm: number,
+  load: number,
+  speedKmh: number,
+  timeSec: number,
+  sampleRate: number,
+): void {
+  if (count <= 0) return;
+  let sr = Math.fround(sampleRate);
+  if (!(sr > 1)) sr = 44100;
+  rpm = Math.fround(Math.max(0, rpm));
+  load = Math.fround(Math.max(0, Math.min(1, load)));
+  speedKmh = Math.fround(Math.max(0, speedKmh));
+  timeSec = Math.fround(Math.max(0, timeSec));
+  const invSr = Math.fround(1 / sr);
+  const fund = Math.fround(rpm / 60);
+  let state = Math.floor(Math.fround(timeSec * sr)) >>> 0;
+  if (state === 0) state = 1;
+  let spd = Math.fround(speedKmh / 140);
+  if (spd > 1) spd = 1;
+  const nMax = Math.min(count, out.length);
+  for (let i = 0; i < nMax; i++) {
+    const t = Math.fround(timeSec + Math.fround(i * invSr));
+    const cycles = Math.fround(t * fund);
+    const frac = Math.fround(cycles - Math.fround(Math.floor(cycles)));
+    const saw = Math.fround(Math.fround(frac * 2) - 1);
+    const cycles2 = Math.fround(t * Math.fround(fund * 2));
+    const frac2 = Math.fround(cycles2 - Math.fround(Math.floor(cycles2)));
+    const saw2 = Math.fround(Math.fround(frac2 * 2) - 1);
+    const eng = Math.fround(
+      Math.fround(Math.fround(saw * 0.28) + Math.fround(saw2 * 0.11)) *
+        Math.fround(0.22 + Math.fround(0.78 * load)),
+    );
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    let n = Math.fround(((state >>> 8) & 0xffffff) / 16777216);
+    n = Math.fround(Math.fround(n * 2) - 1);
+    let s = Math.fround(eng + Math.fround(Math.fround(n * spd) * 0.18));
+    if (s > 1) s = 1;
+    else if (s < -1) s = -1;
+    out[i] = s;
+  }
+}
+
 const JS_FALLBACK: StreetViewWasmAPI = {
   seed: _jsSeed,
   noise2d: _jsNoise2d,
@@ -314,6 +373,7 @@ const JS_FALLBACK: StreetViewWasmAPI = {
   batchHaversine: _jsBatchHaversine,
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
+  fillEngineNoise: _jsFillEngineNoise,
   isWasm: false,
 };
 
@@ -408,6 +468,11 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     const batch_haversine = exp['batch_haversine'] as (
       ptr: number, count: number, out: number
     ) => number;
+    const fill_engine_noise = exp['fill_engine_noise'] as (
+      ptr: number, count: number,
+      rpm: number, load: number, speed: number,
+      time: number, sampleRate: number,
+    ) => void;
 
     // WASM memory starts at byte 512 (after the permutation table); everything
     // from there on is a scratch region for buffer transfers. 512 is a multiple
@@ -480,6 +545,22 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       return total;
     };
 
+    const fillEngineNoise = (
+      out: Float32Array,
+      count: number,
+      rpm: number,
+      load: number,
+      speedKmh: number,
+      timeSec: number,
+      sampleRate: number,
+    ): void => {
+      if (count <= 0) return;
+      reserveScratch(count * 4);
+      fill_engine_noise(SCRATCH_OFFSET, count, rpm, load, speedKmh, timeSec, sampleRate);
+      const view = new Float32Array(wasmMemory.buffer, SCRATCH_OFFSET, count);
+      out.set(view.subarray(0, Math.min(out.length, count)));
+    };
+
     _cachedModule = {
       seed,
       noise2d,
@@ -491,6 +572,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       batchHaversine,
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
+      fillEngineNoise,
       isWasm: true,
     };
   } catch {

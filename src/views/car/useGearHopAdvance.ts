@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  cycleWiperStalk,
-  gearHopCount,
-  GEAR_POSITIONS,
-  setCabinLeverHandlers,
-  setCarGear,
-  type GearPosition,
-  type WiperStalkPosition,
-} from '../../car';
-
-/** Spacing between the extra panorama hops a 2/3 gear queues. */
-const GEAR_HOP_INTERVAL_MS = 550;
+import { gearHopCount, GEAR_POSITIONS, setCabinLeverHandlers, setCarGear, type GearPosition, type WiperStalkPosition, cycleWiperStalk } from '../../car';
+import { gearChainedHopIntervalMs } from '../../car/VehicleDynamics';
 
 export interface UseGearHopAdvanceOptions {
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;
@@ -70,7 +60,7 @@ export function useGearHopAdvance({
         if (gearRef.current !== selected) return;
         advance(resolved, carHeadingRef.current);
         if (i === hops - 1) setChainingHops(0);
-      }, i * GEAR_HOP_INTERVAL_MS);
+      }, i * gearChainedHopIntervalMs(hops));
       pendingHopsRef.current.push(id);
     }
   }, [advance, carHeading, cancelPendingHops]);

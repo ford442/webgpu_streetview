@@ -95,5 +95,15 @@ float normalize_angle(float angle) { return sw_normalize_angle(angle); }
 EMSCRIPTEN_KEEPALIVE
 float signed_angle_diff(float from, float to) { return sw_signed_angle_diff(from, to); }
 
+/**
+ * Mono engine+road PCM. Matches WAT export: 'fill_engine_noise'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void fill_engine_noise(float* buf, int count,
+                       float rpm, float load, float speed_kmh,
+                       float time_sec, float sample_rate) {
+    sw_fill_engine_noise(buf, count, rpm, load, speed_kmh, time_sec, sample_rate);
+}
+
 } // extern "C"
 #endif // __EMSCRIPTEN__

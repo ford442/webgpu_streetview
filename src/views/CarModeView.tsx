@@ -14,6 +14,7 @@ import {
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
+import { useCruiseFlag } from '../hooks/CruiseFlagContext';
 import { useGearHopAdvance } from './car/useGearHopAdvance';
 import { useCabinRadioBinding } from './car/useCabinRadioBinding';
 import { useCarDashboardBridge } from './car/useCarDashboardBridge';
@@ -78,13 +79,14 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
 
+  const isCruiseMode = useCruiseFlag();
   const {
     hudMode,
     setHudModeAndPersist,
     toggleDashboard,
     handleHudKeyDown,
     handleHudKeyUp,
-  } = useCarHudMode();
+  } = useCarHudMode({ isCruiseMode });
 
   const {
     gear,

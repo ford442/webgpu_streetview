@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
+import { gearChainedHopIntervalMs } from '../car/VehicleDynamics';
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
@@ -158,7 +159,7 @@ export function useCruiseMode({
           // Re-read the gear between chained hops so shifting into P/N (or
           // disengaging cruise) stops the chain instead of finishing it.
           if (i > 0) {
-            await new Promise(r => setTimeout(r, CRUISE_CHAINED_HOP_INTERVAL_MS));
+            await new Promise(r => setTimeout(r, gearChainedHopIntervalMs(hops)));
             if (hopsPerTickRef.current && hopsPerTickRef.current() <= 0) break;
           }
           const moved = await singleHop();

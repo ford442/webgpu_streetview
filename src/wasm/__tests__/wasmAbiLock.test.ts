@@ -35,6 +35,7 @@ const EXPECTED_EXPORTS = [
   'signed_angle_diff',
   'haversine',
   'batch_haversine',
+  'fill_engine_noise',
 ] as const;
 
 /** malloc/free come from the Emscripten runtime, not from our sources. */
@@ -137,6 +138,7 @@ describe('WASM ABI lock', () => {
       signedAngleDiff: 'signed_angle_diff',
       haversine: 'haversine',
       batchHaversine: 'batch_haversine',
+      fillEngineNoise: 'fill_engine_noise',
     };
 
     // The JS fallback must implement every method, so a missing binary never

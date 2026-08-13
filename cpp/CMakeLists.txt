@@ -28,7 +28,7 @@ target_include_directories(streetview-wasm PRIVATE include)
 #   - Exported function names match the WAT module exactly:
 #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
 #       fill_particle_seeds, haversine, batch_haversine,
-#       normalize_angle, signed_angle_diff
+#       normalize_angle, signed_angle_diff, fill_engine_noise
 #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the WAT
 #     exports and the TypeScript loader ever drift apart.
 #     These are thin wrappers (in bindings.cpp) around the sw_* functions
@@ -45,7 +45,7 @@ if(EMSCRIPTEN)
         "-s STANDALONE_WASM=1"
         "--no-entry"
         "-s ALLOW_MEMORY_GROWTH=1"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_malloc','_free']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_malloc','_free']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
