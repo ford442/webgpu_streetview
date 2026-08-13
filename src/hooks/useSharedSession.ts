@@ -15,6 +15,7 @@ import {
   toSharedSessionParticipants,
   type SharedSessionParticipant,
 } from './sharedSessionRoster';
+import { resolveIceServers } from '../utils/iceServers';
 
 /**
  * Shared Exploration Sessions — multiplayer Street View road trips.
@@ -30,10 +31,8 @@ import {
  * room "expires" the moment everyone leaves it — there is nothing left to
  * clean up.
  *
- * TURN is intentionally not configured (STUN-only) — most NATs traverse
- * fine, but symmetric NATs / restrictive firewalls on both ends can fail to
- * connect. See README "Shared Exploration Sessions" for how to add a TURN
- * server later (just extend ICE_SERVERS below; no other changes needed).
+ * TURN is optional — configure via REACT_APP_TURN_* or runtime window.TURN_*
+ * in public/config.js. See docs/SHARED_SESSIONS.md.
  *
  * See docs/feature_expansion_plan.md §14.3.
  */
@@ -63,8 +62,8 @@ export type SharedSessionStatus =
 export type { SharedSessionParticipant };
 
 const DATA_CHANNEL_LABEL = 'streetview-sync';
-/** STUN-only for now — see the module doc comment above and README for TURN. */
-const ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+/** STUN + optional TURN — see docs/SHARED_SESSIONS.md. */
+const ICE_SERVERS: RTCIceServer[] = resolveIceServers();
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 

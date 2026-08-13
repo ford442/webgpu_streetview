@@ -46,6 +46,7 @@ interface TourPanelProps {
     onDeleteRouteGraph?: (routeId: string) => void;
     getRouteGraph?: (routeId: string) => Promise<RouteGraphNode[]>;
     panoCacheFetch?: (lat: number, lng: number) => Promise<unknown>;
+    applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
 }
 
 type TabKey = 'library' | 'record' | 'play';
@@ -95,6 +96,7 @@ const TourPanel: React.FC<TourPanelProps> = ({
     onDeleteRouteGraph,
     getRouteGraph,
     panoCacheFetch,
+    applyDirectorKeyframe,
 }) => {
     const panelRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -284,6 +286,7 @@ const TourPanel: React.FC<TourPanelProps> = ({
                                                 ▶ Play
                                             </button>
                                             <button
+                                                data-testid="tour-export-json"
                                                 onClick={() => onDownloadTourJson(tour)}
                                                 style={{ padding: '5px 10px', backgroundColor: '#2196F3', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                                             >
@@ -384,6 +387,7 @@ const TourPanel: React.FC<TourPanelProps> = ({
                         isPanoramaReady={isPanoramaReady}
                         getRouteGraph={getRouteGraph}
                         prewarmPanoCache={panoCacheFetch}
+                        applyDirectorKeyframe={applyDirectorKeyframe}
                     />
                 )}
             </div>

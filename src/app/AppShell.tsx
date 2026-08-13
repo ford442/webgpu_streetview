@@ -1,5 +1,6 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
+import CinemaOverlay from '../components/CinemaOverlay';
 import { parseDeepLinkParams } from '../utils/deepLink';
 import {
   useStreetView,
@@ -17,8 +18,13 @@ import { useSnapshots } from '../hooks/useSnapshots';
 import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useKeyboardShortcuts, useAnnouncer, SkipLink } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
+import { useCinemaMode } from '../hooks/useCinemaMode';
 import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
+import { vehicleManager } from '../car/VehicleManager';
+import type { DirectorSnapshot } from '../hooks/useTours';
+import type { TourDirectorKeyframe } from '../utils/tourDirector';
+import { serializeWeatherPreset } from '../utils/weatherPresetSync';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
@@ -90,6 +96,48 @@ export function AppShell() {
     setMapsLoadStatus: maps.setMapsLoadStatus,
   });
 
+  const cinema = useCinemaMode(connection.isConnected && !connection.showWelcome);
+  const {
+    isCinemaMode,
+    letterbox,
+    gradingLocked,
+    toggleCinemaMode,
+    exitCinemaMode,
+    setLetterbox,
+    setGradingLocked,
+  } = cinema;
+
+  const weatherPresetBroadcast = useMemo(
+    () =>
+      serializeWeatherPreset({
+        timeOfDay: env.timeOfDay,
+        rainIntensity: env.rainIntensity,
+        snowIntensity: env.snowIntensity,
+        fogDensity: env.fogDensity,
+      }),
+    [env.timeOfDay, env.rainIntensity, env.snowIntensity, env.fogDensity],
+  );
+
+  const getDirectorSnapshot = useCallback((): DirectorSnapshot | null => ({
+    timeOfDay: env.timeOfDay,
+    vehicle: vehicleManager.getCurrentVehicle(),
+    rainIntensity: env.rainIntensity,
+    snowIntensity: env.snowIntensity,
+    fogDensity: env.fogDensity,
+  }), [env.timeOfDay, env.rainIntensity, env.snowIntensity, env.fogDensity]);
+
+  const applyDirectorKeyframe = useCallback(
+    (frame: TourDirectorKeyframe) => {
+      if (frame.timeOfDay) env.applyTimeOfDayPreset(frame.timeOfDay);
+      if (frame.rainIntensity !== undefined) env.setRainIntensity(frame.rainIntensity);
+      if (frame.snowIntensity !== undefined) env.setSnowIntensity(frame.snowIntensity);
+      if (frame.fogDensity !== undefined) env.setFogDensity(frame.fogDensity);
+      if (frame.colorGradingPreset) env.applyColorGradingPreset(frame.colorGradingPreset);
+      if (frame.vehicle) vehicleManager.setVehicle(frame.vehicle);
+    },
+    [env],
+  );
+
   const {
     bookmarks,
     addBookmark,
@@ -132,6 +180,11 @@ export function AppShell() {
     setHeading,
     setPitch,
     setZoom,
+    weatherPreset: weatherPresetBroadcast,
+    applyTimeOfDayPreset: env.applyTimeOfDayPreset,
+    setRainIntensity: env.setRainIntensity,
+    setSnowIntensity: env.setSnowIntensity,
+    setFogDensity: env.setFogDensity,
   });
 
   const { tourPanelProps } = useTourBindings({
@@ -147,6 +200,8 @@ export function AppShell() {
     isPanoramaReady,
     routePrefetch,
     panoCacheFetch: panoCache.fetch,
+    getDirectorSnapshot,
+    applyDirectorKeyframe,
   });
 
   const { isCruiseMode, setIsCruiseMode } = useCruiseMode({
@@ -307,6 +362,9 @@ export function AppShell() {
       setIsWeatherPanelOpen: panels.setIsWeatherPanelOpen,
       isTourPanelOpen: panels.isTourPanelOpen,
       setIsTourPanelOpen: panels.setIsTourPanelOpen,
+      isCinemaMode,
+      toggleCinemaMode,
+      exitCinemaMode,
       viewMode,
       toggleViewMode,
       wipersEnabled: env.wipersEnabled,
@@ -321,7 +379,7 @@ export function AppShell() {
       globeMode,
       announce,
     }),
-    connection.isConnected && !connection.showWelcome,
+    connection.isConnected && !connection.showWelcome && !isCinemaMode,
   );
 
   const mapsLoadingOverlay = buildMapsLoadingOverlay({
@@ -376,7 +434,7 @@ export function AppShell() {
 
       {connection.showWelcome && <WelcomeModal onStart={connection.handleStart} search={placeSearch} />}
 
-      {connection.isConnected && (
+      {connection.isConnected && !isCinemaMode && (
         <ConnectedChrome
           panels={panels}
           session={{
@@ -445,6 +503,19 @@ export function AppShell() {
             onRefresh: () => void routePrefetch.refreshSummaries(),
           }}
           search={placeSearch}
+        />
+      )}
+
+      {connection.isConnected && isCinemaMode && (
+        <CinemaOverlay
+          visible={isCinemaMode}
+          letterbox={letterbox}
+          onToggleLetterbox={() => setLetterbox(!letterbox)}
+          gradingLocked={gradingLocked}
+          onToggleGradingLock={() => setGradingLocked(!gradingLocked)}
+          renderer={renderer}
+          onExit={exitCinemaMode}
+          onTakeSnapshot={handleTakeSnapshot}
         />
       )}
 

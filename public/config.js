@@ -35,3 +35,13 @@ window.CESIUM_ION_TOKEN = "";
 // src/hooks/useSharedSession.ts and README "Shared Exploration Sessions".
 window.SUPABASE_URL = "";
 window.SUPABASE_ANON_KEY = "";
+
+// Optional TURN relay for Shared Exploration Sessions when STUN-only
+// WebRTC cannot traverse symmetric NAT / restrictive firewalls on both ends.
+// Supply URL (+ username/credential if required) at build time via
+// REACT_APP_TURN_URL / REACT_APP_TURN_USERNAME / REACT_APP_TURN_CREDENTIAL,
+// or edit here after a bundle deploy. Never commit real credentials.
+// See docs/SHARED_SESSIONS.md.
+window.TURN_URL = "";
+window.TURN_USERNAME = "";
+window.TURN_CREDENTIAL = "";

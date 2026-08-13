@@ -55,6 +55,23 @@ describe('buildHostBroadcastPayload', () => {
       viewMode: 'car',
     });
   });
+
+  it('includes weatherPreset when provided in extras', () => {
+    expect(
+      buildHostBroadcastPayload(
+        mockPanorama({ panoId: 'pano-1' }),
+        pov,
+        viewMode,
+        { weatherPreset: 'tod:night|rain:0.50' },
+      ),
+    ).toEqual({
+      panoId: 'pano-1',
+      position: { lat: 37, lng: -122 },
+      pov,
+      viewMode: 'freelook',
+      weatherPreset: 'tod:night|rain:0.50',
+    });
+  });
 });
 
 describe('shouldTeleportGuestToPano', () => {

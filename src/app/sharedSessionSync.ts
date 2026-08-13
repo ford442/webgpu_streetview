@@ -3,12 +3,16 @@ import type { SessionState } from '../hooks/useSharedSession';
 export type HostBroadcastPov = SessionState['pov'];
 export type HostBroadcastViewMode = SessionState['viewMode'];
 
-export type HostBroadcastPayload = Omit<SessionState, 'seq' | 'weatherPreset'>;
+export type HostBroadcastPayload = Omit<SessionState, 'seq'>;
 
 /** Minimal panorama surface needed to build a host broadcast payload. */
 export interface HostBroadcastPanorama {
   getPano(): string | null | undefined;
   getPosition(): { lat(): number; lng(): number } | null | undefined;
+}
+
+export interface HostBroadcastExtras {
+  weatherPreset?: string;
 }
 
 /**
@@ -19,6 +23,7 @@ export function buildHostBroadcastPayload(
   panorama: HostBroadcastPanorama | null | undefined,
   pov: HostBroadcastPov,
   viewMode: HostBroadcastViewMode,
+  extras?: HostBroadcastExtras,
 ): HostBroadcastPayload | null {
   if (!panorama) return null;
   const panoId = panorama.getPano();
@@ -29,6 +34,7 @@ export function buildHostBroadcastPayload(
     position: { lat: pos.lat(), lng: pos.lng() },
     pov,
     viewMode,
+    ...(extras?.weatherPreset ? { weatherPreset: extras.weatherPreset } : {}),
   };
 }
 

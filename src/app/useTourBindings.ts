@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useTours, type CurrentPOV, type Tour, type TourWaypoint } from '../hooks/useTours';
+import { useTours, type CurrentPOV, type DirectorSnapshot, type Tour, type TourWaypoint } from '../hooks/useTours';
 import type { UseRoutePrefetchResult } from '../hooks/useRoutePrefetch';
 import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '../offline';
 
@@ -16,6 +16,10 @@ export interface UseTourBindingsParams {
   isPanoramaReady: boolean;
   routePrefetch: UseRoutePrefetchResult;
   panoCacheFetch: (lat: number, lng: number) => Promise<unknown>;
+  /** Optional director-track snapshot for session recording. */
+  getDirectorSnapshot?: () => DirectorSnapshot | null;
+  /** Apply director keyframe during tour playback. */
+  applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
 }
 
 /** Props bag consumed by TourPanel (minus isOpen/onClose owned by panels). */
@@ -26,7 +30,11 @@ export interface TourPanelBindings {
   draftWaypoints: TourWaypoint[];
   getCurrentPOV: () => CurrentPOV | null;
   currentLocationLabel: string;
-  onStartRecording: (name: string, getCurrentPOV: () => CurrentPOV | null) => void;
+  onStartRecording: (
+    name: string,
+    getCurrentPOV: () => CurrentPOV | null,
+    getDirectorSnapshot?: () => DirectorSnapshot | null,
+  ) => void;
   onPauseRecording: () => void;
   onResumeRecording: () => void;
   onStopRecording: (name: string) => void;
@@ -55,6 +63,7 @@ export interface TourPanelBindings {
   onDeleteRouteGraph: (routeId: string) => void;
   getRouteGraph: (routeId: string) => Promise<RouteGraphNode[]>;
   panoCacheFetch: (lat: number, lng: number) => Promise<unknown>;
+  applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
 }
 
 export interface UseTourBindingsResult {
@@ -79,6 +88,8 @@ export function useTourBindings({
   isPanoramaReady,
   routePrefetch,
   panoCacheFetch,
+  getDirectorSnapshot,
+  applyDirectorKeyframe,
 }: UseTourBindingsParams): UseTourBindingsResult {
   const toursApi = useTours();
 
@@ -119,7 +130,8 @@ export function useTourBindings({
       draftWaypoints: toursApi.draftWaypoints,
       getCurrentPOV,
       currentLocationLabel: locationName,
-      onStartRecording: (name, getPOV) => toursApi.startRecording(name, getPOV),
+      onStartRecording: (name, getPOV) =>
+        toursApi.startRecording(name, getPOV, 0, getDirectorSnapshot),
       onPauseRecording: toursApi.pauseRecording,
       onResumeRecording: toursApi.resumeRecording,
       onStopRecording: (name) => {
@@ -146,6 +158,7 @@ export function useTourBindings({
       onDeleteRouteGraph,
       getRouteGraph: routePrefetch.getRouteGraph,
       panoCacheFetch,
+      applyDirectorKeyframe,
     }),
     [
       toursApi,
@@ -164,6 +177,8 @@ export function useTourBindings({
       onPrepareOfflineGraph,
       onDeleteRouteGraph,
       panoCacheFetch,
+      getDirectorSnapshot,
+      applyDirectorKeyframe,
     ],
   );
 
