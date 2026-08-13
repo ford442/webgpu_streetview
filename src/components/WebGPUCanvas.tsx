@@ -204,6 +204,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                     result.renderer.getWeatherPostProcessMode?.() === 'compute' ? 'fbm' : 'classic'
                 );
                 setRenderer(result.renderer);  // Register with StreetView context
+                result.renderer.setSamplerAnisotropy?.(qualityRef.current);
                 onWebGPUStatusRef.current?.(true);
                 onBackendInfoRef.current?.({ backendType: result.backendType, fallbackReason: result.fallbackReason });
                 startMonitoringRef.current();

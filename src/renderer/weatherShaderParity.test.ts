@@ -95,7 +95,6 @@ describe('weather shader parity guard', () => {
   );
 
   it.each([
-    'fogAmountAt',
     'applyFog',
     'applySunrise',
     'applyCameraFX',
@@ -150,6 +149,12 @@ describe('weather shader parity guard', () => {
     // as 1024 vec4s, clamped to the last valid element.
     expect(fragment).toMatch(/wasmNoiseTile:\s*array<f32,\s*4096>/);
     expect(compute).toContain('clamp(index, 0, 4095)');
+  });
+
+  it('uses previous-frame depth for temporal fog on the compute path only', () => {
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(compute).toContain('textureLoad(readDepthTexture');
+    expect(compute).toMatch(/fn fogAmountAt\([^)]*coord: vec2<i32>/);
   });
 
   it('writes the depth proxy into the compute pass storage texture', () => {

@@ -4,6 +4,17 @@ import {
     RendererInitOptions,
     WeatherPostProcessMode,
 } from './RendererBackend';
+import {
+    COMPUTE_WEATHER_WORKGROUP_SIZE,
+    OPTIONAL_DEVICE_FEATURES,
+    type AdapterCapabilitySummary,
+    type DeviceCapabilityMatrix,
+} from './deviceCapabilities';
+
+export interface CollectOptionalFeaturesOptions {
+    /** Request timestamp-query when the adapter supports it (performance overlay). */
+    enableTimestampQueries?: boolean;
+}
 
 /**
  * Resolve WebGPU adapter request options: URL override, battery heuristic, or high-performance default.
@@ -50,6 +61,10 @@ export function checkRequiredLimits(
     if (weatherPostProcessMode === 'compute') {
         required.maxStorageBufferBindingSize = 65536;
         required.maxBufferSize = 65536;
+        required.maxComputeWorkgroupSizeX = COMPUTE_WEATHER_WORKGROUP_SIZE;
+        required.maxComputeWorkgroupSizeY = COMPUTE_WEATHER_WORKGROUP_SIZE;
+        required.maxComputeInvocationsPerWorkgroup =
+            COMPUTE_WEATHER_WORKGROUP_SIZE * COMPUTE_WEATHER_WORKGROUP_SIZE;
     }
 
     for (const [name, minimum] of Object.entries(required) as Array<[keyof GPUSupportedLimits, number]>) {
@@ -68,24 +83,51 @@ export function checkRequiredLimits(
     };
 }
 
-export function collectOptionalDeviceFeatures(adapter: GPUAdapter): GPUFeatureName[] {
-    const requiredFeatures: GPUFeatureName[] = [];
-    if (adapter.features.has('float32-filterable')) {
-        requiredFeatures.push('float32-filterable');
+export function collectOptionalDeviceFeatures(
+    adapter: GPUAdapter,
+    options: CollectOptionalFeaturesOptions = {},
+): GPUFeatureName[] {
+    const features: GPUFeatureName[] = [];
+    if (adapter.features.has(OPTIONAL_DEVICE_FEATURES.float32Filterable)) {
+        features.push(OPTIONAL_DEVICE_FEATURES.float32Filterable);
     }
-    return requiredFeatures;
+    if (options.enableTimestampQueries !== false
+        && adapter.features.has(OPTIONAL_DEVICE_FEATURES.timestampQuery)) {
+        features.push(OPTIONAL_DEVICE_FEATURES.timestampQuery);
+    }
+    return features;
+}
+
+export function buildCapabilityMatrix(
+    weatherPostProcessMode: WeatherPostProcessMode,
+    requiredLimits: Record<string, number>,
+    enabledFeatures: GPUFeatureName[],
+): DeviceCapabilityMatrix {
+    return {
+        weatherPostProcessMode,
+        requiredLimits,
+        optionalFeaturesAttempted: [
+            OPTIONAL_DEVICE_FEATURES.float32Filterable,
+            OPTIONAL_DEVICE_FEATURES.timestampQuery,
+        ],
+        optionalFeaturesEnabled: enabledFeatures,
+        timestampQueriesAvailable: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.timestampQuery),
+        temporalDepthPingPong: weatherPostProcessMode === 'compute',
+    };
 }
 
 export function logAdapterCapabilities(
     adapter: GPUAdapter,
     powerPreference?: GPUPowerPreference,
     weatherPostProcessMode?: WeatherPostProcessMode,
+    enabledFeatures: GPUFeatureName[] = [],
+    capabilityMatrix?: DeviceCapabilityMatrix,
 ): void {
     const adapterInfo = (adapter as GPUAdapter & {
         info?: { vendor?: string; architecture?: string; device?: string; description?: string };
     }).info;
-    const summary = {
-        powerPreference: powerPreference || 'unspecified',
+    const summary: AdapterCapabilitySummary = {
+        powerPreference: powerPreference || undefined,
         weatherMode: weatherPostProcessMode,
         vendor: adapterInfo?.vendor || 'unknown',
         architecture: adapterInfo?.architecture || 'unknown',
@@ -95,12 +137,17 @@ export function logAdapterCapabilities(
             maxTextureDimension2D: Number(adapter.limits.maxTextureDimension2D),
             maxStorageBufferBindingSize: Number(adapter.limits.maxStorageBufferBindingSize),
             maxBufferSize: Number(adapter.limits.maxBufferSize),
+            maxComputeWorkgroupSizeX: Number(adapter.limits.maxComputeWorkgroupSizeX),
+            maxComputeWorkgroupSizeY: Number(adapter.limits.maxComputeWorkgroupSizeY),
+            maxComputeInvocationsPerWorkgroup: Number(adapter.limits.maxComputeInvocationsPerWorkgroup),
         },
+        enabledFeatures,
+        capabilityMatrix,
     };
 
     console.info('[Renderer] WebGPU adapter capabilities:', summary);
     if (typeof window !== 'undefined') {
-        (window as Window & { rendererAdapterInfo?: typeof summary }).rendererAdapterInfo = summary;
+        (window as Window & { rendererAdapterInfo?: AdapterCapabilitySummary }).rendererAdapterInfo = summary;
     }
 }
 

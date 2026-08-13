@@ -77,6 +77,8 @@ export interface StreetViewRenderer {
     setDebugOptions?(options: Partial<RendererDebugOptions>): void;
     /** WebGPU only — returns which weather post-process pipeline is active. */
     getWeatherPostProcessMode?(): WeatherPostProcessMode;
+    /** WebGPU only — updates panorama sampler anisotropy from the active quality preset. */
+    setSamplerAnisotropy?(level: import('../config/visualPresets').QualityLevel): void;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);

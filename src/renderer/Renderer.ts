@@ -9,7 +9,13 @@ import {
     collectOptionalDeviceFeatures,
     logAdapterCapabilities,
     resolveAdapterRequestOptions,
+    buildCapabilityMatrix,
 } from './deviceInit';
+import { GpuPassTimer } from './gpuPassTimer';
+import { resetGpuPassTimings } from './gpuPassTimingStore';
+import { clampSamplerAnisotropy, getSamplerAnisotropyForQuality } from './samplerAnisotropy';
+import type { QualityLevel } from '../config/visualPresets';
+import type { WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import { HoldTransitionController } from './holdTransition';
 import { TextureLifecycle } from './textureLifecycle';
 import {
@@ -40,6 +46,8 @@ export class Renderer implements StreetViewRenderer {
     private transitionManager!: TransitionManager;
     private weatherPostProcessor!: WeatherPostProcessorLike;
     private weatherPostProcessMode: WeatherPostProcessMode = 'fragment';
+    private gpuPassTimer: GpuPassTimer | null = null;
+    private samplerAnisotropy: number = 1;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     private isDestroyed: boolean = false;
@@ -88,8 +96,6 @@ export class Renderer implements StreetViewRenderer {
                 return false;
             }
 
-            logAdapterCapabilities(adapter, adapterOptions.powerPreference, this.weatherPostProcessMode);
-
             const limitCheck = checkRequiredLimits(adapter, this.weatherPostProcessMode);
             if (!limitCheck.ok) {
                 this._fallbackReason = limitCheck.reason;
@@ -98,6 +104,19 @@ export class Renderer implements StreetViewRenderer {
             }
 
             const requiredFeatures = collectOptionalDeviceFeatures(adapter);
+            const capabilityMatrix = buildCapabilityMatrix(
+                this.weatherPostProcessMode,
+                limitCheck.requiredLimits!,
+                requiredFeatures,
+            );
+
+            logAdapterCapabilities(
+                adapter,
+                adapterOptions.powerPreference,
+                this.weatherPostProcessMode,
+                requiredFeatures,
+                capabilityMatrix,
+            );
 
             this.device = await adapter.requestDevice({
                 requiredFeatures,
@@ -121,15 +140,15 @@ export class Renderer implements StreetViewRenderer {
             this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
             configureCanvasContext(this.context, this.device, this.presentationFormat);
 
-            this.sampler = this.device.createSampler({
-                magFilter: 'linear',
-                minFilter: 'linear',
-                mipmapFilter: 'linear',
-                addressModeU: 'clamp-to-edge',
-                addressModeV: 'clamp-to-edge',
-                addressModeW: 'clamp-to-edge',
-                maxAnisotropy: 1,
-            });
+            this.samplerAnisotropy = 1;
+            this.sampler = this.device.createSampler(this.buildSamplerDescriptor(1));
+
+            if (capabilityMatrix.timestampQueriesAvailable) {
+                this.gpuPassTimer = new GpuPassTimer(this.device);
+            } else {
+                this.gpuPassTimer = null;
+                resetGpuPassTimings();
+            }
 
             this.textures.createTexture(1, 1);
 
@@ -162,6 +181,28 @@ export class Renderer implements StreetViewRenderer {
 
     public getWeatherPostProcessMode(): WeatherPostProcessMode {
         return this.weatherPostProcessMode;
+    }
+
+    public setSamplerAnisotropy(level: QualityLevel): void {
+        if (!this.device || this.isDestroyed) return;
+        const requested = getSamplerAnisotropyForQuality(level);
+        const anisotropy = clampSamplerAnisotropy(requested, this.device);
+        if (anisotropy === this.samplerAnisotropy) return;
+        this.samplerAnisotropy = anisotropy;
+        this.sampler = this.device.createSampler(this.buildSamplerDescriptor(anisotropy));
+        this.textures.updateBindGroup();
+    }
+
+    private buildSamplerDescriptor(maxAnisotropy: number): GPUSamplerDescriptor {
+        return {
+            magFilter: 'linear',
+            minFilter: 'linear',
+            mipmapFilter: 'linear',
+            addressModeU: 'clamp-to-edge',
+            addressModeV: 'clamp-to-edge',
+            addressModeW: 'clamp-to-edge',
+            maxAnisotropy,
+        };
     }
 
     private async createPipeline(): Promise<void> {
@@ -255,6 +296,8 @@ export class Renderer implements StreetViewRenderer {
             if (this.uniformBuffer) this.uniformBuffer.destroy();
             this.transitionManager?.dispose();
             this.weatherPostProcessor?.dispose();
+            this.gpuPassTimer?.destroy();
+            this.gpuPassTimer = null;
             if (unconfigureContext) {
                 this.context?.unconfigure();
             }
@@ -413,13 +456,26 @@ export class Renderer implements StreetViewRenderer {
             this.textures.ensureIntermediateTexture(canvasWidth, canvasHeight);
 
             const commandEncoder = this.device.createCommandEncoder();
+            const pass1Timing = this.gpuPassTimer
+                ? { timer: this.gpuPassTimer, startIndex: 0, endIndex: 1 }
+                : undefined;
+            const weatherTiming: WeatherPassTimingContext | undefined = this.gpuPassTimer
+                ? {
+                    timer: this.gpuPassTimer,
+                    weatherStartIndex: 2,
+                    weatherEndIndex: 3,
+                    blitStartIndex: this.weatherPostProcessMode === 'compute' ? 4 : undefined,
+                    blitEndIndex: this.weatherPostProcessMode === 'compute' ? 5 : undefined,
+                }
+                : undefined;
 
             const didTransition = this.transitionManager?.renderTransitionPass(
                 commandEncoder,
                 this.textures.intermediateTextureView,
                 this.textures.videoTexture!,
                 this.pipeline,
-                this.textures.bindGroup
+                this.textures.bindGroup,
+                pass1Timing,
             );
 
             if (!didTransition) {
@@ -431,13 +487,23 @@ export class Renderer implements StreetViewRenderer {
                         storeOp: 'store' as GPUStoreOp,
                     }],
                 });
+                if (pass1Timing) {
+                    pass1Timing.timer.markPassStart(mainPass, pass1Timing.startIndex);
+                }
                 mainPass.setPipeline(this.pipeline);
                 mainPass.setBindGroup(0, this.textures.bindGroup);
                 mainPass.draw(4, 1, 0, 0);
+                if (pass1Timing) {
+                    pass1Timing.timer.markPassEnd(mainPass, pass1Timing.endIndex);
+                }
                 mainPass.end();
             }
 
-            this.weatherPostProcessor?.renderPass(commandEncoder);
+            this.weatherPostProcessor?.renderPass(commandEncoder, weatherTiming);
+
+            if (this.gpuPassTimer) {
+                this.gpuPassTimer.resolveAndScheduleRead(commandEncoder);
+            }
 
             this.device.queue.submit([commandEncoder.finish()]);
         } catch {

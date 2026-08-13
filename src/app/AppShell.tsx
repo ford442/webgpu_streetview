@@ -72,7 +72,7 @@ export function AppShell() {
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
   const sharedSession = useSharedSession();
-  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats } = useAppTelemetry();
+  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
   const { audioRef, isRadioPlaying, setIsRadioPlaying, toggleRadio } = useRadioAudio();
@@ -412,6 +412,7 @@ export function AppShell() {
             setShowPerformanceStats,
             perfStats,
             memoryStats: memoryStats || undefined,
+            gpuPassTimings,
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,

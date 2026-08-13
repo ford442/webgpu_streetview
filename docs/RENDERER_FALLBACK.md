@@ -129,7 +129,24 @@ Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weat
 
 Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, WASM dust turbulence, and the cinematic camera FX are at parity between the two paths; shared helper bodies are enforced identical by `src/renderer/weatherShaderParity.test.ts`.
 
-Compute bindings still backed by 1x1 dummies: `readDepthTexture` (needs a ping-pong to read last frame's depth), `dataTextureA/B` (reserved for GPU particle state), and `dataTextureC`. See `docs/GRAPHICS.md` §5 for the current status table.
+Compute bindings still backed by 1x1 dummies: `dataTextureA/B` (reserved for GPU particle state) and `dataTextureC`. Binding 4/6 are a full-res **depth ping-pong** pair (`readDepthTexture` / `writeDepthTexture`) used for temporal fog stability on the compute path only. See `docs/GRAPHICS.md` §5 for the current status table.
+
+## Capability matrix (WebGPU device init)
+
+Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterInfo` after init.
+
+| Surface | Policy | Notes |
+| --- | --- | --- |
+| `float32-filterable` | Always requested when adapter exposes it | HDR intermediate + compute weather storage reads |
+| `timestamp-query` | Opt-in when adapter exposes it | GPU pass timings in the performance overlay (P) |
+| `maxTextureDimension2D` | Required ≥ 4096 | Panorama + HDR intermediate |
+| `maxStorageBufferBindingSize` / `maxBufferSize` | Required ≥ 65536 when `?weather=compute` | WASM noise tile + particle buffer headroom |
+| `maxComputeWorkgroupSizeX/Y` | Required ≥ 16 when compute weather | Matches `@workgroup_size(16,16,1)` |
+| Sampler `maxAnisotropy` | Low=1, Medium=2, High=4, Ultra=8 | Clamped to `device.limits.maxAnisotropy`; fragment path only |
+
+GPU timings (when `timestamp-query` is enabled) are published on `window.rendererGpuTimings` and shown in **Performance Stats** (press P): Pass1 (panorama → HDR), weather (fragment or compute), and blit (compute only).
+
+WGSL compile validation: `npm run validate:shaders` (requires `naga` CLI — CI installs via `cargo install naga-cli`).
 
 ## Parity Notes
 

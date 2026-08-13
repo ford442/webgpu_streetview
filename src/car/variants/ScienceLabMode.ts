@@ -43,7 +43,6 @@ export class ScienceLabInterior {
     private instrumentDisplays: THREE.Mesh[] = [];
     private displayMaterials: THREE.MeshStandardMaterial[] = [];
     private uvLight!: THREE.PointLight;
-    private taskLights: THREE.PointLight[] = [];
     private equipmentFans: THREE.Group[] = [];
     private sampleDrawers: THREE.Group[] = [];
 
@@ -100,7 +99,7 @@ export class ScienceLabInterior {
         this.materials = createScienceLabMaterials();
         const lighting = createScienceLabLighting(this.scene);
         this.uvLight = lighting.uvLight;
-        this.taskLights = lighting.taskLights;
+        void lighting.taskLights;
         buildLabInterior(this.createGeometryContext());
         this.audio.init();
     }

@@ -14,6 +14,7 @@ import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
 import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
 import type { MemoryStats } from '../../utils/memoryProfiler';
+import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
 import {
@@ -131,6 +132,7 @@ export interface ConnectedChromeOverlays {
   setShowPerformanceStats: (show: boolean) => void;
   perfStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
+  gpuPassTimings?: GpuPassTimings;
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
@@ -236,6 +238,7 @@ export function ConnectedChrome({
         <PerformanceStatsOverlay
           fpsStats={overlays.perfStats}
           memoryStats={overlays.memoryStats}
+          gpuPassTimings={overlays.gpuPassTimings}
           position="top-left"
           visible={true}
           showMemory={true}

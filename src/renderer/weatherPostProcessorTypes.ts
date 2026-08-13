@@ -2,6 +2,16 @@
  * Common surface shared by WeatherPostProcessor and ComputeWeatherPostProcessor.
  * Renderer.ts selects either implementation at init based on weatherPostProcessMode.
  */
+import type { GpuPassTimer } from './gpuPassTimer';
+
+export interface WeatherPassTimingContext {
+    timer: GpuPassTimer;
+    weatherStartIndex: number;
+    weatherEndIndex: number;
+    blitStartIndex?: number;
+    blitEndIndex?: number;
+}
+
 export interface WeatherPostProcessorLike {
     init(presentationFormat: GPUTextureFormat): Promise<void>;
     updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
@@ -14,7 +24,7 @@ export interface WeatherPostProcessorLike {
     updateColorParams(params: Float32Array): void;
     updateWeatherAnimation(): void;
     renderWeatherOnly(intermediateTextureView: GPUTextureView): void;
-    renderPass(commandEncoder: GPUCommandEncoder): void;
+    renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void;
     dispose(): void;
 }
 
