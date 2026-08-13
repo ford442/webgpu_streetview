@@ -38,6 +38,7 @@ import {
   ComparisonView,
 } from '../../components';
 import StorageManagementPanel from '../../components/StorageManagementPanel';
+import GlobeReturnButton from '../../components/GlobeReturnButton';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 
@@ -337,6 +338,7 @@ export function ConnectedChrome({
         viewMode={viewMode}
         toggleViewMode={toggleViewMode}
         onGlobeToggle={globeMode.toggle}
+        isGlobeEngaged={globeMode.isEngaged}
         search={search}
       />
 
@@ -525,7 +527,11 @@ export function ConnectedChrome({
             justifyContent: 'center',
             color: '#fff',
             fontFamily: 'system-ui, sans-serif',
+            gap: 20,
           }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           <div
             style={{
@@ -535,10 +541,13 @@ export function ConnectedChrome({
               border: '4px solid rgba(255,255,255,0.15)',
               borderTopColor: '#4CAF50',
               animation: 'spin 0.8s linear infinite',
-              marginBottom: 20,
             }}
           />
           <div style={{ fontSize: 16, opacity: 0.85 }}>Loading Globe…</div>
+          <div style={{ fontSize: 13, opacity: 0.65, maxWidth: 320, textAlign: 'center' }}>
+            Cesium is loading from the CDN. You can return to Street View anytime.
+          </div>
+          <GlobeReturnButton onClick={globeMode.cancel} />
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
@@ -555,6 +564,7 @@ export function ConnectedChrome({
             onTeleportRequest={handleGlobeTeleport}
             onEnterComplete={globeMode.onEnterComplete}
             onExitComplete={globeMode.onExitComplete}
+            onRequestExit={globeMode.cancel}
             onStartJourney={handleStartJourney}
           />
         </Suspense>

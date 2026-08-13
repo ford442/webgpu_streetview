@@ -33,6 +33,7 @@ export interface AppToolbarProps {
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
+  isGlobeEngaged?: boolean;
   search?: UsePlaceSearchResult;
 }
 
@@ -67,6 +68,7 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   viewMode,
   toggleViewMode,
   onGlobeToggle,
+  isGlobeEngaged = false,
   search,
 }) => {
   return (
@@ -186,11 +188,11 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
         {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
       </button>
       <button
-        className="control-btn"
-        style={{ minWidth: 110 }}
+        className={`control-btn${isGlobeEngaged ? ' disconnect' : ''}`}
+        style={{ minWidth: 110, backgroundColor: isGlobeEngaged ? 'rgba(0,204,255,0.25)' : undefined }}
         onClick={e => { e.stopPropagation(); onGlobeToggle(); }}
       >
-        🌍 Globe
+        {isGlobeEngaged ? '🗺️ Street View' : '🌍 Globe'}
       </button>
     </div>
   );

@@ -42,8 +42,10 @@ export interface UseAppKeyboardShortcutsOptions {
   setIsCruiseMode: (v: boolean) => void;
   globeMode: {
     isActive: boolean;
+    isEngaged: boolean;
     transition: string;
     toggle: () => void;
+    cancel: () => void;
     deactivate: () => void;
   };
   announce: (msg: string) => void;
@@ -196,6 +198,9 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       action: () => {
         setIsLooksPanelOpen(!isLooksPanelOpen);
         announce(`Looks panel ${!isLooksPanelOpen ? 'opened' : 'closed'}`);
+      },
+    },
+    {
       key: 'F',
       modifier: 'shift',
       description: 'Toggle cinema mode',
@@ -261,8 +266,9 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       modifier: 'shift',
       description: 'Toggle Globe Mode',
       action: () => {
+        const wasEngaged = globeMode.isEngaged;
         globeMode.toggle();
-        announce(`Globe mode ${globeMode.transition === 'active' ? 'off' : 'on'}`);
+        announce(`Globe mode ${wasEngaged ? 'off' : 'on'}`);
       },
     },
     {
@@ -270,7 +276,7 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       description: 'Close panels or exit cinema mode',
       action: () => {
         if (isCinemaMode) { exitCinemaMode(); return; }
-        if (globeMode.isActive) { globeMode.deactivate(); return; }
+        if (globeMode.isEngaged) { globeMode.cancel(); return; }
         if (isLooksPanelOpen) { setIsLooksPanelOpen(false); return; }
         if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
         if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
