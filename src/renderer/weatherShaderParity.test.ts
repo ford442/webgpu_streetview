@@ -181,4 +181,27 @@ describe('weather shader parity guard', () => {
     expect(fragmentMatch).not.toBeNull();
     expect(computeMatch).not.toBeNull();
   });
+
+  it('keeps the fragment rain/snow functions free of the GPU particle layer', () => {
+    const fragment = readShader('weather-post.wgsl');
+    expect(fragment).not.toContain('fn applyParticlePrecipitation(');
+    expect(fragment).not.toContain('dataTextureA');
+  });
+
+  it('composites GPU particle density on the compute path only', () => {
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(compute).toContain('fn applyParticlePrecipitation(');
+    expect(compute).toMatch(/@group\(0\) @binding\(7\) var dataTextureA: texture_2d<f32>/);
+    expect(compute).toMatch(/@group\(0\) @binding\(8\) var dataTextureB: texture_storage_2d<rgba32float, write>/);
+    expect(compute).toContain('col = col + particleLayer * precipVisibility');
+    expect(compute).not.toMatch(/@binding\(7\) var dataTextureA: texture_storage_2d/);
+  });
+
+  it('integrates particles with the documented downward fall sign', () => {
+    const particles = readShader('weather-particles.wgsl');
+    expect(particles).toContain('const FALL_Y: f32 = -1.0;');
+    expect(particles).toContain('const WIND_SCALE: f32 = 0.35;');
+    expect(particles).toContain('fn integrate(');
+    expect(particles).toContain('fn splat(');
+  });
 });

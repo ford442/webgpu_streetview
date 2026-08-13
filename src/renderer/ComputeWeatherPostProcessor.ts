@@ -5,6 +5,7 @@ import {
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
 import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
+import { PARTICLE_DENSITY_SCALE, PARTICLE_MAX_DT } from './weatherParticles';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the storage
 // buffer declared in weather-post.wgsl. The compute variant binds this tile at
@@ -52,9 +53,10 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
  * receives a full-res view-depth proxy each dispatch, and binding 12 carries
  * the WASM noise tile (#128) that drives dust turbulence — an fBm tile on this
  * path, where the fragment path gets a single octave (see
- * src/wasm/wasmNoiseFeeder.ts and docs/WASM_BRIDGE.md). The remaining
- * surfaces are still 1x1 dummies reserved for GPU particles and temporal
- * effects. See docs/RENDERER_FALLBACK.md and docs/GRAPHICS.md.
+ * src/wasm/wasmNoiseFeeder.ts and docs/WASM_BRIDGE.md). Bindings 7/8 hold
+ * GPU precipitation when `updateParticleSeeds` has run: 7 is a half-res
+ * density splat (`texture_2d` read), 8 is the compact particle-state write
+ * target. See docs/RENDERER_FALLBACK.md and docs/GRAPHICS.md.
  */
 export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private device: GPUDevice;
@@ -79,12 +81,29 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private filteringSampler: GPUSampler | null = null;
     private nonFilteringSampler: GPUSampler | null = null;
     private comparisonSampler: GPUSampler | null = null;
-    // Dummy 1x1 resources for image_video_effects bindings this shader still
-    // doesn't use (scratch data textures). Bindings 4/6 are the depth ping-pong
-    // pair; binding 12 is the WASM noise tile.
+    // Dummy 1x1 resources for unused image_video_effects slots. Binding 9
+    // (dataTextureC) stays a dummy. Bindings 7/8 start as dummies and are
+    // replaced by real particle textures after updateParticleSeeds().
     private dummyDataTextureA: GPUTexture | null = null;
     private dummyDataTextureB: GPUTexture | null = null;
     private dummyDataTextureC: GPUTexture | null = null;
+
+    private particleStates: [GPUTexture | null, GPUTexture | null] = [null, null];
+    private particleReadIndex: 0 | 1 = 0;
+    private particleWriteIndex: 1 | 0 = 1;
+    private particleGridWidth = 0;
+    private particleGridHeight = 0;
+    private particleDensity: GPUTexture | null = null;
+    private particleDensityWidth = 0;
+    private particleDensityHeight = 0;
+    private particlesEnabled = false;
+
+    private particleUniformsBuffer: GPUBuffer | null = null;
+    private particleBindGroupLayout: GPUBindGroupLayout | null = null;
+    private integratePipeline: GPUComputePipeline | null = null;
+    private clearDensityPipeline: GPUComputePipeline | null = null;
+    private splatPipeline: GPUComputePipeline | null = null;
+    private lastParticleTime = 0;
 
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
@@ -126,15 +145,21 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             format: 'rgba8unorm',
             usage: GPUTextureUsage.TEXTURE_BINDING,
         });
+        // Binding 7 is a readable rgba32float (density). Binding 8 is a
+        // write-only storage texture (particle state).
         this.dummyDataTextureA = this.device.createTexture({
             size: [1, 1],
             format: 'rgba32float',
-            usage: GPUTextureUsage.STORAGE_BINDING,
+            usage: GPUTextureUsage.TEXTURE_BINDING,
         });
         this.dummyDataTextureB = this.device.createTexture({
             size: [1, 1],
             format: 'rgba32float',
             usage: GPUTextureUsage.STORAGE_BINDING,
+        });
+        this.particleUniformsBuffer = this.device.createBuffer({
+            size: 32,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
         this.weatherParams.set(createDefaultWeatherParams());
@@ -166,7 +191,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 { binding: 4, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
                 { binding: 5, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'non-filtering' } },
                 { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
-                { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
+                { binding: 7, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
                 { binding: 8, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
                 { binding: 9, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
                 { binding: 10, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
@@ -180,6 +205,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             compute: { module: computeModule, entryPoint: 'main' },
         });
 
+        await this.initParticlePipelines();
+
         const blitModule = this.device.createShaderModule({ code: BLIT_SHADER });
         const blitBindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -191,6 +218,47 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             vertex: { module: blitModule, entryPoint: 'vs_main' },
             fragment: { module: blitModule, entryPoint: 'fs_main', targets: [{ format: presentationFormat }] },
             primitive: { topology: 'triangle-list' },
+        });
+    }
+
+    private async initParticlePipelines(): Promise<void> {
+        const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/weather-particles.wgsl`;
+        let shaderCode: string;
+        try {
+            const response = await fetch(shaderUrl);
+            if (!response.ok) {
+                console.warn(`[Renderer] Particle shader missing (${response.status}); GPU precipitation disabled`);
+                return;
+            }
+            shaderCode = await response.text();
+        } catch (error) {
+            console.warn('[Renderer] Failed to load weather-particles.wgsl; GPU precipitation disabled', error);
+            return;
+        }
+
+        const module = this.device.createShaderModule({ code: shaderCode });
+        this.particleBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+            ],
+        });
+        const layout = this.device.createPipelineLayout({
+            bindGroupLayouts: [this.particleBindGroupLayout],
+        });
+        this.integratePipeline = this.device.createComputePipeline({
+            layout,
+            compute: { module, entryPoint: 'integrate' },
+        });
+        this.clearDensityPipeline = this.device.createComputePipeline({
+            layout,
+            compute: { module, entryPoint: 'clear_density' },
+        });
+        this.splatPipeline = this.device.createComputePipeline({
+            layout,
+            compute: { module, entryPoint: 'splat' },
         });
     }
 
@@ -215,6 +283,73 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.depthTextures[1] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
         this.depthReadIndex = 0;
         this.depthWriteIndex = 1;
+        this.ensureParticleDensityTexture();
+    }
+
+    private ensureParticleDensityTexture(): void {
+        const width = Math.max(1, Math.ceil(this.writeWidth * PARTICLE_DENSITY_SCALE));
+        const height = Math.max(1, Math.ceil(this.writeHeight * PARTICLE_DENSITY_SCALE));
+        if (
+            this.particleDensity
+            && this.particleDensityWidth === width
+            && this.particleDensityHeight === height
+        ) {
+            return;
+        }
+        if (this.particleDensity) this.particleDensity.destroy();
+        this.particleDensityWidth = width;
+        this.particleDensityHeight = height;
+        this.particleDensity = this.device.createTexture({
+            size: [width, height],
+            format: 'rgba32float',
+            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+        });
+    }
+
+    private ensureParticleStateTextures(gridW: number, gridH: number): void {
+        if (
+            this.particleStates[0]
+            && this.particleStates[1]
+            && this.particleGridWidth === gridW
+            && this.particleGridHeight === gridH
+        ) {
+            return;
+        }
+        for (let i = 0; i < 2; i++) {
+            if (this.particleStates[i]) this.particleStates[i]!.destroy();
+            this.particleStates[i] = null;
+        }
+        this.particleGridWidth = gridW;
+        this.particleGridHeight = gridH;
+        const usage = GPUTextureUsage.STORAGE_BINDING
+            | GPUTextureUsage.TEXTURE_BINDING
+            | GPUTextureUsage.COPY_DST;
+        this.particleStates[0] = this.device.createTexture({
+            size: [gridW, gridH],
+            format: 'rgba32float',
+            usage,
+        });
+        this.particleStates[1] = this.device.createTexture({
+            size: [gridW, gridH],
+            format: 'rgba32float',
+            usage,
+        });
+        this.particleReadIndex = 0;
+        this.particleWriteIndex = 1;
+    }
+
+    private getParticleRead(): GPUTexture | null {
+        return this.particleStates[this.particleReadIndex];
+    }
+
+    private getParticleWrite(): GPUTexture | null {
+        return this.particleStates[this.particleWriteIndex];
+    }
+
+    private swapParticlePingPong(): void {
+        const nextRead = this.particleWriteIndex;
+        this.particleWriteIndex = this.particleReadIndex;
+        this.particleReadIndex = nextRead;
     }
 
     private getDepthReadTexture(): GPUTexture | null {
@@ -232,6 +367,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     }
 
     private rebuildComputeBindGroup(intermediateTextureView: GPUTextureView): void {
+        if (this.particlesEnabled) {
+            this.ensureParticleDensityTexture();
+        }
         const depthRead = this.getDepthReadTexture();
         const depthWrite = this.getDepthWriteTexture();
         if (
@@ -263,8 +401,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 { binding: 4, resource: depthRead.createView() },
                 { binding: 5, resource: this.nonFilteringSampler },
                 { binding: 6, resource: depthWrite.createView() },
-                { binding: 7, resource: this.dummyDataTextureA.createView() },
-                { binding: 8, resource: this.dummyDataTextureB.createView() },
+                { binding: 7, resource: this.getDensityView() },
+                { binding: 8, resource: this.getParticleStateWriteView() },
                 { binding: 9, resource: this.dummyDataTextureC.createView() },
                 { binding: 10, resource: { buffer: this.extraBuffer } },
                 { binding: 11, resource: this.comparisonSampler },
@@ -308,6 +446,59 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     public updateNoiseBuffer(tile: Float32Array): void {
         if (!this.noiseBuffer || !this.device) return;
         this.device.queue.writeBuffer(this.noiseBuffer, 0, tile);
+    }
+
+    /**
+     * Upload WASM particle seeds (4 floats/particle) into the compact state
+     * textures. Enables bindings 7/8 for subsequent dispatches. `seeds.length`
+     * must be `width * height * 4`.
+     */
+    public updateParticleSeeds(seeds: Float32Array, width: number, height: number): void {
+        if (!this.device || width < 1 || height < 1) return;
+        if (seeds.length < width * height * 4) return;
+        this.ensureParticleStateTextures(width, height);
+        const read = this.particleStates[0];
+        const write = this.particleStates[1];
+        if (!read || !write) return;
+        const bytesPerRow = width * 16;
+        const layout = { bytesPerRow, rowsPerImage: height };
+        const size = { width, height };
+        this.device.queue.writeTexture({ texture: read }, seeds, layout, size);
+        this.device.queue.writeTexture({ texture: write }, seeds, layout, size);
+        this.particlesEnabled = true;
+        this.lastParticleTime = this.weatherParams[WeatherParamIndex.time] ?? 0;
+        if (this.lastIntermediateView) {
+            this.rebuildComputeBindGroup(this.lastIntermediateView);
+        }
+    }
+
+    /** True when bindings 7/8 are the real particle textures (not 1×1 dummies). */
+    public areParticleTexturesActive(): boolean {
+        return this.particlesEnabled
+            && this.particleGridWidth > 1
+            && this.particleGridHeight > 1
+            && this.particleDensityWidth > 1
+            && this.particleDensityHeight > 1;
+    }
+
+    private getDensityView(): GPUTextureView {
+        if (this.particlesEnabled && this.particleDensity) {
+            return this.particleDensity.createView();
+        }
+        return this.dummyDataTextureA!.createView();
+    }
+
+    private getParticleStateWriteView(): GPUTextureView {
+        const write = this.getParticleWrite();
+        if (this.particlesEnabled && write) {
+            return write.createView();
+        }
+        return this.dummyDataTextureB!.createView();
+    }
+
+    private swapParticlePingPongIfActive(): void {
+        if (!this.particlesEnabled) return;
+        this.swapParticlePingPong();
     }
 
     public setShaderEffects(enabled: boolean): void {
@@ -381,6 +572,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             new Float32Array([this.weatherParams[WeatherParamIndex.time]!, 0, this.writeWidth, this.writeHeight])
         );
 
+        const particlesRan = this.dispatchParticles(commandEncoder);
+
         const computePass = commandEncoder.beginComputePass();
         if (timing) {
             timing.timer.markPassStart(computePass, timing.weatherStartIndex);
@@ -397,9 +590,96 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         computePass.end();
 
         this.swapDepthPingPong();
+        if (particlesRan) {
+            this.swapParticlePingPongIfActive();
+        }
         if (this.lastIntermediateView) {
             this.rebuildComputeBindGroup(this.lastIntermediateView);
         }
+    }
+
+    private dispatchParticles(commandEncoder: GPUCommandEncoder): boolean {
+        const read = this.getParticleRead();
+        const write = this.getParticleWrite();
+        if (
+            !this.particlesEnabled
+            || !read
+            || !write
+            || !this.particleDensity
+            || !this.extraBuffer
+            || !this.particleUniformsBuffer
+            || !this.particleBindGroupLayout
+            || !this.integratePipeline
+            || !this.clearDensityPipeline
+            || !this.splatPipeline
+        ) {
+            return false;
+        }
+
+        const precip =
+            (this.weatherParams[WeatherParamIndex.rainIntensity] ?? 0)
+            + (this.weatherParams[WeatherParamIndex.snowIntensity] ?? 0);
+        if (precip < 0.001) return false;
+
+        const time = this.weatherParams[WeatherParamIndex.time] ?? 0;
+        let dt = time - this.lastParticleTime;
+        if (dt < 0) dt = 0;
+        dt = Math.min(dt, PARTICLE_MAX_DT);
+        this.lastParticleTime = time;
+
+        this.ensureParticleDensityTexture();
+        if (!this.particleDensity) return false;
+
+        const uniforms = new Float32Array([
+            dt,
+            this.particleGridWidth,
+            this.particleGridHeight,
+            0,
+            this.particleDensityWidth,
+            this.particleDensityHeight,
+            0,
+            0,
+        ]);
+        this.device.queue.writeBuffer(this.particleUniformsBuffer, 0, uniforms);
+
+        const makeGroup = (src: GPUTexture, dst: GPUTexture): GPUBindGroup =>
+            this.device.createBindGroup({
+                layout: this.particleBindGroupLayout!,
+                entries: [
+                    { binding: 0, resource: src.createView() },
+                    { binding: 1, resource: dst.createView() },
+                    { binding: 2, resource: { buffer: this.extraBuffer! } },
+                    { binding: 3, resource: { buffer: this.particleUniformsBuffer! } },
+                ],
+            });
+
+        const clearGroup = makeGroup(read, this.particleDensity);
+        const integrateGroup = makeGroup(read, write);
+        const splatGroup = makeGroup(write, this.particleDensity);
+
+        const gridX = Math.ceil(this.particleGridWidth / WORKGROUP_SIZE);
+        const gridY = Math.ceil(this.particleGridHeight / WORKGROUP_SIZE);
+        const densX = Math.ceil(this.particleDensityWidth / WORKGROUP_SIZE);
+        const densY = Math.ceil(this.particleDensityHeight / WORKGROUP_SIZE);
+
+        const clearPass = commandEncoder.beginComputePass();
+        clearPass.setPipeline(this.clearDensityPipeline);
+        clearPass.setBindGroup(0, clearGroup);
+        clearPass.dispatchWorkgroups(densX, densY);
+        clearPass.end();
+
+        const integratePass = commandEncoder.beginComputePass();
+        integratePass.setPipeline(this.integratePipeline);
+        integratePass.setBindGroup(0, integrateGroup);
+        integratePass.dispatchWorkgroups(gridX, gridY);
+        integratePass.end();
+
+        const splatPass = commandEncoder.beginComputePass();
+        splatPass.setPipeline(this.splatPipeline);
+        splatPass.setBindGroup(0, splatGroup);
+        splatPass.dispatchWorkgroups(gridX, gridY);
+        splatPass.end();
+        return true;
     }
 
     private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
@@ -466,6 +746,11 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             for (let i = 0; i < 2; i++) {
                 if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
             }
+            for (let i = 0; i < 2; i++) {
+                if (this.particleStates[i]) this.particleStates[i]!.destroy();
+            }
+            if (this.particleDensity) this.particleDensity.destroy();
+            if (this.particleUniformsBuffer) this.particleUniformsBuffer.destroy();
             if (this.dummyDataTextureA) this.dummyDataTextureA.destroy();
             if (this.dummyDataTextureB) this.dummyDataTextureB.destroy();
             if (this.dummyDataTextureC) this.dummyDataTextureC.destroy();
@@ -477,6 +762,14 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.noiseBuffer = null;
         this.writeTexture = null;
         this.depthTextures = [null, null];
+        this.particleStates = [null, null];
+        this.particleDensity = null;
+        this.particleUniformsBuffer = null;
+        this.particleBindGroupLayout = null;
+        this.integratePipeline = null;
+        this.clearDensityPipeline = null;
+        this.splatPipeline = null;
+        this.particlesEnabled = false;
         this.computePipeline = null;
         this.computeBindGroup = null;
         this.blitPipeline = null;

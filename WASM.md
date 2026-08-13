@@ -77,7 +77,8 @@ scripts/
 src/wasm/
 ├── index.ts                    TypeScript wrapper + pure-JS fallback
 ├── useWasmModule.ts            React hooks (useWasmModule, useNoiseFunction)
-└── wasmNoiseFeeder.ts          Imperative render-loop bridge (WebGPUCanvas.tsx)
+├── wasmNoiseFeeder.ts          Imperative render-loop noise-tile bridge
+└── wasmParticleFeeder.ts       Imperative render-loop particle-seed bridge
 ```
 
 ---
@@ -238,6 +239,11 @@ deliberate: it reads as slow, organic turbulence distinct from the per-pixel
 GPU hash noise used everywhere else in the shader, and it keeps the CPU cost
 negligible.
 
+On the compute weather path the same canvas also owns a `WasmParticleFeeder`.
+`fillParticleSeeds` runs on the CPU **once** (and on grid-size change); per-frame
+advection is `weather-particles.wgsl`, not the JS thread. `?wasmParticles=off`
+leaves the procedural rain/snow as the only precipitation layer.
+
 **Dev toggle**: append `?wasmNoise=off` to the URL (or `?wasmNoise=on` to
 force it back on over a stored preference) to compare the WASM-driven dust
 effect against it being fully disabled — see `getWasmNoisePreference()` in
@@ -321,6 +327,7 @@ npm test -- --reporter=verbose
 - `src/wasm/__tests__/wasmCompiled.test.ts` — compiled binary ABI, memory layout,
   haversine host-import wiring. Loads the file directly via `fs.readFileSync`.
 - `src/wasm/__tests__/wasmNoiseFeeder.test.ts` — `WasmNoiseFeeder` cadence and buffer reuse.
+- `src/wasm/__tests__/wasmParticleFeeder.test.ts` — `fillParticleSeeds` ranges, buffer reuse, dry→wet reseed.
 
 ---
 

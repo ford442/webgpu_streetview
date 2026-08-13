@@ -14,6 +14,7 @@ const SHADERS = [
     'public/shaders/streetview.wgsl',
     'public/shaders/weather-post.wgsl',
     'public/shaders/weather-post-compute.wgsl',
+    'public/shaders/weather-particles.wgsl',
 ];
 
 function resolveNagaBinary() {

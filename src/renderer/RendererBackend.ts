@@ -52,6 +52,11 @@ export interface StreetViewRenderer {
      * backends that don't support it (e.g. the WebGL fallback).
      */
     updateNoiseBuffer(tile: Float32Array): void;
+    /**
+     * Upload WASM particle seeds for the compute weather path. No-op on
+     * backends that stay procedural (fragment WebGPU, WebGL fallback).
+     */
+    updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
     updateWeatherAnimation(): void;
     renderWeatherOnly(): void;
     beginTransition(mode?: string): void;

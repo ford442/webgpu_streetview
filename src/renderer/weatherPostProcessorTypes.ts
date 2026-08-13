@@ -16,6 +16,11 @@ export interface WeatherPostProcessorLike {
     init(presentationFormat: GPUTextureFormat): Promise<void>;
     updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
     updateNoiseBuffer(tile: Float32Array): void;
+    /**
+     * Upload WASM `fill_particle_seeds` output into compute-path storage
+     * textures A/B. No-op on the fragment weather path and WebGL fallback.
+     */
+    updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;
@@ -33,6 +38,7 @@ export const WEATHER_POST_PROCESSOR_METHODS: readonly (keyof WeatherPostProcesso
     'init',
     'updateWeatherBindGroup',
     'updateNoiseBuffer',
+    'updateParticleSeeds',
     'setShaderEffects',
     'getCameraParams',
     'getShaderEffectsEnabled',

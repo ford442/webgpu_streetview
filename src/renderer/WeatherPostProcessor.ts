@@ -135,6 +135,10 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.device.queue.writeBuffer(this.noiseBuffer, 0, tile);
     }
 
+    public updateParticleSeeds(_seeds: Float32Array, _width: number, _height: number): void {
+        // Fragment weather path stays procedural — GPU particles are compute-only.
+    }
+
     public setShaderEffects(enabled: boolean): void {
         this.shaderEffectsEnabled = enabled;
         if (this.weatherParamsBuffer && this.device) {

@@ -8,9 +8,16 @@ import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
+import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
 import { getActiveQualityLevel } from '../config/visualPresets';
 import { resolveCinematicCameraFx, prefersReducedMotion } from '../renderer/cinematicCameraFx';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
+import {
+    isParticlePrecipitationEnabled,
+    particleGridForQuality,
+    particleCountForGrid,
+    PARTICLE_SEED,
+} from '../renderer/weatherParticles';
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
@@ -68,6 +75,8 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
     const noiseFeederRef = useRef<WasmNoiseFeeder>(new WasmNoiseFeeder());
     const wasmNoiseEnabledRef = useRef<boolean>(getWasmNoisePreference());
+    const particleFeederRef = useRef<WasmParticleFeeder>(new WasmParticleFeeder());
+    const wasmParticlesEnabledRef = useRef<boolean>(getWasmParticlePreference());
 
     // Cinematic camera FX gate (DOF + motion blur). Quality and the reduced-motion
     // preference are read once — both require a reload to change — while speed is
@@ -299,6 +308,27 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                         params[WeatherParamIndex.time]!
                     );
                     if (tile) currentRendererRef.current.updateNoiseBuffer(tile);
+                }
+
+                if (
+                    wasmParticlesEnabledRef.current
+                    && isParticlePrecipitationEnabled({
+                        weatherMode: currentRendererRef.current.getWeatherPostProcessMode?.() ?? 'fragment',
+                        quality: qualityRef.current,
+                        preference: true,
+                        reducedMotion: reducedMotionRef.current,
+                    })
+                ) {
+                    const grid = particleGridForQuality(qualityRef.current, reducedMotionRef.current);
+                    const precipActive = e.rainIntensity + e.snowIntensity > 0.001;
+                    const seeds = particleFeederRef.current.sampleSeeds(
+                        particleCountForGrid(grid),
+                        precipActive,
+                        PARTICLE_SEED,
+                    );
+                    if (seeds) {
+                        currentRendererRef.current.updateParticleSeeds(seeds, grid.width, grid.height);
+                    }
                 }
             }
 
