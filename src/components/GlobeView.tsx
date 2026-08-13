@@ -20,25 +20,17 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GlobeTransition } from '../hooks/useGlobeMode';
 import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 import ScoutCard from './ScoutCard';
+import {
+    makeBeaconCanvas,
+    type GlobeBookmark,
+    type GlobePOI,
+} from './globe/globeTypes';
+import { syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
+import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
 
-// Cesium is loaded from CDN at runtime, not bundled.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-declare const Cesium: any;
+import type { CesiumCartesian2, CesiumEntity, CesiumImageryLayer, CesiumScreenSpaceEventHandler, CesiumTerrainProvider, CesiumViewer } from '../types/cesium';
 
-export interface GlobePOI {
-    lat: number;
-    lng: number;
-    label: string;
-}
-
-export interface GlobeBookmark {
-    id: string;
-    name: string;
-    lat: number;
-    lng: number;
-    heading: number;
-    pitch: number;
-}
+export type { GlobePOI, GlobeBookmark } from './globe/globeTypes';
 
 interface GlobeViewProps {
     transition: GlobeTransition;
@@ -55,69 +47,6 @@ interface GlobeViewProps {
     onStartJourney?: (waypoints: { lat: number; lng: number }[]) => void;
 }
 
-// ----- Canvas helpers ---------------------------------------------------------
-
-function makeBeaconCanvas(): string {
-    const c = document.createElement('canvas');
-    c.width = 64; c.height = 64;
-    const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 30);
-    g.addColorStop(0, 'rgba(0,204,255,0.9)');
-    g.addColorStop(0.4, 'rgba(0,204,255,0.4)');
-    g.addColorStop(1, 'rgba(0,204,255,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
-    ctx.beginPath(); ctx.arc(32, 32, 7, 0, Math.PI * 2);
-    ctx.fillStyle = '#00CCFF'; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-    return c.toDataURL();
-}
-
-function makePoiCanvas(): string {
-    const c = document.createElement('canvas');
-    c.width = 40; c.height = 40;
-    const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(20, 20, 2, 20, 20, 17);
-    g.addColorStop(0, 'rgba(255,180,0,0.95)');
-    g.addColorStop(1, 'rgba(255,80,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 40, 40);
-    ctx.beginPath(); ctx.arc(20, 20, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFB400'; ctx.fill();
-    return c.toDataURL();
-}
-
-function makeBookmarkCanvas(): string {
-    const c = document.createElement('canvas');
-    c.width = 48; c.height = 48;
-    const ctx = c.getContext('2d')!;
-    const g = ctx.createRadialGradient(24, 24, 3, 24, 24, 22);
-    g.addColorStop(0, 'rgba(0,255,128,0.95)');
-    g.addColorStop(0.5, 'rgba(0,255,128,0.3)');
-    g.addColorStop(1, 'rgba(0,255,128,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 48, 48);
-    ctx.beginPath(); ctx.arc(24, 24, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#00FF80'; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-    return c.toDataURL();
-}
-
-function makeWaypointCanvas(): string {
-    const c = document.createElement('canvas');
-    c.width = 32; c.height = 32;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = 'rgba(255,50,50,0.9)';
-    ctx.beginPath(); ctx.arc(16, 16, 8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(16, 16, 4, 0, Math.PI * 2); ctx.fill();
-    return c.toDataURL();
-}
-
-// Entity rendering limits — keeps Cesium performant with many entities.
-// Billboard rendering becomes sluggish above ~80 entities at typical zoom levels.
-const MAX_VISIBLE_BOOKMARKS = 50;
-const MAX_VISIBLE_POIS = 30;
-
-// ----- Component --------------------------------------------------------------
-
 const GlobeView: React.FC<GlobeViewProps> = ({
     transition,
     currentLat,
@@ -132,14 +61,14 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     onStartJourney,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const viewerRef = useRef<any>(null);
-    const handlerRef = useRef<any>(null);
-    const locationEntityRef = useRef<any>(null);
-    const poiEntitiesRef = useRef<any[]>([]);
-    const bookmarkEntitiesRef = useRef<any[]>([]);
-    const waypointEntitiesRef = useRef<any[]>([]);
-    const waypointPolylineRef = useRef<any>(null);
-    const svServiceRef = useRef<any>(null);
+    const viewerRef = useRef<CesiumViewer | null>(null);
+    const handlerRef = useRef<CesiumScreenSpaceEventHandler | null>(null);
+    const locationEntityRef = useRef<CesiumEntity | null>(null);
+    const poiEntitiesRef = useRef<CesiumEntity[]>([]);
+    const bookmarkEntitiesRef = useRef<CesiumEntity[]>([]);
+    const waypointEntitiesRef = useRef<CesiumEntity[]>([]);
+    const waypointPolylineRef = useRef<CesiumEntity | null>(null);
+    const svServiceRef = useRef<google.maps.StreetViewService | null>(null);
     const toastTimerRef = useRef<number | null>(null);
 
     // Stable refs for callbacks
@@ -203,9 +132,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             return;
         }
 
-        svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data: any, status: any) => {
+        svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data, status) => {
             if (
-                status === (window as any).google.maps.StreetViewStatus.OK &&
+                status === google.maps.StreetViewStatus.OK &&
                 data?.location?.latLng
             ) {
                 const snappedLat = data.location.latLng.lat();
@@ -242,8 +171,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         // resolveMiniMapLayerOptions prefers real Ion world terrain + imagery when a
         // token is configured, falling back to ellipsoid + CartoCDN on failure so the
         // full-screen globe is never blank (same fallback MiniMap already relies on).
-        let terrainProvider: any;
-        let baseLayer: any;
+        let terrainProvider: CesiumTerrainProvider;
+        let baseLayer: CesiumImageryLayer | false;
         try {
             ({ terrainProvider, baseLayer } = await resolveMiniMapLayerOptions(Cesium));
         } catch (err) {
@@ -254,7 +183,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
         if (cancelled || viewerRef.current || !containerRef.current) return;
 
-        let viewer: any;
+        let viewer: CesiumViewer;
         try {
             viewer = new Cesium.Viewer(containerRef.current, {
                 animation: false,
@@ -287,8 +216,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         // Cesium to retry tiles indefinitely and contributing to billing risk.
 
         // Lazy-init StreetViewService for pre-flight validation
-        if (!svServiceRef.current && (window as any).google?.maps) {
-            svServiceRef.current = new (window as any).google.maps.StreetViewService();
+        if (!svServiceRef.current && window.google?.maps) {
+            svServiceRef.current = new google.maps.StreetViewService();
         }
 
         // Start camera at street level
@@ -358,7 +287,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
             });
         };
 
-        handler.setInputAction((event: { position: any }) => {
+        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
             const cartesian = viewer.camera.pickEllipsoid(
                 event.position,
                 viewer.scene.globe.ellipsoid,
@@ -374,9 +303,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 return;
             }
 
-            svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data: any, status: any) => {
+            svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data, status) => {
                 if (
-                    status === (window as any).google.maps.StreetViewStatus.OK &&
+                    status === google.maps.StreetViewStatus.OK &&
                     data?.location?.latLng
                 ) {
                     const snappedLat = data.location.latLng.lat();
@@ -392,9 +321,9 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         // Clicking a bookmark entity triggers an immediate Orbital Drop.
         // Shift+click is handled by a separate handler registered below with
         // Cesium.KeyboardEventModifier.SHIFT, so it won't reach this handler.
-        handler.setInputAction((event: { position: any }) => {
+        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
             const picked = viewer.scene.pick(event.position);
-            if (Cesium.defined(picked) && picked.id && picked.id.properties) {
+            if (Cesium.defined(picked) && picked?.id?.properties) {
                 // Clicked on a bookmark entity → Orbital Drop directly
                 try {
                     const props = picked.id.properties;
@@ -420,7 +349,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
         // Shift+click → drop waypoint
-        handler.setInputAction((event: { position: any }) => {
+        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
             const cartesian = viewer.camera.pickEllipsoid(
                 event.position,
                 viewer.scene.globe.ellipsoid,
@@ -459,87 +388,17 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     useEffect(() => {
         const viewer = viewerRef.current;
         if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-
-        poiEntitiesRef.current.forEach(e => {
-            try { viewer.entities.remove(e); } catch { /* noop */ }
-        });
-
-        if (pois.length === 0) {
-            poiEntitiesRef.current = [];
-            return;
-        }
-
-        const poiImage = makePoiCanvas();
-        poiEntitiesRef.current = pois.slice(0, MAX_VISIBLE_POIS).map(poi =>
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(poi.lng, poi.lat, 60),
-                billboard: {
-                    image: poiImage,
-                    scale: 0.85,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                label: {
-                    text: poi.label,
-                    font: '12px sans-serif',
-                    fillColor: Cesium.Color.fromCssColorString('#FFB400'),
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 1,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    pixelOffset: new Cesium.Cartesian2(0, -42),
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.65)'),
-                    backgroundPadding: new Cesium.Cartesian2(6, 3),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-            })
-        );
+        poiEntitiesRef.current = syncGlobePoiEntities(viewer, pois, poiEntitiesRef.current);
     }, [pois, viewerReady]);
 
     // ---- Reactive bookmark entities (from ConnectedChrome bookmarks prop) ----
     useEffect(() => {
         const viewer = viewerRef.current;
         if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-
-        // Remove old bookmark entities
-        bookmarkEntitiesRef.current.forEach(e => {
-            try { viewer.entities.remove(e); } catch { /* noop */ }
-        });
-
-        if (bookmarks.length === 0) {
-            bookmarkEntitiesRef.current = [];
-            return;
-        }
-
-        const bookmarkImage = makeBookmarkCanvas();
-        bookmarkEntitiesRef.current = bookmarks.slice(0, MAX_VISIBLE_BOOKMARKS).map(bm =>
-            viewer.entities.add({
-                name: bm.name,
-                position: Cesium.Cartesian3.fromDegrees(bm.lng, bm.lat, 70),
-                billboard: {
-                    image: bookmarkImage,
-                    scale: 0.95,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                label: {
-                    text: `📌 ${bm.name}`,
-                    font: 'bold 12px sans-serif',
-                    fillColor: Cesium.Color.fromCssColorString('#00FF80'),
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    pixelOffset: new Cesium.Cartesian2(0, -40),
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.7)'),
-                    backgroundPadding: new Cesium.Cartesian2(6, 3),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                properties: {
-                    bookmarkId: bm.id,
-                    bookmarkLat: bm.lat,
-                    bookmarkLng: bm.lng,
-                    bookmarkName: bm.name,
-                },
-            })
+        bookmarkEntitiesRef.current = syncGlobeBookmarkEntities(
+            viewer,
+            bookmarks,
+            bookmarkEntitiesRef.current,
         );
     }, [bookmarks, viewerReady]);
 
@@ -547,57 +406,12 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     useEffect(() => {
         const viewer = viewerRef.current;
         if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-
-        // Remove old waypoint entities
-        waypointEntitiesRef.current.forEach(e => {
-            try { viewer.entities.remove(e); } catch { /* noop */ }
+        const visuals = syncGlobeAutopilotVisuals(viewer, waypoints, {
+            waypointEntities: waypointEntitiesRef.current,
+            polylineEntity: waypointPolylineRef.current,
         });
-        if (waypointPolylineRef.current) {
-            try { viewer.entities.remove(waypointPolylineRef.current); } catch { /* noop */ }
-        }
-
-        if (waypoints.length === 0) {
-            waypointEntitiesRef.current = [];
-            waypointPolylineRef.current = null;
-            return;
-        }
-
-        const wpImage = makeWaypointCanvas();
-        waypointEntitiesRef.current = waypoints.map((wp, i) =>
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(wp.lng, wp.lat, 50),
-                billboard: {
-                    image: wpImage,
-                    scale: 1.0,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-                label: {
-                    text: `WP ${i + 1}`,
-                    font: 'bold 11px sans-serif',
-                    fillColor: Cesium.Color.fromCssColorString('#FF3232'),
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    pixelOffset: new Cesium.Cartesian2(0, -28),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-            })
-        );
-
-        // Draw polyline between waypoints
-        if (waypoints.length >= 2) {
-            const positions = waypoints.map(wp =>
-                Cesium.Cartesian3.fromDegrees(wp.lng, wp.lat, 50)
-            );
-            waypointPolylineRef.current = viewer.entities.add({
-                polyline: {
-                    positions,
-                    width: 3,
-                    material: Cesium.Color.fromCssColorString('rgba(255,50,50,0.8)'),
-                    clampToGround: false,
-                },
-            });
-        }
+        waypointEntitiesRef.current = visuals.waypointEntities;
+        waypointPolylineRef.current = visuals.polylineEntity;
     }, [waypoints, viewerReady]);
 
     // ---- update beacon when street view position changes ---------------------

@@ -9,6 +9,7 @@ import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
 import type { AppPanels } from '../useAppPanels';
+export type { ChromeStageActions, ChromeStageState, MobileChromeContract } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
 import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';

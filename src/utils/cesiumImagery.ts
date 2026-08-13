@@ -7,7 +7,7 @@
  * is baked) or CartoCDN Voyager as a free fallback.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { CesiumImageryLayer, CesiumNamespace, CesiumTerrainProvider } from '../types/cesium';
 
 /** CartoCDN Voyager — OSM-derived, allowed for app use (unlike tile.openstreetmap.org). */
 export const CARTO_VOYAGER_URL =
@@ -64,14 +64,14 @@ export function resolveGlobeImagerySource(token: string): GlobeImagerySource {
 }
 
 /** Sets Ion.defaultAccessToken when a non-empty token is provided. Returns the applied token. */
-export function applyCesiumIonToken(Cesium: any, token: string = getCesiumIonToken()): string {
+export function applyCesiumIonToken(Cesium: CesiumNamespace, token: string = getCesiumIonToken()): string {
   if (token) {
     Cesium.Ion.defaultAccessToken = token;
   }
   return token;
 }
 
-export function createCartoBaseLayer(Cesium: any): any {
+export function createCartoBaseLayer(Cesium: CesiumNamespace): CesiumImageryLayer {
   return new Cesium.ImageryLayer(
     new Cesium.UrlTemplateImageryProvider({
       url: CARTO_VOYAGER_URL,
@@ -81,22 +81,17 @@ export function createCartoBaseLayer(Cesium: any): any {
   );
 }
 
-export function createIonWorldBaseLayer(Cesium: any): any {
+export function createIonWorldBaseLayer(Cesium: CesiumNamespace): CesiumImageryLayer {
   return Cesium.ImageryLayer.fromWorldImagery();
 }
 
 export interface CesiumViewerLayerOptions {
-  terrainProvider: any;
-  baseLayer: any;
+  terrainProvider: CesiumTerrainProvider;
+  baseLayer: CesiumImageryLayer | false;
   imagerySource: GlobeImagerySource;
 }
 
-/**
- * Shared Cesium Viewer options for both MiniMap and full-screen GlobeView:
- * Ion world terrain + world imagery when a token works; otherwise ellipsoid +
- * CartoCDN so the globe is never blank.
- */
-export async function resolveMiniMapLayerOptions(Cesium: any): Promise<CesiumViewerLayerOptions> {
+export async function resolveMiniMapLayerOptions(Cesium: CesiumNamespace): Promise<CesiumViewerLayerOptions> {
   const token = applyCesiumIonToken(Cesium);
   if (resolveGlobeImagerySource(token) === 'ion') {
     try {

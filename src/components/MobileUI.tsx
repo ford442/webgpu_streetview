@@ -1,28 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useTouchControls } from '../hooks/useTouchControls';
-import { useDeviceDetection, QualitySettings } from '../hooks/useDeviceDetection';
-import { VehicleType, VehicleConfig, VEHICLES } from '../car/VehicleManager';
+import { useDeviceDetection, type QualitySettings } from '../hooks/useDeviceDetection';
+import { type VehicleType, VehicleConfig, VEHICLES } from '../car/VehicleManager';
+import type { MobileChromeContract } from '../app/shell/chromePanelContracts';
 
-interface MobileUIProps {
-  isVisible: boolean;
-  onPan: (deltaX: number, deltaY: number) => void;
-  onZoom: (zoomDelta: number) => void;
-  onMove: (direction: 'forward' | 'backward' | 'left' | 'right') => void;
-  onToggleCarMode: () => void;
-  onToggleMap: () => void;
-  onTakeSnapshot: () => void;
-  onToggleWipers?: () => void;
-  onToggleRoof?: () => void;
-  onVehicleChange?: (vehicle: VehicleType) => void;
-  onQualityChange?: (settings: QualitySettings) => void;
-  currentVehicle?: VehicleType;
-  isCarMode?: boolean;
-  isMapOpen?: boolean;
-  wipersEnabled?: boolean;
-  isRoofOpen?: boolean;
-  heading?: number;
-  zoom?: number;
-}
+export type MobileUIProps = MobileChromeContract;
 
 /**
  * Mobile-optimized UI for the Street View viewer

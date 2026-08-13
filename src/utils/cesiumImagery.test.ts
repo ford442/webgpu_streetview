@@ -1,3 +1,4 @@
+import type { CesiumNamespace } from '../types/cesium';
 import {
   CARTO_VOYAGER_URL,
   CESIUM_ION_TOKEN_DEPLOY_SENTINEL,
@@ -10,7 +11,7 @@ import {
   resolveMiniMapLayerOptions,
 } from './cesiumImagery';
 
-function makeMockCesium(opts?: { ionThrows?: boolean; terrainRejects?: boolean }) {
+function makeMockCesium(opts?: { ionThrows?: boolean; terrainRejects?: boolean }): CesiumNamespace {
   const ion = { defaultAccessToken: '' as string };
   const UrlTemplateImageryProvider = function (this: { opts: unknown }, o: unknown) {
     this.opts = o;
@@ -37,7 +38,7 @@ function makeMockCesium(opts?: { ionThrows?: boolean; terrainRejects?: boolean }
       if (opts?.terrainRejects) throw new Error('terrain boom');
       return { kind: 'world-terrain' };
     },
-  };
+  } as unknown as CesiumNamespace;
 }
 
 describe('cesiumImagery', () => {
