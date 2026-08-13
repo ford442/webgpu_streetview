@@ -5,32 +5,17 @@
 
 import * as THREE from 'three';
 import { LimoInteriorBuilder } from './LimoInteriorBuilder';
+import {
+    applyLimoMoodLighting,
+    applyLimoScreenContent,
+    applyPartitionGlass,
+    defaultLimoState,
+    tickLimoAtmosphere,
+    type LimoState,
+} from './limousine/limoAtmosphere';
 
-/**
- * Limousine state interface for managing partition, lighting, and entertainment
- */
-export interface LimoState {
-    partitionOpen: boolean;
-    moodLighting: 'relaxing' | 'business' | 'party' | 'romantic';
-    entertainmentOn: boolean;
-    intercomActive: boolean;
-    chauffeurView: boolean;
-    barLightOn: boolean;
-    screenContent: 'none' | 'nav' | 'entertainment' | 'ambient';
-}
-
-/**
- * Default limousine state
- */
-export const defaultLimoState: LimoState = {
-    partitionOpen: false,
-    moodLighting: 'relaxing',
-    entertainmentOn: false,
-    intercomActive: false,
-    chauffeurView: false,
-    barLightOn: true,
-    screenContent: 'ambient',
-};
+export type { LimoState };
+export { defaultLimoState };
 
 /**
  * LimousineMode - Extended luxury cabin with privacy partition, rear-facing seats,
@@ -127,71 +112,15 @@ export class LimousineMode {
     }
 
     private updatePartitionPosition(): void {
-        this.partitionGlassMaterial.opacity = this.state.partitionOpen ? 0.2 : 0.9;
-        this.partitionGlassMaterial.transmission = this.state.partitionOpen ? 0.8 : 0.1;
+        applyPartitionGlass(this.partitionGlassMaterial, this.state.partitionOpen);
     }
 
     private updateMoodLighting(): void {
-        const moodColors: Record<string, number[]> = {
-            relaxing: [0xff8844, 0xffaa66, 0xffcc88, 0xffddaa],
-            business: [0xffffff, 0xffffee, 0xffffdd, 0xffffff],
-            party: [0xff0088, 0x8800ff, 0x0088ff, 0x00ff88],
-            romantic: [0xff4466, 0xff6688, 0xff88aa, 0xffaacc],
-        };
-
-        const colors = (moodColors[this.state.moodLighting] || moodColors.relaxing)!;
-        const intensity = this.state.entertainmentOn ? 0.8 : 0.4;
-
-        this.moodLights.forEach((light, idx) => {
-            light.color.setHex(colors[idx % colors.length]!);
-            light.intensity = intensity;
-        });
-
-        switch (this.state.moodLighting) {
-            case 'relaxing':
-                this.ambientLight.color.setHex(0xffddaa);
-                this.ambientLight.intensity = 0.15;
-                break;
-            case 'business':
-                this.ambientLight.color.setHex(0xffffff);
-                this.ambientLight.intensity = 0.3;
-                break;
-            case 'party':
-                this.ambientLight.color.setHex(0xff00ff);
-                this.ambientLight.intensity = 0.1;
-                break;
-            case 'romantic':
-                this.ambientLight.color.setHex(0xffaabb);
-                this.ambientLight.intensity = 0.12;
-                break;
-        }
-
-        if (this.state.barLightOn) {
-            this.barLight.intensity = 0.5;
-        } else {
-            this.barLight.intensity = 0;
-        }
+        applyLimoMoodLighting(this.state, this.moodLights, this.ambientLight, this.barLight);
     }
 
     private updateScreenContent(): void {
-        const contentColors: Record<string, number> = {
-            none: 0x000000,
-            nav: 0x002244,
-            entertainment: 0x440022,
-            ambient: 0x112233,
-        };
-
-        const emissiveIntensity = this.state.entertainmentOn ? 0.8 : 0.2;
-        const color = (contentColors[this.state.screenContent] || contentColors.ambient)!;
-
-        this.screensGroup.children.forEach((child) => {
-            if (child.name.includes('Screen')) {
-                const mesh = child as THREE.Mesh;
-                const mat = mesh.material as THREE.MeshStandardMaterial;
-                mat.emissive.setHex(color);
-                mat.emissiveIntensity = emissiveIntensity;
-            }
-        });
+        applyLimoScreenContent(this.screensGroup, this.state);
     }
 
     // Public API methods
@@ -268,18 +197,12 @@ export class LimousineMode {
     }
 
     public update(_deltaTime: number): void {
-        if (this.state.entertainmentOn && this.state.moodLighting === 'party') {
-            const time = performance.now() * 0.001;
-            this.moodLights.forEach((light, idx) => {
-                const offset = idx * Math.PI / 2;
-                light.intensity = 0.5 + Math.sin(time * 2 + offset) * 0.3;
-            });
-        }
-
-        this.ceilingLights.forEach((light, idx) => {
-            const time = performance.now() * 0.001;
-            light.intensity = 0.2 + Math.sin(time * 0.5 + idx) * 0.1;
-        });
+        tickLimoAtmosphere(
+            this.state,
+            this.moodLights,
+            this.ceilingLights,
+            performance.now() * 0.001,
+        );
     }
 
     public setHeadOrientation(headYaw: number, headPitch: number): void {

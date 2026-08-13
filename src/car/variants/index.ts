@@ -9,8 +9,8 @@ export type { ConvertibleState } from './ConvertibleMode';
 
 // Limousine Mode
 export { LimousineMode, initLimousineMode } from './LimousineMode';
-export type { LimoState } from './LimousineMode';
-export { defaultLimoState } from './LimousineMode';
+export type { LimoState } from './limousine/limoAtmosphere';
+export { defaultLimoState } from './limousine/limoAtmosphere';
 
 // Science Lab Mode
 export {

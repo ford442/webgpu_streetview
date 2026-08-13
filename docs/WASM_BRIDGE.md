@@ -43,7 +43,7 @@ the WAT source — i.e. when someone edited the WAT and forgot to rebuild.
 
 ## 2. The ABI
 
-Ten exports, identical in the WAT source, the C++ bindings, the CMake export
+Eleven exports, identical in the WAT source, the C++ bindings, the CMake export
 list and the TypeScript loader:
 
 | Export | TS wrapper | Notes |
@@ -58,6 +58,7 @@ list and the TypeScript loader:
 | `signed_angle_diff(f32, f32) → f32` | `signedAngleDiff` | `(-180, 180]` |
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
+| `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
 
 Plus the exported `memory`, which the loader needs to marshal buffers.
 
@@ -97,6 +98,7 @@ in/out — no allocator, no `malloc` on the hot path. 512 is 8-byte aligned, so
 | `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
 | `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
+| `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed mixed in the Web Audio graph; JS fill + oscillators if WASM is missing |
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;

@@ -13,12 +13,17 @@ export interface UseCarHudModeResult {
   handleHudKeyUp: () => void;
 }
 
-export function useCarHudMode(): UseCarHudModeResult {
+export interface UseCarHudModeOptions {
+  isCruiseMode?: boolean;
+}
+
+export function useCarHudMode(options: UseCarHudModeOptions = {}): UseCarHudModeResult {
+  const { isCruiseMode = false } = options;
   const [hudMode, setHudMode] = useState<CarHudMode>(() => {
-    if (typeof window === 'undefined') return 'compact';
+    if (typeof window === 'undefined') return 'immersive';
     const saved = window.localStorage.getItem(HUD_MODE_STORAGE_KEY);
     if (saved === 'full' || saved === 'compact' || saved === 'immersive') return saved;
-    return 'compact';
+    return 'immersive';
   });
   const hudLongPressTimerRef = useRef<number | null>(null);
   const hudLongPressTriggeredRef = useRef(false);
@@ -69,6 +74,12 @@ export function useCarHudMode(): UseCarHudModeResult {
       hudLongPressTimerRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (isCruiseMode) {
+      setHudModeAndPersist('immersive');
+    }
+  }, [isCruiseMode, setHudModeAndPersist]);
 
   return {
     hudMode,

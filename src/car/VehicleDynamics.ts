@@ -19,6 +19,16 @@ export interface VehicleTelemetry {
     accelerating: boolean;
 }
 
+/**
+ * Spacing between extra panorama hops a 2/3 gear queues (manual or cruise).
+ * Higher gears pack hops tighter so cruise interval and dash speed stay coupled.
+ */
+export function gearChainedHopIntervalMs(hops: number): number {
+    if (hops >= 3) return 400;
+    if (hops >= 2) return 480;
+    return 550;
+}
+
 const IDLE_RPM = 850;
 const MAX_SPEED_KMH = 160;
 const ACCEL_KMH_PER_S = 22;
@@ -36,6 +46,8 @@ export class VehicleDynamics {
     /** Simulation seconds since the last movement input. */
     private sinceMove = Infinity;
     private reversing = false;
+    /** Driver-selected cabin gear (P/R/N/D/2/3). Independent of inferred gearbox. */
+    private selectedGear = 'D';
 
     /**
      * Report a panorama hop of `distanceMeters`. Repeated hops (cruise mode,
@@ -62,6 +74,23 @@ export class VehicleDynamics {
         this.sinceMove = 0;
     }
 
+    /** Sync the cabin shifter so hop density and park/reverse affect speed. */
+    public noteGear(gear: string): void {
+        this.selectedGear = gear;
+        if (gear === 'P' || gear === 'N') {
+            this.targetSpeed = 0;
+            this.reversing = false;
+        } else if (gear === 'R') {
+            this.reversing = true;
+        } else {
+            this.reversing = false;
+            const hopBoost = gear === '3' ? 22 : gear === '2' ? 12 : 0;
+            if (hopBoost > 0 && this.sinceMove < COAST_DELAY_S) {
+                this.targetSpeed = Math.max(this.targetSpeed, 28 + hopBoost);
+            }
+        }
+    }
+
     /** Immediately kill all motion (e.g. entering free-look). */
     public stop(): void {
         this.targetSpeed = 0;
@@ -73,7 +102,9 @@ export class VehicleDynamics {
         const clamped = Math.min(Math.max(dt, 0), 0.1);
 
         this.sinceMove += clamped;
-        if (this.sinceMove > COAST_DELAY_S) {
+        if (this.selectedGear === 'P' || this.selectedGear === 'N') {
+            this.targetSpeed = 0;
+        } else if (this.sinceMove > COAST_DELAY_S) {
             this.targetSpeed = Math.max(0, this.targetSpeed - COAST_KMH_PER_S * clamped);
         }
 

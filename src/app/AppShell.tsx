@@ -17,6 +17,7 @@ import { useSnapshots } from '../hooks/useSnapshots';
 import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useKeyboardShortcuts, useAnnouncer, SkipLink } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
+import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
@@ -162,6 +163,11 @@ export function AppShell() {
     hopsPerTick: () => (viewModeRef.current === 'car' ? (carRuntimeModule?.getGearHopCount() ?? 1) : 1),
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
+
+  useEffect(() => {
+    publishCruiseFlag(isCruiseMode);
+    return () => publishCruiseFlag(false);
+  }, [isCruiseMode]);
 
   const handleAddBookmark = useCallback(
     (name: string) => {

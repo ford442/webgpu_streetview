@@ -191,4 +191,41 @@ float sw_signed_angle_diff(float from, float to) {
     return diff;
 }
 
+void sw_fill_engine_noise(float* buf, int count,
+                          float rpm, float load, float speed_kmh,
+                          float time_sec, float sample_rate) {
+    if (count <= 0 || buf == nullptr) return;
+    if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
+    if (rpm < 0.0f) rpm = 0.0f;
+    if (load < 0.0f) load = 0.0f;
+    if (load > 1.0f) load = 1.0f;
+    if (speed_kmh < 0.0f) speed_kmh = 0.0f;
+    if (time_sec < 0.0f) time_sec = 0.0f;
+
+    const float inv_sr = 1.0f / sample_rate;
+    const float fund = rpm / 60.0f;
+    uint32_t state = (uint32_t)floorf(time_sec * sample_rate);
+    if (state == 0u) state = 1u;
+    float spd = speed_kmh / 140.0f;
+    if (spd > 1.0f) spd = 1.0f;
+
+    for (int i = 0; i < count; ++i) {
+        float t = time_sec + (float)i * inv_sr;
+        float cycles = t * fund;
+        float frac = cycles - floorf(cycles);
+        float saw = frac * 2.0f - 1.0f;
+        float cycles2 = t * (fund * 2.0f);
+        float frac2 = cycles2 - floorf(cycles2);
+        float saw2 = frac2 * 2.0f - 1.0f;
+        float eng = (saw * 0.28f + saw2 * 0.11f) * (0.22f + 0.78f * load);
+        state = state * 1664525u + 1013904223u;
+        float n = (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
+        n = n * 2.0f - 1.0f;
+        float s = eng + n * spd * 0.18f;
+        if (s > 1.0f) s = 1.0f;
+        if (s < -1.0f) s = -1.0f;
+        buf[i] = s;
+    }
+}
+
 } // extern "C"

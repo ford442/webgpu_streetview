@@ -27,6 +27,8 @@
 ;;             lat2: f64, lon2: f64)                  → f64  metres
 ;;   batch_haversine(ptr: i32, count: i32,
 ;;                   out: i32)                        → f64  total metres
+;;   fill_engine_noise(ptr, count, rpm, load, speed,
+;;                     time, sampleRate)               → void  mono f32 PCM
 ;;
 ;; haversine relies on "env.sin"/"env.cos"/"env.atan2" host imports (WASM has
 ;; no built-in transcendental functions) — the TypeScript wrapper
@@ -414,6 +416,79 @@
           (f32.mul (call $lcg_unit (local.get $state)) (f32.const 6.2831853)))
 
         (local.set $wp (i32.add (local.get $wp) (i32.const 16)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+  )
+
+  ;; ---- fill_engine_noise(ptr, count, rpm, load, speed, time, sr) → void ----
+  ;; Writes `count` mono f32 PCM samples in [-1, 1]. Saw-stack engine tone
+  ;; plus LCG road noise; bit-identical to C++ / JS fallback (f32 math).
+  (func (export "fill_engine_noise")
+    (param $ptr i32) (param $count i32)
+    (param $rpm f32) (param $load f32) (param $speed f32)
+    (param $time f32) (param $sr f32)
+    (local $i i32) (local $wp i32) (local $state i32)
+    (local $inv_sr f32) (local $fund f32) (local $spd f32)
+    (local $t f32) (local $cycles f32) (local $frac f32)
+    (local $saw f32) (local $cycles2 f32) (local $frac2 f32)
+    (local $saw2 f32) (local $eng f32) (local $n f32) (local $s f32)
+
+    (if (f32.le (local.get $sr) (f32.const 1.0))
+      (then (local.set $sr (f32.const 44100.0))))
+    (if (f32.lt (local.get $rpm) (f32.const 0.0))
+      (then (local.set $rpm (f32.const 0.0))))
+    (if (f32.lt (local.get $load) (f32.const 0.0))
+      (then (local.set $load (f32.const 0.0))))
+    (if (f32.gt (local.get $load) (f32.const 1.0))
+      (then (local.set $load (f32.const 1.0))))
+    (if (f32.lt (local.get $speed) (f32.const 0.0))
+      (then (local.set $speed (f32.const 0.0))))
+    (if (f32.lt (local.get $time) (f32.const 0.0))
+      (then (local.set $time (f32.const 0.0))))
+
+    (local.set $inv_sr (f32.div (f32.const 1.0) (local.get $sr)))
+    (local.set $fund (f32.div (local.get $rpm) (f32.const 60.0)))
+    (local.set $state
+      (i32.trunc_sat_f32_u (f32.floor (f32.mul (local.get $time) (local.get $sr)))))
+    (if (i32.eqz (local.get $state))
+      (then (local.set $state (i32.const 1))))
+    (local.set $spd (f32.div (local.get $speed) (f32.const 140.0)))
+    (if (f32.gt (local.get $spd) (f32.const 1.0))
+      (then (local.set $spd (f32.const 1.0))))
+
+    (local.set $wp (local.get $ptr))
+    (local.set $i (i32.const 0))
+    (block $b
+      (loop $l
+        (br_if $b (i32.ge_s (local.get $i) (local.get $count)))
+        (local.set $t
+          (f32.add (local.get $time)
+            (f32.mul (f32.convert_i32_s (local.get $i)) (local.get $inv_sr))))
+        (local.set $cycles (f32.mul (local.get $t) (local.get $fund)))
+        (local.set $frac (f32.sub (local.get $cycles) (f32.floor (local.get $cycles))))
+        (local.set $saw (f32.sub (f32.mul (local.get $frac) (f32.const 2.0)) (f32.const 1.0)))
+        (local.set $cycles2
+          (f32.mul (local.get $t) (f32.mul (local.get $fund) (f32.const 2.0))))
+        (local.set $frac2 (f32.sub (local.get $cycles2) (f32.floor (local.get $cycles2))))
+        (local.set $saw2 (f32.sub (f32.mul (local.get $frac2) (f32.const 2.0)) (f32.const 1.0)))
+        (local.set $eng
+          (f32.mul
+            (f32.add
+              (f32.mul (local.get $saw) (f32.const 0.28))
+              (f32.mul (local.get $saw2) (f32.const 0.11)))
+            (f32.add (f32.const 0.22) (f32.mul (f32.const 0.78) (local.get $load)))))
+        (local.set $state (call $lcg_next (local.get $state)))
+        (local.set $n
+          (f32.sub (f32.mul (call $lcg_unit (local.get $state)) (f32.const 2.0)) (f32.const 1.0)))
+        (local.set $s
+          (f32.add (local.get $eng)
+            (f32.mul (f32.mul (local.get $n) (local.get $spd)) (f32.const 0.18))))
+        (if (f32.gt (local.get $s) (f32.const 1.0))
+          (then (local.set $s (f32.const 1.0))))
+        (if (f32.lt (local.get $s) (f32.const -1.0))
+          (then (local.set $s (f32.const -1.0))))
+        (f32.store (local.get $wp) (local.get $s))
+        (local.set $wp (i32.add (local.get $wp) (i32.const 4)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $l)))
   )

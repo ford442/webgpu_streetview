@@ -26,6 +26,9 @@ import {
 } from '../../car';
 import { publishCameraSpeed, resetCameraSpeed } from '../../renderer/cameraMotionSignal';
 import { VehicleDynamics, VehicleTelemetry } from '../../car/VehicleDynamics';
+import { applyVehicleTelemetry } from '../../car/telemetryFeed';
+import { CabinAudio } from '../../car/audio/CabinAudio';
+import { SpringPhysics } from '../../animation/PhysicsAnimations';
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -104,6 +107,9 @@ export function useCarDashboardBridge({
     speedKmh: 0, rpm: 850, gear: 'P', accelerating: false,
   });
   const lastTelemetryPushRef = useRef(0);
+  const cabinAudioRef = useRef<CabinAudio | null>(null);
+  const rollSpringRef = useRef(new SpringPhysics({ stiffness: 48, damping: 9, mass: 1 }));
+  const pitchSpringRef = useRef(new SpringPhysics({ stiffness: 36, damping: 8, mass: 1 }));
   const prevPositionRef = useRef<google.maps.LatLng | null>(null);
   const bodyPitchRef = useRef(0);
   const bodyRollRef = useRef(0);
@@ -121,6 +127,9 @@ export function useCarDashboardBridge({
       carModeStateRef.current = initCarMode(containerRef.current);
       registerCarModeState(carModeStateRef.current);
       toggleCarMode(true);
+      const audio = new CabinAudio();
+      cabinAudioRef.current = audio;
+      void audio.start();
     } catch (err) {
       console.error('[CarModeView] Failed to initialize car mode:', err);
     }
@@ -131,6 +140,8 @@ export function useCarDashboardBridge({
       bodyPitchRef.current = 0;
       bodyRollRef.current = 0;
       pitchImpulseRef.current = 0;
+      cabinAudioRef.current?.dispose();
+      cabinAudioRef.current = null;
     };
   }, [containerRef, registerCarModeState]);
 
@@ -229,10 +240,14 @@ export function useCarDashboardBridge({
 
       setCarSteering(steeringInputRef.current);
 
+      dynamicsRef.current!.noteGear(String(gearRef.current));
       const telem = dynamicsRef.current!.update(deltaTime);
       carSpeedRef.current = telem.speedKmh;
-      updateCarGauges(telem.speedKmh, telem.rpm);
+      applyVehicleTelemetry(telem, { updateCluster: updateCarGauges });
       publishCameraSpeed(telem.speedKmh);
+      cabinAudioRef.current?.update(telem, {
+        openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
+      });
 
       if (now - lastTelemetryPushRef.current > 150) {
         lastTelemetryPushRef.current = now;
@@ -248,14 +263,15 @@ export function useCarDashboardBridge({
 
       if (controlMode === 'carSteer') {
         const targetRoll = steeringInputRef.current * 0.04;
-        bodyRollRef.current += (targetRoll - bodyRollRef.current) * Math.min(deltaTime * 6, 1);
+        bodyRollRef.current = rollSpringRef.current.update(deltaTime, targetRoll);
         const targetPitch = pitchImpulseRef.current + (carSpeedRef.current > 0 ? -0.5 : 0);
-        bodyPitchRef.current += (targetPitch - bodyPitchRef.current) * Math.min(deltaTime * 4, 1);
+        bodyPitchRef.current = pitchSpringRef.current.update(deltaTime, targetPitch);
         pitchImpulseRef.current *= 0.92;
         bodyPitchRef.current = Math.max(-8, Math.min(8, bodyPitchRef.current));
       } else {
-        bodyRollRef.current += (0 - bodyRollRef.current) * Math.min(deltaTime * 6, 1);
-        bodyPitchRef.current += (0 - bodyPitchRef.current) * Math.min(deltaTime * 6, 1);
+        // Free-look must not yaw or lean the chassis (#171).
+        bodyRollRef.current = rollSpringRef.current.update(deltaTime, 0);
+        bodyPitchRef.current = pitchSpringRef.current.update(deltaTime, 0);
         pitchImpulseRef.current = 0;
       }
 
@@ -275,7 +291,7 @@ export function useCarDashboardBridge({
       active = false;
       cancelAnimationFrame(rafId);
     };
-  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode]);
+  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen]);
 
   useEffect(() => {
     if (controlMode === 'freeLook') {
@@ -286,6 +302,8 @@ export function useCarDashboardBridge({
       steeringInputRef.current = 0;
       bodyPitchRef.current = 0;
       bodyRollRef.current = 0;
+      rollSpringRef.current.reset(0);
+      pitchSpringRef.current.reset(0);
     }
   }, [controlMode]);
 
