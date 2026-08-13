@@ -7,9 +7,8 @@ import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
 
 // Cesium is loaded from CDN at runtime (see loadCesiumSDK), not bundled —
 // keeps the ~4MB globe stack out of the main chunk for users who never
-// switch to globe view.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-declare const Cesium: any;
+// Cesium is loaded from CDN when globe mode is active — typed via src/types/cesium.ts
+import type { CesiumViewer } from '../types/cesium';
 
 interface MiniMapProps {
     apiKey: string;
@@ -33,7 +32,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
     const mapRef = useRef<HTMLDivElement>(null);
     const cesiumRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
-    const [cesiumViewer, setCesiumViewer] = useState<any>(null);
+    const [cesiumViewer, setCesiumViewer] = useState<CesiumViewer | null>(null);
     const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
     const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);

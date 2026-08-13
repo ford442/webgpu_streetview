@@ -5,7 +5,7 @@ A high-performance Google Maps Street View viewer with an immersive 3D car inter
 [![CI](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml/badge.svg)](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml)
 [![React](https://img.shields.io/badge/React-19.1.1-61DAFB?logo=react)](https://react.dev/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-Latest-FF6B00)](https://gpuweb.github.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-4.9-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.160-000000?logo=three.js)](https://threejs.org/)
 
 **Live demo**: https://test.1ink.us/streetview
@@ -619,7 +619,7 @@ Index  Field            Range / Notes
 | three | 0.160.0 | 3D car interior (WebGL) |
 | @webgpu/types | 0.1.64 | WebGPU TypeScript types |
 | @xenova/transformers | latest | ML utilities (experimental) |
-| typescript | 4.9.5 | Type checking |
+| typescript | ~5.4.5 | Type checking |
 | Vite | 5.x | Build tooling (replaces Create React App) |
 | Vitest | 2.x | Unit tests |
 

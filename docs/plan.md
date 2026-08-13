@@ -1,11 +1,13 @@
 # WebGPU StreetView - Future Development Plan
 
+> **Archived / stale.** Shipped work (EXIF export, deep links, offline route graph, shared sessions, hold-pause, HDR weather) is documented in [`AGENTS.md`](../AGENTS.md) and [`README.md`](../README.md). For active residual items see [`weekly_plan.md`](../weekly_plan.md). Do not treat unchecked boxes below as current backlog without verifying against the codebase.
+
 ## Overview
 This document outlines potential features and enhancements for the WebGPU StreetView project based on popular Google Maps/StreetView utilities and user needs.
 
 ## Current Features (Implemented)
 - ✅ Interactive 360° panoramic Street View navigation
-- ✅ WebGPU-based fluid simulation rendering
+- ✅ WebGPU HDR dual-pass rendering (panorama + weather post-process)
 - ✅ Mouse/keyboard controls for pan, zoom, and movement
 - ✅ Cruise mode (automatic navigation)
 - ✅ **Route plotting for cruise mode** - Plan and follow routes to destinations
@@ -20,7 +22,7 @@ This document outlines potential features and enhancements for the WebGPU Street
 #### 1. Enhanced Snapshot System
 - ✅ **Coordinates in filename** - Latitude and longitude
 - ✅ **Timestamp metadata** - Date and time of capture
-- ⬜ **EXIF metadata embedding** - Store GPS coordinates, heading, pitch in image metadata
+- ⬜ **EXIF metadata embedding** — see `src/utils/imageExport.ts` / snapshot share (may be partially shipped; verify before implementing)
 - ✅ **Snapshot gallery** - View and manage previously saved snapshots
 - ⬜ **Share functionality** - Direct share to social media or copy link
 - ⬜ **Multiple format support** - PNG, JPEG, WebP options

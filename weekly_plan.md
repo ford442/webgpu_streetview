@@ -48,3 +48,16 @@
 - **Priority**: Medium
 - **Status**: **Partial** (epic #171) — night + snow direction parity landed; broader rain/sunset cohesion polish remains open for a dedicated design pass.
 - **Notes**: Polish look and feel of rain, night, sunset/sunrise, fog, and related atmosphere presets — tuning uniforms, color grading, and visual cohesion across modes
+
+---
+
+## Residual / open (track as issues)
+
+| Item | Notes |
+|------|-------|
+| Cruise hold-pause polish (#6 above) | Hold-pause is shipped; tune feel via `panoramaStability.ts` + probe |
+| Gauge SSOT / compact HUD (#7) | See foundation split: `CarModeView` hooks under `src/views/car/` |
+| Shader design pass (#8) | Rain/sunset cohesion beyond night/snow parity |
+| Foundation module splits | `GlobeView` + `MobileUI` contracts — see latest foundation PR |
+
+For architecture and danger zones, read [`AGENTS.md`](./AGENTS.md) first.
