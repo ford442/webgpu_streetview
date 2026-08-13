@@ -27,6 +27,7 @@ import {
 } from './globe/globeTypes';
 import { syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
 import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
+import GlobeReturnButton from './GlobeReturnButton';
 
 import type { CesiumCartesian2, CesiumEntity, CesiumImageryLayer, CesiumScreenSpaceEventHandler, CesiumTerrainProvider, CesiumViewer } from '../types/cesium';
 
@@ -43,6 +44,7 @@ interface GlobeViewProps {
     onTeleportRequest: (lat: number, lng: number) => void;
     onEnterComplete: () => void;
     onExitComplete: () => void;
+    onRequestExit: () => void;
     /** Called with waypoints when user starts autopilot journey */
     onStartJourney?: (waypoints: { lat: number; lng: number }[]) => void;
 }
@@ -58,6 +60,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     onTeleportRequest,
     onEnterComplete,
     onExitComplete,
+    onRequestExit,
     onStartJourney,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -525,6 +528,24 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
     return (
         <>
+            {/* Prominent escape hatch — toolbar sits behind the globe overlay */}
+            {visible && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 16,
+                        left: 16,
+                        zIndex: 210,
+                        pointerEvents: 'auto',
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                >
+                    <GlobeReturnButton onClick={onRequestExit} />
+                </div>
+            )}
+
             {/* Full-screen Cesium container */}
             <div
                 ref={containerRef}
@@ -584,7 +605,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                     </span>
                     <span style={{ color: '#666' }}>|</span>
                     <span>
-                        Press <kbd style={{ background: '#333', padding: '1px 5px', borderRadius: 3 }}>Shift+G</kbd> to return
+                        Press <kbd style={{ background: '#333', padding: '1px 5px', borderRadius: 3 }}>Esc</kbd> or use
+                        <strong> Return to Street View</strong> (top-left)
                     </span>
                 </div>
             )}
@@ -674,21 +696,28 @@ const GlobeView: React.FC<GlobeViewProps> = ({
                 </div>
             )}
 
-            {/* Loading indicator */}
+            {/* Loading indicator (shown if GlobeView mounts before SDK handoff completes) */}
             {transition === 'loading' && (
                 <div style={{
                     position: 'fixed',
                     inset: 0,
                     zIndex: 200,
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    gap: 20,
                     backgroundColor: 'rgba(0,0,0,0.6)',
                     color: '#fff',
                     fontSize: '18px',
                     fontFamily: 'system-ui, sans-serif',
-                }}>
-                    🌍 Loading Globe…
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                >
+                    <div>🌍 Loading Globe…</div>
+                    <GlobeReturnButton onClick={onRequestExit} />
                 </div>
             )}
         </>

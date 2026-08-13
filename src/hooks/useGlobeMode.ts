@@ -50,8 +50,13 @@ export interface GlobeModeControls {
     isVisible: boolean;
     /** True only when fully entered and ready for interaction */
     isActive: boolean;
+    /** True while loading, entering, active, or exiting (anything except inactive). */
+    isEngaged: boolean;
     activate: () => Promise<void>;
+    /** Begin exit animation when active/entering; no-op while loading/inactive. */
     deactivate: () => void;
+    /** Abort immediately from loading, or begin exit from entering/active. */
+    cancel: () => void;
     toggle: () => void;
     onEnterComplete: () => void;
     onExitComplete: () => void;
@@ -60,6 +65,7 @@ export interface GlobeModeControls {
 export function useGlobeMode(): GlobeModeControls {
     const [transition, setTransition] = useState<GlobeTransition>('inactive');
     const transitionRef = useRef<GlobeTransition>('inactive');
+    const activateGenerationRef = useRef(0);
 
     const setT = useCallback((t: GlobeTransition) => {
         transitionRef.current = t;
@@ -68,26 +74,40 @@ export function useGlobeMode(): GlobeModeControls {
 
     const activate = useCallback(async () => {
         if (transitionRef.current !== 'inactive') return;
+        const generation = ++activateGenerationRef.current;
         setT('loading');
         try {
             await loadCesiumSDK();
         } catch (err) {
             console.error(err);
-            setT('inactive');
+            if (activateGenerationRef.current === generation) setT('inactive');
             return;
         }
+        // User may have cancelled while the CDN script was still loading.
+        if (activateGenerationRef.current !== generation) return;
         setT('entering');
     }, [setT]);
 
     const deactivate = useCallback(() => {
-        if (transitionRef.current !== 'active') return;
+        const t = transitionRef.current;
+        if (t === 'active' || t === 'entering') setT('exiting');
+    }, [setT]);
+
+    const cancel = useCallback(() => {
+        const t = transitionRef.current;
+        if (t === 'inactive' || t === 'exiting') return;
+        activateGenerationRef.current += 1;
+        if (t === 'loading') {
+            setT('inactive');
+            return;
+        }
         setT('exiting');
     }, [setT]);
 
     const toggle = useCallback(() => {
         if (transitionRef.current === 'inactive') activate();
-        else if (transitionRef.current === 'active') deactivate();
-    }, [activate, deactivate]);
+        else cancel();
+    }, [activate, cancel]);
 
     const onEnterComplete = useCallback(() => {
         if (transitionRef.current === 'entering') setT('active');
@@ -101,8 +121,10 @@ export function useGlobeMode(): GlobeModeControls {
         transition,
         isVisible: transition !== 'inactive' && transition !== 'loading',
         isActive: transition === 'active',
+        isEngaged: transition !== 'inactive',
         activate,
         deactivate,
+        cancel,
         toggle,
         onEnterComplete,
         onExitComplete,
