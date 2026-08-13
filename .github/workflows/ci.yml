@@ -37,6 +37,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate WGSL shaders (naga)
+        run: |
+          cargo install naga-cli --locked
+          npm run validate:shaders
+
       - name: Run tests
         run: npm test
 

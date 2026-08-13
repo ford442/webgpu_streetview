@@ -1,3 +1,11 @@
+import type { GpuPassTimer } from './gpuPassTimer';
+
+export interface Pass1TimingContext {
+    timer: GpuPassTimer;
+    startIndex: number;
+    endIndex: number;
+}
+
 export class TransitionManager {
     private device: GPUDevice;
     private sampler: GPUSampler;
@@ -215,7 +223,8 @@ export class TransitionManager {
         intermediateTextureView: GPUTextureView,
         videoTexture: GPUTexture,
         _mainPipeline: GPURenderPipeline,
-        _mainBindGroup: GPUBindGroup
+        _mainBindGroup: GPUBindGroup,
+        pass1Timing?: Pass1TimingContext,
     ): boolean {
         const transitionPipeline = this.activeTransition
             ? this.transitionPipelines.get(this.activeTransition)
@@ -242,9 +251,15 @@ export class TransitionManager {
                     { binding: 3, resource: { buffer: this.transitionUniformBuffer } },
                 ],
             });
+            if (pass1Timing) {
+                pass1Timing.timer.markPassStart(mainPass, pass1Timing.startIndex);
+            }
             mainPass.setPipeline(transitionPipeline);
             mainPass.setBindGroup(0, tBindGroup);
             mainPass.draw(3);
+            if (pass1Timing) {
+                pass1Timing.timer.markPassEnd(mainPass, pass1Timing.endIndex);
+            }
             mainPass.end();
             return true;
         }

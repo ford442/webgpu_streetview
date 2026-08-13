@@ -6,10 +6,12 @@ import {
   getFPSColor
 } from '../hooks/usePerformanceMonitor';
 import { MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
+import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
 
 interface PerformanceStatsOverlayProps {
   fpsStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
+  gpuPassTimings?: GpuPassTimings;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   visible?: boolean;
   showMemory?: boolean;
@@ -23,6 +25,7 @@ interface PerformanceStatsOverlayProps {
 export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
   fpsStats,
   memoryStats,
+  gpuPassTimings,
   position = 'top-left',
   visible = true,
   showMemory = true,
@@ -83,6 +86,30 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
       <div style={{ marginBottom: '8px', color: '#ff6666' }}>
         Dropped Frames: {fpsStats.droppedFrames}
       </div>
+
+      {gpuPassTimings?.available && (
+        <>
+          <hr style={{
+            border: 'none',
+            borderTop: '1px solid #444',
+            margin: '8px 0',
+          }} />
+          <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#ffffff' }}>
+            GPU passes
+          </div>
+          <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+            Pass1: {gpuPassTimings.pass1Ms != null ? `${gpuPassTimings.pass1Ms.toFixed(2)}ms` : '—'}
+          </div>
+          <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+            Weather: {gpuPassTimings.weatherMs != null ? `${gpuPassTimings.weatherMs.toFixed(2)}ms` : '—'}
+          </div>
+          {gpuPassTimings.blitMs != null && (
+            <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+              Blit: {gpuPassTimings.blitMs.toFixed(2)}ms
+            </div>
+          )}
+        </>
+      )}
       
       {memoryInfo && (
         <>

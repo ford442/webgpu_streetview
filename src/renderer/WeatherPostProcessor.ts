@@ -4,7 +4,7 @@ import {
     WeatherParamIndex,
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
-import type { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
+import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -226,7 +226,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder): void {
+    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
         if (!this.weatherPipeline || !this.weatherBindGroup) return;
         const finalTextureView = this.context.getCurrentTexture().createView();
         const postPass = commandEncoder.beginRenderPass({
@@ -237,9 +237,15 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
                 storeOp: 'store' as GPUStoreOp,
             }],
         });
+        if (timing) {
+            timing.timer.markPassStart(postPass, timing.weatherStartIndex);
+        }
         postPass.setPipeline(this.weatherPipeline);
         postPass.setBindGroup(0, this.weatherBindGroup);
         postPass.draw(3, 1, 0, 0);
+        if (timing) {
+            timing.timer.markPassEnd(postPass, timing.weatherEndIndex);
+        }
         postPass.end();
     }
 

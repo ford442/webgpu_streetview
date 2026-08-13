@@ -4,7 +4,7 @@ import {
     WeatherParamIndex,
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
-import type { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
+import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the storage
 // buffer declared in weather-post.wgsl. The compute variant binds this tile at
@@ -69,8 +69,10 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private computeUniformsBuffer: GPUBuffer | null = null;
     private noiseBuffer: GPUBuffer | null = null;
     private writeTexture: GPUTexture | null = null;
-    /** Full-res r32float view-depth proxy written by the compute pass. */
-    private depthProxyTexture: GPUTexture | null = null;
+    /** Full-res r32float view-depth proxy — ping-pong pair for temporal fog (binding 4 read / 6 write). */
+    private depthTextures: [GPUTexture | null, GPUTexture | null] = [null, null];
+    private depthReadIndex: 0 | 1 = 0;
+    private depthWriteIndex: 1 | 0 = 1;
     private writeWidth: number = 0;
     private writeHeight: number = 0;
 
@@ -78,9 +80,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private nonFilteringSampler: GPUSampler | null = null;
     private comparisonSampler: GPUSampler | null = null;
     // Dummy 1x1 resources for image_video_effects bindings this shader still
-    // doesn't use (depth read-back, scratch data textures). Bindings 6 and 12
-    // are now backed by real resources — see the shader header.
-    private dummyReadDepthTexture: GPUTexture | null = null;
+    // doesn't use (scratch data textures). Bindings 4/6 are the depth ping-pong
+    // pair; binding 12 is the WASM noise tile.
     private dummyDataTextureA: GPUTexture | null = null;
     private dummyDataTextureB: GPUTexture | null = null;
     private dummyDataTextureC: GPUTexture | null = null;
@@ -120,11 +121,6 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        this.dummyReadDepthTexture = this.device.createTexture({
-            size: [1, 1],
-            format: 'rgba8unorm',
-            usage: GPUTextureUsage.TEXTURE_BINDING,
-        });
         this.dummyDataTextureC = this.device.createTexture({
             size: [1, 1],
             format: 'rgba8unorm',
@@ -201,7 +197,10 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private ensureWriteTexture(width: number, height: number): void {
         if (this.writeTexture && this.writeWidth === width && this.writeHeight === height) return;
         if (this.writeTexture) this.writeTexture.destroy();
-        if (this.depthProxyTexture) this.depthProxyTexture.destroy();
+        for (let i = 0; i < 2; i++) {
+            if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
+            this.depthTextures[i] = null;
+        }
 
         this.writeWidth = width;
         this.writeHeight = height;
@@ -211,12 +210,73 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             format: 'rgba32float',
             usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
         });
-        // Real view-depth proxy target (was a 1x1 dummy). TEXTURE_BINDING keeps
-        // it readable by future passes / debug probes without another resize path.
-        this.depthProxyTexture = this.device.createTexture({
-            size,
-            format: 'r32float',
-            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+        const depthUsage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+        this.depthTextures[0] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
+        this.depthTextures[1] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
+        this.depthReadIndex = 0;
+        this.depthWriteIndex = 1;
+    }
+
+    private getDepthReadTexture(): GPUTexture | null {
+        return this.depthTextures[this.depthReadIndex];
+    }
+
+    private getDepthWriteTexture(): GPUTexture | null {
+        return this.depthTextures[this.depthWriteIndex];
+    }
+
+    private swapDepthPingPong(): void {
+        const nextRead = this.depthWriteIndex;
+        this.depthWriteIndex = this.depthReadIndex;
+        this.depthReadIndex = nextRead;
+    }
+
+    private rebuildComputeBindGroup(intermediateTextureView: GPUTextureView): void {
+        const depthRead = this.getDepthReadTexture();
+        const depthWrite = this.getDepthWriteTexture();
+        if (
+            !this.computePipeline
+            || !this.blitPipeline
+            || !this.writeTexture
+            || !depthRead
+            || !depthWrite
+            || !this.extraBuffer
+            || !this.computeUniformsBuffer
+            || !this.filteringSampler
+            || !this.nonFilteringSampler
+            || !this.comparisonSampler
+            || !this.dummyDataTextureA
+            || !this.dummyDataTextureB
+            || !this.dummyDataTextureC
+            || !this.noiseBuffer
+        ) {
+            return;
+        }
+
+        this.computeBindGroup = this.device.createBindGroup({
+            layout: this.computePipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: this.filteringSampler },
+                { binding: 1, resource: intermediateTextureView },
+                { binding: 2, resource: this.writeTexture.createView() },
+                { binding: 3, resource: { buffer: this.computeUniformsBuffer } },
+                { binding: 4, resource: depthRead.createView() },
+                { binding: 5, resource: this.nonFilteringSampler },
+                { binding: 6, resource: depthWrite.createView() },
+                { binding: 7, resource: this.dummyDataTextureA.createView() },
+                { binding: 8, resource: this.dummyDataTextureB.createView() },
+                { binding: 9, resource: this.dummyDataTextureC.createView() },
+                { binding: 10, resource: { buffer: this.extraBuffer } },
+                { binding: 11, resource: this.comparisonSampler },
+                { binding: 12, resource: { buffer: this.noiseBuffer } },
+            ],
+        });
+
+        this.blitBindGroup = this.device.createBindGroup({
+            layout: this.blitPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: this.writeTexture.createView() },
+            ],
         });
     }
 
@@ -230,7 +290,6 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             || !this.filteringSampler
             || !this.nonFilteringSampler
             || !this.comparisonSampler
-            || !this.dummyReadDepthTexture
             || !this.dummyDataTextureA
             || !this.dummyDataTextureB
             || !this.dummyDataTextureC
@@ -240,35 +299,10 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
 
         this.ensureWriteTexture(width || 1, height || 1);
-        if (!this.writeTexture || !this.depthProxyTexture) return;
+        if (!this.writeTexture) return;
 
-        this.computeBindGroup = this.device.createBindGroup({
-            layout: this.computePipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: this.filteringSampler },
-                { binding: 1, resource: intermediateTextureView },
-                { binding: 2, resource: this.writeTexture.createView() },
-                { binding: 3, resource: { buffer: this.computeUniformsBuffer } },
-                { binding: 4, resource: this.dummyReadDepthTexture.createView() },
-                { binding: 5, resource: this.nonFilteringSampler },
-                { binding: 6, resource: this.depthProxyTexture.createView() },
-                { binding: 7, resource: this.dummyDataTextureA.createView() },
-                { binding: 8, resource: this.dummyDataTextureB.createView() },
-                { binding: 9, resource: this.dummyDataTextureC.createView() },
-                { binding: 10, resource: { buffer: this.extraBuffer } },
-                { binding: 11, resource: this.comparisonSampler },
-                // The image_video_effects "plasma" slot carries the real WASM
-                // noise tile here (4096 floats read as 1024 vec4s).
-                { binding: 12, resource: { buffer: this.noiseBuffer } },
-            ],
-        });
-
-        this.blitBindGroup = this.device.createBindGroup({
-            layout: this.blitPipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: this.writeTexture.createView() },
-            ],
-        });
+        this.lastIntermediateView = intermediateTextureView;
+        this.rebuildComputeBindGroup(intermediateTextureView);
     }
 
     public updateNoiseBuffer(tile: Float32Array): void {
@@ -328,7 +362,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    private dispatch(commandEncoder: GPUCommandEncoder): void {
+    private lastIntermediateView: GPUTextureView | null = null;
+
+    private dispatch(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
         if (
             !this.computeBindGroup
             || !this.computePipeline
@@ -346,16 +382,27 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         );
 
         const computePass = commandEncoder.beginComputePass();
+        if (timing) {
+            timing.timer.markPassStart(computePass, timing.weatherStartIndex);
+        }
         computePass.setPipeline(this.computePipeline);
         computePass.setBindGroup(0, this.computeBindGroup);
         computePass.dispatchWorkgroups(
             Math.ceil(this.writeWidth / WORKGROUP_SIZE),
             Math.ceil(this.writeHeight / WORKGROUP_SIZE)
         );
+        if (timing) {
+            timing.timer.markPassEnd(computePass, timing.weatherEndIndex);
+        }
         computePass.end();
+
+        this.swapDepthPingPong();
+        if (this.lastIntermediateView) {
+            this.rebuildComputeBindGroup(this.lastIntermediateView);
+        }
     }
 
-    private blit(commandEncoder: GPUCommandEncoder): void {
+    private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
         if (!this.blitBindGroup || !this.blitPipeline) return;
         const finalTextureView = this.context.getCurrentTexture().createView();
         const blitPass = commandEncoder.beginRenderPass({
@@ -366,9 +413,15 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 storeOp: 'store' as GPUStoreOp,
             }],
         });
+        if (timing?.blitStartIndex !== undefined && timing.blitEndIndex !== undefined) {
+            timing.timer.markPassStart(blitPass, timing.blitStartIndex);
+        }
         blitPass.setPipeline(this.blitPipeline);
         blitPass.setBindGroup(0, this.blitBindGroup);
         blitPass.draw(3, 1, 0, 0);
+        if (timing?.blitStartIndex !== undefined && timing.blitEndIndex !== undefined) {
+            timing.timer.markPassEnd(blitPass, timing.blitEndIndex);
+        }
         blitPass.end();
     }
 
@@ -399,9 +452,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder): void {
-        this.dispatch(commandEncoder);
-        this.blit(commandEncoder);
+    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+        this.dispatch(commandEncoder, timing);
+        this.blit(commandEncoder, timing);
     }
 
     public dispose(): void {
@@ -410,8 +463,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             if (this.computeUniformsBuffer) this.computeUniformsBuffer.destroy();
             if (this.noiseBuffer) this.noiseBuffer.destroy();
             if (this.writeTexture) this.writeTexture.destroy();
-            if (this.depthProxyTexture) this.depthProxyTexture.destroy();
-            if (this.dummyReadDepthTexture) this.dummyReadDepthTexture.destroy();
+            for (let i = 0; i < 2; i++) {
+                if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
+            }
             if (this.dummyDataTextureA) this.dummyDataTextureA.destroy();
             if (this.dummyDataTextureB) this.dummyDataTextureB.destroy();
             if (this.dummyDataTextureC) this.dummyDataTextureC.destroy();
@@ -422,7 +476,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.computeUniformsBuffer = null;
         this.noiseBuffer = null;
         this.writeTexture = null;
-        this.depthProxyTexture = null;
+        this.depthTextures = [null, null];
         this.computePipeline = null;
         this.computeBindGroup = null;
         this.blitPipeline = null;
@@ -430,7 +484,6 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.filteringSampler = null;
         this.nonFilteringSampler = null;
         this.comparisonSampler = null;
-        this.dummyReadDepthTexture = null;
         this.dummyDataTextureA = null;
         this.dummyDataTextureB = null;
         this.dummyDataTextureC = null;

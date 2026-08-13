@@ -16,11 +16,12 @@
 // STORAGE SURFACES IN USE (formerly 1x1 dummies):
 //  - binding 6  writeDepthTexture : full-res r32float view-depth proxy, written
 //    every dispatch so later passes / probes can read the same depth the fog
-//    and DOF use. See viewDepthProxy() below.
+//  - binding 4 readDepthTexture : previous frame view-depth (ping-pong read).
+//  - binding 6 writeDepthTexture: current frame view-depth (ping-pong write).
 //  - binding 12 plasmaBuffer : the real 64x64 WASM Perlin tile (#128/#189),
 //    packed as 1024 vec4s, driving dust turbulence exactly like the fragment
 //    path's `wasmNoiseTile`.
-// Still dummies: readDepthTexture (4), dataTextureA/B (7/8), dataTextureC (9).
+// Still dummies: dataTextureA/B (7/8), dataTextureC (9).
 
 // --- STANDARD image_video_effects HEADER ---
 @group(0) @binding(0) var u_sampler: sampler;
@@ -354,11 +355,13 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
 // suspended in the fog punches through it. `density` is a Beer-Lambert
 // extinction coefficient integrated along the depth proxy; `intensity` is the
 // flat aerial wash. Mirrors fogAmountAt() in weather-post.wgsl.
-fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32) -> f32 {
+fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32, coord: vec2<i32>) -> f32 {
     if (intensity < 0.001 && density < 0.001) { return 0.0; }
 
     let horizonY = viewHorizonY(p_cameraPitch());
     let depth = viewDepthProxy(uv, horizonY);
+    let prevDepth = textureLoad(readDepthTexture, coord, 0).r;
+    let temporalDepth = select(depth, mix(depth, prevDepth, 0.35), prevDepth > 0.001);
     let profile = fogHeightFalloff(uv, horizonY, height);
 
     let fogUV1 = vec3<f32>(uv * 4.0 + vec2<f32>(t * 0.07, t * 0.04), t * 0.05);
@@ -366,7 +369,7 @@ fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32)
     let roll = fbm(fogUV1, 2) * 0.18 + fbm(fogUV2, 2) * 0.08;
 
     let sigma = density * 2.6 * profile * (0.78 + roll);
-    var fogAmount = 1.0 - exp(-sigma * (0.12 + depth * 1.9));
+    var fogAmount = 1.0 - exp(-sigma * (0.12 + temporalDepth * 1.9));
     fogAmount = fogAmount + intensity * (0.25 + profile * 0.75) * (0.78 + roll);
     return clamp(fogAmount, 0.0, 0.95);
 }
@@ -865,7 +868,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Atmospheric effects — fog coverage computed once, reused to attenuate
     // everything suspended in it (dust, rain, snow).
-    let fogMask = fogAmountAt(uv, p_fogIntensity(), p_fogDensity(), p_fogHeight(), t);
+    let fogMask = fogAmountAt(uv, p_fogIntensity(), p_fogDensity(), p_fogHeight(), t, vec2<i32>(global_id.xy));
     col = applyFog(col, fogMask, p_fogColorIndex(), p_nightIntensity());
     col = applyVolumetricLightShafts(col, uv, p_lightShaftsIntensity(), t);
     col = applyHumidityHaze(col, uv, p_humidityHaze(), t);

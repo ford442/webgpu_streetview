@@ -3,7 +3,8 @@
  */
 
 // Convertible Mode
-export { ConvertibleMode, WindParticleSystem, ConvertibleInterior, SportDashboard, SportSeats } from './ConvertibleMode';
+export { ConvertibleMode, ConvertibleInterior, SportDashboard, SportSeats } from './ConvertibleMode';
+export { WindParticleSystem } from './convertible/WindParticleSystem';
 export type { ConvertibleState } from './ConvertibleMode';
 
 // Limousine Mode
