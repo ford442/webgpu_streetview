@@ -47,6 +47,7 @@
 - **Problem**: Weather / time-of-day shader modes (rain, night, sunset, etc.) could use more design work
 - **Priority**: Medium
 - **Status**: **Partial** (epic #171) — night + snow direction parity landed; broader rain/sunset cohesion polish remains open for a dedicated design pass.
+- **Follow-up**: Named looks + WebGL must-match haze/rain-darken shipped (look packs). Remaining art is reference PNG capture on WebGPU Chrome into `docs/looks/<id>-webgpu.png`.
 - **Notes**: Polish look and feel of rain, night, sunset/sunrise, fog, and related atmosphere presets — tuning uniforms, color grading, and visual cohesion across modes
 
 ---
@@ -57,7 +58,7 @@
 |------|-------|
 | Cruise hold-pause polish (#6 above) | Hold-pause is shipped; tune feel via `panoramaStability.ts` + probe |
 | Gauge SSOT / compact HUD (#7) | See foundation split: `CarModeView` hooks under `src/views/car/` |
-| Shader design pass (#8) | Rain/sunset cohesion beyond night/snow parity |
+| Shader design pass (#8) | **Looks pack** — named looks + WebGL haze/rain-darken parity; see `docs/looks/README.md` |
 | Foundation module splits | `GlobeView` + `MobileUI` contracts — see latest foundation PR |
 
 For architecture and danger zones, read [`AGENTS.md`](./AGENTS.md) first.

@@ -168,7 +168,8 @@ vec3 applyWeather(vec3 col, vec2 uv) {
         vec3 rainTint = mix(vec3(0.64, 0.78, 0.95), vec3(0.50, 0.62, 0.90), night);
         col = mix(col, rainTint, streak * rain * 0.18 * precipVisibility);
         // Ease the wet-scene darkening at night so the #171 readable floor holds.
-        col *= 1.0 - rain * mix(0.045, 0.020, night);
+        // Coefficients match RAIN_DARKEN_DAY/NIGHT in weatherCohesion.ts (0.22 / 0.10).
+        col *= 1.0 - rain * mix(0.22, 0.10, night);
     }
 
     if (snow > 0.001) {
@@ -180,6 +181,19 @@ vec3 applyWeather(vec3 col, vec2 uv) {
     }
 
     return col;
+}
+
+// SDR humidity haze — same distance factor + desat/mix as applyHumidityHaze in
+// weather-post.wgsl. Skips the 4-tap scene blur (WebGPU-only / best-effort).
+vec3 applyHumidityHaze(vec3 col, vec2 uv) {
+    float intensity = clamp(uWeather[31], 0.0, 1.0);
+    if (intensity < 0.001) return col;
+    float distanceFactor = smoothstep(0.7, 0.2, uv.y);
+    vec3 hazeColor = vec3(0.75, 0.82, 0.88);
+    float hazeAmount = intensity * distanceFactor * 0.4;
+    float luma = dot(col, vec3(0.299, 0.587, 0.114));
+    vec3 desaturated = mix(col, vec3(luma), intensity * distanceFactor * 0.3);
+    return mix(desaturated, hazeColor, hazeAmount);
 }
 
 vec3 applyFogAndLighting(vec3 col, vec2 uv) {
@@ -227,17 +241,21 @@ void main() {
         color = applyColorGrade(color);
     } else if (uEffectIsolation == 3) {
         color = applyWeather(color, vUv);
+        color = applyHumidityHaze(color, vUv);
     } else if (uEffectIsolation == 4) {
         color = applyFogAndLighting(color, vUv);
+        color = applyHumidityHaze(color, vUv);
     } else if (uEffectIsolation == 5) {
         color = applyNight(color, vUv);
     } else if (uEffectIsolation == 6) {
         color = applyFogAndLighting(applyNight(color, vUv), vUv);
+        color = applyHumidityHaze(color, vUv);
     } else {
         color = applyColorGrade(color);
         color = applyNight(color, vUv);
         color = applyWeather(color, vUv);
         color = applyFogAndLighting(color, vUv);
+        color = applyHumidityHaze(color, vUv);
     }
 
     color = color / (color + vec3(1.0));

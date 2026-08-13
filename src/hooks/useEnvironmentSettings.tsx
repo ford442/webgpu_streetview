@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
+import {
+  getLookPack,
+  lookPackToEnvPatch,
+  type LookEnvPatch,
+  type LookId,
+} from '../config/lookPacks';
+import { readBootLook } from '../utils/lookLink';
 
 // Types
 export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
+export type { LookId };
 
 export interface EnvironmentSettingsState {
   // Weather settings
@@ -75,6 +83,9 @@ export interface EnvironmentSettingsState {
   // Presets
   applyTimeOfDayPreset: (preset: TimeOfDay) => void;
   applyColorGradingPreset: (preset: string) => void;
+  /** Last applied named look (`?look=`). Null when the user is on a custom grade. */
+  activeLookId: LookId | null;
+  applyLookPack: (id: string) => void;
 
   // Derived
   /** CSS rgba string for the current ambient light color — used to tint dashboard glass panels. */
@@ -95,42 +106,68 @@ interface EnvironmentSettingsProviderProps {
   children: React.ReactNode;
 }
 
+const TOD_ASTRONOMY: Record<TimeOfDay, {
+  nightIntensity: number;
+  sunAltitude: number;
+  sunAzimuth: number;
+  moonAltitude: number;
+  moonAzimuth: number;
+}> = {
+  day: { nightIntensity: 0.0, sunAltitude: 0.785, sunAzimuth: 0, moonAltitude: -0.5, moonAzimuth: 0 },
+  sunrise: { nightIntensity: 0.1, sunAltitude: 0.052, sunAzimuth: 0, moonAltitude: -0.5, moonAzimuth: -1.57 },
+  sunset: { nightIntensity: 0.3, sunAltitude: -0.052, sunAzimuth: -1.57, moonAltitude: 0.2, moonAzimuth: 1.57 },
+  night: { nightIntensity: 1.0, sunAltitude: -1.047, sunAzimuth: 0, moonAltitude: 0.5, moonAzimuth: 0.785 },
+};
+
+function snapshotBoot() {
+  return readBootLook();
+}
+
 export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderProps> = ({
   children,
 }) => {
+  const boot = snapshotBoot();
+  const bootPatch = boot?.patch;
+  const bootAstro = TOD_ASTRONOMY[bootPatch?.timeOfDay ?? 'day'];
+
   // Weather state
-  const [rainIntensity, setRainIntensity] = useState(0);
-  const [snowIntensity, setSnowIntensity] = useState(0);
-  const [wind, setWind] = useState(0);
-  const [fogDensity, setFogDensity] = useState(0.0);
+  const [rainIntensity, setRainIntensity] = useState(bootPatch?.rainIntensity ?? 0);
+  const [snowIntensity, setSnowIntensity] = useState(bootPatch?.snowIntensity ?? 0);
+  const [wind, setWind] = useState(bootPatch?.wind ?? 0);
+  const [fogDensity, setFogDensity] = useState(bootPatch?.fogDensity ?? 0.0);
   
   // Time of day
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day');
-  const [autoNightMode, setAutoNightMode] = useState(true);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(bootPatch?.timeOfDay ?? 'day');
+  const [autoNightMode, setAutoNightMode] = useState(bootPatch ? false : true);
   
   // Night/astronomical
-  const [nightIntensity, setNightIntensity] = useState(0.0);
-  const [sunAzimuth, setSunAzimuth] = useState(0.0);
-  const [sunAltitude, setSunAltitude] = useState(0.2);
-  const [moonAzimuth, setMoonAzimuth] = useState(0.0);
-  const [moonAltitude, setMoonAltitude] = useState(-0.5);
+  const [nightIntensity, setNightIntensity] = useState(
+    bootPatch?.nightIntensity ?? bootAstro.nightIntensity,
+  );
+  const [sunAzimuth, setSunAzimuth] = useState(bootAstro.sunAzimuth);
+  const [sunAltitude, setSunAltitude] = useState(bootAstro.sunAltitude);
+  const [moonAzimuth, setMoonAzimuth] = useState(bootAstro.moonAzimuth);
+  const [moonAltitude, setMoonAltitude] = useState(bootAstro.moonAltitude);
   const [moonIntensity, setMoonIntensity] = useState(0.0);
   
   // Car state
-  const [wipersEnabled, setWipersEnabledState] = useState(false);
-  const [headlightsOn, setHeadlightsOnState] = useState(false);
-  const [highBeam, setHighBeamState] = useState(false);
-  const [domeLightOn, setDomeLightOnState] = useState(false);
+  const [wipersEnabled, setWipersEnabledState] = useState(bootPatch?.wipersEnabled ?? false);
+  const [headlightsOn, setHeadlightsOnState] = useState(bootPatch?.headlightsOn ?? false);
+  const [highBeam, setHighBeamState] = useState(bootPatch?.highBeam ?? false);
+  const [domeLightOn, setDomeLightOnState] = useState(bootPatch?.domeLightOn ?? false);
   const [isRoofOpen, setIsRoofOpen] = useState(false);
   
   // Color grading
-  const [vibrance, setVibrance] = useState(1.0);
-  const [saturation, setSaturation] = useState(1.0);
-  const [contrast, setContrast] = useState(1.0);
-  const [exposure, setExposure] = useState(0.0);
-  const [temperature, setTemperature] = useState(0.0);
-  const [tint, setTint] = useState(0.0);
-  const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(true);
+  const [vibrance, setVibrance] = useState(bootPatch?.vibrance ?? 1.0);
+  const [saturation, setSaturation] = useState(bootPatch?.saturation ?? 1.0);
+  const [contrast, setContrast] = useState(bootPatch?.contrast ?? 1.0);
+  const [exposure, setExposure] = useState(bootPatch?.exposure ?? 0.0);
+  const [temperature, setTemperature] = useState(bootPatch?.temperature ?? 0.0);
+  const [tint, setTint] = useState(bootPatch?.tint ?? 0.0);
+  const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(
+    bootPatch?.shaderEffectsEnabled ?? true,
+  );
+  const [activeLookId, setActiveLookId] = useState<LookId | null>(boot?.lookId ?? null);
   
   // Wipers
   const toggleWipersCallback = useCallback(() => {
@@ -186,41 +223,58 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const applyTimeOfDayPreset = useCallback((preset: TimeOfDay) => {
     setAutoNightMode(false);
     setTimeOfDay(preset);
-    
-    switch (preset) {
-      case 'day':
-        setNightIntensity(0.0);
-        setSunAltitude(0.785);
-        setSunAzimuth(0);
-        setMoonAltitude(-0.5);
-        break;
-      case 'sunrise':
-        setNightIntensity(0.1);
-        setSunAltitude(0.052);
-        setSunAzimuth(0);
-        setMoonAltitude(-0.5);
-        setMoonAzimuth(-1.57);
-        break;
-      case 'sunset':
-        setNightIntensity(0.3);
-        setSunAltitude(-0.052);
-        setSunAzimuth(-1.57);
-        setMoonAltitude(0.2);
-        setMoonAzimuth(1.57);
-        break;
-      case 'night':
-        setNightIntensity(1.0);
-        setHeadlightsOnState(true);
-        setSunAltitude(-1.047);
-        setSunAzimuth(0);
-        setMoonAltitude(0.5);
-        setMoonAzimuth(0.785);
-        break;
+    const astro = TOD_ASTRONOMY[preset];
+    setNightIntensity(astro.nightIntensity);
+    setSunAltitude(astro.sunAltitude);
+    setSunAzimuth(astro.sunAzimuth);
+    setMoonAltitude(astro.moonAltitude);
+    setMoonAzimuth(astro.moonAzimuth);
+    if (preset === 'night') {
+      setHeadlightsOnState(true);
     }
   }, []);
+
+  const applyLookPatch = useCallback((patch: LookEnvPatch) => {
+    setAutoNightMode(false);
+    setShaderEffectsEnabled(true);
+    setTimeOfDay(patch.timeOfDay);
+    setRainIntensity(patch.rainIntensity);
+    setSnowIntensity(patch.snowIntensity);
+    setWind(patch.wind);
+    setFogDensity(patch.fogDensity);
+    setVibrance(patch.vibrance);
+    setSaturation(patch.saturation);
+    setContrast(patch.contrast);
+    setExposure(patch.exposure);
+    setTemperature(patch.temperature);
+    setTint(patch.tint);
+    setNightIntensity(patch.nightIntensity);
+    const astro = TOD_ASTRONOMY[patch.timeOfDay];
+    setSunAltitude(astro.sunAltitude);
+    setSunAzimuth(astro.sunAzimuth);
+    setMoonAltitude(astro.moonAltitude);
+    setMoonAzimuth(astro.moonAzimuth);
+    setHeadlightsOnState(patch.headlightsOn);
+    setHighBeamState(patch.highBeam);
+    setDomeLightOnState(patch.domeLightOn);
+    setWipersEnabledState(patch.wipersEnabled);
+    void loadCarRuntime().then(({ setCarHeadlights, setCarDomeLight, setCarWipers }) => {
+      setCarHeadlights(patch.headlightsOn);
+      setCarDomeLight(patch.domeLightOn);
+      setCarWipers(patch.wipersEnabled);
+    });
+  }, []);
+
+  const applyLookPack = useCallback((id: string) => {
+    const pack = getLookPack(id);
+    if (!pack) return;
+    applyLookPatch(lookPackToEnvPatch(pack));
+    setActiveLookId(pack.id);
+  }, [applyLookPatch]);
   
   // Apply color grading preset
   const applyColorGradingPreset = useCallback((preset: string) => {
+    setActiveLookId(null);
     switch (preset) {
       case 'none':
         setShaderEffectsEnabled(false);
@@ -375,6 +429,8 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     // Presets
     applyTimeOfDayPreset,
     applyColorGradingPreset,
+    activeLookId,
+    applyLookPack,
 
     // Derived
     ambientLightColor,

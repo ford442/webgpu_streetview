@@ -22,6 +22,8 @@ export interface UseAppKeyboardShortcutsOptions {
   setIsAccessibilityPanelOpen: (v: boolean) => void;
   isWeatherPanelOpen: boolean;
   setIsWeatherPanelOpen: (v: boolean) => void;
+  isLooksPanelOpen: boolean;
+  setIsLooksPanelOpen: (v: boolean) => void;
   isTourPanelOpen: boolean;
   setIsTourPanelOpen: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
@@ -66,6 +68,8 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
     setIsAccessibilityPanelOpen,
     isWeatherPanelOpen,
     setIsWeatherPanelOpen,
+    isLooksPanelOpen,
+    setIsLooksPanelOpen,
     isTourPanelOpen,
     setIsTourPanelOpen,
     viewMode,
@@ -181,6 +185,14 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       },
     },
     {
+      key: 'k',
+      description: 'Toggle looks panel',
+      action: () => {
+        setIsLooksPanelOpen(!isLooksPanelOpen);
+        announce(`Looks panel ${!isLooksPanelOpen ? 'opened' : 'closed'}`);
+      },
+    },
+    {
       key: 'c',
       description: 'Toggle car mode',
       action: () => {
@@ -241,6 +253,7 @@ export function buildAppKeyboardShortcuts(options: UseAppKeyboardShortcutsOption
       description: 'Close panels',
       action: () => {
         if (globeMode.isActive) { globeMode.deactivate(); return; }
+        if (isLooksPanelOpen) { setIsLooksPanelOpen(false); return; }
         if (isWeatherPanelOpen) { setIsWeatherPanelOpen(false); return; }
         if (isAccessibilityPanelOpen) setIsAccessibilityPanelOpen(false);
         else if (isBookmarkPanelOpen) setIsBookmarkPanelOpen(false);

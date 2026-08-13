@@ -305,6 +305,8 @@ export function AppShell() {
       setIsAccessibilityPanelOpen: panels.setIsAccessibilityPanelOpen,
       isWeatherPanelOpen: panels.isWeatherPanelOpen,
       setIsWeatherPanelOpen: panels.setIsWeatherPanelOpen,
+      isLooksPanelOpen: panels.isLooksPanelOpen,
+      setIsLooksPanelOpen: panels.setIsLooksPanelOpen,
       isTourPanelOpen: panels.isTourPanelOpen,
       setIsTourPanelOpen: panels.setIsTourPanelOpen,
       viewMode,

@@ -32,6 +32,7 @@ export { default as ColorGradingPanel } from './ColorGradingPanel';
 export { default as PerformanceStatsOverlay } from './PerformanceStatsOverlay';
 export { default as RendererBackendIndicator } from './RendererBackendIndicator';
 export { default as WeatherPanel } from './WeatherPanel';
+export { default as LooksPanel } from './LooksPanel';
 export { default as AccessibilityPanel } from './AccessibilityPanel';
 export { default as ScoutCard } from './ScoutCard';
 export { default as AppToolbar } from './AppToolbar';

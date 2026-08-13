@@ -162,6 +162,16 @@ describe('weather shader parity guard', () => {
     expect(compute).toMatch(/textureStore\(\s*writeDepthTexture/);
   });
 
+  it('keeps humidity haze distance/color terms aligned across WGSL paths', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+    for (const source of [fragment, compute]) {
+      expect(source).toContain('fn applyHumidityHaze(');
+      expect(source).toContain('smoothstep(0.7, 0.2, uv.y)');
+      expect(source).toContain('vec3<f32>(0.75, 0.82, 0.88)');
+    }
+  });
+
   it('keeps precipitation fog attenuation aligned across WGSL paths', () => {
     const fragment = readShader('weather-post.wgsl');
     const compute = readShader('weather-post-compute.wgsl');
