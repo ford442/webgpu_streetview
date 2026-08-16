@@ -284,8 +284,8 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
 
   const textShadow =
     nightGlow > 0.3
-      ? `0 0 ${8 + nightGlow * 16}px rgba(0, 212, 255, ${Math.min(0.3 + nightGlow * 0.5, 0.9)})`
-      : '0 0 10px rgba(0, 212, 255, 0.5)';
+      ? `0 0 ${8 + nightGlow * 16}px var(--ambient-glow, rgba(70, 210, 130, 0.4))`
+      : 'none';
 
   return (
     <div
@@ -526,9 +526,9 @@ const getGearColor = (gear: string): string => {
     case 'N':
       return '#FFC107';
     case 'D':
-      return '#00D4FF';
+      return '#4CAF50';
     default:
-      return '#00D4FF';
+      return '#4CAF50';
   }
 };
 
@@ -544,8 +544,8 @@ export const TelemetryChip: React.FC<TelemetryChipProps> = ({
   const rpmLabel = formatRpm(rpm);
   const glow =
     nightGlow > 0.3
-      ? `0 0 ${8 + nightGlow * 12}px rgba(0, 212, 255, ${Math.min(0.25 + nightGlow * 0.45, 0.85)})`
-      : '0 0 6px rgba(0, 212, 255, 0.25)';
+      ? `0 0 ${8 + nightGlow * 12}px var(--ambient-glow, rgba(70, 210, 130, 0.35))`
+      : 'none';
 
   return (
     <div

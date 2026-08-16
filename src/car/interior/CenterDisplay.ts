@@ -161,7 +161,7 @@ export class CenterDisplay {
 
     /** Boost the screen glow after dark (0 = day baseline, 1 = full night). */
     setNightGlow(night: number): void {
-        this.screenMat.emissiveIntensity = 0.55 + Math.max(0, Math.min(1, night)) * 0.5;
+        this.screenMat.emissiveIntensity = 0.28 + Math.max(0, Math.min(1, night)) * 0.42;
     }
 
     /** Advance to the next page; returns the new page. */

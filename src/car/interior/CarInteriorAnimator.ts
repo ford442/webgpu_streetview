@@ -230,10 +230,10 @@ export class CarInteriorAnimator {
       if (rig.fuelNeedle) rig.fuelNeedle.rotation.z = needleAngle(this.fuelLevel);
       if (rig.tempNeedle) rig.tempNeedle.rotation.z = needleAngle(this.tempFrac);
 
-      const breathe = this.reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * 1.6);
-      const dialGlow = 0.22 + this.nightFactor * 0.55 + breathe * 0.05 + this.rpmFrac * 0.1;
+      const breathe = this.reducedMotion ? 0 : 0.5 + 0.5 * Math.sin(t * 1.6);
+      const dialGlow = 0.16 + this.nightFactor * 0.5 + breathe * 0.04 + this.rpmFrac * 0.06;
       for (const mat of rig.dialMaterials) mat.emissiveIntensity = dialGlow;
-      const needleGlow = 0.85 + this.nightFactor * 0.9 + breathe * 0.12 + this.rpmFrac * 0.4;
+      const needleGlow = 0.32 + this.nightFactor * 0.55 + breathe * 0.05 + this.rpmFrac * 0.18;
       for (const mat of rig.needleMaterials) mat.emissiveIntensity = needleGlow;
       return;
     }

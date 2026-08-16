@@ -25,6 +25,7 @@ import { CarInteriorRenderer } from './CarInteriorRenderer';
 import { CarInteriorLightingManager } from './CarInteriorLightingManager';
 import type { GaugeRig } from './CarInteriorGauges';
 import type { CabinLeverCallbacks } from './CarInteriorDetailProps';
+import type { CabinGlowSprite } from './CabinEmitterGlow';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -91,6 +92,7 @@ export interface CarInteriorAssemblyHost {
     seatOffset: number;
     driverSeatGroup: THREE.Group;
     applySeatPosition: () => void;
+    emitterGlowSprites?: CabinGlowSprite[];
 }
 
 export function setupCarInteriorLOD(host: CarInteriorAssemblyHost): void {
@@ -148,7 +150,8 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
             mirror: host.mirrorMaterial,
             accent: host.accentMaterial,
             chrome: (host.chromeMaterial as THREE.MeshStandardMaterial) || host.metalMaterial,
-        } as import('./MaterialFactory').MaterialSet
+        } as import('./MaterialFactory').MaterialSet,
+        host.reducedMotion,
     );
 
     const buildResult = builder.buildAll();
@@ -161,9 +164,11 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     host.centerDisplayMat = buildResult.centerDisplayMat;
     host.domeLightFixtureMesh = buildResult.domeLightFixtureMesh;
     host.domeSwitchMesh = buildResult.domeSwitchMesh;
+    host.emitterGlowSprites = buildResult.glowSprites ?? [];
 
     if (!host.vehicleConfig.hasGauges) {
         host.gaugeRig = null;
+        host.digitalClockMesh = null;
     }
     if (host.vehicleConfig.hasGauges) {
         const gaugeResult = CarInteriorGauges.build(
@@ -179,6 +184,22 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         host.digitalClockMesh = gaugeResult.digitalClockMesh ?? null;
         host.clockUpdateInterval = gaugeResult.clockUpdateInterval;
     }
+
+    host.lightingManager?.rebindCabin({
+        domeLightFixtureMesh: host.domeLightFixtureMesh,
+        domeSwitchMesh: host.domeSwitchMesh,
+        digitalClockMesh: host.digitalClockMesh,
+        instrumentClusterMat: host.instrumentClusterMat,
+        centerDisplayMat: host.centerDisplayMat,
+        dashboardMaterial: host.dashboardMaterial,
+        leatherMaterial: host.leatherMaterial,
+        frameMaterial: host.frameMaterial,
+        windshieldGlassMesh: host.windshieldGlassMesh,
+        rearGlassMesh: host.rearGlassMesh,
+        clinical: host.vehicleConfig.theme === 'clinical',
+        emitterGlows: host.emitterGlowSprites,
+        dashLightColor: parseInt(host.vehicleConfig.accentColor.replace('#', '0x')),
+    });
 
     if (host.vehicleConfig.hasDashboard && host.quality !== 'low') {
         host.locationPanel?.dispose();
@@ -249,6 +270,8 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     host.interiorGroup.clear();
     host.roofGroup.clear();
+    host.interiorGroup.add(host.driverSeatGroup);
+    host.lightingManager?.attachCabinLights(host.interiorGroup);
 
     if (host.clockUpdateInterval !== undefined) {
         clearInterval(host.clockUpdateInterval);

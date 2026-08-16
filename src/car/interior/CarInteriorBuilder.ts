@@ -6,6 +6,7 @@ import { LODManager } from './LODManager';
 import { CarInteriorDashboardBuilder } from './CarInteriorDashboardBuilder';
 import { CarInteriorSeatBuilder } from './CarInteriorSeatBuilder';
 import { createGlassMaterial } from '../../materials/PBRMaterials';
+import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 
 export interface CarInteriorMaterials {
     dashboard: THREE.MeshStandardMaterial;
@@ -30,6 +31,7 @@ export interface CarInteriorBuildResult {
     centerDisplayMat: THREE.MeshStandardMaterial;
     domeLightFixtureMesh: THREE.Mesh;
     domeSwitchMesh: THREE.Mesh;
+    glowSprites: CabinGlowSprite[];
     /** Wiper stalk lever (absent on vehicles without a steering wheel). */
     wiperStalkMesh?: THREE.Mesh;
     wiperStalkPivot?: THREE.Group;
@@ -45,10 +47,12 @@ export class CarInteriorBuilder {
         private quality: 'high' | 'medium' | 'low',
         private geometryFactory: GeometryFactory,
         private lodManager: LODManager,
-        private materials: CarInteriorMaterials
+        private materials: CarInteriorMaterials,
+        private reducedMotion: boolean = false,
     ) {}
 
     public buildAll(): CarInteriorBuildResult {
+        this.result.glowSprites = [];
         if (this.vehicleConfig.hasDashboard) {
             const dashboardBuilder = new CarInteriorDashboardBuilder(
                 this.interiorGroup,
@@ -56,11 +60,13 @@ export class CarInteriorBuilder {
                 this.vehicleConfig,
                 this.quality,
                 this.geometryFactory,
-                this.lodManager
+                this.lodManager,
+                this.reducedMotion,
             );
-            const { instrumentClusterMat, centerDisplayMat } = dashboardBuilder.build();
+            const { instrumentClusterMat, centerDisplayMat, glowSprites } = dashboardBuilder.build();
             this.result.instrumentClusterMat = instrumentClusterMat;
             this.result.centerDisplayMat = centerDisplayMat;
+            this.result.glowSprites = glowSprites;
         }
         if (this.vehicleConfig.hasSteeringWheel) this.buildSteeringWheel();
         this.buildDoorPanels();
@@ -652,14 +658,29 @@ export class CarInteriorBuilder {
     private buildDomeLightFixture(): void {
         const mountGroup = this.roofGroup ?? this.interiorGroup;
 
-        const fixtureGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.015, 12);
+        const fixtureGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.012, 24);
         const fixtureMat = new THREE.MeshStandardMaterial({
-            color: 0xddddcc, emissive: 0xFFE8B0, emissiveIntensity: 0,
-            roughness: 0.4, metalness: 0.3,
+            color: 0xf2ead8, emissive: 0xFFE8B0, emissiveIntensity: 0,
+            roughness: 0.28, metalness: 0.15,
         });
         this.result.domeLightFixtureMesh = new THREE.Mesh(fixtureGeo, fixtureMat);
         this.result.domeLightFixtureMesh.position.set(0, 1.59, 0.3);
         mountGroup.add(this.result.domeLightFixtureMesh);
+
+        if (this.quality !== 'low') {
+            const domeGlow = createCabinGlowSprite({
+                kind: 'dome',
+                color: 0xffe8b0,
+                width: 0.42,
+                height: 0.42,
+                useShader: this.quality === 'high',
+                reducedMotion: this.reducedMotion,
+            });
+            domeGlow.mesh.position.set(0, 1.545, 0.3);
+            domeGlow.mesh.rotation.set(-Math.PI / 2, 0, 0);
+            mountGroup.add(domeGlow.mesh);
+            (this.result.glowSprites ??= []).push(domeGlow);
+        }
 
         const switchGeo = new THREE.BoxGeometry(0.04, 0.008, 0.04);
         const switchMat = new THREE.MeshStandardMaterial({

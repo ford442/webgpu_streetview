@@ -60,11 +60,12 @@ export interface CarInteriorBootstrapResult {
     hemisphereLight: THREE.HemisphereLight;
     ambientLight: THREE.AmbientLight;
     overheadLight: THREE.DirectionalLight;
-    leftWindowLight: THREE.PointLight;
-    rightWindowLight: THREE.PointLight;
+    leftWindowLight: THREE.PointLight | undefined;
+    rightWindowLight: THREE.PointLight | undefined;
     headlightsLight: THREE.SpotLight;
     interiorBounceLight: THREE.PointLight;
     domeLightSource: THREE.PointLight;
+    dashLight: THREE.PointLight;
     sunLight: THREE.DirectionalLight;
     panoEnvironment: PanoEnvironment;
     animator: CarInteriorAnimator;
@@ -87,7 +88,8 @@ export function bootstrapCarInterior(
     const scene = new THREE.Scene();
     const vehicleConfig = getVehicleConfig(vehicleType);
     const gpuProfile = detectGPUProfile();
-    const quality: 'high' | 'medium' | 'low' = 'high';
+    const quality: 'high' | 'medium' | 'low' =
+        gpuProfile.name === 'low' ? 'low' : gpuProfile.name === 'medium' ? 'medium' : 'high';
 
     const frustumCuller = new FrustumCuller();
     const lodConfig: VehicleLODConfig = {
@@ -188,7 +190,7 @@ export function bootstrapCarInterior(
     host.mirrorMaterial = mats.mirror;
     host.accentMaterial = mats.accent;
 
-    const lights = buildInteriorLighting(scene, interiorGroup, renderer, vehicleConfig);
+    const lights = buildInteriorLighting(scene, interiorGroup, renderer, vehicleConfig, { quality });
     const panoEnvironment = new PanoEnvironment(renderer, scene);
 
     buildInteriorFromBuilder(host);
@@ -243,13 +245,14 @@ export function bootstrapCarInterior(
         lights.leftWindowLight,
         lights.rightWindowLight,
         lights.interiorBounceLight,
-        host.dashboardMaterial,
-        host.leatherMaterial,
-        host.frameMaterial,
         host.windshieldGlassMesh,
         host.rearGlassMesh,
-        lights.sunLight
+        lights.sunLight,
+        lights.dashLight,
+        vehicleConfig.theme === 'clinical',
     );
+    lightingManager.setReducedMotion(reducedMotion);
+    lightingManager.setEmitterGlows(host.emitterGlowSprites ?? []);
     host.lightingManager = lightingManager;
 
     if (isGltfInteriorEnabled()) {
@@ -293,6 +296,7 @@ export function bootstrapCarInterior(
         headlightsLight: lights.headlightsLight,
         interiorBounceLight: lights.interiorBounceLight,
         domeLightSource: lights.domeLightSource,
+        dashLight: lights.dashLight,
         sunLight: lights.sunLight,
         panoEnvironment,
         animator,

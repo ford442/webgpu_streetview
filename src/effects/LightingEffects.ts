@@ -92,18 +92,23 @@ export class EquipmentGlowEffect {
         this.baseIntensities.push(baseIntensity);
     }
 
-    update(deltaTime: number, isActive: boolean): void {
+    update(deltaTime: number, isActive: boolean, reducedMotion: boolean = false): void {
         if (!isActive) {
-            // Dim all materials when inactive
             this.materials.forEach((mat, i) => {
                 mat.emissiveIntensity = (this.baseIntensities[i] ?? 0) * 0.3;
             });
             return;
         }
 
+        if (reducedMotion) {
+            this.materials.forEach((mat, i) => {
+                mat.emissiveIntensity = this.baseIntensities[i] ?? 0;
+            });
+            return;
+        }
+
         this.time += deltaTime;
 
-        // Pulsating effect
         this.materials.forEach((mat, i) => {
             const pulse = Math.sin(this.time * this.pulseSpeed + i * 0.5) * 0.15;
             mat.emissiveIntensity = (this.baseIntensities[i] ?? 0) + pulse;
@@ -242,6 +247,7 @@ export class LightingEffectsManager {
     private equipmentGlow: EquipmentGlowEffect;
     private emergencyLights: EmergencyLightEffect;
     private taskLights: TaskLightEffect[] = [];
+    private reducedMotion = false;
 
     constructor(scene: THREE.Scene, _config: Partial<LightingEffectConfig> = {}) {
         this.uvEffect = new UVLightEffect(scene);
@@ -280,8 +286,12 @@ export class LightingEffectsManager {
         this.equipmentGlow.addMaterial(material, baseIntensity);
     }
 
+    setReducedMotion(reduced: boolean): void {
+        this.reducedMotion = reduced;
+    }
+
     update(deltaTime: number, equipmentActive: boolean): void {
-        this.equipmentGlow.update(deltaTime, equipmentActive);
+        this.equipmentGlow.update(deltaTime, equipmentActive, this.reducedMotion);
         this.emergencyLights.update(deltaTime);
     }
 
