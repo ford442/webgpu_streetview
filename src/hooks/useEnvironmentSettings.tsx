@@ -356,7 +356,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
       case 'sunrise':
         return 'rgba(255, 160, 80, 0.08)';
       case 'night':
-        return `rgba(20, 40, 100, ${(nightIntensity * 0.25).toFixed(3)})`;
+        return `rgba(70, 210, 130, ${(nightIntensity * 0.18).toFixed(3)})`;
       default:
         return 'rgba(255, 255, 255, 0.0)';
     }

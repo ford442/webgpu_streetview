@@ -63,8 +63,8 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public ambientLight!: THREE.AmbientLight;
     public hemisphereLight!: THREE.HemisphereLight;
     public overheadLight!: THREE.DirectionalLight;
-    public leftWindowLight!: THREE.PointLight;
-    public rightWindowLight!: THREE.PointLight;
+    public leftWindowLight: THREE.PointLight | undefined;
+    public rightWindowLight: THREE.PointLight | undefined;
     public instrumentClusterMat!: THREE.MeshStandardMaterial;
     public centerDisplayMat!: THREE.MeshStandardMaterial;
     public windshieldGlassMesh!: THREE.Mesh;
@@ -169,18 +169,20 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public setEnvironmentFromPano(equirect: HTMLCanvasElement, centerHeading: number): void {
         this.panoEnvironment.setFromEquirect(equirect, centerHeading);
+        this.panoEnvironment.setIntensity(this.lightingManager.getIblIntensity());
     }
 
     public setSunPosition(azimuth: number, altitude: number): void {
         this.lightingManager.setSunState(azimuth, altitude);
         const night = this.lightingManager.getSunNightFactor();
-        this.panoEnvironment.setIntensity(1 - night * 0.7);
+        this.panoEnvironment.setIntensity(this.lightingManager.getIblIntensity());
         this.locationPanel?.setNightGlow(night);
         this.centerDisplay?.setNightGlow(night);
         this.lastSunAzimuth = azimuth;
         this.lastSunAltitude = altitude;
         const sunVisibility = Math.max(0, Math.min(1, altitude / 0.35));
         this.animator?.setAmbientState({ sunVisibility });
+        this.animator?.setNightFactor(this.lightingManager.getEffectiveNight());
     }
 
     public setLocationInfo(info: PanoLocationInfo | null): void {
@@ -301,6 +303,8 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
         this.lightingManager.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
+        this.panoEnvironment.setIntensity(this.lightingManager.getIblIntensity(nightIntensity));
+        this.animator?.setNightFactor(this.lightingManager.getEffectiveNight(nightIntensity));
     }
 
     public isDomeSwitchHit(clientX: number, clientY: number): boolean {

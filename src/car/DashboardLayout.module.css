@@ -15,9 +15,9 @@
   --color-text-primary: rgba(255, 255, 255, 0.9);
   --color-text-muted: rgba(255, 255, 255, 0.6);
   --color-border: rgba(255, 255, 255, 0.1);
-  --color-border-hover: rgba(0, 212, 255, 0.3);
-  --color-glow: rgba(0, 212, 255, 0.2);
-  --ambient-glow: rgba(0, 212, 255, 0.45);
+  --color-border-hover: rgba(76, 175, 80, 0.3);
+  --color-glow: rgba(70, 210, 130, 0.18);
+  --ambient-glow: rgba(70, 210, 130, 0.22);
   --night-intensity: 0;
 }
 

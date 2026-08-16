@@ -9,7 +9,7 @@
 
 import React, { useCallback, useState } from 'react';
 import styles from './DashboardUI.module.css';
-import { darkTheme, applyTheme } from './theme';
+import { darkTheme, applyTheme, clusterAmbientGlow } from './theme';
 
 // Layout primitives
 import {
@@ -274,14 +274,14 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   };
 
   const themeStyle = applyTheme(darkTheme, {
-    ambientLightColor,
+    ambientLightColor: clusterAmbientGlow(currentVehicle, nightIntensity, ambientLightColor),
     nightIntensity,
   });
 
   return (
     <div
       className={styles.wrapper}
-      style={{ pointerEvents: 'auto' }}
+      style={{ pointerEvents: 'auto', ...themeStyle }}
       onMouseDown={stopProp}
       onMouseUp={stopProp}
       onMouseMove={stopProp}

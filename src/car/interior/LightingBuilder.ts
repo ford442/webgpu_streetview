@@ -5,8 +5,8 @@ export interface InteriorLights {
   hemisphereLight: THREE.HemisphereLight;
   ambientLight: THREE.AmbientLight;
   overheadLight: THREE.DirectionalLight;
-  leftWindowLight: THREE.PointLight;
-  rightWindowLight: THREE.PointLight;
+  leftWindowLight: THREE.PointLight | undefined;
+  rightWindowLight: THREE.PointLight | undefined;
   headlightsLight: THREE.SpotLight;
   interiorBounceLight: THREE.PointLight;
   domeLightSource: THREE.PointLight;
@@ -14,31 +14,44 @@ export interface InteriorLights {
   sunLight: THREE.DirectionalLight;
 }
 
+export interface InteriorLightingOptions {
+  quality?: 'high' | 'medium' | 'low';
+}
+
 /**
  * Builds the complete lighting rig for a car interior.
- * Includes IBL environment map, ambient fills, window lights,
- * headlights, dome light, and dashboard accent glow.
+ *
+ * IBL ownership: this installs a *dim* room-cube PMREM as a fallback only.
+ * `PanoEnvironment` replaces `scene.environment` on the first successful
+ * pano hop and owns it thereafter — do not write scene.environment from
+ * here after construction.
+ *
+ * Cabin sources (dash, dome, headlights, bounce, window fills) live on
+ * `interiorGroup` so they stay in car-body space when the chassis yaws.
+ * Hemisphere + sun stay on the scene root (world sky / sun).
  */
 export function buildInteriorLighting(
   scene: THREE.Scene,
   interiorGroup: THREE.Group,
   renderer: THREE.WebGLRenderer,
-  config: VehicleConfig
+  config: VehicleConfig,
+  options: InteriorLightingOptions = {},
 ): InteriorLights {
-  // IBL environment map from a minimal lit-room cube
+  const quality = options.quality ?? 'high';
+
   const envScene = new THREE.Scene();
   const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
   const envBoxMats = [
-    new THREE.MeshBasicMaterial({ color: 0xfff5e0, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xe8e0d0, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xfafaf8, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xc8bba8, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xb8b0a4, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xd8d4cc, side: THREE.BackSide }),
     new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xfff0e4, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xe4dcd0, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xc4b8a8, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xb0a898, side: THREE.BackSide }),
   ];
   const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
   envScene.add(envBox);
-  const envLight = new THREE.PointLight(0xfff5e0, 2.5, 10);
+  const envLight = new THREE.PointLight(0xfff5e0, 0.9, 10);
   envLight.position.set(0, 1.8, 0);
   envScene.add(envLight);
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -47,51 +60,49 @@ export function buildInteriorLighting(
   envBoxGeo.dispose();
   envBoxMats.forEach(m => m.dispose());
 
-  const ambientIntensity = config.theme === 'clinical' ? 0.65 : 0.45;
-
-  const hemisphereLight = new THREE.HemisphereLight(
-    0xfff5e0, 0x1a1a28, ambientIntensity * 0.85
-  );
+  const hemisphereLight = new THREE.HemisphereLight(0xfff5e0, 0x1a1a28, 0.16);
   scene.add(hemisphereLight);
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity * 0.25);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.035);
   scene.add(ambientLight);
 
   const dashColor = parseInt(config.accentColor.replace('#', '0x'));
-  const dashLight = new THREE.PointLight(dashColor, 0.35, 3.5);
-  dashLight.position.set(0, 0.9, -0.8);
-  scene.add(dashLight);
+  const dashLight = new THREE.PointLight(dashColor, 0, 1.7, 2);
+  dashLight.position.set(0, 0.86, -0.78);
+  interiorGroup.add(dashLight);
 
-  const overheadLight = new THREE.DirectionalLight(0xfff8f0, 0.55);
-  overheadLight.position.set(0.3, 3, -0.5);
-  scene.add(overheadLight);
+  const overheadLight = new THREE.DirectionalLight(0xfff8f0, 0.2);
+  overheadLight.position.set(0.15, 1.7, -0.2);
+  interiorGroup.add(overheadLight);
 
-  const leftWindowLight = new THREE.PointLight(0xfff0dc, 0.28, 3.2);
-  leftWindowLight.position.set(-0.9, 1.05, -0.1);
-  scene.add(leftWindowLight);
+  let leftWindowLight: THREE.PointLight | undefined;
+  let rightWindowLight: THREE.PointLight | undefined;
+  if (quality !== 'low') {
+    leftWindowLight = new THREE.PointLight(0xfff0dc, 0.13, 2.6, 2);
+    leftWindowLight.position.set(-0.9, 1.05, -0.1);
+    interiorGroup.add(leftWindowLight);
 
-  const rightWindowLight = new THREE.PointLight(0xfff0dc, 0.18, 3.2);
-  rightWindowLight.position.set(0.9, 1.05, -0.1);
-  scene.add(rightWindowLight);
+    rightWindowLight = new THREE.PointLight(0xfff0dc, 0.09, 2.6, 2);
+    rightWindowLight.position.set(0.9, 1.05, -0.1);
+    interiorGroup.add(rightWindowLight);
+  }
 
-  const headlightsLight = new THREE.SpotLight(0xffffcc, 0.3, 50, 0.5, 1.0, 1.0);
-  headlightsLight.position.set(0, 0.8, -1.2);
-  headlightsLight.target.position.set(0, 0, 10);
-  scene.add(headlightsLight);
-  scene.add(headlightsLight.target);
-  headlightsLight.intensity = 0;
+  const headlightsLight = new THREE.SpotLight(0xffffcc, 0, 12, 0.42, 0.85, 1.4);
+  headlightsLight.position.set(0, 0.78, -1.15);
+  headlightsLight.target.position.set(0, 0.2, -8);
+  interiorGroup.add(headlightsLight);
+  interiorGroup.add(headlightsLight.target);
 
-  const interiorBounceLight = new THREE.PointLight(0xff9933, 0, 1.5);
-  interiorBounceLight.position.set(0, 0.5, -0.8);
-  scene.add(interiorBounceLight);
+  const interiorBounceLight = new THREE.PointLight(0xffc080, 0, 1.4, 2);
+  interiorBounceLight.position.set(0, 0.52, -0.7);
+  interiorGroup.add(interiorBounceLight);
 
-  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 3.0);
-  domeLightSource.position.set(0, 1.8, 0.3);
+  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.2, 2);
+  domeLightSource.position.set(0, 1.72, 0.3);
   interiorGroup.add(domeLightSource);
 
-  // Real-sun directional light — position/colour/intensity are driven each
-  // update from SunCalc azimuth/altitude for the pano's location. Lives in
-  // scene root (not interiorGroup) so it stays world-fixed as the car turns.
+  // Real-sun directional light — world-fixed so it stays with the sky as the
+  // car yaws. Position/colour/intensity come from SunCalc each update.
   const sunLight = new THREE.DirectionalLight(0xfff4e6, 0);
   sunLight.position.set(0, 20, 0);
   scene.add(sunLight);

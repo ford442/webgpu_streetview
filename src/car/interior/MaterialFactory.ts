@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
 import { GPUPerformanceProfile } from '../../utils/performance';
+import { cabinGlowScale } from './cabinLightingRamps';
 
 export interface MaterialSet {
   dashboard: THREE.MeshPhysicalMaterial;
@@ -150,7 +151,7 @@ export function setCabinGlowState(
   headlightsOn: boolean,
   breathe: number
 ): void {
-  const scale = 1 + night * 1.1 + (headlightsOn ? 0.25 : 0) + breathe;
+  const scale = cabinGlowScale(night, headlightsOn, breathe);
   for (const entry of glowRegistry) {
     entry.material.emissiveIntensity = entry.base * scale;
   }
@@ -260,32 +261,34 @@ export function createMaterials(
 
   // Soft-touch dash: near-dielectric with a faint sheen so grazing light
   // picks up the matte-plastic look; clinical theme reads as hard gloss.
+  // Clearcoat + IBL intensity let the pano and cluster actually highlight
+  // the dash instead of reading as unlit boxes.
   const dashboard = new THREE.MeshPhysicalMaterial({
     color: dashColor,
     map: clinical ? null : dashTex,
     normalMap: clinical ? null : dashNormalTex,
     normalScale: new THREE.Vector2(0.4, 0.4),
-    roughness: clinical ? 0.35 : 0.88,
-    metalness: clinical ? 0.15 : 0.04,
-    clearcoat: clinical ? 0.6 : 0.0,
-    clearcoatRoughness: 0.25,
-    sheen: clinical ? 0 : 0.25,
-    sheenRoughness: 0.9,
-    sheenColor: new THREE.Color(0x222222),
-    envMapIntensity: 0.4,
+    roughness: clinical ? 0.32 : 0.82,
+    metalness: clinical ? 0.12 : 0.03,
+    clearcoat: clinical ? 0.7 : 0.18,
+    clearcoatRoughness: clinical ? 0.18 : 0.55,
+    sheen: clinical ? 0 : 0.22,
+    sheenRoughness: 0.85,
+    sheenColor: new THREE.Color(0x1a1a1a),
+    envMapIntensity: clinical ? 0.55 : 0.58,
     side: THREE.DoubleSide,
   });
 
   const leather = new THREE.MeshPhysicalMaterial({
     map: leatherTex,
     normalMap: leatherNormalTex,
-    normalScale: new THREE.Vector2(0.8, 0.8),
-    roughness: 0.78,
+    normalScale: new THREE.Vector2(0.75, 0.75),
+    roughness: clinical ? 0.62 : 0.7,
     metalness: 0,
-    sheen: 0.35,
-    sheenRoughness: 0.7,
-    sheenColor: new THREE.Color(0x3a2a1a),
-    envMapIntensity: 0.2,
+    sheen: 0.42,
+    sheenRoughness: 0.62,
+    sheenColor: new THREE.Color(clinical ? 0x8899aa : 0x3a2a1a),
+    envMapIntensity: 0.48,
     side: THREE.DoubleSide,
   });
 
@@ -301,9 +304,9 @@ export function createMaterials(
 
   const frame = new THREE.MeshStandardMaterial({
     color: clinical ? 0xeeeeee : 0x131313,
-    roughness: 0.92,
+    roughness: clinical ? 0.55 : 0.88,
     metalness: 0,
-    envMapIntensity: 0.15,
+    envMapIntensity: 0.28,
     side: THREE.DoubleSide,
   });
 

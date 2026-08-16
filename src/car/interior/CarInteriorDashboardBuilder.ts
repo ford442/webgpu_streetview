@@ -5,6 +5,7 @@ import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 
 export class CarInteriorDashboardBuilder {
     /** Radial/tubular segment counts scale with quality tier. */
@@ -16,12 +17,17 @@ export class CarInteriorDashboardBuilder {
         private vehicleConfig: VehicleConfig,
         private quality: 'high' | 'medium' | 'low',
         private geometryFactory: GeometryFactory,
-        private lodManager: LODManager
+        private lodManager: LODManager,
+        private reducedMotion: boolean = false,
     ) {
         this.segments = quality === 'high' ? 48 : quality === 'medium' ? 24 : 12;
     }
 
-    public build(): { instrumentClusterMat: THREE.MeshStandardMaterial; centerDisplayMat: THREE.MeshStandardMaterial } {
+    public build(): {
+        instrumentClusterMat: THREE.MeshStandardMaterial;
+        centerDisplayMat: THREE.MeshStandardMaterial;
+        glowSprites: CabinGlowSprite[];
+    } {
         const gaugeLayout = resolveGaugeLayout(this.vehicleConfig);
         const dashGeo = new THREE.BoxGeometry(2.0, 0.4, 0.5);
         const dash = new THREE.Mesh(dashGeo, this.materials.dashboard);
@@ -34,50 +40,52 @@ export class CarInteriorDashboardBuilder {
         dashTop.position.set(0, 1.0, -0.85);
         this.interiorGroup.add(dashTop);
 
-        // Instrument cluster: emissive panel recessed into a chamfered bezel hood.
-        const clusterMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x001100, emissiveIntensity: 0.5 });
+        const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
+        // Instrument cluster: dark well with a green backlight that the lighting
+        // manager raises at night. Keep emissive in-family with the HUD, not cyan.
+        const clusterMat = new THREE.MeshStandardMaterial({
+            color: 0x030805,
+            emissive: accentHex,
+            emissiveIntensity: 0.2,
+            roughness: 0.55,
+            metalness: 0.05,
+        });
         const clusterW =
             Math.abs(gaugeLayout.tacho.x - gaugeLayout.speed.x) + gaugeLayout.dialRadius * 2 + 0.06;
         const clusterH = gaugeLayout.dialRadius * 2 + 0.06;
+        const clusterCx = (gaugeLayout.speed.x + gaugeLayout.tacho.x) / 2;
         const cluster = new THREE.Mesh(new THREE.BoxGeometry(clusterW, clusterH, 0.04), clusterMat);
-        cluster.position.set(
-            (gaugeLayout.speed.x + gaugeLayout.tacho.x) / 2,
-            gaugeLayout.speed.y,
-            gaugeLayout.speed.z - 0.02,
-        );
+        cluster.position.set(clusterCx, gaugeLayout.speed.y, gaugeLayout.speed.z - 0.02);
         this.interiorGroup.add(cluster);
 
-        // Recessed housing behind the centre display. At medium/high quality
-        // the live CenterDisplay screen sits in front of it; at low quality
-        // this emissive panel IS the display.
-        const displayMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x002200, emissiveIntensity: 0.3 });
+        const displayMat = new THREE.MeshStandardMaterial({
+            color: 0x040808,
+            emissive: accentHex,
+            emissiveIntensity: 0.24,
+            roughness: 0.4,
+            metalness: 0.02,
+        });
         const display = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.02), displayMat);
         display.position.set(0.15, 0.925, -0.74);
         this.interiorGroup.add(display);
 
+        const glowSprites: CabinGlowSprite[] = [];
+
         if (this.quality !== 'low') {
-            // Bezels sit just proud of each panel face so the chamfered lip catches light.
-            // Cluster frame tracks GAUGE_LAYOUT (compact dials under the beltline).
-            const clusterW =
+            const clusterBezelW =
                 Math.abs(gaugeLayout.tacho.x - gaugeLayout.speed.x) + gaugeLayout.dialRadius * 2 + 0.08;
-            const clusterH = gaugeLayout.dialRadius * 2 + 0.08;
+            const clusterBezelH = gaugeLayout.dialRadius * 2 + 0.08;
             const clusterBezel = new THREE.Mesh(
-                this.makeBezelFrameGeometry(clusterW, clusterH, 0.024),
+                this.makeBezelFrameGeometry(clusterBezelW, clusterBezelH, 0.024),
                 this.materials.dashboard,
             );
-            clusterBezel.position.set(
-                (gaugeLayout.speed.x + gaugeLayout.tacho.x) / 2,
-                gaugeLayout.speed.y,
-                gaugeLayout.speed.z - 0.016,
-            );
+            clusterBezel.position.set(clusterCx, gaugeLayout.speed.y, gaugeLayout.speed.z - 0.016);
             this.interiorGroup.add(clusterBezel);
 
             const displayBezel = new THREE.Mesh(this.makeBezelFrameGeometry(0.34, 0.24, 0.025), this.materials.dashboard);
             displayBezel.position.set(0.15, 0.925, -0.741);
             this.interiorGroup.add(displayBezel);
 
-            // Accent trim: emissive intensity varies per piece so the long
-            // strips read as soft ambient light while rings pop as highlights.
             const stripMat = createAccentMaterial(this.vehicleConfig, 0.25);
             const trim = new THREE.Mesh(new THREE.BoxGeometry(1.96, 0.008, 0.012), stripMat);
             trim.position.set(0, 1.005, -0.86);
@@ -101,10 +109,23 @@ export class CarInteriorDashboardBuilder {
                 this.interiorGroup.add(bezelRing);
             }
 
+            const clusterGlow = createCabinGlowSprite({
+                kind: 'cluster',
+                color: accentHex,
+                width: clusterBezelW * 1.15,
+                height: clusterBezelH * 1.35,
+                useShader: this.quality === 'high',
+                reducedMotion: this.reducedMotion,
+            });
+            clusterGlow.mesh.position.set(clusterCx, gaugeLayout.speed.y, gaugeLayout.speed.z + 0.012);
+            clusterGlow.mesh.rotation.set(-0.12, 0, 0);
+            this.interiorGroup.add(clusterGlow.mesh);
+            glowSprites.push(clusterGlow);
+
             this.buildDetails();
         }
 
-        return { instrumentClusterMat: clusterMat, centerDisplayMat: displayMat };
+        return { instrumentClusterMat: clusterMat, centerDisplayMat: displayMat, glowSprites };
     }
 
     /** Flat frame with rounded corners and a chamfered edge, opening in the middle. */
