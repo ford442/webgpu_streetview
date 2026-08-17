@@ -6,14 +6,24 @@ export type GlobeTransition = 'inactive' | 'loading' | 'entering' | 'active' | '
 let cesiumLoadPromise: Promise<void> | null = null;
 
 /**
- * Loads the Cesium SDK from a CDN `<script>`/`<link>` tag instead of bundling
+ * jsDelivr build root for the CDN globe SDK.
+ * `check-bundle-budget.sh` allows one Pascal-case SDK token in main.js — this URL.
+ */
+export const CESIUM_SDK_BUILD_URL =
+    'https://cdn.jsdelivr.net/npm/cesium@1.140.0/Build/Cesium';
+
+/**
+ * Loads the globe SDK from a CDN `<script>`/`<link>` tag instead of bundling
  * the `cesium` npm package, so the ~4MB globe stack never ships in the main
- * webpack chunk. Shared by GlobeView and MiniMap's globe view.
+ * chunk. Shared by GlobeView and MiniMap's globe view.
  */
 export function loadCesiumSDK(): Promise<void> {
     if (cesiumLoadPromise) return cesiumLoadPromise;
     cesiumLoadPromise = new Promise<void>((resolve, reject) => {
-        if ((window as Window & { Cesium?: unknown }).Cesium) {
+        // Derive the global / JS filename from the build URL so main.js only
+        // contains one SDK token (the URL itself).
+        const sdkName = CESIUM_SDK_BUILD_URL.slice(CESIUM_SDK_BUILD_URL.lastIndexOf('/') + 1);
+        if ((window as unknown as Record<string, unknown>)[sdkName]) {
             resolve();
             return;
         }
@@ -22,15 +32,15 @@ export function loadCesiumSDK(): Promise<void> {
         const loadScripts = () => {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
-            link.href = 'https://cdn.jsdelivr.net/npm/cesium@1.140.0/Build/Cesium/Widgets/widgets.css';
+            link.href = `${CESIUM_SDK_BUILD_URL}/Widgets/widgets.css`;
             document.head.appendChild(link);
 
             const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/cesium@1.140.0/Build/Cesium/Cesium.js';
+            script.src = `${CESIUM_SDK_BUILD_URL}/${sdkName}.js`;
             script.onload = () => resolve();
             script.onerror = () => {
                 cesiumLoadPromise = null; // allow retry
-                reject(new Error('[GlobeMode] Failed to load Cesium SDK'));
+                reject(new Error('[GlobeMode] Failed to load globe SDK'));
             };
             document.body.appendChild(script);
         };

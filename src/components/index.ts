@@ -1,10 +1,9 @@
 /**
  * Components index - Export all components
  *
- * GlobeView is intentionally NOT re-exported here: consumers must
- * `React.lazy(() => import('./GlobeView'))` it directly so webpack code-splits
- * it into its own chunk instead of pulling it into every barrel importer's
- * bundle. See docs/DEVELOPER_CONTEXT.md#chunk-strategy.
+ * GlobeView and MiniMap are intentionally NOT re-exported here: they pull the
+ * globe CDN loader / imagery helpers. Consumers must import those files
+ * directly (or `React.lazy` GlobeView) so they stay out of the main chunk.
  */
 
 export { 
@@ -22,7 +21,6 @@ export { default as FreeLookInputHandler } from './FreeLookInputHandler';
 export { default as CarInputHandler } from './CarInputHandler';
 export { default as Compass } from './Compass';
 export { default as Controls } from './Controls';
-export { default as MiniMap } from './MiniMap';
 export { default as WelcomeModal } from './WelcomeModal';
 export { default as BookmarkPanel } from './BookmarkPanel';
 export { default as HistoryPanel } from './HistoryPanel';
