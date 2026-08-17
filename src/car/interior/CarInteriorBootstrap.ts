@@ -152,17 +152,34 @@ export function bootstrapCarInterior(
     scene.add(roofGroup);
 
     const driverSeatGroup = new THREE.Group();
-    // Host must know driverSeatGroup before applySeatPosition() — CarInterior reads
-    // this.driverSeatGroup.position during the bootstrap callback.
-    host.driverSeatGroup = driverSeatGroup;
-    applySeatPosition();
-    interiorGroup.add(driverSeatGroup);
-    driverSeatGroup.add(camera);
-
     const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const interaction = new InteractionHelper();
     const geometryFactory = new GeometryFactory();
     const lodManager = new LODManager(frustumCuller);
+
+    // Assembly reads these off `host` (not bootstrap locals). Bind them before
+    // applySeatPosition / buildInteriorFromBuilder or meshes throw on .position/.add.
+    host.scene = scene;
+    host.camera = camera;
+    host.renderer = renderer;
+    host.canvas = canvas;
+    host.interiorGroup = interiorGroup;
+    host.roofGroup = roofGroup;
+    host.driverSeatGroup = driverSeatGroup;
+    host.frustumCuller = frustumCuller;
+    host.lodConfig = lodConfig;
+    host.reducedMotion = reducedMotion;
+    host.geometryFactory = geometryFactory;
+    host.lodManager = lodManager;
+    host.gpuProfile = gpuProfile;
+    host.quality = quality;
+    host.vehicleType = vehicleType;
+    host.vehicleConfig = vehicleConfig;
+
+    applySeatPosition();
+    interiorGroup.add(driverSeatGroup);
+    driverSeatGroup.add(camera);
+
     const mats = createMaterials(vehicleConfig, gpuProfile);
 
     let postProcessing: PostProcessingManager | undefined;

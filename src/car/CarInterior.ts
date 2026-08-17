@@ -35,6 +35,7 @@ import {
 } from './interior/CarInteriorAssembly';
 import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
+import { applyDriverSeatOffset } from './seatPosition';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -424,11 +425,11 @@ export class CarInterior implements CarInteriorAssemblyHost {
     }
 
     public applySeatPosition(): void {
-        if (!this.driverSeatGroup || !this.vehicleConfig?.cameraPosition) {
-            return;
-        }
-        const { x, y, z } = this.vehicleConfig.cameraPosition;
-        this.driverSeatGroup.position.set(x, y, z + this.seatOffset);
+        applyDriverSeatOffset(
+            this.driverSeatGroup,
+            this.vehicleConfig?.cameraPosition,
+            this.seatOffset,
+        );
     }
 
     public setSeatOffset(offset: number): void {

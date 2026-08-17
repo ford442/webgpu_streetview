@@ -545,7 +545,7 @@ export function ConnectedChrome({
           />
           <div style={{ fontSize: 16, opacity: 0.85 }}>Loading Globe…</div>
           <div style={{ fontSize: 13, opacity: 0.65, maxWidth: 320, textAlign: 'center' }}>
-            Cesium is loading from the CDN. You can return to Street View anytime.
+            The globe SDK is loading from the CDN. You can return to Street View anytime.
           </div>
           <GlobeReturnButton onClick={globeMode.cancel} />
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>

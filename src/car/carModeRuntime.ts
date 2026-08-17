@@ -56,7 +56,7 @@ let lastTimestamp = 0;
  */
 export function initCarMode(container: HTMLElement, initialVehicle: VehicleType = DEFAULT_VEHICLE): CarModeState {
     // Create the car interior Three.js overlay
-    const interior = new CarInterior(container);
+    const interior = new CarInterior(container, initialVehicle);
 
     // Create the rearview mirror (renders into the car interior scene)
     const mirror = new RearviewMirror(interior.scene, interior.renderer);
