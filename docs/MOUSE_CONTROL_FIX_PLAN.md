@@ -1,5 +1,7 @@
 # Mouse Control Fix Plan - Car Mode Head Look vs Steering
 
+> **Historical.** The App.tsx-mediator plan is superseded. Live head vs chassis model: `src/car/carSpatialModel.ts`, `src/hooks/useViewMode.tsx`, `src/components/CarInputHandler.tsx`. See [`AGENTS.md`](../AGENTS.md).
+
 ## Executive Summary
 
 The current car mode implementation has a **critical architectural flaw** causing the "car to shift around" when using mouse look. This document provides a comprehensive analysis and step-by-step fix plan.

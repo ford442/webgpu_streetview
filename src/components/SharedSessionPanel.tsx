@@ -228,9 +228,11 @@ const SharedSessionPanel: React.FC<SharedSessionPanelProps> = ({
                 )}
 
                 <p style={{ margin: 0, fontSize: '10px', color: '#666', lineHeight: 1.4 }}>
-                    Peer-to-peer over WebRTC (STUN only, no TURN server yet) — works on most networks, but very
-                    restrictive corporate/mobile networks on both ends may fail to connect. Only pano IDs and
-                    view angles are shared, never Street View imagery.
+                    Peer-to-peer over WebRTC (STUN always; optional TURN via{' '}
+                    <code>iceServers.ts</code> / <code>REACT_APP_TURN_URL</code> or{' '}
+                    <code>window.TURN_*</code>) — works on most networks, but very
+                    restrictive corporate/mobile networks on both ends may fail without TURN.
+                    Only pano IDs and view angles are shared, never Street View imagery.
                 </p>
             </div>
         </div>

@@ -1,5 +1,5 @@
 import type { CesiumEntity, CesiumViewer } from '../../types/cesium';
-import { makeBookmarkCanvas, makePoiCanvas, MAX_VISIBLE_BOOKMARKS, MAX_VISIBLE_POIS, type GlobeBookmark, type GlobePOI } from './globeTypes';
+import { makeBeaconCanvas, makeBookmarkCanvas, makePoiCanvas, MAX_VISIBLE_BOOKMARKS, MAX_VISIBLE_POIS, type GlobeBookmark, type GlobePOI } from './globeTypes';
 
 export function syncGlobePoiEntities(
   viewer: CesiumViewer,
@@ -80,4 +80,34 @@ export function syncGlobeBookmarkEntities(
       },
     }),
   );
+}
+
+export function addLocationBeacon(
+  viewer: CesiumViewer,
+  lat: number,
+  lng: number,
+): CesiumEntity {
+  const beaconImage = makeBeaconCanvas();
+  return viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(lng, lat, 80),
+    billboard: {
+      image: beaconImage,
+      scale: 1.0,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      verticalOrigin: Cesium.VerticalOrigin.CENTER,
+    },
+    label: {
+      text: '📍 You are here',
+      font: 'bold 13px sans-serif',
+      fillColor: Cesium.Color.fromCssColorString('#00CCFF'),
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      pixelOffset: new Cesium.Cartesian2(0, -55),
+      showBackground: true,
+      backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.75)'),
+      backgroundPadding: new Cesium.Cartesian2(8, 4),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
 }

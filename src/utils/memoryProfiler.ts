@@ -64,6 +64,17 @@ export interface PotentialLeak {
 
 export const MATERIAL_TEXTURE_PROPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'] as const;
 
+export type MaterialTextureProp = (typeof MATERIAL_TEXTURE_PROPS)[number];
+
+/** Read a named texture slot without `as any`. Missing slots are undefined. */
+export function readMaterialTexture(
+  mat: THREE.Material,
+  prop: MaterialTextureProp,
+): THREE.Texture | undefined {
+  const tex = (mat as THREE.MeshStandardMaterial)[prop];
+  return tex instanceof THREE.Texture ? tex : undefined;
+}
+
 export class MemoryProfiler {
   private snapshots: MemorySnapshot[] = [];
   private maxHistorySize = 60; // Keep last 60 snapshots
@@ -142,11 +153,8 @@ export class MemoryProfiler {
     // Helper to get material info
     const getMaterialInfo = (mat: THREE.Material, name: string): MaterialInfo => {
       let textureCount = 0;
-      const matAny = mat as any;
-      
-      // Count common texture properties
-      MATERIAL_TEXTURE_PROPS.forEach(prop => {
-        if (matAny[prop]) textureCount++;
+      MATERIAL_TEXTURE_PROPS.forEach((prop) => {
+        if (readMaterialTexture(mat, prop)) textureCount++;
       });
       
       return {
@@ -173,11 +181,11 @@ export class MemoryProfiler {
               details.materials.push(getMaterialInfo(mat, obj.name + '_mat'));
               
               // Extract textures from material
-              const matAny = mat as any;
-              MATERIAL_TEXTURE_PROPS.forEach(prop => {
-                if (matAny[prop] && !trackedTextures.has(matAny[prop])) {
-                  trackedTextures.add(matAny[prop]);
-                  details.textures.push(getTextureInfo(matAny[prop], prop));
+              MATERIAL_TEXTURE_PROPS.forEach((prop) => {
+                const tex = readMaterialTexture(mat, prop);
+                if (tex && !trackedTextures.has(tex)) {
+                  trackedTextures.add(tex);
+                  details.textures.push(getTextureInfo(tex, prop));
                 }
               });
             }
@@ -385,10 +393,10 @@ export function deepDispose(object: THREE.Object3D): void {
       materials.forEach(mat => {
         if (mat) {
           // Dispose textures
-          const matAny = mat as any;
-          MATERIAL_TEXTURE_PROPS.forEach(prop => {
-            if (matAny[prop]) {
-              matAny[prop].dispose();
+          MATERIAL_TEXTURE_PROPS.forEach((prop) => {
+            const tex = readMaterialTexture(mat, prop);
+            if (tex) {
+              tex.dispose();
             }
           });
           mat.dispose();
@@ -470,7 +478,9 @@ export class GeometryPool {
  */
 export function getMemoryPressure(): 'low' | 'normal' | 'high' | 'critical' {
   if ('memory' in performance) {
-    const memory = (performance as any).memory;
+    const memory = (performance as Performance & {
+      memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+    }).memory;
     if (memory) {
       const used = memory.usedJSHeapSize;
       const limit = memory.jsHeapSizeLimit;

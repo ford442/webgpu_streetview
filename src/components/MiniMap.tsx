@@ -1,15 +1,39 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { loadCesiumSDK } from '../hooks/useGlobeMode';
 import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
-
-// Import crypto companies config
 import { CRYPTO_COMPANIES } from '../config/cryptoCompanies';
 import type { NearbyPoi } from '../search/poiModel';
+import type { CesiumEntity, CesiumViewer } from '../types/cesium';
 
-// Cesium is loaded from CDN at runtime (see loadCesiumSDK), not bundled —
-// keeps the ~4MB globe stack out of the main chunk for users who never
+type GoogleMapMarker = google.maps.marker.AdvancedMarkerElement | google.maps.Marker;
+type CryptoOverlayMarker = GoogleMapMarker | CesiumEntity;
+
+function setGoogleMarkerPosition(marker: GoogleMapMarker, position: google.maps.LatLng): void {
+    if (marker instanceof google.maps.Marker) {
+        marker.setPosition(position);
+        return;
+    }
+    marker.position = position;
+}
+
+function getGoogleMarkerPosition(
+    marker: GoogleMapMarker,
+): google.maps.LatLng | google.maps.LatLngLiteral | google.maps.LatLngAltitude | google.maps.LatLngAltitudeLiteral | null | undefined {
+    if (marker instanceof google.maps.Marker) {
+        return marker.getPosition() ?? null;
+    }
+    return marker.position;
+}
+
+function clearGoogleMarker(marker: GoogleMapMarker): void {
+    if (marker instanceof google.maps.Marker) {
+        marker.setMap(null);
+        return;
+    }
+    marker.map = null;
+}
+
 // Cesium is loaded from CDN when globe mode is active — typed via src/types/cesium.ts
-import type { CesiumViewer } from '../types/cesium';
 
 interface MiniMapProps {
     apiKey: string;
@@ -39,11 +63,11 @@ const MiniMap: React.FC<MiniMapProps> = ({
     const cesiumRef = useRef<HTMLDivElement>(null);
     const [map, setMap] = useState<google.maps.Map | null>(null);
     const [cesiumViewer, setCesiumViewer] = useState<CesiumViewer | null>(null);
-    const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
+    const [marker, setMarker] = useState<GoogleMapMarker | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<google.maps.LatLng[]>([]);
-    const breadcrumbMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+    const breadcrumbMarkersRef = useRef<GoogleMapMarker[]>([]);
     const routeLineRef = useRef<google.maps.Polyline | null>(null);
-    const cryptoMarkersRef = useRef<(google.maps.marker.AdvancedMarkerElement | any)[]>([]);
+    const cryptoMarkersRef = useRef<CryptoOverlayMarker[]>([]);
     const poiMarkersRef = useRef<google.maps.Marker[]>([]);
 
     /** Create a heading-aware marker element */
@@ -163,7 +187,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
             }
 
             setMap(gMap);
-            setMarker(gMarker as google.maps.marker.AdvancedMarkerElement);
+            setMarker(gMarker);
         };
 
         initMap();
@@ -258,9 +282,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
             const position = panorama.getPosition();
             if (position) {
                 map.setCenter(position);
-                if ('position' in marker) {
-                    (marker as any).position = position;
-                }
+                setGoogleMarkerPosition(marker, position);
             }
         };
 
@@ -268,7 +290,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
 
         // Handle Marker Drag End
         const handleDragEnd = () => {
-            const newPos = (marker as any).position;
+            const newPos = getGoogleMarkerPosition(marker);
             if (newPos) {
                 const latLng = newPos instanceof google.maps.LatLng
                     ? newPos
@@ -331,7 +353,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
         if (!map) return;
 
         // Clear old markers
-        breadcrumbMarkersRef.current.forEach(m => m.map = null);
+        breadcrumbMarkersRef.current.forEach((m) => clearGoogleMarker(m));
 
         // Add new markers - Optimized to create all markers first and set ref once
         breadcrumbMarkersRef.current = breadcrumbs.map((pos, index) => {
@@ -365,7 +387,7 @@ const MiniMap: React.FC<MiniMapProps> = ({
                     map: map,
                     position: pos,
                     title: `Previous Location ${index + 1}`,
-                }) as any;
+                });
 
                 crumb.addListener("click", () => {
                     if (onTeleport) {

@@ -132,21 +132,33 @@ export async function getTopStationForLocation(
     return best;
 }
 
-// Internal helper to map API response to our interface
-function mapStations(data: any[]): RadioStation[] {
+function asString(value: unknown, fallback = ''): string {
+    return typeof value === 'string' ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function isStationRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Map Radio Browser JSON to RadioStation. Unknown / malformed entries become empty fields. */
+export function mapStations(data: unknown): RadioStation[] {
     if (!Array.isArray(data)) return [];
-    return data.map((s: any) => ({
-        id: s.stationuuid || s.id || '',
-        name: s.name || 'Unknown Station',
-        url: s.url || '',
-        urlResolved: s.url_resolved || s.url || '',
-        country: s.country || '',
-        state: s.state || '',
-        language: s.language || '',
-        tags: s.tags || '',
-        codec: s.codec || '',
-        bitrate: s.bitrate || 0,
-        votes: s.votes || 0,
-        favicon: s.favicon || '',
+    return data.filter(isStationRecord).map((s) => ({
+        id: asString(s.stationuuid) || asString(s.id),
+        name: asString(s.name, 'Unknown Station'),
+        url: asString(s.url),
+        urlResolved: asString(s.url_resolved) || asString(s.url),
+        country: asString(s.country),
+        state: asString(s.state),
+        language: asString(s.language),
+        tags: asString(s.tags),
+        codec: asString(s.codec),
+        bitrate: asNumber(s.bitrate),
+        votes: asNumber(s.votes),
+        favicon: asString(s.favicon),
     }));
 }

@@ -1,727 +1,343 @@
 /**
  * GlobeView.tsx
  *
- * CesiumJS-based 3D globe overlay. Lazy-loads Cesium via CDN on first use.
- * Activated by useGlobeMode hook.
- *
- * Features:
- * - Entry animation: camera starts at ground level then flies to orbit
- * - Exit animation: camera descends then triggers panorama teleport
- * - Double-click → "Orbital Drop": camera swoops to surface, teleports Street View
- * - Single-click → opens ScoutCard with Street View Static preview
- * - Bookmark entities: cyan beacons for saved bookmarks
- * - POI layer: orange beacons for location history
- * - Shift-click → drops waypoints with polyline for autopilot route
- * - Start Journey → autopilot along waypoints
- * - WebGL context failure → fallback UI
+ * CesiumJS globe overlay: mount + viewer lifecycle + composition.
+ * Camera / input / journey live in `src/components/globe/`.
+ * Cesium is CDN-loaded — no static import.
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GlobeTransition } from '../hooks/useGlobeMode';
 import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 import ScoutCard from './ScoutCard';
-import {
-    makeBeaconCanvas,
-    type GlobeBookmark,
-    type GlobePOI,
-} from './globe/globeTypes';
-import { syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
+import { type GlobeBookmark, type GlobePOI } from './globe/globeTypes';
+import { addLocationBeacon, syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
 import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
-import GlobeReturnButton from './GlobeReturnButton';
-
-import type { CesiumCartesian2, CesiumEntity, CesiumImageryLayer, CesiumScreenSpaceEventHandler, CesiumTerrainProvider, CesiumViewer } from '../types/cesium';
+import {
+  flyGlobeEnterOrbit,
+  flyGlobeExitDescend,
+  requestOrbitalDrop,
+  setGlobeStreetView,
+} from './globe/globeCamera';
+import { attachGlobeInput } from './globe/globeInput';
+import {
+  appendGlobeWaypoint,
+  canStartJourney,
+  GlobeWaypointPanel,
+  journeyPayload,
+} from './globe/globeJourney';
+import {
+  GlobeContextFailed,
+  GlobeLoadingOverlay,
+  GlobeModeHud,
+  GlobeReturnHatch,
+  GlobeToast,
+} from './globe/GlobeChrome';
+import type {
+  CesiumEntity,
+  CesiumImageryLayer,
+  CesiumTerrainProvider,
+  CesiumViewer,
+} from '../types/cesium';
 
 export type { GlobePOI, GlobeBookmark } from './globe/globeTypes';
 
 interface GlobeViewProps {
-    transition: GlobeTransition;
-    currentLat: number;
-    currentLng: number;
-    currentHeading: number;
-    pois: GlobePOI[];
-    bookmarks: GlobeBookmark[];
-    mapsApiKey: string;
-    onTeleportRequest: (lat: number, lng: number) => void;
-    onEnterComplete: () => void;
-    onExitComplete: () => void;
-    onRequestExit: () => void;
-    /** Called with waypoints when user starts autopilot journey */
-    onStartJourney?: (waypoints: { lat: number; lng: number }[]) => void;
+  transition: GlobeTransition;
+  currentLat: number;
+  currentLng: number;
+  currentHeading: number;
+  pois: GlobePOI[];
+  bookmarks: GlobeBookmark[];
+  mapsApiKey: string;
+  onTeleportRequest: (lat: number, lng: number) => void;
+  onEnterComplete: () => void;
+  onExitComplete: () => void;
+  onRequestExit: () => void;
+  onStartJourney?: (waypoints: { lat: number; lng: number }[]) => void;
 }
 
 const GlobeView: React.FC<GlobeViewProps> = ({
-    transition,
-    currentLat,
-    currentLng,
-    currentHeading,
-    pois,
-    bookmarks,
-    mapsApiKey,
-    onTeleportRequest,
-    onEnterComplete,
-    onExitComplete,
-    onRequestExit,
-    onStartJourney,
+  transition,
+  currentLat,
+  currentLng,
+  currentHeading,
+  pois,
+  bookmarks,
+  mapsApiKey,
+  onTeleportRequest,
+  onEnterComplete,
+  onExitComplete,
+  onRequestExit,
+  onStartJourney,
 }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const viewerRef = useRef<CesiumViewer | null>(null);
-    const handlerRef = useRef<CesiumScreenSpaceEventHandler | null>(null);
-    const locationEntityRef = useRef<CesiumEntity | null>(null);
-    const poiEntitiesRef = useRef<CesiumEntity[]>([]);
-    const bookmarkEntitiesRef = useRef<CesiumEntity[]>([]);
-    const waypointEntitiesRef = useRef<CesiumEntity[]>([]);
-    const waypointPolylineRef = useRef<CesiumEntity | null>(null);
-    const svServiceRef = useRef<google.maps.StreetViewService | null>(null);
-    const toastTimerRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<CesiumViewer | null>(null);
+  const detachInputRef = useRef<(() => void) | null>(null);
+  const locationEntityRef = useRef<CesiumEntity | null>(null);
+  const poiEntitiesRef = useRef<CesiumEntity[]>([]);
+  const bookmarkEntitiesRef = useRef<CesiumEntity[]>([]);
+  const waypointEntitiesRef = useRef<CesiumEntity[]>([]);
+  const waypointPolylineRef = useRef<CesiumEntity | null>(null);
+  const svServiceRef = useRef<google.maps.StreetViewService | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
-    // Stable refs for callbacks
-    const onEnterRef = useRef(onEnterComplete);
-    const onExitRef = useRef(onExitComplete);
-    const onTeleportRef = useRef(onTeleportRequest);
-    onEnterRef.current = onEnterComplete;
-    onExitRef.current = onExitComplete;
-    onTeleportRef.current = onTeleportRequest;
+  const onEnterRef = useRef(onEnterComplete);
+  const onExitRef = useRef(onExitComplete);
+  const onTeleportRef = useRef(onTeleportRequest);
+  onEnterRef.current = onEnterComplete;
+  onExitRef.current = onExitComplete;
+  onTeleportRef.current = onTeleportRequest;
 
-    // ScoutCard state
-    const [scoutTarget, setScoutTarget] = useState<{ lat: number; lng: number; label?: string } | null>(null);
+  const [scoutTarget, setScoutTarget] = useState<{ lat: number; lng: number; label?: string } | null>(null);
+  const [waypoints, setWaypoints] = useState<{ lat: number; lng: number }[]>([]);
+  const [contextFailed, setContextFailed] = useState(false);
+  const [viewerReady, setViewerReady] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-    // Waypoints state (for Phase 5 autopilot)
-    const [waypoints, setWaypoints] = useState<{ lat: number; lng: number }[]>([]);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200) as unknown as number;
+  }, []);
 
-    // WebGL context failure state
-    const [contextFailed, setContextFailed] = useState(false);
+  const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });
 
-    // Set once the async Cesium Viewer is created so POI/bookmark effects can sync.
-    const [viewerReady, setViewerReady] = useState(false);
+  const handleScoutEngage = useCallback((lat: number, lng: number) => {
+    setScoutTarget(null);
+    requestOrbitalDrop({
+      viewer: viewerRef.current,
+      heading: currentHeading,
+      lat,
+      lng,
+      svService: svServiceRef.current,
+      onTeleport: (tLat, tLng) => onTeleportRef.current(tLat, tLng),
+      onNoStreetView: () => showToast('No Street View here'),
+    });
+  }, [currentHeading, showToast]);
 
-    // Transient toast for "No Street View here"
-    const [toast, setToast] = useState<string | null>(null);
-    const showToast = useCallback((msg: string) => {
-        setToast(msg);
-        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = window.setTimeout(() => setToast(null), 2200) as unknown as number;
-    }, []);
+  const handleScoutEngageRef = useRef(handleScoutEngage);
+  handleScoutEngageRef.current = handleScoutEngage;
 
-    // Snapshot coords when entering
-    const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });
-
-    // ---- Handle ScoutCard engage (Orbital Drop) ----
-    const handleScoutEngage = useCallback((lat: number, lng: number) => {
-        setScoutTarget(null);
-        const viewer = viewerRef.current;
-
-        const doFlyAndTeleport = (tLat: number, tLng: number) => {
-            if (!viewer || viewer.isDestroyed()) {
-                onTeleportRef.current(tLat, tLng);
-                return;
-            }
-            viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(tLng, tLat, 250),
-                orientation: {
-                    heading: Cesium.Math.toRadians(currentHeading),
-                    pitch: Cesium.Math.toRadians(-35),
-                    roll: 0,
-                },
-                duration: 2.5,
-                complete: () => {
-                    onTeleportRef.current(tLat, tLng);
-                },
-            });
-        };
-
-        const svc = svServiceRef.current;
-        if (!svc) {
-            doFlyAndTeleport(lat, lng);
-            return;
-        }
-
-        svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data, status) => {
-            if (
-                status === google.maps.StreetViewStatus.OK &&
-                data?.location?.latLng
-            ) {
-                const snappedLat = data.location.latLng.lat();
-                const snappedLng = data.location.latLng.lng();
-                doFlyAndTeleport(snappedLat, snappedLng);
-            } else {
-                showToast('No Street View here');
-            }
-        });
-    }, [currentHeading, showToast]);
-
-    // Stable ref for handleScoutEngage so input handlers always see latest version
-    const handleScoutEngageRef = useRef(handleScoutEngage);
-    handleScoutEngageRef.current = handleScoutEngage;
-
-    // ---- initialise Cesium once when entering --------------------------------
-    useEffect(() => {
-        if (transition !== 'entering') return;
-        if (viewerRef.current) return;
-        if (!containerRef.current) return;
-        if (typeof Cesium === 'undefined') {
-            console.error('[GlobeView] Cesium not available on window');
-            setContextFailed(true);
-            return;
-        }
-
-        entryCoords.current = { lat: currentLat, lng: currentLng, heading: currentHeading };
-
-        let cancelled = false;
-
-        (async () => {
-        // Cesium ≥1.107: use `baseLayer` (ImageryLayer). The removed `imageryProvider`
-        // option only disables default Ion imagery and never adds tiles → blank sphere.
-        // resolveMiniMapLayerOptions prefers real Ion world terrain + imagery when a
-        // token is configured, falling back to ellipsoid + CartoCDN on failure so the
-        // full-screen globe is never blank (same fallback MiniMap already relies on).
-        let terrainProvider: CesiumTerrainProvider;
-        let baseLayer: CesiumImageryLayer | false;
-        try {
-            ({ terrainProvider, baseLayer } = await resolveMiniMapLayerOptions(Cesium));
-        } catch (err) {
-            console.warn('[GlobeView] Layer options resolve failed; using ellipsoid fallback:', err);
-            terrainProvider = new Cesium.EllipsoidTerrainProvider();
-            baseLayer = false;
-        }
-
-        if (cancelled || viewerRef.current || !containerRef.current) return;
-
-        let viewer: CesiumViewer;
-        try {
-            viewer = new Cesium.Viewer(containerRef.current, {
-                animation: false,
-                baseLayerPicker: false,
-                fullscreenButton: false,
-                geocoder: false,
-                homeButton: false,
-                infoBox: false,
-                sceneModePicker: false,
-                selectionIndicator: false,
-                timeline: false,
-                navigationHelpButton: false,
-                navigationInstructionsInitiallyVisible: false,
-                skyAtmosphere: new Cesium.SkyAtmosphere(),
-                terrainProvider,
-                baseLayer,
-            });
-        } catch (err) {
-            console.error('[GlobeView] Failed to create Cesium Viewer (WebGL context?):', err);
-            setContextFailed(true);
-            onEnterRef.current();
-            return;
-        }
-
-        viewerRef.current = viewer;
-        setViewerReady(true);
-
-        // Note: The mts1.googleapis.com/vt Street View coverage overlay has been
-        // removed — it is an undocumented endpoint that can 403 silently, causing
-        // Cesium to retry tiles indefinitely and contributing to billing risk.
-
-        // Lazy-init StreetViewService for pre-flight validation
-        if (!svServiceRef.current && window.google?.maps) {
-            svServiceRef.current = new google.maps.StreetViewService();
-        }
-
-        // Start camera at street level
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 120),
-            orientation: {
-                heading: Cesium.Math.toRadians(currentHeading),
-                pitch: Cesium.Math.toRadians(-15),
-                roll: 0,
-            },
-        });
-
-        // Orbital rise
-        viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 1_800_000),
-            orientation: {
-                heading: Cesium.Math.toRadians(currentHeading),
-                pitch: Cesium.Math.toRadians(-90),
-                roll: 0,
-            },
-            duration: 3.5,
-            complete: () => onEnterRef.current(),
-        });
-
-        // "You are here" beacon
-        const beaconImage = makeBeaconCanvas();
-        locationEntityRef.current = viewer.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 80),
-            billboard: {
-                image: beaconImage,
-                scale: 1.0,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                verticalOrigin: Cesium.VerticalOrigin.CENTER,
-            },
-            label: {
-                text: '📍 You are here',
-                font: 'bold 13px sans-serif',
-                fillColor: Cesium.Color.fromCssColorString('#00CCFF'),
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 2,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                pixelOffset: new Cesium.Cartesian2(0, -55),
-                showBackground: true,
-                backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.75)'),
-                backgroundPadding: new Cesium.Cartesian2(8, 4),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-        });
-
-        // --- Event handlers ---
-
-        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-        // Double-click → validate via StreetViewService, then Orbital Drop
-        const flyToAndTeleport = (lat: number, lng: number) => {
-            viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(lng, lat, 250),
-                orientation: {
-                    heading: Cesium.Math.toRadians(currentHeading),
-                    pitch: Cesium.Math.toRadians(-35),
-                    roll: 0,
-                },
-                duration: 2.5,
-                complete: () => {
-                    onTeleportRef.current(lat, lng);
-                },
-            });
-        };
-
-        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
-            const cartesian = viewer.camera.pickEllipsoid(
-                event.position,
-                viewer.scene.globe.ellipsoid,
-            );
-            if (!cartesian) return;
-            const carto = Cesium.Cartographic.fromCartesian(cartesian);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            const lng = Cesium.Math.toDegrees(carto.longitude);
-
-            const svc = svServiceRef.current;
-            if (!svc) {
-                flyToAndTeleport(lat, lng);
-                return;
-            }
-
-            svc.getPanorama({ location: { lat, lng }, radius: 50 }, (data, status) => {
-                if (
-                    status === google.maps.StreetViewStatus.OK &&
-                    data?.location?.latLng
-                ) {
-                    const snappedLat = data.location.latLng.lat();
-                    const snappedLng = data.location.latLng.lng();
-                    flyToAndTeleport(snappedLat, snappedLng);
-                } else {
-                    showToast('No Street View here');
-                }
-            });
-        }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-
-        // Single-click (unmodified) → ScoutCard preview.
-        // Clicking a bookmark entity triggers an immediate Orbital Drop.
-        // Shift+click is handled by a separate handler registered below with
-        // Cesium.KeyboardEventModifier.SHIFT, so it won't reach this handler.
-        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
-            const picked = viewer.scene.pick(event.position);
-            if (Cesium.defined(picked) && picked?.id?.properties) {
-                // Clicked on a bookmark entity → Orbital Drop directly
-                try {
-                    const props = picked.id.properties;
-                    const bLat = props.bookmarkLat?.getValue();
-                    const bLng = props.bookmarkLng?.getValue();
-                    if (bLat !== undefined && bLng !== undefined) {
-                        handleScoutEngageRef.current(bLat, bLng);
-                        return;
-                    }
-                } catch { /* fall through to globe pick */ }
-            }
-
-            // Clicked on globe surface → preview that location
-            const cartesian = viewer.camera.pickEllipsoid(
-                event.position,
-                viewer.scene.globe.ellipsoid,
-            );
-            if (!cartesian) return;
-            const carto = Cesium.Cartographic.fromCartesian(cartesian);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            const lng = Cesium.Math.toDegrees(carto.longitude);
-            setScoutTarget({ lat, lng });
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-        // Shift+click → drop waypoint
-        handler.setInputAction((event: { position: CesiumCartesian2 }) => {
-            const cartesian = viewer.camera.pickEllipsoid(
-                event.position,
-                viewer.scene.globe.ellipsoid,
-            );
-            if (!cartesian) return;
-            const carto = Cesium.Cartographic.fromCartesian(cartesian);
-            const lat = Cesium.Math.toDegrees(carto.latitude);
-            const lng = Cesium.Math.toDegrees(carto.longitude);
-
-            setWaypoints(prev => [...prev, { lat, lng }]);
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK, Cesium.KeyboardEventModifier.SHIFT);
-
-        handlerRef.current = handler;
-        })();
-
-        // NOTE: We intentionally do NOT destroy the viewer in this cleanup —
-        // only guard against the async layer-resolution race above resolving
-        // after the effect re-runs. This effect depends on [transition]; if we
-        // destroyed the viewer here, transition changes (entering -> active)
-        // would wipe the globe. Viewer teardown is handled in a dedicated
-        // unmount effect.
-        return () => {
-            cancelled = true;
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [transition]);
-
-    // Dedicated unmount cleanup: only runs when GlobeView is removed from the tree
-    useEffect(() => {
-        return () => {
-            cleanupViewer();
-        };
-    }, []);
-
-    // ---- Reactive POI entities (location history from ConnectedChrome) ----
-    useEffect(() => {
-        const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-        poiEntitiesRef.current = syncGlobePoiEntities(viewer, pois, poiEntitiesRef.current);
-    }, [pois, viewerReady]);
-
-    // ---- Reactive bookmark entities (from ConnectedChrome bookmarks prop) ----
-    useEffect(() => {
-        const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-        bookmarkEntitiesRef.current = syncGlobeBookmarkEntities(
-            viewer,
-            bookmarks,
-            bookmarkEntitiesRef.current,
-        );
-    }, [bookmarks, viewerReady]);
-
-    // ---- Update waypoint visuals on globe ----
-    useEffect(() => {
-        const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
-        const visuals = syncGlobeAutopilotVisuals(viewer, waypoints, {
-            waypointEntities: waypointEntitiesRef.current,
-            polylineEntity: waypointPolylineRef.current,
-        });
-        waypointEntitiesRef.current = visuals.waypointEntities;
-        waypointPolylineRef.current = visuals.polylineEntity;
-    }, [waypoints, viewerReady]);
-
-    // ---- update beacon when street view position changes ---------------------
-    useEffect(() => {
-        if (!locationEntityRef.current || typeof Cesium === 'undefined') return;
-        locationEntityRef.current.position =
-            Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 80);
-    }, [currentLat, currentLng]);
-
-    // ---- handle exit ---------------------------------------------------------
-    useEffect(() => {
-        if (transition !== 'exiting') return;
-        const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed()) {
-            onExitRef.current();
-            return;
-        }
-        const { lat, lng, heading } = entryCoords.current;
-        viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(lng, lat, 120),
-            orientation: {
-                heading: Cesium.Math.toRadians(heading),
-                pitch: Cesium.Math.toRadians(-30),
-                roll: 0,
-            },
-            duration: 2.2,
-            complete: () => {
-                cleanupViewer();
-                onExitRef.current();
-            },
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [transition]);
-
-    function cleanupViewer() {
-        handlerRef.current?.destroy();
-        handlerRef.current = null;
-        poiEntitiesRef.current = [];
-        bookmarkEntitiesRef.current = [];
-        waypointEntitiesRef.current = [];
-        waypointPolylineRef.current = null;
-        locationEntityRef.current = null;
-        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = null;
-        const v = viewerRef.current;
-        if (v && !v.isDestroyed()) v.destroy();
-        viewerRef.current = null;
-        setViewerReady(false);
-        setContextFailed(false);
-        setScoutTarget(null);
-        setWaypoints([]);
-        setToast(null);
+  useEffect(() => {
+    if (transition !== 'entering') return;
+    if (viewerRef.current) return;
+    if (!containerRef.current) return;
+    if (typeof Cesium === 'undefined') {
+      console.error('[GlobeView] Cesium not available on window');
+      setContextFailed(true);
+      return;
     }
 
-    const handleClearWaypoints = useCallback(() => {
-        setWaypoints([]);
-    }, []);
+    entryCoords.current = { lat: currentLat, lng: currentLng, heading: currentHeading };
 
-    const handleStartJourney = useCallback(() => {
-        if (waypoints.length === 0) return;
-        onStartJourney?.(waypoints);
-    }, [waypoints, onStartJourney]);
+    let cancelled = false;
 
-    const visible = transition !== 'inactive' && transition !== 'loading';
+    (async () => {
+      let terrainProvider: CesiumTerrainProvider;
+      let baseLayer: CesiumImageryLayer | false;
+      try {
+        ({ terrainProvider, baseLayer } = await resolveMiniMapLayerOptions(Cesium));
+      } catch (err) {
+        console.warn('[GlobeView] Layer options resolve failed; using ellipsoid fallback:', err);
+        terrainProvider = new Cesium.EllipsoidTerrainProvider();
+        baseLayer = false;
+      }
 
-    // ---- WebGL context failure fallback ----
-    if (contextFailed) {
-        return (
-            <div
-                style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 200,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'rgba(0,0,0,0.85)',
-                    color: '#fff',
-                    fontFamily: 'system-ui, sans-serif',
-                    gap: 16,
-                }}
-            >
-                <div style={{ fontSize: 48 }}>🌍</div>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>Globe View Unavailable</div>
-                <div style={{ fontSize: 14, color: '#aaa', maxWidth: 400, textAlign: 'center' }}>
-                    WebGL context could not be created. This may happen if too many GPU contexts
-                    are active, or your browser doesn't support WebGL. Try refreshing the page.
-                </div>
-                <button
-                    onClick={() => {
-                        setContextFailed(false);
-                        onExitRef.current();
-                    }}
-                    style={{
-                        marginTop: 12,
-                        padding: '10px 24px',
-                        backgroundColor: 'rgba(0,204,255,0.2)',
-                        border: '1px solid rgba(0,204,255,0.5)',
-                        borderRadius: 8,
-                        color: '#00CCFF',
-                        fontSize: 14,
-                        cursor: 'pointer',
-                    }}
-                >
-                    Return to Street View
-                </button>
-            </div>
-        );
-    }
+      if (cancelled || viewerRef.current || !containerRef.current) return;
 
-    return (
-        <>
-            {/* Prominent escape hatch — toolbar sits behind the globe overlay */}
-            {visible && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: 16,
-                        left: 16,
-                        zIndex: 210,
-                        pointerEvents: 'auto',
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                >
-                    <GlobeReturnButton onClick={onRequestExit} />
-                </div>
-            )}
+      let viewer: CesiumViewer;
+      try {
+        viewer = new Cesium.Viewer(containerRef.current, {
+          animation: false,
+          baseLayerPicker: false,
+          fullscreenButton: false,
+          geocoder: false,
+          homeButton: false,
+          infoBox: false,
+          sceneModePicker: false,
+          selectionIndicator: false,
+          timeline: false,
+          navigationHelpButton: false,
+          navigationInstructionsInitiallyVisible: false,
+          skyAtmosphere: new Cesium.SkyAtmosphere(),
+          terrainProvider,
+          baseLayer,
+        });
+      } catch (err) {
+        console.error('[GlobeView] Failed to create Cesium Viewer (WebGL context?):', err);
+        setContextFailed(true);
+        onEnterRef.current();
+        return;
+      }
 
-            {/* Full-screen Cesium container */}
-            <div
-                ref={containerRef}
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    zIndex: 200,
-                    opacity: visible ? 1 : 0,
-                    pointerEvents: visible ? 'all' : 'none',
-                    transition: 'opacity 0.6s ease-in-out',
-                }}
-                aria-hidden={!visible}
-            />
+      viewerRef.current = viewer;
+      setViewerReady(true);
 
-            {/* ScoutCard overlay */}
-            {scoutTarget && visible && (
-                <ScoutCard
-                    lat={scoutTarget.lat}
-                    lng={scoutTarget.lng}
-                    label={scoutTarget.label}
-                    mapsApiKey={mapsApiKey}
-                    onEngage={(lat, lng) => handleScoutEngage(lat, lng)}
-                    onClose={() => setScoutTarget(null)}
-                />
-            )}
+      if (!svServiceRef.current && window.google?.maps) {
+        svServiceRef.current = new google.maps.StreetViewService();
+      }
 
-            {/* HUD overlay shown when active */}
-            {(transition === 'active' || transition === 'entering') && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        bottom: 30,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 201,
-                        backgroundColor: 'rgba(0,0,0,0.72)',
-                        color: '#fff',
-                        padding: '10px 20px',
-                        borderRadius: '20px',
-                        fontSize: '13px',
-                        fontFamily: 'system-ui, sans-serif',
-                        border: '1px solid rgba(0,204,255,0.4)',
-                        boxShadow: '0 0 20px rgba(0,204,255,0.2)',
-                        pointerEvents: 'none',
-                        whiteSpace: 'nowrap',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                    }}
-                >
-                    <span>
-                        🌍 Globe Mode — <strong>click</strong> to preview | <strong>double-click</strong> to drop in |
-                        <strong> Shift+click</strong> to add waypoint
-                    </span>
-                    <span style={{ color: '#666' }}>|</span>
-                    <span>
-                        Press <kbd style={{ background: '#333', padding: '1px 5px', borderRadius: 3 }}>Esc</kbd> or use
-                        <strong> Return to Street View</strong> (top-left)
-                    </span>
-                </div>
-            )}
+      const pose = { lat: currentLat, lng: currentLng, heading: currentHeading };
+      setGlobeStreetView(viewer, pose);
+      flyGlobeEnterOrbit(viewer, pose, () => onEnterRef.current());
 
-            {/* Waypoint controls */}
-            {transition === 'active' && waypoints.length > 0 && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: 20,
-                        right: 20,
-                        zIndex: 202,
-                        backgroundColor: 'rgba(0,0,0,0.85)',
-                        color: '#fff',
-                        padding: '12px 16px',
-                        borderRadius: 12,
-                        fontFamily: 'system-ui, sans-serif',
-                        fontSize: 13,
-                        border: '1px solid rgba(255,50,50,0.4)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                        pointerEvents: 'all',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                >
-                    <div style={{ fontWeight: 600 }}>
-                        🗺️ Waypoints ({waypoints.length})
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                            onClick={handleStartJourney}
-                            style={{
-                                padding: '6px 14px',
-                                backgroundColor: 'rgba(0,204,255,0.2)',
-                                border: '1px solid rgba(0,204,255,0.5)',
-                                borderRadius: 6,
-                                color: '#00CCFF',
-                                fontSize: 12,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            🚗 Start Journey
-                        </button>
-                        <button
-                            onClick={handleClearWaypoints}
-                            style={{
-                                padding: '6px 14px',
-                                backgroundColor: 'rgba(255,50,50,0.15)',
-                                border: '1px solid rgba(255,50,50,0.4)',
-                                borderRadius: 6,
-                                color: '#FF6464',
-                                fontSize: 12,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            ✕ Clear
-                        </button>
-                    </div>
-                </div>
-            )}
+      locationEntityRef.current = addLocationBeacon(viewer, currentLat, currentLng);
 
-            {/* Toast notification */}
-            {toast && visible && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: 80,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 203,
-                        backgroundColor: 'rgba(0,0,0,0.85)',
-                        color: '#FF6464',
-                        padding: '10px 20px',
-                        borderRadius: 12,
-                        fontSize: 14,
-                        fontFamily: 'system-ui, sans-serif',
-                        fontWeight: 600,
-                        border: '1px solid rgba(255,50,50,0.4)',
-                        pointerEvents: 'none',
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {toast}
-                </div>
-            )}
+      const attached = attachGlobeInput(viewer, {
+        onScoutPreview: (wp) => setScoutTarget({ lat: wp.lat, lng: wp.lng }),
+        onOrbitalDrop: (wp) => handleScoutEngageRef.current(wp.lat, wp.lng),
+        onAddWaypoint: (wp) => setWaypoints((prev) => appendGlobeWaypoint(prev, wp)),
+        onBookmarkDrop: (wp) => handleScoutEngageRef.current(wp.lat, wp.lng),
+      });
+      detachInputRef.current = attached.detach;
+    })();
 
-            {/* Loading indicator (shown if GlobeView mounts before SDK handoff completes) */}
-            {transition === 'loading' && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 200,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 20,
-                    backgroundColor: 'rgba(0,0,0,0.6)',
-                    color: '#fff',
-                    fontSize: '18px',
-                    fontFamily: 'system-ui, sans-serif',
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-                >
-                    <div>🌍 Loading Globe…</div>
-                    <GlobeReturnButton onClick={onRequestExit} />
-                </div>
-            )}
-        </>
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transition]);
+
+  useEffect(() => {
+    return () => {
+      cleanupViewer();
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+    poiEntitiesRef.current = syncGlobePoiEntities(viewer, pois, poiEntitiesRef.current);
+  }, [pois, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+    bookmarkEntitiesRef.current = syncGlobeBookmarkEntities(
+      viewer,
+      bookmarks,
+      bookmarkEntitiesRef.current,
     );
+  }, [bookmarks, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+    const visuals = syncGlobeAutopilotVisuals(viewer, waypoints, {
+      waypointEntities: waypointEntitiesRef.current,
+      polylineEntity: waypointPolylineRef.current,
+    });
+    waypointEntitiesRef.current = visuals.waypointEntities;
+    waypointPolylineRef.current = visuals.polylineEntity;
+  }, [waypoints, viewerReady]);
+
+  useEffect(() => {
+    if (!locationEntityRef.current || typeof Cesium === 'undefined') return;
+    locationEntityRef.current.position =
+      Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 80);
+  }, [currentLat, currentLng]);
+
+  useEffect(() => {
+    if (transition !== 'exiting') return;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) {
+      onExitRef.current();
+      return;
+    }
+    flyGlobeExitDescend(viewer, entryCoords.current, () => {
+      cleanupViewer();
+      onExitRef.current();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transition]);
+
+  function cleanupViewer() {
+    detachInputRef.current?.();
+    detachInputRef.current = null;
+    poiEntitiesRef.current = [];
+    bookmarkEntitiesRef.current = [];
+    waypointEntitiesRef.current = [];
+    waypointPolylineRef.current = null;
+    locationEntityRef.current = null;
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
+    const v = viewerRef.current;
+    if (v && !v.isDestroyed()) v.destroy();
+    viewerRef.current = null;
+    setViewerReady(false);
+    setContextFailed(false);
+    setScoutTarget(null);
+    setWaypoints([]);
+    setToast(null);
+  }
+
+  const handleClearWaypoints = useCallback(() => setWaypoints([]), []);
+
+  const handleStartJourney = useCallback(() => {
+    if (!canStartJourney(waypoints)) return;
+    onStartJourney?.(journeyPayload(waypoints));
+  }, [waypoints, onStartJourney]);
+
+  const visible = transition !== 'inactive' && transition !== 'loading';
+
+  if (contextFailed) {
+    return (
+      <GlobeContextFailed
+        onReturn={() => {
+          setContextFailed(false);
+          onExitRef.current();
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+      {visible && <GlobeReturnHatch onRequestExit={onRequestExit} />}
+
+      <div
+        ref={containerRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 200,
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'all' : 'none',
+          transition: 'opacity 0.6s ease-in-out',
+        }}
+        aria-hidden={!visible}
+      />
+
+      {scoutTarget && visible && (
+        <ScoutCard
+          lat={scoutTarget.lat}
+          lng={scoutTarget.lng}
+          label={scoutTarget.label}
+          mapsApiKey={mapsApiKey}
+          onEngage={(lat, lng) => handleScoutEngage(lat, lng)}
+          onClose={() => setScoutTarget(null)}
+        />
+      )}
+
+      {(transition === 'active' || transition === 'entering') && <GlobeModeHud />}
+
+      {transition === 'active' && waypoints.length > 0 && (
+        <GlobeWaypointPanel
+          waypoints={waypoints}
+          onStartJourney={handleStartJourney}
+          onClear={handleClearWaypoints}
+        />
+      )}
+
+      {toast && visible && <GlobeToast message={toast} />}
+
+      {transition === 'loading' && <GlobeLoadingOverlay onRequestExit={onRequestExit} />}
+    </>
+  );
 };
 
 export default GlobeView;

@@ -77,7 +77,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     }
     
     // Memory estimation (Chrome only)
-    const memory = (navigator as any).deviceMemory;
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
     
     // CPU cores
     const cpuCores = navigator.hardwareConcurrency || 2;
@@ -192,7 +192,15 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     const setupBatteryMonitoring = async () => {
       if ('getBattery' in navigator) {
         try {
-          const battery = await (navigator as any).getBattery();
+          const navWithBattery = navigator as Navigator & {
+            getBattery: () => Promise<{
+              level: number;
+              charging: boolean;
+              addEventListener: (type: string, listener: () => void) => void;
+              removeEventListener: (type: string, listener: () => void) => void;
+            }>;
+          };
+          const battery = await navWithBattery.getBattery();
           
           const handleBatteryChange = () => {
             // Enable battery save mode if battery is low (< 20%) or charging is slow

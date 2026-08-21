@@ -122,12 +122,14 @@ Earlier versions of this feature required manually copy-pasting base64 SDP blobs
 
 ### STUN/TURN and connection failures
 
-WebRTC needs to traverse NAT to connect two browsers directly. This app currently configures **STUN only** (`stun:stun.l.google.com:19302`, see `ICE_SERVERS` in `useSharedSession.ts`) — no TURN relay yet. STUN is enough for most home/mobile networks, but two participants both behind symmetric NATs or restrictive corporate firewalls may fail to connect a data channel even though signaling succeeds. When that happens:
+WebRTC needs to traverse NAT to connect two browsers directly. ICE servers are resolved in [`src/utils/iceServers.ts`](src/utils/iceServers.ts) (consumed by `useSharedSession.ts`): **Google STUN is always included**; optional TURN is added when `REACT_APP_TURN_URL` / `VITE_TURN_URL` is set at build time, or `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`. Full setup: [`docs/SHARED_SESSIONS.md`](docs/SHARED_SESSIONS.md).
+
+STUN is enough for most home/mobile networks, but two participants both behind symmetric NATs or restrictive corporate firewalls may fail to connect a data channel even though signaling succeeds. When that happens:
 
 - The affected connection retries automatically (up to 5 attempts, ~2s apart) as long as both sides are still in the room.
 - After exhausting retries, an error banner explains a TURN server is likely needed.
 
-To add TURN, extend `ICE_SERVERS` in `src/hooks/useSharedSession.ts` with a `urls`/`username`/`credential` entry (a free/open TURN provider, or a self-hosted [coturn](https://github.com/coturn/coturn)) — no other code changes are required.
+To add TURN, configure the env vars or `window.TURN_*` keys above (a free/open TURN provider, or a self-hosted [coturn](https://github.com/coturn/coturn)) — do not hardcode credentials in `useSharedSession.ts`.
 
 ### Configuring the signaling backend
 
@@ -367,7 +369,7 @@ webgpu_streetview/
 │       ├── carview.wgsl           # Car windshield post-process
 │       └── texture.wgsl           # Debug passthrough
 ├── src/
-│   ├── App.tsx                    # Central controller and state owner
+│   ├── App.tsx                    # Thin root: AppProviders + AppShell
 │   ├── index.tsx
 │   ├── style.css
 │   ├── components/
@@ -433,10 +435,9 @@ webgpu_streetview/
 │       └── memoryProfiler.ts
 ├── deploy.py                      # Contabo bundle deploy (env vars only — see .env.deploy.example)
 ├── package.json
-├── CLAUDE.md                      # AI agent guide — danger zones and conventions
-├── DEVELOPER_CONTEXT.md           # Architecture deep-dive
-├── CAR_MODE_ENHANCEMENTS.md       # Car feature implementation notes
-└── feature_expansion_plan.md      # Future roadmap
+├── AGENTS.md                      # AI agent SSOT
+├── CLAUDE.md                      # Short pointer to AGENTS.md
+└── weekly_plan.md                 # Active residuals
 ```
 
 ---
@@ -445,7 +446,7 @@ webgpu_streetview/
 
 ### How Canvas Scraping Works
 
-The Google Maps API renders Street View into internal `<canvas>` elements inside a DOM subtree it manages internally. There is no official API to access this canvas. `StreetView.tsx` sets up a `MutationObserver` on the panorama container, collects every `<canvas>` it finds, sorts them by pixel area, and selects the largest one that exceeds 256×256 pixels as the active panorama canvas. This reference flows up through `App.tsx` → `WebGPUCanvas.tsx` → `Renderer.ts`, which uploads it every frame with `copyExternalImageToTexture`.
+The Google Maps API renders Street View into internal `<canvas>` elements inside a DOM subtree it manages internally. There is no official API to access this canvas. `StreetView.tsx` sets up a `MutationObserver` on the panorama container, collects every `<canvas>` it finds, sorts them by pixel area, and selects the largest one that exceeds 256×256 pixels as the active panorama canvas. This reference flows up through `StreetViewProvider` → `WebGPUCanvas.tsx` → `Renderer.ts`, which uploads it every frame with `copyExternalImageToTexture`.
 
 **Risk**: Any Google Maps DOM restructure will silently break canvas detection. Symptom: black WebGPU canvas.
 
@@ -574,7 +575,7 @@ Index  Field            Range / Notes
 ### Adding a New UI Panel
 
 1. Create component in `src/components/MyPanel.tsx`
-2. Add open/close state in `App.tsx` and wire the toggle
+2. Add open/close state in `src/app/useAppPanels.ts` and wire the toggle from `ConnectedChrome`
 3. Register shortcut in `useKeyboardShortcuts.tsx`
 4. Add `e.stopPropagation()` on **all** mouse and keyboard events inside the panel
 
@@ -602,11 +603,12 @@ Index  Field            Range / Notes
 
 | File | Contents |
 |---|---|
-| `CLAUDE.md` | AI agent guide — commands, danger zones, conventions |
-| `DEVELOPER_CONTEXT.md` | Architecture deep-dive, complexity hotspots, data flows |
-| `CAR_MODE_ENHANCEMENTS.md` | Car feature implementation details |
+| `AGENTS.md` | AI agent SSOT — commands, danger zones, architecture |
+| `CLAUDE.md` | Short pointer to AGENTS.md |
+| `docs/DEVELOPER_CONTEXT.md` | Architecture deep-dive, complexity hotspots, data flows |
+| `docs/SHARED_SESSIONS.md` | WebRTC rooms, STUN/TURN via `iceServers.ts` |
 | `src/docs/GRAPHICS.md` | Graphics pipeline, material system, shader reference |
-| `feature_expansion_plan.md` | Planned features roadmap |
+| `weekly_plan.md` | Active residuals (not archived checklists) |
 
 ---
 

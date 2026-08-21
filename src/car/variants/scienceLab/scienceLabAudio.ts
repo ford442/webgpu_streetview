@@ -1,3 +1,5 @@
+import { createBrowserAudioContext } from '../../../audio/createAudioContext';
+
 export class ScienceLabAudio {
     audioContext: AudioContext | null = null;
     fanOscillator: OscillatorNode | null = null;
@@ -5,7 +7,7 @@ export class ScienceLabAudio {
 
     init(): void {
         try {
-            this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            this.audioContext = createBrowserAudioContext();
             this.startEquipmentSounds();
         } catch (e) {
             console.warn('Audio not available for lab equipment:', e);
