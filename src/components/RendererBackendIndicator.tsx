@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { RendererBackendType, RendererEffectIsolation } from '../renderer/RendererBackend';
+import { RendererBackendType } from '../renderer/RendererBackend';
+import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
 
 export interface RendererBackendInfo {
   backendType: RendererBackendType | null;
@@ -9,8 +10,6 @@ export interface RendererBackendInfo {
 interface RendererBackendIndicatorProps {
   backendInfo: RendererBackendInfo | null;
 }
-
-const EFFECT_OPTIONS: RendererEffectIsolation[] = ['all', 'raw', 'color', 'weather', 'fog', 'night', 'lighting'];
 
 const chipStyle: React.CSSProperties = {
   position: 'fixed',
@@ -40,10 +39,11 @@ const panelStyle: React.CSSProperties = {
   padding: '10px',
   borderRadius: '4px',
   border: '1px solid #333',
-  minWidth: '180px',
+  minWidth: '220px',
+  maxWidth: '320px',
 };
 
-const switchButtonStyle = (active: boolean): React.CSSProperties => ({
+const switchButtonStyle = (active: boolean, disabled = false): React.CSSProperties => ({
   flex: 1,
   padding: '4px 6px',
   marginRight: '4px',
@@ -52,8 +52,9 @@ const switchButtonStyle = (active: boolean): React.CSSProperties => ({
   border: `1px solid ${active ? '#00ff00' : '#555'}`,
   borderRadius: '3px',
   backgroundColor: active ? 'rgba(0,255,0,0.15)' : 'rgba(255,255,255,0.05)',
-  color: active ? '#00ff00' : '#ccc',
-  cursor: 'pointer',
+  color: disabled ? '#666' : active ? '#00ff00' : '#ccc',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.6 : 1,
 });
 
 interface DeviceDiagnostics {
@@ -80,35 +81,45 @@ function readDeviceDiagnostics(): DeviceDiagnostics | null {
   };
 }
 
+function readProbe(): WebGpuProbeRecord | null {
+  return window.webgpuProbe ?? null;
+}
+
 function chipLabel(info: RendererBackendInfo): string {
   if (info.backendType === 'webgpu') return 'WebGPU';
-  if (info.backendType === 'webgl') return 'WebGL2 (fallback)';
-  return 'Raw fallback';
+  if (info.backendType === 'webgl') return 'WebGL2 (deferred)';
+  const probe = readProbe();
+  if (probe && !probe.ok) {
+    return `WebGPU failed (${probe.browserBrand})`;
+  }
+  return 'WebGPU failed';
 }
 
 export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ backendInfo }) => {
   const [expanded, setExpanded] = useState(false);
-  const [effectIsolation, setEffectIsolation] = useState<RendererEffectIsolation>(
-    () => window.streetViewRendererDebug?.getDebugOptions().effectIsolation ?? 'all'
-  );
-  const [wireframe, setWireframe] = useState<boolean>(
-    () => window.streetViewRendererDebug?.getDebugOptions().wireframe ?? false
-  );
   const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics | null>(null);
+  const [probe, setProbe] = useState<WebGpuProbeRecord | null>(null);
 
   const isWebGPU = backendInfo?.backendType === 'webgpu';
+  const isFailed = backendInfo != null && backendInfo.backendType !== 'webgpu';
 
-  // Uncaptured errors accumulate after init, so poll the matrix while the panel is open.
   useEffect(() => {
-    if (!expanded || !isWebGPU) return undefined;
-    setDiagnostics(readDeviceDiagnostics());
-    const timer = window.setInterval(() => setDiagnostics(readDeviceDiagnostics()), 1000);
-    return () => window.clearInterval(timer);
+    if (!expanded) return undefined;
+    setProbe(readProbe());
+    if (isWebGPU) {
+      setDiagnostics(readDeviceDiagnostics());
+      const timer = window.setInterval(() => {
+        setDiagnostics(readDeviceDiagnostics());
+        setProbe(readProbe());
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }
+    return undefined;
   }, [expanded, isWebGPU]);
 
   if (!backendInfo) return null;
 
-  const isWebGL = backendInfo.backendType === 'webgl';
+  const chipColor = isFailed ? '#ff6666' : '#00ff00';
 
   return (
     <>
@@ -122,15 +133,50 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
               WebGPU
             </button>
             <button
-              style={{ ...switchButtonStyle(backendInfo.backendType === 'webgl'), marginRight: 0 }}
-              onClick={() => window.streetViewRendererDebug?.setBackend('webgl')}
+              style={{ ...switchButtonStyle(false, true), marginRight: 0 }}
+              title="WebGL weather path deferred this phase"
+              disabled
             >
-              WebGL2
+              WebGL2 (deferred)
             </button>
           </div>
-          <div style={{ color: '#888', fontSize: '9px', marginBottom: isWebGL ? '8px' : 0 }}>
-            (reloads page)
+          <div style={{ color: '#888', fontSize: '9px', marginBottom: '8px' }}>
+            WebGPU required — WebGL weather deferred
           </div>
+
+          {(probe || backendInfo.fallbackReason) && (
+            <>
+              <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
+              <div style={{ color: isFailed ? '#ff9999' : '#ccc', fontSize: '10px', lineHeight: 1.5 }}>
+                {probe && (
+                  <>
+                    <div>brand: {probe.browserBrand}</div>
+                    <div>stage: {probe.stage}{probe.ok ? '' : ' (failed)'}</div>
+                    {probe.adapter && (
+                      <div title={probe.adapter.description}>
+                        adapter: {probe.adapter.vendor} / {probe.adapter.architecture}
+                      </div>
+                    )}
+                    {probe.webglPreferenceDeferred && (
+                      <div style={{ color: '#ffcc66' }}>webgl preference deferred</div>
+                    )}
+                  </>
+                )}
+                {(probe?.reason || backendInfo.fallbackReason) && (
+                  <div
+                    style={{
+                      color: '#ff6666',
+                      marginTop: 4,
+                      wordBreak: 'break-word',
+                    }}
+                    title={probe?.reason || backendInfo.fallbackReason}
+                  >
+                    {probe?.reason || backendInfo.fallbackReason}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {diagnostics && (
             <>
@@ -166,55 +212,10 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
               </div>
             </>
           )}
-
-          {isWebGL && (
-            <>
-              <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
-              <label style={{ display: 'block', marginBottom: '6px', color: '#ccc' }}>
-                Effect isolation
-                <select
-                  value={effectIsolation}
-                  onChange={e => {
-                    const next = e.target.value as RendererEffectIsolation;
-                    setEffectIsolation(next);
-                    window.streetViewRendererDebug?.setEffectIsolation(next);
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    marginTop: '2px',
-                    backgroundColor: '#111',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '3px',
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                  }}
-                >
-                  {EFFECT_OPTIONS.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ccc' }}>
-                <input
-                  type="checkbox"
-                  checked={wireframe}
-                  onChange={e => {
-                    const next = e.target.checked;
-                    setWireframe(next);
-                    window.streetViewRendererDebug?.setWireframe(next);
-                  }}
-                />
-                Wireframe
-              </label>
-            </>
-          )}
         </div>
       )}
       <div
-        style={chipStyle}
+        style={{ ...chipStyle, color: chipColor, borderColor: isFailed ? '#663333' : '#333' }}
         onClick={() => setExpanded(v => !v)}
         title={backendInfo.fallbackReason || 'Click to toggle renderer backend controls'}
       >

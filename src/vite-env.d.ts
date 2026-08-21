@@ -39,6 +39,8 @@ declare global {
     rendererFallbackReason?: string;
     weatherPostProcessMode?: WeatherPostProcessMode;
     rendererAdapterInfo?: import('./renderer/deviceCapabilities').AdapterCapabilitySummary;
+    /** Boot probe — set on WebGPU success and hard-fail (Chrome vs Edge brand + reason). */
+    webgpuProbe?: import('./renderer/webgpuBootProbe').WebGpuProbeRecord;
     streetViewRendererDebug?: {
       getBackend: () => {
         rendererType?: 'webgpu' | 'webgl';

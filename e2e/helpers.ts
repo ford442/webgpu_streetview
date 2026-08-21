@@ -53,5 +53,12 @@ declare global {
     rendererType?: 'webgpu' | 'webgl';
     usingWebGPU?: boolean;
     usingWebGL?: boolean;
+    webgpuProbe?: {
+      ok: boolean;
+      stage: string;
+      reason: string;
+      browserBrand: string;
+      webglPreferenceDeferred?: boolean;
+    };
   }
 }

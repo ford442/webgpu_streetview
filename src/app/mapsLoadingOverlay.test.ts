@@ -73,7 +73,7 @@ describe('buildMapsLoadingOverlay', () => {
     expect(overlay?.isVisible).toBe(true);
   });
 
-  it('hides WebGPU prep once renderer is ready or on WebGL fallback', () => {
+  it('hides WebGPU prep once renderer is ready', () => {
     const ready = buildMapsLoadingOverlay({
       ...baseParams,
       mapsLoadStatus: 'canvas-ready',
@@ -81,14 +81,20 @@ describe('buildMapsLoadingOverlay', () => {
       scraperHealth: healthy,
     });
     expect(ready?.isVisible).toBe(false);
+  });
 
-    const fallback = buildMapsLoadingOverlay({
+  it('blocks the pano with a hard-fail overlay when WebGPU fails', () => {
+    const failed = buildMapsLoadingOverlay({
       ...baseParams,
       mapsLoadStatus: 'canvas-ready',
-      webgpuStatus: 'fallback',
+      webgpuStatus: 'failed',
       scraperHealth: healthy,
+      webgpuFailureReason: 'No compatible WebGPU adapter found',
     });
-    expect(fallback?.isVisible).toBe(false);
+    expect(failed?.isVisible).toBe(true);
+    expect(failed?.error).toMatch(/WebGPU is required/i);
+    expect(failed?.error).toMatch(/No compatible WebGPU adapter found/);
+    expect(failed?.retryable).toBe(true);
   });
 
   it('keeps scrape / auth / WebGPU user strings distinct', () => {
@@ -98,7 +104,8 @@ describe('buildMapsLoadingOverlay', () => {
     const authMsg = scraperHealthUserMessage(auth);
     expect(scrapeMsg).toMatch(/canvas|DOM/i);
     expect(authMsg).toMatch(/authentication|API key|referrer/i);
-    expect(WEBGPU_FAILURE_USER_MESSAGE).toMatch(/WebGPU/i);
+    expect(WEBGPU_FAILURE_USER_MESSAGE).toMatch(/WebGPU is required/i);
+    expect(WEBGPU_FAILURE_USER_MESSAGE).not.toMatch(/Falling back to WebGL/i);
     expect(scrapeMsg).not.toEqual(authMsg);
     expect(scrapeMsg).not.toEqual(WEBGPU_FAILURE_USER_MESSAGE);
     expect(authMsg).not.toEqual(WEBGPU_FAILURE_USER_MESSAGE);

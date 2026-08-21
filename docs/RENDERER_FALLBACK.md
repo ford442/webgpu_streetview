@@ -1,11 +1,13 @@
 # Renderer Fallback and Debugging
 
-Street View post-processing now has two renderer backends:
+Street View post-processing has a **WebGPU-required** boot contract this phase:
 
-- `webgpu`: the primary dual-pass renderer in `src/renderer/Renderer.ts`.
-- `webgl`: the WebGL2 debug/reference renderer in `src/renderer/WebGLFallbackRenderer.ts`.
+- `webgpu`: the primary dual-pass renderer in `src/renderer/Renderer.ts` (only live weather path).
+- `webgl`: the WebGL2 debug/reference renderer in `src/renderer/WebGLFallbackRenderer.ts` — **code retained, selection deferred**. A later wave may restore it as an **opt-in**, not a default rescue when WebGPU dies in Chrome/Edge.
 
-Both backends consume the same scraped Google Maps canvas, the same 40-float weather parameter layout, and the same normalized camera heading/pitch values from `WebGPUCanvas.tsx`. The Three.js car interior remains a separate transparent overlay above either backend.
+Failed WebGPU boot probe → **hard-fail** (blocking overlay on the pano). The app does **not** construct a WebGL weather context and does **not** elevate raw Street View as a weather session.
+
+The Three.js car interior remains a separate transparent overlay above the WebGPU backend when WebGPU is ready.
 
 ## Backend Selection
 
@@ -19,23 +21,28 @@ Use URL flags:
 ?legacyTransitions=1
 ```
 
-`?renderer=webgl` tries WebGL2 first and falls back to WebGPU if WebGL2 cannot initialize. `?renderer=webgpu` tries WebGPU first and falls back to WebGL2 if WebGPU cannot initialize. With no flag, the app tries WebGPU first, then WebGL2, then the raw Street View DOM fallback.
+With no flag (or `auto` / `webgpu`), the app probes **WebGPU only**. On failure it hard-fails with `window.webgpuProbe` + a blocking UI.
+
+`?renderer=webgl` / `?webgl` / `setBackend('webgl')` do **not** start a WebGL weather session this phase. Preference is recorded (`webgpuProbe.webglPreferenceDeferred`) and the boot still probes WebGPU only. Restore as opt-in in a later wave.
 
 The selected backend is exposed for browser automation and debugging:
 
 ```js
-window.rendererType              // "webgpu" | "webgl"
+window.rendererType              // "webgpu" when ready; unset on hard-fail
 window.usingWebGPU               // boolean
-window.usingWebGL                // boolean
-window.rendererFallbackReason    // string, empty when primary WebGPU is active
+window.usingWebGL                // always false this phase (GL weather deferred)
+window.rendererFallbackReason    // string, empty when WebGPU is active; probe reason on hard-fail
+window.webgpuProbe               // { ok, stage, reason, browserBrand, adapter, preference, webglPreferenceDeferred, capabilityMatrix }
 ```
+
+`window.webgpuProbe.browserBrand` distinguishes Chrome vs Edge (and others) so device-matrix failures are not hidden behind a silent GL rescue. `#216` gpu-chores must check `webgpuProbe.ok` (or share the single Renderer `GPUDevice`) and must **not** call `requestDevice` after a failed probe.
 
 Persist a preference or change debug settings from DevTools:
 
 ```js
-window.streetViewRendererDebug.setBackend('webgl');
 window.streetViewRendererDebug.setBackend('webgpu');
 window.streetViewRendererDebug.setBackend('auto');
+window.streetViewRendererDebug.setBackend('webgl'); // deferred — reloads, still probes WebGPU
 window.streetViewRendererDebug.getBackend();
 ```
 
@@ -55,7 +62,8 @@ Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chroma
   - `featureLevel` is only sent when the browser exposes the field (duck-typed via `GPUAdapter.prototype`), so older Chrome still boots with the historical request shape. When it is not sent, the capability matrix reports `featureLevel: 'unknown'`.
   - Otherwise, battery heuristic (`navigator.getBattery`) prefers low-power when unplugged and <=20%; default is high-performance.
   - Adapter identity comes from the synchronous `adapter.info` (SSOT); the deprecated `requestAdapterInfo()` is not used.
-- **Limit probing**: renderer checks required adapter limits (always `maxTextureDimension2D >= 4096`; compute weather additionally requires storage-buffer minima) and fails soft to fallback with a descriptive reason.
+- **Limit probing**: renderer checks required adapter limits (always `maxTextureDimension2D >= 4096`; compute weather additionally requires storage-buffer minima) and **hard-fails** the boot probe with a descriptive reason (no WebGL weather rescue).
+- **Compute smoke**: after device + canvas configure, a tiny `@compute` pipeline is created so Edge/Chrome shader-backend gaps fail the probe instead of mounting a broken weather session.
 - **Labels**: the device, its default queue, and the swap-chain configuration carry `streetview-device` / `streetview-queue` / `streetview-swapchain` (`DEVICE_LABELS`) so PIX, RenderDoc and `about:gpu` traces are readable.
 - **Canvas configure** is a policy (`resolveCanvasOutputPolicy` + `buildCanvasConfiguration` in `deviceInit.ts`), not four literals. The default boot is unchanged and pixel-identical to the historical SDR swap-chain:
   - `format: navigator.gpu.getPreferredCanvasFormat()`
@@ -68,11 +76,11 @@ Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chroma
 - **Uncaptured errors**: `device.addEventListener('uncapturederror')` counts errors onto `capabilityMatrix.uncapturedErrorCount` / `lastUncapturedError`, logs them, and surfaces them on the backend chip. This is separate from the `device.lost` promise so the two paths never double-dispose.
 - **Device loss path**: on `device.lost`, renderer stops rendering, tears down GPU resources, calls `context.unconfigure()`, and relies on `WebGPUCanvas.tsx` reinit (`reinitCounter`) to construct a fresh renderer instance.
 - **Adapter probe surface**: a summarized adapter record is logged once and exposed at `window.rendererAdapterInfo` for diagnostics.
-- **One device only**: `adapter.requestDevice()` is called in exactly one place (`Renderer.ts`); chores and weather share that device. Enforced by `deviceInit.test.ts`.
+- **One device only**: `adapter.requestDevice()` is called in exactly one place (`Renderer.ts`); chores and weather share that device. Enforced by `deviceInit.test.ts`. After a failed boot probe, `#216` chores must use `isWebGpuProbeOk()` / WASM-JS and must **not** call `requestDevice` again.
 
 ## In-App Control
 
-All of the above is also reachable without DevTools: a small `WebGPU` / `WebGL2 (fallback)` / `Raw fallback` chip is pinned to the bottom-left corner of the app whenever a renderer is active, in both FreeLook and Car Mode (it sits above the Three.js car overlay, so it stays clickable while driving). Clicking it expands a panel with WebGPU/WebGL2 buttons — these just call `window.streetViewRendererDebug.setBackend(...)` under the hood, so switching backends still persists the choice to `localStorage` and reloads the page, same as the DevTools API. When the active backend is WebGPU, the panel also shows a read-only diagnostics block (feature level, canvas color space / tone mapping, uncaptured-error count and the latest message) read from `window.rendererAdapterInfo.capabilityMatrix`. When the active backend is WebGL2, the panel also exposes the effect-isolation dropdown and a wireframe checkbox described below; both apply live, with no reload, visible immediately through the car windows if you're in Car Mode. The chip is a thin UI wrapper, not a second source of truth — `window.streetViewRendererDebug` remains fully supported for scripting and automation.
+All of the above is also reachable without DevTools: a small `WebGPU` / `WebGPU failed (Chrome|Edge|…)` chip is pinned to the bottom-left corner whenever backend info is available (including hard-fail). Clicking it expands a panel with a WebGPU button and a **disabled** “WebGL2 (deferred)” control. On success the panel shows the capability-matrix diagnostics; on hard-fail it shows `webgpuProbe` brand / stage / adapter / reason. The chip is a thin UI wrapper — `window.webgpuProbe` and `window.streetViewRendererDebug` remain the scripting surfaces.
 
 ## Effect Isolation
 
@@ -176,8 +184,8 @@ Current parity:
 - Shared source: Google Maps panorama canvas.
 - Shared controls: color grading, rain, snow, wind, fog, night intensity, headlights, dome light, sun/moon camera-aware lighting.
 - Shared camera state: heading, pitch, and zoom.
-- Shared fallback chain: WebGPU -> WebGL2 -> raw Street View DOM.
-- Shared browser breadcrumbs for Playwright and manual debugging.
+- Boot chain this phase: WebGPU probe → ready **or** hard-fail (WebGL weather selection deferred).
+- Shared browser breadcrumbs (`webgpuProbe`, renderer globals) for Playwright and manual debugging.
 
 Known differences:
 

@@ -3,6 +3,8 @@ import type { RendererBackendType } from '../renderer/RendererBackend';
 import type { MapsLoadStatus } from '../components/StreetView';
 import { migrateLocalStorageToIndexedDB } from '../offline/offlinePersistence';
 
+export type WebGpuConnectionStatus = 'initializing' | 'ready' | 'failed';
+
 export interface UseAppConnectionParams {
   canvas: HTMLCanvasElement | null;
   mapsLoadStatus: MapsLoadStatus;
@@ -13,7 +15,7 @@ export interface UseAppConnectionResult {
   showWelcome: boolean;
   isConnected: boolean;
   webGPUAvailable: boolean;
-  webgpuStatus: 'initializing' | 'ready' | 'fallback';
+  webgpuStatus: WebGpuConnectionStatus;
   rendererBackendInfo: {
     backendType: RendererBackendType | null;
     fallbackReason?: string;
@@ -33,6 +35,9 @@ export interface UseAppConnectionResult {
 /**
  * Welcome/connected gate, canvas/WebGPU readiness, maps→rendering promotion,
  * and one-shot offline IndexedDB migration.
+ *
+ * WebGPU hard-fail (`webgpuStatus === 'failed'`) blocks promotion to
+ * `rendering` and never elevates the raw Maps scraper as a weather rescue.
  */
 export function useAppConnection({
   canvas,
@@ -42,9 +47,7 @@ export function useAppConnection({
   const [showWelcome, setShowWelcome] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [webGPUAvailable, setWebGPUAvailable] = useState(true);
-  const [webgpuStatus, setWebgpuStatus] = useState<'initializing' | 'ready' | 'fallback'>(
-    'initializing',
-  );
+  const [webgpuStatus, setWebgpuStatus] = useState<WebGpuConnectionStatus>('initializing');
   const [rendererBackendInfo, setRendererBackendInfo] = useState<{
     backendType: RendererBackendType | null;
     fallbackReason?: string;
@@ -55,7 +58,7 @@ export function useAppConnection({
 
   const handleWebGPUStatus = useCallback((available: boolean) => {
     setWebGPUAvailable(available);
-    setWebgpuStatus(available ? 'ready' : 'fallback');
+    setWebgpuStatus(available ? 'ready' : 'failed');
   }, []);
 
   const handleBackendInfo = useCallback(
@@ -79,6 +82,8 @@ export function useAppConnection({
   }, [canvas, isCanvasReady]);
 
   useEffect(() => {
+    // Hard-fail: never promote Maps to "rendering" without a live WebGPU session.
+    if (webgpuStatus === 'failed') return;
     if (
       isCanvasReady &&
       webgpuStatus !== 'initializing' &&

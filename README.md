@@ -467,9 +467,9 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 ### WebGL2 Debug Fallback
 
-The post-processing canvas has an explicit WebGL2 fallback/debug backend in `src/renderer/WebGLFallbackRenderer.ts`. Use `?renderer=webgl` or `?webgl` to force it, `?renderer=webgpu` or `?webgpu` to prefer WebGPU, and no flag for automatic WebGPU -> WebGL2 -> raw Street View fallback.
+WebGPU is **required** for the weather/graphics path. A failed boot probe hard-fails with a blocking overlay (`window.webgpuProbe` records browser brand, adapter, and reason). The WebGL2 renderer in `src/renderer/WebGLFallbackRenderer.ts` remains in the repo but is **not selected** this phase (`?renderer=webgl` is deferred). A later wave may restore it as an opt-in.
 
-Runtime breadcrumbs are available as `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, and `window.rendererFallbackReason`. WebGL-only debugging supports `?effect=raw|color|weather|fog|night|lighting` and `?wireframe`.
+Runtime breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, `window.rendererFallbackReason`, and `window.webgpuProbe`.
 
 See [Renderer Fallback and Debugging](docs/RENDERER_FALLBACK.md) for parity notes and WebGL -> WebGPU porting guidance.
 
@@ -541,7 +541,7 @@ Index  Field            Range / Notes
 
 | Issue | Detail |
 |---|---|
-| WebGPU required | Chrome 113+ / Edge 113+. Falls back to the raw Google Maps canvas if unavailable. |
+| WebGPU required | Chrome 113+ / Edge 113+. Boot probe hard-fails (blocking overlay) if unavailable — WebGL weather deferred. |
 | Canvas scraping fragility | Google Maps DOM changes will silently break the canvas feed. |
 | Input hijacking | `InputHandler` is window-scoped. All UI overlays must call `e.stopPropagation()`. |
 | Mobile | WebGPU on mobile is limited; full car mode requires desktop or high-end tablet. |

@@ -140,9 +140,9 @@ export function scraperHealthUserMessage(health: ScraperHealth): string | null {
   }
 }
 
-/** Distinct WebGPU/renderer failure copy (not scrape). */
+/** Distinct WebGPU/renderer failure copy (not scrape). WebGL weather is deferred — hard-fail. */
 export const WEBGPU_FAILURE_USER_MESSAGE =
-  'WebGPU is unavailable or failed to initialize. Falling back to WebGL / raw Street View when possible.';
+  'WebGPU is required and failed to initialize. This browser or GPU cannot run the Street View weather renderer.';
 
 export function reduceScraperHealth(
   state: ScraperHealth,

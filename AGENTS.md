@@ -359,20 +359,18 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 ### WebGL2 Fallback / Debug Renderer
 
-`src/renderer/createStreetViewRenderer.ts` selects the active post-processing backend. The default path tries WebGPU first, then WebGL2, then lets the app expose raw Street View if both renderer backends fail. Explicit flags:
+`src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required** this phase: a failed boot probe is a hard-fail (blocking overlay). The app does **not** construct `WebGLFallbackRenderer` as a rescue — including for `?renderer=webgl` / stale localStorage (preference is deferred; see `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:
 
 ```
 ?renderer=webgpu
-?renderer=webgl
+?renderer=webgl   # deferred — still probes WebGPU only
 ?webgpu
-?webgl
+?webgl            # deferred
 ```
 
-The selected backend is exposed as `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, and `window.rendererFallbackReason`. DevTools/automation can call `window.streetViewRendererDebug.setBackend('webgl' | 'webgpu' | 'auto')`.
+Breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL` (always false this phase), `window.rendererFallbackReason`, and `window.webgpuProbe` (`ok`, `stage`, `reason`, `browserBrand` Chrome vs Edge, `adapter`, capability matrix). DevTools: `window.streetViewRendererDebug.setBackend('webgpu' | 'auto')`; `setBackend('webgl')` reloads but does not start GL weather.
 
-The WebGL2 backend (`src/renderer/WebGLFallbackRenderer.ts`) shares the scraped panorama source, camera heading/pitch/zoom, and the same 40-float weather layout. It is an SDR single-pass approximation for debugging, not a full HDR parity renderer. It supports `?effect=raw|color|weather|fog|night|lighting` and `?wireframe` for effect isolation.
-
-When porting WebGL debug effects back to WebGPU, keep `WebGPUCanvas.tsx`, `WeatherPostProcessor.ts`, `weather-post.wgsl`, and `WebGLFallbackRenderer.ts` aligned on weather uniform indices. See `docs/RENDERER_FALLBACK.md`.
+`WebGLFallbackRenderer.ts` remains in the repo for a later **opt-in** wave (SDR approximation; same 40-float layout). Keep uniform indices aligned when touching weather WGSL/TS. See `docs/RENDERER_FALLBACK.md`.
 
 ### GPU Transition System
 
@@ -560,7 +558,7 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - **Artifacts**: traces / screenshots / video under `test-results/` and `playwright-report/` (gitignored); CI uploads them on failure
 
 ### Unit tests (Vitest/jsdom) vs. browser E2E (Playwright)
-- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
+- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
 
@@ -602,7 +600,7 @@ invent behaviour. Full detail and the plan for retiring the hand-written WAT:
 - `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
 - `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
-- `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts` — Backend preference/debug-flag parsing and the WebGPU→WebGL2→raw fallback chain.
+- `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts`, `src/renderer/webgpuBootProbe.test.ts` — Backend preference/debug-flag parsing, WebGPU-required hard-fail (no WebGL construct), and `webgpuProbe` brand/stage records.
 - `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
 - `src/app/historicalExperience.test.ts` — Historical comparison after-label derivation.
 - `src/car/__tests__/rearViewFeed.test.ts` — Static-API URL/cache-key builders and the cost-control policy: throttle, dedupe, blockers, session budget, failure circuit breaker, kill switch.
@@ -785,7 +783,7 @@ Single-product Vite + React project; `npm install` / `npm ci` is the only depend
 - **Tests**: `npm test` (Vitest). `src/setupTests.ts` polyfills `TextDecoder`/`TextEncoder`, which jsdom does not implement (some transitive deps expect them at module-load time).
 - **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
 - **Symptom → cause: stuck at "Connecting to Google Maps... 15%" with a black canvas and NO error banner.** This means the key string is valid enough to load the Maps JS library (`window.__mapsApiLoadState.status === 'ready'`) but Google fires `gm_authFailure` when the Street View panorama actually renders, so no `<canvas>` is ever produced and the loading gate never advances. The usual cause is the key's **HTTP-referrer restriction not allowing the current origin** (e.g. a key scoped to `test.1ink.us`/`go.1ink.us` will fail on `http://localhost:3000`), or disabled billing / Maps JavaScript API. Fix it in Google Cloud Console (add `http://localhost:3000/*` to the key's allowlist); it is not a code or VM bug. Note the dev server is plain **http**, so the allowlist entry must be `http://localhost:3000/*` — an `https://localhost:3000/*` entry will NOT match and still fails. To see the exact reason, capture full browser console output while loading a minimal panorama page: Google logs the precise error (`RefererNotAllowedMapError`, `ApiNotActivatedMapError`, `BillingNotEnabledMapError`, or `InvalidKeyMapError`) plus the exact "site URL to be authorized". Referrer changes can take several minutes to propagate.
-- **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the renderer falls back to WebGL2 → raw. Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
+- **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the boot probe **hard-fails** (blocking overlay; no WebGL weather session). Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
 - `package-lock.json` is tracked. Prefer `npm ci` in automation (CI already does); always commit lockfile updates with dependency changes.
 
 ---

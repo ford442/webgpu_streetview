@@ -286,21 +286,18 @@ export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean 
     return fallback;
 }
 
-export function exposeRendererDebugGlobals(
-    backendType: RendererBackendType,
-    fallbackReason: string | undefined,
+/**
+ * WebGL weather selection is deferred this phase (see docs/RENDERER_FALLBACK.md).
+ * `setBackend('webgl')` records the preference for a future opt-in wave but forces
+ * a WebGPU probe on reload instead of constructing WebGLFallbackRenderer.
+ */
+export const WEBGL_WEATHER_DEFERRED_MESSAGE =
+    'WebGL weather path is deferred; WebGPU is required. Preference ignored until a later opt-in wave.';
+
+function installStreetViewRendererDebug(
     debugOptions: RendererDebugOptions,
     applyDebugOptions: (options: Partial<RendererDebugOptions>) => void,
-    weatherPostProcessMode?: WeatherPostProcessMode
 ): void {
-    if (typeof window === 'undefined') return;
-
-    window.rendererType = backendType;
-    window.usingWebGPU = backendType === 'webgpu';
-    window.usingWebGL = backendType === 'webgl';
-    window.rendererFallbackReason = fallbackReason || '';
-    window.weatherPostProcessMode = weatherPostProcessMode || 'fragment';
-
     window.streetViewRendererDebug = {
         getBackend: () => ({
             rendererType: window.rendererType,
@@ -310,6 +307,13 @@ export function exposeRendererDebugGlobals(
         }),
         setBackend: (backend: RendererBackendPreference) => {
             if (!VALID_BACKENDS.has(backend)) return;
+            if (backend === 'webgl') {
+                console.warn(`[Renderer] ${WEBGL_WEATHER_DEFERRED_MESSAGE}`);
+                // Persist so a later wave can honor it, but boot still probes WebGPU only.
+                window.localStorage.setItem('streetview.renderer', 'webgl');
+                window.location.reload();
+                return;
+            }
             window.localStorage.setItem('streetview.renderer', backend);
             window.location.reload();
         },
@@ -329,4 +333,40 @@ export function exposeRendererDebugGlobals(
             window.location.reload();
         },
     };
+}
+
+export function exposeRendererDebugGlobals(
+    backendType: RendererBackendType,
+    fallbackReason: string | undefined,
+    debugOptions: RendererDebugOptions,
+    applyDebugOptions: (options: Partial<RendererDebugOptions>) => void,
+    weatherPostProcessMode?: WeatherPostProcessMode
+): void {
+    if (typeof window === 'undefined') return;
+
+    window.rendererType = backendType;
+    window.usingWebGPU = backendType === 'webgpu';
+    window.usingWebGL = backendType === 'webgl';
+    window.rendererFallbackReason = fallbackReason || '';
+    window.weatherPostProcessMode = weatherPostProcessMode || 'fragment';
+
+    installStreetViewRendererDebug(debugOptions, applyDebugOptions);
+}
+
+/** Hard-fail breadcrumbs when WebGPU boot probe fails — never claims a WebGL weather session. */
+export function exposeRendererHardFailGlobals(
+    fallbackReason: string,
+    debugOptions: RendererDebugOptions,
+): void {
+    if (typeof window === 'undefined') return;
+
+    window.rendererType = undefined;
+    window.usingWebGPU = false;
+    window.usingWebGL = false;
+    window.rendererFallbackReason = fallbackReason;
+    window.weatherPostProcessMode = undefined;
+
+    installStreetViewRendererDebug(debugOptions, () => {
+        // No live renderer to apply debug options onto.
+    });
 }

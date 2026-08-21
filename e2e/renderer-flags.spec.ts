@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { dismissWelcome, getUncaught, gotoApp, hasMapsKey } from './helpers';
 
 test.describe('renderer debug flags', () => {
-  test('loads with ?renderer=webgl without uncaught exceptions', async ({ page }) => {
+  test('loads with ?renderer=webgl without uncaught exceptions (GL deferred)', async ({ page }) => {
     await gotoApp(page, '/?renderer=webgl');
     await dismissWelcome(page);
 
@@ -10,19 +10,30 @@ test.describe('renderer debug flags', () => {
     expect(getUncaught(page)).toEqual([]);
   });
 
-  test('sets window.rendererType to webgl when renderer mounts @keyed', async ({ page }) => {
+  test('does not start a WebGL weather session when ?renderer=webgl @keyed', async ({ page }) => {
     test.skip(
       !hasMapsKey,
-      'window.rendererType is only set after Maps canvas scrape; needs REACT_APP_MAPS_API_KEY',
+      'renderer breadcrumbs are only set after Maps canvas scrape; needs REACT_APP_MAPS_API_KEY',
     );
 
     await gotoApp(page, '/?renderer=webgl');
     await dismissWelcome(page);
 
+    // WebGL weather is deferred: either WebGPU boots, or hard-fail — never usingWebGL.
     await expect
-      .poll(async () => page.evaluate(() => window.rendererType ?? null), { timeout: 90_000 })
-      .toBe('webgl');
+      .poll(async () => page.evaluate(() => window.usingWebGL === true), { timeout: 90_000 })
+      .toBe(false);
 
-    await expect.poll(async () => page.evaluate(() => window.usingWebGL === true)).toBe(true);
+    const probe = await page.evaluate(() => ({
+      usingWebGL: window.usingWebGL ?? false,
+      rendererType: window.rendererType ?? null,
+      webglDeferred: window.webgpuProbe?.webglPreferenceDeferred ?? false,
+      probeOk: window.webgpuProbe?.ok ?? null,
+    }));
+
+    expect(probe.usingWebGL).toBe(false);
+    expect(probe.webglDeferred).toBe(true);
+    // Capable GPU → webgpu; headless CI without WebGPU → hard-fail (null).
+    expect(probe.rendererType === 'webgpu' || probe.rendererType === null).toBe(true);
   });
 });

@@ -16,7 +16,7 @@ contract).
 |------|-------------|-------|
 | Fragment (default) | `public/shaders/weather-post.wgsl` | HDR `rgba16float`, full effect set |
 | Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba32float` storage texture + blit; adds the depth-proxy storage target |
-| WebGL2 fallback | `FRAGMENT_SHADER` in `src/renderer/WebGLFallbackRenderer.ts` | SDR approximation, no fbm rolling layer, no camera FX |
+| WebGL2 (deferred) | `FRAGMENT_SHADER` in `src/renderer/WebGLFallbackRenderer.ts` | SDR approximation retained in-repo; **not selected** this phase (WebGPU hard-fail instead). Later wave may restore as opt-in. |
 
 All three read the same 40-float uniform block. Shared WGSL helpers are held
 byte-identical between the two WGSL paths and guarded by

@@ -1,23 +1,24 @@
 import { createStreetViewRenderer } from './createStreetViewRenderer';
 
-// No mocking here on purpose: jsdom provides `canvas.getContext('webgl2') === null`
-// and `navigator.gpu === undefined` out of the box, so both real backends already
-// fail their own internal guards. This exercises the genuine "no GPU available"
-// fallback path without needing any WebGPU/WebGL mocking infrastructure.
+// No mocking here on purpose: jsdom provides `navigator.gpu === undefined`
+// so the real WebGPU Renderer fails its own internal guard. WebGL weather is
+// no longer constructed as a rescue — hard-fail is the expected contract.
 describe('createStreetViewRenderer (real backends, no GPU in jsdom)', () => {
   const resetSearch = () => window.history.pushState({}, '', '/');
 
   beforeEach(resetSearch);
   afterEach(resetSearch);
 
-  it('resolves gracefully with no renderer when neither backend can initialize', async () => {
+  it('hard-fails with no renderer when WebGPU cannot initialize', async () => {
     const canvas = document.createElement('canvas');
     const created = await createStreetViewRenderer(canvas);
 
     expect(created.renderer).toBeNull();
     expect(created.backendType).toBeNull();
-    expect(created.fallbackReason).toBe('WebGL2 renderer failed to initialize');
+    expect(created.fallbackReason).toMatch(/WebGPU/i);
     expect(created.debugOptions).toEqual({ effectIsolation: 'all', wireframe: false });
+    expect(window.usingWebGL).toBe(false);
+    expect(window.webgpuProbe?.ok).toBe(false);
   });
 
   it('does not throw and resolves a default debugOptions object even with URL overrides', async () => {
@@ -28,5 +29,7 @@ describe('createStreetViewRenderer (real backends, no GPU in jsdom)', () => {
     expect(created.renderer).toBeNull();
     expect(created.backendType).toBeNull();
     expect(created.debugOptions).toEqual({ effectIsolation: 'fog', wireframe: true });
+    expect(window.usingWebGL).toBe(false);
+    expect(window.webgpuProbe?.webglPreferenceDeferred).toBe(true);
   });
 });

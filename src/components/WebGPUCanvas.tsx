@@ -222,7 +222,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                     (result.fallbackReason ? ` (${result.fallbackReason})` : '')
                 );
             } else {
-                console.warn("Renderer initialization failed. Raw Street View fallback active.");
+                console.warn(
+                    'WebGPU renderer initialization failed. Hard-fail — WebGL weather deferred.',
+                    result.fallbackReason || '',
+                );
                 onWebGPUStatusRef.current?.(false);
                 onBackendInfoRef.current?.({ backendType: null, fallbackReason: result.fallbackReason });
             }

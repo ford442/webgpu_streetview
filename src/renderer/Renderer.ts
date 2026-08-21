@@ -31,7 +31,12 @@ import {
     RendererInitOptions,
     StreetViewRenderer,
     WeatherPostProcessMode,
+    getRendererPreference,
 } from './RendererBackend';
+import {
+    adapterInfoFromGpuAdapter,
+    publishWebGpuProbe,
+} from './webgpuBootProbe';
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
@@ -90,9 +95,20 @@ export class Renderer implements StreetViewRenderer {
         this._fallbackReason = undefined;
         this.isDestroyed = false;
         this.isDisposed = false;
+
+        const preference = getRendererPreference();
+        const webglPreferenceDeferred = preference === 'webgl';
+
         if (!navigator.gpu) {
             this._fallbackReason = 'WebGPU is not supported in this browser';
-            console.warn('WebGPU not supported. Using StreetView fallback.');
+            publishWebGpuProbe({
+                ok: false,
+                stage: 'navigator',
+                reason: this._fallbackReason,
+                preference,
+                webglPreferenceDeferred,
+            });
+            console.warn('WebGPU not supported. Hard-fail — WebGL weather deferred.');
             return false;
         }
 
@@ -101,24 +117,57 @@ export class Renderer implements StreetViewRenderer {
             const adapter = await navigator.gpu.requestAdapter(adapterOptions);
             if (!adapter) {
                 this._fallbackReason = 'No compatible WebGPU adapter found';
-                console.warn('No WebGPU adapter found. Fallback active.');
+                publishWebGpuProbe({
+                    ok: false,
+                    stage: 'adapter',
+                    reason: this._fallbackReason,
+                    preference,
+                    webglPreferenceDeferred,
+                });
+                console.warn('No WebGPU adapter found. Hard-fail — WebGL weather deferred.');
                 return false;
             }
+
+            const probeAdapter = adapterInfoFromGpuAdapter(adapter);
 
             const limitCheck = checkRequiredLimits(adapter, this.weatherPostProcessMode);
             if (!limitCheck.ok) {
                 this._fallbackReason = limitCheck.reason;
+                publishWebGpuProbe({
+                    ok: false,
+                    stage: 'limits',
+                    reason: this._fallbackReason,
+                    preference,
+                    webglPreferenceDeferred,
+                    adapter: probeAdapter,
+                });
                 console.warn('[Renderer] WebGPU adapter limits are insufficient:', limitCheck.reason);
                 return false;
             }
 
             const requiredFeatures = collectOptionalDeviceFeatures(adapter);
 
-            this.device = await adapter.requestDevice({
-                label: DEVICE_LABELS.device,
-                requiredFeatures,
-                requiredLimits: limitCheck.requiredLimits,
-            });
+            try {
+                this.device = await adapter.requestDevice({
+                    label: DEVICE_LABELS.device,
+                    requiredFeatures,
+                    requiredLimits: limitCheck.requiredLimits,
+                });
+            } catch (deviceError) {
+                this._fallbackReason = deviceError instanceof Error
+                    ? deviceError.message
+                    : String(deviceError);
+                publishWebGpuProbe({
+                    ok: false,
+                    stage: 'device',
+                    reason: this._fallbackReason,
+                    preference,
+                    webglPreferenceDeferred,
+                    adapter: probeAdapter,
+                });
+                console.warn('[Renderer] requestDevice failed:', this._fallbackReason);
+                return false;
+            }
             labelDevice(this.device);
 
             this.device.lost.then((info) => {
@@ -130,7 +179,15 @@ export class Renderer implements StreetViewRenderer {
             const context = this.canvas.getContext('webgpu');
             if (!context) {
                 this._fallbackReason = 'Could not acquire a WebGPU canvas context';
-                console.warn('Could not get WebGPU context. Fallback active.');
+                publishWebGpuProbe({
+                    ok: false,
+                    stage: 'canvas',
+                    reason: this._fallbackReason,
+                    preference,
+                    webglPreferenceDeferred,
+                    adapter: probeAdapter,
+                });
+                console.warn('Could not get WebGPU context. Hard-fail — WebGL weather deferred.');
                 return false;
             }
 
@@ -174,6 +231,27 @@ export class Renderer implements StreetViewRenderer {
             );
             attachUncapturedErrorHandler(this.device, capabilityMatrix);
 
+            // Boot-probe compute smoke: catch Edge/Chrome shader backend gaps before weather mounts.
+            try {
+                await this.runComputeBootProbe();
+            } catch (computeError) {
+                this._fallbackReason = computeError instanceof Error
+                    ? computeError.message
+                    : String(computeError);
+                publishWebGpuProbe({
+                    ok: false,
+                    stage: 'compute',
+                    reason: this._fallbackReason,
+                    preference,
+                    webglPreferenceDeferred,
+                    adapter: probeAdapter,
+                    capabilityMatrix,
+                });
+                console.warn('[Renderer] Compute boot probe failed:', this._fallbackReason);
+                this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
+                return false;
+            }
+
             this.samplerAnisotropy = 1;
             this.sampler = this.device.createSampler(this.buildSamplerDescriptor(1));
 
@@ -205,12 +283,44 @@ export class Renderer implements StreetViewRenderer {
                 console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
             }
 
+            publishWebGpuProbe({
+                ok: true,
+                stage: 'ok',
+                reason: '',
+                preference,
+                webglPreferenceDeferred,
+                adapter: probeAdapter,
+                capabilityMatrix,
+            });
+
             return true;
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
+            publishWebGpuProbe({
+                ok: false,
+                stage: 'device',
+                reason: this._fallbackReason,
+                preference,
+                webglPreferenceDeferred,
+            });
             console.warn('WebGPU init failed:', e instanceof Error ? e.message : String(e));
             return false;
         }
+    }
+
+    /** Tiny @compute pipeline create — surfaces backend compile failures during boot. */
+    private async runComputeBootProbe(): Promise<void> {
+        const shader = this.device.createShaderModule({
+            label: 'streetview-boot-compute-probe',
+            code: `@compute @workgroup_size(1) fn main() {}`,
+        });
+        this.device.createComputePipeline({
+            label: 'streetview-boot-compute-probe-pipeline',
+            layout: 'auto',
+            compute: { module: shader, entryPoint: 'main' },
+        });
+        // Yield so async compilation / uncapturederror can surface before we continue.
+        await this.device.queue.onSubmittedWorkDone();
     }
 
     public getWeatherPostProcessMode(): WeatherPostProcessMode {

@@ -1,8 +1,10 @@
 import type { MapsLoadStatus } from '../components/StreetView';
 import {
   scraperHealthUserMessage,
+  WEBGPU_FAILURE_USER_MESSAGE,
   type ScraperHealth,
 } from '../utils/scraperHealth';
+import type { WebGpuConnectionStatus } from './useAppConnection';
 
 export interface MapsLoadingOverlayConfig {
   isVisible: boolean;
@@ -18,12 +20,14 @@ export interface BuildMapsLoadingOverlayParams {
   effectiveMapsKey: string;
   mapsLoadStatus: MapsLoadStatus;
   isRetryingMapsAuth: boolean;
-  webgpuStatus: 'initializing' | 'ready' | 'fallback';
+  webgpuStatus: WebGpuConnectionStatus;
   isCanvasReady: boolean;
   canvasError: string | null;
   mapsAuthError: string | null;
   scraperHealth: ScraperHealth;
   handleRetryMapsAuth: () => void;
+  /** Technical probe reason when WebGPU hard-fails. */
+  webgpuFailureReason?: string | null;
 }
 
 /**
@@ -33,7 +37,7 @@ export interface BuildMapsLoadingOverlayParams {
  * Failure copy is intentionally distinct:
  *  - api-error / auth-blocked → Maps key / referrer
  *  - scrape lost / timeout → canvas scrape
- *  - WebGPU strings live in scraperHealth.WEBGPU_FAILURE_USER_MESSAGE (renderer chip)
+ *  - WebGPU hard-fail → WEBGPU_FAILURE_USER_MESSAGE (+ probe reason)
  */
 export function buildMapsLoadingOverlay(
   params: BuildMapsLoadingOverlayParams,
@@ -49,6 +53,7 @@ export function buildMapsLoadingOverlay(
     mapsAuthError,
     scraperHealth,
     handleRetryMapsAuth,
+    webgpuFailureReason,
   } = params;
 
   if (!isConnected) return null;
@@ -61,6 +66,20 @@ export function buildMapsLoadingOverlay(
         'No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.',
       retryable: true,
       onRetry: handleRetryMapsAuth,
+    };
+  }
+
+  // WebGPU hard-fail blocks the pano — do not fall through to WebGL / raw weather.
+  if (webgpuStatus === 'failed') {
+    const detail = webgpuFailureReason?.trim();
+    return {
+      isVisible: true,
+      message: '',
+      error: detail
+        ? `${WEBGPU_FAILURE_USER_MESSAGE} (${detail})`
+        : WEBGPU_FAILURE_USER_MESSAGE,
+      retryable: true,
+      onRetry: () => window.location.reload(),
     };
   }
 

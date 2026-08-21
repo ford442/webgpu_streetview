@@ -32,10 +32,11 @@ export function StreetViewStage({
           left: 0,
           width: '100%',
           height: '100%',
-          zIndex: connection.isConnected && connection.webGPUAvailable ? 0 : 2,
+          // Keep the Maps scraper hidden while connected. WebGPU hard-fail must
+          // not elevate raw Street View as a weather rescue (opacity stays 1).
+          zIndex: connection.isConnected ? 0 : 2,
           opacity: 1,
-          pointerEvents:
-            connection.isConnected && connection.webGPUAvailable ? 'none' : 'auto',
+          pointerEvents: connection.isConnected ? 'none' : 'auto',
         }}
       >
         <StreetView
@@ -77,7 +78,7 @@ export function StreetViewStage({
       >
         {connection.isConnected &&
           connection.isCanvasReady &&
-          connection.webgpuStatus !== 'initializing' && (
+          connection.webgpuStatus === 'ready' && (
             <MainView mapsApiKey={maps.effectiveMapsKey} />
           )}
 

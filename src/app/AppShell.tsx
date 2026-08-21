@@ -395,6 +395,10 @@ export function AppShell() {
     mapsAuthError: maps.mapsAuthError,
     scraperHealth: maps.scraperHealth,
     handleRetryMapsAuth: maps.handleRetryMapsAuth,
+    webgpuFailureReason:
+      connection.rendererBackendInfo?.fallbackReason ||
+      (typeof window !== 'undefined' ? window.webgpuProbe?.reason : undefined) ||
+      null,
   });
 
   return (
