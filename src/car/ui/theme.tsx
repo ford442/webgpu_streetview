@@ -48,10 +48,7 @@ export const ThemeProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ theme, children }) => {
   const vars = themeVariables[theme];
-  const style = Object.entries(vars).reduce<React.CSSProperties>((acc, [k, v]) => {
-    (acc as any)[k] = v;
-    return acc;
-  }, {});
+  const style = vars as React.CSSProperties;
   return (
     <ThemeContext.Provider value={theme}>
       <div style={style}>{children}</div>

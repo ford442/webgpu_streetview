@@ -55,7 +55,7 @@ export function createGlassMaterial(tintColor: string, darkness: number): THREE.
 export class VehiclePBRMaterials {
     private textures: THREE.Texture[] = [];
     private materials: THREE.Material[] = [];
-    private materialCache: Map<string, THREE.Material> = new Map();
+    private materialCache: Map<string, THREE.MeshPhysicalMaterial> = new Map();
     private defaultQuality: MaterialQuality;
     private effectOverrides: Partial<MaterialEffects> | null;
 
@@ -187,8 +187,9 @@ export class VehiclePBRMaterials {
 
     createLeatherMaterial(color: number = 0x8B4513, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
         const cacheKey = this.getCacheKey('leather', color, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size, effects } = this.getPreset(quality);
@@ -273,8 +274,9 @@ export class VehiclePBRMaterials {
 
     createBrushedMetalMaterial(color: number = 0xcccccc, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
         const cacheKey = this.getCacheKey('metal', color, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size, effects } = this.getPreset(quality);
@@ -385,8 +387,9 @@ export class VehiclePBRMaterials {
 
     createCarbonFiberMaterial(quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
         const cacheKey = this.getCacheKey('carbon', undefined, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size, effects } = this.getPreset(quality);
@@ -460,8 +463,9 @@ export class VehiclePBRMaterials {
 
     createVelvetMaterial(color: number = 0x800020, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
         const cacheKey = this.getCacheKey('velvet', color, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size, effects } = this.getPreset(quality);
@@ -509,8 +513,9 @@ export class VehiclePBRMaterials {
 
     createCarPaintMaterial(color: number = 0xcc0000, quality?: MaterialQuality): THREE.MeshPhysicalMaterial {
         const cacheKey = this.getCacheKey('carpaint', color, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size, effects } = this.getPreset(quality);
@@ -565,8 +570,9 @@ export class VehiclePBRMaterials {
 
     createDustOverlay(intensity: number = 0.3, quality?: MaterialQuality): THREE.MeshStandardMaterial {
         const cacheKey = this.getCacheKey('dust', intensity, quality);
-        if (this.materialCache.has(cacheKey)) {
-            return this.materialCache.get(cacheKey) as any;
+        const cached = this.materialCache.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const { textureSize: size } = this.getPreset(quality);

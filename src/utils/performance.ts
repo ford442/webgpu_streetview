@@ -1,6 +1,6 @@
 /** @fileoverview Performance optimization utilities including LOD, texture optimization, and frustum culling */
 import * as THREE from 'three';
-import { MATERIAL_TEXTURE_PROPS } from './memoryProfiler';
+import { MATERIAL_TEXTURE_PROPS, readMaterialTexture } from './memoryProfiler';
 
 // ============================================================
 // LOD (Level of Detail) System
@@ -481,12 +481,10 @@ export function getSceneMetrics(scene: THREE.Scene): PerformanceMetrics {
       
       // Count textures
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      materials.forEach(mat => {
-        mat as THREE.MeshStandardMaterial;
-        // Check for common texture properties
-        const matAny = mat as any;
-        MATERIAL_TEXTURE_PROPS.forEach(prop => {
-          if (matAny[prop]) textures.add(matAny[prop]);
+      materials.forEach((mat) => {
+        MATERIAL_TEXTURE_PROPS.forEach((prop) => {
+          const tex = readMaterialTexture(mat, prop);
+          if (tex) textures.add(tex);
         });
       });
     }

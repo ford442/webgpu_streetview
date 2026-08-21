@@ -3,6 +3,8 @@
  * Designed to work with remote audio streams and local Web Audio API.
  */
 
+import { createBrowserAudioContext } from './createAudioContext';
+
 export interface AudioFrequencyData {
   bass: number;         // 0..1 (20Hz - 250Hz)
   lowMid: number;       // 0..1 (250Hz - 500Hz)
@@ -55,7 +57,7 @@ export class AudioAnalyzer {
     try {
       // Create an audio context if one doesn't exist
       if (!this.audioContext) {
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.audioContext = createBrowserAudioContext();
       }
 
       // Create hidden audio element

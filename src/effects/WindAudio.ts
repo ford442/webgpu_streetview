@@ -3,6 +3,8 @@
  * Creates procedural wind noise that varies with car speed
  */
 
+import { createBrowserAudioContext } from '../audio/createAudioContext';
+
 export interface WindAudioConfig {
   baseVolume: number;
   maxVolume: number;
@@ -40,7 +42,7 @@ export class WindAudio {
   async init(): Promise<boolean> {
     try {
       if (!this.audioContext) {
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.audioContext = createBrowserAudioContext();
       }
 
       // Create gain node for volume control
