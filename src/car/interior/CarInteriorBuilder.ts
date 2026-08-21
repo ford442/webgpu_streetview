@@ -95,6 +95,7 @@ export class CarInteriorBuilder {
     private buildSteeringWheel(): void {
         const wheelCfg = resolveSteeringWheel(this.vehicleConfig);
         this.result.steeringWheelGroup = new THREE.Group();
+        this.result.steeringWheelGroup.name = 'SteeringWheel';
         this.result.steeringWheelGroup.position.set(
             wheelCfg.position.x,
             wheelCfg.position.y,
@@ -453,7 +454,7 @@ export class CarInteriorBuilder {
 
         const glassMat = createGlassMaterial('#eef5f8', 0.1);
         this.result.windshieldGlassMesh = new THREE.Mesh(geometry, glassMat);
-        this.result.windshieldGlassMesh.name = 'windshieldGlass';
+        this.result.windshieldGlassMesh.name = 'Windshield';
         this.result.windshieldGlassMesh.position.set(0, 1.3, -0.88);
         this.result.windshieldGlassMesh.rotation.set(-0.15, 0, 0);
         this.interiorGroup.add(this.result.windshieldGlassMesh);
@@ -519,6 +520,7 @@ export class CarInteriorBuilder {
 
         const leftMirrorPlaneGeo = new THREE.PlaneGeometry(0.15, 0.2);
         this.result.leftMirrorPlane = new THREE.Mesh(leftMirrorPlaneGeo, this.materials.mirror);
+        this.result.leftMirrorPlane.name = 'SideMirrorL';
         this.result.leftMirrorPlane.position.set(-0.98, 1.05, -0.52);
         this.result.leftMirrorPlane.rotation.set(0, 0.5, 0);
         this.interiorGroup.add(this.result.leftMirrorPlane);
@@ -531,6 +533,7 @@ export class CarInteriorBuilder {
 
         const rightMirrorPlaneGeo = new THREE.PlaneGeometry(0.15, 0.2);
         this.result.rightMirrorPlane = new THREE.Mesh(rightMirrorPlaneGeo, this.materials.mirror);
+        this.result.rightMirrorPlane.name = 'SideMirrorR';
         this.result.rightMirrorPlane.position.set(0.98, 1.05, -0.52);
         this.result.rightMirrorPlane.rotation.set(0, -0.5, 0);
         this.interiorGroup.add(this.result.rightMirrorPlane);
@@ -538,6 +541,7 @@ export class CarInteriorBuilder {
 
     private buildWipers(): void {
         this.result.wiperLeft = new THREE.Group();
+        this.result.wiperLeft.name = 'WiperL';
         this.result.wiperLeft.position.set(-0.2, 1.1, -0.9);
         this.interiorGroup.add(this.result.wiperLeft);
 
@@ -548,6 +552,7 @@ export class CarInteriorBuilder {
         this.result.wiperLeft.add(leftWiperBlad);
 
         this.result.wiperRight = new THREE.Group();
+        this.result.wiperRight.name = 'WiperR';
         this.result.wiperRight.position.set(0.2, 1.1, -0.9);
         this.interiorGroup.add(this.result.wiperRight);
 

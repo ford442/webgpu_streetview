@@ -36,15 +36,16 @@ float streak(vec2 uv, float seed) {
 
 float wiperClear(vec2 uv) {
   if (!wiperActive) return 0.0;
-  float sweep = sin(wiperPhase * 6.28318);
+  // Match CarInteriorAnimator: angle = sin(phase * PI) * PI/4.
+  float sweep = sin(wiperPhase * 3.14159265);
   vec2 pivot = vec2(0.25, 0.02);
   vec2 dir = uv - pivot;
-  float ang = atan(dir.x, dir.y) - sweep * 1.1;
-  float arc = smoothstep(0.18, 0.0, abs(ang)) * smoothstep(0.08, 0.55, length(dir));
+  float ang = atan(dir.x, dir.y) - sweep * 0.85;
+  float arc = smoothstep(0.16, 0.0, abs(ang)) * smoothstep(0.06, 0.62, length(dir));
   vec2 pivot2 = vec2(0.75, 0.02);
   vec2 dir2 = uv - pivot2;
-  float ang2 = atan(dir2.x, dir2.y) + sweep * 1.1;
-  float arc2 = smoothstep(0.18, 0.0, abs(ang2)) * smoothstep(0.08, 0.55, length(dir2));
+  float ang2 = atan(dir2.x, dir2.y) + sweep * 0.85;
+  float arc2 = smoothstep(0.16, 0.0, abs(ang2)) * smoothstep(0.06, 0.62, length(dir2));
   return max(arc, arc2);
 }
 

@@ -4,6 +4,9 @@
  * Hot PCM comes from WASM `fill_engine_noise` when the module is available;
  * otherwise a pure-JS fill (same ABI) or two oscillators so a missing binary
  * never silences the cabin. Mixes into the Web Audio graph beside radio/wind.
+ *
+ * Cabin IR (`fill_cabin_ir`) is intentionally not added here — new DSP
+ * exports go through the C++ SSOT + goldens pipeline, not a hand-grown WAT.
  */
 
 import { loadWasmModule, type StreetViewWasmAPI } from '../../wasm';

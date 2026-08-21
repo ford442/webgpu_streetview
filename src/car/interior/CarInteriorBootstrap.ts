@@ -23,6 +23,7 @@ import { CarInteriorAnimator } from './CarInteriorAnimator';
 import { CarInteriorRenderer } from './CarInteriorRenderer';
 import { CarInteriorLightingManager } from './CarInteriorLightingManager';
 import {
+    applyHeroCabinIfEnabled,
     buildInteriorFromBuilder,
     setupCarInteriorLOD,
     setupWindowWeatherOverlay,
@@ -235,6 +236,7 @@ export function bootstrapCarInterior(
     animator.setRoofTargetY(host.roofTargetY);
     animator.setGaugeRig(host.gaugeRig);
     host.animator = animator;
+    void applyHeroCabinIfEnabled(host);
 
     const postProcessingEnabled = false;
     const rendererDelegate = new CarInteriorRenderer(

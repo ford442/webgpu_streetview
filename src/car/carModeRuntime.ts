@@ -60,6 +60,11 @@ export function initCarMode(container: HTMLElement, initialVehicle: VehicleType 
 
     // Create the rearview mirror (renders into the car interior scene)
     const mirror = new RearviewMirror(interior.scene, interior.renderer);
+    const attachMirrors = () => {
+        mirror.attachSideGlasses(interior.leftMirrorPlane, interior.rightMirrorPlane);
+    };
+    interior.onCabinSocketsChanged = attachMirrors;
+    attachMirrors();
 
     // Create post-processing settings manager
     const postProcessing = new SelectivePostProcessing();

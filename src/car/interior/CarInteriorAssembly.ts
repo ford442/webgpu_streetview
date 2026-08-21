@@ -26,6 +26,11 @@ import { CarInteriorLightingManager } from './CarInteriorLightingManager';
 import type { GaugeRig } from './CarInteriorGauges';
 import type { CabinLeverCallbacks } from './CarInteriorDetailProps';
 import type { CabinGlowSprite } from './CabinEmitterGlow';
+import {
+    applyGltfInterior,
+    isGltfInteriorEnabled,
+    loadGltfInteriorKit,
+} from '../gltfInteriorKit';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -62,6 +67,8 @@ export interface CarInteriorAssemblyHost {
     wiperRight: THREE.Group;
     windshieldGlassMesh: THREE.Mesh;
     rearGlassMesh: THREE.Mesh;
+    leftMirrorPlane?: THREE.Mesh;
+    rightMirrorPlane?: THREE.Mesh;
     instrumentClusterMat: THREE.MeshStandardMaterial;
     centerDisplayMat: THREE.MeshStandardMaterial;
     domeLightFixtureMesh: THREE.Mesh;
@@ -93,6 +100,10 @@ export interface CarInteriorAssemblyHost {
     driverSeatGroup: THREE.Group;
     applySeatPosition: () => void;
     emitterGlowSprites?: CabinGlowSprite[];
+    proceduralCabinGroup?: THREE.Group;
+    gltfCabinGroup?: THREE.Group;
+    gltfInteriorApplied?: boolean;
+    onCabinSocketsChanged?: () => void;
 }
 
 export function setupCarInteriorLOD(host: CarInteriorAssemblyHost): void {
@@ -134,8 +145,19 @@ export function setupWindowWeatherOverlay(host: CarInteriorAssemblyHost): void {
 export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     if (resetGlowRegistry) resetGlowRegistry();
 
+    if (!host.proceduralCabinGroup) {
+        host.proceduralCabinGroup = new THREE.Group();
+        host.proceduralCabinGroup.name = 'proceduralCabin';
+        host.interiorGroup.add(host.proceduralCabinGroup);
+    } else {
+        host.proceduralCabinGroup.clear();
+        host.proceduralCabinGroup.visible = true;
+    }
+    const cabin = host.proceduralCabinGroup;
+    host.gltfInteriorApplied = false;
+
     const builder = new CarInteriorBuilder(
-        host.interiorGroup,
+        cabin,
         host.roofGroup,
         host.vehicleConfig,
         host.quality,
@@ -160,6 +182,8 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     host.wiperRight = buildResult.wiperRight;
     host.windshieldGlassMesh = buildResult.windshieldGlassMesh;
     host.rearGlassMesh = buildResult.rearGlassMesh;
+    host.leftMirrorPlane = buildResult.leftMirrorPlane;
+    host.rightMirrorPlane = buildResult.rightMirrorPlane;
     host.instrumentClusterMat = buildResult.instrumentClusterMat;
     host.centerDisplayMat = buildResult.centerDisplayMat;
     host.domeLightFixtureMesh = buildResult.domeLightFixtureMesh;
@@ -172,7 +196,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     }
     if (host.vehicleConfig.hasGauges) {
         const gaugeResult = CarInteriorGauges.build(
-            host.interiorGroup,
+            cabin,
             host.metalMaterial,
             host.vehicleConfig,
             host.gpuProfile as import('../../utils/performance').GPUPerformanceProfile,
@@ -204,7 +228,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     if (host.vehicleConfig.hasDashboard && host.quality !== 'low') {
         host.locationPanel?.dispose();
         host.locationPanel = new LocationPanel(host.vehicleConfig.accentColor, host.gpuProfile.name);
-        host.interiorGroup.add(host.locationPanel.mesh);
+        cabin.add(host.locationPanel.mesh);
         host.locationPanel.setLocation(host.lastLocationInfo);
         host.locationPanel.setHeading(host.lastCompassHeading);
         host.locationPanel.setNightGlow(host.lightingManager?.getSunNightFactor() ?? 0);
@@ -221,7 +245,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     host.centerDisplay = null;
     if (host.vehicleConfig.hasDashboard && host.quality !== 'low') {
         host.centerDisplay = new CenterDisplay(host.vehicleConfig, host.gpuProfile.name);
-        host.interiorGroup.add(host.centerDisplay.group);
+        cabin.add(host.centerDisplay.group);
         host.centerDisplay.setLocation(host.lastLocationInfo);
         host.centerDisplay.setHeading(host.lastCompassHeading);
         host.centerDisplay.setMedia(host.lastMediaInfo.name, host.lastMediaInfo.tags, host.lastMediaInfo.playing);
@@ -230,7 +254,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
 
     if (host.quality !== 'low') {
         const detail = CarInteriorDetailProps.build(
-            host.interiorGroup,
+            cabin,
             {
                 dashboard: host.dashboardMaterial,
                 leather: host.leatherMaterial,
@@ -262,6 +286,37 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     host.animator?.setGaugeRig(host.gaugeRig);
 }
 
+export async function applyHeroCabinIfEnabled(host: CarInteriorAssemblyHost): Promise<void> {
+    if (!isGltfInteriorEnabled()) return;
+    try {
+        const kit = await loadGltfInteriorKit();
+        if (!kit) return;
+        const ok = await applyGltfInterior(kit, host);
+        if (!ok) return;
+        setupWindowWeatherOverlay(host);
+        host.animator?.rebindSockets({
+            steeringWheelGroup: host.steeringWheelGroup,
+            wiperLeft: host.wiperLeft,
+            wiperRight: host.wiperRight,
+            speedometerNeedle: host.speedometerNeedle,
+            tachometerNeedle: host.tachometerNeedle,
+            windowOverlay: host.windowWeatherOverlay,
+        });
+        host.lightingManager?.rebindCabin({
+            domeLightFixtureMesh: host.domeLightFixtureMesh,
+            domeSwitchMesh: host.domeSwitchMesh,
+            digitalClockMesh: host.digitalClockMesh,
+            instrumentClusterMat: host.instrumentClusterMat,
+            centerDisplayMat: host.centerDisplayMat,
+            windshieldGlassMesh: host.windshieldGlassMesh,
+            rearGlassMesh: host.rearGlassMesh,
+        });
+        host.onCabinSocketsChanged?.();
+    } catch (err) {
+        console.warn('[gltfInterior] hero cabin skipped', err);
+    }
+}
+
 export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehicleType: VehicleType): void {
     if (host.vehicleType === vehicleType) return;
 
@@ -270,6 +325,9 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     host.interiorGroup.clear();
     host.roofGroup.clear();
+    host.proceduralCabinGroup = undefined;
+    host.gltfCabinGroup = undefined;
+    host.gltfInteriorApplied = false;
     host.interiorGroup.add(host.driverSeatGroup);
     host.lightingManager?.attachCabinLights(host.interiorGroup);
 
@@ -294,6 +352,7 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     buildInteriorFromBuilder(host);
     setupWindowWeatherOverlay(host);
+    void applyHeroCabinIfEnabled(host);
 
     if (host.vehicleConfig.hasRoof) {
         host.isRoofOpen = false;
