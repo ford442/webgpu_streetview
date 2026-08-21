@@ -20,6 +20,7 @@ import type { RendererBackendInfo } from '../../components/RendererBackendIndica
 import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
 import type { MemoryStats } from '../../utils/memoryProfiler';
 import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
+import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
 import {
@@ -145,6 +146,7 @@ export interface ConnectedChromeOverlays {
   perfStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
+  gpuChoresStats?: GpuChoresStats;
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
@@ -268,6 +270,7 @@ export function ConnectedChrome({
           fpsStats={overlays.perfStats}
           memoryStats={overlays.memoryStats}
           gpuPassTimings={overlays.gpuPassTimings}
+          gpuChoresStats={overlays.gpuChoresStats}
           position="top-left"
           visible={true}
           showMemory={true}

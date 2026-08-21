@@ -29,6 +29,9 @@
 ;;                   out: i32)                        → f64  total metres
 ;;   fill_engine_noise(ptr, count, rpm, load, speed,
 ;;                     time, sampleRate)               → void  mono f32 PCM
+;;   luma_histogram_bt709(rgba, w, h, bins)            → void  256 u32 bins
+;;   reduce_luma_bt709(rgba, w, h, out3)               → void  mean/min/max f32
+;;   downsample_2d(src, sw, sh, dst, dw, dh)           → void  RGBA8 box filter
 ;;
 ;; haversine relies on "env.sin"/"env.cos"/"env.atan2" host imports (WASM has
 ;; no built-in transcendental functions) — the TypeScript wrapper
@@ -597,4 +600,195 @@
 
     (local.get $total)
   )
+
+  ;; ---- Rec.709 luma helpers (u8 RGB → 0–255 weighted acc / bin) ----
+  (func $bt709_acc (param $r i32) (param $g i32) (param $b i32) (result f32)
+    (f32.add
+      (f32.add
+        (f32.mul (f32.convert_i32_u (local.get $r)) (f32.const 0.2126))
+        (f32.mul (f32.convert_i32_u (local.get $g)) (f32.const 0.7152)))
+      (f32.mul (f32.convert_i32_u (local.get $b)) (f32.const 0.0722))))
+
+  (func $bt709_bin (param $r i32) (param $g i32) (param $b i32) (result i32)
+    (local $bin i32)
+    (local.set $bin
+      (i32.trunc_sat_f32_s
+        (f32.floor (f32.add (call $bt709_acc (local.get $r) (local.get $g) (local.get $b))
+                            (f32.const 0.5)))))
+    (if (i32.lt_s (local.get $bin) (i32.const 0))
+      (then (local.set $bin (i32.const 0))))
+    (if (i32.gt_s (local.get $bin) (i32.const 255))
+      (then (local.set $bin (i32.const 255))))
+    (local.get $bin))
+
+  ;; ---- luma_histogram_bt709(rgba, w, h, bins) → void ----
+  (func (export "luma_histogram_bt709")
+    (param $rgba i32) (param $w i32) (param $h i32) (param $bins i32)
+    (local $i i32) (local $n i32) (local $p i32) (local $bin i32) (local $addr i32)
+
+    (local.set $i (i32.const 0))
+    (loop $zero
+      (i32.store
+        (i32.add (local.get $bins) (i32.shl (local.get $i) (i32.const 2)))
+        (i32.const 0))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br_if $zero (i32.lt_s (local.get $i) (i32.const 256))))
+
+    (if (i32.or (i32.le_s (local.get $w) (i32.const 0))
+                (i32.le_s (local.get $h) (i32.const 0)))
+      (then (return)))
+
+    (local.set $n (i32.mul (local.get $w) (local.get $h)))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $px
+        (br_if $done (i32.ge_s (local.get $i) (local.get $n)))
+        (local.set $p (i32.add (local.get $rgba) (i32.shl (local.get $i) (i32.const 2))))
+        (local.set $bin
+          (call $bt709_bin
+            (i32.load8_u (local.get $p))
+            (i32.load8_u offset=1 (local.get $p))
+            (i32.load8_u offset=2 (local.get $p))))
+        (local.set $addr
+          (i32.add (local.get $bins) (i32.shl (local.get $bin) (i32.const 2))))
+        (i32.store (local.get $addr)
+          (i32.add (i32.load (local.get $addr)) (i32.const 1)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $px))))
+
+  ;; ---- reduce_luma_bt709(rgba, w, h, out3) → void  mean/min/max in [0,1] ----
+  (func (export "reduce_luma_bt709")
+    (param $rgba i32) (param $w i32) (param $h i32) (param $out i32)
+    (local $i i32) (local $n i32) (local $p i32)
+    (local $y f32) (local $sum f32) (local $mn f32) (local $mx f32)
+
+    (f32.store (local.get $out) (f32.const 0.0))
+    (f32.store offset=4 (local.get $out) (f32.const 0.0))
+    (f32.store offset=8 (local.get $out) (f32.const 0.0))
+    (if (i32.or (i32.le_s (local.get $w) (i32.const 0))
+                (i32.le_s (local.get $h) (i32.const 0)))
+      (then (return)))
+
+    (local.set $n (i32.mul (local.get $w) (local.get $h)))
+    (local.set $sum (f32.const 0.0))
+    (local.set $mn (f32.const 1.0))
+    (local.set $mx (f32.const 0.0))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $px
+        (br_if $done (i32.ge_s (local.get $i) (local.get $n)))
+        (local.set $p (i32.add (local.get $rgba) (i32.shl (local.get $i) (i32.const 2))))
+        (local.set $y
+          (f32.div
+            (call $bt709_acc
+              (i32.load8_u (local.get $p))
+              (i32.load8_u offset=1 (local.get $p))
+              (i32.load8_u offset=2 (local.get $p)))
+            (f32.const 255.0)))
+        (local.set $sum (f32.add (local.get $sum) (local.get $y)))
+        (if (f32.lt (local.get $y) (local.get $mn))
+          (then (local.set $mn (local.get $y))))
+        (if (f32.gt (local.get $y) (local.get $mx))
+          (then (local.set $mx (local.get $y))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $px)))
+    (f32.store (local.get $out)
+      (f32.div (local.get $sum) (f32.convert_i32_s (local.get $n))))
+    (f32.store offset=4 (local.get $out) (local.get $mn))
+    (f32.store offset=8 (local.get $out) (local.get $mx)))
+
+  ;; ---- downsample_2d(src, sw, sh, dst, dw, dh) → void ----
+  (func (export "downsample_2d")
+    (param $src i32) (param $sw i32) (param $sh i32)
+    (param $dst i32) (param $dw i32) (param $dh i32)
+    (local $dx i32) (local $dy i32)
+    (local $x0 i32) (local $x1 i32) (local $y0 i32) (local $y1 i32)
+    (local $x i32) (local $y i32)
+    (local $sr i32) (local $sg i32) (local $sb i32) (local $sa i32) (local $n i32)
+    (local $p i32) (local $d i32)
+
+    (if (i32.or
+          (i32.or (i32.le_s (local.get $sw) (i32.const 0))
+                  (i32.le_s (local.get $sh) (i32.const 0)))
+          (i32.or (i32.le_s (local.get $dw) (i32.const 0))
+                  (i32.le_s (local.get $dh) (i32.const 0))))
+      (then (return)))
+
+    (local.set $dy (i32.const 0))
+    (block $rows
+      (loop $row
+        (br_if $rows (i32.ge_s (local.get $dy) (local.get $dh)))
+        (local.set $y0 (i32.div_s (i32.mul (local.get $dy) (local.get $sh)) (local.get $dh)))
+        (local.set $y1
+          (i32.div_s (i32.mul (i32.add (local.get $dy) (i32.const 1)) (local.get $sh))
+                     (local.get $dh)))
+        (if (i32.le_s (local.get $y1) (local.get $y0))
+          (then (local.set $y1 (i32.add (local.get $y0) (i32.const 1)))))
+        (if (i32.gt_s (local.get $y1) (local.get $sh))
+          (then (local.set $y1 (local.get $sh))))
+
+        (local.set $dx (i32.const 0))
+        (block $cols
+          (loop $col
+            (br_if $cols (i32.ge_s (local.get $dx) (local.get $dw)))
+            (local.set $x0 (i32.div_s (i32.mul (local.get $dx) (local.get $sw)) (local.get $dw)))
+            (local.set $x1
+              (i32.div_s (i32.mul (i32.add (local.get $dx) (i32.const 1)) (local.get $sw))
+                         (local.get $dw)))
+            (if (i32.le_s (local.get $x1) (local.get $x0))
+              (then (local.set $x1 (i32.add (local.get $x0) (i32.const 1)))))
+            (if (i32.gt_s (local.get $x1) (local.get $sw))
+              (then (local.set $x1 (local.get $sw))))
+
+            (local.set $sr (i32.const 0))
+            (local.set $sg (i32.const 0))
+            (local.set $sb (i32.const 0))
+            (local.set $sa (i32.const 0))
+            (local.set $n (i32.const 0))
+            (local.set $y (local.get $y0))
+            (block $ys
+              (loop $yloop
+                (br_if $ys (i32.ge_s (local.get $y) (local.get $y1)))
+                (local.set $x (local.get $x0))
+                (block $xs
+                  (loop $xloop
+                    (br_if $xs (i32.ge_s (local.get $x) (local.get $x1)))
+                    (local.set $p
+                      (i32.add (local.get $src)
+                        (i32.shl
+                          (i32.add (i32.mul (local.get $y) (local.get $sw)) (local.get $x))
+                          (i32.const 2))))
+                    (local.set $sr (i32.add (local.get $sr) (i32.load8_u (local.get $p))))
+                    (local.set $sg (i32.add (local.get $sg) (i32.load8_u offset=1 (local.get $p))))
+                    (local.set $sb (i32.add (local.get $sb) (i32.load8_u offset=2 (local.get $p))))
+                    (local.set $sa (i32.add (local.get $sa) (i32.load8_u offset=3 (local.get $p))))
+                    (local.set $n (i32.add (local.get $n) (i32.const 1)))
+                    (local.set $x (i32.add (local.get $x) (i32.const 1)))
+                    (br $xloop)))
+                (local.set $y (i32.add (local.get $y) (i32.const 1)))
+                (br $yloop)))
+
+            (local.set $d
+              (i32.add (local.get $dst)
+                (i32.shl
+                  (i32.add (i32.mul (local.get $dy) (local.get $dw)) (local.get $dx))
+                  (i32.const 2))))
+            (if (i32.le_s (local.get $n) (i32.const 0))
+              (then
+                (i32.store8 (local.get $d) (i32.const 0))
+                (i32.store8 offset=1 (local.get $d) (i32.const 0))
+                (i32.store8 offset=2 (local.get $d) (i32.const 0))
+                (i32.store8 offset=3 (local.get $d) (i32.const 255)))
+              (else
+                (i32.store8 (local.get $d) (i32.div_s (local.get $sr) (local.get $n)))
+                (i32.store8 offset=1 (local.get $d) (i32.div_s (local.get $sg) (local.get $n)))
+                (i32.store8 offset=2 (local.get $d) (i32.div_s (local.get $sb) (local.get $n)))
+                (i32.store8 offset=3 (local.get $d) (i32.div_s (local.get $sa) (local.get $n)))))
+
+            (local.set $dx (i32.add (local.get $dx) (i32.const 1)))
+            (br $col)))
+        (local.set $dy (i32.add (local.get $dy) (i32.const 1)))
+        (br $row)))
+  )
 )
+

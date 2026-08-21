@@ -54,7 +54,9 @@ export default defineConfig({
   webServer: process.env.E2E_SKIP_WEBSERVER
     ? undefined
     : {
-        command: `npm start`,
+        // Bind IPv4 explicitly — `npm start` / Vite `localhost` can listen on
+        // ::1 only, which never answers Playwright's http://127.0.0.1:3000 check.
+        command: `npx vite --host 127.0.0.1 --port ${PORT}`,
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,
         timeout: 180_000,

@@ -88,6 +88,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 3000,
+      // Playwright smoke polls http://127.0.0.1:3000. Default Vite `localhost`
+      // can bind IPv6-only on GitHub runners, so the health check never
+      // succeeds (e2e-smoke then times out after the TS checker reports 0 errors).
+      host: '127.0.0.1',
       strictPort: true,
       open: false,
     },

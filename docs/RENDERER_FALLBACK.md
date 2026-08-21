@@ -19,6 +19,7 @@ Use URL flags:
 ?webgpu
 ?webgl
 ?legacyTransitions=1
+?no_gpu_compute
 ```
 
 With no flag (or `auto` / `webgpu`), the app probes **WebGPU only**. On failure it hard-fails with `window.webgpuProbe` + a blocking UI.
@@ -170,8 +171,23 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `viewFormats` | `[]` today | Reserved for future sRGB-variant views |
 | `canvasDowngradeReason` | Set when an HDR/P3 configure was rejected | Renderer re-configures SDR sRGB and keeps going |
 | `uncapturedErrorCount` / `lastUncapturedError` | Counted from `uncapturederror` | Shown on the backend chip |
+| `gpuChoresWorkgroupSize` | Always `8` | `#216` hist/downsample `@workgroup_size(8,8,1)` — independent of weather 16×16 |
+| `gpuChoresKillSwitch` | `true` when `?no_gpu_compute` | Chores fall back to WASM/JS; **weather fragment/compute is unchanged** |
 
 GPU timings (when `timestamp-query` is enabled) are published on `window.rendererGpuTimings` and shown in **Performance Stats** (press P): Pass1 (panorama → HDR), weather (fragment or compute), and blit (compute only).
+
+## gpu-chores (panorama analysis, #216)
+
+Histogram / downsample / reduce for gauges, snapshot picker thumbs, and an auto-exposure **hint**. This is **not** another weather physics pass and must not share bind groups with `weather-post-compute.wgsl`.
+
+- Jobs: `luma_histogram_bt709` (256-bin Rec.709, 1/4-res samples), `downsample_2d` (integer box filter), `reduce` (mean/min/max luma).
+- Backend order: WebGPU compute on the **shared Renderer `GPUDevice`** → WASM → JS. No second `requestDevice`. Chrome **or** Edge probe failure (`webgpuProbe.ok === false`) degrades chores to WASM without tearing down weather.
+- Kill switch: `?no_gpu_compute` (bare / `=1` / `true`). Does **not** force `?weather=compute` off. Rain still draws on the fragment path with chores disabled.
+- Breadcrumbs: `window.__GPU_CHORES__` (`backend`, `killSwitch`, `jobs`, last mean/min/max/ms) and `window.streetViewRendererDebug.getGpuChores()`.
+- Consumers: Performance Stats **Scene luma** gauge (incl. AE EV hint; does not mutate the exposure slider) and snapshot gallery thumbs via `downsample_2d`.
+- Goldens: `cpp/tests/goldens.json` / `goldens_generated.h` (`luma_histogram_bt709`, `reduce_luma_bt709`, `downsample_2d`). GPU vs WASM is a gauge signal when an adapter exists; jsdom has no GPU.
+
+Workgroups are `(8,8)`. WebGL2 histogram is deferred until a live WebGL weather session exists; do not spin a second GL context on the panorama working set.
 
 WGSL compile validation: `npm run validate:shaders` (requires `naga` CLI — CI installs via `cargo install naga-cli`).
 

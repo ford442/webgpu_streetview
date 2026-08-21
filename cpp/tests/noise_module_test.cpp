@@ -315,3 +315,34 @@ TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") 
     CHECK(buf[0] == 7.0f);
     sw_fill_engine_noise(nullptr, 16, 2000.0f, 0.5f, 50.0f, 1.0f, 44100.0f);
 }
+
+TEST_CASE("luma_histogram_bt709 matches the shipping WASM goldens") {
+    std::vector<unsigned> bins(256, 99u);
+    sw_luma_histogram_bt709(goldens::kChoresRgba, goldens::kChoresWidth,
+                            goldens::kChoresHeight, bins.data());
+    for (int i = 0; i < 256; ++i) {
+        INFO(at(i));
+        CHECK(bins[static_cast<size_t>(i)] == goldens::kChoresHistExpected[i]);
+    }
+}
+
+TEST_CASE("reduce_luma_bt709 matches the shipping WASM goldens") {
+    float out[3] = { -1.0f, -1.0f, -1.0f };
+    sw_reduce_luma_bt709(goldens::kChoresRgba, goldens::kChoresWidth,
+                         goldens::kChoresHeight, out);
+    CHECK(bit_equal(out[0], goldens::kChoresReduceExpected[0]));
+    CHECK(bit_equal(out[1], goldens::kChoresReduceExpected[1]));
+    CHECK(bit_equal(out[2], goldens::kChoresReduceExpected[2]));
+}
+
+TEST_CASE("downsample_2d matches the shipping WASM goldens") {
+    const int n = goldens::kChoresDownWidth * goldens::kChoresDownHeight * 4;
+    std::vector<unsigned char> dst(static_cast<size_t>(n), 7);
+    sw_downsample_2d(goldens::kChoresRgba, goldens::kChoresWidth, goldens::kChoresHeight,
+                     dst.data(), goldens::kChoresDownWidth, goldens::kChoresDownHeight);
+    for (int i = 0; i < n; ++i) {
+        INFO(at(i));
+        CHECK(dst[static_cast<size_t>(i)] == goldens::kChoresDownExpected[i]);
+    }
+}
+

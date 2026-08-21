@@ -413,6 +413,10 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         return this.canvas.toDataURL('image/png', 1.0);
     }
 
+    public getOutputCanvas(): HTMLCanvasElement {
+        return this.canvas;
+    }
+
     public setShaderEffects(enabled: boolean): void {
         this.shaderEffectsEnabled = enabled;
         this.weatherParams[WeatherParamIndex.shaderEffectsEnabled] = enabled ? 1.0 : 0.0;

@@ -10,6 +10,7 @@
 
 #include "streetview_wasm.h"
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <stdint.h>
 
@@ -234,6 +235,95 @@ void sw_fill_engine_noise(float* buf, int count,
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         buf[i] = s;
+    }
+}
+
+static int bt709_bin_u8(unsigned char r, unsigned char g, unsigned char b) {
+    float acc = 0.2126f * static_cast<float>(r)
+              + 0.7152f * static_cast<float>(g)
+              + 0.0722f * static_cast<float>(b);
+    int bin = static_cast<int>(floorf(acc + 0.5f));
+    if (bin < 0) bin = 0;
+    if (bin > 255) bin = 255;
+    return bin;
+}
+
+void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
+                             unsigned int* bins) {
+    if (bins == nullptr) return;
+    for (int i = 0; i < 256; ++i) bins[static_cast<unsigned>(i)] = 0u;
+    if (width <= 0 || height <= 0 || rgba == nullptr) return;
+    const int count = width * height;
+    for (int i = 0; i < count; ++i) {
+        const unsigned char* p = rgba + static_cast<size_t>(i) * 4u;
+        int bin = bt709_bin_u8(p[0], p[1], p[2]);
+        bins[static_cast<unsigned>(bin)] += 1u;
+    }
+}
+
+void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
+                          float* out3) {
+    if (out3 == nullptr) return;
+    out3[0] = 0.0f;
+    out3[1] = 0.0f;
+    out3[2] = 0.0f;
+    if (width <= 0 || height <= 0 || rgba == nullptr) return;
+    const int count = width * height;
+    float sum = 0.0f;
+    float mn = 1.0f;
+    float mx = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        const unsigned char* p = rgba + static_cast<size_t>(i) * 4u;
+        float y = (0.2126f * static_cast<float>(p[0])
+                 + 0.7152f * static_cast<float>(p[1])
+                 + 0.0722f * static_cast<float>(p[2])) / 255.0f;
+        sum += y;
+        if (y < mn) mn = y;
+        if (y > mx) mx = y;
+    }
+    out3[0] = sum / static_cast<float>(count);
+    out3[1] = mn;
+    out3[2] = mx;
+}
+
+void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
+                      unsigned char* dst, int dst_w, int dst_h) {
+    if (src == nullptr || dst == nullptr) return;
+    if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) return;
+    for (int dy = 0; dy < dst_h; ++dy) {
+        int y0 = (dy * src_h) / dst_h;
+        int y1 = ((dy + 1) * src_h) / dst_h;
+        if (y1 <= y0) y1 = y0 + 1;
+        if (y1 > src_h) y1 = src_h;
+        for (int dx = 0; dx < dst_w; ++dx) {
+            int x0 = (dx * src_w) / dst_w;
+            int x1 = ((dx + 1) * src_w) / dst_w;
+            if (x1 <= x0) x1 = x0 + 1;
+            if (x1 > src_w) x1 = src_w;
+            int sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
+            for (int y = y0; y < y1; ++y) {
+                for (int x = x0; x < x1; ++x) {
+                    const unsigned char* p =
+                        src + (static_cast<size_t>(y) * static_cast<size_t>(src_w)
+                               + static_cast<size_t>(x)) * 4u;
+                    sr += static_cast<int>(p[0]);
+                    sg += static_cast<int>(p[1]);
+                    sb += static_cast<int>(p[2]);
+                    sa += static_cast<int>(p[3]);
+                    n += 1;
+                }
+            }
+            unsigned char* d = dst + (static_cast<size_t>(dy) * static_cast<size_t>(dst_w)
+                                      + static_cast<size_t>(dx)) * 4u;
+            if (n <= 0) {
+                d[0] = 0; d[1] = 0; d[2] = 0; d[3] = 255;
+            } else {
+                d[0] = static_cast<unsigned char>(sr / n);
+                d[1] = static_cast<unsigned char>(sg / n);
+                d[2] = static_cast<unsigned char>(sb / n);
+                d[3] = static_cast<unsigned char>(sa / n);
+            }
+        }
     }
 }
 

@@ -57,7 +57,9 @@ declare global {
       };
       getWeatherMode: () => WeatherPostProcessMode;
       setWeatherMode: (mode: WeatherPostProcessMode) => void;
+      getGpuChores: () => import('./renderer/gpuChores').GpuChoresBreadcrumbs | null;
     };
+    __GPU_CHORES__?: import('./renderer/gpuChores').GpuChoresBreadcrumbs;
   }
 
   // Jest-compat alias installed in setupTests for CRA-era tests.

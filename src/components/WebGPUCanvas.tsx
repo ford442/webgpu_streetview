@@ -366,6 +366,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                     renderer.renderWeatherOnly();
                 }
                 sourceChangeFlagRef.current = false;
+                if (!holding && frameCountRef.current % 8 === 0) {
+                    renderer.samplePanoramaStats?.();
+                }
             } else if (currentRendererRef.current) {
                 currentRendererRef.current.updateWeatherAnimation();
                 if (panoramaUpdatePaused || currentRendererRef.current.isHoldActive()) {

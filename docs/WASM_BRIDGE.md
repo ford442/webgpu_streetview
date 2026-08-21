@@ -114,7 +114,7 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Eleven exports, identical in the WAT source, the C++ bindings, the CMake export
+Fourteen exports, identical in the WAT source, the C++ bindings, the CMake export
 list and the TypeScript loader:
 
 | Export | TS wrapper | Notes |
@@ -130,6 +130,9 @@ list and the TypeScript loader:
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
+| `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
+| `reduce_luma_bt709(rgba, w, h, out3)` | `reduceLumaBt709` | mean/min/max luma in `[0, 1]` |
+| `downsample_2d(src, sw, sh, dst, dw, dh)` | `downsample2d` | integer box-filter downsample, packed RGBA8 |
 
 Plus the exported `memory`, which the loader needs to marshal buffers.
 
@@ -183,6 +186,7 @@ in/out — no allocator, no `malloc` on the hot path. 512 is 8-byte aligned, so
 | `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
 | `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed mixed in the Web Audio graph; JS fill + oscillators if WASM is missing |
+| gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;
