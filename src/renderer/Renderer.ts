@@ -10,7 +10,15 @@ import {
     logAdapterCapabilities,
     resolveAdapterRequestOptions,
     buildCapabilityMatrix,
+    describeAdapterSelection,
+    attachUncapturedErrorHandler,
+    labelDevice,
+    getCanvasOutputFlags,
+    readDisplayOutputCapabilities,
+    resolveCanvasOutputPolicy,
+    type CanvasOutputPolicy,
 } from './deviceInit';
+import { DEVICE_LABELS } from './deviceCapabilities';
 import { GpuPassTimer } from './gpuPassTimer';
 import { resetGpuPassTimings } from './gpuPassTimingStore';
 import { clampSamplerAnisotropy, getSamplerAnisotropyForQuality } from './samplerAnisotropy';
@@ -35,6 +43,7 @@ export class Renderer implements StreetViewRenderer {
     private device!: GPUDevice;
     private context!: GPUCanvasContext;
     private presentationFormat!: GPUTextureFormat;
+    private canvasOutputPolicy: CanvasOutputPolicy = { hdr: false, p3: false };
 
     private pipeline!: GPURenderPipeline;
     private sampler!: GPUSampler;
@@ -104,24 +113,13 @@ export class Renderer implements StreetViewRenderer {
             }
 
             const requiredFeatures = collectOptionalDeviceFeatures(adapter);
-            const capabilityMatrix = buildCapabilityMatrix(
-                this.weatherPostProcessMode,
-                limitCheck.requiredLimits!,
-                requiredFeatures,
-            );
-
-            logAdapterCapabilities(
-                adapter,
-                adapterOptions.powerPreference,
-                this.weatherPostProcessMode,
-                requiredFeatures,
-                capabilityMatrix,
-            );
 
             this.device = await adapter.requestDevice({
+                label: DEVICE_LABELS.device,
                 requiredFeatures,
                 requiredLimits: limitCheck.requiredLimits,
             });
+            labelDevice(this.device);
 
             this.device.lost.then((info) => {
                 console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
@@ -137,8 +135,44 @@ export class Renderer implements StreetViewRenderer {
             }
 
             this.context = context;
-            this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-            configureCanvasContext(this.context, this.device, this.presentationFormat);
+            const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
+            this.canvasOutputPolicy = resolveCanvasOutputPolicy({
+                preferredFormat,
+                enabledFeatures: requiredFeatures,
+                flags: getCanvasOutputFlags(),
+                ...readDisplayOutputCapabilities(),
+            });
+            if (this.canvasOutputPolicy.hdrRejectedReason) {
+                console.info('[Renderer] HDR canvas not enabled:', this.canvasOutputPolicy.hdrRejectedReason);
+            }
+            const appliedCanvas = configureCanvasContext(
+                this.context,
+                this.device,
+                preferredFormat,
+                this.canvasOutputPolicy,
+            );
+            // The HDR path swaps the swap-chain format, so pipelines follow what was applied.
+            this.presentationFormat = appliedCanvas.format;
+            // Resize re-configures; keep the policy in sync with what the browser accepted.
+            this.canvasOutputPolicy = {
+                hdr: appliedCanvas.toneMapping === 'extended',
+                p3: appliedCanvas.colorSpace === 'display-p3',
+            };
+
+            const capabilityMatrix = buildCapabilityMatrix(
+                this.weatherPostProcessMode,
+                limitCheck.requiredLimits!,
+                requiredFeatures,
+                { ...describeAdapterSelection(adapterOptions), canvas: appliedCanvas },
+            );
+            logAdapterCapabilities(
+                adapter,
+                adapterOptions.powerPreference,
+                this.weatherPostProcessMode,
+                requiredFeatures,
+                capabilityMatrix,
+            );
+            attachUncapturedErrorHandler(this.device, capabilityMatrix);
 
             this.samplerAnisotropy = 1;
             this.sampler = this.device.createSampler(this.buildSamplerDescriptor(1));
@@ -269,7 +303,7 @@ export class Renderer implements StreetViewRenderer {
 
     public resize(_width: number, _height: number) {
         if (this.isDestroyed) return;
-        configureCanvasContext(this.context, this.device, this.presentationFormat);
+        configureCanvasContext(this.context, this.device, this.presentationFormat, this.canvasOutputPolicy);
     }
 
     public destroy() {

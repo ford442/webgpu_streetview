@@ -1,6 +1,8 @@
 import {
   getAdapterPowerPreferencePolicy,
   getAdapterRequestOptions,
+  getAdapterSelectionPolicy,
+  getCanvasOutputFlags,
   exposeRendererDebugGlobals,
   getLegacyTransitionsEnabled,
   getRendererDebugOptions,
@@ -268,5 +270,63 @@ describe('exposeRendererDebugGlobals', () => {
     expect(window.streetViewRendererDebug?.getDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: false });
     window.streetViewRendererDebug?.setWireframe(true);
     expect(window.streetViewRendererDebug?.getDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: true });
+  });
+});
+
+describe('getAdapterSelectionPolicy', () => {
+  beforeEach(resetGlobals);
+  afterEach(resetGlobals);
+
+  it('defaults to core with no fallback adapter', () => {
+    expect(getAdapterSelectionPolicy()).toEqual({
+      forceFallbackAdapter: false,
+      featureLevel: 'core',
+      featureLevelSource: 'default',
+    });
+  });
+
+  it('reads ?gpu=fallback and ?gpu=compat', () => {
+    setSearch('?gpu=fallback');
+    expect(getAdapterSelectionPolicy().forceFallbackAdapter).toBe(true);
+
+    setSearch('?gpu=compat');
+    const compat = getAdapterSelectionPolicy();
+    expect(compat.featureLevel).toBe('compatibility');
+    expect(compat.featureLevelSource).toBe('url');
+  });
+
+  it('accepts a combined token list alongside the power preference', () => {
+    setSearch('?gpu=high,compat,fallback');
+    expect(getAdapterPowerPreferencePolicy()).toEqual({
+      powerPreference: 'high-performance',
+      source: 'url',
+    });
+    expect(getAdapterSelectionPolicy()).toEqual({
+      forceFallbackAdapter: true,
+      featureLevel: 'compatibility',
+      featureLevelSource: 'url',
+    });
+  });
+});
+
+describe('getCanvasOutputFlags', () => {
+  beforeEach(resetGlobals);
+  afterEach(resetGlobals);
+
+  it('defaults both opt-ins to off so a default boot stays SDR sRGB', () => {
+    expect(getCanvasOutputFlags()).toEqual({ hdr: 'off', p3: 'off' });
+  });
+
+  it('reads ?hdr=1 / ?p3=1 and the auto form', () => {
+    setSearch('?hdr=1&p3=auto');
+    expect(getCanvasOutputFlags()).toEqual({ hdr: 'on', p3: 'auto' });
+
+    setSearch('?hdr=0&p3=true');
+    expect(getCanvasOutputFlags()).toEqual({ hdr: 'off', p3: 'on' });
+  });
+
+  it('treats an unrecognized value as off', () => {
+    setSearch('?hdr=bogus');
+    expect(getCanvasOutputFlags().hdr).toBe('off');
   });
 });

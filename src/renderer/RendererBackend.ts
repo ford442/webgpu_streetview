@@ -100,6 +100,13 @@ export interface AdapterPowerPreferencePolicy {
     source: 'override' | 'url' | 'default';
 }
 
+/** `?gpu=` accepts a comma-separated token list, e.g. `?gpu=high,compat`. */
+function readGpuTokens(): string[] {
+    const raw = readSearchParams().get('gpu');
+    if (!raw) return [];
+    return raw.toLowerCase().split(',').map(token => token.trim()).filter(Boolean);
+}
+
 export function getAdapterPowerPreferencePolicy(options?: RendererInitOptions): AdapterPowerPreferencePolicy {
     if (options?.powerPreference) {
         return {
@@ -108,21 +115,98 @@ export function getAdapterPowerPreferencePolicy(options?: RendererInitOptions): 
         };
     }
 
-    const params = readSearchParams();
-    const gpuParam = params.get('gpu')?.toLowerCase();
-    if (gpuParam === 'low' || gpuParam === 'low-power') {
+    const tokens = readGpuTokens();
+    if (tokens.includes('low') || tokens.includes('low-power')) {
         return { powerPreference: 'low-power', source: 'url' };
     }
-    if (gpuParam === 'high' || gpuParam === 'high-performance') {
+    if (tokens.includes('high') || tokens.includes('high-performance')) {
         return { powerPreference: 'high-performance', source: 'url' };
     }
 
     return { source: 'default' };
 }
 
+/**
+ * Adapter selection knobs beyond power preference. `featureLevel` is only
+ * emitted when the browser understands the field (see `supportsAdapterFeatureLevel`),
+ * so older Chrome still boots with today's request shape.
+ */
+export interface AdapterSelectionPolicy {
+    /** `?gpu=fallback` — SwiftShader / software adapter for CI and probe runs. */
+    forceFallbackAdapter: boolean;
+    /** `?gpu=compat` requests compatibility mode; default is core. */
+    featureLevel: AdapterFeatureLevel;
+    featureLevelSource: 'url' | 'default';
+}
+
+export type AdapterFeatureLevel = 'core' | 'compatibility';
+
+export function getAdapterSelectionPolicy(): AdapterSelectionPolicy {
+    const tokens = readGpuTokens();
+    const compat = tokens.includes('compat') || tokens.includes('compatibility');
+    return {
+        forceFallbackAdapter: tokens.includes('fallback') || tokens.includes('software'),
+        featureLevel: compat ? 'compatibility' : 'core',
+        featureLevelSource: compat ? 'url' : 'default',
+    };
+}
+
+/** Duck-type the (Chrome 133+) `GPUAdapter.featureLevel` surface. */
+export function supportsAdapterFeatureLevel(): boolean {
+    const adapterCtor = (globalThis as { GPUAdapter?: { prototype?: object } }).GPUAdapter;
+    if (!adapterCtor?.prototype) return false;
+    return 'featureLevel' in adapterCtor.prototype;
+}
+
 export function getAdapterRequestOptions(options?: RendererInitOptions): GPURequestAdapterOptions {
     const policy = getAdapterPowerPreferencePolicy(options);
-    return policy.powerPreference ? { powerPreference: policy.powerPreference } : {};
+    return buildAdapterRequestOptions(
+        policy.powerPreference,
+        getAdapterSelectionPolicy(),
+        supportsAdapterFeatureLevel(),
+    );
+}
+
+/** Pure builder — the only place adapter request fields are assembled. */
+export function buildAdapterRequestOptions(
+    powerPreference: GPUPowerPreference | undefined,
+    selection: AdapterSelectionPolicy,
+    featureLevelSupported: boolean,
+): GPURequestAdapterOptions {
+    const requestOptions: GPURequestAdapterOptions & { featureLevel?: AdapterFeatureLevel } = {};
+    if (powerPreference) requestOptions.powerPreference = powerPreference;
+    if (selection.forceFallbackAdapter) requestOptions.forceFallbackAdapter = true;
+    if (featureLevelSupported) requestOptions.featureLevel = selection.featureLevel;
+    return requestOptions;
+}
+
+export type CanvasOutputFlag = 'on' | 'off' | 'auto';
+
+export interface CanvasOutputFlags {
+    /** `?hdr=1` — extended tone mapping + rgba16float swap-chain. */
+    hdr: CanvasOutputFlag;
+    /** `?p3=1` — display-p3 canvas color space; `?p3=auto` follows the display. */
+    p3: CanvasOutputFlag;
+}
+
+function readCanvasOutputFlag(params: URLSearchParams, name: string): CanvasOutputFlag {
+    const value = params.get(name)?.toLowerCase();
+    if (value === '1' || value === 'true' || value === 'on') return 'on';
+    if (value === '0' || value === 'false' || value === 'off') return 'off';
+    if (value === 'auto') return 'auto';
+    return 'off';
+}
+
+/**
+ * Output-referred canvas opt-ins. Both default to `off` so a default boot stays
+ * pixel-identical to the SDR sRGB swap-chain; `auto` defers to the display.
+ */
+export function getCanvasOutputFlags(): CanvasOutputFlags {
+    const params = readSearchParams();
+    return {
+        hdr: readCanvasOutputFlag(params, 'hdr'),
+        p3: readCanvasOutputFlag(params, 'p3'),
+    };
 }
 
 export function getRendererPreference(): RendererBackendPreference {
