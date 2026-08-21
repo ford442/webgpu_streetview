@@ -478,7 +478,9 @@ export class GeometryPool {
  */
 export function getMemoryPressure(): 'low' | 'normal' | 'high' | 'critical' {
   if ('memory' in performance) {
-    const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
+    const memory = (performance as Performance & {
+      memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+    }).memory;
     if (memory) {
       const used = memory.usedJSHeapSize;
       const limit = memory.jsHeapSizeLimit;
