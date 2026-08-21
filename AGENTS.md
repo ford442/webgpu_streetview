@@ -564,7 +564,8 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 
 ### WASM numeric layer (`cpp/` + `src/wasm/`)
 
-The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM)
+The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM,
+panorama luma hist/reduce/downsample)
 exists as three implementations — the shipping `public/wasm/streetview-wasm.wasm`,
 the C++ in `cpp/src/noise_module.cpp`, and the pure-JS fallback in
 `src/wasm/index.ts`. They are pinned to **one set of golden vectors** captured
@@ -605,6 +606,7 @@ invent behaviour. Full detail and the plan for retiring the hand-written WAT:
 - `src/app/historicalExperience.test.ts` — Historical comparison after-label derivation.
 - `src/car/__tests__/rearViewFeed.test.ts` — Static-API URL/cache-key builders and the cost-control policy: throttle, dedupe, blockers, session budget, failure circuit breaker, kill switch.
 - `src/car/__tests__/RearviewMirror.test.ts` — Honest-unavailable fallback plus the true-rear path (bind/clear, UV pan registration, coverage fade, head-pitch independence).
+- `src/renderer/gpuChores/*.test.ts` — BT.709 hist/reduce/downsample goldens, `?no_gpu_compute` policy, single-device isolation from weather compute.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 
 ### Manual Testing Requirements

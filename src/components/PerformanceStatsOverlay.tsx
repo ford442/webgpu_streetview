@@ -7,11 +7,14 @@ import {
 } from '../hooks/usePerformanceMonitor';
 import { MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
 import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
+import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
+import { exposureHintFromMeanLuma } from '../renderer/gpuChores/lumaMath';
 
 interface PerformanceStatsOverlayProps {
   fpsStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
+  gpuChoresStats?: GpuChoresStats;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   visible?: boolean;
   showMemory?: boolean;
@@ -26,6 +29,7 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
   fpsStats,
   memoryStats,
   gpuPassTimings,
+  gpuChoresStats,
   position = 'top-left',
   visible = true,
   showMemory = true,
@@ -48,6 +52,9 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
   
   // Check for memory leaks
   const hasLeaks = memoryStats?.leaks && memoryStats.leaks.length > 0;
+  const aeHint = gpuChoresStats?.meanLuma != null
+    ? exposureHintFromMeanLuma(gpuChoresStats.meanLuma)
+    : null;
   
   return (
     <div 
@@ -108,6 +115,33 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
               Blit: {gpuPassTimings.blitMs.toFixed(2)}ms
             </div>
           )}
+        </>
+      )}
+
+      {gpuChoresStats && gpuChoresStats.backend !== 'disabled' && (
+        <>
+          <hr style={{
+            border: 'none',
+            borderTop: '1px solid #444',
+            margin: '8px 0',
+          }} />
+          <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#ffffff' }}>
+            Scene luma
+          </div>
+          <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+            Y: {gpuChoresStats.meanLuma != null ? gpuChoresStats.meanLuma.toFixed(3) : '—'}
+            {gpuChoresStats.minLuma != null && gpuChoresStats.maxLuma != null
+              ? `  [${gpuChoresStats.minLuma.toFixed(2)}–${gpuChoresStats.maxLuma.toFixed(2)}]`
+              : ''}
+          </div>
+          <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+            AE: {aeHint != null ? `${aeHint >= 0 ? '+' : ''}${aeHint.toFixed(2)} EV` : '—'}
+          </div>
+          <div style={{ marginBottom: '4px', color: '#888888', fontSize: '10px' }}>
+            chores: {gpuChoresStats.backend}
+            {gpuChoresStats.killSwitch ? '  kill=no_gpu_compute' : ''}
+            {gpuChoresStats.sampleMs != null ? `  ${gpuChoresStats.sampleMs.toFixed(1)}ms` : ''}
+          </div>
         </>
       )}
       

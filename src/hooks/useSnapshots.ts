@@ -21,6 +21,8 @@ export interface SnapshotMetadata {
     zoom: number;
     locationName?: string;
     panoId?: string;
+    /** Quarter-res JPEG from downsample_2d for the gallery picker. */
+    thumbnailDataUrl?: string;
 }
 
 export type SnapshotShareResult = 'share' | 'clipboard' | 'cancelled';

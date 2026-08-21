@@ -44,6 +44,7 @@ import { ConnectedChrome } from './shell/ConnectedChrome';
 import { MapsAuthModal } from './shell/MapsAuthModal';
 import { OfflineStatusToast } from './shell/OfflineStatusToast';
 import { StreetViewStage } from './shell/StreetViewStage';
+import { makePickerThumbDataUrl } from '../renderer/gpuChores/pickerThumb';
 
 /** Cached car runtime for sync cruise gear hops once car mode has loaded. */
 let carRuntimeModule: typeof import('../car/carModeRuntime') | null = null;
@@ -80,7 +81,7 @@ export function AppShell() {
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
   const sharedSession = useSharedSession();
-  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings } = useAppTelemetry();
+  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
   const { audioRef, isRadioPlaying, setIsRadioPlaying, toggleRadio } = useRadioAudio();
@@ -244,9 +245,20 @@ export function AppShell() {
     if (!panorama || !renderer) return;
     const position = panorama.getPosition();
     if (!position) return;
+    const output = renderer.getOutputCanvas?.();
+    const chores = renderer.getGpuChores?.();
+    const thumbnailDataUrl = output
+      ? makePickerThumbDataUrl(
+          output,
+          chores
+            ? (rgba, w, h, dw, dh) => chores.downsampleRgba(rgba, w, h, dw, dh)
+            : undefined,
+        ) ?? undefined
+      : undefined;
     addSnapshot({
       name: locationName || `Snapshot ${new Date().toLocaleString()}`,
       dataUrl: renderer.getCanvasDataURL(),
+      thumbnailDataUrl,
       lat: position.lat(),
       lng: position.lng(),
       heading,
@@ -499,6 +511,7 @@ export function AppShell() {
             perfStats,
             memoryStats: memoryStats || undefined,
             gpuPassTimings,
+            gpuChoresStats,
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,

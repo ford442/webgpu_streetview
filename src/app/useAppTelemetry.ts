@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 import { getMemoryProfiler, type MemoryStats } from '../utils/memoryProfiler';
 import { getGpuPassTimings, type GpuPassTimings } from '../renderer/gpuPassTimingStore';
+import { getGpuChoresStats, type GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 
 export interface AppTelemetry {
   showPerformanceStats: boolean;
@@ -9,6 +10,7 @@ export interface AppTelemetry {
   memoryStats: MemoryStats | null;
   perfStats: ReturnType<typeof usePerformanceMonitor>['stats'];
   gpuPassTimings: GpuPassTimings;
+  gpuChoresStats: GpuChoresStats;
 }
 
 /** Performance overlay + memory profiler sampling for the stats panel. */
@@ -16,6 +18,7 @@ export function useAppTelemetry(): AppTelemetry {
   const [showPerformanceStats, setShowPerformanceStats] = useState(false);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [gpuPassTimings, setGpuPassTimingsState] = useState<GpuPassTimings>(() => getGpuPassTimings());
+  const [gpuChoresStats, setGpuChoresStatsState] = useState<GpuChoresStats>(() => getGpuChoresStats());
   const { stats: perfStats } = usePerformanceMonitor({
     targetFPS: 60,
     sampleSize: 60,
@@ -31,6 +34,7 @@ export function useAppTelemetry(): AppTelemetry {
       memoryProfiler.snapshot();
       setMemoryStats(memoryProfiler.getStats());
       setGpuPassTimingsState(getGpuPassTimings());
+      setGpuChoresStatsState({ ...getGpuChoresStats() });
     }, 1000);
     return () => clearInterval(interval);
   }, [showPerformanceStats]);
@@ -41,5 +45,6 @@ export function useAppTelemetry(): AppTelemetry {
     memoryStats,
     perfStats,
     gpuPassTimings,
+    gpuChoresStats,
   };
 }

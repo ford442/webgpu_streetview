@@ -357,7 +357,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 }}
                             >
                                 <img
-                                    src={snapshot.dataUrl}
+                                    src={snapshot.thumbnailDataUrl || snapshot.dataUrl}
                                     alt={snapshot.name}
                                     onClick={() => setSelectedSnapshot(snapshot)}
                                     style={{
