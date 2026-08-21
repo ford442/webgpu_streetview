@@ -1,5 +1,7 @@
 # WebGPU StreetView Car Mode Enhancements
 
+> **Historical.** Pre-#171 / pre-AppShell notes. `App.tsx` is no longer the car-lighting mediator; rearview does **not** UV-crop the forward panorama. Live contract: [`AGENTS.md`](../AGENTS.md), `src/car/RearviewMirror.ts`, billing-gated `src/car/rearViewFeed.ts`, `src/views/car/`.
+
 ## Overview
 Enhanced the car interior view system with interactive steering wheel animation, functional side mirrors, animated wipers, and dashboard gauges that provide real-time vehicle feedback.
 

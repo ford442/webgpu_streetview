@@ -44,7 +44,7 @@ State lives in **providers and colocated hooks** under `src/app/` and `src/hooks
 | Hold-pause transitions | `src/hooks/useStreetView.tsx` + `src/utils/panoramaStability.ts` |
 | Free-look input | `src/components/FreeLookInputHandler.tsx` |
 | Car mode | `src/views/CarModeView.tsx` + `src/views/car/*` hooks |
-| Globe | `src/components/GlobeView.tsx` + `src/components/globe/*` |
+| Globe | `src/components/GlobeView.tsx` + `src/components/globe/` (camera, input, journey, POI) |
 | Cruise / navigation | `src/utils/navigation.ts`, toolbar in `AppToolbar.tsx` |
 
 ---
@@ -61,7 +61,7 @@ Never upload live GMaps canvas while `holdActive`. Regression guard: `window.__S
 Single source of truth: `src/renderer/weatherUniformLayout.ts` — must match both `weather-post.wgsl` and `weather-post-compute.wgsl`.
 
 ### Cesium typing
-CDN-loaded Cesium is typed via `src/types/cesium.ts` + global ambient in `src/types/cesium.d.ts`. Globe POI/autopilot visuals live in `src/components/globe/`.
+CDN-loaded Cesium is typed via `src/types/cesium.ts` + global ambient in `src/types/cesium.d.ts`. Globe camera / input / journey / POI live in `src/components/globe/` — no static `import 'cesium'`.
 
 ---
 

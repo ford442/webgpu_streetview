@@ -165,9 +165,11 @@ webgpu_streetview/
 │   │   ├── VehicleSelector.tsx      # Car type chooser
 │   │   ├── AccessibilityPanel.tsx   # A11y settings panel
 │   │   ├── PerformanceStatsOverlay.tsx # Live FPS / GPU stats
-│   │   ├── GlobeView.tsx            # Cesium globe integration
+│   │   ├── GlobeView.tsx            # Cesium globe mount + viewer lifecycle
+│   │   ├── globe/                   # Camera flights, input, journey, POI/autopilot
 │   │   ├── ScoutCard.tsx            # Location scout UI
-│   │   └── MobileUI.tsx             # Touch-friendly fallback
+│   │   ├── MobileUI.tsx             # Touch chrome compositor
+│   │   └── mobile/                  # Touch layer, settings/vehicle sheet, help sheet
 │   ├── renderer/
 │   │   ├── Renderer.ts              # WebGPU orchestrator: device, dual-pass pipeline, transitions
 │   │   └── types.ts                 # RenderMode type

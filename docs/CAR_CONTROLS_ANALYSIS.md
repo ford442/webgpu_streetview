@@ -1,5 +1,7 @@
 # WebGPU StreetView - Car Interior Controls Analysis
 
+> **Historical.** Pre-#171 analysis. Head/chassis split lives in `src/car/carSpatialModel.ts` and `CarInputHandler.tsx`, not `App.tsx`. See [`AGENTS.md`](../AGENTS.md) car spatial checklist.
+
 ## Current Control Scheme
 
 ### Free Look (Head Movement Inside Car)

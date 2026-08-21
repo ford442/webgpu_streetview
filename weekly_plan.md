@@ -59,6 +59,6 @@
 | Cruise hold-pause polish (#6 above) | Hold-pause is shipped; tune feel via `panoramaStability.ts` + probe |
 | Gauge SSOT / compact HUD (#7) | See foundation split: `CarModeView` hooks under `src/views/car/` |
 | Shader design pass (#8) | **Looks pack** — named looks + WebGL haze/rain-darken parity; see `docs/looks/README.md` |
-| Foundation module splits | `GlobeView` + `MobileUI` contracts — see latest foundation PR |
+| Foundation module splits | ✅ `GlobeView` + `MobileUI` contracts (`src/components/globe/`, `src/components/mobile/`) |
 
 For architecture and danger zones, read [`AGENTS.md`](./AGENTS.md) first.
