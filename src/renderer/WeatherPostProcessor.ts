@@ -5,6 +5,14 @@ import {
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
 import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
+import type { LutVolume } from './lut';
+import {
+    createIdentityLutTexture,
+    createLookLutTexture,
+    createLutBindGroup,
+    createLutBindGroupLayout,
+    createLutSampler,
+} from './lutGpu';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -20,6 +28,11 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private weatherParamsBuffer: GPUBuffer | null = null;
     private weatherSampler: GPUSampler | null = null;
     private noiseBuffer: GPUBuffer | null = null;
+    private lutSampler: GPUSampler | null = null;
+    private dummyLutTexture: GPUTexture | null = null;
+    private lutTexture: GPUTexture | null = null;
+    private lutBindGroupLayout: GPUBindGroupLayout | null = null;
+    private lutBindGroup: GPUBindGroup | null = null;
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -48,6 +61,9 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         });
 
         this.weatherParams.set(createDefaultWeatherParams());
+        this.lutSampler = createLutSampler(this.device);
+        this.dummyLutTexture = createIdentityLutTexture(this.device);
+        this.lutTexture = this.dummyLutTexture;
     }
 
     public async init(presentationFormat: GPUTextureFormat): Promise<void> {
@@ -91,8 +107,9 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             ],
         });
 
+        this.lutBindGroupLayout = createLutBindGroupLayout(this.device, GPUShaderStage.FRAGMENT);
         const pipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout],
+            bindGroupLayouts: [bindGroupLayout, this.lutBindGroupLayout],
         });
 
         this.weatherPipeline = this.device.createRenderPipeline({
@@ -108,6 +125,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             },
             primitive: { topology: 'triangle-list' },
         });
+
+        this.rebuildLutBindGroup();
     }
 
     public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, _width?: number, _height?: number): void {
@@ -137,6 +156,30 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     public updateParticleSeeds(_seeds: Float32Array, _width: number, _height: number): void {
         // Fragment weather path stays procedural — GPU particles are compute-only.
+    }
+
+    private rebuildLutBindGroup(): void {
+        if (!this.lutBindGroupLayout || !this.lutSampler || !this.lutTexture) return;
+        this.lutBindGroup = createLutBindGroup(
+            this.device,
+            this.lutBindGroupLayout,
+            this.lutTexture,
+            this.lutSampler,
+        );
+    }
+
+    public setLookLut(volume: LutVolume | null): void {
+        if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) {
+            this.lutTexture.destroy();
+        }
+        this.lutTexture = volume
+            ? createLookLutTexture(this.device, volume)
+            : this.dummyLutTexture;
+        this.rebuildLutBindGroup();
+    }
+
+    public setTemporalHistoryEnabled(_enabled: boolean): void {
+        // TAA/DOF history is compute-only.
     }
 
     public setShaderEffects(enabled: boolean): void {
@@ -221,6 +264,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
             postPass.setPipeline(this.weatherPipeline);
             postPass.setBindGroup(0, this.weatherBindGroup);
+            if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
             postPass.draw(3, 1, 0, 0);
             postPass.end();
 
@@ -246,6 +290,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
         postPass.setPipeline(this.weatherPipeline);
         postPass.setBindGroup(0, this.weatherBindGroup);
+        if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
         postPass.draw(3, 1, 0, 0);
         if (timing) {
             timing.timer.markPassEnd(postPass, timing.weatherEndIndex);
@@ -257,6 +302,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         try {
             if (this.weatherParamsBuffer) this.weatherParamsBuffer.destroy();
             if (this.noiseBuffer) this.noiseBuffer.destroy();
+            if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) this.lutTexture.destroy();
+            if (this.dummyLutTexture) this.dummyLutTexture.destroy();
         } catch (e) {
             // ignore cleanup errors
         }
@@ -265,5 +312,10 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.weatherPipeline = null;
         this.weatherBindGroup = null;
         this.weatherSampler = null;
+        this.lutSampler = null;
+        this.lutTexture = null;
+        this.dummyLutTexture = null;
+        this.lutBindGroup = null;
+        this.lutBindGroupLayout = null;
     }
 }

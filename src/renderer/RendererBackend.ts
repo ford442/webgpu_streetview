@@ -57,6 +57,10 @@ export interface StreetViewRenderer {
      * backends that stay procedural (fragment WebGPU, WebGL fallback).
      */
     updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
+    /** 3D look LUT. Null = identity (today's ACES path). No-op on WebGL. */
+    setLookLut?(volume: import('./lut').LutVolume | null): void;
+    /** Compute-only temporal history. No-op on fragment WebGPU and WebGL. */
+    setTemporalHistoryEnabled?(enabled: boolean): void;
     updateWeatherAnimation(): void;
     renderWeatherOnly(): void;
     beginTransition(mode?: string): void;

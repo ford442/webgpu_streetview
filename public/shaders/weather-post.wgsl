@@ -66,6 +66,11 @@ struct WeatherParams {
 // alternative to the per-pixel GPU hash noise used elsewhere in this file.
 @group(0) @binding(3) var<storage, read> wasmNoiseTile: array<f32, 4096>;
 
+// 3D film LUT (group 1). A 1×1×1 dummy means identity — skip sampling so
+// default ACES pixels stay bit-identical to the pre-LUT path.
+@group(1) @binding(0) var lut3d: texture_3d<f32>;
+@group(1) @binding(1) var lutSampler: sampler;
+
 // Vertex shader - full screen triangle
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
@@ -220,6 +225,17 @@ fn applyContrast(col: vec3<f32>, contrast: f32) -> vec3<f32> {
 
 fn applyExposure(col: vec3<f32>, exposure: f32) -> vec3<f32> {
     return col * pow(2.0, exposure);
+}
+
+fn applyLut(color: vec3<f32>) -> vec3<f32> {
+    let dim = textureDimensions(lut3d).x;
+    if (dim <= 1u) {
+        return color;
+    }
+    let n = f32(dim);
+    let uvw = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    let uvwC = (uvw * (n - 1.0) + vec3<f32>(0.5)) / n;
+    return textureSampleLevel(lut3d, lutSampler, uvwC, 0.0).rgb;
 }
 
 fn kelvinToRGB(kelvin: f32) -> vec3<f32> {
@@ -1001,11 +1017,17 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col = applyHeatShimmer(col, uv, p.heatShimmerIntensity, t);
     
     // === COLOR GRADING ===
-    col = applyVibrance(col, p.vibrance);
-    col = applySaturation(col, p.saturation);
-    col = applyContrast(col, p.contrast);
-    col = applyTemperatureTint(col, p.temperature, p.tint);
-    col = applyExposure(col, p.exposure);
+    // Named looks bind a 3D LUT (texture, not a uniform). Identity / 1³ dummy
+    // keeps the 6-knob chain so default ACES pixels do not change.
+    if (textureDimensions(lut3d).x > 1u) {
+        col = applyLut(col);
+    } else {
+        col = applyVibrance(col, p.vibrance);
+        col = applySaturation(col, p.saturation);
+        col = applyContrast(col, p.contrast);
+        col = applyTemperatureTint(col, p.temperature, p.tint);
+        col = applyExposure(col, p.exposure);
+    }
 
     // === NIGHTTIME MODE ===
     col = applyNight(col, p.nightIntensity, uv, t);
