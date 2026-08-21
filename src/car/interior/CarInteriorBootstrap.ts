@@ -28,7 +28,6 @@ import {
     setupWindowWeatherOverlay,
     type CarInteriorAssemblyHost,
 } from './CarInteriorAssembly';
-import { isGltfInteriorEnabled, loadGltfInteriorKit } from '../gltfInteriorKit';
 
 export interface CarInteriorBootstrapResult {
     scene: THREE.Scene;
@@ -271,12 +270,6 @@ export function bootstrapCarInterior(
     lightingManager.setReducedMotion(reducedMotion);
     lightingManager.setEmitterGlows(host.emitterGlowSprites ?? []);
     host.lightingManager = lightingManager;
-
-    if (isGltfInteriorEnabled()) {
-        void loadGltfInteriorKit().catch((err) => {
-            console.warn('[CarInterior] glTF kit skipped', err);
-        });
-    }
 
     return {
         scene,
