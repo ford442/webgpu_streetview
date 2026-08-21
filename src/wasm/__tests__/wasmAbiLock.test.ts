@@ -36,6 +36,9 @@ const EXPECTED_EXPORTS = [
   'haversine',
   'batch_haversine',
   'fill_engine_noise',
+  'luma_histogram_bt709',
+  'reduce_luma_bt709',
+  'downsample_2d',
 ] as const;
 
 /** malloc/free come from the Emscripten runtime, not from our sources. */
@@ -139,6 +142,9 @@ describe('WASM ABI lock', () => {
       haversine: 'haversine',
       batchHaversine: 'batch_haversine',
       fillEngineNoise: 'fill_engine_noise',
+      lumaHistogramBt709: 'luma_histogram_bt709',
+      reduceLumaBt709: 'reduce_luma_bt709',
+      downsample2d: 'downsample_2d',
     };
 
     // The JS fallback must implement every method, so a missing binary never

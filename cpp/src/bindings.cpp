@@ -105,5 +105,23 @@ void fill_engine_noise(float* buf, int count,
     sw_fill_engine_noise(buf, count, rpm, load, speed_kmh, time_sec, sample_rate);
 }
 
+EMSCRIPTEN_KEEPALIVE
+void luma_histogram_bt709(const unsigned char* rgba, int width, int height,
+                          unsigned int* bins) {
+    sw_luma_histogram_bt709(rgba, width, height, bins);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void reduce_luma_bt709(const unsigned char* rgba, int width, int height,
+                       float* out3) {
+    sw_reduce_luma_bt709(rgba, width, height, out3);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void downsample_2d(const unsigned char* src, int src_w, int src_h,
+                   unsigned char* dst, int dst_w, int dst_h) {
+    sw_downsample_2d(src, src_w, src_h, dst, dst_w, dst_h);
+}
+
 } // extern "C"
 #endif // __EMSCRIPTEN__

@@ -7,7 +7,8 @@
  * Emscripten build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine,
- *   normalize_angle, signed_angle_diff, fill_engine_noise
+ *   normalize_angle, signed_angle_diff, fill_engine_noise,
+ *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
  * canonical names for Emscripten EXPORTED_FUNCTIONS.
@@ -123,6 +124,26 @@ float sw_signed_angle_diff(float from, float to);
 void sw_fill_engine_noise(float* buf, int count,
                           float rpm, float load, float speed_kmh,
                           float time_sec, float sample_rate);
+
+/**
+ * 256-bin Rec.709 luma histogram of packed RGBA8 (row-major, 4 bytes/pixel).
+ * `bins` is 256 uint32 counts; zeroed then filled. No-op when width/height <= 0.
+ */
+void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
+                             unsigned int* bins);
+
+/**
+ * Rec.709 luma reduce: writes three f32 values {mean, min, max} in [0, 1].
+ * Empty input writes zeros.
+ */
+void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
+                          float* out3);
+
+/**
+ * Integer box-filter downsample of packed RGBA8 into packed RGBA8.
+ */
+void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
+                      unsigned char* dst, int dst_w, int dst_h);
 
 #ifdef __cplusplus
 } // extern "C"

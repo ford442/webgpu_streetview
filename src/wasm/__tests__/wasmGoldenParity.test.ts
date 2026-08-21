@@ -56,6 +56,12 @@ interface Goldens {
     label: string; count: number; rpm: number; load: number;
     speedKmh: number; timeSec: number; sampleRate: number; expected: number[];
   }[];
+  lumaHistogram: { width: number; height: number; rgba: number[]; expectedBins: number[] };
+  lumaReduce: { width: number; height: number; rgba: number[]; expected: number[] };
+  downsample2d: {
+    width: number; height: number; rgba: number[];
+    dstW: number; dstH: number; expected: number[];
+  };
 }
 
 const goldens: Goldens = JSON.parse(
@@ -230,5 +236,33 @@ describe('WASM golden parity (JS fallback)', () => {
         expectClose(out[i]!, expected, TOLERANCES.f32RoundingOrder, `engineNoise[${c.label}][${i}]`);
       });
     });
+  });
+
+  it('lumaHistogramBt709 matches the goldens', () => {
+    const rgba = Uint8Array.from(goldens.lumaHistogram.rgba);
+    const bins = api.lumaHistogramBt709(rgba, goldens.lumaHistogram.width, goldens.lumaHistogram.height);
+    goldens.lumaHistogram.expectedBins.forEach((expected, i) => {
+      expect(bins[i], `hist[${i}]`).toBe(expected);
+    });
+  });
+
+  it('reduceLumaBt709 matches the goldens', () => {
+    const rgba = Uint8Array.from(goldens.lumaReduce.rgba);
+    const reduced = api.reduceLumaBt709(rgba, goldens.lumaReduce.width, goldens.lumaReduce.height);
+    expectClose(reduced.mean, goldens.lumaReduce.expected[0]!, TOLERANCES.f32RoundingOrder, 'reduce.mean');
+    expectClose(reduced.min, goldens.lumaReduce.expected[1]!, TOLERANCES.f32RoundingOrder, 'reduce.min');
+    expectClose(reduced.max, goldens.lumaReduce.expected[2]!, TOLERANCES.f32RoundingOrder, 'reduce.max');
+  });
+
+  it('downsample2d matches the goldens', () => {
+    const src = Uint8Array.from(goldens.downsample2d.rgba);
+    const dst = api.downsample2d(
+      src,
+      goldens.downsample2d.width,
+      goldens.downsample2d.height,
+      goldens.downsample2d.dstW,
+      goldens.downsample2d.dstH,
+    );
+    expect([...dst]).toEqual(goldens.downsample2d.expected);
   });
 });

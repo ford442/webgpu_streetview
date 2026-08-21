@@ -16,7 +16,7 @@
 
 namespace goldens {
 
-inline constexpr const char* kWasmSha256 = "226b8436750a8590696581ee53e158d52e0ad34fb09431b17929027b5bd6be87";
+inline constexpr const char* kWasmSha256 = "d0df54e818fc80bd2fb778d80b253cba74e1ccd068b35f5c189d9af6acfb07a3";
 inline constexpr unsigned kNoiseSeed = 1337u;
 
 // --- noise2d -------------------------------------------------------------
@@ -229,6 +229,57 @@ inline constexpr float kEngineExpected3[] = {
     -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f,
     -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f,
     -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f, -0.38999998569488525f,
+};
+
+// --- luma_histogram_bt709 / reduce / downsample_2d -------------------
+inline constexpr int kChoresWidth = 4;
+inline constexpr int kChoresHeight = 2;
+inline constexpr unsigned char kChoresRgba[] = {
+    0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 0, 255,
+    0, 255, 0, 255, 0, 0, 255, 255, 128, 128, 128, 255,
+    255, 255, 0, 255, 0, 255, 255, 255,
+};
+inline constexpr unsigned kChoresHistExpected[] = {
+    1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 1u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 1u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 1u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 1u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 1u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+    0u, 0u, 0u, 0u, 0u, 0u, 0u, 1u,
+};
+inline constexpr float kChoresReduceExpected[] = {
+    0.5271450877189636f, 0.0f, 1.0f,
+};
+inline constexpr int kChoresDownWidth = 2;
+inline constexpr int kChoresDownHeight = 1;
+inline constexpr unsigned char kChoresDownExpected[] = {
+    95, 95, 159, 255, 127, 191, 63, 255,
 };
 
 } // namespace goldens

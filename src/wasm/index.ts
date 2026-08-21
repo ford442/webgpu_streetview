@@ -1,6 +1,9 @@
-/**
- * src/wasm/index.ts
- * TypeScript wrapper for the WebGPU StreetView WASM module.
+import {
+  downsample2d as jsDownsample2d,
+  lumaHistogramBt709 as jsLumaHistogramBt709,
+  reduceLumaBt709 as jsReduceLumaBt709,
+  type LumaReduce,
+} from '../renderer/gpuChores/lumaMath';
  *
  * Usage:
  *   import { loadWasmModule, type StreetViewWasmAPI } from './wasm';
@@ -123,6 +126,32 @@ export interface StreetViewWasmAPI {
     timeSec: number,
     sampleRate: number,
   ): void;
+
+  /**
+   * 256-bin Rec.709 luma histogram of packed RGBA8.
+   * `rgba` must contain at least `width * height * 4` bytes.
+   */
+  lumaHistogramBt709(
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+  ): Uint32Array;
+
+  /** Rec.709 luma reduce: mean / min / max in [0, 1]. */
+  reduceLumaBt709(
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+  ): LumaReduce;
+
+  /** Integer box-filter downsample of packed RGBA8. */
+  downsample2d(
+    src: Uint8Array | Uint8ClampedArray,
+    srcW: number,
+    srcH: number,
+    dstW: number,
+    dstH: number,
+  ): Uint8Array;
 
   /** True when backed by the compiled WASM binary; false for JS fallback. */
   isWasm: boolean;
@@ -374,6 +403,9 @@ const JS_FALLBACK: StreetViewWasmAPI = {
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
   fillEngineNoise: _jsFillEngineNoise,
+  lumaHistogramBt709: jsLumaHistogramBt709,
+  reduceLumaBt709: jsReduceLumaBt709,
+  downsample2d: jsDownsample2d,
   isWasm: false,
 };
 
@@ -473,6 +505,20 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       rpm: number, load: number, speed: number,
       time: number, sampleRate: number,
     ) => void;
+    const luma_histogram_bt709 = exp['luma_histogram_bt709'] as (
+      rgba: number, w: number, h: number, bins: number,
+    ) => void;
+    const reduce_luma_bt709 = exp['reduce_luma_bt709'] as (
+      rgba: number, w: number, h: number, out: number,
+    ) => void;
+    const downsample_2d = exp['downsample_2d'] as (
+      src: number, sw: number, sh: number, dst: number, dw: number, dh: number,
+    ) => void;
+    if (typeof luma_histogram_bt709 !== 'function'
+      || typeof reduce_luma_bt709 !== 'function'
+      || typeof downsample_2d !== 'function') {
+      throw new Error('WASM ABI missing gpu-chores exports');
+    }
 
     // WASM memory starts at byte 512 (after the permutation table); everything
     // from there on is a scratch region for buffer transfers. 512 is a multiple
@@ -561,6 +607,54 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       out.set(view.subarray(0, Math.min(out.length, count)));
     };
 
+    const lumaHistogramBt709 = (
+      rgba: Uint8Array | Uint8ClampedArray,
+      width: number,
+      height: number,
+    ): Uint32Array => {
+      if (width <= 0 || height <= 0) return new Uint32Array(256);
+      const pix = width * height * 4;
+      const binsOff = SCRATCH_OFFSET + ((pix + 3) & ~3);
+      reserveScratch(binsOff - SCRATCH_OFFSET + 256 * 4);
+      new Uint8Array(wasmMemory.buffer, SCRATCH_OFFSET, pix).set(rgba.subarray(0, pix));
+      luma_histogram_bt709(SCRATCH_OFFSET, width, height, binsOff);
+      return new Uint32Array(wasmMemory.buffer.slice(binsOff, binsOff + 256 * 4));
+    };
+
+    const reduceLumaBt709 = (
+      rgba: Uint8Array | Uint8ClampedArray,
+      width: number,
+      height: number,
+    ): LumaReduce => {
+      if (width <= 0 || height <= 0) return { mean: 0, min: 0, max: 0, count: 0 };
+      const pix = width * height * 4;
+      const outOff = SCRATCH_OFFSET + ((pix + 3) & ~3);
+      reserveScratch(outOff - SCRATCH_OFFSET + 12);
+      new Uint8Array(wasmMemory.buffer, SCRATCH_OFFSET, pix).set(rgba.subarray(0, pix));
+      reduce_luma_bt709(SCRATCH_OFFSET, width, height, outOff);
+      const v = new Float32Array(wasmMemory.buffer, outOff, 3);
+      return { mean: v[0]!, min: v[1]!, max: v[2]!, count: width * height };
+    };
+
+    const downsample2d = (
+      src: Uint8Array | Uint8ClampedArray,
+      srcW: number,
+      srcH: number,
+      dstW: number,
+      dstH: number,
+    ): Uint8Array => {
+      if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) {
+        return new Uint8Array(Math.max(0, dstW) * Math.max(0, dstH) * 4);
+      }
+      const srcBytes = srcW * srcH * 4;
+      const dstBytes = dstW * dstH * 4;
+      const dstOff = SCRATCH_OFFSET + ((srcBytes + 3) & ~3);
+      reserveScratch(dstOff - SCRATCH_OFFSET + dstBytes);
+      new Uint8Array(wasmMemory.buffer, SCRATCH_OFFSET, srcBytes).set(src.subarray(0, srcBytes));
+      downsample_2d(SCRATCH_OFFSET, srcW, srcH, dstOff, dstW, dstH);
+      return new Uint8Array(wasmMemory.buffer.slice(dstOff, dstOff + dstBytes));
+    };
+
     _cachedModule = {
       seed,
       noise2d,
@@ -573,6 +667,9 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       fillEngineNoise,
+      lumaHistogramBt709,
+      reduceLumaBt709,
+      downsample2d,
       isWasm: true,
     };
   } catch {
