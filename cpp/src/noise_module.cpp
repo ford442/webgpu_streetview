@@ -51,7 +51,9 @@ static inline float grad2d(int hash, float x, float y) {
 
 static inline int fast_floor(float x) {
     int xi = (int)x;
-    return x < xi ? xi - 1 : xi;
+    // Explicit int -> float so -Wconversion stays clean; the comparison
+    // already happened in float, so the semantics are unchanged.
+    return x < static_cast<float>(xi) ? xi - 1 : xi;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,8 +188,15 @@ float sw_normalize_angle(float angle) {
 
 float sw_signed_angle_diff(float from, float to) {
     float diff = fmodf((to - from + 180.0f), 360.0f) - 180.0f;
-    // fmod can return -180 when the inputs are exactly opposite; keep as -180
-    // per the convention used throughout the codebase (matches navigation.ts).
+    // fmodf keeps the sign of the dividend, so a negative (to - from + 180)
+    // lands the result below -180 (e.g. to-from = -183 yields -183 instead of
+    // +177). The correction below is what the WAT module, the JS fallback in
+    // src/wasm/index.ts and signedAngleDiff() in src/utils/navigation.ts all
+    // do; without it this function silently disagreed with every other
+    // implementation for negative differences.
+    if (diff < -180.0f) diff += 360.0f;
+    // Exactly-opposite inputs still return -180 (not +180), matching the other
+    // implementations.
     return diff;
 }
 

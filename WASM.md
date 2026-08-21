@@ -16,6 +16,10 @@ npm run build:wasm
 
 # Full app build — correct order: WASM first, then Vite copies it into build/
 npm run build
+
+# Build and test the C++ algorithms natively (no emcc, no browser, no Node)
+npm run test:cpp
+npm run test:cpp:asan       # same, with ASan + UBSan
 ```
 
 ### Calling the module from TypeScript
@@ -59,20 +63,29 @@ function WeatherComponent() {
 
 ```
 cpp/
-├── CMakeLists.txt              Emscripten CMake build (raw-export / STANDALONE_WASM mode)
+├── CMakeLists.txt              Host CMake build + Emscripten build (raw-export / STANDALONE_WASM)
 ├── include/
 │   └── streetview_wasm.h       C public API (sw_* internal names)
-└── src/
-    ├── noise_module.cpp        Core implementation (Perlin noise, haversine, …)
-    ├── bindings.cpp            Canonical raw-export wrappers (seed, noise2d, …)
-    └── streetview-wasm.wat     Hand-crafted WAT source — canonical ABI reference
+├── src/
+│   ├── noise_module.cpp        Algorithm source of truth (Perlin noise, haversine, …)
+│   ├── bindings.cpp            Canonical raw-export wrappers (seed, noise2d, …)
+│   └── streetview-wasm.wat     Hand-crafted WAT source — ABI source of record, what ships
+├── tests/
+│   ├── CMakeLists.txt          Host-only test target (streetview_cpu_tests)
+│   ├── noise_module_test.cpp   doctest golden-vector tests
+│   ├── goldens_generated.h     GENERATED goldens for C++ (npm run gen:wasm-goldens)
+│   └── goldens.json            The same goldens for the Vitest JS-fallback parity test
+└── third_party/
+    └── doctest/                Vendored single-header test framework (MIT, v2.4.11)
 
 public/wasm/
 ├── streetview-wasm.wasm        Pre-built binary (commit this; rebuild with npm run build:wasm)
 └── streetview-wasm.wasm.sha256 SHA-256 of the WAT source at the last build (staleness guard)
 
 scripts/
-└── build-wasm.sh               Build script (auto-detects emcc vs wabt)
+├── build-wasm.sh               Build script (auto-detects emcc vs wabt)
+├── check-wasm-abi.mjs          Compiled binary exports the whole ABI
+└── gen-wasm-goldens.mjs        Capture goldens from the shipping binary
 
 src/wasm/
 ├── index.ts                    TypeScript wrapper + pure-JS fallback
@@ -147,8 +160,14 @@ Output:
 - `public/wasm/streetview-wasm.wasm` — compiled WASM binary
 - `public/wasm/streetview-wasm.wasm.sha256` — SHA-256 of the WAT source (staleness guard)
 
-This is the **canonical path** used in CI. The WAT source is the single source
-of truth; both the pre-built binary and its hash file should be committed.
+This is the path used in CI and the one that produces the shipped binary. The
+WAT is the **ABI source of record**; both the pre-built binary and its hash file
+should be committed.
+
+The *algorithms*, however, live in `cpp/src/noise_module.cpp` — see
+"Path C" below and `docs/WASM_BRIDGE.md` §6. Do not hand-write new WAT
+algorithms: write the C++, transcribe it, and let the goldens prove the two
+agree.
 
 ### Path B — C++ → WASM via Emscripten
 
@@ -157,13 +176,20 @@ for exact `haversine` and enables link-time optimisation.
 
 **Emscripten flags used (see `CMakeLists.txt`):**
 ```
+-O3 -g0                # release; DWARF stripped
 -s STANDALONE_WASM=1   # link math statically; no JS glue file required
 --no-entry             # suppress WASI _start; pure compute module
+-s INITIAL_MEMORY=16777216   # explicit, so the first tile never triggers a grow
 -s ALLOW_MEMORY_GROWTH=1
--s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer',
-                        '_haversine','_normalize_angle','_signed_angle_diff',
-                        '_malloc','_free']
+-s ASSERTIONS=0
+-s EXPORTED_FUNCTIONS=[all eleven ABI names, plus '_malloc','_free']
+-s EXPORTED_RUNTIME_METHODS=[]
 ```
+
+Compile flags: `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`
+(shared with the host build) plus `-fno-exceptions -fno-rtti`. Passing
+`-DSTREETVIEW_WASM_SIMD=ON` adds `-msimd128`; it changes no algorithm, only
+whether the `fill_*` loops may autovectorize.
 
 **No `MODULARIZE`, no `EXPORT_ES6`, no `--bind`** — these flags would produce a
 JS-module wrapper incompatible with the TS loader's direct `WebAssembly.instantiate()`.
@@ -187,6 +213,38 @@ Output: `public/wasm/streetview-wasm.wasm` — the WASM binary (no `.js` glue fi
 docker run --rm -v "$(pwd):/src" -w /src \
   emscripten/emsdk bash scripts/build-wasm.sh
 ```
+
+### Path C — native host build (algorithms only, no WASM)
+
+`cpp/src/noise_module.cpp` builds with the system compiler so the algorithms can
+be tested anywhere `cmake` exists:
+
+```bash
+npm run test:cpp        # configure + build + ctest with g++/clang++, -Werror
+npm run test:cpp:asan   # same, with -fsanitize=address,undefined
+
+# or by hand
+cmake -S cpp -B cpp/build-host -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build cpp/build-host
+ctest --test-dir cpp/build-host --output-on-failure
+```
+
+This produces no `.wasm`. It builds the `streetview_cpu` static library and
+`streetview_cpu_tests`, which asserts every `sw_*` function against golden
+vectors captured from the shipping binary — bit-exact on the f32 paths, `1e-12`
+relative on `haversine`.
+
+Configuring also writes `cpp/build-host/compile_commands.json`
+(`CMAKE_EXPORT_COMPILE_COMMANDS=ON`), so clangd/clang-tidy work in `cpp/`.
+
+Regenerate the goldens only when an algorithm deliberately changes:
+
+```bash
+npm run gen:wasm-goldens   # rewrites cpp/tests/goldens.json + goldens_generated.h
+```
+
+CI re-runs the generator and fails on any diff, so the goldens cannot drift from
+the committed binary or be hand-edited.
 
 #### Emscripten SDK version pinning
 

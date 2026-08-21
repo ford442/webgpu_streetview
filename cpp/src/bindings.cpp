@@ -91,7 +91,7 @@ double batch_haversine(const double* points, int count, double* out) {
 EMSCRIPTEN_KEEPALIVE
 float normalize_angle(float angle) { return sw_normalize_angle(angle); }
 
-/** Smallest signed angle difference (-180, 180]. Matches WAT export: 'signed_angle_diff'. */
+/** Smallest signed angle difference [-180, 180). Matches WAT export: 'signed_angle_diff'. */
 EMSCRIPTEN_KEEPALIVE
 float signed_angle_diff(float from, float to) { return sw_signed_angle_diff(from, to); }
 

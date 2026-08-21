@@ -102,7 +102,8 @@ double sw_batch_haversine(const double* points, int count, double* out);
 float sw_normalize_angle(float angle);
 
 /**
- * Smallest signed angle difference, result in (-180, 180].
+ * Smallest signed angle difference, result in [-180, 180).
+ * Exactly-opposite inputs return -180, not +180.
  */
 float sw_signed_angle_diff(float from, float to);
 

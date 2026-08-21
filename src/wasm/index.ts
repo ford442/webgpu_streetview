@@ -107,7 +107,7 @@ export interface StreetViewWasmAPI {
   /** Normalise an angle to [0, 360). */
   normalizeAngle(angle: number): number;
 
-  /** Smallest signed angle difference; result in (-180, 180]. */
+  /** Smallest signed angle difference; result in `[-180, 180)` — exactly-opposite inputs give -180. */
   signedAngleDiff(from: number, to: number): number;
 
   /**
