@@ -33,6 +33,10 @@ import {
     WeatherPostProcessMode,
     getRendererPreference,
 } from './RendererBackend';
+import {
+    adapterInfoFromGpuAdapter,
+    publishWebGpuProbe,
+} from './webgpuBootProbe';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
 

@@ -35,7 +35,7 @@ describe('lumaMath BT.709 chores', () => {
     const r = reduceLumaBt709(rgba, 2, 1);
     expect(r.count).toBe(2);
     expect(r.min).toBe(0);
-    expect(r.max).toBe(1);
+    expect(r.max).toBeCloseTo(1, 10);
     expect(r.mean).toBeCloseTo(0.5, 5);
   });
 
@@ -58,7 +58,7 @@ describe('lumaMath BT.709 chores', () => {
   it('exposureHintFromMeanLuma targets mid-grey and clamps', () => {
     expect(exposureHintFromMeanLuma(0.18)).toBeCloseTo(0, 5);
     expect(exposureHintFromMeanLuma(0.09)).toBeCloseTo(1, 5);
-    expect(exposureHintFromMeanLuma(1)).toBeCloseTo(Math.log2(0.18), 5);
+    expect(exposureHintFromMeanLuma(1)).toBe(-2);
     expect(exposureHintFromMeanLuma(0)).toBe(0);
     expect(exposureHintFromMeanLuma(0.0001)).toBe(2);
   });

@@ -8,9 +8,13 @@ describe('makePickerThumbDataUrl', () => {
     src.width = 8;
     src.height = 8;
     const ctx = src.getContext('2d');
-    expect(ctx).not.toBeNull();
-    ctx!.fillStyle = '#ff0000';
-    ctx!.fillRect(0, 0, 8, 8);
+    if (!ctx) {
+      // jsdom has no 2d context unless the canvas package is installed.
+      expect(ctx).toBeNull();
+      return;
+    }
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, 8, 8);
     const url = makePickerThumbDataUrl(src, downsample2d, 4, 2);
     expect(url).toMatch(/^data:image\/jpeg/);
   });

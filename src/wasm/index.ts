@@ -1,9 +1,6 @@
-import {
-  downsample2d as jsDownsample2d,
-  lumaHistogramBt709 as jsLumaHistogramBt709,
-  reduceLumaBt709 as jsReduceLumaBt709,
-  type LumaReduce,
-} from '../renderer/gpuChores/lumaMath';
+/**
+ * src/wasm/index.ts
+ * TypeScript wrapper for the WebGPU StreetView WASM module.
  *
  * Usage:
  *   import { loadWasmModule, type StreetViewWasmAPI } from './wasm';
@@ -16,6 +13,14 @@ import {
  * The module is lazy-loaded (not included in the initial JS bundle).
  * A pure-JS fallback is used automatically when the WASM file is unavailable.
  */
+import {
+  downsample2d as jsDownsample2d,
+  lumaHistogramBt709 as jsLumaHistogramBt709,
+  reduceLumaBt709 as jsReduceLumaBt709,
+  type LumaReduce,
+} from '../renderer/gpuChores/lumaMath';
+
+export type { LumaReduce };
 
 // ---------------------------------------------------------------------------
 // Public API types

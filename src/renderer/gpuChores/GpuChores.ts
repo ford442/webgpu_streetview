@@ -46,7 +46,6 @@ export class GpuChores {
   private binsReadback: GPUBuffer | null = null;
   private sizeBuffer: GPUBuffer | null = null;
   private gpuReady = false;
-  private gpuFailed = false;
   private initPromise: Promise<void> | null = null;
   private inFlight = false;
   private wasm: StreetViewWasmAPI | null = null;
@@ -146,7 +145,6 @@ export class GpuChores {
       setGpuChoresStats({ backend: 'webgpu', killSwitch: this.killSwitch });
     } catch (err) {
       console.warn('[gpu-chores] WebGPU init failed — WASM/JS fallback', err);
-      this.gpuFailed = true;
       this.gpuReady = false;
       this.device = null;
       setGpuChoresStats({
@@ -267,7 +265,6 @@ export class GpuChores {
       return sample;
     } catch (err) {
       console.warn('[gpu-chores] GPU hist failed — CPU fallback next sample', err);
-      this.gpuFailed = true;
       this.gpuReady = false;
       return null;
     } finally {
