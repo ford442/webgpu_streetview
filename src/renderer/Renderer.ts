@@ -33,10 +33,8 @@ import {
     WeatherPostProcessMode,
     getRendererPreference,
 } from './RendererBackend';
-import {
-    adapterInfoFromGpuAdapter,
-    publishWebGpuProbe,
-} from './webgpuBootProbe';
+import { GpuChores } from './gpuChores/GpuChores';
+import { histDownsampleSize } from './gpuChores/lumaMath';
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
@@ -61,6 +59,7 @@ export class Renderer implements StreetViewRenderer {
     private weatherPostProcessor!: WeatherPostProcessorLike;
     private weatherPostProcessMode: WeatherPostProcessMode = 'fragment';
     private gpuPassTimer: GpuPassTimer | null = null;
+    private gpuChores: GpuChores | null = null;
     private samplerAnisotropy: number = 1;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
@@ -276,6 +275,9 @@ export class Renderer implements StreetViewRenderer {
                 : new WeatherPostProcessor(this.device, this.context, this.canvas);
             await this.weatherPostProcessor.init(this.presentationFormat);
 
+            this.gpuChores = new GpuChores(this.device);
+            void this.gpuChores.ensureReady();
+
             this.transitionManager = new TransitionManager(this.device, this.sampler);
             try {
                 await this.transitionManager.init(!!options?.legacyTransitions);
@@ -325,6 +327,53 @@ export class Renderer implements StreetViewRenderer {
 
     public getWeatherPostProcessMode(): WeatherPostProcessMode {
         return this.weatherPostProcessMode;
+    }
+
+    public getGpuChores(): GpuChores | null {
+        return this.gpuChores;
+    }
+
+    /**
+     * #216: sample panorama luma (hist/reduce) on the shared device, or WASM/JS.
+     * Skipped while a hold is active so we never read a loading live canvas.
+     */
+    public samplePanoramaStats(): void {
+        if (this.isDestroyed || !this.gpuChores || this.holdTransition.isHoldActive()) return;
+        void this.samplePanoramaStatsAsync();
+    }
+
+    public getOutputCanvas(): HTMLCanvasElement {
+        return this.canvas;
+    }
+
+    private async samplePanoramaStatsAsync(): Promise<void> {
+        const chores = this.gpuChores;
+        if (!chores || this.isDestroyed || this.holdTransition.isHoldActive()) return;
+        await chores.ensureReady();
+        if (this.isDestroyed || this.holdTransition.isHoldActive()) return;
+        const tex = this.textures.videoTexture;
+        if (tex) {
+            const sample = await chores.sampleTexture(tex);
+            if (sample || this.isDestroyed || this.holdTransition.isHoldActive()) return;
+        }
+        this.samplePanoramaStatsCpu(chores);
+    }
+
+    private samplePanoramaStatsCpu(chores: GpuChores): void {
+        if (typeof document === 'undefined' || this.canvas.width < 2 || this.canvas.height < 2) return;
+        const q = histDownsampleSize(this.canvas.width, this.canvas.height);
+        const tmp = document.createElement('canvas');
+        tmp.width = q.width;
+        tmp.height = q.height;
+        const ctx = tmp.getContext('2d');
+        if (!ctx) return;
+        try {
+            ctx.drawImage(this.canvas, 0, 0, q.width, q.height);
+            const img = ctx.getImageData(0, 0, q.width, q.height);
+            chores.analyzePreparedRgba(img.data, q.width, q.height);
+        } catch {
+            // Canvas taint / GPU canvas readback can fail — skip this tick.
+        }
     }
 
     public setSamplerAnisotropy(level: QualityLevel): void {
@@ -440,6 +489,8 @@ export class Renderer implements StreetViewRenderer {
             if (this.uniformBuffer) this.uniformBuffer.destroy();
             this.transitionManager?.dispose();
             this.weatherPostProcessor?.dispose();
+            this.gpuChores?.destroy();
+            this.gpuChores = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
             if (unconfigureContext) {

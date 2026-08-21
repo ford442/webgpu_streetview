@@ -11,6 +11,9 @@ export const OPTIONAL_DEVICE_FEATURES = {
 /** Minimum workgroup size for weather-post-compute (@workgroup_size(16,16,1)). */
 export const COMPUTE_WEATHER_WORKGROUP_SIZE = 16;
 
+/** #216 gpu-chores histogram / downsample (@workgroup_size(8,8,1)). */
+export const COMPUTE_CHORES_WORKGROUP_SIZE = 8;
+
 /** Labels applied to the device/queue/swap-chain so PIX, RenderDoc and about:gpu traces are readable. */
 export const DEVICE_LABELS = {
     device: 'streetview-device',
@@ -36,6 +39,10 @@ export interface DeviceCapabilityMatrix {
     canvasDowngradeReason?: string;
     uncapturedErrorCount: number;
     lastUncapturedError?: string;
+    /** #216 gpu-chores workgroup (histogram / downsample). Independent of weather 16×16. */
+    gpuChoresWorkgroupSize: number;
+    /** `?no_gpu_compute` — chores fall back to WASM/JS; weather path unchanged. */
+    gpuChoresKillSwitch: boolean;
 }
 
 export interface AdapterCapabilitySummary {

@@ -249,6 +249,8 @@ describe('uncaptured errors and labels', () => {
         expect(matrix.canvasColorSpace).toBe('display-p3');
         expect(matrix.canvasToneMapping).toBe('extended');
         expect(matrix.uncapturedErrorCount).toBe(0);
+        expect(matrix.gpuChoresWorkgroupSize).toBe(8);
+        expect(matrix.gpuChoresKillSwitch).toBe(false);
     });
 });
 

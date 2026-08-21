@@ -15,6 +15,8 @@ const SHADERS = [
     'public/shaders/weather-post.wgsl',
     'public/shaders/weather-post-compute.wgsl',
     'public/shaders/weather-particles.wgsl',
+    'public/shaders/gpu-chores-hist.wgsl',
+    'public/shaders/gpu-chores-downsample.wgsl',
 ];
 
 function resolveNagaBinary() {

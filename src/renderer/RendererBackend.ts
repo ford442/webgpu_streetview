@@ -84,6 +84,10 @@ export interface StreetViewRenderer {
     getWeatherPostProcessMode?(): WeatherPostProcessMode;
     /** WebGPU only — updates panorama sampler anisotropy from the active quality preset. */
     setSamplerAnisotropy?(level: import('../config/visualPresets').QualityLevel): void;
+    /** #216 gpu-chores — shared-device hist/downsample, or WASM/JS. */
+    getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
+    samplePanoramaStats?(): void;
+    getOutputCanvas?(): HTMLCanvasElement;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);
@@ -332,6 +336,7 @@ function installStreetViewRendererDebug(
             window.localStorage.setItem('streetview.weatherMode', mode);
             window.location.reload();
         },
+        getGpuChores: () => window.__GPU_CHORES__ ?? null,
     };
 }
 

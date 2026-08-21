@@ -12,11 +12,13 @@ import {
 } from './RendererBackend';
 import {
     COMPUTE_WEATHER_WORKGROUP_SIZE,
+    COMPUTE_CHORES_WORKGROUP_SIZE,
     DEVICE_LABELS,
     OPTIONAL_DEVICE_FEATURES,
     type AdapterCapabilitySummary,
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
+import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 
 export interface CollectOptionalFeaturesOptions {
     /** Request timestamp-query when the adapter supports it (performance overlay). */
@@ -148,6 +150,8 @@ export function buildCapabilityMatrix(
         viewFormats: canvas?.viewFormats ?? [],
         canvasDowngradeReason: canvas?.downgradeReason,
         uncapturedErrorCount: 0,
+        gpuChoresWorkgroupSize: COMPUTE_CHORES_WORKGROUP_SIZE,
+        gpuChoresKillSwitch: readNoGpuComputeFlag(),
     };
 }
 
