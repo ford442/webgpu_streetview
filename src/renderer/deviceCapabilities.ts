@@ -1,4 +1,4 @@
-import type { WeatherPostProcessMode } from './RendererBackend';
+import type { AdapterFeatureLevel, WeatherPostProcessMode } from './RendererBackend';
 
 /** Documented optional features — see docs/RENDERER_FALLBACK.md § Capability matrix. */
 export const OPTIONAL_DEVICE_FEATURES = {
@@ -11,6 +11,13 @@ export const OPTIONAL_DEVICE_FEATURES = {
 /** Minimum workgroup size for weather-post-compute (@workgroup_size(16,16,1)). */
 export const COMPUTE_WEATHER_WORKGROUP_SIZE = 16;
 
+/** Labels applied to the device/queue/swap-chain so PIX, RenderDoc and about:gpu traces are readable. */
+export const DEVICE_LABELS = {
+    device: 'streetview-device',
+    queue: 'streetview-queue',
+    swapChain: 'streetview-swapchain',
+} as const;
+
 export interface DeviceCapabilityMatrix {
     weatherPostProcessMode: WeatherPostProcessMode;
     requiredLimits: Record<string, number>;
@@ -18,6 +25,17 @@ export interface DeviceCapabilityMatrix {
     optionalFeaturesEnabled: GPUFeatureName[];
     timestampQueriesAvailable: boolean;
     temporalDepthPingPong: boolean;
+    /** `'unknown'` when the browser does not expose `GPURequestAdapterOptions.featureLevel`. */
+    featureLevel: AdapterFeatureLevel | 'unknown';
+    forceFallbackAdapter: boolean;
+    canvasFormat: GPUTextureFormat;
+    canvasColorSpace: 'srgb' | 'display-p3';
+    canvasToneMapping: 'standard' | 'extended';
+    viewFormats: GPUTextureFormat[];
+    /** Reason the requested HDR/P3 configure was rejected and re-configured as SDR sRGB. */
+    canvasDowngradeReason?: string;
+    uncapturedErrorCount: number;
+    lastUncapturedError?: string;
 }
 
 export interface AdapterCapabilitySummary {

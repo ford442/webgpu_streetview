@@ -38,6 +38,7 @@ declare global {
     usingWebGL?: boolean;
     rendererFallbackReason?: string;
     weatherPostProcessMode?: WeatherPostProcessMode;
+    rendererAdapterInfo?: import('./renderer/deviceCapabilities').AdapterCapabilitySummary;
     streetViewRendererDebug?: {
       getBackend: () => {
         rendererType?: 'webgpu' | 'webgl';

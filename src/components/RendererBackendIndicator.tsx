@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RendererBackendType, RendererEffectIsolation } from '../renderer/RendererBackend';
 
 export interface RendererBackendInfo {
@@ -56,6 +56,30 @@ const switchButtonStyle = (active: boolean): React.CSSProperties => ({
   cursor: 'pointer',
 });
 
+interface DeviceDiagnostics {
+  featureLevel: string;
+  forceFallbackAdapter: boolean;
+  colorSpace: string;
+  toneMapping: string;
+  uncapturedErrorCount: number;
+  lastUncapturedError?: string;
+  canvasDowngradeReason?: string;
+}
+
+function readDeviceDiagnostics(): DeviceDiagnostics | null {
+  const matrix = window.rendererAdapterInfo?.capabilityMatrix;
+  if (!matrix) return null;
+  return {
+    featureLevel: matrix.featureLevel,
+    forceFallbackAdapter: matrix.forceFallbackAdapter,
+    colorSpace: matrix.canvasColorSpace,
+    toneMapping: matrix.canvasToneMapping,
+    uncapturedErrorCount: matrix.uncapturedErrorCount,
+    lastUncapturedError: matrix.lastUncapturedError,
+    canvasDowngradeReason: matrix.canvasDowngradeReason,
+  };
+}
+
 function chipLabel(info: RendererBackendInfo): string {
   if (info.backendType === 'webgpu') return 'WebGPU';
   if (info.backendType === 'webgl') return 'WebGL2 (fallback)';
@@ -70,6 +94,17 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
   const [wireframe, setWireframe] = useState<boolean>(
     () => window.streetViewRendererDebug?.getDebugOptions().wireframe ?? false
   );
+  const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics | null>(null);
+
+  const isWebGPU = backendInfo?.backendType === 'webgpu';
+
+  // Uncaptured errors accumulate after init, so poll the matrix while the panel is open.
+  useEffect(() => {
+    if (!expanded || !isWebGPU) return undefined;
+    setDiagnostics(readDeviceDiagnostics());
+    const timer = window.setInterval(() => setDiagnostics(readDeviceDiagnostics()), 1000);
+    return () => window.clearInterval(timer);
+  }, [expanded, isWebGPU]);
 
   if (!backendInfo) return null;
 
@@ -96,6 +131,41 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
           <div style={{ color: '#888', fontSize: '9px', marginBottom: isWebGL ? '8px' : 0 }}>
             (reloads page)
           </div>
+
+          {diagnostics && (
+            <>
+              <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
+              <div style={{ color: '#ccc', fontSize: '10px', lineHeight: 1.5 }}>
+                <div>
+                  featureLevel: {diagnostics.featureLevel}
+                  {diagnostics.forceFallbackAdapter ? ' (fallback adapter)' : ''}
+                </div>
+                <div>canvas: {diagnostics.colorSpace} / {diagnostics.toneMapping}</div>
+                {diagnostics.canvasDowngradeReason && (
+                  <div style={{ color: '#ffcc66' }} title={diagnostics.canvasDowngradeReason}>
+                    canvas downgraded to SDR
+                  </div>
+                )}
+                <div style={{ color: diagnostics.uncapturedErrorCount > 0 ? '#ff6666' : '#ccc' }}>
+                  uncaptured errors: {diagnostics.uncapturedErrorCount}
+                </div>
+                {diagnostics.lastUncapturedError && (
+                  <div
+                    style={{
+                      color: '#ff6666',
+                      maxWidth: '220px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={diagnostics.lastUncapturedError}
+                  >
+                    {diagnostics.lastUncapturedError}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {isWebGL && (
             <>
