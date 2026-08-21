@@ -75,6 +75,10 @@ npm run typecheck
 # Playwright E2E (keyless smoke vs full/keyed — see Testing Strategy)
 npm run test:e2e:smoke
 # REACT_APP_MAPS_API_KEY=... npm run test:e2e:keyed
+
+# C++ WASM algorithms — native host build + golden tests (no emcc, no browser)
+npm run test:cpp
+npm run test:cpp:asan       # same, with ASan + UBSan
 ```
 
 ### Deployment
@@ -557,6 +561,33 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend/fallback-chain selection logic (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` deliberately exercises the "WebGPU not supported, fall through to WebGL2, then raw" path rather than a real WebGPU device; the `console.warn`/`console.error` noise this produces (`WebGPU not supported...`, jsdom's `Not implemented: HTMLCanvasElement.prototype.getContext`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
+
+### WASM numeric layer (`cpp/` + `src/wasm/`)
+
+The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM)
+exists as three implementations — the shipping `public/wasm/streetview-wasm.wasm`,
+the C++ in `cpp/src/noise_module.cpp`, and the pure-JS fallback in
+`src/wasm/index.ts`. They are pinned to **one set of golden vectors** captured
+from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
+
+- **`npm run test:cpp`** — CMake host target + doctest goldens, built with
+  `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror` under both g++ and
+  clang++. Needs only `cmake` and a C++17 compiler. `npm run test:cpp:asan`
+  adds ASan + UBSan. Configuring writes `cpp/build-host/compile_commands.json`
+  for clangd.
+- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
+  the JS fallback (runs with `npm test`).
+- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across the
+  WAT, `bindings.cpp`, `CMakeLists.txt`, the TS loader and the committed binary.
+- **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
+  and `build-wasm-emscripten` (full C++ → wasm via emcc + ABI check). Both are
+  required.
+
+**Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
+not hand-write new `.wat` algorithms and do not add new `src/**/*.js`
+application code — the JS fallback is a degrade/test twin, not a third place to
+invent behaviour. Full detail and the plan for retiring the hand-written WAT:
+`docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

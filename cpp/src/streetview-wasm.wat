@@ -22,7 +22,7 @@
 ;;   fill_particle_seeds(ptr: i32, count: i32,
 ;;                       seed: i32)                   → void
 ;;   normalize_angle(a: f32)                          → f32  [0, 360)
-;;   signed_angle_diff(from: f32, to: f32)            → f32  (-180, 180]
+;;   signed_angle_diff(from: f32, to: f32)            → f32  [-180, 180)
 ;;   haversine(lat1: f64, lon1: f64,
 ;;             lat2: f64, lon2: f64)                  → f64  metres
 ;;   batch_haversine(ptr: i32, count: i32,
@@ -502,7 +502,7 @@
         (f32.floor (f32.div (local.get $a) (f32.const 360.0)))))
   )
 
-  ;; ---- signed_angle_diff(from: f32, to: f32) → f32  (-180, 180] ----
+  ;; ---- signed_angle_diff(from: f32, to: f32) → f32  [-180, 180) ----
   (func (export "signed_angle_diff") (param $from f32) (param $to f32) (result f32)
     (local $d f32)
     (local.set $d (f32.sub (local.get $to) (local.get $from)))

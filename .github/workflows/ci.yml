@@ -75,14 +75,63 @@ jobs:
           path: /tmp/bundle-report.html
           if-no-files-found: ignore
 
-  # Optional parity check: rebuild the WASM module through the full C++/Emscripten
-  # path (cpp/src/noise_module.cpp) instead of the hand-written WAT source, so a
-  # regression in the C++ implementation doesn't go unnoticed. Not required for
-  # merge — the WAT-built public/wasm/streetview-wasm.wasm committed to the repo
-  # is what actually ships.
+  # Native (non-Emscripten) build of the C++ source of truth plus the golden
+  # vector tests. This is the job that makes cpp/src/noise_module.cpp a real
+  # source rather than an untested parity twin: it needs no emcc, no browser and
+  # no Node, runs in seconds, and asserts the C++ against vectors captured from
+  # the binary that actually ships. See docs/WASM_BRIDGE.md.
+  wasm-cpp-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host build + golden tests (g++, -Werror)
+        run: |
+          cmake -S cpp -B cpp/build-host -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER=g++
+          cmake --build cpp/build-host -j"$(nproc)"
+          ctest --test-dir cpp/build-host --output-on-failure
+
+      # Two compilers because -Wconversion/-Wshadow diagnostics differ between
+      # them, and emcc is clang — a clang-clean tree is what the WASM build needs.
+      - name: Host build + golden tests (clang++, -Werror)
+        run: |
+          cmake -S cpp -B cpp/build-clang -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER=clang++
+          cmake --build cpp/build-clang -j"$(nproc)"
+          ctest --test-dir cpp/build-clang --output-on-failure
+
+      - name: Host build + golden tests (ASan + UBSan)
+        run: |
+          cmake -S cpp -B cpp/build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++ -DSTREETVIEW_SANITIZERS=ON
+          cmake --build cpp/build-asan -j"$(nproc)"
+          ctest --test-dir cpp/build-asan --output-on-failure
+
+      # clangd in cpp/ depends on this; a CMake change that drops it is a
+      # silent developer-experience regression.
+      - name: compile_commands.json is emitted
+        run: test -f cpp/build-host/compile_commands.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The goldens are generated from the committed binary, so regenerating
+      # them must be a no-op. A diff here means either the binary changed
+      # without `npm run gen:wasm-goldens`, or a golden file was hand-edited.
+      - name: Golden vectors are reproducible from the committed binary
+        run: |
+          node scripts/gen-wasm-goldens.mjs
+          git diff --exit-code cpp/tests/goldens.json cpp/tests/goldens_generated.h
+
+  # Rebuild the WASM module through the full C++/Emscripten path
+  # (cpp/src/noise_module.cpp) instead of the hand-written WAT source. Required:
+  # the C++ is the source of truth for the algorithms, so it has to keep
+  # compiling and exporting the whole ABI even while the WAT-built
+  # public/wasm/streetview-wasm.wasm is still what ships.
   build-wasm-emscripten:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
