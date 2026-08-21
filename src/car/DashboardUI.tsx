@@ -294,8 +294,12 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
     >
       {hudMode === 'immersive' ? (
         <div className={styles.immersiveChip}>
-          <span className={styles.immersiveValue}>{Math.round(displaySpeedKmh)}</span>
-          <span className={styles.immersiveUnit}>km/h</span>
+          <TelemetryChip
+            speedKmh={displaySpeedKmh}
+            rpm={displayRpm}
+            gear={displayGear}
+            nightGlow={nightIntensity}
+          />
         </div>
       ) : hudMode === 'compact' ? (
         <div className={styles.compactChip}>

@@ -4,10 +4,14 @@
  * Each pack is a one-click combination of weather, time-of-day, vehicle lights,
  * and color-grading knobs. Grading is the existing 6-slider chain
  * (vibrance → saturation → contrast → temperature/tint → exposure) with ACES
- * still last in the shader — "LUTs as piecewise curves" without a 3D LUT
- * texture or extra uniform slots. The 40-float weather layout is unchanged.
+ * still last in the shader. Named looks additionally bind a 32³ HALD LUT
+ * (`public/luts/<id>.png`) on WebGPU; identity / clear skips the sample so
+ * default pixels stay ACES-only. The 40-float weather layout is unchanged.
  *
  * Look targets and before/after notes: docs/looks/README.md, docs/GRAPHICS.md §8.
+ * WebGPU named looks also bind a 32³ HALD LUT from `public/luts/<id>.png`
+ * (identity / clear skips sampling so ACES pixels stay unchanged). The 40-float
+ * weather layout is still unchanged — LUTs are textures, not uniforms.
  */
 
 /** Mirrors `TimeOfDay` in useEnvironmentSettings — kept local to avoid a cycle. */

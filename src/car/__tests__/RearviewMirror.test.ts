@@ -243,3 +243,19 @@ describe('RearviewMirror with a true rear feed', () => {
     expect(mirror.getStatus().hasRearSample).toBe(false);
   });
 });
+
+describe('RearviewMirror side glasses', () => {
+  it('shares the rearview shader (no forward-pano crop) with side meshes', () => {
+    const scene = new THREE.Scene();
+    const mirror = new RearviewMirror(scene, new THREE.WebGLRenderer());
+    const left = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshStandardMaterial());
+    const right = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshStandardMaterial());
+    mirror.attachSideGlasses(left, right);
+    const shared = mirror.getMirrorMesh().material;
+    expect(left.name).toBe('SideMirrorL');
+    expect(right.name).toBe('SideMirrorR');
+    expect(left.material).toBe(shared);
+    expect(right.material).toBe(shared);
+    expect(mirror.isRearAvailable()).toBe(false);
+  });
+});

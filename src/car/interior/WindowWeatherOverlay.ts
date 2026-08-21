@@ -10,7 +10,6 @@ import {
 export class WindowWeatherOverlay {
   private mesh!: THREE.Mesh;
   private material!: THREE.ShaderMaterial;
-  private wiperPhase = 0;
   private wipersActive = false;
   private lastRain = 0;
   private lastCondensation = 0;
@@ -59,7 +58,6 @@ export class WindowWeatherOverlay {
     const u = this.material.uniforms;
     this.wipersActive = active;
     u.wiperActive!.value = active;
-    this.wiperPhase = phase;
     u.wiperPhase!.value = phase;
     if (active && this.lastRain < 0.08) {
       u.rainIntensity!.value = 0.12;
@@ -67,13 +65,14 @@ export class WindowWeatherOverlay {
     this.refreshVisibility();
   }
 
+  /**
+   * Advance rain-streak time only. Wiper phase is owned by
+   * CarInteriorAnimator — do not free-run it here or the clear arc
+   * desyncs from the blade mesh.
+   */
   update(deltaTime: number): void {
     const u = this.material.uniforms;
     u.time!.value += deltaTime;
-    if (u.wiperActive!.value) {
-      this.wiperPhase = (this.wiperPhase + deltaTime * 0.55) % 1;
-      u.wiperPhase!.value = this.wiperPhase;
-    }
   }
 
   dispose(): void {

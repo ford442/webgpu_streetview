@@ -450,6 +450,14 @@ export class WebGLFallbackRenderer implements StreetViewRenderer {
         // WebGL fallback stays procedural; no compute particle textures.
     }
 
+    public setLookLut(_volume: import('./lut').LutVolume | null): void {
+        // WebGL keeps the 6-knob look approximation — no 3D LUT, no second lighting model.
+    }
+
+    public setTemporalHistoryEnabled(_enabled: boolean): void {
+        // TAA/DOF history is compute-only.
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherParams[WeatherParamIndex.time] = ((Date.now() - this.startTime) / 1000) % 10000.0;
         if (this.lastSource) {

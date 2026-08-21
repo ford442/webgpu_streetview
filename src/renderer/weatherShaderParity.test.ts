@@ -151,6 +151,32 @@ describe('weather shader parity guard', () => {
     expect(compute).toContain('clamp(index, 0, 4095)');
   });
 
+  it('keeps applyLut identical between fragment and compute paths', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(normalizeWgsl(extractFunctionBody(compute, 'applyLut')))
+      .toBe(normalizeWgsl(extractFunctionBody(fragment, 'applyLut')));
+  });
+
+  it('skips 3D LUT sampling when the dummy 1³ texture is bound', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+    for (const source of [fragment, compute]) {
+      expect(source).toContain('fn applyLut(');
+      expect(source).toMatch(/if \(dim <= 1u\)/);
+      expect(source).toContain('textureDimensions(lut3d)');
+    }
+  });
+
+  it('keeps TAA/DOF history compute-only and dummy-gated', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(fragment).not.toContain('applyTemporalHistory');
+    expect(compute).toContain('fn applyTemporalHistory(');
+    expect(compute).toMatch(/histSize\.x <= 1u/);
+    expect(compute).toContain('textureLoad(dataTextureC');
+  });
+
   it('uses previous-frame depth for temporal fog on the compute path only', () => {
     const compute = readShader('weather-post-compute.wgsl');
     expect(compute).toContain('textureLoad(readDepthTexture');

@@ -40,6 +40,8 @@
 @group(0) @binding(10) var<storage, read_write> extraBuffer: array<f32>;
 @group(0) @binding(11) var comparison_sampler: sampler_comparison;
 @group(0) @binding(12) var<storage, read> plasmaBuffer: array<vec4<f32>>;
+@group(1) @binding(0) var lut3d: texture_3d<f32>;
+@group(1) @binding(1) var lutSampler: sampler;
 // ---------------------------------------------
 
 struct Uniforms {
@@ -246,6 +248,17 @@ fn applyContrast(col: vec3<f32>, contrast: f32) -> vec3<f32> {
 
 fn applyExposure(col: vec3<f32>, exposure: f32) -> vec3<f32> {
     return col * pow(2.0, exposure);
+}
+
+fn applyLut(color: vec3<f32>) -> vec3<f32> {
+    let dim = textureDimensions(lut3d).x;
+    if (dim <= 1u) {
+        return color;
+    }
+    let n = f32(dim);
+    let uvw = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    let uvwC = (uvw * (n - 1.0) + vec3<f32>(0.5)) / n;
+    return textureSampleLevel(lut3d, lutSampler, uvwC, 0.0).rgb;
 }
 
 fn kelvinToRGB(kelvin: f32) -> vec3<f32> {
@@ -820,6 +833,19 @@ fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn applyTemporalHistory(col: vec3<f32>, coord: vec2<i32>, depth: f32) -> vec3<f32> {
+    let histSize = textureDimensions(dataTextureC);
+    if (histSize.x <= 1u) {
+        return col;
+    }
+    let prev = textureLoad(dataTextureC, coord, 0).rgb;
+    let prevDepth = textureLoad(readDepthTexture, coord, 0).r;
+    if (abs(depth - prevDepth) > 0.08) {
+        return col;
+    }
+    return mix(prev, col, 0.22);
+}
+
 // ============================================================================
 // MAIN COMPUTE SHADER
 // ============================================================================
@@ -866,12 +892,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         col = mix(col, heatCol, blend);
     }
 
-    // Color grading
-    col = applyVibrance(col, p_vibrance());
-    col = applySaturation(col, p_saturation());
-    col = applyContrast(col, p_contrast());
-    col = applyTemperatureTint(col, p_temperature(), p_tint());
-    col = applyExposure(col, p_exposure());
+    // Color grading — 3D LUT replaces the 6-knob chain when bound (dim > 1).
+    if (textureDimensions(lut3d).x > 1u) {
+        col = applyLut(col);
+    } else {
+        col = applyVibrance(col, p_vibrance());
+        col = applySaturation(col, p_saturation());
+        col = applyContrast(col, p_contrast());
+        col = applyTemperatureTint(col, p_temperature(), p_tint());
+        col = applyExposure(col, p_exposure());
+    }
 
     // Nighttime
     col = applyNight(col, p_nightIntensity(), uv, t);
@@ -939,6 +969,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Dither
     let noise = fract(sin(dot(vec2<f32>(global_id.xy), vec2<f32>(12.9898, 78.233))) * 43758.5453);
     col = col + (noise - 0.5) * 0.0025;
+
+    // 1-frame color history + depth-reject (compute-only). Binding 9 is a 1×1
+    // dummy when quality < high or prefers-reduced-motion, which no-ops this.
+    col = applyTemporalHistory(col, vec2<i32>(global_id.xy), viewDepth);
 
     textureStore(writeTexture, vec2<i32>(global_id.xy), vec4<f32>(col, 1.0));
 }

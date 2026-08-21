@@ -70,6 +70,9 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public centerDisplayMat!: THREE.MeshStandardMaterial;
     public windshieldGlassMesh!: THREE.Mesh;
     public rearGlassMesh!: THREE.Mesh;
+    public leftMirrorPlane?: THREE.Mesh;
+    public rightMirrorPlane?: THREE.Mesh;
+    public onCabinSocketsChanged?: () => void;
     public digitalClockMesh: THREE.Mesh | null = null;
     public clockUpdateInterval?: number;
     public locationPanel: LocationPanel | null = null;

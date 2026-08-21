@@ -642,11 +642,13 @@ Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed
 2. **Rearview mirror — feed OFF (default)**
    - Look up at the interior rearview glass with the dashboard **Rear** button unlit.
    - **Pass**: dark glass with a dim center band (unavailable state). It must **not** show a UV-shifted crop of the forward Street View canvas.
+   - Side mirrors (`SideMirrorL` / `SideMirrorR`) follow the same honest-unavailable glass; they share the interior rearview material, never a forward-pano crop.
    - **Billing gate**: open DevTools → Network, filter `maps/api/streetview`, and drive/cruise 10+ hops. **Zero** requests must appear while the toggle is off. Any request here is a release blocker.
 
 3. **Rearview mirror — feed ON** (`rearViewFeed.ts`, **billable** — read `BILLING_SAFETY_CHECKLIST.md` first)
    - Click **Rear** on the dashboard. The billing note under the light row should switch to `On — N requests this session`.
    - **Pass**: the glass shows real imagery of the road *behind* the car, left/right reversed like a real mirror. Driving forward should push scenery away from you in the glass, not toward you.
+   - Side mirrors bind the **same** Static sample (one request, not three) when the feed is on.
    - Steer left/right without hopping: the imagery should pan to stay world-locked, then fade back to the unavailable glass once you have turned roughly a full 90° FOV away — it must not smear clamped edge texels.
    - Free-look around the cabin: the mirror must **not** move with your head (car-body space).
    - **Throttle**: watch the Network panel while cruising. Requests must be spaced ≥3s apart and must stop entirely when parked.

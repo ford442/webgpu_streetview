@@ -10,7 +10,8 @@ import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdR
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
 import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
 import { getActiveQualityLevel } from '../config/visualPresets';
-import { resolveCinematicCameraFx, prefersReducedMotion } from '../renderer/cinematicCameraFx';
+import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
+import { fetchLookLutVolume } from '../renderer/lut';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
 import {
     isParticlePrecipitationEnabled,
@@ -45,7 +46,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         vibrance, saturation, contrast, exposure, temperature, tint,
         headlightsOn, highBeam, domeLightOn,
         sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled, timeOfDay
+        shaderEffectsEnabled, timeOfDay, activeLookId
     } = useEnvironmentSettings();
 
     // Get street view state
@@ -145,6 +146,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
+    const [rendererReadyTick, setRendererReadyTick] = useState(0);
     
     // Keep latest environment settings in a ref for the render loop
     const envRef = useRef({
@@ -206,6 +208,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             if (result.renderer) {
                 activeRenderer = result.renderer;
                 internalRendererRef.current = result.renderer;
+                setRendererReadyTick((tick) => tick + 1);
                 // The compute weather path gets the fBm turbulence tile
                 // (WASM fill_fbm_buffer); the fragment default keeps the
                 // single-octave tile so its output is unchanged.
@@ -214,6 +217,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 );
                 setRenderer(result.renderer);  // Register with StreetView context
                 result.renderer.setSamplerAnisotropy?.(qualityRef.current);
+                result.renderer.setTemporalHistoryEnabled?.(
+                    isCinematicQuality(qualityRef.current) && !reducedMotionRef.current
+                );
                 onWebGPUStatusRef.current?.(true);
                 onBackendInfoRef.current?.({ backendType: result.backendType, fallbackReason: result.fallbackReason });
                 startMonitoringRef.current();
@@ -238,6 +244,19 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             activeRenderer?.destroy();
         };
     }, [reinitCounter, setRenderer]);
+
+    useEffect(() => {
+        const renderer = internalRendererRef.current;
+        if (!renderer?.setLookLut) return;
+        let cancelled = false;
+        void fetchLookLutVolume(activeLookId, qualityRef.current).then((volume) => {
+            if (cancelled) return;
+            renderer.setLookLut?.(volume);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeLookId, reinitCounter, rendererReadyTick]);
 
     useEffect(() => {
         // Ignore live canvas swaps while the outgoing frame is held — they are loading artifacts.

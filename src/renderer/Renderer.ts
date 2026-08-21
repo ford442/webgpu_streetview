@@ -504,6 +504,14 @@ export class Renderer implements StreetViewRenderer {
         this.weatherPostProcessor?.updateParticleSeeds(seeds, width, height);
     }
 
+    public setLookLut(volume: import('./lut').LutVolume | null): void {
+        this.weatherPostProcessor?.setLookLut(volume);
+    }
+
+    public setTemporalHistoryEnabled(enabled: boolean): void {
+        this.weatherPostProcessor?.setTemporalHistoryEnabled(enabled);
+    }
+
     public updateWeatherAnimation(): void {
         this.weatherPostProcessor?.updateWeatherAnimation();
     }

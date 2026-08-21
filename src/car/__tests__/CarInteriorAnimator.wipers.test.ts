@@ -78,5 +78,6 @@ describe('CarInteriorAnimator wiper quality gate', () => {
       Math.abs(wiperLeft.rotation.z - park.left) > 0.01 ||
       Math.abs(wiperRight.rotation.z - park.right) > 0.01;
     expect(moved).toBe(true);
+    expect(animator.getWiperPhase()).toBeGreaterThan(0);
   });
 });

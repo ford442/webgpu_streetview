@@ -6,6 +6,14 @@ import {
 import { createDefaultWeatherParams } from './packWeatherParams';
 import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import { PARTICLE_DENSITY_SCALE, PARTICLE_MAX_DT } from './weatherParticles';
+import type { LutVolume } from './lut';
+import {
+    createIdentityLutTexture,
+    createLookLutTexture,
+    createLutBindGroup,
+    createLutBindGroupLayout,
+    createLutSampler,
+} from './lutGpu';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the storage
 // buffer declared in weather-post.wgsl. The compute variant binds this tile at
@@ -105,6 +113,15 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private splatPipeline: GPUComputePipeline | null = null;
     private lastParticleTime = 0;
 
+    private lutSampler: GPUSampler | null = null;
+    private dummyLutTexture: GPUTexture | null = null;
+    private lutTexture: GPUTexture | null = null;
+    private lutBindGroupLayout: GPUBindGroupLayout | null = null;
+    private lutBindGroup: GPUBindGroup | null = null;
+    private colorHistoryTexture: GPUTexture | null = null;
+    private historyReady = false;
+    private temporalHistoryEnabled = false;
+
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -164,6 +181,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
         this.weatherParams.set(createDefaultWeatherParams());
         this.device.queue.writeBuffer(this.extraBuffer, 0, this.weatherParams);
+        this.lutSampler = createLutSampler(this.device);
+        this.dummyLutTexture = createIdentityLutTexture(this.device);
+        this.lutTexture = this.dummyLutTexture;
     }
 
     public async init(presentationFormat: GPUTextureFormat): Promise<void> {
@@ -200,10 +220,14 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             ],
         });
 
+        this.lutBindGroupLayout = createLutBindGroupLayout(this.device, GPUShaderStage.COMPUTE);
         this.computePipeline = this.device.createComputePipeline({
-            layout: this.device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] }),
+            layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [computeBindGroupLayout, this.lutBindGroupLayout],
+            }),
             compute: { module: computeModule, entryPoint: 'main' },
         });
+        this.rebuildLutBindGroup();
 
         await this.initParticlePipelines();
 
@@ -276,8 +300,15 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.writeTexture = this.device.createTexture({
             size,
             format: 'rgba32float',
-            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
         });
+        if (this.colorHistoryTexture) this.colorHistoryTexture.destroy();
+        this.colorHistoryTexture = this.device.createTexture({
+            size,
+            format: 'rgba32float',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        this.historyReady = false;
         const depthUsage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
         this.depthTextures[0] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
         this.depthTextures[1] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
@@ -403,7 +434,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 { binding: 6, resource: depthWrite.createView() },
                 { binding: 7, resource: this.getDensityView() },
                 { binding: 8, resource: this.getParticleStateWriteView() },
-                { binding: 9, resource: this.dummyDataTextureC.createView() },
+                { binding: 9, resource: this.getColorHistoryView() },
                 { binding: 10, resource: { buffer: this.extraBuffer } },
                 { binding: 11, resource: this.comparisonSampler },
                 { binding: 12, resource: { buffer: this.noiseBuffer } },
@@ -416,6 +447,44 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
                 { binding: 0, resource: this.writeTexture.createView() },
             ],
         });
+    }
+
+    private getColorHistoryView(): GPUTextureView {
+        if (
+            this.temporalHistoryEnabled
+            && this.historyReady
+            && this.colorHistoryTexture
+        ) {
+            return this.colorHistoryTexture.createView();
+        }
+        return this.dummyDataTextureC!.createView();
+    }
+
+    private rebuildLutBindGroup(): void {
+        if (!this.lutBindGroupLayout || !this.lutSampler || !this.lutTexture) return;
+        this.lutBindGroup = createLutBindGroup(
+            this.device,
+            this.lutBindGroupLayout,
+            this.lutTexture,
+            this.lutSampler,
+        );
+    }
+
+    public setLookLut(volume: LutVolume | null): void {
+        if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) {
+            this.lutTexture.destroy();
+        }
+        this.lutTexture = volume
+            ? createLookLutTexture(this.device, volume)
+            : this.dummyLutTexture;
+        this.rebuildLutBindGroup();
+    }
+
+    public setTemporalHistoryEnabled(enabled: boolean): void {
+        if (this.temporalHistoryEnabled === enabled) return;
+        this.temporalHistoryEnabled = enabled;
+        if (!enabled) this.historyReady = false;
+        if (this.lastIntermediateView) this.rebuildComputeBindGroup(this.lastIntermediateView);
     }
 
     public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void {
@@ -580,6 +649,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
         computePass.setPipeline(this.computePipeline);
         computePass.setBindGroup(0, this.computeBindGroup);
+        if (this.lutBindGroup) computePass.setBindGroup(1, this.lutBindGroup);
         computePass.dispatchWorkgroups(
             Math.ceil(this.writeWidth / WORKGROUP_SIZE),
             Math.ceil(this.writeHeight / WORKGROUP_SIZE)
@@ -703,6 +773,28 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             timing.timer.markPassEnd(blitPass, timing.blitEndIndex);
         }
         blitPass.end();
+        this.copyColorHistory(commandEncoder);
+    }
+
+    private copyColorHistory(commandEncoder: GPUCommandEncoder): void {
+        if (
+            !this.temporalHistoryEnabled
+            || !this.writeTexture
+            || !this.colorHistoryTexture
+            || this.writeWidth < 1
+            || this.writeHeight < 1
+        ) {
+            return;
+        }
+        commandEncoder.copyTextureToTexture(
+            { texture: this.writeTexture },
+            { texture: this.colorHistoryTexture },
+            [this.writeWidth, this.writeHeight],
+        );
+        this.historyReady = true;
+        if (this.lastIntermediateView) {
+            this.rebuildComputeBindGroup(this.lastIntermediateView);
+        }
     }
 
     public renderWeatherOnly(intermediateTextureView: GPUTextureView): void {
@@ -743,6 +835,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             if (this.computeUniformsBuffer) this.computeUniformsBuffer.destroy();
             if (this.noiseBuffer) this.noiseBuffer.destroy();
             if (this.writeTexture) this.writeTexture.destroy();
+            if (this.colorHistoryTexture) this.colorHistoryTexture.destroy();
             for (let i = 0; i < 2; i++) {
                 if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
             }
@@ -754,6 +847,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             if (this.dummyDataTextureA) this.dummyDataTextureA.destroy();
             if (this.dummyDataTextureB) this.dummyDataTextureB.destroy();
             if (this.dummyDataTextureC) this.dummyDataTextureC.destroy();
+            if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) this.lutTexture.destroy();
+            if (this.dummyLutTexture) this.dummyLutTexture.destroy();
         } catch (e) {
             // ignore cleanup errors
         }
@@ -761,6 +856,12 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.computeUniformsBuffer = null;
         this.noiseBuffer = null;
         this.writeTexture = null;
+        this.colorHistoryTexture = null;
+        this.lutTexture = null;
+        this.dummyLutTexture = null;
+        this.lutBindGroup = null;
+        this.lutBindGroupLayout = null;
+        this.historyReady = false;
         this.depthTextures = [null, null];
         this.particleStates = [null, null];
         this.particleDensity = null;

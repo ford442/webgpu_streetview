@@ -48,11 +48,11 @@ describe('DashboardUI HUD modes', () => {
     expect(screen.queryByLabelText('Select Time of Day')).not.toBeInTheDocument();
   });
 
-  it('renders immersive minimal speed chip', () => {
+  it('renders immersive telemetry chip without a floating DOM speedo or cluster', () => {
     render(<DashboardUI {...baseProps} hudMode="immersive" speedKmh={47.7} />);
 
-    expect(screen.getByText('48')).toBeInTheDocument();
-    expect(screen.getByText('km/h')).toBeInTheDocument();
+    expect(screen.getByTestId('telemetry-chip')).toHaveTextContent('48 km/h');
     expect(screen.queryByRole('button', { name: 'Toggle GPS' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Select Time of Day')).not.toBeInTheDocument();
   });
 });

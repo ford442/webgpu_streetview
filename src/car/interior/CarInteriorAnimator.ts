@@ -96,6 +96,46 @@ export class CarInteriorAnimator {
     this.rainSystem?.setIntensity(rainNorm);
     this.rainSystem?.setActive(rainNorm > 0.04);
     this.windowOverlay?.setWeather(rainNorm, fogNorm, humidityNorm);
+    this.applyWetGlass(rainNorm, humidityNorm);
+  }
+
+  /**
+   * Hero glTF swap: re-point wheel / wiper / needle handles so the same
+   * animator drives either the procedural cabin or the flagged kit.
+   */
+  public rebindSockets(sockets: {
+    steeringWheelGroup?: THREE.Group | null;
+    wiperLeft?: THREE.Group | null;
+    wiperRight?: THREE.Group | null;
+    speedometerNeedle?: THREE.Mesh | null;
+    tachometerNeedle?: THREE.Mesh | null;
+    windowOverlay?: WindowWeatherOverlay;
+  }): void {
+    if (sockets.steeringWheelGroup !== undefined) this.steeringWheelGroup = sockets.steeringWheelGroup;
+    if (sockets.wiperLeft !== undefined) this.wiperLeft = sockets.wiperLeft;
+    if (sockets.wiperRight !== undefined) this.wiperRight = sockets.wiperRight;
+    if (sockets.speedometerNeedle !== undefined) this.speedometerNeedle = sockets.speedometerNeedle;
+    if (sockets.tachometerNeedle !== undefined) this.tachometerNeedle = sockets.tachometerNeedle;
+    if (sockets.windowOverlay !== undefined) this.windowOverlay = sockets.windowOverlay;
+  }
+
+  /** 0–1 sweep phase shared with WindowWeatherOverlay (one writer). */
+  public getWiperPhase(): number {
+    return this.wiperAnimationTime % 1;
+  }
+
+  private applyWetGlass(rainNorm: number, humidityNorm: number): void {
+    const wet = Math.max(0, Math.min(1, rainNorm * 0.85 + humidityNorm * 0.2));
+    this.interiorGroup.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      if (obj.name !== 'Windshield' && obj.name !== 'windshieldGlass') return;
+      const mat = obj.material as THREE.MeshPhysicalMaterial;
+      if (!mat || mat.roughness === undefined) return;
+      mat.roughness = THREE.MathUtils.lerp(0.04, 0.28, wet);
+      if (typeof mat.clearcoat === 'number') {
+        mat.clearcoat = THREE.MathUtils.lerp(0.9, 0.25, wet);
+      }
+    });
   }
 
   public update(deltaTime: number, carSpeedKmh = 0): void {

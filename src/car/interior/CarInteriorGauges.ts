@@ -266,6 +266,7 @@ export class CarInteriorGauges {
         const speedNeedle = CarInteriorGauges.buildNeedle(L.needleLength, 0xff5030);
         speedNeedle.mesh.position.set(L.speed.x, L.speed.y, L.speed.z + L.needleZ);
         speedNeedle.mesh.rotation.z = needleAngle(0);
+        speedNeedle.mesh.name = 'SpeedoNeedle';
         interiorGroup.add(speedNeedle.mesh);
         needleMaterials.push(speedNeedle.material);
 
@@ -288,6 +289,7 @@ export class CarInteriorGauges {
         const tachoNeedle = CarInteriorGauges.buildNeedle(L.needleLength, 0xff5030);
         tachoNeedle.mesh.position.set(L.tacho.x, L.tacho.y, L.tacho.z + L.needleZ);
         tachoNeedle.mesh.rotation.z = needleAngle(0);
+        tachoNeedle.mesh.name = 'TachoNeedle';
         interiorGroup.add(tachoNeedle.mesh);
         needleMaterials.push(tachoNeedle.material);
 

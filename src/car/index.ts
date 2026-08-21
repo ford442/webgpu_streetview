@@ -4,6 +4,13 @@
 export { CarInterior } from './CarInterior';
 export { RearviewMirror } from './RearviewMirror';
 export {
+    isGltfInteriorEnabled,
+    setGltfInteriorEnabled,
+    loadGltfInteriorKit,
+    applyGltfInterior,
+} from './gltfInteriorKit';
+export { GLTF_INTERIOR_SOCKETS, GLTF_INTERIOR_ASSET } from './gltfSockets';
+export {
     RearViewFeed,
     REAR_VIEW_DEFAULTS,
     buildRearViewUrl,

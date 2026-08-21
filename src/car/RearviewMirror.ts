@@ -130,7 +130,7 @@ export class RearviewMirror {
         this.mirrorPlane = new THREE.Mesh(mirrorGeo, this.mirrorMaterial);
         this.mirrorPlane.position.set(0, 1.42, -0.83);
         this.mirrorPlane.rotation.set(-0.1, 0, 0);
-        this.mirrorPlane.name = 'rearviewMirror';
+        this.mirrorPlane.name = 'RearviewGlass';
 
         const frameGeo = new THREE.BoxGeometry(0.32, 0.14, 0.02);
         const frameMat = new THREE.MeshStandardMaterial({
@@ -148,6 +148,23 @@ export class RearviewMirror {
 
         // Renderer kept for API parity with a future rear-facing RT path.
         void this.renderer;
+    }
+
+    /**
+     * Side glasses follow the interior rearview rule: honest unavailable by
+     * default, and the same billing-gated Static sample when one is bound.
+     * Never UV-crop the forward panorama. Sharing `mirrorMaterial` means one
+     * sample, not three requests.
+     */
+    public attachSideGlasses(left?: THREE.Mesh | null, right?: THREE.Mesh | null): void {
+        if (left) {
+            left.name = 'SideMirrorL';
+            left.material = this.mirrorMaterial;
+        }
+        if (right) {
+            right.name = 'SideMirrorR';
+            right.material = this.mirrorMaterial;
+        }
     }
 
     /**
