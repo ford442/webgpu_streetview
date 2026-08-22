@@ -105,6 +105,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
   const handleScoutEngage = useCallback((lat: number, lng: number) => {
     setScoutTarget(null);
+    // Exit descend uses entryCoords — update so deactivate lands on the drop target, not globe entry.
+    entryCoords.current = { lat, lng, heading: currentHeading };
     requestOrbitalDrop({
       viewer: viewerRef.current,
       heading: currentHeading,
