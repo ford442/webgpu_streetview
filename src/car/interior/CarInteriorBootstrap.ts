@@ -206,13 +206,25 @@ export function bootstrapCarInterior(
     host.glassMaterial = mats.glass;
     host.mirrorMaterial = mats.mirror;
     host.accentMaterial = mats.accent;
+    host.chromeMaterial = mats.chrome;
+    // Assembly reads these off `host` (the CarInterior instance). Bind them
+    // before buildInteriorFromBuilder — otherwise medium/high quality hits
+    // `host.microInteractions.register(...)` while the field is still
+    // uninitialized and car mode dies with a leftover empty canvas.
+    host.microInteractions = microInteractions;
 
     const lights = buildInteriorLighting(scene, interiorGroup, renderer, vehicleConfig, { quality });
     const panoEnvironment = new PanoEnvironment(renderer, scene);
 
-    buildInteriorFromBuilder(host);
-    setupWindowWeatherOverlay(host);
-    setupCarInteriorLOD(host);
+    try {
+        buildInteriorFromBuilder(host);
+        setupWindowWeatherOverlay(host);
+        setupCarInteriorLOD(host);
+    } catch (err) {
+        canvas.remove();
+        renderer.dispose();
+        throw err;
+    }
 
     const animator = new CarInteriorAnimator(
         camera,
