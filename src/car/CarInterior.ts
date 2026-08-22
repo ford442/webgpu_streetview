@@ -321,9 +321,10 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public isSteeringWheelHit(clientX: number, clientY: number): boolean {
         if (!this.steeringWheelGroup) return false;
+        const hitTarget = this.steeringWheelGroup.getObjectByName('SteeringWheelHit') ?? this.steeringWheelGroup;
         return this.interaction.hitTest(
             clientX, clientY, this.canvas.getBoundingClientRect(),
-            this.camera, this.steeringWheelGroup, true
+            this.camera, hitTarget, hitTarget === this.steeringWheelGroup,
         );
     }
 

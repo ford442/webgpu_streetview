@@ -108,6 +108,9 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   // Drop any in-progress drag when switching control modes (but not during a
   // steering-wheel hold, which intentionally switches into temp carSteer).
   useEffect(() => {
+    if (controlMode === 'freeLook') {
+      isSteeringWheelDragRef.current = false;
+    }
     if (!isTempSteerMode) {
       clearDragState();
     }
@@ -195,8 +198,14 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
         }
       } else if (currentMode === 'carSteer') {
-        applySteering(e.movementX * 0.3);
-        setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
+        const maySteerChassis = !isTempSteerMode || isSteeringWheelDragRef.current;
+        if (maySteerChassis) {
+          applySteering(e.movementX * 0.3);
+          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
+        } else {
+          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
+          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
+        }
       } else if (currentMode === 'uiMouse' && isRightMouseRef.current) {
         applySteering(e.movementX * 0.3);
       }

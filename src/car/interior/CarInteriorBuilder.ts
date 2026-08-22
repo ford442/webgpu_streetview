@@ -116,6 +116,15 @@ export class CarInteriorBuilder {
         wheel.rotation.set(wheelCfg.tilt, 0, 0);
         this.result.steeringWheelGroup.add(wheel);
 
+        const hitGeo = new THREE.TorusGeometry(wheelCfg.rimRadius * 0.9, wheelCfg.rimRadius * 0.14, 8, 24);
+        const hitMesh = new THREE.Mesh(
+            hitGeo,
+            new THREE.MeshBasicMaterial({ visible: false }),
+        );
+        hitMesh.name = 'SteeringWheelHit';
+        hitMesh.rotation.set(wheelCfg.tilt, 0, 0);
+        this.result.steeringWheelGroup.add(hitMesh);
+
         const hubGeo = new THREE.CylinderGeometry(wheelCfg.rimRadius * 0.33, wheelCfg.rimRadius * 0.33, 0.02, 16);
         const hub = new THREE.Mesh(hubGeo, this.materials.dashboard);
         hub.rotation.set(wheelCfg.tilt, 0, 0);
