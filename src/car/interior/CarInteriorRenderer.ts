@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PostProcessingManager } from './PostProcessingManager';
+import type { PostProcessingManager } from './PostProcessingManager';
 import { CameraFovConfig, zoomToVerticalFov } from '../vehicleLayout';
 
 export class CarInteriorRenderer {

@@ -8,7 +8,7 @@ import { CarInteriorLightingManager } from './interior/CarInteriorLightingManage
 import { InteractionHelper } from './interior/InteractionHelper';
 import { GeometryFactory } from './interior/GeometryFactory';
 import { LODManager } from './interior/LODManager';
-import { PostProcessingManager } from './interior/PostProcessingManager';
+import type { PostProcessingManager } from './interior/PostProcessingManager';
 import { RainSystem } from './interior/RainSystem';
 import { DustMoteSystem } from './interior/DustMoteSystem';
 import { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';

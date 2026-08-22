@@ -11,7 +11,6 @@ import { resolveCameraFov } from '../vehicleLayout';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
-import { PostProcessingManager } from './PostProcessingManager';
 import { RainSystem } from './RainSystem';
 import { DustMoteSystem } from './DustMoteSystem';
 import { InteriorMicroInteractions } from './InteriorMicroInteractions';
@@ -22,6 +21,7 @@ import { PanoEnvironment } from './PanoEnvironment';
 import { CarInteriorAnimator } from './CarInteriorAnimator';
 import { CarInteriorRenderer } from './CarInteriorRenderer';
 import { CarInteriorLightingManager } from './CarInteriorLightingManager';
+import type { PostProcessingManager } from './PostProcessingManager';
 import {
     applyHeroCabinIfEnabled,
     buildInteriorFromBuilder,
@@ -182,10 +182,13 @@ export function bootstrapCarInterior(
 
     const mats = createMaterials(vehicleConfig, gpuProfile);
 
-    let postProcessing: PostProcessingManager | undefined;
-    if (gpuProfile.name !== 'low') {
-        postProcessing = new PostProcessingManager(renderer, scene, camera, gpuProfile);
-    }
+    // Do not construct EffectComposer / SMAA / bloom here. Those passes break
+    // alpha compositing over the WebGPU panorama (see CarInteriorRenderer) and
+    // the CopyShader/SMAA data-URL path has been crashing car init with
+    // `Cannot read properties of undefined (reading 'register')` plus WebGL
+    // context loss. Leave postProcessing unset; the renderer already falls
+    // back to a straight WebGL draw.
+    const postProcessing = undefined;
 
     const rainSystem = new RainSystem(200);
     interiorGroup.add(rainSystem.getMesh());

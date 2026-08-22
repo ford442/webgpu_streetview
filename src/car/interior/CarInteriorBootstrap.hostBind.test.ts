@@ -14,4 +14,10 @@ describe('CarInteriorBootstrap host bind order', () => {
     expect(buildIdx).toBeGreaterThan(-1);
     expect(assignIdx).toBeLessThan(buildIdx);
   });
+
+  it('does not construct the unused EffectComposer post stack at cabin boot', () => {
+    const src = readFileSync(srcPath, 'utf8');
+    expect(src).not.toMatch(/new PostProcessingManager\s*\(/);
+    expect(src).not.toMatch(/import \{ PostProcessingManager \}/);
+  });
 });
