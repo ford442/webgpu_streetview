@@ -23,7 +23,7 @@ export interface TeleportSafeOptions {
  *  - Returns a Promise that resolves when the transition has finished.
  */
 export function useAdvanceSafe() {
-  const { isPanoramaReady, readyPromise, advance, teleport, teleportToPano } = useStreetView();
+  const { navigationIdlePromise, advance, teleport, teleportToPano } = useStreetView();
   const panoCache = usePanoramaCache();
 
   const advanceSafe = useCallback(
@@ -32,12 +32,12 @@ export function useAdvanceSafe() {
       targetLatLng?: { lat: number; lng: number },
       heading?: number
     ) => {
-      // 1️⃣ Make sure we are *currently* ready
-      if (!isPanoramaReady) {
-        await readyPromise();
-      }
+      // Wait until the previous hop's hold + release crossfade finished.
+      // readyPromise alone fires when the canvas stabilizes, while advance()
+      // still refuses calls while isTransitioning is true.
+      await navigationIdlePromise();
 
-      // 2️⃣ If we have a target location, pre-fetch it now
+      // If we have a target location, pre-fetch it now
       if (targetLatLng) {
         try {
           await panoCache.fetch(targetLatLng.lat, targetLatLng.lng);
@@ -47,40 +47,35 @@ export function useAdvanceSafe() {
         }
       }
 
-      // 3️⃣ Finally call the original advance
+      // Finally call the original advance
       advance(dir, heading);
     },
-    [isPanoramaReady, readyPromise, advance, panoCache]
+    [navigationIdlePromise, advance, panoCache]
   );
 
   const teleportSafe = useCallback(
     async (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => {
-      // 1️⃣ Make sure we are *currently* ready
-      if (!isPanoramaReady) {
-        await readyPromise();
-      }
+      await navigationIdlePromise();
 
-      // 2️⃣ Pre-fetch the target location
+      // Pre-fetch the target location
       try {
         await panoCache.fetch(lat, lng);
       } catch (e) {
         console.warn('[teleportSafe] Could not pre-fetch target pano', e);
       }
 
-      // 3️⃣ Finally call the original teleport
+      // Finally call the original teleport
       teleport(lat, lng, targetHeading, targetPitch);
     },
-    [isPanoramaReady, readyPromise, teleport, panoCache]
+    [navigationIdlePromise, teleport, panoCache]
   );
 
   const teleportToPanoSafe = useCallback(
     async (panoId: string) => {
-      if (!isPanoramaReady) {
-        await readyPromise();
-      }
+      await navigationIdlePromise();
       teleportToPano(panoId);
     },
-    [isPanoramaReady, readyPromise, teleportToPano]
+    [navigationIdlePromise, teleportToPano]
   );
 
   return { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache };

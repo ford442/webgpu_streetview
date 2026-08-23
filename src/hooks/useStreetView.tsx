@@ -50,7 +50,10 @@ export interface StreetViewState {
   isPanoramaReady: boolean;
   /** True while advancing: outgoing frame is held; live GMaps canvas must not be sampled. */
   isPanoramaUpdatePaused: boolean;
+  /** Resolves when the current panorama canvas is stable (hold may still be releasing). */
   readyPromise: () => Promise<void>;
+  /** Resolves when navigation is idle — stable panorama and release crossfade complete. */
+  navigationIdlePromise: () => Promise<void>;
   
   // Cached snapshot of the outgoing panorama (WebGL fallback / diagnostics)
   transitionSource: HTMLCanvasElement | null;
@@ -106,6 +109,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const isPanoramaUpdatePausedRef = useRef(false);
   const holdBaselineFingerprintRef = useRef('');
   const readyPromiseRef = useRef<Set<() => void>>(new Set());
+  const navigationIdlePromiseRef = useRef<Set<() => void>>(new Set());
   const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
   
   // Transition animation RAF ref (release crossfade only)
@@ -150,6 +154,17 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     }
   }, [isPanoramaReady]);
 
+  const resolveNavigationIdleWaiters = useCallback(() => {
+    if (!isPanoramaReadyRef.current || isTransitioningRef.current) return;
+    navigationIdlePromiseRef.current.forEach(resolve => resolve());
+    navigationIdlePromiseRef.current.clear();
+  }, []);
+
+  // Resolve navigation-idle waiters once the release crossfade finishes.
+  useEffect(() => {
+    resolveNavigationIdleWaiters();
+  }, [isPanoramaReady, isTransitioning, resolveNavigationIdleWaiters]);
+
   const setHeading = useCallback((value: number | ((prev: number) => number)) => {
     setHeadingState(prev => {
       const newValue = typeof value === 'function' ? value(prev) : value;
@@ -193,6 +208,15 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (isPanoramaReadyRef.current) return Promise.resolve();
     return new Promise<void>((resolve) => {
       readyPromiseRef.current.add(resolve);
+    });
+  }, []);
+
+  const navigationIdlePromise = useCallback(() => {
+    if (isPanoramaReadyRef.current && !isTransitioningRef.current) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      navigationIdlePromiseRef.current.add(resolve);
     });
   }, []);
   
@@ -250,7 +274,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     currentHeading?: number
   ) => {
     const pano = panoramaRef.current;
-    if (!pano || isTransitioning) return;
+    if (!pano || isTransitioningRef.current) return;
 
     const links = pano.getLinks();
     if (!links) return;
@@ -283,7 +307,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     targetPitch?: number
   ) => {
     const pano = panoramaRef.current;
-    if (!pano || isTransitioning) return;
+    if (!pano || isTransitioningRef.current) return;
 
     armHold();
     pano.setPosition({ lat, lng });
@@ -301,7 +325,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // apples-to-apples across dates. Same hold-pause treatment as advance/teleport.
   const teleportToPano = useCallback((panoId: string) => {
     const pano = panoramaRef.current;
-    if (!pano || isTransitioning || !panoId) return;
+    if (!pano || isTransitioningRef.current || !panoId) return;
 
     armHold();
     pano.setPano(panoId);
@@ -465,11 +489,13 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // Cleanup transition RAF on unmount
   useEffect(() => {
     const readyPromiseTracker = readyPromiseRef.current;
+    const navigationIdleTracker = navigationIdlePromiseRef.current;
     return () => {
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
       }
       readyPromiseTracker.clear();
+      navigationIdleTracker.clear();
     };
   }, []);
   
@@ -497,6 +523,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     isPanoramaReady,
     isPanoramaUpdatePaused: isTransitioning && !isPanoramaReady,
     readyPromise,
+    navigationIdlePromise,
     transitionSource,
   };
   

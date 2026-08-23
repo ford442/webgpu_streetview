@@ -143,6 +143,7 @@ export function useCruiseMode({
         return;
       }
       if (mapsAuthFailed) {
+        console.warn('[CruiseMode] Disabling — Maps auth failed');
         setIsCruiseMode(false);
         return;
       }
@@ -150,7 +151,10 @@ export function useCruiseMode({
       // Gear decides how far one tick travels: P/N park, D one hop, 2/3 chain
       // two or three. Read fresh each tick so shifting takes effect at once.
       const hops = hopsPerTickRef.current ? hopsPerTickRef.current() : 1;
-      if (hops <= 0) return;
+      if (hops <= 0) {
+        console.log('[CruiseMode] Skipping hop — gear parked (P/N)');
+        return;
+      }
 
       hopInFlightRef.current = true;
       let movedAny = false;

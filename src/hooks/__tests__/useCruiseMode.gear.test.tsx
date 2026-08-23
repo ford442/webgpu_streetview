@@ -76,14 +76,16 @@ describe('useCruiseMode gear-aware hops', () => {
   });
 
   it('issues no hop while parked in P/N', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { advanceSafe, view } = setup(() => 0, ['a', 'b']);
     act(() => view.result.current.setIsCruiseMode(true));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(9000); // three parked ticks
+      await vi.advanceTimersByTimeAsync(3000);
     });
     expect(advanceSafe).not.toHaveBeenCalled();
-    // Parked ticks are not "stuck" hops, so cruise stays engaged.
+    expect(logSpy).toHaveBeenCalledWith('[CruiseMode] Skipping hop — gear parked (P/N)');
     expect(view.result.current.isCruiseMode).toBe(true);
+    logSpy.mockRestore();
   });
 
   it('stops the chain early at a dead end', async () => {
