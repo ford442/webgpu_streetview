@@ -11,7 +11,6 @@ import { resolveCameraFov } from '../vehicleLayout';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
-import { PostProcessingManager } from './PostProcessingManager';
 import { RainSystem } from './RainSystem';
 import { DustMoteSystem } from './DustMoteSystem';
 import { InteriorMicroInteractions } from './InteriorMicroInteractions';
@@ -22,6 +21,7 @@ import { PanoEnvironment } from './PanoEnvironment';
 import { CarInteriorAnimator } from './CarInteriorAnimator';
 import { CarInteriorRenderer } from './CarInteriorRenderer';
 import { CarInteriorLightingManager } from './CarInteriorLightingManager';
+import type { PostProcessingManager } from './PostProcessingManager';
 import {
     applyHeroCabinIfEnabled,
     buildInteriorFromBuilder,
@@ -182,10 +182,13 @@ export function bootstrapCarInterior(
 
     const mats = createMaterials(vehicleConfig, gpuProfile);
 
-    let postProcessing: PostProcessingManager | undefined;
-    if (gpuProfile.name !== 'low') {
-        postProcessing = new PostProcessingManager(renderer, scene, camera, gpuProfile);
-    }
+    // Do not construct EffectComposer / SMAA / bloom here. Those passes break
+    // alpha compositing over the WebGPU panorama (see CarInteriorRenderer) and
+    // the CopyShader/SMAA data-URL path has been crashing car init with
+    // `Cannot read properties of undefined (reading 'register')` plus WebGL
+    // context loss. Leave postProcessing unset; the renderer already falls
+    // back to a straight WebGL draw.
+    const postProcessing = undefined;
 
     const rainSystem = new RainSystem(200);
     interiorGroup.add(rainSystem.getMesh());
@@ -206,13 +209,25 @@ export function bootstrapCarInterior(
     host.glassMaterial = mats.glass;
     host.mirrorMaterial = mats.mirror;
     host.accentMaterial = mats.accent;
+    host.chromeMaterial = mats.chrome;
+    // Assembly reads these off `host` (the CarInterior instance). Bind them
+    // before buildInteriorFromBuilder — otherwise medium/high quality hits
+    // `host.microInteractions.register(...)` while the field is still
+    // uninitialized and car mode dies with a leftover empty canvas.
+    host.microInteractions = microInteractions;
 
     const lights = buildInteriorLighting(scene, interiorGroup, renderer, vehicleConfig, { quality });
     const panoEnvironment = new PanoEnvironment(renderer, scene);
 
-    buildInteriorFromBuilder(host);
-    setupWindowWeatherOverlay(host);
-    setupCarInteriorLOD(host);
+    try {
+        buildInteriorFromBuilder(host);
+        setupWindowWeatherOverlay(host);
+        setupCarInteriorLOD(host);
+    } catch (err) {
+        canvas.remove();
+        renderer.dispose();
+        throw err;
+    }
 
     const animator = new CarInteriorAnimator(
         camera,

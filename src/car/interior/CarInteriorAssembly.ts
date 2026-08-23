@@ -272,6 +272,11 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
             }
         );
         host.cupLiquidMaterial = detail.cupLiquidMaterial;
+        if (!host.microInteractions) {
+            throw new Error(
+                '[CarInterior] microInteractions must be bound on the host before cabin assembly',
+            );
+        }
         host.microInteractions.register(detail.interactives);
         host.animator?.setCupLiquidMaterial(host.cupLiquidMaterial);
 
