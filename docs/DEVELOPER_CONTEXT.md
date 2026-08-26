@@ -75,7 +75,7 @@ CDN-loaded Cesium is typed via `src/types/cesium.ts` + global ambient in `src/ty
 ## 5. Further reading
 
 - [`docs/RENDERER_FALLBACK.md`](./RENDERER_FALLBACK.md) — WebGPU / WebGL2 / compute weather paths
-- [`docs/WASM_BRIDGE.md`](./WASM_BRIDGE.md) — C++/WAT noise tile
+- [`docs/WASM_BRIDGE.md`](./WASM_BRIDGE.md) — C++ → WASM numeric layer
 - [`BILLING_SAFETY_CHECKLIST.md`](../BILLING_SAFETY_CHECKLIST.md) — rear-view Static API
 
 _Last updated: foundation refactor split (CarModeView hooks, Globe types, docs SSOT pass)._

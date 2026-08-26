@@ -18,7 +18,7 @@ This file is a short pointer so Claude Code sessions land on the right doc witho
 - **Input hijacking** — UI overlays must `stopPropagation` on mouse/keyboard events.
 - **Maps API keys** — runtime `public/config.js` / deploy `MAPS_API_KEY`; referrer allowlist per host.
 - **Shader uniform layout** — `src/renderer/weatherUniformLayout.ts` must match both weather WGSL passes.
-- **WASM numeric layer** — algorithms live in `cpp/src/noise_module.cpp`; the WAT is a transcription, never the place to invent behaviour. Changing either means regenerating `cpp/tests/goldens*` (`npm run gen:wasm-goldens`) and re-running `npm run test:cpp`.
+- **WASM numeric layer** — algorithms live in `cpp/src/noise_module.cpp` and ship via emcc (`npm run build:wasm`). Changing the C++ means regenerating `cpp/tests/goldens*` (`npm run gen:wasm-goldens`) and re-running `npm run test:cpp`.
 
 ## Commands
 

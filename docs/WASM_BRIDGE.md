@@ -1,4 +1,4 @@
-# WASM Bridge — hot CPU math in C++/WAT
+# WASM Bridge — hot CPU math in C++ → WASM
 
 The app keeps a small WebAssembly module for CPU work that is hot, numeric and
 batchable. Everything else stays where it belongs: UI/Maps/state in TypeScript,
@@ -9,7 +9,7 @@ pixels in WGSL, cabin geometry in Three.js.
 | UI, Maps, app state | TypeScript |
 | Per-pixel effects | WGSL |
 | Car interior | Three.js |
-| Noise tiles, particle seeds, batch geodesy | **C++/WAT → WASM** |
+| Noise tiles, particle seeds, batch geodesy | **C++ → WASM** |
 
 ---
 
@@ -18,30 +18,35 @@ pixels in WGSL, cabin geometry in Three.js.
 | File | Role |
 |---|---|
 | `cpp/src/noise_module.cpp` | **algorithm source of truth** (`sw_*`), host-tested |
-| `cpp/src/streetview-wasm.wat` | **ABI source of record** — still what actually ships |
 | `cpp/src/bindings.cpp` | raw `extern "C"` wrappers with the canonical export names |
 | `cpp/include/streetview_wasm.h` | `sw_*` declarations + per-function contracts |
 | `cpp/CMakeLists.txt` | host target (`streetview_cpu`) **and** the Emscripten link flags |
+| `cpp/emsdk.version` | pinned Emscripten SDK for CI and local rebuilds |
 | `cpp/tests/` | doctest golden-vector tests + the generated goldens |
 | `cpp/third_party/doctest/` | vendored single-header test framework (MIT) |
 | `scripts/gen-wasm-goldens.mjs` | captures the goldens from the shipping binary |
 | `src/wasm/index.ts` | loader, camelCase API, **pure-JS fallback** |
+| `src/wasm/scratchOffset.ts` | loader scratch base (past emcc statics) |
 | `src/wasm/useWasmModule.ts` | React hook (`useWasmModule`) for React-side consumers |
 | `src/wasm/wasmNoiseFeeder.ts` | render-loop tile feeder |
 | `src/wasm/wasmParticleFeeder.ts` | render-loop particle-seed feeder (compute weather) |
-| `public/wasm/streetview-wasm.wasm` | committed binary (built from the WAT source) |
+| `public/wasm/streetview-wasm.wasm` | committed binary (built from C++ with emcc) |
 
-Two build paths produce the binary, and only one runs on a given machine:
+One build path produces the binary:
 
 ```bash
-npm run build:wasm             # WAT → wasm via wabt (no toolchain needed; what CI ships)
-npm run build:wasm:emscripten  # C++ → wasm via emcc (required CI job)
+npm run build:wasm             # C++ → wasm via emcc (what CI ships)
 node scripts/check-wasm-abi.mjs  # the built binary exports the whole ABI
 ```
 
 `npm run build` runs `build:wasm` before Vite, and `scripts/verify-build.sh`
 fails the build when `public/wasm/streetview-wasm.wasm.sha256` no longer matches
-the WAT source — i.e. when someone edited the WAT and forgot to rebuild.
+the C++ inputs (`noise_module.cpp`, `bindings.cpp`, `streetview_wasm.h`,
+`CMakeLists.txt`) — i.e. when someone edited the algorithms and forgot to rebuild.
+Locally, if `emcc` is missing but that hash still matches, the committed binary
+is reused. CI (`CI=true`) fails without emcc.
+
+The Emscripten SDK version is pinned in `cpp/emsdk.version`.
 
 ### Working on the C++
 
@@ -114,12 +119,12 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Fourteen exports, identical in the WAT source, the C++ bindings, the CMake export
-list and the TypeScript loader:
+Fourteen exports, identical in `bindings.cpp`, the CMake export list and the
+TypeScript loader:
 
 | Export | TS wrapper | Notes |
 |---|---|---|
-| `seed(i32)` | `seed` | seeds the 512-byte permutation table |
+| `seed(i32)` | `seed` | seeds the internal permutation table |
 | `noise2d(f32, f32) → f32` | `noise2d` | Perlin gradient noise, `[-1, 1]` |
 | `fill_noise_buffer(ptr, w, h, scale, ox, oy)` | `fillNoiseBuffer` | single-octave tile |
 | `fbm2d(x, y, octaves, lacunarity, gain) → f32` | `fbm2d` | normalised by accumulated amplitude, so `[-1, 1]` for any octave count |
@@ -136,23 +141,22 @@ list and the TypeScript loader:
 
 Plus the exported `memory`, which the loader needs to marshal buffers.
 
-**Adding an export means touching four files** — the WAT, `bindings.cpp`,
-`CMakeLists.txt` and the TS loader. `src/wasm/__tests__/wasmAbiLock.test.ts`
-fails if any of them drifts, and `scripts/check-wasm-abi.mjs` (run in the
-Emscripten CI job) fails if the compiled binary is missing a name the WAT
-source declares — otherwise a missing `bindings.cpp` wrapper would only show up
-as a silent JS-fallback at runtime.
+**Adding an export means touching** `noise_module.cpp` / `streetview_wasm.h`,
+`bindings.cpp`, `CMakeLists.txt` `EXPORTED_FUNCTIONS`, and the TS loader.
+`src/wasm/__tests__/wasmAbiLock.test.ts` fails if any of them drifts, and
+`scripts/check-wasm-abi.mjs` fails if the compiled binary is missing a name
+`bindings.cpp` declares — otherwise a missing wrapper would only show up as a
+silent JS-fallback at runtime.
 
-Collapsing that to one edit is the point of retiring the hand-written WAT; see
-§6. Until then, write the algorithm in `noise_module.cpp` **first** and treat
-the WAT as a transcription of it — never the other way round.
+Write the algorithm in `noise_module.cpp` **first**. Do not add a hand-written
+`.wat`.
 
 ### Determinism and float precision
 
-The WAT module and C++ produce **bit-identical** f32 results for the noise, fBm,
-particle-seed, angle and engine-PCM exports — `cpp/tests` asserts that with a
-`memcmp`, not a tolerance. `haversine`/`batch_haversine` agree to ~1e-12
-relative (host `Math.*` imports vs `libm`).
+The emcc binary and host C++ produce **bit-identical** f32 results for the noise,
+fBm, particle-seed, angle and engine-PCM exports — `cpp/tests` asserts that with
+a `memcmp`, not a tolerance. `haversine`/`batch_haversine` agree to ~1e-12
+relative (host libm vs the libm emcc linked).
 
 The JS fallback mirrors the same algorithms — where a value would otherwise
 round twice through a double intermediate, the fallback applies `Math.fround`
@@ -163,17 +167,18 @@ the `Float32Array` store while the module rounds after every operation. Measured
 worst cases are recorded in `TOLERANCES` in `wasmGoldenParity.test.ts`; treat a
 tolerance bump there as a bug report, not a fix.
 
-`haversine` has no WASM-native transcendentals, so the WAT module imports
-`env.sin`/`env.cos`/`env.atan2` from the host; the Emscripten build links them
-statically instead and ignores those imports.
+`haversine` has no WASM-native transcendentals; the Emscripten STANDALONE_WASM
+build links `sin`/`cos`/`atan2` statically. The loader still supplies optional
+`env` stubs (and `emscripten_notify_memory_growth` for `ALLOW_MEMORY_GROWTH`).
 
 ### Memory marshalling
 
-Byte 0–511 is the permutation table; everything past `SCRATCH_OFFSET = 512` is
-scratch. The loader grows linear memory on demand (`reserveScratch`) and copies
-in/out — no allocator, no `malloc` on the hot path. 512 is 8-byte aligned, so
-`batch_haversine`'s f64 views are naturally aligned; its output region sits at
-`512 + count * 16`, which stays aligned for any count.
+C++ keeps `perm` as a static (linker-placed, ~byte 4080 on the current emcc).
+The loader copies tiles at `WASM_SCRATCH_OFFSET = 65536` (`src/wasm/scratchOffset.ts`)
+so fills cannot overlap `.data`. The loader grows linear memory on demand
+(`reserveScratch`) and copies in/out — no allocator, no `malloc` on the hot
+path. 65536 is 8-byte aligned, so `batch_haversine`'s f64 views are naturally
+aligned; its output region sits at `65536 + count * 16`.
 
 ---
 
@@ -221,15 +226,15 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
 
 - **Changing an algorithm?** Edit `cpp/src/noise_module.cpp` first and run
   `npm run test:cpp` — it will fail against the goldens, which is the point.
-  Then transcribe the change into the WAT and the JS fallback, rebuild
-  (`npm run build:wasm`), regenerate (`npm run gen:wasm-goldens`) and re-run
-  `npm run test:cpp && npm test`. The golden diff is the behavioural record.
-- **New export?** WAT + `bindings.cpp` + `CMakeLists.txt` + `src/wasm/index.ts`
-  (API type, JS fallback, WASM wrapper) — then `npm run build:wasm`. Add
-  coverage to `cpp/tests/noise_module_test.cpp` and vectors to
-  `scripts/gen-wasm-goldens.mjs` in the same change; the ABI lock only checks
-  that the *name* exists everywhere, not that the maths agrees.
-- **Rebuilt the WAT?** Commit `public/wasm/streetview-wasm.wasm` **and** its
+  Mirror the change in the JS fallback, rebuild (`npm run build:wasm`),
+  regenerate (`npm run gen:wasm-goldens`) and re-run `npm run test:cpp && npm test`.
+  The golden diff is the behavioural record.
+- **New export?** `noise_module.cpp` + `streetview_wasm.h` + `bindings.cpp` +
+  `CMakeLists.txt` + `src/wasm/index.ts` (API type, JS fallback, WASM wrapper)
+  — then `npm run build:wasm`. Add coverage to `cpp/tests/noise_module_test.cpp`
+  and vectors to `scripts/gen-wasm-goldens.mjs` in the same change; the ABI lock
+  only checks that the *name* exists everywhere, not that the maths agrees.
+- **Rebuilt the wasm?** Commit `public/wasm/streetview-wasm.wasm` **and** its
   `.sha256`, or `verify-build.sh` fails — and regenerate the goldens, or the
   binary-hash assertions fail.
 - **Touching float math?** Check `wasmCompiled.test.ts` and
@@ -241,24 +246,15 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
 
 ---
 
-## 6. Where this is going (single compile path)
+## 6. Compile path (done)
 
-The remaining duplication is the hand-written `cpp/src/streetview-wasm.wat`:
-600 lines of Wasm text implementing what `noise_module.cpp` already implements
-in 240. The target state is **one algorithm source**:
+One algorithm source: `noise_module.cpp`, shipped as emcc STANDALONE_WASM.
 
 1. ✅ **Host build + goldens.** `noise_module.cpp` compiles and tests with the
    system compiler under `-Werror` and sanitizers, against vectors captured
-   from the shipping binary. The Emscripten job is no longer advisory.
-2. ⬜ **Flip the ship path to emcc.** Make the committed
-   `public/wasm/streetview-wasm.wasm` the Emscripten artifact and pin
-   `verify-build.sh` to the C++ sources (or the produced wasm hash) instead of
-   the WAT text.
-3. ⬜ **Retire the WAT.** Delete it, or keep it only as a generated view
-   (`wasm2wat` of the emcc binary) so nobody hand-edits it again. That is what
-   collapses the four-file edit tax in §2 down to one.
-4. ⬜ **Optional SIMD128.** Flip `STREETVIEW_WASM_SIMD=ON` once step 2 lands and
-   confirm the goldens are unchanged.
-
-Step 1 is deliberately independent of the ship path: it makes the C++ a tested
-source today, without moving the binary anyone deploys.
+   from the shipping binary.
+2. ✅ **Ship path is emcc.** `npm run build:wasm` / `npm run build` compile C++.
+   `verify-build.sh` hashes the C++ inputs. SDK pin: `cpp/emsdk.version`.
+3. ✅ **WAT retired.** There is no `streetview-wasm.wat`. Do not add one.
+4. ✅ **SIMD128 CI (not shipped).** `STREETVIEW_WASM_SIMD=ON` is a CI row that
+   must keep goldens bit-identical. Production CMake default stays `OFF`.

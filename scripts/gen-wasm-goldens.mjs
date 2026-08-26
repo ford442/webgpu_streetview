@@ -22,6 +22,10 @@
  *
  * Usage:
  *   npm run gen:wasm-goldens          # after a deliberate algorithm change
+ *   node scripts/gen-wasm-goldens.mjs --compare   # SIMD CI: vectors must match
+ *
+ * Flags:
+ *   --wasm <path>  --json-out <path>  --header-out <path>  --compare
  *
  * Regenerating is an explicit act: it re-baselines the contract, so the diff
  * should always be reviewed alongside the algorithm change that caused it.
@@ -33,20 +37,33 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const wasmPath = join(repoRoot, 'public', 'wasm', 'streetview-wasm.wasm');
-const jsonOut = join(repoRoot, 'cpp', 'tests', 'goldens.json');
-const headerOut = join(repoRoot, 'cpp', 'tests', 'goldens_generated.h');
+const argv = process.argv.slice(2);
+const flagValue = (flag) => {
+  const i = argv.indexOf(flag);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
+const compareOnly = argv.includes('--compare');
+const wasmPath = flagValue('--wasm') || join(repoRoot, 'public', 'wasm', 'streetview-wasm.wasm');
+const jsonOut = flagValue('--json-out') || join(repoRoot, 'cpp', 'tests', 'goldens.json');
+const headerOut = flagValue('--header-out') || join(repoRoot, 'cpp', 'tests', 'goldens_generated.h');
 
 const bytes = readFileSync(wasmPath);
 const wasmSha256 = createHash('sha256').update(bytes).digest('hex');
 
-const importObject = { env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 } };
+const importObject = {
+  env: {
+    sin: Math.sin,
+    cos: Math.cos,
+    atan2: Math.atan2,
+    emscripten_notify_memory_growth: () => {},
+  },
+};
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
 const exp = instance.exports;
 const memory = exp.memory;
 
-/** Byte offset the TS loader uses for buffer transfers (see src/wasm/index.ts). */
-const SCRATCH = 512;
+/** Must match src/wasm/scratchOffset.ts (`WASM_SCRATCH_OFFSET`). */
+const SCRATCH = 65536;
 
 const reserve = (nbytes) => {
   const available = memory.buffer.byteLength - SCRATCH;
@@ -240,6 +257,24 @@ const goldens = {
   downsample2d,
 };
 
+function vectorsOnly(obj) {
+  const { $comment, wasmSha256: _sha, ...rest } = obj;
+  return rest;
+}
+
+if (compareOnly) {
+  const committed = JSON.parse(readFileSync(jsonOut, 'utf8'));
+  const actual = JSON.stringify(vectorsOnly(goldens));
+  const expected = JSON.stringify(vectorsOnly(committed));
+  if (actual !== expected) {
+    console.error('❌ Golden vectors from this wasm differ from cpp/tests/goldens.json');
+    console.error('   (wasmSha256 is ignored — this check is for SIMD bit-identity.)');
+    process.exit(1);
+  }
+  console.log('✅ Golden vectors match cpp/tests/goldens.json (bit-identical, sha ignored)');
+  process.exit(0);
+}
+
 writeFileSync(jsonOut, `${JSON.stringify(goldens, null, 2)}\n`);
 
 // ---------------------------------------------------------------------------
@@ -290,7 +325,7 @@ lines.push(' *     npm run gen:wasm-goldens');
 lines.push(' *');
 lines.push(' * The same vectors are emitted to cpp/tests/goldens.json, which');
 lines.push(' * src/wasm/__tests__/wasmGoldenParity.test.ts asserts the JS fallback');
-lines.push(' * against — so C++, WAT and JS are pinned to one contract.');
+lines.push(' * against — so C++, the emcc binary and JS are pinned to one contract.');
 lines.push(' */');
 lines.push('#pragma once');
 lines.push('');

@@ -9,7 +9,7 @@
  * identical numbers are emitted to cpp/tests/goldens_generated.h for the host
  * `ctest` run. So the same contract covers all three implementations:
  *
- *   WAT/wasm  →  goldens  →  C++ (ctest)      ← native host CI
+ *   WAT/emcc wasm  →  goldens  →  C++ (ctest)      ← native host CI
  *                         →  JS fallback (here)
  *
  * Without this, a C++ change could pass the native tests while the JS twin —

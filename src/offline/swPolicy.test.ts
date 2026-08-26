@@ -16,7 +16,7 @@ describe('swPolicy', () => {
     expect(resolveSwFetchStrategy(`${origin}/streetview/shaders/streetview.wgsl`, 'GET', origin)).toBe(
       'cache-first',
     );
-    expect(resolveSwFetchStrategy(`${origin}/streetview/wasm/streetview-wasm.js`, 'GET', origin)).toBe(
+    expect(resolveSwFetchStrategy(`${origin}/streetview/wasm/streetview-wasm.wasm`, 'GET', origin)).toBe(
       'cache-first',
     );
     expect(resolveSwFetchStrategy(`${origin}/streetview/static/js/main.abc.js`, 'GET', origin)).toBe(
@@ -41,6 +41,6 @@ describe('swPolicy', () => {
 
   it('precaches shader and wasm paths', () => {
     expect(PRECACHE_URLS.some((url) => url.includes('streetview.wgsl'))).toBe(true);
-    expect(PRECACHE_URLS.some((url) => url.includes('streetview-wasm.js'))).toBe(true);
+    expect(PRECACHE_URLS.some((url) => url.includes('streetview-wasm.wasm'))).toBe(true);
   });
 });

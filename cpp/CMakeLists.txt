@@ -35,26 +35,23 @@ if(EMSCRIPTEN)
     # -----------------------------------------------------------------------
     # WASM target (Emscripten)
     # -----------------------------------------------------------------------
-    # The output WASM must be ABI-compatible with the WAT module and the
-    # TypeScript loader in src/wasm/index.ts.  Key requirements:
+    # The output WASM must be ABI-compatible with the TypeScript loader in
+    # src/wasm/index.ts.  Key requirements:
     #
     #   - No MODULARIZE / EXPORT_ES6 / JS glue wrapper — the TS loader
     #     instantiates the .wasm binary directly via WebAssembly.instantiate().
     #   - No embind (--bind) — raw C exports are used instead.
-    #   - Exported function names match the WAT module exactly:
+    #   - Exported function names match bindings.cpp:
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
     #       fill_particle_seeds, haversine, batch_haversine,
     #       normalize_angle, signed_angle_diff, fill_engine_noise,
     #       luma_histogram_bt709, reduce_luma_bt709, downsample_2d
-    #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the WAT
-    #     exports and the TypeScript loader ever drift apart.
-    #     These are thin wrappers (in bindings.cpp) around the sw_* functions
-    #     in noise_module.cpp.
+    #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
+    #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
-    #     binary has no host math imports, matching the fact that the WAT
-    #     module uses env.sin/cos/atan2 but the Emscripten binary does not.
-    #     The TS loader's importObject supplies those env stubs regardless;
-    #     extra keys in the import object are silently ignored by the runtime.
+    #     binary has no host math imports. The TS loader still supplies env
+    #     stubs (including emscripten_notify_memory_growth); extra keys are
+    #     ignored.
     add_executable(streetview-wasm
         src/noise_module.cpp
         src/bindings.cpp

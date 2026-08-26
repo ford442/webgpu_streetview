@@ -144,7 +144,7 @@ void sw_fill_fbm_buffer(float* buf, int width, int height,
 
 void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
     // Same LCG as sw_seed's shuffle; the top 24 bits of the low word give a
-    // uniform [0, 1) float. Mirrored bit-for-bit by the WAT module and the
+    // uniform [0, 1) float. Mirrored bit-for-bit by the JS fallback in
     // JS fallback in src/wasm/index.ts.
     uint32_t state = seed;
     auto next_unit = [&state]() -> float {
@@ -191,7 +191,7 @@ float sw_signed_angle_diff(float from, float to) {
     float diff = fmodf((to - from + 180.0f), 360.0f) - 180.0f;
     // fmodf keeps the sign of the dividend, so a negative (to - from + 180)
     // lands the result below -180 (e.g. to-from = -183 yields -183 instead of
-    // +177). The correction below is what the WAT module, the JS fallback in
+    // +177). The correction below is what the JS fallback in
     // src/wasm/index.ts and signedAngleDiff() in src/utils/navigation.ts all
     // do; without it this function silently disagreed with every other
     // implementation for negative differences.

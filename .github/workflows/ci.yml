@@ -15,6 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read pinned emsdk version
+        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -125,19 +132,19 @@ jobs:
           node scripts/gen-wasm-goldens.mjs
           git diff --exit-code cpp/tests/goldens.json cpp/tests/goldens_generated.h
 
-  # Rebuild the WASM module through the full C++/Emscripten path
-  # (cpp/src/noise_module.cpp) instead of the hand-written WAT source. Required:
-  # the C++ is the source of truth for the algorithms, so it has to keep
-  # compiling and exporting the whole ABI even while the WAT-built
-  # public/wasm/streetview-wasm.wasm is still what ships.
+  # Rebuild the WASM module through the C++/Emscripten ship path and prove the
+  # committed public/wasm/streetview-wasm.wasm matches this pinned emcc.
   build-wasm-emscripten:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read pinned emsdk version
+        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
-          version: latest
+          version: ${{ env.EMSDK_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
@@ -146,17 +153,23 @@ jobs:
 
       - run: npm ci
 
-      # build:wasm is pinned to --wat-only; this job exists to exercise the C++
-      # toolchain, so it must use the Emscripten entry point explicitly.
       - name: Build C++ → WASM via Emscripten
-        run: npm run build:wasm:emscripten
+        run: npm run build:wasm
 
-      # Catch C++/WAT ABI drift: the Emscripten binary must export every name
-      # the canonical WAT source declares (missing wrapper in bindings.cpp or a
-      # forgotten EXPORTED_FUNCTIONS entry would otherwise only show up as a
-      # silent JS-fallback at runtime).
       - name: Verify Emscripten build exports the full ABI
         run: node scripts/check-wasm-abi.mjs
+
+      - name: Committed wasm matches this emcc
+        run: git diff --exit-code public/wasm/streetview-wasm.wasm public/wasm/streetview-wasm.wasm.sha256
+
+      - name: SIMD128 goldens stay bit-identical (not shipped)
+        run: |
+          cp public/wasm/streetview-wasm.wasm /tmp/scalar-streetview-wasm.wasm
+          cp public/wasm/streetview-wasm.wasm.sha256 /tmp/scalar-streetview-wasm.wasm.sha256
+          STREETVIEW_WASM_SIMD=ON npm run build:wasm
+          node scripts/gen-wasm-goldens.mjs --compare
+          cp /tmp/scalar-streetview-wasm.wasm public/wasm/streetview-wasm.wasm
+          cp /tmp/scalar-streetview-wasm.wasm.sha256 public/wasm/streetview-wasm.wasm.sha256
 
   e2e-smoke:
     runs-on: ubuntu-latest

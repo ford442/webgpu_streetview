@@ -1,20 +1,20 @@
 /**
  * src/wasm/__tests__/wasmAbiLock.test.ts
  *
- * Locks the WASM ABI across all four places it is declared:
+ * Locks the WASM ABI across the places it is declared:
  *
- *   1. cpp/src/streetview-wasm.wat      – canonical WAT source (`(export "…")`)
- *   2. cpp/src/bindings.cpp             – Emscripten C++ wrappers
- *   3. cpp/CMakeLists.txt               – EXPORTED_FUNCTIONS for the emcc link
- *   4. src/wasm/index.ts                – TypeScript loader (`exp['…']`)
+ *   1. cpp/src/bindings.cpp             – Emscripten C++ wrappers
+ *   2. cpp/CMakeLists.txt               – EXPORTED_FUNCTIONS for the emcc link
+ *   3. src/wasm/index.ts                – TypeScript loader (`exp['…']`)
+ *   4. cpp/include/streetview_wasm.h    – sw_* twins of the exported names
  *
- * plus the committed binary in public/wasm. Adding an export to one of them and
- * forgetting the others is the failure mode this file exists to catch — the WAT
- * and Emscripten builds are produced by different toolchains (see
- * scripts/build-wasm.sh) and only one of them runs on any given machine, so
- * drift is otherwise invisible until runtime.
+ * plus the committed binary in public/wasm and the C++ source hash that
+ * scripts/verify-build.sh checks. Adding an export to one of them and
+ * forgetting the others is the failure mode this file exists to catch.
  */
 
+import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -41,8 +41,14 @@ const EXPECTED_EXPORTS = [
   'downsample_2d',
 ] as const;
 
-/** malloc/free come from the Emscripten runtime, not from our sources. */
-const EMSCRIPTEN_RUNTIME_EXPORTS = new Set(['malloc', 'free']);
+/** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
+const EMSCRIPTEN_RUNTIME_EXPORTS = new Set([
+  'malloc',
+  'free',
+  '_initialize',
+  '_emscripten_stack_restore',
+  'emscripten_stack_get_current',
+]);
 
 function sorted(names: Iterable<string>): string[] {
   return Array.from(names).sort();
@@ -51,26 +57,9 @@ function sorted(names: Iterable<string>): string[] {
 const expectedSorted = sorted(EXPECTED_EXPORTS);
 
 describe('WASM ABI lock', () => {
-  it('WAT source exports exactly the expected set', () => {
-    const wat = read('cpp', 'src', 'streetview-wasm.wat');
-    const names = new Set<string>();
-    // `(func (export "name")` — the memory export is matched too, so filter it.
-    for (const match of wat.matchAll(/\(export\s+"([A-Za-z0-9_]+)"\)/g)) {
-      const name = match[1]!;
-      if (name !== 'memory') names.add(name);
-    }
-    expect(sorted(names)).toEqual(expectedSorted);
-  });
-
-  it('WAT source exports its linear memory (the loader needs it for buffer transfers)', () => {
-    const wat = read('cpp', 'src', 'streetview-wasm.wat');
-    expect(wat).toMatch(/\(memory\s+\(export\s+"memory"\)/);
-  });
-
   it('bindings.cpp defines a wrapper for every export', () => {
     const bindings = read('cpp', 'src', 'bindings.cpp');
     const names = new Set<string>();
-    // EMSCRIPTEN_KEEPALIVE followed by `<return type> name(`.
     for (const match of bindings.matchAll(
       /EMSCRIPTEN_KEEPALIVE\s+[A-Za-z_][A-Za-z0-9_*\s]*?\s([A-Za-z0-9_]+)\s*\(/g,
     )) {
@@ -87,12 +76,20 @@ describe('WASM ABI lock', () => {
     for (const raw of listMatch![1]!.split(',')) {
       const name = raw.trim().replace(/^'|'$/g, '');
       if (!name) continue;
-      // Emscripten prefixes C symbols with an underscore.
       expect(name.startsWith('_')).toBe(true);
       const stripped = name.slice(1);
       if (!EMSCRIPTEN_RUNTIME_EXPORTS.has(stripped)) names.add(stripped);
     }
     expect(sorted(names)).toEqual(expectedSorted);
+  });
+
+  it('streetview_wasm.h declares a sw_* twin for every export', () => {
+    const header = read('cpp', 'include', 'streetview_wasm.h');
+    const declared = new Set<string>();
+    for (const match of header.matchAll(/\bsw_([A-Za-z0-9_]+)\s*\(/g)) {
+      declared.add(match[1]!);
+    }
+    expect(sorted(declared)).toEqual(expectedSorted);
   });
 
   it('the TypeScript loader reads exactly the expected exports', () => {
@@ -105,7 +102,7 @@ describe('WASM ABI lock', () => {
     expect(sorted(names)).toEqual(expectedSorted);
   });
 
-  it('the committed binary exports exactly the expected set', async () => {
+  it('the committed binary exports every expected function (runtime extras allowed)', async () => {
     const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
     const module = await WebAssembly.compile(bytes);
     const names = new Set<string>();
@@ -115,21 +112,26 @@ describe('WASM ABI lock', () => {
     expect(sorted(names)).toEqual(expectedSorted);
   });
 
-  it('the committed binary is not stale relative to the WAT source', async () => {
-    const { createHash } = await import('crypto');
-    const watSource = read('cpp', 'src', 'streetview-wasm.wat');
+  it('the committed binary is not stale relative to the C++ sources', () => {
     const recorded = read('public', 'wasm', 'streetview-wasm.wasm.sha256').trim();
-    const actual = createHash('sha256').update(watSource).digest('hex');
-    // scripts/build-wasm.sh writes this hash; scripts/verify-build.sh checks the
-    // same thing at build time. Run `npm run build:wasm` if this fails.
+    const actual = execFileSync('node', ['scripts/wasm-source-hash.mjs'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim();
     expect(actual).toBe(recorded);
+  });
+
+  it('the committed binary SHA-256 matches the goldens record', () => {
+    const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    const goldens = JSON.parse(read('cpp', 'tests', 'goldens.json')) as { wasmSha256: string };
+    expect(sha).toBe(goldens.wasmSha256);
   });
 
   it('every API method on the TS wrapper is backed by a documented export', async () => {
     const { loadWasmModule, _resetWasmModule } = await import('../index');
     _resetWasmModule();
     const api = await loadWasmModule();
-    // camelCase wrapper name → snake_case export name.
     const methodToExport: Record<string, string> = {
       seed: 'seed',
       noise2d: 'noise2d',
@@ -147,12 +149,9 @@ describe('WASM ABI lock', () => {
       downsample2d: 'downsample_2d',
     };
 
-    // The JS fallback must implement every method, so a missing binary never
-    // turns into a runtime TypeError.
     for (const method of Object.keys(methodToExport)) {
       expect(typeof (api as unknown as Record<string, unknown>)[method]).toBe('function');
     }
-    // …and the mapping must cover the whole surface, minus the isWasm flag.
     const apiMethods = sorted(
       Object.keys(api).filter((key) => key !== 'isWasm'),
     );

@@ -10,13 +10,13 @@
  *
  * The same vectors are emitted to cpp/tests/goldens.json, which
  * src/wasm/__tests__/wasmGoldenParity.test.ts asserts the JS fallback
- * against — so C++, WAT and JS are pinned to one contract.
+ * against — so C++, the emcc binary and JS are pinned to one contract.
  */
 #pragma once
 
 namespace goldens {
 
-inline constexpr const char* kWasmSha256 = "d0df54e818fc80bd2fb778d80b253cba74e1ccd068b35f5c189d9af6acfb07a3";
+inline constexpr const char* kWasmSha256 = "48f07f317d5402184201cb923cfb6d7c5ebe8cc595241d2efc23787e48ba03c7";
 inline constexpr unsigned kNoiseSeed = 1337u;
 
 // --- noise2d -------------------------------------------------------------
@@ -132,8 +132,8 @@ inline constexpr double kPolylinePoints[] = {
     -73.999, 40.7178, -73.995,
 };
 inline constexpr double kPolylineExpectedSegments[] = {
-    118.91279951949545, 168.36659761650574, 201.9348396367855,
-    276.2109133163144, 354.9802166425447,
+    118.91279951949545, 168.36659761650571, 201.9348396367855,
+    276.2109133163144, 354.98021664254475,
 };
 inline constexpr double kPolylineExpectedTotal = 1120.405366731646;
 

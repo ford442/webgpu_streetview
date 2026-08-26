@@ -27,9 +27,9 @@
     "dev": "vite",
     "prebuild": "node scripts/prebuild-env.mjs",
     "build": "npm run build:wasm && vite build && ./scripts/verify-build.sh",
-    "build:wasm": "bash scripts/build-wasm.sh --wat-only",
+    "build:wasm": "bash scripts/build-wasm.sh",
     "build:wasm:emscripten": "bash scripts/build-wasm.sh",
-    "build:wasm:watch": "bash scripts/build-wasm.sh --wat-only && echo 'Run npm run build:wasm to rebuild after changes.'",
+    "build:wasm:watch": "bash scripts/build-wasm.sh && echo 'Run npm run build:wasm to rebuild after C++ changes.'",
     "gen:wasm-goldens": "node scripts/gen-wasm-goldens.mjs",
     "gen:look-luts": "node scripts/gen-look-luts.mjs",
     "gen:hero-cabin": "node scripts/gen-hero-cabin-gltf.mjs",
@@ -82,7 +82,6 @@
     "typescript-eslint": "^8.66.0",
     "vite": "^5.4.11",
     "vite-plugin-checker": "^0.8.0",
-    "vitest": "^2.1.8",
-    "wabt": "^1.0.39"
+    "vitest": "^2.1.8"
   }
 }

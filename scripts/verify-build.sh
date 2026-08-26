@@ -23,11 +23,17 @@ fi
 echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
 
 # ---------------------------------------------------------------------------
-# 1a. WASM binary: must exist, be non-empty, and not be stale vs WAT source.
+# 1a. WASM binary: must exist, be non-empty, and not be stale vs C++ sources.
 # ---------------------------------------------------------------------------
 WASM_FILE="$BUILD_DIR/wasm/streetview-wasm.wasm"
-WAT_SRC="$SCRIPT_ROOT/cpp/src/streetview-wasm.wat"
 WASM_HASH_FILE="$SCRIPT_ROOT/public/wasm/streetview-wasm.wasm.sha256"
+GLUE_JS="$BUILD_DIR/wasm/streetview-wasm.js"
+
+if [ -f "$GLUE_JS" ]; then
+  echo "❌ ERROR: $GLUE_JS is present. STANDALONE_WASM must not emit JS glue."
+  echo "   The TS loader instantiates the raw .wasm; delete the leftover .js."
+  ERRORS=$((ERRORS+1))
+fi
 
 if [ ! -f "$WASM_FILE" ]; then
   echo "❌ ERROR: $WASM_FILE is missing."
@@ -42,18 +48,17 @@ else
     echo "✅ build/wasm/streetview-wasm.wasm present (${WASM_BYTES} bytes)"
   fi
 
-  # Staleness check: compare the WAT source hash recorded at build time against
-  # the current WAT source.  A mismatch means the WAT was modified after the
-  # last 'npm run build:wasm' — the committed binary may be out of date.
-  if [ -f "$WASM_HASH_FILE" ] && [ -f "$WAT_SRC" ] && command -v sha256sum &>/dev/null; then
-    RECORDED_HASH=$(cat "$WASM_HASH_FILE")
-    CURRENT_HASH=$(sha256sum "$WAT_SRC" | awk '{print $1}')
+  # Staleness check: C++ input hash recorded at the last emcc build vs current
+  # noise_module.cpp / bindings.cpp / header / CMakeLists.txt.
+  if [ -f "$WASM_HASH_FILE" ] && command -v node &>/dev/null; then
+    RECORDED_HASH=$(tr -d '[:space:]' < "$WASM_HASH_FILE")
+    CURRENT_HASH=$(node "$SCRIPT_ROOT/scripts/wasm-source-hash.mjs")
     if [ "$RECORDED_HASH" != "$CURRENT_HASH" ]; then
-      echo "❌ ERROR: WAT source has changed since the last WASM build."
+      echo "❌ ERROR: C++ WASM sources have changed since the last emcc build."
       echo "   Run 'npm run build:wasm' to regenerate the binary, then rebuild."
       ERRORS=$((ERRORS+1))
     else
-      echo "✅ WASM binary is up-to-date with WAT source (hash match)"
+      echo "✅ WASM binary is up-to-date with C++ sources (hash match)"
     fi
   elif [ ! -f "$WASM_HASH_FILE" ]; then
     echo "⚠️  WASM source hash file missing ($WASM_HASH_FILE)."

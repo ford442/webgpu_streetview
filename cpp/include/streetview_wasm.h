@@ -3,8 +3,8 @@
  * streetview_wasm.h
  * Public API for the WebGPU StreetView WASM module (internal sw_* names).
  *
- * The canonical external ABI (exported from both the WAT module and the
- * Emscripten build) uses plain names without the sw_ prefix:
+ * The canonical external ABI (exported from the Emscripten STANDALONE_WASM
+ * build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine,
  *   normalize_angle, signed_angle_diff, fill_engine_noise,

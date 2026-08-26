@@ -19,8 +19,10 @@ import {
   reduceLumaBt709 as jsReduceLumaBt709,
   type LumaReduce,
 } from '../renderer/gpuChores/lumaMath';
+import { WASM_SCRATCH_OFFSET } from './scratchOffset';
 
 export type { LumaReduce };
+export { WASM_SCRATCH_OFFSET } from './scratchOffset';
 
 // ---------------------------------------------------------------------------
 // Public API types
@@ -441,28 +443,19 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const bytes = await response.arrayBuffer();
-    // The WAT module has no built-in transcendental functions, so haversine()
-    // imports sin/cos/atan2 from the host — this gives it the same
-    // double-precision result as the JS fallback formula.
-    //
-    // Both the WAT and the Emscripten STANDALONE_WASM builds are supported
-    // with the same importObject:
-    //
-    //  • WAT build (canonical, built via wabt): imports env.sin/cos/atan2
-    //    for haversine — exactly what we supply below.
-    //
-    //  • Emscripten STANDALONE_WASM build (--no-entry, no MODULARIZE):
-    //    links math statically, so it does NOT import env.sin/cos/atan2.
-    //    Extra keys in the importObject are silently ignored by the runtime.
-    //    It may import wasi_snapshot_preview1 functions (memory/fd helpers);
-    //    these are stubbed out below so the binary instantiates cleanly.
-    //
-    // If the binary imports something not covered here it will throw and we
-    // fall back to the JS implementation.
+    // Emscripten STANDALONE_WASM links libm statically. ALLOW_MEMORY_GROWTH
+    // imports env.emscripten_notify_memory_growth; extra keys (legacy env.sin
+    // / WASI stubs) are ignored. If the binary imports something not covered
+    // here it will throw and we fall back to the JS implementation.
     const noopI32 = (): number => 0;
     const importObject = {
-      env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 },
-      // WASI stubs — Emscripten STANDALONE_WASM may import these even for
+      env: {
+        sin: Math.sin,
+        cos: Math.cos,
+        atan2: Math.atan2,
+        emscripten_notify_memory_growth: (): void => {},
+      },
+      // WASI stubs — older STANDALONE_WASM builds may import these even for
       // pure-compute modules compiled with --no-entry.
       wasi_snapshot_preview1: {
         proc_exit: (_code: number): never => { throw new Error('proc_exit'); },
@@ -525,10 +518,9 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       throw new Error('WASM ABI missing gpu-chores exports');
     }
 
-    // WASM memory starts at byte 512 (after the permutation table); everything
-    // from there on is a scratch region for buffer transfers. 512 is a multiple
-    // of 8, so f64 views placed at the base stay naturally aligned.
-    const SCRATCH_OFFSET = 512;
+    // Past Emscripten statics (perm / grad tables live in the first ~8 KiB).
+    // 64 KiB is 8-byte aligned so f64 views at the base stay naturally aligned.
+    const SCRATCH_OFFSET = WASM_SCRATCH_OFFSET;
 
     /** Grow linear memory until `bytes` are available past SCRATCH_OFFSET. */
     const reserveScratch = (bytes: number): void => {

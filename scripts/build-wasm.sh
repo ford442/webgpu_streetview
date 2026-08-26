@@ -1,31 +1,23 @@
 #!/usr/bin/env bash
 # scripts/build-wasm.sh
-# Build the WebGPU StreetView WASM module.
+# Build the WebGPU StreetView WASM module from C++ via Emscripten.
 #
 # Prerequisites:
-#   Option A – Emscripten (full C++ build):
-#     source /path/to/emsdk/emsdk_env.sh    # activate emcc
-#
-#   Option B – wabt (WAT → WASM, no Emscripten required):
-#     npm install   # installs wabt as a devDependency
-#     node scripts/build-wasm.sh  # uses the Node.js wabt API automatically
+#   source /path/to/emsdk/emsdk_env.sh    # activate emcc (pin: cpp/emsdk.version)
 #
 # Output:
-#   public/wasm/streetview-wasm.wasm   – compiled WASM binary
-#   public/wasm/streetview-wasm.js     – Emscripten JS glue (Option A only)
+#   public/wasm/streetview-wasm.wasm      – standalone WASM (no JS glue)
+#   public/wasm/streetview-wasm.wasm.sha256 – SHA-256 of the C++ inputs
 #
 # Usage:
-#   bash scripts/build-wasm.sh [--release] [--wat-only]
+#   bash scripts/build-wasm.sh [--release|--debug]
 #
-#   --release    Pass -O3 to Emscripten (default when EMSCRIPTEN is detected).
-#   --wat-only   Always use the WAT→WASM path, even if emcc is available.
+# Env:
+#   STREETVIEW_WASM_SIMD=ON   pass -DSTREETVIEW_WASM_SIMD=ON (CI only; not shipped)
+#   CI=true                   fail if emcc is missing (do not reuse a stale binary)
 
 set -euo pipefail
 
-# Activate Emscripten if an emsdk environment is available, but never let a
-# missing/relocated emsdk abort the build — the script falls back to the
-# wabt (WAT → WASM) path below when emcc is not present. Honour EMSDK_ENV if
-# set, otherwise probe a couple of common locations.
 activate_emsdk() {
   local candidate
   for candidate in \
@@ -47,103 +39,84 @@ activate_emsdk
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$REPO_ROOT/cpp"
-WAT_SRC="$CPP_DIR/src/streetview-wasm.wat"
 OUT_DIR="$REPO_ROOT/public/wasm"
 WASM_OUT="$OUT_DIR/streetview-wasm.wasm"
+HASH_OUT="$OUT_DIR/streetview-wasm.wasm.sha256"
+GLUE_JS="$OUT_DIR/streetview-wasm.js"
 
 mkdir -p "$OUT_DIR"
 
-USE_WAT_ONLY=false
 BUILD_TYPE="Release"
-
 for arg in "$@"; do
   case "$arg" in
-    --wat-only) USE_WAT_ONLY=true ;;
-    --release)  BUILD_TYPE="Release" ;;
-    --debug)    BUILD_TYPE="Debug" ;;
+    --release) BUILD_TYPE="Release" ;;
+    --debug)   BUILD_TYPE="Debug" ;;
+    --wat-only)
+      echo "ERROR: --wat-only is retired. The shipped module is built from C++ with emcc." >&2
+      echo "       See docs/WASM_BRIDGE.md." >&2
+      exit 1
+      ;;
   esac
 done
 
-# ---------------------------------------------------------------------------
-# Option A: Emscripten build
-# ---------------------------------------------------------------------------
-if ! $USE_WAT_ONLY && command -v emcc &>/dev/null; then
-  echo "==> Emscripten detected ($(emcc --version | head -1))"
-  echo "==> Building C++ → WASM via Emscripten …"
+SOURCE_HASH="$(node "$REPO_ROOT/scripts/wasm-source-hash.mjs")"
 
-  BUILD_DIR="$CPP_DIR/build-emscripten"
-  mkdir -p "$BUILD_DIR"
-  cd "$BUILD_DIR"
-
-  CXXFLAGS="-O3"
-  if [[ "$BUILD_TYPE" == "Debug" ]]; then
-    CXXFLAGS="-O0 -g"
+if ! command -v emcc &>/dev/null; then
+  if [ "${CI:-}" = "true" ]; then
+    echo "ERROR: emcc is required in CI. Install the SDK pinned in cpp/emsdk.version" >&2
+    echo "       (see WASM.md / mymindstorm/setup-emsdk)." >&2
+    exit 1
   fi
-
-  # Configure with Emscripten's CMake toolchain.
-  emcmake cmake "$CPP_DIR" \
-    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DCMAKE_CXX_FLAGS="$CXXFLAGS"
-
-  emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
-
-  # Record the WAT source hash so verify-build.sh can detect staleness.
-  # (The Emscripten build is independent of WAT, but we still pin the hash so
-  # CI can flag when WAT and C++ diverge.)
-  if command -v sha256sum &>/dev/null && [ -f "$WAT_SRC" ]; then
-    sha256sum "$WAT_SRC" | awk '{print $1}' > "$OUT_DIR/streetview-wasm.wasm.sha256"
-    echo "==> WAT source hash written (staleness check reference)"
+  if [ -f "$WASM_OUT" ] && [ -f "$HASH_OUT" ] && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
+    echo "==> emcc not found; C++ source hash matches committed wasm — skipping rebuild."
+    exit 0
   fi
-
-  echo "==> Emscripten build done."
-  echo "    WASM: $WASM_OUT"
-  exit 0
-fi
-
-# ---------------------------------------------------------------------------
-# Option B: WAT → WASM via Node.js + wabt
-# ---------------------------------------------------------------------------
-echo "==> emcc not found (or --wat-only requested). Compiling WAT → WASM via wabt …"
-
-if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js is required when Emscripten is not available." >&2
+  echo "ERROR: emcc not found and the C++ sources do not match public/wasm/streetview-wasm.wasm.sha256." >&2
+  echo "       Install Emscripten (pin: $(tr -d '[:space:]' < "$CPP_DIR/emsdk.version")) and retry." >&2
+  echo "       See WASM.md." >&2
   exit 1
 fi
 
-node - "$REPO_ROOT" <<'NODE_EOF'
-const wabt   = require('wabt');
-const fs     = require('fs');
-const path   = require('path');
-const crypto = require('crypto');
+echo "==> Emscripten detected ($(emcc --version | head -1))"
+echo "==> Building C++ → WASM via Emscripten …"
 
-const repoRoot  = process.argv[2];
-const watSrc    = path.join(repoRoot, 'cpp', 'src', 'streetview-wasm.wat');
-const outDir    = path.join(repoRoot, 'public', 'wasm');
-const wasmOut   = path.join(outDir, 'streetview-wasm.wasm');
-const hashOut   = path.join(outDir, 'streetview-wasm.wasm.sha256');
+BUILD_DIR="$CPP_DIR/build-emscripten"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
 
-fs.mkdirSync(outDir, { recursive: true });
+CXXFLAGS="-O3"
+if [[ "$BUILD_TYPE" == "Debug" ]]; then
+  CXXFLAGS="-O0 -g"
+fi
 
-wabt().then(w => {
-  const source = fs.readFileSync(watSrc, 'utf8');
-  const module = w.parseWat(watSrc, source, {});
-  module.validate();
-  const { buffer } = module.toBinary({});
-  fs.writeFileSync(wasmOut, buffer);
-  module.destroy();
+SIMD_CMAKE=()
+if [[ "${STREETVIEW_WASM_SIMD:-}" == "ON" || "${STREETVIEW_WASM_SIMD:-}" == "1" ]]; then
+  SIMD_CMAKE=(-DSTREETVIEW_WASM_SIMD=ON)
+  echo "==> STREETVIEW_WASM_SIMD=ON (autovectorization only; do not ship this binary)"
+fi
 
-  // Record the SHA-256 of the WAT source so verify-build.sh can detect
-  // when the source has changed since the last build.
-  const watHash = crypto.createHash('sha256').update(source).digest('hex');
-  fs.writeFileSync(hashOut, watHash + '\n');
+emcmake cmake "$CPP_DIR" \
+  -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+  -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+  "${SIMD_CMAKE[@]}"
 
-  console.log(`==> Written ${buffer.byteLength} bytes to ${wasmOut}`);
-  console.log(`==> WAT source hash: ${watHash}`);
-}).catch(err => {
-  console.error('wabt compilation failed:', err.message);
-  process.exit(1);
-});
-NODE_EOF
+emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
-echo "==> WAT build done."
-echo "    WASM: $WASM_OUT"
+# STANDALONE_WASM must not emit JS glue. A leftover embind .js would be copied
+# into build/ by Vite and precached by the service worker.
+rm -f "$GLUE_JS"
+
+if [ ! -f "$WASM_OUT" ] || [ ! -s "$WASM_OUT" ]; then
+  echo "ERROR: expected non-empty $WASM_OUT after emcc link." >&2
+  exit 1
+fi
+
+# Record the C++ source hash so verify-build.sh can detect staleness.
+# SIMD CI rebuilds must not rewrite the committed hash of the scalar ship binary.
+if [[ "${STREETVIEW_WASM_SIMD:-}" != "ON" && "${STREETVIEW_WASM_SIMD:-}" != "1" ]]; then
+  printf '%s\n' "$SOURCE_HASH" > "$HASH_OUT"
+  echo "==> C++ source hash written: $SOURCE_HASH"
+fi
+
+echo "==> Emscripten build done."
+echo "    WASM: $WASM_OUT ($(wc -c < "$WASM_OUT") bytes)"

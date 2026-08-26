@@ -578,17 +578,16 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   for clangd.
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
   the JS fallback (runs with `npm test`).
-- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across the
-  WAT, `bindings.cpp`, `CMakeLists.txt`, the TS loader and the committed binary.
+- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
+  `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
-  and `build-wasm-emscripten` (full C++ → wasm via emcc + ABI check). Both are
+  and `build-wasm-emscripten` (C++ → wasm via pinned emcc + ABI check + SIMD goldens). Both are
   required.
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
-not hand-write new `.wat` algorithms and do not add new `src/**/*.js`
+not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code — the JS fallback is a degrade/test twin, not a third place to
-invent behaviour. Full detail and the plan for retiring the hand-written WAT:
-`docs/WASM_BRIDGE.md`.
+invent behaviour. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

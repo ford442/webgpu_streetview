@@ -8,10 +8,10 @@ WebGPU StreetView for high-performance CPU-side computation.
 ## Quick Start
 
 ```bash
-# Install dependencies (includes wabt for WAT→WASM compilation)
-npm install
+# Install dependencies
+npm ci
 
-# Rebuild the .wasm binary from the WAT source (always run BEFORE vite build)
+# Rebuild the .wasm binary from C++ via emcc (always run BEFORE vite build)
 npm run build:wasm
 
 # Full app build — correct order: WASM first, then Vite copies it into build/
@@ -68,8 +68,7 @@ cpp/
 │   └── streetview_wasm.h       C public API (sw_* internal names)
 ├── src/
 │   ├── noise_module.cpp        Algorithm source of truth (Perlin noise, haversine, …)
-│   ├── bindings.cpp            Canonical raw-export wrappers (seed, noise2d, …)
-│   └── streetview-wasm.wat     Hand-crafted WAT source — ABI source of record, what ships
+│   └── bindings.cpp            Canonical raw-export wrappers (seed, noise2d, …)
 ├── tests/
 │   ├── CMakeLists.txt          Host-only test target (streetview_cpu_tests)
 │   ├── noise_module_test.cpp   doctest golden-vector tests
@@ -80,10 +79,11 @@ cpp/
 
 public/wasm/
 ├── streetview-wasm.wasm        Pre-built binary (commit this; rebuild with npm run build:wasm)
-└── streetview-wasm.wasm.sha256 SHA-256 of the WAT source at the last build (staleness guard)
+└── streetview-wasm.wasm.sha256 SHA-256 of the C++ inputs at the last emcc build
 
 scripts/
-├── build-wasm.sh               Build script (auto-detects emcc vs wabt)
+├── build-wasm.sh               C++ → wasm via emcc
+├── wasm-source-hash.mjs        C++ input hash for the staleness guard
 ├── check-wasm-abi.mjs          Compiled binary exports the whole ABI
 └── gen-wasm-goldens.mjs        Capture goldens from the shipping binary
 
@@ -98,34 +98,27 @@ src/wasm/
 
 ## Single ABI — Canonical Export Names
 
-Both build paths must produce a binary with **identical export names** so
-`src/wasm/index.ts` can instantiate either without a loader branch:
+The Emscripten STANDALONE_WASM binary uses these export names so
+`src/wasm/index.ts` can instantiate it without a loader branch:
 
-| Export name | WAT | Emscripten (via bindings.cpp) |
-|---|---|---|
-| `seed` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE void seed(…)` |
-| `noise2d` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float noise2d(…)` |
-| `fill_noise_buffer` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE void fill_noise_buffer(…)` |
-| `haversine` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE double haversine(…)` |
-| `normalize_angle` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float normalize_angle(…)` |
-| `signed_angle_diff` | ✅ direct | ✅ via `EMSCRIPTEN_KEEPALIVE float signed_angle_diff(…)` |
-| `memory` | ✅ exported | ✅ exported |
+| Export name | Emscripten (via bindings.cpp) |
+|---|---|
+| `seed` | `EMSCRIPTEN_KEEPALIVE void seed(…)` |
+| `noise2d` | `EMSCRIPTEN_KEEPALIVE float noise2d(…)` |
+| `fill_noise_buffer` | `EMSCRIPTEN_KEEPALIVE void fill_noise_buffer(…)` |
+| `haversine` | `EMSCRIPTEN_KEEPALIVE double haversine(…)` |
+| `normalize_angle` | `EMSCRIPTEN_KEEPALIVE float normalize_angle(…)` |
+| `signed_angle_diff` | `EMSCRIPTEN_KEEPALIVE float signed_angle_diff(…)` |
+| `memory` | exported |
 
 The internal C++ functions (`sw_seed`, `sw_noise2d`, …) are NOT exported — only
 the thin canonical wrappers in `bindings.cpp` are. The
 `EXPORTED_FUNCTIONS` list in `CMakeLists.txt` uses `_seed`, `_noise2d` etc.
 (Emscripten's underscore convention maps `_seed` → export name `seed`).
 
-### Math imports: WAT vs Emscripten
-
-- **WAT**: imports `env.sin`, `env.cos`, `env.atan2` from the host (WASM has no
-  built-in transcendental functions). The TS loader supplies `Math.sin/cos/atan2`.
-- **Emscripten STANDALONE_WASM**: links math statically using musl. No host math
-  imports. The TS loader's extra `env.*` keys are silently ignored.
-
-Both binaries may produce slightly different floating-point results for
-`haversine` due to different math library precision paths; the unit tests
-use `toBeCloseTo(…, 6)` (six decimal places) to accommodate this.
+Emscripten STANDALONE_WASM links math statically using musl. `ALLOW_MEMORY_GROWTH`
+imports `env.emscripten_notify_memory_growth`. Host `haversine` tests allow
+~1e-12 relative vs platform libm.
 
 ---
 
@@ -147,32 +140,10 @@ JS fallback.
 
 ## Build Paths
 
-### Path A — WAT → WASM (no Emscripten, canonical / recommended)
+### Path A — C++ → WASM via Emscripten (what ships)
 
-Uses the hand-crafted WAT source in `cpp/src/streetview-wasm.wat` and the
-[wabt](https://github.com/AssemblyScript/wabt) Node.js package.
-
-```bash
-npm run build:wasm          # or: bash scripts/build-wasm.sh --wat-only
-```
-
-Output:
-- `public/wasm/streetview-wasm.wasm` — compiled WASM binary
-- `public/wasm/streetview-wasm.wasm.sha256` — SHA-256 of the WAT source (staleness guard)
-
-This is the path used in CI and the one that produces the shipped binary. The
-WAT is the **ABI source of record**; both the pre-built binary and its hash file
-should be committed.
-
-The *algorithms*, however, live in `cpp/src/noise_module.cpp` — see
-"Path C" below and `docs/WASM_BRIDGE.md` §6. Do not hand-write new WAT
-algorithms: write the C++, transcribe it, and let the goldens prove the two
-agree.
-
-### Path B — C++ → WASM via Emscripten
-
-The C++ implementation (`cpp/src/noise_module.cpp` + `bindings.cpp`) uses libm
-for exact `haversine` and enables link-time optimisation.
+The C++ implementation (`cpp/src/noise_module.cpp` + `bindings.cpp`) is compiled
+with a **pinned** Emscripten SDK (`cpp/emsdk.version`).
 
 **Emscripten flags used (see `CMakeLists.txt`):**
 ```
@@ -182,30 +153,32 @@ for exact `haversine` and enables link-time optimisation.
 -s INITIAL_MEMORY=16777216   # explicit, so the first tile never triggers a grow
 -s ALLOW_MEMORY_GROWTH=1
 -s ASSERTIONS=0
--s EXPORTED_FUNCTIONS=[all eleven ABI names, plus '_malloc','_free']
+-s EXPORTED_FUNCTIONS=[ABI names, plus '_malloc','_free']
 -s EXPORTED_RUNTIME_METHODS=[]
 ```
 
 Compile flags: `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`
 (shared with the host build) plus `-fno-exceptions -fno-rtti`. Passing
-`-DSTREETVIEW_WASM_SIMD=ON` adds `-msimd128`; it changes no algorithm, only
-whether the `fill_*` loops may autovectorize.
+`-DSTREETVIEW_WASM_SIMD=ON` adds `-msimd128`; CI checks goldens stay bit-identical.
+Do **not** ship a SIMD-built binary until that job is the production default.
 
 **No `MODULARIZE`, no `EXPORT_ES6`, no `--bind`** — these flags would produce a
 JS-module wrapper incompatible with the TS loader's direct `WebAssembly.instantiate()`.
 
 ```bash
-# Install Emscripten SDK
+# Install the pinned Emscripten SDK (see cpp/emsdk.version)
 git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
-/opt/emsdk/emsdk install latest
-/opt/emsdk/emsdk activate latest
+PIN=$(tr -d '[:space:]' < cpp/emsdk.version)
+/opt/emsdk/emsdk install "$PIN"
+/opt/emsdk/emsdk activate "$PIN"
 source /opt/emsdk/emsdk_env.sh
 
-# Build (auto-detected if emcc is on PATH)
 npm run build:wasm
 ```
 
-Output: `public/wasm/streetview-wasm.wasm` — the WASM binary (no `.js` glue file)
+Output:
+- `public/wasm/streetview-wasm.wasm` — standalone WASM (no `.js` glue)
+- `public/wasm/streetview-wasm.wasm.sha256` — SHA-256 of the C++ inputs
 
 #### Docker alternative
 
@@ -214,7 +187,7 @@ docker run --rm -v "$(pwd):/src" -w /src \
   emscripten/emsdk bash scripts/build-wasm.sh
 ```
 
-### Path C — native host build (algorithms only, no WASM)
+### Path B — native host build (algorithms only, no WASM)
 
 `cpp/src/noise_module.cpp` builds with the system compiler so the algorithms can
 be tested anywhere `cmake` exists:
@@ -248,19 +221,15 @@ the committed binary or be hand-edited.
 
 #### Emscripten SDK version pinning
 
-Pin the Emscripten SDK version in CI to avoid binary drift:
-```bash
-/opt/emsdk/emsdk install 3.1.55
-/opt/emsdk/emsdk activate 3.1.55
-```
-Update the version in `scripts/build-wasm.sh` when upgrading.
+Pin the Emscripten SDK version in `cpp/emsdk.version` (CI reads the same file).
+Do not use `latest` — goldens and the committed `.wasm` would churn.
 
 ---
 
 ## Build Order (Critical)
 
 ```
-npm run build:wasm   →   public/wasm/streetview-wasm.wasm  (WAT or Emscripten)
+npm run build:wasm   →   public/wasm/streetview-wasm.wasm  (emcc STANDALONE_WASM)
 vite build           →   build/ (copies public/ into it, including the fresh .wasm)
 ./scripts/verify-build.sh   →   asserts build/wasm/streetview-wasm.wasm exists + size > 0
 ```
@@ -308,25 +277,22 @@ effect against it being fully disabled — see `getWasmNoisePreference()` in
 `src/wasm/wasmNoiseFeeder.ts`. When disabled, dust intensity is driven to 0
 and the noise tile is never uploaded.
 
-### haversine's host math imports (WAT build only)
+### haversine (libm, linked statically)
 
-WASM has no built-in transcendental functions, so `haversine()` in
-`streetview-wasm.wat` imports `sin`/`cos`/`atan2` from the host — the
-loader in `src/wasm/index.ts` supplies `Math.sin`/`Math.cos`/`Math.atan2` at
-instantiation time:
+The emcc STANDALONE_WASM build links `sin`/`cos`/`atan2` into the module.
+`ALLOW_MEMORY_GROWTH` imports `env.emscripten_notify_memory_growth`; the loader
+stubs it. Extra keys (legacy `env.sin` / WASI) are ignored:
 
 ```typescript
 const importObject = {
-  env: { sin: Math.sin, cos: Math.cos, atan2: Math.atan2 },
-  wasi_snapshot_preview1: { /* stubs for Emscripten STANDALONE_WASM */ },
+  env: {
+    sin: Math.sin, cos: Math.cos, atan2: Math.atan2,
+    emscripten_notify_memory_growth: () => {},
+  },
+  wasi_snapshot_preview1: { /* stubs */ },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
 ```
-
-The Emscripten STANDALONE_WASM build links math statically, so it does NOT use
-these host imports. Extra keys in the import object are silently ignored.
-The WASI stubs handle any `wasi_snapshot_preview1.*` imports Emscripten may
-emit even with `--no-entry`.
 
 ---
 
@@ -350,10 +316,10 @@ two at runtime.
 `scripts/verify-build.sh` (called at the end of `npm run build`) checks:
 
 1. `build/wasm/streetview-wasm.wasm` **exists** and **size > 0**.
-2. **Source hash**: the SHA-256 of `cpp/src/streetview-wasm.wat` recorded at
-   the last `npm run build:wasm` must match the current WAT source. A mismatch
-   means the WAT was edited without a WASM rebuild — the deploy artifact would
-   be stale.
+2. **Source hash**: the SHA-256 of the C++ inputs recorded at the last
+   `npm run build:wasm` must match `scripts/wasm-source-hash.mjs`. A mismatch
+   means the algorithms were edited without a WASM rebuild.
+3. No `build/wasm/streetview-wasm.js` glue file.
 
 The hash file lives at `public/wasm/streetview-wasm.wasm.sha256` and is
 committed alongside the binary so CI can verify it without rebuilding.

@@ -16,11 +16,8 @@
  * src/wasm/__tests__/wasmGoldenParity.test.ts. All three implementations are
  * therefore pinned to one contract.
  *
- * On tolerances: the f32 paths are plain IEEE-754 single-precision arithmetic
- * in the same order on both sides, so they are compared bit-exactly. Only
- * haversine gets a relative tolerance — the WAT module calls the host's
- * Math.sin/cos/atan2 while this build uses the platform libm, and the two are
- * allowed to differ in the last places of a double.
+ * **Tolerance** for haversine: host libm vs the emcc-linked libm may differ
+ * in the last places of a double (1e-12 relative).
  */
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -52,7 +49,7 @@ double rel_diff(double actual, double expected) {
                          : std::fabs(actual - expected);
 }
 
-/** Tolerance for the double path (host libm vs the WAT module's host math). */
+/** Tolerance for the double path (host libm vs the emcc-linked libm). */
 constexpr double kHaversineRelTolerance = 1e-12;
 
 std::string at(int i) { return "index " + std::to_string(i); }
