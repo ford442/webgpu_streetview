@@ -164,7 +164,11 @@ export function useCarDashboardBridge({
       cabinAudioRef.current?.dispose();
       cabinAudioRef.current = null;
     };
-  }, [containerRef, registerCarModeState]);
+    // sharedGpuDevice: re-run if it flips from undefined to a real device
+    // (WebGPU init can still be resolving when car mode first mounts) — the
+    // ?cabin=webgpu path must not get stuck on the WebGL fallback for the
+    // rest of the session just because it lost that race once.
+  }, [containerRef, registerCarModeState, sharedGpuDevice]);
 
   useEffect(() => {
     const prev = prevPositionRef.current;

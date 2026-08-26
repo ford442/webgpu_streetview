@@ -2,6 +2,19 @@ import * as THREE from 'three';
 import type { CabinRenderer } from './createCabinRenderer';
 
 /**
+ * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
+ * than imported: importing it here — for whatever reason in Rollup's
+ * automatic chunking of this particular module graph — pulls the shared
+ * `three` runtime into the eager main bundle (verified: main.js gzip goes
+ * from ~350 KiB to ~430 KiB, over `scripts/check-bundle-budget.sh`'s cap,
+ * even though nothing here touches `three/webgpu`). This predicate has no
+ * dependencies of its own, so a local copy is cheap insurance.
+ */
+function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
+  return (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
+}
+
+/**
  * Sun-visor vanity mirror — samples the Street View pano with a tight,
  * downward-biased crop and horizontal flip (like RearviewMirror, smaller RT).
  */
@@ -60,7 +73,12 @@ export class VanityMirror {
     });
 
     this.mirrorPlane = mirrorPlane;
-    this.mirrorPlane.material = this.mirrorMaterial;
+    // WebGPURenderer has no TSL/NodeMaterial equivalent for this custom GLSL
+    // warmth/vignette shader yet — show the plain render-target crop instead
+    // of crashing. The render-target pipeline itself (below) is backend-agnostic.
+    this.mirrorPlane.material = isWebGPUCabinRenderer(renderer)
+      ? new THREE.MeshBasicMaterial({ map: this.renderTarget.texture })
+      : this.mirrorMaterial;
 
     this.mirrorCamera = new THREE.PerspectiveCamera(60, VanityMirror.WIDTH / VanityMirror.HEIGHT, 0.1, 100);
     this.mirrorCamera.position.set(0, 0, 1);
@@ -119,6 +137,9 @@ export class VanityMirror {
   dispose(): void {
     this.renderTarget.dispose();
     this.mirrorMaterial.dispose();
+    if (this.mirrorPlane.material !== this.mirrorMaterial) {
+      (this.mirrorPlane.material as THREE.Material).dispose();
+    }
     this.mirrorScreenMesh.geometry.dispose();
     this.mirrorScreenMat.dispose();
     this.streetViewTexture?.dispose();
