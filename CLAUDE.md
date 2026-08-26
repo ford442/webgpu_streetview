@@ -29,7 +29,7 @@ npm test        # Vitest
 npm run typecheck
 npm run lint
 npm run build
-npm run test:cpp  # native C++ golden tests (needs cmake + a C++17 compiler)
+npm run test:cpp  # native C++ golden tests (needs cmake + a C++20 compiler)
 ```
 
 _Last updated: foundation refactor (#173 superseded)._

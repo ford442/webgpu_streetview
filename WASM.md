@@ -234,8 +234,10 @@ This produces no `.wasm`. It builds the `streetview_cpu` static library and
 vectors captured from the shipping binary — bit-exact on the f32 paths, `1e-12`
 relative on `haversine`.
 
-Configuring also writes `cpp/build-host/compile_commands.json`
-(`CMAKE_EXPORT_COMPILE_COMMANDS=ON`), so clangd/clang-tidy work in `cpp/`.
+Configuring writes `cpp/build-host/compile_commands.json`
+(`CMAKE_EXPORT_COMPILE_COMMANDS=ON`); building links it to
+`cpp/compile_commands.json` automatically, and `cpp/.clangd` points at
+`build-host` too — clangd/clang-tidy just work in `cpp/`, no manual `ln -s`.
 
 Regenerate the goldens only when an algorithm deliberately changes:
 

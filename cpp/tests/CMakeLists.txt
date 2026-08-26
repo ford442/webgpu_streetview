@@ -19,6 +19,6 @@ target_include_directories(streetview_cpu_tests PRIVATE ${CMAKE_CURRENT_SOURCE_D
 target_include_directories(streetview_cpu_tests SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/doctest)
 
-target_compile_options(streetview_cpu_tests PRIVATE ${STREETVIEW_WARNINGS})
+target_compile_options(streetview_cpu_tests PRIVATE ${STREETVIEW_HOST_WARNINGS})
 
 add_test(NAME streetview_cpu_tests COMMAND streetview_cpu_tests)
