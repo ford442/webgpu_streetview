@@ -29,11 +29,14 @@ import {
     setupWindowWeatherOverlay,
     type CarInteriorAssemblyHost,
 } from './CarInteriorAssembly';
+import { createCabinRenderer, type CabinRenderer } from './createCabinRenderer';
 
 export interface CarInteriorBootstrapResult {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    renderer: CabinRenderer;
+    /** True once `renderer` can actually draw a frame — see `createCabinRenderer.ts`. */
+    isRendererReady: () => boolean;
     canvas: HTMLCanvasElement;
     interiorGroup: THREE.Group;
     roofGroup: THREE.Group;
@@ -84,6 +87,8 @@ export function bootstrapCarInterior(
     vehicleType: VehicleType,
     host: CarInteriorAssemblyHost,
     applySeatPosition: () => void,
+    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts` (`?cabin=webgpu`). */
+    sharedDevice?: GPUDevice,
 ): CarInteriorBootstrapResult {
     const scene = new THREE.Scene();
     const vehicleConfig = getVehicleConfig(vehicleType);
@@ -109,32 +114,21 @@ export function bootstrapCarInterior(
     camera.rotation.order = 'YXZ';
     camera.rotation.set(0, 0, 0);
 
-    const useAntialias = gpuProfile.antialias;
-    let renderer: THREE.WebGLRenderer;
-    try {
-        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: useAntialias });
-    } catch (err) {
-        throw new Error(
-            `Car mode requires WebGL, which is not available in this environment. ` +
-            `(${err instanceof Error ? err.message : String(err)})`
-        );
-    }
+    const cabinRenderer = createCabinRenderer({ gpuProfile, sharedDevice });
+    const { renderer, isReady: isRendererReady } = cabinRenderer;
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, gpuProfile.pixelRatio));
-    renderer.setClearColor(0x000000, 0);
-    renderer.autoClear = true;
 
-    applyPerformanceProfile(renderer, gpuProfile);
-    optimizeTextures(renderer, {
-        maxTextureSize: gpuProfile.maxTextureSize,
-        anisotropy: gpuProfile.name === 'high' ? 4 : 2,
-    });
+    if (cabinRenderer.backend === 'webgl') {
+        // WebGPU-only: no raw WebGL context to read capabilities/extensions from.
+        applyPerformanceProfile(renderer as THREE.WebGLRenderer, gpuProfile);
+        optimizeTextures(renderer as THREE.WebGLRenderer, {
+            maxTextureSize: gpuProfile.maxTextureSize,
+            anisotropy: gpuProfile.name === 'high' ? 4 : 2,
+        });
+    }
 
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-    const canvas = renderer.domElement;
+    const canvas = cabinRenderer.canvas;
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
     canvas.style.left = '0';
@@ -261,6 +255,7 @@ export function bootstrapCarInterior(
         postProcessing,
         canvas,
         resolveCameraFov(vehicleConfig),
+        isRendererReady,
     );
     rendererDelegate.setPostProcessingEnabled(postProcessingEnabled);
 
@@ -292,6 +287,7 @@ export function bootstrapCarInterior(
         scene,
         camera,
         renderer,
+        isRendererReady,
         canvas,
         interiorGroup,
         roofGroup,

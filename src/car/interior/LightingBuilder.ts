@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
+import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
 
 export interface InteriorLights {
   hemisphereLight: THREE.HemisphereLight;
@@ -33,32 +34,37 @@ export interface InteriorLightingOptions {
 export function buildInteriorLighting(
   scene: THREE.Scene,
   interiorGroup: THREE.Group,
-  renderer: THREE.WebGLRenderer,
+  renderer: CabinRenderer,
   config: VehicleConfig,
   options: InteriorLightingOptions = {},
 ): InteriorLights {
   const quality = options.quality ?? 'high';
 
-  const envScene = new THREE.Scene();
-  const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
-  const envBoxMats = [
-    new THREE.MeshBasicMaterial({ color: 0xc8bba8, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xb8b0a4, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xd8d4cc, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xc4b8a8, side: THREE.BackSide }),
-    new THREE.MeshBasicMaterial({ color: 0xb0a898, side: THREE.BackSide }),
-  ];
-  const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
-  envScene.add(envBox);
-  const envLight = new THREE.PointLight(0xfff5e0, 0.9, 10);
-  envLight.position.set(0, 1.8, 0);
-  envScene.add(envLight);
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(envScene).texture;
-  pmrem.dispose();
-  envBoxGeo.dispose();
-  envBoxMats.forEach(m => m.dispose());
+  // classic THREE.PMREMGenerator is WebGL-only; the `?cabin=webgpu` escape
+  // hatch skips the static studio-cube IBL fallback rather than crash. Real
+  // reflections on that path are follow-up work — see createCabinRenderer.ts.
+  if (!isWebGPUCabinRenderer(renderer)) {
+    const envScene = new THREE.Scene();
+    const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
+    const envBoxMats = [
+      new THREE.MeshBasicMaterial({ color: 0xc8bba8, side: THREE.BackSide }),
+      new THREE.MeshBasicMaterial({ color: 0xb8b0a4, side: THREE.BackSide }),
+      new THREE.MeshBasicMaterial({ color: 0xd8d4cc, side: THREE.BackSide }),
+      new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }),
+      new THREE.MeshBasicMaterial({ color: 0xc4b8a8, side: THREE.BackSide }),
+      new THREE.MeshBasicMaterial({ color: 0xb0a898, side: THREE.BackSide }),
+    ];
+    const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
+    envScene.add(envBox);
+    const envLight = new THREE.PointLight(0xfff5e0, 0.9, 10);
+    envLight.position.set(0, 1.8, 0);
+    envScene.add(envLight);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(envScene).texture;
+    pmrem.dispose();
+    envBoxGeo.dispose();
+    envBoxMats.forEach(m => m.dispose());
+  }
 
   const hemisphereLight = new THREE.HemisphereLight(0xfff5e0, 0x1a1a28, 0.16);
   scene.add(hemisphereLight);

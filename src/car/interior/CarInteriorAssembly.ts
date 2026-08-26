@@ -31,6 +31,7 @@ import {
     isGltfInteriorEnabled,
     loadGltfInteriorKit,
 } from '../gltfInteriorKit';
+import type { CabinRenderer } from './createCabinRenderer';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -46,7 +47,7 @@ export interface CarInteriorAssemblyHost {
     lodConfig: VehicleLODConfig;
     frustumCuller: FrustumCuller;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    renderer: CabinRenderer;
     scene: THREE.Scene;
     canvas: HTMLCanvasElement;
     postProcessing?: import('./PostProcessingManager').PostProcessingManager;

@@ -21,7 +21,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Language | TypeScript | 4.9.5 |
 | Build Tool | Vite 5 + Vitest | — |
 | Rendering API | WebGPU | Native browser API |
-| 3D Overlay | Three.js | 0.160.0 |
+| 3D Overlay | Three.js | 0.180.0 (pinned) |
 | Shader Language | WGSL | WebGPU Shading Language |
 | Maps Integration | Google Maps JavaScript API | Weekly |
 | State Management | React Context + Hooks | Provider pattern |
@@ -421,6 +421,8 @@ Browser Output (top to bottom)
 - **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
 - **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
 - **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
+
+**`?cabin=webgpu` escape hatch** (`car/interior/createCabinRenderer.ts` — cabin/pano device-unification effort, PR 1 of 3, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. Default (no flag) stays the classic `THREE.WebGLRenderer` above, byte-identical to before. With the flag **and** a shared `GPUDevice` available (`Renderer.ts#getSharedGpuDevice` — still the only `requestDevice` call site), the cabin instead adopts that device via `THREE.WebGPURenderer({ device })` — never requesting its own adapter/device. `three/webgpu` (the node-material/TSL renderer) is fetched as its own further-lazy chunk only when the flag is active (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`) so the 99% WebGL default never pays for it — see `scripts/check-bundle-budget.sh`'s per-chunk overrides. On this path, PMREM environment maps (`LightingBuilder.ts`, `PanoEnvironment.ts` — classic `THREE.PMREMGenerator` is WebGL-only) and `optimizeTextures` (raw WebGL context reads) are skipped rather than crash; closing that gap, deleting the science-lab/limousine variants' own `WebGLRenderer`s, and flipping the default are later PRs in the same issue, not done here.
 
 ### Input Handling
 

@@ -9,11 +9,12 @@ import type { DustMoteSystem } from './DustMoteSystem';
 import type { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import type { VanityMirror } from './VanityMirror';
 import type { LocationPanel } from './LocationPanel';
+import type { CabinRenderer } from './createCabinRenderer';
 
 export interface CarInteriorDisposeHost {
     animationId: number;
     clockUpdateInterval?: number;
-    renderer: THREE.WebGLRenderer;
+    renderer: CabinRenderer;
     scene: THREE.Scene;
     canvas: HTMLCanvasElement;
     panoEnvironment: PanoEnvironment;

@@ -338,6 +338,15 @@ export class Renderer implements StreetViewRenderer {
     }
 
     /**
+     * The single shared `GPUDevice` (see `requestDevice` above — the only
+     * allowed call site). Car mode adopts this device instead of creating its
+     * own; never expose it before `init()` has resolved or after teardown.
+     */
+    public getSharedGpuDevice(): GPUDevice | undefined {
+        return this.isDestroyed || this.isDisposed ? undefined : this.device;
+    }
+
+    /**
      * #216: sample panorama luma (hist/reduce) on the shared device, or WASM/JS.
      * Skipped while a hold is active so we never read a loading live canvas.
      */

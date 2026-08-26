@@ -30,7 +30,8 @@ interface CarModeViewProps {
  * Controllers live in `src/views/car/*` hooks; this file wires providers + UI only.
  */
 const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
-  const { heading, pitch, panorama, advance, canvas, zoom, position } = useStreetView();
+  const { heading, pitch, panorama, advance, canvas, zoom, position, renderer } = useStreetView();
+  const sharedGpuDevice = renderer?.getSharedGpuDevice?.();
   const {
     controlMode,
     setControlMode,
@@ -119,6 +120,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   } = useCarDashboardBridge({
     containerRef,
     registerCarModeState,
+    sharedGpuDevice,
     controlMode,
     heading,
     pitch,

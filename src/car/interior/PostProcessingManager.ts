@@ -44,10 +44,7 @@ export class PostProcessingManager {
     this.composer.addPass(this.bloomPass);
 
     // SMAA anti-aliasing — light on performance, good visual payoff
-    const smaaPass = new SMAAPass(
-      window.innerWidth * renderer.getPixelRatio(),
-      window.innerHeight * renderer.getPixelRatio()
-    );
+    const smaaPass = new SMAAPass();
     smaaPass.enabled = gpuProfile.name !== 'low';
     this.composer.addPass(smaaPass);
 
