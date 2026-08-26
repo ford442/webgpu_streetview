@@ -36,6 +36,7 @@ import {
 import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
+import type { CabinRenderer } from './interior/createCabinRenderer';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -43,7 +44,7 @@ import { applyDriverSeatOffset } from './seatPosition';
 export class CarInterior implements CarInteriorAssemblyHost {
     public scene!: THREE.Scene;
     public camera!: THREE.PerspectiveCamera;
-    public renderer!: THREE.WebGLRenderer;
+    public renderer!: CabinRenderer;
     public canvas!: HTMLCanvasElement;
     public interiorGroup!: THREE.Group;
     public roofGroup!: THREE.Group;
@@ -122,7 +123,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public lightingManager!: CarInteriorLightingManager;
   public seatOffset = 0;
 
-    constructor(container: HTMLElement, vehicleType: VehicleType = 'sedan') {
+    constructor(container: HTMLElement, vehicleType: VehicleType = 'sedan', sharedDevice?: GPUDevice) {
         this.vehicleType = vehicleType;
         this.vehicleConfig = getVehicleConfig(vehicleType);
         this.roofTargetY = this.vehicleConfig.hasRoof ? 1.6 : -1.0;
@@ -133,6 +134,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
             vehicleType,
             this,
             () => this.applySeatPosition(),
+            sharedDevice,
         );
 
         this.scene = boot.scene;

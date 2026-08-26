@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import type { CabinRenderer } from './createCabinRenderer';
 
 export interface FrameMetrics {
   fps: number;
@@ -14,7 +14,7 @@ export interface FrameMetrics {
  * Tracks FPS, frame time, and Three.js stats without heavy overhead.
  */
 export class PerformanceProfiler {
-  private renderer: THREE.WebGLRenderer;
+  private renderer: CabinRenderer;
   private lastTime = performance.now();
   private frameCount = 0;
   private metrics: FrameMetrics = {
@@ -28,7 +28,7 @@ export class PerformanceProfiler {
   private history: FrameMetrics[] = [];
   private readonly maxHistory = 60;
 
-  constructor(renderer: THREE.WebGLRenderer) {
+  constructor(renderer: CabinRenderer) {
     this.renderer = renderer;
   }
 

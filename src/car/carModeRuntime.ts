@@ -54,9 +54,14 @@ let lastTimestamp = 0;
  * @param initialVehicle - Initial vehicle type (defaults to 'sedan')
  * @returns CarModeState object for managing the car view
  */
-export function initCarMode(container: HTMLElement, initialVehicle: VehicleType = DEFAULT_VEHICLE): CarModeState {
+export function initCarMode(
+    container: HTMLElement,
+    initialVehicle: VehicleType = DEFAULT_VEHICLE,
+    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts` (`?cabin=webgpu`). */
+    sharedDevice?: GPUDevice,
+): CarModeState {
     // Create the car interior Three.js overlay
-    const interior = new CarInterior(container, initialVehicle);
+    const interior = new CarInterior(container, initialVehicle, sharedDevice);
 
     let mirror: RearviewMirror;
     try {

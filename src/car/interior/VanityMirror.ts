@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { CabinRenderer } from './createCabinRenderer';
 
 /**
  * Sun-visor vanity mirror — samples the Street View pano with a tight,
@@ -21,7 +22,7 @@ export class VanityMirror {
 
   constructor(
     _scene: THREE.Scene,
-    private readonly renderer: THREE.WebGLRenderer,
+    private readonly renderer: CabinRenderer,
     mirrorPlane: THREE.Mesh
   ) {
     this.renderTarget = new THREE.WebGLRenderTarget(VanityMirror.WIDTH, VanityMirror.HEIGHT, {
@@ -109,7 +110,10 @@ export class VanityMirror {
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.clear();
     this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
-    this.renderer.setRenderTarget(currentTarget);
+    // `getRenderTarget()`/`setRenderTarget()` round-trip the same renderer's own
+    // value; the two `CabinRenderer` union members type this pair slightly
+    // differently, so re-narrow rather than fight the union.
+    this.renderer.setRenderTarget(currentTarget as ReturnType<THREE.WebGLRenderer['getRenderTarget']>);
   }
 
   dispose(): void {

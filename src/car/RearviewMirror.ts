@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { RearViewSample } from './rearViewFeed';
 import { signedHeadingDelta } from './rearViewFeed';
+import type { CabinRenderer } from './interior/createCabinRenderer';
 
 /**
  * RearviewMirror — cabin rear-view glass.
@@ -43,7 +44,7 @@ export class RearviewMirror {
 
     constructor(
         scene: THREE.Scene,
-        private renderer: THREE.WebGLRenderer
+        private renderer: CabinRenderer
     ) {
         // Honest unavailable glass: dark tint + soft vignette + label cue.
         // No sampling of the forward Street View canvas.

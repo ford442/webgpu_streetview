@@ -29,10 +29,16 @@ import { VehicleDynamics, VehicleTelemetry } from '../../car/VehicleDynamics';
 import { applyVehicleTelemetry } from '../../car/telemetryFeed';
 import { CabinAudio } from '../../car/audio/CabinAudio';
 import { SpringPhysics } from '../../animation/PhysicsAnimations';
+import {
+  preloadWebGPUCabinRenderer,
+  resolveCabinRendererPreference,
+} from '../../car/interior/createCabinRenderer';
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
   registerCarModeState: (state: CarModeState) => void;
+  /** Street View's shared `GPUDevice`, for the `?cabin=webgpu` escape hatch — see `createCabinRenderer.ts`. */
+  sharedGpuDevice?: GPUDevice;
   controlMode: ControlMode;
   heading: number;
   pitch: number;
@@ -69,6 +75,7 @@ export interface UseCarDashboardBridgeResult {
 export function useCarDashboardBridge({
   containerRef,
   registerCarModeState,
+  sharedGpuDevice,
   controlMode,
   heading,
   pitch,
@@ -123,17 +130,31 @@ export function useCarDashboardBridge({
       toggleCarMode(true);
       return;
     }
-    try {
-      carModeStateRef.current = initCarMode(containerRef.current);
-      registerCarModeState(carModeStateRef.current);
-      toggleCarMode(true);
-      const audio = new CabinAudio();
-      cabinAudioRef.current = audio;
-      void audio.start();
-    } catch (err) {
-      console.error('[CarModeView] Failed to initialize car mode:', err);
-    }
+    let cancelled = false;
+    void (async () => {
+      // The `?cabin=webgpu` escape hatch needs its renderer module fetched
+      // (its own further-lazy chunk — see createCabinRenderer.ts) before
+      // initCarMode() can adopt the shared device; the default WebGL path
+      // never awaits anything here, so init stays synchronous for it.
+      if (resolveCabinRendererPreference(window.location.search) === 'webgpu') {
+        await preloadWebGPUCabinRenderer().catch((err) => {
+          console.error('[CarModeView] Failed to preload the WebGPU cabin renderer; falling back to WebGL.', err);
+        });
+      }
+      if (cancelled || !containerRef.current) return;
+      try {
+        carModeStateRef.current = initCarMode(containerRef.current, undefined, sharedGpuDevice);
+        registerCarModeState(carModeStateRef.current);
+        toggleCarMode(true);
+        const audio = new CabinAudio();
+        cabinAudioRef.current = audio;
+        void audio.start();
+      } catch (err) {
+        console.error('[CarModeView] Failed to initialize car mode:', err);
+      }
+    })();
     return () => {
+      cancelled = true;
       toggleCarMode(false);
       disposeCarMode();
       carModeStateRef.current = null;
