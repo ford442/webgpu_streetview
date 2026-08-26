@@ -42,6 +42,7 @@ namespace {
  * NaN never compares equal, which is what we want — no golden is NaN.
  */
 bool bit_equal(float a, float b) {
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) — bit-exact on purpose, see above.
     return std::memcmp(&a, &b, sizeof(float)) == 0;
 }
 

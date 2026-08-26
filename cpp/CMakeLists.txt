@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(streetview_wasm CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# emsdk in CI (build-wasm-emscripten) tracks 'latest', which has supported
+# -std=c++20 for a long time; std::span/std::bit_cast make the conversion-heavy
+# fill_* code under -Wconversion easier to get right. Bump the host compilers
+# together with it so both sides of the ABI boundary build under the same mode.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -29,6 +33,16 @@ else()
     if(STREETVIEW_WERROR)
         list(APPEND STREETVIEW_WARNINGS -Werror)
     endif()
+endif()
+
+# -Wdouble-promotion, host only: the algorithms mix f32 (noise, particle
+# seeds, engine audio) with f64 (haversine), and this flags an accidental
+# float silently widened into a double expression. Not applied to the
+# Emscripten target below — that stays scoped to what CI's two host
+# compilers (g++, clang++) already gate on every push.
+set(STREETVIEW_HOST_WARNINGS ${STREETVIEW_WARNINGS})
+if(NOT MSVC)
+    list(APPEND STREETVIEW_HOST_WARNINGS -Wdouble-promotion)
 endif()
 
 if(EMSCRIPTEN)
@@ -111,7 +125,21 @@ else()
     # and only exists to re-export the sw_* functions under their ABI names.
     add_library(streetview_cpu STATIC src/noise_module.cpp)
     target_include_directories(streetview_cpu PUBLIC include)
-    target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_WARNINGS})
+    target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
+
+    # Belt-and-suspenders alongside cpp/.clangd's CompilationDatabase setting:
+    # a real cpp/compile_commands.json for tools that don't read .clangd (a
+    # standalone `clang-tidy` invocation without -p, some editor plugins).
+    # POST_BUILD (not configure-time file(CREATE_LINK)) because CMake writes
+    # compile_commands.json during the generate step, which runs after
+    # CMakeLists.txt processing — linking it here would race an empty/missing
+    # file on a first configure.
+    add_custom_command(TARGET streetview_cpu POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "${CMAKE_BINARY_DIR}/compile_commands.json"
+                "${CMAKE_SOURCE_DIR}/compile_commands.json"
+        COMMENT "Linking compile_commands.json into cpp/ for clangd/clang-tidy"
+    )
 
     if(STREETVIEW_SANITIZERS)
         if(MSVC)

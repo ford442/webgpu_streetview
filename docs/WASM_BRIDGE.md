@@ -53,11 +53,16 @@ npm run test:cpp        # cmake configure + build + ctest (g++/clang++, -Werror)
 npm run test:cpp:asan   # same, with -fsanitize=address,undefined
 ```
 
-Both compile with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`
-(`-DSTREETVIEW_WERROR=OFF` relaxes that while iterating). Configuring also
-writes `cpp/build-host/compile_commands.json`, so **clangd works in `cpp/`** —
-point your editor at it (`ln -s cpp/build-host/compile_commands.json cpp/`, or
-set `CompileFlags: CompilationDatabase: build-host` in `cpp/.clangd`).
+Both compile with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion
+-Wdouble-promotion -Werror` (`-DSTREETVIEW_WERROR=OFF` relaxes that while
+iterating; `-Wdouble-promotion` is host-only — it flags an f32 value
+silently widened into an f64 expression, useful here since the algorithms
+mix f32 noise/audio with f64 haversine). C++20. Configuring writes
+`cpp/build-host/compile_commands.json`, and building links it to
+`cpp/compile_commands.json` automatically (a `POST_BUILD` step on the host
+target) — **clangd/clang-tidy just work in `cpp/`** with no setup beyond
+running `npm run test:cpp` once. The committed `cpp/.clangd` also points
+clangd at `build-host` directly, so it works even before that first build.
 
 CMake options:
 
