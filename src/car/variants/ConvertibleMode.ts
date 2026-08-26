@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WindParticleSystem } from './convertible/WindParticleSystem';
+import type { VehicleType } from '../VehicleManager';
 
 /**
  * ConvertibleState - Interface for managing convertible vehicle state
@@ -266,18 +267,17 @@ export class SportSeats {
 }
 
 /**
- * VehicleType - Enum for vehicle types
- * Local vehicle type enum for convertible internal use
- * Note: This is distinct from the global VehicleType type alias in VehicleManager
- */
-enum VehicleType {
-  SEDAN = 'sedan',
-  CONVERTIBLE = 'convertible',
-}
-type LocalVehicleType = VehicleType;
-
-/**
  * ConvertibleMode - Main class for managing convertible vehicle mode
+ *
+ * Vehicle types come from `VehicleManager` — this file must never declare its
+ * own. It used to carry a private two-value enum (sedan/convertible), which
+ * forced every caller through an `as any` cast and meant a new vehicle could
+ * be added to `VehicleManager` without this class ever knowing.
+ *
+ * Only `'convertible'` gets the open-air treatment; every other vehicle type
+ * ('sedan', 'science-lab', 'limousine', and anything added later) gets the
+ * roofed/no-wind treatment. That is exactly what the casts already produced,
+ * since the old enum comparison fell through to the else branch for them.
  */
 export class ConvertibleMode {
   private interiorGroup: THREE.Group;
@@ -294,7 +294,7 @@ export class ConvertibleMode {
     windDeflectorDeployed: false,
   };
 
-  private vehicleType: VehicleType = VehicleType.CONVERTIBLE;
+  private vehicleType: VehicleType = 'convertible';
 
   constructor(
     scene: THREE.Scene,
@@ -317,13 +317,14 @@ export class ConvertibleMode {
     this.interiorGroup.add(this.sportSeats.getGroup());
 
     // Initialize as convertible (no roof, sport features)
-    this.applyVehicleType(VehicleType.CONVERTIBLE);
+    this.applyVehicleType('convertible');
   }
 
   /**
-   * Set the vehicle type (sedan or convertible)
+   * Set the vehicle type. Anything other than `'convertible'` is applied as a
+   * roofed vehicle — see the class doc comment.
    */
-  setVehicleType(type: LocalVehicleType): void {
+  setVehicleType(type: VehicleType): void {
     if (this.vehicleType === type) return;
     this.vehicleType = type;
     this.applyVehicleType(type);
@@ -333,7 +334,12 @@ export class ConvertibleMode {
    * Toggle between sedan and convertible modes
    */
   toggleVehicleType(): VehicleType {
-    const newType = this.vehicleType === VehicleType.SEDAN ? VehicleType.CONVERTIBLE : VehicleType.SEDAN;
+    // Kept as the original enum comparison read: only 'sedan' toggles *to*
+    // convertible; every other type (including the roofed variants) toggles to
+    // 'sedan'. Note this is a two-state toggle over a four-value type — prefer
+    // `VehicleManager.setVehicle()` / `carModeRuntime.setVehicleType()` for
+    // real vehicle switching.
+    const newType: VehicleType = this.vehicleType === 'sedan' ? 'convertible' : 'sedan';
     this.setVehicleType(newType);
     return newType;
   }
@@ -349,7 +355,7 @@ export class ConvertibleMode {
    * Apply vehicle type settings
    */
   private applyVehicleType(type: VehicleType): void {
-    if (type === VehicleType.CONVERTIBLE) {
+    if (type === 'convertible') {
       // Convertible mode: no roof, sport features, wind effects
       this.roofGroup.visible = false;
       this.state.isOpen = true;
@@ -372,7 +378,7 @@ export class ConvertibleMode {
    * Toggle the convertible roof (only relevant in convertible mode)
    */
   toggleRoof(): boolean {
-    if (this.vehicleType !== VehicleType.CONVERTIBLE) {
+    if (this.vehicleType !== 'convertible') {
       console.warn('Cannot toggle roof in sedan mode');
       return false;
     }
@@ -412,7 +418,7 @@ export class ConvertibleMode {
    * @param carSpeed - Current car speed for wind effects
    */
   update(deltaTime: number, carSpeed: number): void {
-    if (this.vehicleType === VehicleType.CONVERTIBLE && this.state.isOpen) {
+    if (this.vehicleType === 'convertible' && this.state.isOpen) {
       this.windParticles.update(deltaTime, carSpeed);
     }
   }
@@ -428,7 +434,7 @@ export class ConvertibleMode {
    * Check if currently in convertible mode with open roof
    */
   isConvertibleOpen(): boolean {
-    return this.vehicleType === VehicleType.CONVERTIBLE && this.state.isOpen;
+    return this.vehicleType === 'convertible' && this.state.isOpen;
   }
 
   /**
