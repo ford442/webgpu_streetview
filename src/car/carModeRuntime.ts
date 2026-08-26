@@ -88,7 +88,7 @@ export function initCarMode(
     );
 
     // Set initial vehicle type
-    convertibleMode.setVehicleType(initialVehicle as any);
+    convertibleMode.setVehicleType(initialVehicle);
 
     carModeState = {
         interior,
@@ -118,7 +118,7 @@ export function initCarMode(
     // Listen for vehicle changes from manager
     vehicleManager.onChange((vehicle) => {
         if (carModeState?.convertibleMode) {
-            carModeState.convertibleMode.setVehicleType(vehicle as any);
+            carModeState.convertibleMode.setVehicleType(vehicle);
             carModeState.currentVehicle = vehicle;
         }
     });
@@ -503,7 +503,7 @@ export function toggleVehicleType(): VehicleType {
     carModeState.currentVehicle = newType;
 
     if (carModeState.convertibleMode) {
-        carModeState.convertibleMode.setVehicleType(newType as any);
+        carModeState.convertibleMode.setVehicleType(newType);
     }
 
     return newType;
@@ -520,7 +520,7 @@ export function setVehicleType(type: VehicleType): void {
     carModeState.currentVehicle = type;
 
     if (carModeState.convertibleMode) {
-        carModeState.convertibleMode.setVehicleType(type as any);
+        carModeState.convertibleMode.setVehicleType(type);
     }
 }
 
