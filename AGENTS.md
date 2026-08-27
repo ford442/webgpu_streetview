@@ -175,6 +175,15 @@ webgpu_streetview/
 │   │   └── types.ts                 # RenderMode type
 │   ├── car/                         # Three.js car interior system
 │   │   ├── index.ts                 # Public car mode API (init/toggle/update/dispose)
+│   │   ├── carModeRuntime.ts        # Façade — re-exports runtime/ by name (the API contract)
+│   │   ├── runtime/                 # Car-mode singleton, split by what it touches
+│   │   │   ├── state.ts             # The ONE owner of carModeState / leverHandlers
+│   │   │   ├── lifecycle.ts         # init / toggle / per-frame update / dispose
+│   │   │   ├── cabinControls.ts     # Wiper stalk, gear, steering, seat, zoom FOV
+│   │   │   ├── vehicleSwitch.ts     # Vehicle type + convertible roof/wind/tint
+│   │   │   ├── telemetryBridge.ts   # App → cabin feeds (location, weather, gauges, lamps)
+│   │   │   ├── mirror.ts            # Rearview / vanity glass (billable imagery)
+│   │   │   └── interaction.ts       # Pointer hit-testing against cabin meshes
 │   │   ├── CarInterior.ts           # Procedural interior geometry
 │   │   ├── DashboardUI.tsx          # React dashboard overlay
 │   │   ├── DashboardLayout.tsx      # Dashboard zone layout primitives
