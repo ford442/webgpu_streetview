@@ -16,5 +16,6 @@ describe('clusterAmbientGlow', () => {
     expect(clusterAmbientGlow('science-lab', 1, 'x')).toContain('0, 180, 200');
     expect(clusterAmbientGlow('convertible', 1, 'x')).toContain('255, 110, 64');
     expect(clusterAmbientGlow('limousine', 1, 'x')).toContain('212, 176, 96');
+    expect(clusterAmbientGlow('cortianics', 1, 'x')).toContain('220, 32, 28');
   });
 });

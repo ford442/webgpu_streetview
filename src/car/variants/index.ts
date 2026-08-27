@@ -25,3 +25,6 @@ export {
     disposeScienceLabMode,
 } from './ScienceLabMode';
 export type { LabState, ScienceLabModeState } from './ScienceLabMode';
+
+// Cortianics GT
+export { CORTIANICS_ACCENT, CORTIANICS_NIGHT_STRIP, CORTIANICS_REFERENCE } from './CortianicsMode';
