@@ -233,7 +233,6 @@ webgpu_streetview/
 │   │   ├── usePanoramaCache.ts      # Panorama pre-fetch cache
 │   │   └── __tests__/               # Hook tests (mobile.test.tsx)
 │   ├── effects/
-│   │   ├── PostProcessing.ts
 │   │   ├── LightingEffects.ts
 │   │   ├── WindAudio.ts             # Procedural wind audio
 │   │   └── index.ts
