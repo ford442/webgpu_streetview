@@ -59,6 +59,19 @@ export interface RecordedEncoder {
     copies: Array<{ src: unknown; dst: unknown; size: unknown }>;
 }
 
+/** A created bind group *layout*, so tests can assert declared sample types. */
+export interface RecordedBindGroupLayout {
+    kind: 'bgl';
+    id: number;
+    entries: Array<{
+        binding: number;
+        texture?: { sampleType?: string };
+        sampler?: { type?: string };
+        storageTexture?: { access?: string; format?: string };
+        buffer?: { type?: string };
+    }>;
+}
+
 export interface FakeGpu {
     device: GPUDevice;
     context: GPUCanvasContext;
@@ -66,6 +79,7 @@ export interface FakeGpu {
     textures: FakeTexture[];
     buffers: FakeBuffer[];
     bindGroups: RecordedBindGroup[];
+    bindGroupLayouts: RecordedBindGroupLayout[];
     encoders: RecordedEncoder[];
     computePipelines: Array<{ id: number; entryPoint: string }>;
     renderPipelines: Array<{ id: number }>;
@@ -118,6 +132,7 @@ export function createFakeGpu(): FakeGpu {
     const textures: FakeTexture[] = [];
     const buffers: FakeBuffer[] = [];
     const bindGroups: RecordedBindGroup[] = [];
+    const bindGroupLayouts: RecordedBindGroupLayout[] = [];
     const encoders: RecordedEncoder[] = [];
     const computePipelines: Array<{ id: number; entryPoint: string }> = [];
     const renderPipelines: Array<{ id: number }> = [];
@@ -182,7 +197,15 @@ export function createFakeGpu(): FakeGpu {
         },
         createTexture: (d: GPUTextureDescriptor) => makeTexture(d, `tex${nextId}`),
         createShaderModule: (d: GPUShaderModuleDescriptor) => ({ kind: 'module', id: nextId++, code: d.code }),
-        createBindGroupLayout: (d: GPUBindGroupLayoutDescriptor) => ({ kind: 'bgl', id: nextId++, descriptor: d }),
+        createBindGroupLayout: (d: GPUBindGroupLayoutDescriptor) => {
+            const bgl = {
+                kind: 'bgl' as const,
+                id: nextId++,
+                entries: [...(d.entries as unknown as RecordedBindGroupLayout['entries'])],
+            };
+            bindGroupLayouts.push(bgl);
+            return bgl;
+        },
         createPipelineLayout: (d: GPUPipelineLayoutDescriptor) => ({ kind: 'pl', id: nextId++, descriptor: d }),
         createComputePipeline: (d: GPUComputePipelineDescriptor) => {
             const entryPoint = d.compute?.entryPoint ?? '';
@@ -234,6 +257,7 @@ export function createFakeGpu(): FakeGpu {
         textures,
         buffers,
         bindGroups,
+        bindGroupLayouts,
         encoders,
         computePipelines,
         renderPipelines,

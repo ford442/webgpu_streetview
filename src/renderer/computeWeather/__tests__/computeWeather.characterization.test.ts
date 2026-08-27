@@ -84,6 +84,28 @@ describe('compute weather — pipeline setup', () => {
         await makeProcessor(gpu);
         expect(gpu.computePipelines.map((p) => p.entryPoint)).toEqual(['main']);
     });
+
+    it('declares every 32-bit-float texture binding as unfilterable-float', async () => {
+        await makeProcessor(gpu);
+
+        // Bindings 4 (r32float depth), 7 (rgba32float density) and 9
+        // (rgba32float colour history) are only filterable when the optional
+        // `float32-filterable` feature is enabled, and deviceInit.ts only
+        // requests it when the adapter offers it. Declaring any of them
+        // 'float' fails bind-group validation on adapters without it. The
+        // shader reads all three with textureLoad, so this is also correct.
+        const layout = gpu.bindGroupLayouts.find((l) => l.entries.length === 13);
+        expect(layout).toBeDefined();
+        for (const binding of [4, 7, 9]) {
+            const entry = layout!.entries.find((e) => e.binding === binding);
+            expect(entry?.texture?.sampleType, `binding ${binding}`).toBe('unfilterable-float');
+        }
+
+        // Binding 1 is the rgba16float intermediate, which *is* filterable
+        // without any feature and is genuinely sampled — it stays 'float'.
+        const intermediate = layout!.entries.find((e) => e.binding === 1);
+        expect(intermediate?.texture?.sampleType).toBe('float');
+    });
 });
 
 describe('compute weather — bind group wiring', () => {
