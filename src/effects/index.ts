@@ -19,9 +19,3 @@ export {
   DEFAULT_LIGHTING_CONFIG,
 } from './LightingEffects';
 export type { LightingEffectConfig } from './LightingEffects';
-
-export {
-  PostProcessingPipeline,
-  DEFAULT_POST_PROCESSING_CONFIG,
-} from './PostProcessing';
-export type { PostProcessingConfig } from './PostProcessing';
