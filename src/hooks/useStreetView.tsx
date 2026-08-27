@@ -52,7 +52,7 @@ export interface StreetViewState {
   isPanoramaUpdatePaused: boolean;
   readyPromise: () => Promise<void>;
   
-  // Cached snapshot of the outgoing panorama (WebGL fallback / diagnostics)
+  // Cached snapshot of the outgoing panorama (diagnostics / hold-pause CPU path)
   transitionSource: HTMLCanvasElement | null;
 }
 

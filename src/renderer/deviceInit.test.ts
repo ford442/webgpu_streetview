@@ -13,7 +13,7 @@ import {
     resolveCanvasOutputPolicy,
 } from './deviceInit';
 import { buildAdapterRequestOptions, type AdapterSelectionPolicy } from './RendererBackend';
-import { COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS } from './deviceCapabilities';
+import { COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED, TIMESTAMP_QUERY_INSIDE_PASSES } from './deviceCapabilities';
 
 function makeAdapter(limits: Partial<GPUSupportedLimits>, features: GPUFeatureName[] = []): GPUAdapter {
     const featureSet = new Set(features);
@@ -65,13 +65,47 @@ describe('deviceInit limits and features', () => {
         expect(features).toContain('timestamp-query');
     });
 
+    it('collectOptionalDeviceFeatures requests the v3 optional set when the adapter exposes them', () => {
+        const all = [
+            'float32-filterable',
+            'timestamp-query',
+            TIMESTAMP_QUERY_INSIDE_PASSES,
+            'subgroups',
+            'shader-f16',
+            'rg11b10ufloat-renderable',
+            'dual-source-blending',
+            'clip-distances',
+            'core-features-and-limits',
+        ] as GPUFeatureName[];
+        const features = collectOptionalDeviceFeatures(makeAdapter({}, all), { featureLevel: 'core' });
+        expect(features).toEqual(all);
+    });
+
+    it('collectOptionalDeviceFeatures skips names the adapter does not expose', () => {
+        const features = collectOptionalDeviceFeatures(
+            makeAdapter({}, ['float32-filterable']),
+            { featureLevel: 'core' },
+        );
+        expect(features).toEqual(['float32-filterable']);
+    });
+
+    it('collectOptionalDeviceFeatures skips core-features-and-limits under ?gpu=compat', () => {
+        const features = collectOptionalDeviceFeatures(
+            makeAdapter({}, ['core-features-and-limits', 'subgroups']),
+            { featureLevel: 'compatibility' },
+        );
+        expect(features).toContain('subgroups');
+        expect(features).not.toContain('core-features-and-limits');
+    });
+
     it('collectOptionalDeviceFeatures skips timestamp-query when disabled', () => {
         const features = collectOptionalDeviceFeatures(
-            makeAdapter({}, ['float32-filterable', 'timestamp-query']),
+            makeAdapter({}, ['float32-filterable', 'timestamp-query', TIMESTAMP_QUERY_INSIDE_PASSES]),
             { enableTimestampQueries: false },
         );
         expect(features).toContain('float32-filterable');
         expect(features).not.toContain('timestamp-query');
+        expect(features).not.toContain(TIMESTAMP_QUERY_INSIDE_PASSES);
     });
 
     it('buildCapabilityMatrix documents compute temporal depth and timestamp availability', () => {
@@ -80,6 +114,7 @@ describe('deviceInit limits and features', () => {
         expect(matrix.temporalDepthPingPong).toBe(true);
         expect(matrix.timestampQueriesAvailable).toBe(true);
         expect(matrix.optionalFeaturesEnabled).toEqual(features);
+        expect(matrix.optionalFeaturesAttempted).toEqual(OPTIONAL_FEATURES_ATTEMPTED);
     });
 });
 

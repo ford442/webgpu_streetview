@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RendererBackendType } from '../renderer/RendererBackend';
+import { wantsGpuFeatureDump, type RendererBackendType } from '../renderer/RendererBackend';
 import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
 
 export interface RendererBackendInfo {
@@ -65,6 +65,8 @@ interface DeviceDiagnostics {
   uncapturedErrorCount: number;
   lastUncapturedError?: string;
   canvasDowngradeReason?: string;
+  optionalFeaturesAttempted: GPUFeatureName[];
+  optionalFeaturesEnabled: GPUFeatureName[];
 }
 
 function readDeviceDiagnostics(): DeviceDiagnostics | null {
@@ -78,6 +80,8 @@ function readDeviceDiagnostics(): DeviceDiagnostics | null {
     uncapturedErrorCount: matrix.uncapturedErrorCount,
     lastUncapturedError: matrix.lastUncapturedError,
     canvasDowngradeReason: matrix.canvasDowngradeReason,
+    optionalFeaturesAttempted: matrix.optionalFeaturesAttempted,
+    optionalFeaturesEnabled: matrix.optionalFeaturesEnabled,
   };
 }
 
@@ -87,7 +91,7 @@ function readProbe(): WebGpuProbeRecord | null {
 
 function chipLabel(info: RendererBackendInfo): string {
   if (info.backendType === 'webgpu') return 'WebGPU';
-  if (info.backendType === 'webgl') return 'WebGL2 (deferred)';
+  if (info.backendType === 'webgl') return 'WebGL2 (reference only)';
   const probe = readProbe();
   if (probe && !probe.ok) {
     return `WebGPU failed (${probe.browserBrand})`;
@@ -134,14 +138,14 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
             </button>
             <button
               style={{ ...switchButtonStyle(false, true), marginRight: 0 }}
-              title="WebGL weather path deferred this phase"
+              title="WebGL weather is a GLSL reference — not a live backend"
               disabled
             >
-              WebGL2 (deferred)
+              WebGL2 (reference)
             </button>
           </div>
           <div style={{ color: '#888', fontSize: '9px', marginBottom: '8px' }}>
-            WebGPU required — WebGL weather deferred
+            WebGPU required — WebGL weather is not a live backend
           </div>
 
           {(probe || backendInfo.fallbackReason) && (
@@ -158,7 +162,7 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
                       </div>
                     )}
                     {probe.webglPreferenceDeferred && (
-                      <div style={{ color: '#ffcc66' }}>webgl preference deferred</div>
+                      <div style={{ color: '#ffcc66' }}>webgl preference ignored (no live GL weather)</div>
                     )}
                   </>
                 )}
@@ -187,6 +191,31 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
                   {diagnostics.forceFallbackAdapter ? ' (fallback adapter)' : ''}
                 </div>
                 <div>canvas: {diagnostics.colorSpace} / {diagnostics.toneMapping}</div>
+                <div title={`${diagnostics.optionalFeaturesEnabled.length} enabled of ${diagnostics.optionalFeaturesAttempted.length} attempted`}>
+                  optional features: {diagnostics.optionalFeaturesEnabled.length}/{diagnostics.optionalFeaturesAttempted.length}
+                </div>
+                {wantsGpuFeatureDump() && (
+                  <pre
+                    style={{
+                      margin: '6px 0 0',
+                      maxHeight: '140px',
+                      overflow: 'auto',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: '#9cf',
+                      fontSize: '9px',
+                    }}
+                  >
+                    {JSON.stringify(
+                      {
+                        attempted: diagnostics.optionalFeaturesAttempted,
+                        enabled: diagnostics.optionalFeaturesEnabled,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                )}
                 {diagnostics.canvasDowngradeReason && (
                   <div style={{ color: '#ffcc66' }} title={diagnostics.canvasDowngradeReason}>
                     canvas downgraded to SDR

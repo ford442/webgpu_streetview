@@ -1,5 +1,7 @@
 import {
   buildHostBroadcastPayload,
+  normalizeIncomingSessionFields,
+  shouldApplyGuestHeadLook,
   shouldTeleportGuestToPano,
   type HostBroadcastPanorama,
 } from './sharedSessionSync';
@@ -56,21 +58,47 @@ describe('buildHostBroadcastPayload', () => {
     });
   });
 
-  it('includes weatherPreset when provided in extras', () => {
+  it('includes film-set extras when valid', () => {
     expect(
       buildHostBroadcastPayload(
         mockPanorama({ panoId: 'pano-1' }),
         pov,
-        viewMode,
-        { weatherPreset: 'tod:night|rain:0.50' },
+        'car',
+        {
+          weatherPreset: 'tod:night|rain:0.50',
+          lookId: 'noir',
+          imageDate: '2012-06',
+          vehicleType: 'convertible',
+          cabinView: 'driver',
+          carHeading: 34,
+          hdr: true,
+        },
       ),
     ).toEqual({
       panoId: 'pano-1',
       position: { lat: 37, lng: -122 },
       pov,
-      viewMode: 'freelook',
+      viewMode: 'car',
       weatherPreset: 'tod:night|rain:0.50',
+      lookId: 'noir',
+      imageDate: '2012-06',
+      vehicleType: 'convertible',
+      cabinView: 'driver',
+      carHeading: 34,
+      hdr: true,
     });
+  });
+
+  it('drops unknown look and vehicle ids from extras', () => {
+    const payload = buildHostBroadcastPayload(
+      mockPanorama({ panoId: 'pano-1' }),
+      pov,
+      viewMode,
+      { lookId: 'sepia-dream', vehicleType: 'hovercraft', cabinView: 'sidecar' as never },
+    );
+    expect(payload?.lookId).toBeUndefined();
+    expect(payload?.vehicleType).toBeUndefined();
+    expect(payload?.cabinView).toBeUndefined();
   });
 });
 
@@ -92,5 +120,46 @@ describe('shouldTeleportGuestToPano', () => {
   it('returns true for a new pano not yet applied', () => {
     expect(shouldTeleportGuestToPano('pano-2', 'pano-1', 'pano-0')).toBe(true);
     expect(shouldTeleportGuestToPano('pano-2', null, null)).toBe(true);
+  });
+});
+
+describe('normalizeIncomingSessionFields', () => {
+  it('keeps known look, vehicle, cabin, and imageDate', () => {
+    expect(
+      normalizeIncomingSessionFields({
+        lookId: 'noir',
+        vehicleType: 'convertible',
+        cabinView: 'chauffeur',
+        imageDate: '2012-06',
+        carHeading: 370,
+        hdr: false,
+      }),
+    ).toEqual({
+      lookId: 'noir',
+      vehicleType: 'convertible',
+      cabinView: 'chauffeur',
+      imageDate: '2012-06',
+      carHeading: 10,
+      hdr: false,
+    });
+  });
+
+  it('ignores unknown look and vehicle instead of crashing', () => {
+    expect(
+      normalizeIncomingSessionFields({
+        lookId: 'not-a-pack',
+        vehicleType: 'spaceship',
+        cabinView: 'trunk',
+        imageDate: 'June 2012',
+        carHeading: Number.NaN,
+      }),
+    ).toEqual({});
+  });
+});
+
+describe('shouldApplyGuestHeadLook', () => {
+  it('seeds heading once then leaves guest look local', () => {
+    expect(shouldApplyGuestHeadLook(false)).toBe(true);
+    expect(shouldApplyGuestHeadLook(true)).toBe(false);
   });
 });

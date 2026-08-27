@@ -1,7 +1,8 @@
+import { RAIN_DARKEN_DAY, RAIN_DARKEN_NIGHT } from './weatherCohesion';
+import { WEBGL_WEATHER_FRAGMENT_GLSL } from './webgl/weatherReference.glsl';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { RAIN_DARKEN_DAY, RAIN_DARKEN_NIGHT } from './weatherCohesion';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +12,7 @@ function read(rel: string): string {
 }
 
 describe('WebGL must-match parity (night floor, precip Y, overcast, rain darken, haze)', () => {
-  const webgl = read('./WebGLFallbackRenderer.ts');
+  const webgl = WEBGL_WEATHER_FRAGMENT_GLSL;
   const fragment = read('../../public/shaders/weather-post.wgsl');
   const compute = read('../../public/shaders/weather-post-compute.wgsl');
 
@@ -24,7 +25,7 @@ describe('WebGL must-match parity (night floor, precip Y, overcast, rain darken,
     expect(webgl).toContain(`mix(${RAIN_DARKEN_DAY.toFixed(2)}, ${RAIN_DARKEN_NIGHT.toFixed(2)}`);
   });
 
-  it('applies humidity haze in the WebGL fallback (must-match atmosphere)', () => {
+  it('applies humidity haze in the WebGL reference (must-match atmosphere)', () => {
     expect(webgl).toContain('vec3 applyHumidityHaze');
     expect(webgl).toContain('uWeather[31]');
     expect(webgl).toContain('smoothstep(0.7, 0.2, uv.y)');

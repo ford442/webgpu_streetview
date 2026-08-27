@@ -22,4 +22,10 @@ describe('shouldApplyIncomingState', () => {
     expect(shouldApplyIncomingState(base, { ...base, seq: 5 })).toBe(false);
     expect(shouldApplyIncomingState(base, { ...base, seq: 4 })).toBe(false);
   });
+
+  it('still keys only on seq when film-set fields are present', () => {
+    const withLook = { ...base, lookId: 'noir', vehicleType: 'convertible', seq: 5 };
+    expect(shouldApplyIncomingState(base, withLook)).toBe(false);
+    expect(shouldApplyIncomingState(base, { ...withLook, seq: 6 })).toBe(true);
+  });
 });

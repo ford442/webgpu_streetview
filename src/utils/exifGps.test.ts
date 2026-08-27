@@ -71,6 +71,33 @@ describe('embedExifGps', () => {
             zoom: 2,
             panoId: 'pano-xyz',
             buildVersion: '1.2.3',
+            imageDate: null,
+            lookId: null,
+            vehicleType: null,
+        });
+    });
+
+    it('round-trips imageDate, lookId, and vehicleType in UserComment', () => {
+        const result = embedExifGps(MINIMAL_JPEG_DATA_URL, {
+            lat: 0,
+            lng: 0,
+            heading: 10,
+            pitch: 1,
+            zoom: 1,
+            panoId: 'tokyo-alley',
+            timestamp: '2026-01-01T00:00:00.000Z',
+            imageDate: '2012-06',
+            lookId: 'noir',
+            vehicleType: 'convertible',
+        });
+        const exif = piexif.load(result);
+        const rawComment = exif.Exif![piexif.ExifIFD.UserComment] as string;
+        const parsed = JSON.parse(rawComment.slice(8));
+        expect(parsed).toMatchObject({
+            panoId: 'tokyo-alley',
+            imageDate: '2012-06',
+            lookId: 'noir',
+            vehicleType: 'convertible',
         });
     });
 

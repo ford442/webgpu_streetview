@@ -359,18 +359,18 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 ### WebGL2 Fallback / Debug Renderer
 
-`src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required** this phase: a failed boot probe is a hard-fail (blocking overlay). The app does **not** construct `WebGLFallbackRenderer` as a rescue — including for `?renderer=webgl` / stale localStorage (preference is deferred; see `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:
+`src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required**: a failed boot probe is a hard-fail (blocking overlay). There is **no live GL weather class** in the runtime module graph — including for `?renderer=webgl` / stale localStorage (preference is recorded as `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:
 
 ```
 ?renderer=webgpu
-?renderer=webgl   # deferred — still probes WebGPU only
+?renderer=webgl   # still probes WebGPU only; GLSL is tests/docs only
 ?webgpu
-?webgl            # deferred
+?webgl            # same
 ```
 
-Breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL` (always false this phase), `window.rendererFallbackReason`, and `window.webgpuProbe` (`ok`, `stage`, `reason`, `browserBrand` Chrome vs Edge, `adapter`, capability matrix). DevTools: `window.streetViewRendererDebug.setBackend('webgpu' | 'auto')`; `setBackend('webgl')` reloads but does not start GL weather.
+Breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL` (always false), `window.rendererFallbackReason`, and `window.webgpuProbe` (`ok`, `stage`, `reason`, `browserBrand` Chrome vs Edge, `adapter`, capability matrix). DevTools: `window.streetViewRendererDebug.setBackend('webgpu' | 'auto')`; `setBackend('webgl')` reloads but does not start GL weather.
 
-`WebGLFallbackRenderer.ts` remains in the repo for a later **opt-in** wave (SDR approximation; same 40-float layout). Keep uniform indices aligned when touching weather WGSL/TS. See `docs/RENDERER_FALLBACK.md`.
+SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for `webglLookParity.test.ts`. Live uniform lockstep is layout + pack + both WGSL processors. See `docs/RENDERER_FALLBACK.md`.
 
 ### GPU Transition System
 
@@ -382,7 +382,7 @@ Supported legacy modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
 
 `useStreetView.tsx`'s `armHold()` (shared by `advance()` and `teleport()`) does three things before changing the panorama:
 1. `renderer.beginHoldTransition(heading, pitch)` — GPU-snapshots `videoTexture` into `previousFrameTexture`, records `capturePanX/Y`, sets `holdActive = true`.
-2. A CPU-side `<canvas>` snapshot of the outgoing frame (`transitionSource`, used by the WebGL fallback).
+2. A CPU-side `<canvas>` snapshot of the outgoing frame (`transitionSource`, diagnostics).
 3. `setIsPanoramaReady(false)` + `setIsTransitioning(true)`.
 
 While `holdActive`/`isPanoramaUpdatePaused` is true:
@@ -629,7 +629,7 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
 ### Car Spatial Correctness Manual Checklist
-Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `WebGLFallbackRenderer.ts` (epic #171):
+Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `src/renderer/webgl/weatherReference.glsl.ts` (epic #171):
 
 **World model** (`src/car/carSpatialModel.ts`): car body yaw = `carHeading`; head look = Street View `heading`/`pitch`. Free-look pans the head only. Chassis steers only in `carSteer`, temp-steer (steering-wheel grab), or explicit steer keys.
 
@@ -661,11 +661,11 @@ Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed
 4. **Night exposure**
    - Apply the Night time-of-day preset (or max night slider). Toggle headlights and dome light.
    - **Pass**: scene reads as night but road + cabin UI remain readable; headlights clearly lift the forward road; not crushed near-black.
-   - Repeat with `?renderer=webgl&effect=night` and (WebGPU) default + `?weather=compute` — all three backends should stay in the same ballpark.
+   - Repeat with WebGPU default + `?weather=compute` — both live paths should stay in the same ballpark.
 
 5. **Snow / rain fall direction (`?effect=weather`)**
    - Set snow (and rain) above 0. WebGPU default: confirm flakes fall **downward**.
-   - `?renderer=webgl&effect=weather`: same downward fall (top-origin UV; negative Y time term).
+   - GLSL reference (`weatherReference.glsl.ts`): same downward fall (top-origin UV; negative Y time term) — CI via `webglLookParity.test.ts`.
    - Optional: `?weather=compute` on WebGPU — same direction as fragment pass.
 
 6. **Wipers / quality gate**

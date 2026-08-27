@@ -12,6 +12,8 @@ export { useAppConnection } from './useAppConnection';
 export {
   buildHostBroadcastPayload,
   shouldTeleportGuestToPano,
+  normalizeIncomingSessionFields,
+  shouldApplyGuestHeadLook,
 } from './sharedSessionSync';
 export { resolveHistoricalAfterLabel } from './historicalExperience';
 export {

@@ -467,7 +467,7 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 ### WebGL2 Debug Fallback
 
-WebGPU is **required** for the weather/graphics path. A failed boot probe hard-fails with a blocking overlay (`window.webgpuProbe` records browser brand, adapter, and reason). The WebGL2 renderer in `src/renderer/WebGLFallbackRenderer.ts` remains in the repo but is **not selected** this phase (`?renderer=webgl` is deferred). A later wave may restore it as an opt-in.
+WebGPU is **required** for the weather/graphics path. A failed boot probe hard-fails with a blocking overlay (`window.webgpuProbe` records browser brand, adapter, and reason). There is no live WebGL2 weather backend (`?renderer=webgl` still probes WebGPU). SDR GLSL for tests lives in `src/renderer/webgl/weatherReference.glsl.ts`.
 
 Runtime breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL`, `window.rendererFallbackReason`, and `window.webgpuProbe`.
 
@@ -541,7 +541,7 @@ Index  Field            Range / Notes
 
 | Issue | Detail |
 |---|---|
-| WebGPU required | Chrome 113+ / Edge 113+. Boot probe hard-fails (blocking overlay) if unavailable — WebGL weather deferred. |
+| WebGPU required | Chrome 113+ / Edge 113+. Boot probe hard-fails (blocking overlay) if unavailable — no live GL weather. |
 | Canvas scraping fragility | Google Maps DOM changes will silently break the canvas feed. |
 | Input hijacking | `InputHandler` is window-scoped. All UI overlays must call `e.stopPropagation()`. |
 | Mobile | WebGPU on mobile is limited; full car mode requires desktop or high-end tablet. |

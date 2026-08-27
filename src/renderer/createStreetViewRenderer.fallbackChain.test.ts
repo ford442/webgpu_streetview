@@ -1,21 +1,17 @@
 import { createStreetViewRenderer } from './createStreetViewRenderer';
 import { Renderer } from './Renderer';
-import { WebGLFallbackRenderer } from './WebGLFallbackRenderer';
 import { vi, type Mock } from 'vitest';
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
 
-// Mock-prefixed names are required: vitest hoists vi.mock() factories above
-// imports, so any out-of-scope variable referenced inside a factory must start
-// with "mock".
 const mockRendererInit = vi.fn();
 const mockRendererDestroy = vi.fn();
-const mockCallOrder: Array<'webgpu' | 'webgl'> = [];
+const mockCallOrder: Array<'webgpu'> = [];
 let mockWebgpuFallbackReason: string | undefined;
 
 vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
-vi.mock('./WebGLFallbackRenderer', () => ({ WebGLFallbackRenderer: vi.fn() }));
 
 const MockedRenderer = Renderer as unknown as Mock;
-const MockedWebGLFallbackRenderer = WebGLFallbackRenderer as unknown as Mock;
 
 describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
   const resetSearch = () => window.history.pushState({}, '', '/');
@@ -45,24 +41,20 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
       this.setDebugOptions = vi.fn();
       this.getWeatherPostProcessMode = vi.fn().mockReturnValue('fragment');
     });
-
-    MockedWebGLFallbackRenderer.mockReset().mockImplementation(function () {
-      mockCallOrder.push('webgl');
-    });
   });
 
   afterEach(resetSearch);
 
-  it('short-circuits on a successful WebGPU init without ever constructing WebGL', async () => {
+  it('short-circuits on a successful WebGPU init without constructing GL weather', async () => {
     const canvas = document.createElement('canvas');
     const created = await createStreetViewRenderer(canvas);
 
     expect(created.backendType).toBe('webgpu');
     expect(MockedRenderer).toHaveBeenCalledTimes(1);
-    expect(MockedWebGLFallbackRenderer).not.toHaveBeenCalled();
+    expect(mockCallOrder).toEqual(['webgpu']);
   });
 
-  it('hard-fails without constructing WebGL when WebGPU init fails', async () => {
+  it('hard-fails without constructing GL weather when WebGPU init fails', async () => {
     mockRendererInit.mockResolvedValue(false);
     mockWebgpuFallbackReason = 'Adapter limit maxTextureDimension2D=2048 below required 4096';
     const canvas = document.createElement('canvas');
@@ -72,7 +64,6 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
     expect(created.backendType).toBeNull();
     expect(created.fallbackReason).toBe('Adapter limit maxTextureDimension2D=2048 below required 4096');
     expect(mockRendererDestroy).toHaveBeenCalledTimes(1);
-    expect(MockedWebGLFallbackRenderer).not.toHaveBeenCalled();
     expect(mockCallOrder).toEqual(['webgpu']);
     expect(window.usingWebGL).toBe(false);
     expect(window.usingWebGPU).toBe(false);
@@ -80,18 +71,17 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
     expect(window.rendererFallbackReason).toBe(created.fallbackReason);
   });
 
-  it('still probes WebGPU only when ?renderer=webgl is set (GL deferred)', async () => {
+  it('still probes WebGPU only when ?renderer=webgl is set (no live GL weather)', async () => {
     window.history.pushState({}, '', '/?renderer=webgl');
     const canvas = document.createElement('canvas');
     const created = await createStreetViewRenderer(canvas);
 
     expect(created.backendType).toBe('webgpu');
-    expect(MockedWebGLFallbackRenderer).not.toHaveBeenCalled();
     expect(mockCallOrder).toEqual(['webgpu']);
     expect(window.webgpuProbe?.webglPreferenceDeferred).toBe(true);
   });
 
-  it('hard-fails on webgl preference when WebGPU also fails — still no WebGL construct', async () => {
+  it('hard-fails on webgl preference when WebGPU also fails — still no GL weather', async () => {
     window.history.pushState({}, '', '/?renderer=webgl');
     mockRendererInit.mockResolvedValue(false);
     mockWebgpuFallbackReason = 'WebGPU is not supported in this browser';
@@ -99,7 +89,6 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
     const created = await createStreetViewRenderer(canvas);
 
     expect(created.renderer).toBeNull();
-    expect(MockedWebGLFallbackRenderer).not.toHaveBeenCalled();
     expect(window.usingWebGL).toBe(false);
   });
 
@@ -125,5 +114,26 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
     expect(mockRendererInit).toHaveBeenLastCalledWith(
       expect.objectContaining({ legacyTransitions: true })
     );
+  });
+
+  it('does not import a live GL weather class from production renderer sources', () => {
+    const root = join(__dirname);
+    const hits: string[] = [];
+    const collect = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'webgl') continue;
+          collect(full);
+        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          const text = readFileSync(full, 'utf8');
+          if (text.includes('WebGLFallbackRenderer') || /from ['"].*webgl\/weatherReference/.test(text)) {
+            hits.push(full.replace(`${root}/`, ''));
+          }
+        }
+      }
+    };
+    collect(root);
+    expect(hits).toEqual([]);
   });
 });

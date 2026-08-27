@@ -1,8 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { UseSharedSessionResult } from '../hooks/useSharedSession';
-import { buildHostBroadcastPayload, shouldTeleportGuestToPano } from './sharedSessionSync';
+import {
+  buildHostBroadcastPayload,
+  normalizeIncomingSessionFields,
+  shouldApplyGuestHeadLook,
+  shouldTeleportGuestToPano,
+  type CabinView,
+  type HostBroadcastExtras,
+} from './sharedSessionSync';
 import { parseWeatherPreset } from '../utils/weatherPresetSync';
 import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
+import type { VehicleType } from '../car/VehicleManager';
 
 export interface UseSharedSessionSyncParams {
   sharedSession: UseSharedSessionResult;
@@ -21,10 +29,22 @@ export interface UseSharedSessionSyncParams {
   setRainIntensity?: (v: number) => void;
   setSnowIntensity?: (v: number) => void;
   setFogDensity?: (v: number) => void;
+  lookId?: string | null;
+  imageDate?: string | null;
+  vehicleType?: string | null;
+  cabinView?: CabinView | null;
+  carHeading?: number;
+  hdr?: boolean;
+  applyLookPack?: (id: string) => void;
+  setVehicleType?: (type: VehicleType) => void;
+  setViewMode?: (mode: 'freelook' | 'car') => void;
+  setCarHeading?: (heading: number) => void;
+  setCabinView?: (view: CabinView) => void;
 }
 
 /**
- * AppShell glue for shared sessions: host 10Hz POV broadcast + guest follow.
+ * AppShell glue for shared sessions: host 10Hz POV broadcast + guest film-set follow.
+ * Guests lock pano / look / vehicle / year (via pano) / chassis; head look stays local after the first packet.
  */
 export function useSharedSessionSync({
   sharedSession,
@@ -42,9 +62,25 @@ export function useSharedSessionSync({
   setRainIntensity,
   setSnowIntensity,
   setFogDensity,
+  lookId,
+  imageDate,
+  vehicleType,
+  cabinView,
+  carHeading,
+  hdr,
+  applyLookPack,
+  setVehicleType,
+  setViewMode,
+  setCarHeading,
+  setCabinView,
 }: UseSharedSessionSyncParams): void {
   const lastAppliedPanoRef = useRef<string | null>(null);
   const lastWeatherPresetRef = useRef<string | null>(null);
+  const lastLookIdRef = useRef<string | null>(null);
+  const lastVehicleRef = useRef<string | null>(null);
+  const lastViewModeRef = useRef<string | null>(null);
+  const lastCabinViewRef = useRef<string | null>(null);
+  const appliedInitialLookRef = useRef(false);
 
   const {
     role: sessionRole,
@@ -57,11 +93,20 @@ export function useSharedSessionSync({
   useEffect(() => {
     if (sessionRole !== 'host' || !sessionConnected) return;
     const interval = setInterval(() => {
+      const extras: HostBroadcastExtras = {
+        ...(weatherPreset ? { weatherPreset } : {}),
+        lookId: lookId ?? undefined,
+        imageDate: imageDate ?? undefined,
+        vehicleType: vehicleType ?? undefined,
+        cabinView: cabinView ?? undefined,
+        carHeading,
+        hdr,
+      };
       const payload = buildHostBroadcastPayload(
         panorama,
         { heading, pitch, zoom },
         viewMode,
-        weatherPreset ? { weatherPreset } : undefined,
+        extras,
       );
       if (!payload) return;
       broadcastState(payload);
@@ -77,21 +122,57 @@ export function useSharedSessionSync({
     zoom,
     viewMode,
     weatherPreset,
+    lookId,
+    imageDate,
+    vehicleType,
+    cabinView,
+    carHeading,
+    hdr,
   ]);
 
-  // Guests follow the host's POV as it arrives.
+  // Guests follow the host film set as it arrives.
   useEffect(() => {
     if (sessionRole !== 'guest') return;
     if (!latestState) return;
+
+    const film = normalizeIncomingSessionFields(latestState);
 
     const currentPanoId = panorama?.getPano();
     if (shouldTeleportGuestToPano(latestState.panoId, currentPanoId, lastAppliedPanoRef.current)) {
       lastAppliedPanoRef.current = latestState.panoId;
       void teleportToPanoSafe(latestState.panoId);
     }
-    setHeading(latestState.pov.heading);
-    setPitch(latestState.pov.pitch);
+
+    if (shouldApplyGuestHeadLook(appliedInitialLookRef.current)) {
+      setHeading(latestState.pov.heading);
+      setPitch(latestState.pov.pitch);
+      appliedInitialLookRef.current = true;
+    }
     setZoom(latestState.pov.zoom);
+
+    if (latestState.viewMode && latestState.viewMode !== lastViewModeRef.current) {
+      lastViewModeRef.current = latestState.viewMode;
+      setViewMode?.(latestState.viewMode);
+    }
+
+    if (typeof film.carHeading === 'number') {
+      setCarHeading?.(film.carHeading);
+    }
+
+    if (film.lookId && film.lookId !== lastLookIdRef.current) {
+      lastLookIdRef.current = film.lookId;
+      applyLookPack?.(film.lookId);
+    }
+
+    if (film.vehicleType && film.vehicleType !== lastVehicleRef.current) {
+      lastVehicleRef.current = film.vehicleType;
+      setVehicleType?.(film.vehicleType);
+    }
+
+    if (film.cabinView && film.cabinView !== lastCabinViewRef.current) {
+      lastCabinViewRef.current = film.cabinView;
+      setCabinView?.(film.cabinView);
+    }
 
     if (
       latestState.weatherPreset &&
@@ -118,5 +199,10 @@ export function useSharedSessionSync({
     setRainIntensity,
     setSnowIntensity,
     setFogDensity,
+    applyLookPack,
+    setVehicleType,
+    setViewMode,
+    setCarHeading,
+    setCabinView,
   ]);
 }

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { dismissWelcome, getUncaught, gotoApp, hasMapsKey } from './helpers';
 
 test.describe('renderer debug flags', () => {
-  test('loads with ?renderer=webgl without uncaught exceptions (GL deferred)', async ({ page }) => {
+  test('loads with ?renderer=webgl without uncaught exceptions (no live GL weather)', async ({ page }) => {
     await gotoApp(page, '/?renderer=webgl');
     await dismissWelcome(page);
 
@@ -19,7 +19,7 @@ test.describe('renderer debug flags', () => {
     await gotoApp(page, '/?renderer=webgl');
     await dismissWelcome(page);
 
-    // WebGL weather is deferred: either WebGPU boots, or hard-fail — never usingWebGL.
+    // No live GL weather: either WebGPU boots, or hard-fail — never usingWebGL.
     await expect
       .poll(async () => page.evaluate(() => window.usingWebGL === true), { timeout: 90_000 })
       .toBe(false);

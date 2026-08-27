@@ -43,6 +43,17 @@ export interface SessionState {
   pov: { heading: number; pitch: number; zoom: number };
   viewMode: 'freelook' | 'car';
   weatherPreset?: string;
+  /** Named look pack id (`noir`, …). Unknown ids are dropped by guests. */
+  lookId?: string;
+  /** Capture date from the historical archive, `YYYY-MM`. Sidecar; year change is the pano teleport. */
+  imageDate?: string;
+  /** VehicleManager SSOT. Unknown values are dropped by guests. */
+  vehicleType?: string;
+  cabinView?: 'driver' | 'chauffeur';
+  /** Chassis yaw when viewMode is car. Guest head look stays local. */
+  carHeading?: number;
+  /** Informational host display cap; guests do not change their own HDR path. */
+  hdr?: boolean;
   seq: number;
 }
 

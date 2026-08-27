@@ -2,6 +2,8 @@ import { useRef, useCallback, useEffect, useMemo } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import CinemaOverlay from '../components/CinemaOverlay';
 import { parseDeepLinkParams } from '../utils/deepLink';
+import { parseStudioLinkParams, buildStudioShareUrl } from '../utils/studioLink';
+import { getWindAudio } from '../effects/WindAudio';
 import {
   useStreetView,
   useViewMode,
@@ -9,6 +11,7 @@ import {
   useAdvanceSafe,
   useRoutePrefetch,
   usePlaceSearch,
+  useVehicleSettings,
 } from '../hooks';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
 import { useSharedSession } from '../hooks/useSharedSession';
@@ -21,7 +24,8 @@ import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
 import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
-import { vehicleManager } from '../car/VehicleManager';
+import { vehicleManager, type VehicleType } from '../car/VehicleManager';
+import { getCabinView, setCabinView } from '../car/cabinView';
 import type { DirectorSnapshot } from '../hooks/useTours';
 import type { TourDirectorKeyframe } from '../utils/tourDirector';
 import { serializeWeatherPreset } from '../utils/weatherPresetSync';
@@ -73,10 +77,11 @@ export function AppShell() {
   } = useStreetView();
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const routePrefetch = useRoutePrefetch();
-  const { viewMode, toggleViewMode } = useViewMode();
+  const { viewMode, toggleViewMode, setViewMode, carHeading, setCarHeading } = useViewMode();
   // Read by the cruise tick, which must see the live mode without re-arming.
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
+  const { currentVehicle } = useVehicleSettings();
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
@@ -118,6 +123,10 @@ export function AppShell() {
       }),
     [env.timeOfDay, env.rainIntensity, env.snowIntensity, env.fogDensity],
   );
+
+  useEffect(() => {
+    getWindAudio().setHeadingPan(heading, carHeading);
+  }, [heading, carHeading]);
 
   const getDirectorSnapshot = useCallback((): DirectorSnapshot | null => ({
     timeOfDay: env.timeOfDay,
@@ -170,6 +179,16 @@ export function AppShell() {
     readyPromise,
   });
 
+  const currentImageDate =
+    historical.historicalCurrentIndex >= 0
+      ? historical.historicalEntries[historical.historicalCurrentIndex]?.imageDate ?? null
+      : null;
+
+  const setSessionVehicle = useCallback((type: VehicleType) => {
+    vehicleManager.setVehicle(type);
+    void loadCarRuntime().then((m) => m.setVehicleType(type));
+  }, []);
+
   useSharedSessionSync({
     sharedSession,
     panorama,
@@ -186,6 +205,17 @@ export function AppShell() {
     setRainIntensity: env.setRainIntensity,
     setSnowIntensity: env.setSnowIntensity,
     setFogDensity: env.setFogDensity,
+    lookId: env.activeLookId,
+    imageDate: currentImageDate,
+    vehicleType: currentVehicle,
+    cabinView: getCabinView(),
+    carHeading,
+    hdr: connection.webgpuStatus === 'ready',
+    applyLookPack: env.applyLookPack,
+    setVehicleType: setSessionVehicle,
+    setViewMode,
+    setCarHeading,
+    setCabinView,
   });
 
   const { tourPanelProps } = useTourBindings({
@@ -266,8 +296,11 @@ export function AppShell() {
       zoom,
       locationName,
       panoId: panorama.getPano() || undefined,
+      imageDate: currentImageDate ?? undefined,
+      lookId: env.activeLookId ?? undefined,
+      vehicleType: currentVehicle,
     });
-  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName]);
+  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName, currentImageDate, env.activeLookId, currentVehicle]);
 
   const handleSnapshotTeleport = useCallback(
     async (lat: number, lng: number, targetHeading: number, targetPitch: number, panoId?: string) => {
@@ -284,6 +317,22 @@ export function AppShell() {
 
   // Consume `?lat=&lng=&heading=&pitch=&zoom=&pano=` deep-link params once Maps/panorama are ready.
   const deepLinkConsumedRef = useRef(false);
+  const studioBootRef = useRef(parseStudioLinkParams());
+  const yearBootConsumedRef = useRef(!studioBootRef.current.year);
+  const yearSawHistoricalLoadRef = useRef(false);
+  const vehicleBootConsumedRef = useRef(!studioBootRef.current.vehicleType);
+
+  useEffect(() => {
+    if (vehicleBootConsumedRef.current) return;
+    const vehicle = studioBootRef.current.vehicleType;
+    if (!vehicle) {
+      vehicleBootConsumedRef.current = true;
+      return;
+    }
+    vehicleBootConsumedRef.current = true;
+    setSessionVehicle(vehicle);
+  }, [setSessionVehicle]);
+
   useEffect(() => {
     if (deepLinkConsumedRef.current) return;
     if (!connection.isConnected || !panorama || !isPanoramaReady) return;
@@ -315,6 +364,33 @@ export function AppShell() {
     setHeading,
     setPitch,
     setZoom,
+  ]);
+
+  // Solo `?year=YYYY` — pick from the existing historical timeline (no new crawl).
+  useEffect(() => {
+    if (yearBootConsumedRef.current) return;
+    if (!connection.isConnected || !isPanoramaReady) return;
+    if (historical.isHistoricalLoading) {
+      yearSawHistoricalLoadRef.current = true;
+      return;
+    }
+    if (!yearSawHistoricalLoadRef.current && historical.historicalEntries.length === 0) {
+      return;
+    }
+    const year = studioBootRef.current.year;
+    yearBootConsumedRef.current = true;
+    if (!year) return;
+    const entry = pickHistoricalEntryForYear(historical.historicalEntries, year);
+    if (entry && entry.panoId !== panorama?.getPano()) {
+      void teleportToPanoSafe(entry.panoId);
+    }
+  }, [
+    connection.isConnected,
+    isPanoramaReady,
+    historical.isHistoricalLoading,
+    historical.historicalEntries,
+    panorama,
+    teleportToPanoSafe,
   ]);
 
   const getCurrentPosition = useCallback(() => {
@@ -535,6 +611,25 @@ export function AppShell() {
           renderer={renderer}
           onExit={exitCinemaMode}
           onTakeSnapshot={handleTakeSnapshot}
+          lookId={env.activeLookId}
+          vehicleType={currentVehicle}
+          panoId={panorama?.getPano() ?? null}
+          imageDate={currentImageDate}
+          shareUrl={(() => {
+            const pos = panorama?.getPosition();
+            if (!pos) return undefined;
+            return buildStudioShareUrl({
+              lat: pos.lat(),
+              lng: pos.lng(),
+              heading,
+              pitch,
+              zoom,
+              panoId: panorama.getPano() || undefined,
+              lookId: env.activeLookId,
+              year: currentImageDate,
+              vehicleType: currentVehicle,
+            });
+          })()}
         />
       )}
 

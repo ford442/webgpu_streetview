@@ -182,3 +182,40 @@ export function downloadClip(blob: Blob, mimeType: string, baseName = 'streetvie
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+export type ClipShareResult = 'share' | 'download' | 'cancelled';
+
+/**
+ * Share a WebM via `navigator.share({ files })` when the UA allows it;
+ * otherwise download. Optional deep link is included as `url` when sharing.
+ */
+export async function shareOrDownloadClip(
+  blob: Blob,
+  mimeType: string,
+  options: { deepLink?: string; baseName?: string } = {},
+): Promise<ClipShareResult> {
+  const baseName = options.baseName ?? 'streetview-clip';
+  const ext = mimeType.includes('webm') ? 'webm' : 'mp4';
+  const file = new File([blob], `${baseName}.${ext}`, { type: mimeType });
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      const canShareFiles = typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] });
+      if (canShareFiles) {
+        await navigator.share({
+          title: 'Street View clip',
+          files: [file],
+          ...(options.deepLink ? { url: options.deepLink } : {}),
+        });
+        return 'share';
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return 'cancelled';
+      }
+    }
+  }
+
+  downloadClip(blob, mimeType, baseName);
+  return 'download';
+}

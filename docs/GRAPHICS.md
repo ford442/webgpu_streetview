@@ -16,7 +16,7 @@ contract).
 |------|-------------|-------|
 | Fragment (default) | `public/shaders/weather-post.wgsl` | HDR `rgba16float`, full effect set |
 | Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba32float` storage texture + blit; adds the depth-proxy storage target |
-| WebGL2 (deferred) | `FRAGMENT_SHADER` in `src/renderer/WebGLFallbackRenderer.ts` | SDR approximation retained in-repo; **not selected** this phase (WebGPU hard-fail instead). Later wave may restore as opt-in. |
+| GLSL reference (not live) | `src/renderer/webgl/weatherReference.glsl.ts` | SDR approximation for must-match tests; **not constructed** at runtime |
 
 All three read the same 40-float uniform block. Shared WGSL helpers are held
 byte-identical between the two WGSL paths and guarded by
@@ -81,7 +81,7 @@ On the **compute** path (Ultra, or `?weather=compute` at High) a second layer
 of WASM-seeded GPU particles is splatted into bindings 7/8: streaks pick up
 the same wind, fall downward (`WEATHER_FALL_Y_SIGN = −1`), thicken toward the
 windshield, and light up in the headlight cone at night. The fragment default
-and the WebGL fallback stay on the procedural `rain()` function only.
+and the GLSL reference stay on the procedural `rain()` function only.
 
 ### ⛈️ Storm (rain 100, wind 80)
 As above, pushed to a near-black sky: overcast 0.85 ⇒ lens flare 0.4 → 0.06.
@@ -200,7 +200,7 @@ GPU precipitation (`public/shaders/weather-particles.wgsl`) is gated to the
 compute weather path at High/Ultra. `WasmParticleFeeder` calls
 `fill_particle_seeds` once (and again on count change or a dry→wet restart);
 a compute integrate pass advects with wind + gravity (`WEATHER_FALL_Y_SIGN`)
-and a splat pass writes density. The fragment path and WebGL fallback stay
+and a splat pass writes density. The fragment path stays
 procedural. See `docs/WASM_BRIDGE.md`.
 
 ### Noise tile detail differs by path
@@ -240,7 +240,7 @@ so the default fragment path pays a single branch. DOF focuses at depth 0.45
 and defocuses toward infinity; motion blur streaks radially away from screen
 centre and is biased toward the frame edges.
 
-The WebGL2 fallback does not implement either — it ignores slots 38/39.
+The GLSL reference does not implement either — it ignores slots 38/39.
 
 ---
 
@@ -282,10 +282,10 @@ the Weather panel. **Copy look as URL** writes the current pack + diffs.
 
 ---
 
-## 9. WebGL parity budget
+## 9. GLSL reference parity budget
 
-The WebGL2 fallback is SDR and skips DOF, motion blur, fBm dust, and the 4-tap
-haze blur. Isolation flags (`?effect=weather|night|fog`) exist so look targets
+The GLSL reference (`src/renderer/webgl/weatherReference.glsl.ts`) is SDR and skips DOF, motion blur, fBm dust, and the 4-tap
+haze blur. Isolation flags (`?effect=weather|night|fog`) exist on WebGPU so look targets
 can be compared directionally.
 
 | Effect | Must match | Best effort | Skip |

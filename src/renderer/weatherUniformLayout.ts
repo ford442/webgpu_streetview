@@ -5,9 +5,9 @@
  *  - src/renderer/ComputeWeatherPostProcessor.ts (compute pass, storage buffer)
  *  - public/shaders/weather-post.wgsl        (`struct WeatherParams`)
  *  - public/shaders/weather-post-compute.wgsl (`extraBuffer` accessors)
- *  - src/renderer/WebGLFallbackRenderer.ts   (SDR approximation)
+ *  - src/renderer/webgl/weatherReference.glsl.ts (SDR GLSL reference; not a live backend)
  *
- * Changing an index here means updating all five in lockstep. See
+ * Changing an index here means updating the live WebGPU paths in lockstep. See
  * docs/RENDERER_FALLBACK.md and AGENTS.md ("Shader Uniform Layouts").
  */
 

@@ -18,12 +18,12 @@ export interface WeatherPostProcessorLike {
     updateNoiseBuffer(tile: Float32Array): void;
     /**
      * Upload WASM `fill_particle_seeds` output into compute-path storage
-     * textures A/B. No-op on the fragment weather path and WebGL fallback.
+     * textures A/B. No-op on the fragment weather path.
      */
     updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
     /** Bind a 3D look LUT, or null for the identity (ACES-only) path. */
     setLookLut(volume: import('./lut').LutVolume | null): void;
-    /** Compute-only 1-frame color history. No-op on fragment / WebGL. */
+    /** Compute-only 1-frame color history. No-op on fragment. */
     setTemporalHistoryEnabled(enabled: boolean): void;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };

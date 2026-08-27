@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
-import { buildDeepLinkUrl } from '../utils/deepLink';
+import { buildStudioShareUrl } from '../utils/studioLink';
 import {
     ImageExportFormat,
     convertDataUrlFormat,
@@ -21,6 +21,9 @@ export interface SnapshotMetadata {
     zoom: number;
     locationName?: string;
     panoId?: string;
+    imageDate?: string;
+    lookId?: string;
+    vehicleType?: string;
     /** Quarter-res JPEG from downsample_2d for the gallery picker. */
     thumbnailDataUrl?: string;
 }
@@ -46,6 +49,9 @@ async function prepareExport(
             zoom: snapshot.zoom,
             panoId: snapshot.panoId,
             timestamp: snapshot.timestamp,
+            imageDate: snapshot.imageDate,
+            lookId: snapshot.lookId,
+            vehicleType: snapshot.vehicleType,
         });
         return { dataUrl: withExif, extension: formatExtension(format), mimeType: 'image/jpeg' };
     }
@@ -163,13 +169,16 @@ export function useSnapshots() {
     }, []);
 
     const getSnapshotDeepLink = useCallback((snapshot: SnapshotMetadata) => {
-        return buildDeepLinkUrl({
+        return buildStudioShareUrl({
             lat: snapshot.lat,
             lng: snapshot.lng,
             heading: snapshot.heading,
             pitch: snapshot.pitch,
             zoom: snapshot.zoom,
             panoId: snapshot.panoId,
+            lookId: snapshot.lookId,
+            year: snapshot.imageDate,
+            vehicleType: snapshot.vehicleType,
         });
     }, []);
 
@@ -177,13 +186,16 @@ export function useSnapshots() {
         snapshot: SnapshotMetadata,
         format: ImageExportFormat = 'jpeg',
     ): Promise<SnapshotShareResult> => {
-        const link = buildDeepLinkUrl({
+        const link = buildStudioShareUrl({
             lat: snapshot.lat,
             lng: snapshot.lng,
             heading: snapshot.heading,
             pitch: snapshot.pitch,
             zoom: snapshot.zoom,
             panoId: snapshot.panoId,
+            lookId: snapshot.lookId,
+            year: snapshot.imageDate,
+            vehicleType: snapshot.vehicleType,
         });
         const shareText = `${snapshot.locationName || `${snapshot.lat.toFixed(4)}, ${snapshot.lng.toFixed(4)}`} — captured in WebGPU StreetView\n${MAPS_ATTRIBUTION}`;
 

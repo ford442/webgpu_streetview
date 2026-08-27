@@ -20,7 +20,7 @@ export type WeatherPostProcessMode = 'fragment' | 'compute';
 
 export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
-    /** WebGPU only — WebGL2 fallback stays fragment-only. See docs/RENDERER_FALLBACK.md. */
+    /** WebGPU only — see docs/RENDERER_FALLBACK.md. */
     weatherPostProcessMode?: WeatherPostProcessMode;
     /** WebGPU only — legacy zoom/fade transition shaders are opt-in (`?legacyTransitions=1`). */
     legacyTransitions?: boolean;
@@ -49,12 +49,12 @@ export interface StreetViewRenderer {
      * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts) for
      * shaders to sample as CPU-driven turbulence. `tile` must have
      * `NOISE_TILE_SIZE * NOISE_TILE_SIZE` elements, row-major. No-op on
-     * backends that don't support it (e.g. the WebGL fallback).
+     * backends that don't support it (fragment path without a noise sampler).
      */
     updateNoiseBuffer(tile: Float32Array): void;
     /**
      * Upload WASM particle seeds for the compute weather path. No-op on
-     * backends that stay procedural (fragment WebGPU, WebGL fallback).
+     * backends that stay procedural (fragment WebGPU).
      */
     updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
     /** 3D look LUT. Null = identity (today's ACES path). No-op on WebGL. */
@@ -148,6 +148,14 @@ export interface AdapterSelectionPolicy {
 }
 
 export type AdapterFeatureLevel = 'core' | 'compatibility';
+
+/**
+ * `?gpu=features` dumps attempted/enabled optional features on the backend chip.
+ * It does not change `requestAdapter` options.
+ */
+export function wantsGpuFeatureDump(): boolean {
+    return readGpuTokens().includes('features');
+}
 
 export function getAdapterSelectionPolicy(): AdapterSelectionPolicy {
     const tokens = readGpuTokens();
@@ -264,8 +272,7 @@ export function getRendererDebugOptions(): RendererDebugOptions {
  * Resolve the weather post-processing pipeline: `?weather=compute` or
  * `?weather=fragment` in the URL wins, then a persisted `localStorage`
  * choice, then `fallback` (typically the current visual quality preset's
- * default — see src/config/visualPresets.ts). WebGPU-only; the WebGL2
- * fallback renderer always uses its fragment-only SDR approximation.
+ * default — see src/config/visualPresets.ts). WebGPU-only.
  */
 export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fragment'): WeatherPostProcessMode {
     const params = readSearchParams();
@@ -295,12 +302,12 @@ export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean 
 }
 
 /**
- * WebGL weather selection is deferred this phase (see docs/RENDERER_FALLBACK.md).
- * `setBackend('webgl')` records the preference for a future opt-in wave but forces
- * a WebGPU probe on reload instead of constructing WebGLFallbackRenderer.
+ * WebGL weather is a GLSL reference only (`src/renderer/webgl/weatherReference.glsl.ts`).
+ * `setBackend('webgl')` still records the preference but forces a WebGPU probe —
+ * there is no live GL weather class in the runtime module graph.
  */
 export const WEBGL_WEATHER_DEFERRED_MESSAGE =
-    'WebGL weather path is deferred; WebGPU is required. Preference ignored until a later opt-in wave.';
+    'WebGL weather is a GLSL reference only; WebGPU is required. Preference ignored.';
 
 function installStreetViewRendererDebug(
     debugOptions: RendererDebugOptions,

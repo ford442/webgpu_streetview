@@ -218,3 +218,16 @@ export function formatImageDate(imageDate: string): string {
   const label = monthNames[idx] ?? month;
   return `${label} ${year}`;
 }
+
+/**
+ * Pick the first timeline entry whose `imageDate` starts with a 4-digit year.
+ * Reuses the existing #221 archive — does not crawl.
+ */
+export function pickHistoricalEntryForYear(
+  entries: readonly HistoricalPanoEntry[],
+  year: string | number | null | undefined,
+): HistoricalPanoEntry | null {
+  const y = String(year ?? '').trim();
+  if (!/^\d{4}$/.test(y)) return null;
+  return entries.find((e) => e.imageDate.startsWith(y)) ?? null;
+}

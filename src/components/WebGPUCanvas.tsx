@@ -229,7 +229,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 );
             } else {
                 console.warn(
-                    'WebGPU renderer initialization failed. Hard-fail — WebGL weather deferred.',
+                    'WebGPU renderer initialization failed. Hard-fail — no live GL weather.',
                     result.fallbackReason || '',
                 );
                 onWebGPUStatusRef.current?.(false);

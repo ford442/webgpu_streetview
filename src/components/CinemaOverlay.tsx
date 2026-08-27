@@ -2,10 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { StreetViewRenderer } from '../renderer/RendererBackend';
 import {
   CanvasClipRecorder,
-  downloadClip,
   isClipRecordingSupported,
+  shareOrDownloadClip,
   type ClipRecorderState,
 } from '../utils/canvasRecorder';
+import {
+  createCinemaSidecarSession,
+  downloadSidecarJson,
+  type CinemaSidecarSession,
+} from '../utils/cinemaSidecar';
 
 export interface CinemaOverlayProps {
   visible: boolean;
@@ -16,6 +21,12 @@ export interface CinemaOverlayProps {
   renderer: StreetViewRenderer | null;
   onExit: () => void;
   onTakeSnapshot?: () => void;
+  /** Graded-road canvas only until single-device cabin lands. */
+  lookId?: string | null;
+  vehicleType?: string | null;
+  panoId?: string | null;
+  imageDate?: string | null;
+  shareUrl?: string;
 }
 
 const MIN_CLIP_MS = 15_000;
@@ -29,12 +40,18 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
   renderer,
   onExit,
   onTakeSnapshot,
+  lookId = null,
+  vehicleType = null,
+  panoId = null,
+  imageDate = null,
+  shareUrl,
 }) => {
   const [recState, setRecState] = useState<ClipRecorderState>(
     isClipRecordingSupported() ? 'idle' : 'unsupported',
   );
   const [elapsedSec, setElapsedSec] = useState(0);
   const recorderRef = useRef<CanvasClipRecorder | null>(null);
+  const sidecarRef = useRef<CinemaSidecarSession | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopTimer = useCallback(() => {
@@ -48,6 +65,7 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
     stopTimer();
     recorderRef.current?.dispose();
     recorderRef.current = null;
+    sidecarRef.current = null;
     setElapsedSec(0);
     setRecState(isClipRecordingSupported() ? 'idle' : 'unsupported');
   }, [stopTimer]);
@@ -66,19 +84,30 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
       return;
     }
     recorderRef.current = recorder;
+    const sidecar = createCinemaSidecarSession({ lookId, vehicleType });
+    sidecar.note(panoId, imageDate);
+    sidecarRef.current = sidecar;
     recorder.start();
     setRecState('recording');
     setElapsedSec(0);
     timerRef.current = setInterval(() => setElapsedSec((s) => s + 1), 1000);
-  }, [renderer, recState, cleanupRecorder]);
+  }, [renderer, recState, cleanupRecorder, lookId, vehicleType, panoId, imageDate]);
+
+  useEffect(() => {
+    if (recState !== 'recording') return;
+    sidecarRef.current?.note(panoId, imageDate);
+  }, [recState, panoId, imageDate]);
 
   const handleStopRecording = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder || recState !== 'recording') return;
     stopTimer();
     try {
+      sidecarRef.current?.note(panoId, imageDate);
+      const sidecar = sidecarRef.current?.toJSON();
       const result = await recorder.stop();
-      downloadClip(result.blob, result.mimeType);
+      await shareOrDownloadClip(result.blob, result.mimeType, { deepLink: shareUrl });
+      if (sidecar) downloadSidecarJson(sidecar);
       setRecState('stopped');
     } catch (err) {
       console.error('[CinemaOverlay] clip stop failed', err);
@@ -86,10 +115,11 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
     } finally {
       recorder.dispose();
       recorderRef.current = null;
+      sidecarRef.current = null;
       setElapsedSec(0);
       setTimeout(() => setRecState(isClipRecordingSupported() ? 'idle' : 'unsupported'), 1500);
     }
-  }, [recState, stopTimer]);
+  }, [recState, stopTimer, panoId, imageDate, shareUrl]);
 
   if (!visible) return null;
 
@@ -177,7 +207,7 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
             onClick={handleStartRecording}
             disabled={!renderer}
             style={btnStyle('#d9534f')}
-            title="Record WebM clip (min 15s)"
+            title="Record WebM of the graded road canvas (cabin overlay not included yet). Min 15s."
           >
             ● Record
           </button>

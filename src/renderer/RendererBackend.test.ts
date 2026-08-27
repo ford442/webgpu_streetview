@@ -3,6 +3,7 @@ import {
   getAdapterRequestOptions,
   getAdapterSelectionPolicy,
   getCanvasOutputFlags,
+  wantsGpuFeatureDump,
   exposeRendererDebugGlobals,
   getLegacyTransitionsEnabled,
   getRendererDebugOptions,
@@ -306,6 +307,22 @@ describe('getAdapterSelectionPolicy', () => {
       featureLevel: 'compatibility',
       featureLevelSource: 'url',
     });
+  });
+
+  it('treats ?gpu=features as a dump flag that does not change adapter request options', () => {
+    setSearch('?gpu=features');
+    expect(wantsGpuFeatureDump()).toBe(true);
+    expect(getAdapterSelectionPolicy()).toEqual({
+      forceFallbackAdapter: false,
+      featureLevel: 'core',
+      featureLevelSource: 'default',
+    });
+    expect(getAdapterPowerPreferencePolicy()).toEqual({ source: 'default' });
+
+    setSearch('?gpu=high,features,compat');
+    expect(wantsGpuFeatureDump()).toBe(true);
+    expect(getAdapterPowerPreferencePolicy().powerPreference).toBe('high-performance');
+    expect(getAdapterSelectionPolicy().featureLevel).toBe('compatibility');
   });
 });
 

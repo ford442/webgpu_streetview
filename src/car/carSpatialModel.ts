@@ -14,11 +14,13 @@
  *     3. explicit steer keys while in `carSteer` (A/D, Q/E).
  *   Shift / RMB / wheel alone must not steer in free-look.
  *
- * Night exposure floors (shared by WGSL + WebGL fallback comments/tests)
+ * Night exposure floors (shared by WGSL + GLSL reference comments/tests)
  * ---------------------------------------------------------------------
  * Full night multiplies scene luminance toward NIGHT_BASE_FLOOR (not near-zero),
  * keeps sky readable via NIGHT_SKY_FLOOR, and lets headlights/dome lift the road.
  */
+
+import { signedAngleDiff } from '../utils/navigation';
 
 /** Minimum scene luminance scale at full night (was ~0.03 — crushed black). */
 export const NIGHT_BASE_FLOOR = 0.14;
@@ -29,13 +31,13 @@ export const NIGHT_SKY_FLOOR = 0.18;
 /** Desaturation amount at full night (0–1). */
 export const NIGHT_DESATURATE = 0.55;
 
-/** WebGL fallback mix toward cool night tint at full night (SDR approximation). */
+/** GLSL reference mix toward cool night tint at full night (SDR approximation). */
 export const NIGHT_WEBGL_TINT = { r: 0.42, g: 0.50, b: 0.64 } as const;
 
 /**
  * Particle fall direction in top-origin UV space (uv.y = 0 at top, 1 at bottom).
  * Negative Y velocity ⇒ flakes/streaks move downward on screen.
- * WebGPU fragCoord and the WebGL fallback (which flips vUv.y) both use top-origin.
+ * WebGPU fragCoord and the GLSL reference (which flips vUv.y) both use top-origin.
  */
 export const WEATHER_FALL_Y_SIGN = -1 as const;
 
@@ -44,6 +46,15 @@ export const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
 
 /** Parked wiper base angle (radians). */
 export const WIPER_PARK_ANGLE = Math.PI / 6;
+
+/**
+ * StereoPannerNode pan from signed head-vs-chassis yaw.
+ * Looking right of the car body → positive (right ear). Clamped to [-1, 1].
+ */
+export function cabinAudioPanFromHeadYaw(headHeading: number, carHeading: number): number {
+  const signed = signedAngleDiff(headHeading, carHeading);
+  return Math.max(-1, Math.min(1, signed / 90));
+}
 
 /**
  * Whether a free-look mouse drag should steer the chassis.

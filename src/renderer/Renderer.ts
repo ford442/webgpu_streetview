@@ -111,7 +111,7 @@ export class Renderer implements StreetViewRenderer {
                 preference,
                 webglPreferenceDeferred,
             });
-            console.warn('WebGPU not supported. Hard-fail — WebGL weather deferred.');
+            console.warn('WebGPU not supported. Hard-fail — no live GL weather.');
             return false;
         }
 
@@ -127,7 +127,7 @@ export class Renderer implements StreetViewRenderer {
                     preference,
                     webglPreferenceDeferred,
                 });
-                console.warn('No WebGPU adapter found. Hard-fail — WebGL weather deferred.');
+                console.warn('No WebGPU adapter found. Hard-fail — no live GL weather.');
                 return false;
             }
 
@@ -148,7 +148,9 @@ export class Renderer implements StreetViewRenderer {
                 return false;
             }
 
-            const requiredFeatures = collectOptionalDeviceFeatures(adapter);
+            const requiredFeatures = collectOptionalDeviceFeatures(adapter, {
+                featureLevel: describeAdapterSelection(adapterOptions).featureLevel,
+            });
 
             try {
                 this.device = await adapter.requestDevice({
@@ -190,7 +192,7 @@ export class Renderer implements StreetViewRenderer {
                     webglPreferenceDeferred,
                     adapter: probeAdapter,
                 });
-                console.warn('Could not get WebGPU context. Hard-fail — WebGL weather deferred.');
+                console.warn('Could not get WebGPU context. Hard-fail — no live GL weather.');
                 return false;
             }
 

@@ -43,8 +43,7 @@ export interface VisualPreset {
    * -> weather-post.wgsl) or 'compute' (weather-post-compute.wgsl, storage-buffer
    * based — see docs/RENDERER_FALLBACK.md and ComputeWeatherPostProcessor.ts).
    * A `?weather=compute`/`?weather=fragment` URL flag or persisted
-   * localStorage choice always overrides this default. Ignored by the
-   * WebGL2 fallback renderer, which is fragment-only.
+   * localStorage choice always overrides this default.
    */
   weatherPostProcessMode: 'fragment' | 'compute';
 

@@ -193,6 +193,8 @@ aligned; its output region sits at `65536 + count * 16`.
 | `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed mixed in the Web Audio graph; JS fill + oscillators if WASM is missing |
 | gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
 
+Cabin **HRTF convolution** is not an export. Heading-relative pan uses `StereoPannerNode` in `WindAudio`. A true HRTF kernel would be a new wasm export after the emcc ship path — do not add WAT for it.
+
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;
 `WebGPUCanvas` switches the feeder to `'fbm'` only when the renderer reports the

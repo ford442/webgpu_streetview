@@ -4,6 +4,7 @@
  */
 
 import { createBrowserAudioContext } from '../audio/createAudioContext';
+import { cabinAudioPanFromHeadYaw } from '../car/carSpatialModel';
 
 export interface WindAudioConfig {
   baseVolume: number;
@@ -17,10 +18,12 @@ export class WindAudio {
   private audioContext: AudioContext | null = null;
   private noiseNode: AudioBufferSourceNode | null = null;
   private gainNode: GainNode | null = null;
+  private pannerNode: StereoPannerNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
   private isActive: boolean = false;
   private currentSpeed: number = 0;
   private targetVolume: number = 0;
+  private pendingPan: number = 0;
   private config: WindAudioConfig;
 
   // Default configuration
@@ -48,7 +51,11 @@ export class WindAudio {
       // Create gain node for volume control
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 0; // Start silent
-      this.gainNode.connect(this.audioContext.destination);
+
+      this.pannerNode = this.audioContext.createStereoPanner();
+      this.pannerNode.pan.value = this.pendingPan;
+      this.gainNode.connect(this.pannerNode);
+      this.pannerNode.connect(this.audioContext.destination);
 
       // Create filter for wind effect (lowpass that opens with speed)
       this.filterNode = this.audioContext.createBiquadFilter();
@@ -194,6 +201,17 @@ export class WindAudio {
   }
 
   /**
+   * Heading-relative stereo pan (Web Audio StereoPannerNode). Not HRTF.
+   */
+  setHeadingPan(headHeading: number, carHeading: number): void {
+    const pan = cabinAudioPanFromHeadYaw(headHeading, carHeading);
+    this.pendingPan = pan;
+    if (this.pannerNode && this.audioContext) {
+      this.pannerNode.pan.setTargetAtTime(pan, this.audioContext.currentTime, 0.08);
+    }
+  }
+
+  /**
    * Check if wind audio is currently active
    */
   isPlaying(): boolean {
@@ -216,6 +234,11 @@ export class WindAudio {
     if (this.filterNode) {
       this.filterNode.disconnect();
       this.filterNode = null;
+    }
+
+    if (this.pannerNode) {
+      this.pannerNode.disconnect();
+      this.pannerNode = null;
     }
 
     if (this.gainNode) {

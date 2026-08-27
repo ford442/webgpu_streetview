@@ -15,6 +15,7 @@ import {
     COMPUTE_CHORES_WORKGROUP_SIZE,
     DEVICE_LABELS,
     OPTIONAL_DEVICE_FEATURES,
+    OPTIONAL_FEATURES_ATTEMPTED,
     type AdapterCapabilitySummary,
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
@@ -23,6 +24,11 @@ import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 export interface CollectOptionalFeaturesOptions {
     /** Request timestamp-query when the adapter supports it (performance overlay). */
     enableTimestampQueries?: boolean;
+    /**
+     * Skip `core-features-and-limits` when the adapter was requested in
+     * compatibility mode (`?gpu=compat`) so we do not undo that knob.
+     */
+    featureLevel?: AdapterFeatureLevel | 'unknown';
 }
 
 /**
@@ -108,13 +114,27 @@ export function collectOptionalDeviceFeatures(
     options: CollectOptionalFeaturesOptions = {},
 ): GPUFeatureName[] {
     const features: GPUFeatureName[] = [];
-    if (adapter.features.has(OPTIONAL_DEVICE_FEATURES.float32Filterable)) {
-        features.push(OPTIONAL_DEVICE_FEATURES.float32Filterable);
-    }
-    if (options.enableTimestampQueries !== false
-        && adapter.features.has(OPTIONAL_DEVICE_FEATURES.timestampQuery)) {
-        features.push(OPTIONAL_DEVICE_FEATURES.timestampQuery);
-    }
+    const tryAdd = (name: GPUFeatureName, extraGate = true): void => {
+        if (!extraGate) return;
+        if (adapter.features.has(name)) features.push(name);
+    };
+
+    tryAdd(OPTIONAL_DEVICE_FEATURES.float32Filterable);
+
+    const timestamps = options.enableTimestampQueries !== false;
+    tryAdd(OPTIONAL_DEVICE_FEATURES.timestampQuery, timestamps);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.timestampQueryInsidePasses, timestamps);
+
+    tryAdd(OPTIONAL_DEVICE_FEATURES.subgroups);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.shaderF16);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.rg11b10ufloatRenderable);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.clipDistances);
+    tryAdd(
+        OPTIONAL_DEVICE_FEATURES.coreFeaturesAndLimits,
+        options.featureLevel !== 'compatibility',
+    );
+
     return features;
 }
 
@@ -135,10 +155,7 @@ export function buildCapabilityMatrix(
     return {
         weatherPostProcessMode,
         requiredLimits,
-        optionalFeaturesAttempted: [
-            OPTIONAL_DEVICE_FEATURES.float32Filterable,
-            OPTIONAL_DEVICE_FEATURES.timestampQuery,
-        ],
+        optionalFeaturesAttempted: [...OPTIONAL_FEATURES_ATTEMPTED],
         optionalFeaturesEnabled: enabledFeatures,
         timestampQueriesAvailable: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.timestampQuery),
         temporalDepthPingPong: weatherPostProcessMode === 'compute',

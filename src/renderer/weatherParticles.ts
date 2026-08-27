@@ -2,9 +2,8 @@
  * weatherParticles.ts — gating + grid policy for compute-path precipitation.
  *
  * True GPU particles are an Ultra / `?weather=compute` enhancement. The
- * fragment weather path and the WebGL fallback stay purely procedural so the
- * default look does not change. Low and Medium quality never allocate the
- * storage textures.
+ * fragment weather path stays purely procedural so the default look does not
+ * change. Low and Medium quality never allocate the storage textures.
  *
  * Particle *controls* (wind, rain, snow, speed) already live in the 40-float
  * weather block — this module does not add uniforms.

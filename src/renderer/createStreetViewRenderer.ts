@@ -24,9 +24,9 @@ export interface RendererCreateResult {
 /**
  * Create the Street View post-process renderer.
  *
- * WebGPU is required this phase. WebGL weather (`WebGLFallbackRenderer`) is
- * retained in the repo for a later opt-in wave but is never constructed here —
- * including when `?renderer=webgl` / localStorage asks for it.
+ * WebGPU is required. The WebGL2 weather class was removed from the runtime
+ * module graph; GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts`
+ * for tests/docs only. `?renderer=webgl` still probes WebGPU only.
  */
 export async function createStreetViewRenderer(
     canvas: HTMLCanvasElement,
@@ -49,8 +49,8 @@ export async function createStreetViewRenderer(
 
     if (webglPreferenceDeferred) {
         console.warn(
-            '[Renderer] WebGL weather path is deferred this phase; probing WebGPU only. ' +
-            'A later wave may restore ?renderer=webgl as an opt-in.',
+            '[Renderer] WebGL weather is a GLSL reference only; probing WebGPU. ' +
+            'There is no live GL weather backend.',
         );
     }
 

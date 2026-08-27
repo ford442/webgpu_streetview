@@ -30,7 +30,7 @@ export interface WebGpuProbeRecord {
   reason: string;
   browserBrand: BrowserBrand;
   preference: RendererBackendPreference;
-  /** True when URL/localStorage asked for webgl; GL weather is deferred this phase. */
+  /** True when URL/localStorage asked for webgl; there is no live GL weather backend. */
   webglPreferenceDeferred: boolean;
   adapter?: WebGpuProbeAdapterInfo;
   capabilityMatrix?: DeviceCapabilityMatrix;

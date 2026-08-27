@@ -9,6 +9,9 @@ export interface ExifGpsOptions {
   panoId?: string;
   timestamp: string;
   buildVersion?: string;
+  imageDate?: string;
+  lookId?: string;
+  vehicleType?: string;
 }
 
 type Dms = [[number, number], [number, number], [number, number]];
@@ -41,11 +44,20 @@ function encodeUserComment(comment: string): string {
  * Returns a new data URL; the input must already be JPEG-encoded (piexifjs operates on JPEG only).
  */
 export function embedExifGps(jpegDataUrl: string, options: ExifGpsOptions): string {
-  const { lat, lng, heading, pitch, zoom, panoId, timestamp, buildVersion } = options;
+  const { lat, lng, heading, pitch, zoom, panoId, timestamp, buildVersion, imageDate, lookId, vehicleType } = options;
   const normalizedHeading = ((heading % 360) + 360) % 360;
 
   const userComment = encodeUserComment(
-    JSON.stringify({ heading, pitch, zoom, panoId: panoId ?? null, buildVersion: buildVersion ?? null }),
+    JSON.stringify({
+      heading,
+      pitch,
+      zoom,
+      panoId: panoId ?? null,
+      buildVersion: buildVersion ?? null,
+      imageDate: imageDate ?? null,
+      lookId: lookId ?? null,
+      vehicleType: vehicleType ?? null,
+    }),
   );
 
   const exifDict = {

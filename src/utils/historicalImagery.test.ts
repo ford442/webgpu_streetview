@@ -3,6 +3,7 @@ import {
   buildSamplePoints,
   dedupeByDate,
   formatImageDate,
+  pickHistoricalEntryForYear,
   readHistoricalCache,
   writeHistoricalCache,
   type HistoricalPanoEntry,
@@ -97,6 +98,24 @@ describe('formatImageDate', () => {
 
   it('passes through unrecognized formats untouched', () => {
     expect(formatImageDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('pickHistoricalEntryForYear', () => {
+  const list: HistoricalPanoEntry[] = [
+    { panoId: 'a', imageDate: '2012-06', lat: 0, lng: 0, copyright: null },
+    { panoId: 'b', imageDate: '2019-03', lat: 0, lng: 0, copyright: null },
+  ];
+
+  it('matches YYYY prefix on imageDate', () => {
+    expect(pickHistoricalEntryForYear(list, 2012)?.panoId).toBe('a');
+    expect(pickHistoricalEntryForYear(list, '2019')?.panoId).toBe('b');
+  });
+
+  it('returns null for unknown years or junk', () => {
+    expect(pickHistoricalEntryForYear(list, '1999')).toBeNull();
+    expect(pickHistoricalEntryForYear(list, 'noir')).toBeNull();
+    expect(pickHistoricalEntryForYear([], '2012')).toBeNull();
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  cabinAudioPanFromHeadYaw,
   NIGHT_BASE_FLOOR,
   NIGHT_SKY_FLOOR,
   WEATHER_FALL_Y_SIGN,
@@ -71,5 +72,13 @@ describe('carSpatialModel wiper poses', () => {
     // Symmetric outward raise.
     expect(on.left).toBeLessThan(park.left);
     expect(on.right).toBeGreaterThan(park.right);
+  });
+});
+
+describe('carSpatialModel cabin audio pan', () => {
+  it('pans right when the head looks right of the chassis', () => {
+    expect(cabinAudioPanFromHeadYaw(90, 0)).toBeCloseTo(1, 5);
+    expect(cabinAudioPanFromHeadYaw(0, 0)).toBeCloseTo(0, 5);
+    expect(cabinAudioPanFromHeadYaw(-45, 0)).toBeCloseTo(-0.5, 5);
   });
 });

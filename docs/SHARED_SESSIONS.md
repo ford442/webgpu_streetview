@@ -19,6 +19,7 @@ Host browser                         Guest browser
 - **Media path**: peer-to-peer `RTCDataChannel` (`streetview-sync` label), hub topology (host ↔ each guest).
 - **Signaling**: 6-character room codes via Supabase Realtime — SDP offers/answers and trickle ICE only.
 - **Weather sync**: host broadcasts a compact `weatherPreset` string (`tod:night|rain:0.50|…`) at 10 Hz with POV; guests apply time-of-day and weather sliders when it changes.
+- **Film-set v2**: the same 10 Hz payload may include `lookId`, `imageDate` (`YYYY-MM`), `vehicleType` (VehicleManager SSOT), `cabinView` (`driver` | `chauffeur`), `carHeading`, and informational `hdr`. Unknown look/vehicle/cabin values are dropped — guests never white-screen. Year change is the host `panoId` teleport through hold-pause (`armHold()`); guests do not crawl historical imagery or scrape a second Maps canvas. `hdr` is not a guest display command.
 
 ## STUN vs TURN
 
@@ -61,12 +62,19 @@ REACT_APP_TURN_CREDENTIAL=secret
 
 ## Guest follow modes
 
-Current behavior: **hard follow** — guests teleport to the host pano and mirror heading/pitch/zoom. Free-look offset for guests is a future UX option; the data model already carries full POV for extension.
+Guests **lock to the host film set**: panorama (via hold-pause teleport), named look, vehicle, view mode (freelook/car), and car-body yaw. After the first packet seeds heading/pitch, **head look stays local** so guests can look around the cabin and street. Host zoom remains applied. This replaces the earlier hard-follow of heading/pitch every tick.
+
+Keyed Playwright covering a live guest join is a follow-up; unit tests cover seq ordering and unknown-field drops. Manual/keyed bar: `window.__STREETVIEW_PROBE__.getWarnings()` empty after hops.
+
+## Cinema capture
+
+Cinema WebM records the **Street View renderer canvas** (graded road / weather). The Three.js cabin is a separate overlay today, so clips are **road-only** until the single-GPUDevice cabin work composites glass + road into one swapchain. A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. Stills use the same canvas plus JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
 
 ## Billing / imagery
 
 - Shared sessions **never** fetch Street View Static API imagery.
 - Signaling carries handshake metadata only — no Google tiles are cached by the session layer (`swPolicy` remains `network-only` for `maps.googleapis.com`).
+- Rearview Static feed stays opt-in, throttled, default off — this feature does not turn it on.
 
 ## Related files
 
@@ -77,3 +85,10 @@ Current behavior: **hard follow** — guests teleport to the host pano and mirro
 | `src/app/sharedSessionSync.ts` | Pure payload builders |
 | `src/utils/iceServers.ts` | STUN + optional TURN resolution |
 | `src/utils/weatherPresetSync.ts` | Weather preset serialize/parse |
+| `src/utils/studioLink.ts` | Share URLs: `?look=&year=&vehicle=` plus location |
+| `src/utils/cinemaSidecar.ts` | WebM metadata JSON (road-only capture) |
+| `src/utils/exifGps.ts` | JPEG GPS + UserComment film-set fields |
+
+## Audio
+
+Wind/rain bed stays in the Web Audio graph. v1 spatialization is `StereoPannerNode` from head-vs-car yaw. **HRTF convolution is out of scope** until a follow-up wasm export after emcc (no new WAT).
