@@ -215,7 +215,9 @@ export function createMaterials(
     // Stitch thread color where the height field raises the seam dashes
     const dash = 16;
     ctx.putImageData(img, 0, 0);
-    ctx.fillStyle = 'rgba(196,168,120,0.9)';
+    ctx.fillStyle = config.type === 'cortianics'
+      ? 'rgba(201,162,39,0.95)'
+      : 'rgba(196,168,120,0.9)';
     for (const row of [Math.floor(256 * 0.06), Math.floor(256 * 0.94)]) {
       for (let x = 0; x < 256; x += dash) {
         ctx.fillRect(x, row - 1, dash * 0.55, 3);
@@ -256,8 +258,11 @@ export function createMaterials(
     neon: 0x0a0a1a,
     clinical: 0xf0f0f0,
   };
-  const dashColor = dashboardColors[config.theme] ?? 0x1a1a1a;
+  const dashColor = config.type === 'cortianics'
+    ? 0x101214
+    : dashboardColors[config.theme] ?? 0x1a1a1a;
   const clinical = config.theme === 'clinical';
+  const cortianics = config.type === 'cortianics';
 
   // Soft-touch dash: near-dielectric with a faint sheen so grazing light
   // picks up the matte-plastic look; clinical theme reads as hard gloss.
@@ -280,14 +285,15 @@ export function createMaterials(
   });
 
   const leather = new THREE.MeshPhysicalMaterial({
+    color: cortianics ? 0x1a1c1e : 0xffffff,
     map: leatherTex,
     normalMap: leatherNormalTex,
     normalScale: new THREE.Vector2(0.75, 0.75),
-    roughness: clinical ? 0.62 : 0.7,
+    roughness: cortianics ? 0.58 : clinical ? 0.62 : 0.7,
     metalness: 0,
-    sheen: 0.42,
+    sheen: cortianics ? 0.55 : 0.42,
     sheenRoughness: 0.62,
-    sheenColor: new THREE.Color(clinical ? 0x8899aa : 0x3a2a1a),
+    sheenColor: new THREE.Color(cortianics ? 0x2a2c2e : clinical ? 0x8899aa : 0x3a2a1a),
     envMapIntensity: 0.48,
     side: THREE.DoubleSide,
   });

@@ -75,7 +75,7 @@ export interface DashboardUIProps {
   rearFeedEnabled?: boolean;
   /** Human-readable feed state (off / paused / request count) for the row. */
   rearFeedStatus?: string;
-  currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine';
+  currentVehicle?: 'sedan' | 'convertible' | 'science-lab' | 'limousine' | 'cortianics';
   rainIntensity: number;
   snowIntensity?: number;
   wind?: number;
@@ -268,6 +268,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
         return 'Lab';
       case 'limousine':
         return 'Limo';
+      case 'cortianics':
+        return 'Cortianics';
       default:
         return 'Sedan';
     }

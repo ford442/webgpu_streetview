@@ -383,6 +383,29 @@ export class CarInteriorBuilder {
     }
 
     private buildRoof(): void {
+        if (this.vehicleConfig.type === 'cortianics') {
+            const roofFrameGeo = new THREE.BoxGeometry(2.0, 0.04, 2.0);
+            const roofFrameMat = new THREE.MeshStandardMaterial({
+                color: 0x0f1012,
+                roughness: 0.82,
+                metalness: 0.06,
+                envMapIntensity: 0.12,
+                side: THREE.DoubleSide,
+            });
+            const roofFrame = new THREE.Mesh(roofFrameGeo, roofFrameMat);
+            roofFrame.position.set(0, 1.62, 0);
+            this.roofGroup.add(roofFrame);
+
+            const panoramicGlass = new THREE.Mesh(
+                new THREE.BoxGeometry(1.55, 0.02, 1.55),
+                createGlassMaterial('#7f9cb0', 0.12),
+            );
+            panoramicGlass.name = 'CortianicsPanoramicRoof';
+            panoramicGlass.position.set(0, 1.58, 0);
+            this.roofGroup.add(panoramicGlass);
+            return;
+        }
+
         const roofGeo = new THREE.BoxGeometry(2.0, 0.05, 2.0);
         const roofMat = new THREE.MeshStandardMaterial({
             color: 0x1e1e1e,
@@ -583,6 +606,9 @@ export class CarInteriorBuilder {
             case 'convertible':
                 this.buildConvertibleFeatures();
                 break;
+            case 'cortianics':
+                this.buildCortianicsFeatures();
+                break;
             default:
                 break;
         }
@@ -667,6 +693,65 @@ export class CarInteriorBuilder {
         const headrest = new THREE.Mesh(sportHeadrestGeo, this.materials.leather);
         headrest.position.set(-0.35, 1.3, 0.5);
         this.interiorGroup.add(headrest);
+    }
+
+    private buildCortianicsFeatures(): void {
+        const carbonOverlayMat = new THREE.MeshPhysicalMaterial({
+            color: 0x1a1c1f,
+            roughness: 0.45,
+            metalness: 0.18,
+            clearcoat: 0.9,
+            clearcoatRoughness: 0.2,
+        });
+        const leftOverlay = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.78, 0.04), carbonOverlayMat);
+        leftOverlay.position.set(-0.905, 1.32, -0.84);
+        leftOverlay.rotation.set(-0.2, 0, -0.1);
+        this.interiorGroup.add(leftOverlay);
+
+        const rightOverlay = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.78, 0.04), carbonOverlayMat);
+        rightOverlay.position.set(0.905, 1.32, -0.84);
+        rightOverlay.rotation.set(-0.2, 0, 0.1);
+        this.interiorGroup.add(rightOverlay);
+
+        const hud = new THREE.Mesh(
+            new THREE.BoxGeometry(0.32, 0.085, 0.045),
+            new THREE.MeshStandardMaterial({
+                color: 0x10151c,
+                emissive: 0x5a7f8a,
+                emissiveIntensity: 0.46,
+                roughness: 0.28,
+                metalness: 0.62,
+            }),
+        );
+        hud.name = 'CortianicsCenterHud';
+        hud.position.set(0.18, 0.995, -0.74);
+        this.interiorGroup.add(hud);
+
+        const ambientStrip = new THREE.Mesh(
+            new THREE.BoxGeometry(0.72, 0.018, 0.02),
+            new THREE.MeshStandardMaterial({
+                color: 0x55120f,
+                emissive: 0xdc201c,
+                emissiveIntensity: 0.45,
+                roughness: 0.35,
+                metalness: 0.2,
+            }),
+        );
+        ambientStrip.name = 'CortianicsAmbientStrip';
+        ambientStrip.position.set(0.18, 0.93, -0.76);
+        this.interiorGroup.add(ambientStrip);
+
+        const clusterGlow = createCabinGlowSprite({
+            kind: 'cluster',
+            color: 0xdc201c,
+            width: 1.4,
+            height: 0.08,
+            useShader: this.quality === 'high',
+            reducedMotion: this.reducedMotion,
+        });
+        clusterGlow.mesh.position.set(0.18, 0.94, -0.755);
+        this.interiorGroup.add(clusterGlow.mesh);
+        (this.result.glowSprites ??= []).push(clusterGlow);
     }
 
     private buildDomeLightFixture(): void {
