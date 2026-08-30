@@ -7,7 +7,7 @@ export class CarInteriorSeatBuilder {
     constructor(
         private interiorGroup: THREE.Group,
         private materials: CarInteriorMaterials,
-        _vehicleConfig: VehicleConfig,
+        private vehicleConfig: VehicleConfig,
         private quality: 'high' | 'medium' | 'low',
         private geometryFactory: GeometryFactory
     ) {}
@@ -48,6 +48,10 @@ export class CarInteriorSeatBuilder {
         headrestPass.position.set(0.45, 1.35, 0.5);
         this.interiorGroup.add(headrestPass);
 
+        if (this.vehicleConfig.type === 'cortianics') {
+            this.buildCortianicsHeadrestCrests();
+        }
+
         const stalkGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.14, 6);
         for (const x of [-0.35, 0.45]) {
             for (const offset of [-0.05, 0.05]) {
@@ -78,9 +82,9 @@ export class CarInteriorSeatBuilder {
 
     private buildSeatDetails(): void {
         const stitchMaterial = new THREE.MeshStandardMaterial({
-            color: 0x9B5523,
+            color: this.vehicleConfig.type === 'cortianics' ? 0xc9a227 : 0x9B5523,
             roughness: 0.58,
-            metalness: 0.0,
+            metalness: this.vehicleConfig.type === 'cortianics' ? 0.35 : 0.0,
             envMapIntensity: 0.3,
         });
 
@@ -184,5 +188,32 @@ export class CarInteriorSeatBuilder {
         rightBolsterP.position.set(0.68, 0.9, 0.52);
         rightBolsterP.rotation.set(-0.15, -0.1, 0);
         this.interiorGroup.add(rightBolsterP);
+    }
+
+    private buildCortianicsHeadrestCrests(): void {
+        const crestFillMaterial = new THREE.MeshStandardMaterial({
+            color: 0xc9a227,
+            roughness: 0.35,
+            metalness: 0.35,
+            side: THREE.DoubleSide,
+        });
+        const crestRingMaterial = new THREE.MeshStandardMaterial({
+            color: 0x896916,
+            roughness: 0.28,
+            metalness: 0.5,
+            side: THREE.DoubleSide,
+        });
+
+        for (const x of [-0.35, 0.45]) {
+            const crestFill = new THREE.Mesh(new THREE.CircleGeometry(0.03, 24), crestFillMaterial);
+            crestFill.name = 'CortianicsCrest';
+            crestFill.position.set(x, 1.36, 0.545);
+            this.interiorGroup.add(crestFill);
+
+            const crestRing = new THREE.Mesh(new THREE.RingGeometry(0.026, 0.034, 24), crestRingMaterial);
+            crestRing.name = 'CortianicsCrest';
+            crestRing.position.set(x, 1.36, 0.546);
+            this.interiorGroup.add(crestRing);
+        }
     }
 }

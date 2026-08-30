@@ -12,7 +12,7 @@ export type { Vec3, GaugeLayoutOverrides, SteeringWheelOverrides } from './vehic
  * Future additions: 'streetcar' | 'trolley' - for urban transit-style interiors
  * with exterior viewport (vs. enclosed car models)
  */
-export type VehicleType = 'sedan' | 'convertible' | 'science-lab' | 'limousine';
+export type VehicleType = 'sedan' | 'convertible' | 'science-lab' | 'limousine' | 'cortianics';
 
 export interface VehicleConfig {
     type: VehicleType;
@@ -156,6 +156,47 @@ export const VEHICLES: Record<VehicleType, VehicleConfig> = {
         dashboardLayout: 'luxury',
         accentColor: '#FFD700',
         theme: 'light',
+    },
+    cortianics: {
+        type: 'cortianics',
+        name: 'Cortianics GT',
+        description: 'Charcoal sport cabin with gold crest stitching, panoramic roof, and a night-red cluster.',
+        features: [
+            'Panoramic glass roof',
+            'Gold crest headrests',
+            'Carbon-fiber pillars',
+            'Floating center HUD',
+            'Red night ambient strip',
+            'Y-spoke sport wheel',
+            'Perforated leather',
+        ],
+        interiorModel: 'cortianics_interior',
+        hasRoof: true,
+        seatCount: 4,
+        hasRearviewMirror: true,
+        hasSteeringWheel: true,
+        hasSideMirrors: true,
+        hasWipers: true,
+        hasDashboard: true,
+        hasGauges: true,
+        cameraPosition: { x: -0.34, y: 1.22, z: 0.04 },
+        defaultSeatOffset: 0.26,
+        cameraFov: { base: 56, min: 28, max: 86 },
+        gaugeLayout: {
+            speed: { x: -0.50, y: 0.72, z: -0.82 },
+            tacho: { x: -0.16, y: 0.72, z: -0.82 },
+            fuel: { y: 0.60, z: -0.82 },
+            temp: { y: 0.60, z: -0.82 },
+            dialRadius: 0.082,
+        },
+        steeringWheel: {
+            position: { x: -0.34, y: 0.86, z: -0.50 },
+            columnPosition: { x: -0.34, y: 0.70, z: -0.60 },
+            rimRadius: 0.155,
+        },
+        dashboardLayout: 'luxury',
+        accentColor: '#C9A227',
+        theme: 'dark',
     },
 };
 
