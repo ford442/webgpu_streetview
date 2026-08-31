@@ -14,8 +14,8 @@ export interface UseHistoricalTimelineResult {
 }
 
 /**
- * Combines the current panorama's own capture date (via `resolvePanoLocation`,
- * cached per pano id) with a nearby-imagery crawl (`useHistoricalImagery`) to
+ * Combines the current panorama's capture date (`StreetViewService`, not
+ * Geocoding) with a nearby-imagery crawl (`useHistoricalImagery`) to
  * produce the full list of dates the `<HistoricalTimeline />` slider scrubs
  * through.
  */
@@ -38,7 +38,7 @@ export function useHistoricalTimeline(
     }
     setCurrentPanoId(panorama.getPano() || null);
 
-    resolvePanoLocation(panorama)
+    resolvePanoLocation(panorama, { includeAddress: false })
       .then((info) => {
         if (cancelled || !info) return;
         setCurrentImageDate(info.captureDate);

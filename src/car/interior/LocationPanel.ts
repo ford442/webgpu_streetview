@@ -90,7 +90,7 @@ export class LocationPanel {
   private contentKey(): string {
     const i = this.info;
     return [
-      i?.address ?? i?.description ?? '',
+      i?.description ?? '',
       i?.lat != null ? i.lat.toFixed(5) : '',
       i?.lng != null ? i.lng.toFixed(5) : '',
       i?.captureDate ?? '',
@@ -129,7 +129,7 @@ export class LocationPanel {
     ctx.strokeRect(9, 9, W - 18, H - 18);
 
     const i = this.info;
-    const road = i?.address || i?.description || null;
+    const road = i?.description || null;
     const coords =
       i?.lat != null && i?.lng != null
         ? `${i.lat.toFixed(5)}, ${i.lng.toFixed(5)}`

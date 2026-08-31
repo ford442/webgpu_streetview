@@ -252,6 +252,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const pano = panoramaRef.current;
     if (!pano || isTransitioning) return;
 
+    // Cruise / WASD hop: Street View link graph only — never Geocoder.
     const links = pano.getLinks();
     if (!links) return;
 

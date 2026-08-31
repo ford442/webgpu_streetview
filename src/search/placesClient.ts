@@ -10,6 +10,7 @@ import {
   type PlaceSearchBlockReason,
   type PlaceSearchMeter,
 } from './placeSearchBudget';
+import { isGeocodeDenied, noteGeocodeStatus } from './geocodeAuth';
 import {
   NEARBY_CATEGORY_PLACE_TYPES,
   type NearbyPoi,
@@ -135,11 +136,14 @@ export async function resolvePlaceId(placeId: string): Promise<ResolvedDestinati
 export async function geocodeTextQuery(query: string): Promise<ResolvedDestination | null> {
   const allowed = gate('geocode');
   if (!allowed.ok) return null;
+  if (isGeocodeDenied()) return null;
   if (typeof google === 'undefined' || !google.maps?.Geocoder) return null;
   const geocoder = new google.maps.Geocoder();
   return new Promise((resolve) => {
     geocoder.geocode({ address: query }, (results, status) => {
-      if (status === 'OK' && results?.[0]?.geometry?.location) {
+      const statusText = String(status);
+      noteGeocodeStatus(statusText);
+      if (statusText === 'OK' && results?.[0]?.geometry?.location) {
         getPlaceSearchBudget().recordSuccess('geocode');
         const loc = results[0].geometry.location;
         resolve({
@@ -147,7 +151,7 @@ export async function geocodeTextQuery(query: string): Promise<ResolvedDestinati
           lng: loc.lng(),
           label: results[0].formatted_address || query,
         });
-      } else if (status === 'ZERO_RESULTS') {
+      } else if (statusText === 'ZERO_RESULTS') {
         getPlaceSearchBudget().recordSuccess('geocode');
         resolve(null);
       } else {

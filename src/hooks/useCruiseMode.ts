@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
 import { gearChainedHopIntervalMs } from '../car/VehicleDynamics';
+import { isGeocodeDenied } from '../search/geocodeAuth';
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
@@ -101,9 +102,8 @@ export function useCruiseMode({
         .catch((err) => console.warn('[CruiseMode] Failed to load offline route graph nodes', err));
     }
     /**
-     * One panorama hop along the committed travel heading. Returns true when
-     * the panorama actually changed, and self-corrects the travel heading to
-     * the direction we really moved so the next hop follows the road.
+     * Graph walk: getLinks → heading nearest cruiseHeadingRef → setPano.
+     * Must not call Geocoder. `advanceSafe` is Street View links only.
      */
     const singleHop = async (): Promise<boolean> => {
       const panoIdBefore = panorama.getPano();
@@ -173,6 +173,8 @@ export function useCruiseMode({
 
       if (movedAny) {
         cruiseFailCountRef.current = 0;
+      } else if (isGeocodeDenied()) {
+        // Address lookup is not the hop. Denial is logged once in geocodeAuth.
       } else {
         cruiseFailCountRef.current += 1;
         console.warn(`[CruiseMode] Hop did not advance (${cruiseFailCountRef.current}/3)`);

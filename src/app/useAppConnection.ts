@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { RendererBackendType } from '../renderer/RendererBackend';
 import type { MapsLoadStatus } from '../components/StreetView';
 import { migrateLocalStorageToIndexedDB } from '../offline/offlinePersistence';
@@ -23,7 +23,6 @@ export interface UseAppConnectionResult {
   isCanvasReady: boolean;
   navPending: boolean;
   setNavPending: React.Dispatch<React.SetStateAction<boolean>>;
-  geocoderRef: React.MutableRefObject<google.maps.Geocoder | null>;
   handleStart: () => void;
   handleWebGPUStatus: (available: boolean) => void;
   handleBackendInfo: (info: {
@@ -54,7 +53,6 @@ export function useAppConnection({
   } | null>(null);
   const [isCanvasReady, setIsCanvasReady] = useState(false);
   const [navPending, setNavPending] = useState(false);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
   const handleWebGPUStatus = useCallback((available: boolean) => {
     setWebGPUAvailable(available);
@@ -108,7 +106,6 @@ export function useAppConnection({
     isCanvasReady,
     navPending,
     setNavPending,
-    geocoderRef,
     handleStart,
     handleWebGPUStatus,
     handleBackendInfo,

@@ -82,6 +82,11 @@ Places. Nearby POIs default **off** for the session.
 **Meters counted toward the session budget:** `autocomplete`, `placeDetails`,
 `nearby`, `geocode` (forward), `staticPreview`, `streetViewLookup` (coverage).
 
+**Reverse-geocode** (`src/utils/panoLocation.ts`) is opt-in (`includeAddress`) for
+search / globe / full address, cached per panorama id. Cruise hops and the car
+HUD use `getLocation().description` only — they do **not** call Geocoding.
+`REQUEST_DENIED` logs once (`geocodeAuth`) and is never treated as a stuck hop.
+
 **Kill switch** — from DevTools:
 
 ```js
@@ -97,7 +102,7 @@ traffic.
 
 - [ ] Nearby toggle still defaults **off**
 - [ ] Coordinate / pano-id submit does not call Autocomplete
-- [ ] Unit tests pass: `npx vitest run src/search/parseSearchQuery.test.ts src/search/placeSearchBudget.test.ts`
+- [ ] Unit tests pass: `npx vitest run src/search/parseSearchQuery.test.ts src/search/placeSearchBudget.test.ts src/search/geocodeAuth.test.ts src/search/placesClient.geocode.test.ts src/utils/panoLocation.test.ts`
 - [ ] Google imagery is still `network-only` in `src/offline/swPolicy.ts`
 
 ### Rear-view mirror imagery (Street View **Static** API)

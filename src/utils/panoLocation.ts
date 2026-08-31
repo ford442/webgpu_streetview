@@ -1,16 +1,17 @@
 /**
  * panoLocation.ts
  *
- * Resolves human-readable location metadata for a Street View panorama using
- * the already-loaded Google Maps JS API (no extra dependency):
- *   - description / lat-lng / pano id come straight from `panorama.getLocation()`
- *   - a fuller street address is reverse-geocoded via `google.maps.Geocoder`
- *   - the capture date (`imageDate`) is fetched via `StreetViewService.getPanorama`
+ * Location labels for a Street View panorama:
+ *   - HUD uses `panorama.getLocation().description` (sync, no extra APIs)
+ *   - Capture date comes from `StreetViewService.getPanorama` (not Geocoding)
+ *   - Reverse-geocode (`Geocoder.geocode({ location })`) is opt-in only:
+ *     search / globe drop / explicit full-address. Never on cruise hops.
  *
- * Results are cached per pano id so we never repeat a lookup, and concurrent
- * requests for the same pano are de-duplicated. All network fields degrade
- * gracefully to `null` on failure or quota limits.
+ * Cached per pano id. REQUEST_DENIED trips a session circuit (geocodeAuth)
+ * so we log once and skip further Geocoder calls.
  */
+
+import { isGeocodeDenied, noteGeocodeStatus } from '../search/geocodeAuth';
 
 export interface PanoLocationInfo {
   panoId: string;
@@ -18,10 +19,18 @@ export interface PanoLocationInfo {
   description: string | null;
   lat: number | null;
   lng: number | null;
-  /** Reverse-geocoded street address (enriched, async). */
+  /** Reverse-geocoded street address — only after `includeAddress`. */
   address: string | null;
-  /** Capture date string, e.g. "2022-05" (async). */
+  /** Capture date string, e.g. "2022-05" (async, Street View metadata). */
   captureDate: string | null;
+}
+
+export interface ResolvePanoLocationOptions {
+  /**
+   * Call Geocoding API for a formatted street address.
+   * Default false — cruise / HUD / hop must never set this.
+   */
+  includeAddress?: boolean;
 }
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -29,7 +38,6 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 /** Quantize a bearing in degrees to an 8-point compass label. */
 export function headingToCompass(heading: number): string {
   const h = (((heading % 360) + 360) % 360);
-  // Math.round(h / 45) % 8 is always in [0,7], a valid index into COMPASS.
   return COMPASS[Math.round(h / 45) % 8]!;
 }
 
@@ -52,12 +60,14 @@ function getSvService(): google.maps.StreetViewService | null {
 }
 
 function reverseGeocode(latLng: google.maps.LatLng): Promise<string | null> {
+  if (isGeocodeDenied()) return Promise.resolve(null);
   const gc = getGeocoder();
   if (!gc) return Promise.resolve(null);
   return new Promise((resolve) => {
     gc.geocode({ location: latLng }, (results, status) => {
-      // OVER_QUERY_LIMIT / ZERO_RESULTS / errors all fall back to null.
-      if (status === 'OK' && results && results[0]) {
+      const statusText = String(status);
+      noteGeocodeStatus(statusText);
+      if (statusText === 'OK' && results && results[0]) {
         resolve(results[0].formatted_address ?? null);
       } else {
         resolve(null);
@@ -80,14 +90,9 @@ function fetchImageDate(panoId: string): Promise<string | null> {
   });
 }
 
-/** Synchronous, no-network base info from the loaded panorama. */
-export function getPanoLocationBase(
-  panorama: google.maps.StreetViewPanorama
-): PanoLocationInfo | null {
+function readBase(panorama: google.maps.StreetViewPanorama): PanoLocationInfo | null {
   const panoId = panorama.getPano();
   if (!panoId) return null;
-  if (cache.has(panoId)) return cache.get(panoId)!;
-
   const loc = panorama.getLocation();
   const latLng = loc?.latLng ?? panorama.getPosition() ?? null;
   return {
@@ -100,36 +105,78 @@ export function getPanoLocationBase(
   };
 }
 
+/** Synchronous HUD fields from the loaded panorama — no Geocoder, no SV metadata. */
+export function getPanoLocationBase(
+  panorama: google.maps.StreetViewPanorama
+): PanoLocationInfo | null {
+  const panoId = panorama.getPano();
+  if (!panoId) return null;
+  const cached = cache.get(panoId);
+  if (cached) {
+    return {
+      ...cached,
+      description: cached.description ?? readBase(panorama)?.description ?? null,
+    };
+  }
+  return readBase(panorama);
+}
+
 /**
- * Resolve full location info for the current panorama, enriching the base data
- * with a reverse-geocoded address and capture date. Cached per pano id.
+ * Enrich location with capture date, and optionally a reverse-geocoded address.
+ * Cached per pano id. `includeAddress` is opt-in (search / globe / full address).
  */
 export function resolvePanoLocation(
-  panorama: google.maps.StreetViewPanorama
+  panorama: google.maps.StreetViewPanorama,
+  options?: ResolvePanoLocationOptions
 ): Promise<PanoLocationInfo | null> {
-  const base = getPanoLocationBase(panorama);
+  const includeAddress = options?.includeAddress === true;
+  const base = readBase(panorama);
   if (!base) return Promise.resolve(null);
 
   const { panoId } = base;
-  if (cache.has(panoId)) return Promise.resolve(cache.get(panoId)!);
-  const pending = inFlight.get(panoId);
+  const cached = cache.get(panoId);
+  if (cached && !includeAddress) return Promise.resolve(cached);
+  if (cached && includeAddress && (cached.address != null || isGeocodeDenied())) {
+    return Promise.resolve(cached);
+  }
+
+  const flightKey = `${panoId}:${includeAddress ? 'addr' : 'meta'}`;
+  const pending = inFlight.get(flightKey);
   if (pending) return pending;
 
-  const latLng = base.lat != null && base.lng != null
+  const latLng = includeAddress && base.lat != null && base.lng != null
     ? new google.maps.LatLng(base.lat, base.lng)
     : null;
 
   const task = (async (): Promise<PanoLocationInfo> => {
+    const prev = cache.get(panoId);
     const [address, captureDate] = await Promise.all([
-      latLng ? reverseGeocode(latLng).catch(() => null) : Promise.resolve(null),
-      fetchImageDate(panoId).catch(() => null),
+      includeAddress && latLng
+        ? reverseGeocode(latLng).catch(() => null)
+        : Promise.resolve(prev?.address ?? null),
+      prev?.captureDate
+        ? Promise.resolve(prev.captureDate)
+        : fetchImageDate(panoId).catch(() => null),
     ]);
-    const info: PanoLocationInfo = { ...base, address, captureDate };
+    const info: PanoLocationInfo = {
+      ...base,
+      description: base.description ?? prev?.description ?? null,
+      address: includeAddress ? address : (prev?.address ?? null),
+      captureDate: captureDate ?? prev?.captureDate ?? null,
+    };
     cache.set(panoId, info);
-    inFlight.delete(panoId);
+    inFlight.delete(flightKey);
     return info;
   })();
 
-  inFlight.set(panoId, task);
+  inFlight.set(flightKey, task);
   return task;
+}
+
+/** Test-only: drop caches and the Geocoder singleton. */
+export function resetPanoLocationForTests(): void {
+  cache.clear();
+  inFlight.clear();
+  geocoder = null;
+  svService = null;
 }

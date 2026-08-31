@@ -49,9 +49,6 @@ export function StreetViewStage({
           onPanoramaReady={(pano) => {
             setPanorama(pano);
             maps.setCanvasError(null);
-            if (!connection.geocoderRef.current) {
-              connection.geocoderRef.current = new google.maps.Geocoder();
-            }
           }}
         />
       </div>

@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { useCruiseMode } from '../useCruiseMode';
+import { noteGeocodeStatus, resetGeocodeAuthForTests } from '../../search/geocodeAuth';
 
 /**
  * Cruise ticks are gear-aware: P/N park, D does one hop, 2/3 chain extra hops
@@ -55,7 +56,9 @@ async function runTick(view: { result: { current: { setIsCruiseMode: (v: boolean
 }
 
 describe('useCruiseMode gear-aware hops', () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -109,3 +112,44 @@ describe('useCruiseMode gear-aware hops', () => {
     expect(advanceSafe).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useCruiseMode geocode denial is not a stuck hop', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetGeocodeAuthForTests();
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    resetGeocodeAuthForTests();
+  });
+
+  it('keeps cruise on and does not count stuck hops when Geocoding is denied', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    noteGeocodeStatus('REQUEST_DENIED');
+
+    const harness = makePanorama(['stuck']);
+    const advanceSafe = vi.fn(async () => {});
+    const view = renderHook(() =>
+      useCruiseMode({
+        panorama: harness.pano,
+        advanceSafe,
+        mapsAuthFailed: false,
+        heading: 0,
+        isTransitioning: false,
+        setNavPending: () => {},
+        hopsPerTick: () => 1,
+      })
+    );
+    act(() => view.result.current.setIsCruiseMode(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12000);
+    });
+    expect(view.result.current.isCruiseMode).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+    expect(advanceSafe).toHaveBeenCalled();
+    expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).not.toMatch(/Hop did not advance/);
+  });
+});
+

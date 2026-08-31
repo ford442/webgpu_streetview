@@ -10,6 +10,7 @@ Use this before every production deploy to `test.1ink.us` or `go.1ink.us`. Most 
   - `http://localhost:3000/*` (and 3001 for good measure)
 - [ ] **Maps JavaScript API** is enabled for the project (APIs & Services → Library).
 - [ ] **Maps Directions API** is enabled (needed for route planning / globe).
+- [ ] **Geocoding API** is enabled **and** listed on this key’s API restrictions (same HTTP-referrer browser key as Maps JS — not a Compute Engine credential). Without it, reverse-geocode and address search return `REQUEST_DENIED`.
 - [ ] Billing account is linked to the project and has no payment failures / alerts firing.
 - [ ] (Recommended) Budget alerts + "prevent overspend" are configured.
 

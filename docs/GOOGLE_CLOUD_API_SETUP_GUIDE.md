@@ -47,16 +47,19 @@ This guide provides step-by-step instructions for safely setting up Google Cloud
 **Required APIs**:
 1. Maps JavaScript API
 2. Maps Directions API
+3. **Geocoding API** (reverse-geocode on hops + text address search — **not** covered by Maps JavaScript API alone)
 
 **Enable them**:
 1. Go to: **APIs & Services → Enabled APIs & Services**
 2. Click **"+ Enable APIs and Services"**
 3. Search for **"Maps JavaScript API"**
 4. Click **"Enable"**
-5. Repeat for **"Maps Directions API"**
+5. Repeat for **"Maps Directions API"** and **"Geocoding API"**
+
+Enable these on the **same GCP project** as the HTTP-referrer **browser** key used by `test.1ink.us` / `go.1ink.us`. Enabling Geocoding only on a Compute Engine / IP-restricted credential does **not** authorize Maps JS `Geocoder` in the browser (`REQUEST_DENIED`).
 
 **Verify**:
-- You should see both APIs in your **Enabled APIs & Services** list
+- You should see all three APIs in your **Enabled APIs & Services** list
 - Check the **Library** tab if you need to find other APIs
 
 ---
@@ -77,6 +80,7 @@ This guide provides step-by-step instructions for safely setting up Google Cloud
    - Select **"Restrict key"**
    - Check: **Maps JavaScript API**
    - Check: **Maps Directions API**
+   - Check: **Geocoding API** (required for `google.maps.Geocoder`; otherwise hops log `REQUEST_DENIED`)
    - (Uncheck any others)
 3. Click **"Save"**
 

@@ -19,8 +19,10 @@ export interface TeleportSafeOptions {
 /**
  * Safe wrapper around `advance` and `teleport` that:
  *  - Waits for the *current* panorama to be ready.
- *  - Pre-fetches the *target* panorama (if lat/lng is known).
+ *  - Pre-fetches the *target* panorama (if lat/lng is known) via StreetViewService.
  *  - Returns a Promise that resolves when the transition has finished.
+ *
+ * Does not call Geocoder. Cruise hops are `getLinks` + `setPano` only.
  */
 export function useAdvanceSafe() {
   const { isPanoramaReady, readyPromise, advance, teleport, teleportToPano } = useStreetView();

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
 import { NEARBY_CATEGORY_LABELS, NEARBY_POI_CATEGORIES } from '../search/poiModel';
+import { useGeocodeDenied } from '../search/geocodeAuth';
 
 export interface PlaceSearchBarProps {
   search: UsePlaceSearchResult;
@@ -13,6 +14,7 @@ const stop = (e: React.SyntheticEvent) => {
 
 const PlaceSearchBar: React.FC<PlaceSearchBarProps> = ({ search, compact = false }) => {
   const listId = 'place-search-suggestions';
+  const geocodeDenied = useGeocodeDenied();
 
   return (
     <div
@@ -67,6 +69,12 @@ const PlaceSearchBar: React.FC<PlaceSearchBarProps> = ({ search, compact = false
           {search.isSearching ? '…' : 'Go'}
         </button>
       </form>
+
+      {geocodeDenied && (
+        <div style={{ fontSize: 11, color: 'rgba(255,200,120,0.95)', lineHeight: 1.35 }}>
+          Address search needs Geocoding on the HTTP-referrer browser key. Coordinate and pano-id paste still work.
+        </div>
+      )}
 
       {search.suggestions.length > 0 && (
         <ul

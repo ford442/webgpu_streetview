@@ -47,6 +47,7 @@ import { useAppConnection } from './useAppConnection';
 import { ConnectedChrome } from './shell/ConnectedChrome';
 import { MapsAuthModal } from './shell/MapsAuthModal';
 import { OfflineStatusToast } from './shell/OfflineStatusToast';
+import { GeocodeDeniedToast } from './shell/GeocodeDeniedToast';
 import { StreetViewStage } from './shell/StreetViewStage';
 import { makePickerThumbDataUrl } from '../renderer/gpuChores/pickerThumb';
 
@@ -101,7 +102,6 @@ export function AppShell() {
     mapsLoadStatus: maps.mapsLoadStatus,
     setMapsLoadStatus: maps.setMapsLoadStatus,
   });
-
   const cinema = useCinemaMode(connection.isConnected && !connection.showWelcome);
   const {
     isCinemaMode,
@@ -517,6 +517,7 @@ export function AppShell() {
       />
 
       <OfflineStatusToast visible={connection.isConnected && !isOnline} />
+      <GeocodeDeniedToast />
 
       <MapsAuthModal
         open={maps.mapsAuthFailed}
