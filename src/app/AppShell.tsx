@@ -3,6 +3,7 @@ import WelcomeModal from '../components/WelcomeModal';
 import CinemaOverlay from '../components/CinemaOverlay';
 import { parseDeepLinkParams } from '../utils/deepLink';
 import { parseStudioLinkParams, buildStudioShareUrl } from '../utils/studioLink';
+import { pickHistoricalEntryForYear } from '../utils/historicalImagery';
 import { getWindAudio } from '../effects/WindAudio';
 import {
   useStreetView,
@@ -625,7 +626,7 @@ export function AppShell() {
               heading,
               pitch,
               zoom,
-              panoId: panorama.getPano() || undefined,
+              panoId: panorama?.getPano() || undefined,
               lookId: env.activeLookId,
               year: currentImageDate,
               vehicleType: currentVehicle,

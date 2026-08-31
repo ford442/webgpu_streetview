@@ -40,7 +40,7 @@ export interface NormalizedSessionFilmSet {
  * white-screen a guest. Seq ordering is handled separately.
  */
 export function normalizeIncomingSessionFields(
-  incoming: Partial<NormalizedSessionFilmSet> & {
+  incoming: {
     lookId?: unknown;
     imageDate?: unknown;
     vehicleType?: unknown;
