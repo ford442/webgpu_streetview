@@ -65,14 +65,14 @@ describe('cruise shortcut vs geocode denied', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('does not engage cruise when Geocoding is REQUEST_DENIED', () => {
+  it('still engages cruise when Geocoding is REQUEST_DENIED (hops do not use Geocoder)', () => {
     noteGeocodeStatus('REQUEST_DENIED');
     const { announce, setIsCruiseMode, options } = baseOptions();
     const shortcuts = buildAppKeyboardShortcuts(options);
     const cruise = shortcuts.find((s) => s.key === 'r');
     cruise?.action();
-    expect(setIsCruiseMode).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/Cruise unavailable/i));
+    expect(setIsCruiseMode).toHaveBeenCalledWith(true);
+    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/Cruise mode on/i));
   });
 
   it('still allows turning cruise off', () => {
