@@ -24,6 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read pinned emsdk version
+        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -51,6 +58,9 @@ jobs:
 
       - name: Build production bundle
         run: npm run build
+        env:
+          REACT_APP_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          VITE_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
 
       - uses: actions/setup-python@v5
         with:
