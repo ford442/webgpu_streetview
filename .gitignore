@@ -29,6 +29,7 @@ cpp/build-emscripten/
 cpp/build-host/
 cpp/build-asan/
 cpp/build-clang/
+cpp/compile_commands.json
 node_modules/
 public/wasm/*.js
 __pycache__/

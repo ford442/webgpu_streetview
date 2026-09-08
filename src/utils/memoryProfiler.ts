@@ -1,5 +1,9 @@
 /** @fileoverview Memory profiling and optimization utilities for Three.js/WebGPU */
-import * as THREE from 'three';
+// Type-only — this module is reachable from the eager pano bundle (perf
+// overlays) as well as car mode, and must not pull the `three` runtime into
+// that eager path. Object identity checks below use the `.isX` marker
+// properties three.js sets on every instance instead of `instanceof`.
+import type * as THREE from 'three';
 
 // ============================================================
 // Memory Tracking Types
@@ -72,7 +76,16 @@ export function readMaterialTexture(
   prop: MaterialTextureProp,
 ): THREE.Texture | undefined {
   const tex = (mat as THREE.MeshStandardMaterial)[prop];
-  return tex instanceof THREE.Texture ? tex : undefined;
+  return isTexture(tex) ? tex : undefined;
+}
+
+/** `.isTexture`/`.isMesh` marker-property checks — avoid an `instanceof` (and the runtime `three` import that would require). */
+function isTexture(value: unknown): value is THREE.Texture {
+  return !!value && (value as { isTexture?: boolean }).isTexture === true;
+}
+
+function isMesh(value: unknown): value is THREE.Mesh {
+  return !!value && (value as { isMesh?: boolean }).isMesh === true;
 }
 
 export class MemoryProfiler {
@@ -168,7 +181,7 @@ export class MemoryProfiler {
     // Scan scene if provided
     if (scene) {
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh || obj instanceof THREE.SkinnedMesh) {
+        if (isMesh(obj)) {
           if (obj.geometry && !trackedGeometries.has(obj.geometry)) {
             trackedGeometries.add(obj.geometry);
             details.geometries.push(getGeometryInfo(obj.geometry, obj.name + '_geo'));
@@ -384,7 +397,7 @@ export function getMemoryProfiler(): MemoryProfiler {
  */
 export function deepDispose(object: THREE.Object3D): void {
   object.traverse((child) => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.SkinnedMesh) {
+    if (isMesh(child)) {
       if (child.geometry) {
         child.geometry.dispose();
       }

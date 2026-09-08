@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WindParticleSystem } from './convertible/WindParticleSystem';
-import { isValidVehicleType, type VehicleType } from '../VehicleManager';
+import type { VehicleType } from '../VehicleManager';
 
 /**
  * ConvertibleState - Interface for managing convertible vehicle state
@@ -268,6 +268,16 @@ export class SportSeats {
 
 /**
  * ConvertibleMode - Main class for managing convertible vehicle mode
+ *
+ * Vehicle types come from `VehicleManager` — this file must never declare its
+ * own. It used to carry a private two-value enum (sedan/convertible), which
+ * forced every caller through an `as any` cast and meant a new vehicle could
+ * be added to `VehicleManager` without this class ever knowing.
+ *
+ * Only `'convertible'` gets the open-air treatment; every other vehicle type
+ * ('sedan', 'science-lab', 'limousine', and anything added later) gets the
+ * roofed/no-wind treatment. That is exactly what the casts already produced,
+ * since the old enum comparison fell through to the else branch for them.
  */
 export class ConvertibleMode {
   private interiorGroup: THREE.Group;
@@ -311,11 +321,10 @@ export class ConvertibleMode {
   }
 
   /**
-   * Set vehicle type using VehicleManager SSOT. Unknown ids are ignored.
-   * Only `'convertible'` opens the roof overlay; every other valid type parks it.
+   * Set the vehicle type. Anything other than `'convertible'` is applied as a
+   * roofed vehicle — see the class doc comment.
    */
-  setVehicleType(type: string): void {
-    if (!isValidVehicleType(type)) return;
+  setVehicleType(type: VehicleType): void {
     if (this.vehicleType === type) return;
     this.vehicleType = type;
     this.applyVehicleType(type);
@@ -325,6 +334,11 @@ export class ConvertibleMode {
    * Toggle between sedan and convertible modes
    */
   toggleVehicleType(): VehicleType {
+    // Kept as the original enum comparison read: only 'sedan' toggles *to*
+    // convertible; every other type (including the roofed variants) toggles to
+    // 'sedan'. Note this is a two-state toggle over a four-value type — prefer
+    // `VehicleManager.setVehicle()` / `carModeRuntime.setVehicleType()` for
+    // real vehicle switching.
     const newType: VehicleType = this.vehicleType === 'sedan' ? 'convertible' : 'sedan';
     this.setVehicleType(newType);
     return newType;

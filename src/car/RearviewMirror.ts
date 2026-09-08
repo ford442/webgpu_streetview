@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import type { RearViewSample } from './rearViewFeed';
 import { signedHeadingDelta } from './rearViewFeed';
+import type { CabinRenderer } from './interior/createCabinRenderer';
+
+/**
+ * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
+ * than imported — see the identical note in `interior/VanityMirror.ts` for
+ * why (importing it here changes Rollup's automatic chunking of this module
+ * graph and leaks `three` into the eager main bundle). No dependencies of
+ * its own, so a local copy is cheap insurance.
+ */
+function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
+    return (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
+}
 
 /**
  * RearviewMirror — cabin rear-view glass.
@@ -28,7 +40,10 @@ import { signedHeadingDelta } from './rearViewFeed';
  */
 export class RearviewMirror {
     private mirrorPlane: THREE.Mesh;
+    /** The shader-driven glass. Uniform state is always kept up to date (see below) even when `activeMaterial` is showing something else. */
     private mirrorMaterial: THREE.ShaderMaterial;
+    /** What the mirror meshes actually display: `mirrorMaterial` on WebGL, or a plain flat fallback on WebGPU — `ShaderMaterial`'s raw GLSL has no TSL/NodeMaterial equivalent there yet. */
+    private readonly activeMaterial: THREE.Material;
     private isNightMode: boolean = false;
     private rearAvailable: boolean = false;
 
@@ -43,7 +58,7 @@ export class RearviewMirror {
 
     constructor(
         scene: THREE.Scene,
-        private renderer: THREE.WebGLRenderer
+        private renderer: CabinRenderer
     ) {
         // Honest unavailable glass: dark tint + soft vignette + label cue.
         // No sampling of the forward Street View canvas.
@@ -126,8 +141,12 @@ export class RearviewMirror {
             `,
         });
 
+        this.activeMaterial = isWebGPUCabinRenderer(renderer)
+            ? new THREE.MeshBasicMaterial({ color: 0x0f1116 })
+            : this.mirrorMaterial;
+
         const mirrorGeo = new THREE.PlaneGeometry(0.28, 0.1);
-        this.mirrorPlane = new THREE.Mesh(mirrorGeo, this.mirrorMaterial);
+        this.mirrorPlane = new THREE.Mesh(mirrorGeo, this.activeMaterial);
         this.mirrorPlane.position.set(0, 1.42, -0.83);
         this.mirrorPlane.rotation.set(-0.1, 0, 0);
         this.mirrorPlane.name = 'RearviewGlass';
@@ -159,11 +178,11 @@ export class RearviewMirror {
     public attachSideGlasses(left?: THREE.Mesh | null, right?: THREE.Mesh | null): void {
         if (left) {
             left.name = 'SideMirrorL';
-            left.material = this.mirrorMaterial;
+            left.material = this.activeMaterial;
         }
         if (right) {
             right.name = 'SideMirrorR';
-            right.material = this.mirrorMaterial;
+            right.material = this.activeMaterial;
         }
     }
 
@@ -326,6 +345,7 @@ export class RearviewMirror {
         this.releaseRearTexture();
         this.rearSample = null;
         this.mirrorMaterial.dispose();
+        if (this.activeMaterial !== this.mirrorMaterial) this.activeMaterial.dispose();
         this.mirrorPlane.geometry.dispose();
     }
 }

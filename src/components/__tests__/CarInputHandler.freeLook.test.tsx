@@ -124,4 +124,24 @@ describe('CarInputHandler free-look chassis coupling', () => {
 
     expect(setCarHeading).toHaveBeenCalled();
   });
+
+  it('does not steer in freeLook after temp-steer flag is cleared (overlay switch)', () => {
+    const { rerender } = render(<Harness isSteeringWheelAtPoint={() => true} />);
+    const target = screen.getByTestId('target');
+
+    mouseDown(target, 0);
+    mouseMove(8, 0, 1);
+    expect(setCarHeading).toHaveBeenCalled();
+    setCarHeading.mockClear();
+
+    controlMode = 'freeLook';
+    isTempSteerMode = false;
+    rerender(<Harness isSteeringWheelAtPoint={() => false} />);
+
+    mouseDown(target, 0);
+    mouseMove(12, -4, 1);
+
+    expect(setHeading).toHaveBeenCalled();
+    expect(setCarHeading).not.toHaveBeenCalled();
+  });
 });

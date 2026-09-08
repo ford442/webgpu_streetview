@@ -13,7 +13,25 @@ set -euo pipefail
 BUILD_DIR="${1:-build}"
 MAIN_GZIP_BUDGET_BYTES="${MAIN_GZIP_BUDGET_BYTES:-409600}"   # 400 KiB
 CESIUM_MAX_HITS="${CESIUM_MAX_HITS:-1}"
-CHUNK_GZIP_BUDGET_BYTES="${CHUNK_GZIP_BUDGET_BYTES:-102400}" # 100 KiB
+CHUNK_GZIP_BUDGET_BYTES="${CHUNK_GZIP_BUDGET_BYTES:-102400}" # 100 KiB default, per lazy chunk
+
+# Per-chunk overrides, keyed by the chunk's logical name (its filename up to
+# the content-hash segment, e.g. "carModeRuntime.<hash>.chunk.js"). Anything
+# not listed here still uses CHUNK_GZIP_BUDGET_BYTES above.
+declare -A CHUNK_GZIP_BUDGET_OVERRIDES=(
+  # three.js bump to a WebGPURenderer-capable release (r160 -> pinned 0.180,
+  # cabin/pano device-unification "one GPUDevice, one frame" effort) shifted
+  # more of three's own shared payload into this already-lazy car-mode chunk
+  # (measured ~108 KiB, was ~32 KiB pre-bump) — see AGENTS.md "Car Mode
+  # Rendering Stack".
+  ["carModeRuntime"]=143360   # 140 KiB
+  # three/webgpu (the node-material/TSL renderer) loads only behind the
+  # experimental `?cabin=webgpu` escape hatch (createCabinRenderer.ts /
+  # preloadWebGPUCabinRenderer) as its own further-lazy chunk — nobody on the
+  # default WebGL path fetches it. Budgeted generously since three/webgpu is
+  # inherently large and this never ships to default users.
+  ["three.webgpu"]=204800     # 200 KiB
+)
 
 ERRORS=0
 
@@ -65,10 +83,18 @@ if [ "${#CHUNK_FILES[@]}" -eq 0 ]; then
   echo "ℹ️  No lazy *.chunk.js files"
 else
   for chunk in "${CHUNK_FILES[@]}"; do
+    chunk_name="$(basename "$chunk")"
+    chunk_budget="$CHUNK_GZIP_BUDGET_BYTES"
+    for prefix in "${!CHUNK_GZIP_BUDGET_OVERRIDES[@]}"; do
+      if [[ "$chunk_name" == "$prefix".* ]]; then
+        chunk_budget="${CHUNK_GZIP_BUDGET_OVERRIDES[$prefix]}"
+        break
+      fi
+    done
     CHUNK_GZIP=$(gzip -c "$chunk" | wc -c)
-    echo "   chunk: $(basename "$chunk") gzip ${CHUNK_GZIP} bytes (budget ${CHUNK_GZIP_BUDGET_BYTES})"
-    if [ "$CHUNK_GZIP" -gt "$CHUNK_GZIP_BUDGET_BYTES" ]; then
-      echo "❌ ERROR: $(basename "$chunk") gzip ${CHUNK_GZIP} exceeds chunk budget ${CHUNK_GZIP_BUDGET_BYTES}"
+    echo "   chunk: ${chunk_name} gzip ${CHUNK_GZIP} bytes (budget ${chunk_budget})"
+    if [ "$CHUNK_GZIP" -gt "$chunk_budget" ]; then
+      echo "❌ ERROR: ${chunk_name} gzip ${CHUNK_GZIP} exceeds chunk budget ${chunk_budget}"
       ERRORS=$((ERRORS + 1))
     fi
   done

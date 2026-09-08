@@ -1,4 +1,18 @@
 import * as THREE from 'three';
+import type { CabinRenderer } from './createCabinRenderer';
+
+/**
+ * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
+ * than imported: importing it here — for whatever reason in Rollup's
+ * automatic chunking of this particular module graph — pulls the shared
+ * `three` runtime into the eager main bundle (verified: main.js gzip goes
+ * from ~350 KiB to ~430 KiB, over `scripts/check-bundle-budget.sh`'s cap,
+ * even though nothing here touches `three/webgpu`). This predicate has no
+ * dependencies of its own, so a local copy is cheap insurance.
+ */
+function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
+  return (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
+}
 
 /**
  * Sun-visor vanity mirror — samples the Street View pano with a tight,
@@ -21,7 +35,7 @@ export class VanityMirror {
 
   constructor(
     _scene: THREE.Scene,
-    private readonly renderer: THREE.WebGLRenderer,
+    private readonly renderer: CabinRenderer,
     mirrorPlane: THREE.Mesh
   ) {
     this.renderTarget = new THREE.WebGLRenderTarget(VanityMirror.WIDTH, VanityMirror.HEIGHT, {
@@ -59,7 +73,12 @@ export class VanityMirror {
     });
 
     this.mirrorPlane = mirrorPlane;
-    this.mirrorPlane.material = this.mirrorMaterial;
+    // WebGPURenderer has no TSL/NodeMaterial equivalent for this custom GLSL
+    // warmth/vignette shader yet — show the plain render-target crop instead
+    // of crashing. The render-target pipeline itself (below) is backend-agnostic.
+    this.mirrorPlane.material = isWebGPUCabinRenderer(renderer)
+      ? new THREE.MeshBasicMaterial({ map: this.renderTarget.texture })
+      : this.mirrorMaterial;
 
     this.mirrorCamera = new THREE.PerspectiveCamera(60, VanityMirror.WIDTH / VanityMirror.HEIGHT, 0.1, 100);
     this.mirrorCamera.position.set(0, 0, 1);
@@ -109,12 +128,18 @@ export class VanityMirror {
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.clear();
     this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
-    this.renderer.setRenderTarget(currentTarget);
+    // `getRenderTarget()`/`setRenderTarget()` round-trip the same renderer's own
+    // value; the two `CabinRenderer` union members type this pair slightly
+    // differently, so re-narrow rather than fight the union.
+    this.renderer.setRenderTarget(currentTarget as ReturnType<THREE.WebGLRenderer['getRenderTarget']>);
   }
 
   dispose(): void {
     this.renderTarget.dispose();
     this.mirrorMaterial.dispose();
+    if (this.mirrorPlane.material !== this.mirrorMaterial) {
+      (this.mirrorPlane.material as THREE.Material).dispose();
+    }
     this.mirrorScreenMesh.geometry.dispose();
     this.mirrorScreenMat.dispose();
     this.streetViewTexture?.dispose();

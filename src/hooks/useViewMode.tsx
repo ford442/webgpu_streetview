@@ -140,6 +140,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
 
       if (viewMode === 'car' && carModeStateRef.current && containerRef.current) {
         toggleCarMode(true);
+        setIsTempSteerMode(false);
         setControlMode('freeLook');
         previousControlModeRef.current = 'freeLook';
       }
@@ -159,18 +160,24 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   }, []);
   
   // Control mode switching
+  const clearTempSteerMode = useCallback(() => {
+    setIsTempSteerMode(false);
+  }, []);
+
   const setControlModeWithTracking = useCallback((mode: ControlMode) => {
+    clearTempSteerMode();
     previousControlModeRef.current = controlMode;
     setControlMode(mode);
-  }, [controlMode]);
-  
+  }, [controlMode, clearTempSteerMode]);
+
   const toggleControlMode = useCallback(() => {
+    clearTempSteerMode();
     setControlMode(prev => {
       const next = prev === 'freeLook' ? 'uiMouse' : prev === 'uiMouse' ? 'carSteer' : 'freeLook';
       previousControlModeRef.current = prev;
       return next;
     });
-  }, []);
+  }, [clearTempSteerMode]);
   
   // Temporary steering mode (steering wheel click)
   const startTempSteerMode = useCallback(() => {

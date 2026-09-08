@@ -11,8 +11,9 @@
 #include "streetview_wasm.h"
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
-#include <stdint.h>
+#include <span>
 
 // ---------------------------------------------------------------------------
 // Permutation table (512 entries, duplicated for wrap-around).
@@ -104,11 +105,12 @@ float sw_noise2d(float x, float y) {
 void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY) {
     const float inv_scale = 1.0f / scale;
+    const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
             float nx = ((float)col + offsetX) * inv_scale;
             float ny = ((float)row + offsetY) * inv_scale;
-            buf[row * width + col] = sw_noise2d(nx, ny);
+            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] = sw_noise2d(nx, ny);
         }
     }
 }
@@ -133,11 +135,12 @@ void sw_fill_fbm_buffer(float* buf, int width, int height,
                         float scale, float offsetX, float offsetY,
                         int octaves, float lacunarity, float gain) {
     const float inv_scale = 1.0f / scale;
+    const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
             float nx = ((float)col + offsetX) * inv_scale;
             float ny = ((float)row + offsetY) * inv_scale;
-            buf[row * width + col] = sw_fbm2d(nx, ny, octaves, lacunarity, gain);
+            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] = sw_fbm2d(nx, ny, octaves, lacunarity, gain);
         }
     }
 }
@@ -151,8 +154,9 @@ void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
         state = state * 1664525u + 1013904223u;
         return (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
     };
+    const std::span<float> out(buf, static_cast<size_t>(count) * 4);
     for (int i = 0; i < count; ++i) {
-        float* p = buf + (size_t)i * 4;
+        const std::span<float, 4> p = out.subspan(static_cast<size_t>(i) * 4).first<4>();
         p[0] = next_unit();                    // x     [0, 1)
         p[1] = next_unit();                    // y     [0, 1)
         p[2] = 0.5f + next_unit();             // speed [0.5, 1.5)
@@ -173,11 +177,15 @@ double sw_haversine(double lat1, double lon1, double lat2, double lon2) {
 }
 
 double sw_batch_haversine(const double* points, int count, double* out) {
+    if (count < 2) return 0.0;
+    const std::span<const double> pts(points, static_cast<size_t>(count) * 2);
+    const std::span<double> segs(out, static_cast<size_t>(count) - 1);
     double total = 0.0;
     for (int i = 0; i < count - 1; ++i) {
-        double d = sw_haversine(points[i * 2], points[i * 2 + 1],
-                                points[i * 2 + 2], points[i * 2 + 3]);
-        out[i] = d;
+        const size_t base = static_cast<size_t>(i) * 2;
+        double d = sw_haversine(pts[base], pts[base + 1],
+                                pts[base + 2], pts[base + 3]);
+        segs[static_cast<size_t>(i)] = d;
         total += d;
     }
     return total;
@@ -219,6 +227,7 @@ void sw_fill_engine_noise(float* buf, int count,
     float spd = speed_kmh / 140.0f;
     if (spd > 1.0f) spd = 1.0f;
 
+    const std::span<float> out(buf, static_cast<size_t>(count));
     for (int i = 0; i < count; ++i) {
         float t = time_sec + (float)i * inv_sr;
         float cycles = t * fund;
@@ -234,7 +243,7 @@ void sw_fill_engine_noise(float* buf, int count,
         float s = eng + n * spd * 0.18f;
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
-        buf[i] = s;
+        out[static_cast<size_t>(i)] = s;
     }
 }
 
@@ -251,45 +260,53 @@ static int bt709_bin_u8(unsigned char r, unsigned char g, unsigned char b) {
 void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
                              unsigned int* bins) {
     if (bins == nullptr) return;
-    for (int i = 0; i < 256; ++i) bins[static_cast<unsigned>(i)] = 0u;
+    const std::span<unsigned int, 256> bin_span(bins, 256);
+    for (size_t i = 0; i < 256; ++i) bin_span[i] = 0u;
     if (width <= 0 || height <= 0 || rgba == nullptr) return;
     const int count = width * height;
+    const std::span<const unsigned char> px(rgba, static_cast<size_t>(count) * 4u);
     for (int i = 0; i < count; ++i) {
-        const unsigned char* p = rgba + static_cast<size_t>(i) * 4u;
-        int bin = bt709_bin_u8(p[0], p[1], p[2]);
-        bins[static_cast<unsigned>(bin)] += 1u;
+        const size_t base = static_cast<size_t>(i) * 4u;
+        int bin = bt709_bin_u8(px[base], px[base + 1], px[base + 2]);
+        bin_span[static_cast<size_t>(bin)] += 1u;
     }
 }
 
 void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
                           float* out3) {
     if (out3 == nullptr) return;
-    out3[0] = 0.0f;
-    out3[1] = 0.0f;
-    out3[2] = 0.0f;
+    const std::span<float, 3> out(out3, 3);
+    out[0] = 0.0f;
+    out[1] = 0.0f;
+    out[2] = 0.0f;
     if (width <= 0 || height <= 0 || rgba == nullptr) return;
     const int count = width * height;
+    const std::span<const unsigned char> px(rgba, static_cast<size_t>(count) * 4u);
     float sum = 0.0f;
     float mn = 1.0f;
     float mx = 0.0f;
     for (int i = 0; i < count; ++i) {
-        const unsigned char* p = rgba + static_cast<size_t>(i) * 4u;
-        float y = (0.2126f * static_cast<float>(p[0])
-                 + 0.7152f * static_cast<float>(p[1])
-                 + 0.0722f * static_cast<float>(p[2])) / 255.0f;
+        const size_t base = static_cast<size_t>(i) * 4u;
+        float y = (0.2126f * static_cast<float>(px[base])
+                 + 0.7152f * static_cast<float>(px[base + 1])
+                 + 0.0722f * static_cast<float>(px[base + 2])) / 255.0f;
         sum += y;
         if (y < mn) mn = y;
         if (y > mx) mx = y;
     }
-    out3[0] = sum / static_cast<float>(count);
-    out3[1] = mn;
-    out3[2] = mx;
+    out[0] = sum / static_cast<float>(count);
+    out[1] = mn;
+    out[2] = mx;
 }
 
 void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
                       unsigned char* dst, int dst_w, int dst_h) {
     if (src == nullptr || dst == nullptr) return;
     if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) return;
+    const std::span<const unsigned char> in(
+        src, static_cast<size_t>(src_w) * static_cast<size_t>(src_h) * 4u);
+    const std::span<unsigned char> out(
+        dst, static_cast<size_t>(dst_w) * static_cast<size_t>(dst_h) * 4u);
     for (int dy = 0; dy < dst_h; ++dy) {
         int y0 = (dy * src_h) / dst_h;
         int y1 = ((dy + 1) * src_h) / dst_h;
@@ -303,25 +320,24 @@ void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
             int sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
             for (int y = y0; y < y1; ++y) {
                 for (int x = x0; x < x1; ++x) {
-                    const unsigned char* p =
-                        src + (static_cast<size_t>(y) * static_cast<size_t>(src_w)
-                               + static_cast<size_t>(x)) * 4u;
-                    sr += static_cast<int>(p[0]);
-                    sg += static_cast<int>(p[1]);
-                    sb += static_cast<int>(p[2]);
-                    sa += static_cast<int>(p[3]);
+                    const size_t base = (static_cast<size_t>(y) * static_cast<size_t>(src_w)
+                                          + static_cast<size_t>(x)) * 4u;
+                    sr += static_cast<int>(in[base]);
+                    sg += static_cast<int>(in[base + 1]);
+                    sb += static_cast<int>(in[base + 2]);
+                    sa += static_cast<int>(in[base + 3]);
                     n += 1;
                 }
             }
-            unsigned char* d = dst + (static_cast<size_t>(dy) * static_cast<size_t>(dst_w)
-                                      + static_cast<size_t>(dx)) * 4u;
+            const size_t dbase = (static_cast<size_t>(dy) * static_cast<size_t>(dst_w)
+                                  + static_cast<size_t>(dx)) * 4u;
             if (n <= 0) {
-                d[0] = 0; d[1] = 0; d[2] = 0; d[3] = 255;
+                out[dbase] = 0; out[dbase + 1] = 0; out[dbase + 2] = 0; out[dbase + 3] = 255;
             } else {
-                d[0] = static_cast<unsigned char>(sr / n);
-                d[1] = static_cast<unsigned char>(sg / n);
-                d[2] = static_cast<unsigned char>(sb / n);
-                d[3] = static_cast<unsigned char>(sa / n);
+                out[dbase]     = static_cast<unsigned char>(sr / n);
+                out[dbase + 1] = static_cast<unsigned char>(sg / n);
+                out[dbase + 2] = static_cast<unsigned char>(sb / n);
+                out[dbase + 3] = static_cast<unsigned char>(sa / n);
             }
         }
     }

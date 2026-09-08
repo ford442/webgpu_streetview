@@ -92,6 +92,12 @@ export interface StreetViewRenderer {
     getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
     samplePanoramaStats?(): void;
     getOutputCanvas?(): HTMLCanvasElement;
+    /**
+     * The single shared `GPUDevice` backing this renderer, for car mode to
+     * adopt (`createCabinRenderer.ts`) instead of requesting its own. WebGPU
+     * only — absent (or undefined) on any backend without a real device.
+     */
+    getSharedGpuDevice?(): GPUDevice | undefined;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);

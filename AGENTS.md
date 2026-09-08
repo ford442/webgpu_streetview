@@ -21,7 +21,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Language | TypeScript | 4.9.5 |
 | Build Tool | Vite 5 + Vitest | — |
 | Rendering API | WebGPU | Native browser API |
-| 3D Overlay | Three.js | 0.160.0 |
+| 3D Overlay | Three.js | 0.180.0 (pinned) |
 | Shader Language | WGSL | WebGPU Shading Language |
 | Maps Integration | Google Maps JavaScript API | Weekly |
 | State Management | React Context + Hooks | Provider pattern |
@@ -175,6 +175,15 @@ webgpu_streetview/
 │   │   └── types.ts                 # RenderMode type
 │   ├── car/                         # Three.js car interior system
 │   │   ├── index.ts                 # Public car mode API (init/toggle/update/dispose)
+│   │   ├── carModeRuntime.ts        # Façade — re-exports runtime/ by name (the API contract)
+│   │   ├── runtime/                 # Car-mode singleton, split by what it touches
+│   │   │   ├── state.ts             # The ONE owner of carModeState / leverHandlers
+│   │   │   ├── lifecycle.ts         # init / toggle / per-frame update / dispose
+│   │   │   ├── cabinControls.ts     # Wiper stalk, gear, steering, seat, zoom FOV
+│   │   │   ├── vehicleSwitch.ts     # Vehicle type + convertible roof/wind/tint
+│   │   │   ├── telemetryBridge.ts   # App → cabin feeds (location, weather, gauges, lamps)
+│   │   │   ├── mirror.ts            # Rearview / vanity glass (billable imagery)
+│   │   │   └── interaction.ts       # Pointer hit-testing against cabin meshes
 │   │   ├── CarInterior.ts           # Procedural interior geometry
 │   │   ├── DashboardUI.tsx          # React dashboard overlay
 │   │   ├── DashboardLayout.tsx      # Dashboard zone layout primitives
@@ -233,7 +242,6 @@ webgpu_streetview/
 │   │   ├── usePanoramaCache.ts      # Panorama pre-fetch cache
 │   │   └── __tests__/               # Hook tests (mobile.test.tsx)
 │   ├── effects/
-│   │   ├── PostProcessing.ts
 │   │   ├── LightingEffects.ts
 │   │   ├── WindAudio.ts             # Procedural wind audio
 │   │   └── index.ts
@@ -357,6 +365,10 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 **Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `ultra` visual quality preset. Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
+`ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 40-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
+
+**Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
+
 ### WebGL2 Fallback / Debug Renderer
 
 `src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required**: a failed boot probe is a hard-fail (blocking overlay). There is **no live GL weather class** in the runtime module graph — including for `?renderer=webgl` / stale localStorage (preference is recorded as `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:
@@ -421,6 +433,8 @@ Browser Output (top to bottom)
 - **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
 - **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
 - **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
+
+**`?cabin=webgpu` escape hatch** (`car/interior/createCabinRenderer.ts` — cabin/pano device-unification effort, PR 1 of 3, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. Default (no flag) stays the classic `THREE.WebGLRenderer` above, byte-identical to before. With the flag **and** a shared `GPUDevice` available (`Renderer.ts#getSharedGpuDevice` — still the only `requestDevice` call site), the cabin instead adopts that device via `THREE.WebGPURenderer({ device })` — never requesting its own adapter/device. `three/webgpu` (the node-material/TSL renderer) is fetched as its own further-lazy chunk only when the flag is active (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`) so the 99% WebGL default never pays for it — see `scripts/check-bundle-budget.sh`'s per-chunk overrides. On this path, PMREM environment maps (`LightingBuilder.ts`, `PanoEnvironment.ts` — classic `THREE.PMREMGenerator` is WebGL-only) and `optimizeTextures` (raw WebGL context reads) are skipped rather than crash; closing that gap, deleting the science-lab/limousine variants' own `WebGLRenderer`s, and flipping the default are later PRs in the same issue, not done here.
 
 ### Input Handling
 
@@ -572,10 +586,14 @@ the C++ in `cpp/src/noise_module.cpp`, and the pure-JS fallback in
 from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
-  `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror` under both g++ and
-  clang++. Needs only `cmake` and a C++17 compiler. `npm run test:cpp:asan`
-  adds ASan + UBSan. Configuring writes `cpp/build-host/compile_commands.json`
-  for clangd.
+  `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
+  under both g++ and clang++. Needs only `cmake` and a C++20 compiler.
+  `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
+  `cpp/build-host/compile_commands.json`; building links it to
+  `cpp/compile_commands.json` automatically and the committed `cpp/.clangd`
+  points at `build-host` too, so clangd/clang-tidy work with zero setup.
+  `cpp/.clang-tidy` is a small advisory bugprone/modernize set — not
+  CI-gating yet, run manually (`clang-tidy -p cpp/build-host cpp/src/*.cpp`).
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
   the JS fallback (runs with `npm test`).
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across

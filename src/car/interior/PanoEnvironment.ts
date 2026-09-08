@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
 
 /**
  * PanoEnvironment
@@ -22,7 +23,7 @@ export class PanoEnvironment {
     private intensity = 1;
 
     constructor(
-        private renderer: THREE.WebGLRenderer,
+        private readonly renderer: CabinRenderer,
         private scene: THREE.Scene
     ) {
         this.shiftCanvas = document.createElement('canvas');
@@ -32,8 +33,12 @@ export class PanoEnvironment {
      * Replace the scene environment with a PMREM-filtered version of the given
      * equirect pano image. `centerHeading` is the compass heading (degrees) at
      * the horizontal centre of the image.
+     *
+     * No-op on the `?cabin=webgpu` escape hatch — classic `THREE.PMREMGenerator`
+     * is WebGL-only; see `createCabinRenderer.ts`.
      */
     public setFromEquirect(equirect: HTMLCanvasElement, centerHeading: number): void {
+        if (isWebGPUCabinRenderer(this.renderer)) return;
         const W = equirect.width;
         const H = equirect.height;
         this.shiftCanvas.width = W;

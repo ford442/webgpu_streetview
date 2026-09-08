@@ -1,0 +1,16 @@
+---
+# Advisory only for now (see docs/WASM_BRIDGE.md) — not wired into a gating
+# CI job yet. A deliberately small bugprone/modernize set: this is numeric,
+# extern "C" ABI code, not idiomatic modern C++, so checks aimed at class
+# hierarchies, ownership, or trailing-return-type style would be pure noise
+# here. Run manually: `clang-tidy -p cpp/build-host cpp/src/noise_module.cpp`.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  modernize-use-nullptr,
+  modernize-use-using,
+  modernize-deprecated-headers,
+  modernize-macro-to-enum
+WarningsAsErrors: ''
+HeaderFilterRegex: 'cpp/(src|include)/.*'
