@@ -10,6 +10,7 @@
 import React, { useCallback, useState } from 'react';
 import styles from './DashboardUI.module.css';
 import { darkTheme, applyTheme, clusterAmbientGlow } from './theme';
+import { getVehicleConfig } from './VehicleManager';
 
 // Layout primitives
 import {
@@ -276,6 +277,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   const themeStyle = applyTheme(darkTheme, {
     ambientLightColor: clusterAmbientGlow(currentVehicle, nightIntensity, ambientLightColor),
     nightIntensity,
+    accent: currentVehicle ? getVehicleConfig(currentVehicle).accentColor : undefined,
   });
 
   return (

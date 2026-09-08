@@ -62,21 +62,48 @@ export const neonTheme: Theme = {
 };
 
 /**
- * Merge a base theme with runtime overrides (ambient light colour, night intensity).
+ * Merge a base theme with runtime overrides (ambient light colour, night intensity,
+ * vehicle accent). Accent hover/active/border tints are derived from the hex.
  */
 export function applyTheme(
   base: Theme,
   overrides: {
     ambientLightColor?: string;
     nightIntensity?: number;
+    accent?: string;
   }
 ): React.CSSProperties {
   const glow = overrides.ambientLightColor ?? base['--ambient-glow'];
-  return {
+  const style: Theme = {
     ...base,
     '--ambient-glow': glow,
     '--night-intensity': (overrides.nightIntensity ?? 0).toString(),
-  } as React.CSSProperties;
+  };
+  if (overrides.accent) {
+    const accent = normalizeHex(overrides.accent);
+    style['--accent'] = accent;
+    style['--accent-hover'] = hexToRgba(accent, 0.3);
+    style['--accent-active'] = hexToRgba(accent, 0.45);
+    style['--border-hover'] = hexToRgba(accent, 0.3);
+  }
+  return style as React.CSSProperties;
+}
+
+/** Expand #abc / #aabbcc to a canonical 7-char hex. */
+export function normalizeHex(hex: string): string {
+  const h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) {
+    return `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`.toUpperCase();
+  }
+  return `#${h}`.toUpperCase();
+}
+
+export function hexToRgba(hex: string, alpha: number): string {
+  const n = parseInt(normalizeHex(hex).slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 /**

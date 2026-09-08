@@ -159,8 +159,37 @@ describe('cabinLightingRamps', () => {
       headlightsOn: false,
       domeLightOn: false,
     });
+    const sedanNight = cabinFillTargets({
+      effectiveNight: 1,
+      rain: 0,
+      headlightsOn: false,
+      domeLightOn: false,
+    });
     expect(day.hemi).toBeGreaterThan(sedanDay.hemi);
     expect(night.hemi).toBeLessThan(0.02);
     expect(night.ambient).toBeLessThan(0.01);
+    expect(night.hemi).toBeCloseTo(sedanNight.hemi, 5);
+    expect(night.ambient).toBeCloseTo(sedanNight.ambient, 5);
+    expect(night.overhead).toBe(sedanNight.overhead);
+    expect(night.leftWindow).toBeCloseTo(sedanNight.leftWindow, 5);
+    expect(night.rightWindow).toBeCloseTo(sedanNight.rightWindow, 5);
+  });
+
+  it('clinical theme does not change emitter or glow ramps', () => {
+    const base = {
+      effectiveNight: 1,
+      rain: 0,
+      headlightsOn: true,
+      domeLightOn: true,
+    };
+    expect(cabinEmitterTargets({ ...base, clinical: true })).toEqual(
+      cabinEmitterTargets(base),
+    );
+    expect(clusterGlowLevel({ ...base, clinical: true })).toBe(
+      clusterGlowLevel(base),
+    );
+    expect(domeGlowLevel({ ...base, clinical: true })).toBe(
+      domeGlowLevel(base),
+    );
   });
 });

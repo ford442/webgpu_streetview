@@ -55,4 +55,11 @@ describe('DashboardUI HUD modes', () => {
     expect(screen.queryByRole('button', { name: 'Toggle GPS' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Select Time of Day')).not.toBeInTheDocument();
   });
+
+  it('uses science-lab teal --accent on dark glass, not the light clinical page theme', () => {
+    render(<DashboardUI {...baseProps} currentVehicle="science-lab" />);
+    const region = screen.getByRole('region', { name: 'Car Dashboard Controls' });
+    expect(region).toHaveStyle({ '--accent': '#00BCD4' });
+    expect(region).toHaveStyle({ '--bg-glass': 'rgba(0,0,0,0.6)' });
+  });
 });

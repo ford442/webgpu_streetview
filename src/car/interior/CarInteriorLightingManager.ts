@@ -44,6 +44,7 @@ export class CarInteriorLightingManager {
     /** Disables the ambient breathing modulation. */
     private reducedMotion: boolean = false;
     private emitterGlows: CabinGlowSprite[] = [];
+    private labDisplayMats: THREE.MeshStandardMaterial[] = [];
     private lastNightIntensity: number = 0;
 
     // Sun colour ramp: warm at the horizon (golden hour) → neutral at midday.
@@ -60,6 +61,7 @@ export class CarInteriorLightingManager {
         digitalClockMesh: THREE.Mesh | null;
         instrumentClusterMat: THREE.MeshStandardMaterial | null;
         centerDisplayMat: THREE.MeshStandardMaterial | null;
+        labDisplayMats?: THREE.MeshStandardMaterial[];
         dashboardMaterial?: THREE.MeshStandardMaterial;
         leatherMaterial?: THREE.MeshStandardMaterial;
         frameMaterial?: THREE.MeshStandardMaterial;
@@ -74,6 +76,7 @@ export class CarInteriorLightingManager {
         this.digitalClockMesh = opts.digitalClockMesh;
         this.instrumentClusterMat = opts.instrumentClusterMat;
         this.centerDisplayMat = opts.centerDisplayMat;
+        if (opts.labDisplayMats !== undefined) this.labDisplayMats = opts.labDisplayMats;
         if (opts.windshieldGlassMesh !== undefined) this.windshieldGlassMesh = opts.windshieldGlassMesh;
         if (opts.rearGlassMesh !== undefined) this.rearGlassMesh = opts.rearGlassMesh;
         if (opts.clinical !== undefined) this.clinical = opts.clinical;
@@ -85,6 +88,10 @@ export class CarInteriorLightingManager {
 
     public setEmitterGlows(glows: CabinGlowSprite[]): void {
         this.emitterGlows = glows;
+    }
+
+    public setLabDisplayMats(mats: THREE.MeshStandardMaterial[]): void {
+        this.labDisplayMats = mats;
     }
 
     /** Re-parent cabin-space lights after `interiorGroup.clear()` on vehicle swap. */
@@ -231,6 +238,9 @@ export class CarInteriorLightingManager {
 
         this.lerpEmissive(this.instrumentClusterMat, emit.cluster);
         this.lerpEmissive(this.centerDisplayMat, emit.centerDisplay);
+        for (const mat of this.labDisplayMats) {
+            this.lerpEmissive(mat, emit.centerDisplay);
+        }
 
         if (this.domeLightFixtureMesh) {
             this.lerpEmissive(

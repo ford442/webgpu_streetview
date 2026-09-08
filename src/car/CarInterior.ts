@@ -68,6 +68,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public rightWindowLight: THREE.PointLight | undefined;
     public instrumentClusterMat!: THREE.MeshStandardMaterial;
     public centerDisplayMat!: THREE.MeshStandardMaterial;
+    public labDisplayMats: THREE.MeshStandardMaterial[] = [];
     public windshieldGlassMesh!: THREE.Mesh;
     public rearGlassMesh!: THREE.Mesh;
     public leftMirrorPlane?: THREE.Mesh;

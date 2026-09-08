@@ -71,6 +71,7 @@ export interface CarInteriorAssemblyHost {
     rightMirrorPlane?: THREE.Mesh;
     instrumentClusterMat: THREE.MeshStandardMaterial;
     centerDisplayMat: THREE.MeshStandardMaterial;
+    labDisplayMats?: THREE.MeshStandardMaterial[];
     domeLightFixtureMesh: THREE.Mesh;
     domeSwitchMesh: THREE.Mesh;
     speedometerNeedle: THREE.Mesh;
@@ -186,6 +187,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     host.rightMirrorPlane = buildResult.rightMirrorPlane;
     host.instrumentClusterMat = buildResult.instrumentClusterMat;
     host.centerDisplayMat = buildResult.centerDisplayMat;
+    host.labDisplayMats = buildResult.labDisplayMats ?? [];
     host.domeLightFixtureMesh = buildResult.domeLightFixtureMesh;
     host.domeSwitchMesh = buildResult.domeSwitchMesh;
     host.emitterGlowSprites = buildResult.glowSprites ?? [];
@@ -215,6 +217,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         digitalClockMesh: host.digitalClockMesh,
         instrumentClusterMat: host.instrumentClusterMat,
         centerDisplayMat: host.centerDisplayMat,
+        labDisplayMats: host.labDisplayMats ?? [],
         dashboardMaterial: host.dashboardMaterial,
         leatherMaterial: host.leatherMaterial,
         frameMaterial: host.frameMaterial,

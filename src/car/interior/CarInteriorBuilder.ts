@@ -32,6 +32,8 @@ export interface CarInteriorBuildResult {
     domeLightFixtureMesh: THREE.Mesh;
     domeSwitchMesh: THREE.Mesh;
     glowSprites: CabinGlowSprite[];
+    /** Science-lab monitor screens; driven like the center display at night. */
+    labDisplayMats: THREE.MeshStandardMaterial[];
     /** Wiper stalk lever (absent on vehicles without a steering wheel). */
     wiperStalkMesh?: THREE.Mesh;
     wiperStalkPivot?: THREE.Group;
@@ -53,6 +55,7 @@ export class CarInteriorBuilder {
 
     public buildAll(): CarInteriorBuildResult {
         this.result.glowSprites = [];
+        this.result.labDisplayMats = [];
         if (this.vehicleConfig.hasDashboard) {
             const dashboardBuilder = new CarInteriorDashboardBuilder(
                 this.interiorGroup,
@@ -580,21 +583,42 @@ export class CarInteriorBuilder {
     }
 
     private buildLabFeatures(): void {
+        const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
         const monitorGeo = new THREE.BoxGeometry(0.4, 0.25, 0.05);
         const monitorMat = new THREE.MeshStandardMaterial({
-            color: 0x000000,
-            emissive: 0x004444,
-            emissiveIntensity: 0.5,
+            color: 0x001418,
+            emissive: accentHex,
+            emissiveIntensity: 0.24,
             roughness: 0.2,
         });
 
-        const monitor1 = new THREE.Mesh(monitorGeo, monitorMat);
-        monitor1.position.set(0.2, 1.0, -0.72);
-        this.interiorGroup.add(monitor1);
+        const monitorPositions: Array<[number, number, number]> = [
+            [0.2, 1.0, -0.72],
+            [-0.2, 1.0, -0.72],
+        ];
+        for (const [x, y, z] of monitorPositions) {
+            const monitor = new THREE.Mesh(monitorGeo, monitorMat);
+            monitor.name = 'labMonitor';
+            monitor.position.set(x, y, z);
+            this.interiorGroup.add(monitor);
 
-        const monitor2 = new THREE.Mesh(monitorGeo, monitorMat);
-        monitor2.position.set(-0.2, 1.0, -0.72);
-        this.interiorGroup.add(monitor2);
+            if (this.quality !== 'low') {
+                const glow = createCabinGlowSprite({
+                    kind: 'cluster',
+                    color: accentHex,
+                    width: 0.44,
+                    height: 0.28,
+                    useShader: this.quality === 'high',
+                    reducedMotion: this.reducedMotion,
+                });
+                glow.mesh.name = 'labMonitorGlow';
+                // Sit on the camera-facing (+Z) face of the 0.05-deep box.
+                glow.mesh.position.set(x, y, z + 0.032);
+                this.interiorGroup.add(glow.mesh);
+                (this.result.glowSprites ??= []).push(glow);
+            }
+        }
+        (this.result.labDisplayMats ??= []).push(monitorMat);
 
         const rackGeo = new THREE.BoxGeometry(1.8, 0.6, 0.3);
         const rackMat = new THREE.MeshStandardMaterial({

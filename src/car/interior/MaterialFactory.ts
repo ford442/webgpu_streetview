@@ -254,7 +254,9 @@ export function createMaterials(
     dark: 0x1a1a1a,
     light: 0x2a2a2a,
     neon: 0x0a0a1a,
-    clinical: 0xf0f0f0,
+    // Cool instrument-bay grey — lighter than sedan, not hospital-white
+    // so night IBL (0.18) does not read as a fluorescent room.
+    clinical: 0xb4bcc0,
   };
   const dashColor = dashboardColors[config.theme] ?? 0x1a1a1a;
   const clinical = config.theme === 'clinical';
@@ -303,7 +305,7 @@ export function createMaterials(
   });
 
   const frame = new THREE.MeshStandardMaterial({
-    color: clinical ? 0xeeeeee : 0x131313,
+    color: clinical ? 0x8a9298 : 0x131313,
     roughness: clinical ? 0.55 : 0.88,
     metalness: 0,
     envMapIntensity: 0.28,
