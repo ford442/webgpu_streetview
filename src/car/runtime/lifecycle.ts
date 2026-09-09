@@ -4,6 +4,7 @@ import { SelectivePostProcessing } from '../SelectivePostProcessing';
 import { ConvertibleMode } from '../variants';
 import { DEFAULT_VEHICLE, vehicleManager, type VehicleType } from '../VehicleManager';
 import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
+import { notifyCabinFrameRendered } from './frameCapture';
 import { getState, setState, type CarModeState } from './state';
 
 /**
@@ -169,6 +170,10 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
 
     // Render the car interior
     state.interior.render();
+
+    // Publish the one moment the cabin's drawing buffer is readable, so cinema
+    // can latch it for the composite clip (see runtime/frameCapture.ts).
+    notifyCabinFrameRendered();
 }
 
 /**

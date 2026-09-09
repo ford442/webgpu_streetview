@@ -7,7 +7,9 @@ Street View post-processing has a **WebGPU-required** boot contract:
 
 Failed WebGPU boot probe → **hard-fail** (blocking overlay on the pano). The app does **not** construct a WebGL weather context and does **not** elevate raw Street View as a weather session.
 
-The Three.js car interior remains a separate transparent overlay above the WebGPU backend when WebGPU is ready. Cabin-on-WebGPU (separate issue) must share the single `GPUDevice` and must **not** call `configure()` on this canvas a second time (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`).
+The Three.js car interior remains a separate transparent overlay above the WebGPU backend when WebGPU is ready. Cabin-on-WebGPU (separate issue) must share the single `GPUDevice` and must **not** call `configure()` on this canvas a second time (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`). The `?cabin=webgpu` escape hatch (`car/interior/createCabinRenderer.ts`) is the only path that adopts the shared device today; the default cabin is still WebGL.
+
+Because the two are separate canvases, **cinema capture composites them in 2D** rather than recording one swapchain: `car/runtime/frameCapture.ts` publishes the post-`interior.render()` moment (the only frame in which the cabin's drawing buffer is readable — the cabin renderer has no `preserveDrawingBuffer`) and `utils/canvasRecorder.ts` latches the cabin there. Road-only is the automatic fallback whenever car mode is not rendering. See `docs/SHARED_SESSIONS.md` § Cinema capture. Once the cabin shares the device this composite collapses into the swapchain and the latch can go.
 
 ## Backend Selection
 

@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import CinemaOverlay from '../components/CinemaOverlay';
+import type { ClipOverlaySource } from '../utils/canvasRecorder';
 import { parseDeepLinkParams } from '../utils/deepLink';
 import { parseStudioLinkParams, buildStudioShareUrl } from '../utils/studioLink';
 import { pickHistoricalEntryForYear } from '../utils/historicalImagery';
@@ -250,6 +251,16 @@ export function AppShell() {
     hopsPerTick: () => (viewModeRef.current === 'car' ? (carRuntimeModule?.getGearHopCount() ?? 1) : 1),
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
+
+  // Cinema composites the cabin over the graded road canvas. Both hooks read
+  // `carRuntimeModule` at call time, so this object is stable for the life of
+  // the shell and stays correct whether or not the lazy car chunk has loaded —
+  // before it does (or outside car mode) the cabin canvas is simply null and
+  // the clip is road-only. See `car/runtime/frameCapture.ts`.
+  const cabinOverlay = useMemo<ClipOverlaySource>(() => ({
+    getCanvas: () => carRuntimeModule?.getCabinCanvas() ?? null,
+    subscribe: (onRendered) => carRuntimeModule?.onCabinFrameRendered(onRendered) ?? (() => {}),
+  }), []);
 
   useEffect(() => {
     publishCruiseFlag(isCruiseMode);
@@ -613,6 +624,7 @@ export function AppShell() {
           renderer={renderer}
           onExit={exitCinemaMode}
           onTakeSnapshot={handleTakeSnapshot}
+          cabinOverlay={cabinOverlay}
           lookId={env.activeLookId}
           vehicleType={currentVehicle}
           panoId={panorama?.getPano() ?? null}

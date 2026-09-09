@@ -4,6 +4,7 @@ import {
   CanvasClipRecorder,
   isClipRecordingSupported,
   shareOrDownloadClip,
+  type ClipOverlaySource,
   type ClipRecorderState,
 } from '../utils/canvasRecorder';
 import {
@@ -21,7 +22,12 @@ export interface CinemaOverlayProps {
   renderer: StreetViewRenderer | null;
   onExit: () => void;
   onTakeSnapshot?: () => void;
-  /** Graded-road canvas only until single-device cabin lands. */
+  /**
+   * Composites car mode's cabin over the graded road canvas. Passed down from
+   * `AppShell` so this component never statically imports the lazy car runtime.
+   * Null (or a cabin that never renders) records road-only.
+   */
+  cabinOverlay?: ClipOverlaySource | null;
   lookId?: string | null;
   vehicleType?: string | null;
   panoId?: string | null;
@@ -40,6 +46,7 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
   renderer,
   onExit,
   onTakeSnapshot,
+  cabinOverlay = null,
   lookId = null,
   vehicleType = null,
   panoId = null,
@@ -78,7 +85,11 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
   const handleStartRecording = useCallback(() => {
     if (!renderer?.canvas || recState === 'recording') return;
     cleanupRecorder();
-    const recorder = new CanvasClipRecorder(renderer.canvas, { fps: 30, burnAttribution: true });
+    const recorder = new CanvasClipRecorder(renderer.canvas, {
+      fps: 30,
+      burnAttribution: true,
+      overlay: cabinOverlay ?? undefined,
+    });
     if (recorder.getState() === 'unsupported') {
       setRecState('unsupported');
       return;
@@ -91,7 +102,7 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
     setRecState('recording');
     setElapsedSec(0);
     timerRef.current = setInterval(() => setElapsedSec((s) => s + 1), 1000);
-  }, [renderer, recState, cleanupRecorder, lookId, vehicleType, panoId, imageDate]);
+  }, [renderer, recState, cleanupRecorder, cabinOverlay, lookId, vehicleType, panoId, imageDate]);
 
   useEffect(() => {
     if (recState !== 'recording') return;
@@ -207,7 +218,7 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
             onClick={handleStartRecording}
             disabled={!renderer}
             style={btnStyle('#d9534f')}
-            title="Record WebM of the graded road canvas (cabin overlay not included yet). Min 15s."
+            title="Record WebM of the graded road canvas, with the cabin composited in while car mode is on. Min 15s."
           >
             ● Record
           </button>

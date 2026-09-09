@@ -193,5 +193,7 @@ export {
     setCarPostProcessingEnabled,
     setCarBloomStrength,
     getCarPerformanceString,
+    getCabinCanvas,
+    onCabinFrameRendered,
     disposeCarMode,
 } from './carModeRuntime';

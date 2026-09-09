@@ -11,6 +11,7 @@
  * - `runtime/telemetryBridge.ts`— app → cabin feeds (location, weather, gauges, lamps)
  * - `runtime/mirror.ts`         — rearview / vanity glass (billable imagery)
  * - `runtime/interaction.ts`    — pointer hit-testing against cabin meshes
+ * - `runtime/frameCapture.ts`   — cabin canvas + post-render tap for cinema
  *
  * The re-exports below are written out by name rather than `export *` because
  * this surface is a contract: `src/car/index.ts` re-exports it item by item,
@@ -27,6 +28,11 @@ export {
     updateCarMode,
     disposeCarMode,
 } from './runtime/lifecycle';
+
+export {
+    getCabinCanvas,
+    onCabinFrameRendered,
+} from './runtime/frameCapture';
 
 export {
     setMirrorStreetViewCanvas,
