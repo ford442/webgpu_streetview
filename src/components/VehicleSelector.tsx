@@ -13,6 +13,7 @@ const vehicleIcons: Record<VehicleType, string> = {
     convertible: '🏎️',
     'science-lab': '🔬',
     limousine: '🚙',
+    cortianics: '🛡️',
 };
 
 const VehicleCard: React.FC<{

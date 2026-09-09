@@ -112,7 +112,7 @@ export function hexToRgba(hex: string, alpha: number): string {
  * still reach the glass; night replaces the old cyan wash.
  */
 export function clusterAmbientGlow(
-  vehicle: 'sedan' | 'convertible' | 'science-lab' | 'limousine' | undefined,
+  vehicle: 'sedan' | 'convertible' | 'science-lab' | 'limousine' | 'cortianics' | undefined,
   nightIntensity: number,
   dayFallback: string,
 ): string {
@@ -125,6 +125,8 @@ export function clusterAmbientGlow(
       return `rgba(255, 110, 64, ${a})`;
     case 'limousine':
       return `rgba(212, 176, 96, ${a})`;
+    case 'cortianics':
+      return `rgba(220, 32, 28, ${a})`;
     default:
       return `rgba(70, 210, 130, ${a})`;
   }

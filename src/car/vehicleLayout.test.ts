@@ -47,7 +47,7 @@ describe('vehicleLayout', () => {
   });
 
   it('every vehicle defines defaultSeatOffset and cameraFov', () => {
-    for (const type of ['sedan', 'convertible', 'science-lab', 'limousine'] as const) {
+    for (const type of ['sedan', 'convertible', 'science-lab', 'limousine', 'cortianics'] as const) {
       const cfg = getVehicleConfig(type);
       expect(cfg.defaultSeatOffset).toBeGreaterThanOrEqual(0);
       expect(cfg.cameraFov.base).toBeGreaterThan(cfg.cameraFov.min);
