@@ -26,6 +26,11 @@ export class ConvertibleInterior {
     this.buildWindDeflector();
   }
 
+  /** Re-parent onto `interiorGroup` after a cabin rebuild clears it. */
+  attachToCabin(): void {
+    this.interiorGroup.add(this.windDeflectorGroup);
+  }
+
   private buildWindDeflector(): void {
     // Wind deflector frame (behind seats, reduces cabin turbulence)
     const frameMat = new THREE.MeshStandardMaterial({
@@ -106,6 +111,11 @@ export class SportDashboard {
     this.interiorGroup = interiorGroup;
     this.sportElements = new THREE.Group();
     this.buildSportDashboard();
+  }
+
+  /** Re-parent onto `interiorGroup` after a cabin rebuild clears it. */
+  attachToCabin(): void {
+    this.interiorGroup.add(this.sportElements);
   }
 
   private buildSportDashboard(): void {
@@ -318,6 +328,18 @@ export class ConvertibleMode {
 
     // Initialize as convertible (no roof, sport features)
     this.applyVehicleType('convertible');
+  }
+
+  /**
+   * Re-parent this mode's own meshes onto `interiorGroup` after a cabin
+   * rebuild (`rebuildCarInteriorForVehicle`) clears it — `clear()` only
+   * detaches children, it doesn't dispose them, so the sport dashboard,
+   * sport seats and wind deflector survive and just need to be re-added.
+   */
+  attachToCabin(): void {
+    this.convertibleInterior.attachToCabin();
+    this.sportDashboard.attachToCabin();
+    this.interiorGroup.add(this.sportSeats.getGroup());
   }
 
   /**

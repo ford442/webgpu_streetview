@@ -398,7 +398,7 @@ webgpu_streetview/
 │   │   ├── RearviewMirror.ts
 │   │   ├── SelectivePostProcessing.ts
 │   │   ├── VehicleManager.ts      # Vehicle type configs
-│   │   └── variants/              # ConvertibleMode, LimousineMode, ScienceLabMode
+│   │   └── variants/              # ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere
 │   ├── hooks/
 │   │   ├── useKeyboardShortcuts.tsx
 │   │   ├── useBookmarks.ts

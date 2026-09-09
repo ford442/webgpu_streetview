@@ -15,7 +15,18 @@ Add a limousine with partition glass, rear-facing seats, and luxury amenities.
 
 ## Implementation
 
-Created `webgpu_streetview/src/car/variants/LimousineMode.ts`
+Lives at `src/car/variants/limousine/LimoAtmospherePlugin.ts`.
+
+> **Superseded:** this file originally described a `LimousineMode` class that
+> took an `HTMLElement` container, built a whole cabin, and drove its own
+> `THREE.WebGLRenderer` + `render()` loop — a second GPU context that nothing on
+> the live path ever called. It was folded into `LimoAtmosphere`, a **scene
+> plugin** that adds only the limo-specific trim to the shared
+> `interior.interiorGroup` and is updated by `src/car/runtime/lifecycle.ts`.
+> Driver seat, floor, roof and glass come from the shared `CarInteriorBuilder`
+> for every vehicle. `src/car/variants/__tests__/atmospherePlugins.test.ts`
+> greps `src/car/variants/` for `new THREE.WebGLRenderer` and fails if one comes
+> back. **Do not add one.**
 
 ### Features Implemented:
 
@@ -42,30 +53,40 @@ export interface LimoState {
   screenContent: 'none' | 'nav' | 'entertainment' | 'ambient';
 }
 
-export class LimousineMode {
-  constructor(container: HTMLElement, initialState?: Partial<LimoState>);
+export class LimoAtmosphere {
+  constructor(
+    interiorGroup: THREE.Group,      // the shared cabin group — not a container element
+    initialVehicle: VehicleType,
+    initialState?: Partial<LimoState>,
+  );
+  attachToCabin(): void;             // re-parent after rebuildCarInteriorForVehicle()'s clear()
+  setVehicleType(type: VehicleType): void;  // visibility follows 'limousine'
   togglePartition(): boolean;
   setMoodLighting(mode: LimoState['moodLighting']): void;
   toggleEntertainment(): boolean;
   toggleBarLight(): boolean;
   toggleIntercom(): boolean;
-  toggleChauffeurView(): boolean;
   setScreenContent(content: LimoState['screenContent']): void;
   getState(): LimoState;
-  setState(newState: Partial<LimoState>): void;
   update(deltaTime: number): void;
-  render(): void;
+  dispose(): void;
 }
 
-export function initLimousineMode(container: HTMLElement, initialState?: Partial<LimoState>): LimousineMode;
+export const defaultLimoState: LimoState;
 ```
 
-## Files Modified
+`chauffeurView` remains in `LimoState` but has no `toggleChauffeurView()` —
+camera placement is the shared cabin's job, so that criterion is carried by
+`vehicleLayout.ts`, not by this plugin.
 
-- `src/car/variants/LimousineMode.ts` - Main implementation (39KB)
-- `src/car/variants/index.ts` - Added exports
-- `src/car/index.ts` - Added exports
+## Files
+
+- `src/car/variants/limousine/LimoAtmospherePlugin.ts` — the plugin
+- `src/car/variants/limousine/limoAtmosphere.ts` — mood-lighting ramps
+- `src/car/variants/index.ts`, `src/car/index.ts` — exports
+- `src/car/runtime/lifecycle.ts`, `src/car/runtime/state.ts`, `src/car/runtime/vehicleSwitch.ts` — construction, per-vehicle visibility, update, dispose
+- `src/car/variants/__tests__/atmospherePlugins.test.ts` — plugin + no-renderer tests
 
 ## Status
 
-**COMPLETED** - March 9, 2026
+**COMPLETED** - March 9, 2026; refolded into a scene plugin (no second renderer).
