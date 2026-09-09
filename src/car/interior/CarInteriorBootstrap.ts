@@ -119,14 +119,13 @@ export function bootstrapCarInterior(
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, gpuProfile.pixelRatio));
 
-    if (cabinRenderer.backend === 'webgl') {
-        // WebGPU-only: no raw WebGL context to read capabilities/extensions from.
-        applyPerformanceProfile(renderer as THREE.WebGLRenderer, gpuProfile);
-        optimizeTextures(renderer as THREE.WebGLRenderer, {
-            maxTextureSize: gpuProfile.maxTextureSize,
-            anisotropy: gpuProfile.name === 'high' ? 4 : 2,
-        });
-    }
+    // Both backends: `optimizeTextures` takes the backend explicitly and keeps
+    // the compressed-format extension probe on the WebGL side (see #258).
+    applyPerformanceProfile(renderer, gpuProfile);
+    optimizeTextures(renderer, cabinRenderer.backend, {
+        maxTextureSize: gpuProfile.maxTextureSize,
+        anisotropy: gpuProfile.name === 'high' ? 4 : 2,
+    });
 
     const canvas = cabinRenderer.canvas;
     canvas.style.position = 'absolute';
