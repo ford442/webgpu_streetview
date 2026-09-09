@@ -68,7 +68,13 @@ Keyed Playwright covering a live guest join is a follow-up; unit tests cover seq
 
 ## Cinema capture
 
-Cinema WebM records the **Street View renderer canvas** (graded road / weather). The Three.js cabin is a separate overlay today, so clips are **road-only** until the single-GPUDevice cabin work composites glass + road into one swapchain. A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. Stills use the same canvas plus JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
+Cinema WebM records the **Street View renderer canvas** (graded road / weather) with the **cabin composited over it** whenever car mode is on.
+
+The cabin is still a separate canvas on its own renderer, so this is a 2D composite, not one swapchain — the single-GPUDevice cabin work will make it one. The compositing has to respect the cabin's drawing buffer lifetime: `createCabinRenderer.ts` does not pay for `preserveDrawingBuffer`, so the cabin canvas is only readable inside the frame that drew it. `car/runtime/frameCapture.ts` therefore publishes that moment (`updateCarMode()` calls `notifyCabinFrameRendered()` right after `interior.render()`), the recorder copies the cabin into a plain 2D latch there, and its own `requestAnimationFrame` composites road → latch → attribution footer at capture rate. Reading the cabin from the recorder's rAF instead would race the car render loop and latch blank frames.
+
+**Fallback is road-only**, silently and correctly: outside car mode, before the lazy car chunk has loaded, or if car mode is toggled off mid-clip, nothing fires the tap, the latch stays transparent, and the clip is just the graded road.
+
+A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. **Stills are still road-only** — `handleTakeSnapshot` reads `renderer.getCanvasDataURL()` directly, and compositing a one-shot still needs to await a cabin frame through the same tap; that is not wired yet. Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
 
 ## Billing / imagery
 
@@ -86,7 +92,8 @@ Cinema WebM records the **Street View renderer canvas** (graded road / weather).
 | `src/utils/iceServers.ts` | STUN + optional TURN resolution |
 | `src/utils/weatherPresetSync.ts` | Weather preset serialize/parse |
 | `src/utils/studioLink.ts` | Share URLs: `?look=&year=&vehicle=` plus location |
-| `src/utils/cinemaSidecar.ts` | WebM metadata JSON (road-only capture) |
+| `src/utils/cinemaSidecar.ts` | WebM metadata JSON |
+| `src/car/runtime/frameCapture.ts` | Cabin canvas + post-render tap that lets cinema composite the cabin |
 | `src/utils/exifGps.ts` | JPEG GPS + UserComment film-set fields |
 
 ## Audio
