@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { WebGPURenderer } from 'three/webgpu';
+import type { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu';
 import type { GPUPerformanceProfile } from '../../utils/performance';
 
 export type CabinRendererBackend = 'webgl' | 'webgpu';
@@ -57,11 +57,26 @@ export function isWebGPUCabinRenderer(renderer: CabinRenderer): renderer is WebG
 // (called from `useCarDashboardBridge.ts`); `createCabinRenderer` itself
 // stays fully synchronous and only ever reads the already-resolved class.
 let WebGPURendererClass: typeof WebGPURenderer | undefined;
+let WebGPUPMREMGeneratorClass: typeof WebGPUPMREMGenerator | undefined;
 
 export async function preloadWebGPUCabinRenderer(): Promise<void> {
     if (WebGPURendererClass) return;
     const mod = await import('three/webgpu');
     WebGPURendererClass = mod.WebGPURenderer;
+    // `three/webgpu` ships its own PMREMGenerator — a different class from
+    // `THREE.PMREMGenerator`, which only drives a WebGLRenderer. Captured from
+    // the same chunk so the IBL path costs the WebGL default nothing; consumed
+    // by `cabinPmrem.ts`.
+    WebGPUPMREMGeneratorClass = mod.PMREMGenerator;
+}
+
+/**
+ * The WebGPU `PMREMGenerator` class, once `preloadWebGPUCabinRenderer()` has
+ * resolved. Undefined on the default WebGL path, where `THREE.PMREMGenerator`
+ * is the right one.
+ */
+export function getWebGPUPMREMGeneratorClass(): typeof WebGPUPMREMGenerator | undefined {
+    return WebGPUPMREMGeneratorClass;
 }
 
 /**
@@ -74,9 +89,11 @@ export async function preloadWebGPUCabinRenderer(): Promise<void> {
  * `?cabin=webgpu` adopts the Street View `GPUDevice` via
  * `THREE.WebGPURenderer({ device })` instead of the cabin opening its own
  * WebGL context — one `GPUDevice`, one frame. PMREM environment maps
- * (`LightingBuilder.ts`, `PanoEnvironment.ts`) and `optimizeTextures` stay
- * WebGL-only for now and no-op on this path (guarded at their call sites);
- * closing that gap is follow-up work, not this escape hatch.
+ * (`LightingBuilder.ts`, `PanoEnvironment.ts`) work on both backends via
+ * `cabinPmrem.ts`. `optimizeTextures` still reads a raw WebGL context and so
+ * remains WebGL-only, skipped on this path (guarded at its call site in
+ * `CarInteriorBootstrap.ts`); that is the last known gap before the default
+ * can flip.
  */
 export function createCabinRenderer(options: CreateCabinRendererOptions): CabinRendererHandle {
     const search = options.search ?? (typeof window !== 'undefined' ? window.location.search : '');
