@@ -1,11 +1,15 @@
 import * as THREE from 'three';
 import type { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu';
-import type { GPUPerformanceProfile } from '../../utils/performance';
+import type {
+    CabinCapableRenderer,
+    CabinRendererBackend,
+    GPUPerformanceProfile,
+} from '../../utils/performance';
 
-export type CabinRendererBackend = 'webgl' | 'webgpu';
+export type { CabinRendererBackend };
 
 /** Either backend, once constructed — the two share the common Three.js `Renderer` surface (render/dispose/setSize/setPixelRatio/setClearColor/toneMapping/outputColorSpace/domElement/info). */
-export type CabinRenderer = THREE.WebGLRenderer | WebGPURenderer;
+export type CabinRenderer = CabinCapableRenderer;
 
 export interface CabinRendererHandle {
     renderer: CabinRenderer;
@@ -90,10 +94,9 @@ export function getWebGPUPMREMGeneratorClass(): typeof WebGPUPMREMGenerator | un
  * `THREE.WebGPURenderer({ device })` instead of the cabin opening its own
  * WebGL context — one `GPUDevice`, one frame. PMREM environment maps
  * (`LightingBuilder.ts`, `PanoEnvironment.ts`) work on both backends via
- * `cabinPmrem.ts`. `optimizeTextures` still reads a raw WebGL context and so
- * remains WebGL-only, skipped on this path (guarded at its call site in
- * `CarInteriorBootstrap.ts`); that is the last known gap before the default
- * can flip.
+ * `cabinPmrem.ts`, and `optimizeTextures` / `applyPerformanceProfile` now run
+ * on both too (`utils/performance.ts` takes the backend explicitly). No known
+ * capability gap remains between the two paths.
  */
 export function createCabinRenderer(options: CreateCabinRendererOptions): CabinRendererHandle {
     const search = options.search ?? (typeof window !== 'undefined' ? window.location.search : '');
