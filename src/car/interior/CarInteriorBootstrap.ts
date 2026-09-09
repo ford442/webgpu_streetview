@@ -117,8 +117,9 @@ export function bootstrapCarInterior(
     const cabinRenderer = createCabinRenderer({ gpuProfile, sharedDevice });
     const { renderer, isReady: isRendererReady } = cabinRenderer;
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, gpuProfile.pixelRatio));
 
+    // `applyPerformanceProfile` is the only caller of `setPixelRatio` (#260):
+    // it clamps the live `devicePixelRatio` to the profile's cap.
     // Both backends: `optimizeTextures` takes the backend explicitly and keeps
     // the compressed-format extension probe on the WebGL side (see #258).
     applyPerformanceProfile(renderer, gpuProfile);
