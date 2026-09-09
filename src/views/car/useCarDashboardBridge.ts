@@ -20,6 +20,7 @@ import {
   cycleCarDisplayPage,
   setCarWeather,
   isConvertibleOpen,
+  getCurrentVehicleType,
   gearHopCount,
   CarModeState,
   type GearPosition,
@@ -272,6 +273,9 @@ export function useCarDashboardBridge({
       publishCameraSpeed(telem.speedKmh);
       cabinAudioRef.current?.update(telem, {
         openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
+        // The cabin IR is per-vehicle, so the audio follows the vehicle
+        // picker the same way the interior does.
+        vehicle: getCurrentVehicleType(),
       });
 
       if (now - lastTelemetryPushRef.current > 150) {

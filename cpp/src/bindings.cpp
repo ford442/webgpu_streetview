@@ -106,6 +106,15 @@ void fill_engine_noise(float* buf, int count,
     sw_fill_engine_noise(buf, count, rpm, load, speed_kmh, time_sec, sample_rate);
 }
 
+/**
+ * Short cabin impulse response. Matches ABI export: 'fill_cabin_ir'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void fill_cabin_ir(float* buf, int count, int vehicle_type,
+                   float openness, float sample_rate) {
+    sw_fill_cabin_ir(buf, count, vehicle_type, openness, sample_rate);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void luma_histogram_bt709(const unsigned char* rgba, int width, int height,
                           unsigned int* bins) {

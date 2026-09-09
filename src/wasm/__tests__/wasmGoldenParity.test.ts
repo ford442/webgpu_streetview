@@ -56,6 +56,10 @@ interface Goldens {
     label: string; count: number; rpm: number; load: number;
     speedKmh: number; timeSec: number; sampleRate: number; expected: number[];
   }[];
+  cabinIr: {
+    label: string; count: number; vehicleType: number;
+    openness: number; sampleRate: number; expected: number[];
+  }[];
   lumaHistogram: { width: number; height: number; rgba: number[]; expectedBins: number[] };
   lumaReduce: { width: number; height: number; rgba: number[]; expected: number[] };
   downsample2d: {
@@ -75,7 +79,7 @@ const goldens: Goldens = JSON.parse(
  *
  * Measured worst-case |JS - golden| at the time of writing:
  *   noise2d 1.2e-8 · fbm2d 7.4e-9 · noise tile 2.2e-7 · fBm tile 9.3e-8
- *   engine PCM 3.0e-8 · particle seeds 0 · angle helpers 0
+ *   engine PCM 3.0e-8 · particle seeds 0 · angle helpers 0 · cabin IR 0
  */
 const TOLERANCES = {
   /**
@@ -85,7 +89,11 @@ const TOLERANCES = {
   f32RoundingOrder: 5e-7,
   /** Both sides use the host's Math.sin/cos/atan2 in double precision. */
   haversineRelative: 1e-12,
-  /** Integer-LCG and fmod paths: no accumulation, so exact agreement. */
+  /**
+   * Integer-LCG and fmod paths, plus the cabin IR (whose JS twin rounds with
+   * Math.fround after every operation): no double-precision accumulation, so
+   * exact agreement.
+   */
   exact: 0,
 } as const;
 
@@ -234,6 +242,16 @@ describe('WASM golden parity (JS fallback)', () => {
       api.fillEngineNoise(out, c.count, c.rpm, c.load, c.speedKmh, c.timeSec, c.sampleRate);
       c.expected.forEach((expected, i) => {
         expectClose(out[i]!, expected, TOLERANCES.f32RoundingOrder, `engineNoise[${c.label}][${i}]`);
+      });
+    });
+  });
+
+  it('fillCabinIr matches the goldens', () => {
+    goldens.cabinIr.forEach((c) => {
+      const out = new Float32Array(c.count);
+      api.fillCabinIr(out, c.count, c.vehicleType, c.openness, c.sampleRate);
+      c.expected.forEach((expected, i) => {
+        expectClose(out[i]!, expected, TOLERANCES.exact, `cabinIr[${c.label}][${i}]`);
       });
     });
   });

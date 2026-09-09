@@ -192,6 +192,24 @@ const engineNoise = ENGINE_CASES.map((c) => {
   return { ...c, expected: readF32(c.count) };
 });
 
+// Cabin IRs: two production-length taps at 44.1 kHz (roof closed vs open, the
+// pair the openness contract rests on), a half-open convertible at 48 kHz, a
+// buffer too short to hold the late reflections, and out-of-range arguments
+// that must clamp identically on every backend.
+const CABIN_IR_CASES = [
+  { label: 'sedan-closed', count: 128, vehicleType: 0, openness: 0, sampleRate: 44100 },
+  { label: 'sedan-open', count: 128, vehicleType: 0, openness: 1, sampleRate: 44100 },
+  { label: 'convertible-half', count: 96, vehicleType: 1, openness: 0.5, sampleRate: 48000 },
+  { label: 'limousine-short', count: 64, vehicleType: 3, openness: 0, sampleRate: 44100 },
+  { label: 'clamped', count: 32, vehicleType: 99, openness: 2.5, sampleRate: 0 },
+];
+
+const cabinIr = CABIN_IR_CASES.map((c) => {
+  reserve(c.count * 4);
+  exp.fill_cabin_ir(SCRATCH, c.count, c.vehicleType, c.openness, c.sampleRate);
+  return { ...c, expected: readF32(c.count) };
+});
+
 const CHORES_IMAGE = {
   width: 4,
   height: 2,
@@ -252,6 +270,7 @@ const goldens = {
   normalizeAngle,
   signedAngleDiff,
   engineNoise,
+  cabinIr,
   lumaHistogram,
   lumaReduce,
   downsample2d,
@@ -419,6 +438,18 @@ engineNoise.forEach((c, i) => {
   lines.push(`inline constexpr float kEngineTime${i} = ${f32(c.timeSec)};`);
   lines.push(`inline constexpr float kEngineSampleRate${i} = ${f32(c.sampleRate)};`);
   lines.push(f32Array(`kEngineExpected${i}`, c.expected));
+  lines.push('');
+});
+
+lines.push('// --- fill_cabin_ir -------------------------------------------------------');
+lines.push(`inline constexpr int kCabinIrCaseCount = ${cabinIr.length};`);
+cabinIr.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kCabinIrCount${i} = ${c.count};`);
+  lines.push(`inline constexpr int kCabinIrVehicle${i} = ${c.vehicleType};`);
+  lines.push(`inline constexpr float kCabinIrOpenness${i} = ${f32(c.openness)};`);
+  lines.push(`inline constexpr float kCabinIrSampleRate${i} = ${f32(c.sampleRate)};`);
+  lines.push(f32Array(`kCabinIrExpected${i}`, c.expected));
   lines.push('');
 });
 

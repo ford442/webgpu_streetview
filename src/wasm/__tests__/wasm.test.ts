@@ -395,6 +395,55 @@ describe('fillEngineNoise', () => {
   });
 });
 
+// ---- fillCabinIr ------------------------------------------------------------
+describe('fillCabinIr', () => {
+  const hfTransfer = (ir: Float32Array): number => {
+    let dc = 0;
+    let nyquist = 0;
+    for (let i = 0; i < ir.length; i++) {
+      dc += ir[i]!;
+      nyquist += i % 2 === 0 ? ir[i]! : -ir[i]!;
+    }
+    return Math.abs(nyquist) / Math.abs(dc);
+  };
+
+  const ir = async (vehicleType: number, openness: number): Promise<Float32Array> => {
+    const wasm = await getFallback();
+    const out = new Float32Array(128);
+    wasm.fillCabinIr(out, out.length, vehicleType, openness, 44100);
+    return out;
+  };
+
+  test('starts with the direct path and normalises the DC gain to 1', async () => {
+    const out = await ir(0, 0);
+    expect(out[0]).toBeGreaterThan(0);
+    const dc = out.reduce((sum, v) => sum + v, 0);
+    expect(dc).toBeCloseTo(1, 4);
+  });
+
+  test('an open roof passes more high frequency than a sealed cabin', async () => {
+    for (let vehicleType = 0; vehicleType < 5; vehicleType++) {
+      const open = hfTransfer(await ir(vehicleType, 1));
+      const closed = hfTransfer(await ir(vehicleType, 0));
+      expect(open).toBeGreaterThan(closed * 2);
+    }
+  });
+
+  test('clamps an out-of-range vehicle index and openness', async () => {
+    expect(Array.from(await ir(99, 0))).toEqual(Array.from(await ir(4, 0)));
+    expect(Array.from(await ir(-1, 0))).toEqual(Array.from(await ir(0, 0)));
+    expect(Array.from(await ir(0, 4))).toEqual(Array.from(await ir(0, 1)));
+  });
+
+  test('is deterministic and a no-op for a zero count', async () => {
+    expect(Array.from(await ir(2, 0.5))).toEqual(Array.from(await ir(2, 0.5)));
+    const wasm = await getFallback();
+    const buf = new Float32Array(4);
+    wasm.fillCabinIr(buf, 0, 0, 0, 44100);
+    expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
+  });
+});
+
 // ---- isWasm flag ------------------------------------------------------------
 describe('isWasm flag', () => {
   test('JS fallback has isWasm = false', async () => {

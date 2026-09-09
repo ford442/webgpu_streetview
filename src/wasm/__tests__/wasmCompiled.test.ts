@@ -35,6 +35,10 @@ interface CompiledExports {
     rpm: number, load: number, speed: number,
     time: number, sampleRate: number,
   ) => void;
+  fill_cabin_ir: (
+    ptr: number, count: number,
+    vehicleType: number, openness: number, sampleRate: number,
+  ) => void;
 }
 
 function jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -80,6 +84,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(typeof exp.haversine).toBe('function');
     expect(typeof exp.batch_haversine).toBe('function');
     expect(typeof exp.fill_engine_noise).toBe('function');
+    expect(typeof exp.fill_cabin_ir).toBe('function');
   });
 
   test('haversine matches the JS reference formula', () => {
@@ -258,6 +263,27 @@ describe('compiled streetview-wasm.wasm binary', () => {
     for (let i = 0; i < count; i++) {
       expect(jsBuf[i]).toBeCloseTo(fromWasm[i]!, 4);
     }
+    _resetWasmModule();
+  });
+
+  test('fill_cabin_ir matches the JS fallback bit-for-bit', async () => {
+    const { loadWasmModule, _resetWasmModule } = await import('../index');
+    _resetWasmModule();
+    const fallback = await loadWasmModule();
+    expect(fallback.isWasm).toBe(false);
+
+    // A fractional openness on purpose: the interpolated coefficients are
+    // where an f64 literal in the twin would show up (the 0/1 endpoints
+    // collapse to an exact operand and hide the difference).
+    const count = 128;
+    const ptr = WASM_SCRATCH_OFFSET;
+    const args = [1, 0.35, 48000] as const;
+    exp.fill_cabin_ir(ptr, count, ...args);
+    const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
+
+    const jsBuf = new Float32Array(count);
+    fallback.fillCabinIr(jsBuf, count, ...args);
+    expect(Array.from(jsBuf)).toEqual(fromWasm);
     _resetWasmModule();
   });
 

@@ -59,7 +59,8 @@ if(EMSCRIPTEN)
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
     #       fill_particle_seeds, haversine, batch_haversine,
     #       normalize_angle, signed_angle_diff, fill_engine_noise,
-    #       luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+    #       fill_cabin_ir, luma_histogram_bt709, reduce_luma_bt709,
+    #       downsample_2d
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
@@ -100,7 +101,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 

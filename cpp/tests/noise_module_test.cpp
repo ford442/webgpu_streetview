@@ -297,6 +297,120 @@ TEST_CASE("fill_engine_noise matches the shipping WASM goldens") {
     }
 }
 
+TEST_CASE("fill_cabin_ir matches the shipping WASM goldens") {
+    struct Case {
+        int count;
+        int vehicle;
+        float openness, sample_rate;
+        const float* expected;
+    };
+    const Case cases[] = {
+        { goldens::kCabinIrCount0, goldens::kCabinIrVehicle0, goldens::kCabinIrOpenness0,
+          goldens::kCabinIrSampleRate0, goldens::kCabinIrExpected0 },
+        { goldens::kCabinIrCount1, goldens::kCabinIrVehicle1, goldens::kCabinIrOpenness1,
+          goldens::kCabinIrSampleRate1, goldens::kCabinIrExpected1 },
+        { goldens::kCabinIrCount2, goldens::kCabinIrVehicle2, goldens::kCabinIrOpenness2,
+          goldens::kCabinIrSampleRate2, goldens::kCabinIrExpected2 },
+        { goldens::kCabinIrCount3, goldens::kCabinIrVehicle3, goldens::kCabinIrOpenness3,
+          goldens::kCabinIrSampleRate3, goldens::kCabinIrExpected3 },
+        { goldens::kCabinIrCount4, goldens::kCabinIrVehicle4, goldens::kCabinIrOpenness4,
+          goldens::kCabinIrSampleRate4, goldens::kCabinIrExpected4 },
+    };
+    static_assert(sizeof(cases) / sizeof(cases[0]) == goldens::kCabinIrCaseCount,
+                  "cabin IR golden case count drifted from the generated header");
+
+    for (int c = 0; c < goldens::kCabinIrCaseCount; ++c) {
+        const Case& k = cases[c];
+        INFO("case " << c);
+        std::vector<float> buf(static_cast<size_t>(k.count), 0.0f);
+        sw_fill_cabin_ir(buf.data(), k.count, k.vehicle, k.openness, k.sample_rate);
+        for (int i = 0; i < k.count; ++i) {
+            INFO(at(i));
+            CHECK(bit_equal(buf[static_cast<size_t>(i)], k.expected[i]));
+        }
+    }
+}
+
+namespace {
+
+/**
+ * How much of the top of the spectrum an IR passes, relative to DC: the
+ * magnitude of its Nyquist response (alternating-sign sum) over its DC
+ * response (plain sum). Small = muffled cabin, large = open air.
+ */
+double hf_transfer(const std::vector<float>& ir) {
+    double dc = 0.0;
+    double nyquist = 0.0;
+    for (size_t i = 0; i < ir.size(); ++i) {
+        dc += static_cast<double>(ir[i]);
+        nyquist += (i % 2 == 0) ? static_cast<double>(ir[i]) : -static_cast<double>(ir[i]);
+    }
+    return std::fabs(nyquist) / std::fabs(dc);
+}
+
+std::vector<float> cabin_ir(int vehicle, float openness) {
+    std::vector<float> ir(128, 0.0f);
+    sw_fill_cabin_ir(ir.data(), static_cast<int>(ir.size()), vehicle, openness, 44100.0f);
+    return ir;
+}
+
+} // namespace
+
+TEST_CASE("fill_cabin_ir: opening the roof raises the high-frequency transfer") {
+    // The audible half of the contract: roof-down must be brighter than
+    // roof-up for every vehicle, and the DC gain must not move with it, so a
+    // roof toggle re-colours the cabin instead of jumping its level.
+    for (int v = 0; v < 5; ++v) {
+        INFO("vehicle " << v);
+        const std::vector<float> closed = cabin_ir(v, 0.0f);
+        const std::vector<float> open = cabin_ir(v, 1.0f);
+        const std::vector<float> half = cabin_ir(v, 0.5f);
+
+        CHECK(hf_transfer(open) > hf_transfer(half));
+        CHECK(hf_transfer(half) > hf_transfer(closed));
+        // Doubling the top-octave transfer is well past "audible".
+        CHECK(hf_transfer(open) > 2.0 * hf_transfer(closed));
+
+        double dc_closed = 0.0, dc_open = 0.0;
+        for (size_t i = 0; i < closed.size(); ++i) {
+            dc_closed += static_cast<double>(closed[i]);
+            dc_open += static_cast<double>(open[i]);
+        }
+        CHECK(dc_closed == doctest::Approx(1.0).epsilon(1e-5));
+        CHECK(dc_open == doctest::Approx(1.0).epsilon(1e-5));
+    }
+}
+
+TEST_CASE("fill_cabin_ir: distinct cabins, clamped arguments, safe edges") {
+    // Every vehicle has its own room; a shared table entry would make the
+    // vehicle picker silent in the audio.
+    for (int v = 1; v < 5; ++v) {
+        INFO("vehicle " << v);
+        CHECK(cabin_ir(v, 0.0f) != cabin_ir(0, 0.0f));
+    }
+
+    // Out-of-range vehicle / openness clamp rather than reading past the table.
+    CHECK(cabin_ir(99, 0.0f) == cabin_ir(4, 0.0f));
+    CHECK(cabin_ir(-3, 0.0f) == cabin_ir(0, 0.0f));
+    CHECK(cabin_ir(0, 7.5f) == cabin_ir(0, 1.0f));
+    CHECK(cabin_ir(0, -7.5f) == cabin_ir(0, 0.0f));
+
+    // sample_rate <= 1 falls back to 44100, like fill_engine_noise.
+    std::vector<float> fallback(128, 0.0f);
+    sw_fill_cabin_ir(fallback.data(), 128, 0, 0.0f, 0.0f);
+    CHECK(fallback == cabin_ir(0, 0.0f));
+
+    // A single-tap buffer, a zero count and a null pointer must all be safe.
+    std::vector<float> one(1, 9.0f);
+    sw_fill_cabin_ir(one.data(), 1, 0, 0.0f, 44100.0f);
+    CHECK(one[0] == doctest::Approx(1.0f));
+
+    std::vector<float> untouched(8, 7.0f);
+    sw_fill_cabin_ir(untouched.data(), 0, 0, 0.0f, 44100.0f);
+    CHECK(untouched[0] == 7.0f);
+    sw_fill_cabin_ir(nullptr, 16, 0, 0.0f, 44100.0f);
+}
+
 TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") {
     std::vector<float> buf(256, 7.0f);
     sw_fill_engine_noise(buf.data(), static_cast<int>(buf.size()),

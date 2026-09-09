@@ -7,7 +7,7 @@
  * build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine,
- *   normalize_angle, signed_angle_diff, fill_engine_noise,
+ *   normalize_angle, signed_angle_diff, fill_engine_noise, fill_cabin_ir,
  *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
@@ -124,6 +124,34 @@ float sw_signed_angle_diff(float from, float to);
 void sw_fill_engine_noise(float* buf, int count,
                           float rpm, float load, float speed_kmh,
                           float time_sec, float sample_rate);
+
+/**
+ * Fill a short cabin impulse response (mono, f32, `count` taps).
+ *
+ * Tap 0 is the direct path; a handful of early reflections and a diffuse tail
+ * follow, then a one-pole absorption filter. The taps are normalised to a DC
+ * gain of 1, so convolving the engine bed with the IR colours it without
+ * changing its level — that is what makes the cabin sound like a room instead
+ * of a raw oscillator.
+ *
+ * Only add/sub/mul/div and an integer LCG are used — no transcendentals — so
+ * the emcc binary, the host build and the JS twin agree to the last f32 bit
+ * on every platform.
+ *
+ * @param buf           Caller-owned float array of length `count` (128 is what
+ *                      the cabin worklet uses; ~3 ms at 44.1 kHz).
+ * @param count         Number of taps to write. <= 0 is a no-op.
+ * @param vehicle_type  Cabin profile index, clamped to [0, 4]; the order
+ *                      matches CABIN_IR_VEHICLE_INDEX in
+ *                      src/car/audio/cabinIr.ts (sedan, convertible,
+ *                      science-lab, limousine, cortianics).
+ * @param openness      0 = sealed, 1 = roof/windows fully open. Higher values
+ *                      drop the reflected energy and raise the high-frequency
+ *                      transfer, i.e. less muffling.
+ * @param sample_rate   Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ */
+void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
+                      float openness, float sample_rate);
 
 /**
  * 256-bin Rec.709 luma histogram of packed RGBA8 (row-major, 4 bytes/pixel).

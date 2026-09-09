@@ -135,6 +135,26 @@ export interface StreetViewWasmAPI {
   ): void;
 
   /**
+   * Fill a Float32Array with a short cabin impulse response — tap 0 is the
+   * direct path, then early reflections and a damped diffuse tail, normalised
+   * to a DC gain of 1 so convolving with it does not change the bed's level.
+   *
+   * @param out         Pre-allocated array of at least `count` taps.
+   * @param count       Number of taps (128 is what the cabin worklet uses).
+   * @param vehicleType Cabin profile index, clamped to [0, 4] — see
+   *                    `CABIN_IR_VEHICLE_INDEX` in `src/car/audio/cabinIr.ts`.
+   * @param openness    0 = sealed, 1 = roof/windows open (more HF gets through).
+   * @param sampleRate  Audio sample rate (Hz); values <= 1 fall back to 44100.
+   */
+  fillCabinIr(
+    out: Float32Array,
+    count: number,
+    vehicleType: number,
+    openness: number,
+    sampleRate: number,
+  ): void;
+
+  /**
    * 256-bin Rec.709 luma histogram of packed RGBA8.
    * `rgba` must contain at least `width * height * 4` bytes.
    */
@@ -398,6 +418,108 @@ function _jsFillEngineNoise(
   }
 }
 
+/**
+ * Cabin IR profiles — the JS twin of `cabin_profiles` in
+ * cpp/src/noise_module.cpp. Times are milliseconds; gains are relative to the
+ * direct path. Order matches `CABIN_IR_VEHICLE_INDEX` in
+ * `src/car/audio/cabinIr.ts`.
+ */
+const _CABIN_PROFILES_RAW = [
+  // sedan
+  { reflectMs: [1.15, 1.9, 2.7], reflectGain: [0.42, 0.26, 0.17], tailLevel: 0.3, tailMs: 2.2, dampClosed: 0.3, dampOpen: 0.88 },
+  // convertible
+  { reflectMs: [0.85, 1.45, 2.05], reflectGain: [0.34, 0.2, 0.11], tailLevel: 0.22, tailMs: 1.5, dampClosed: 0.38, dampOpen: 0.95 },
+  // science-lab
+  { reflectMs: [1.4, 2.35, 3.1], reflectGain: [0.46, 0.31, 0.22], tailLevel: 0.38, tailMs: 3.1, dampClosed: 0.26, dampOpen: 0.82 },
+  // limousine
+  { reflectMs: [1.75, 2.8, 3.6], reflectGain: [0.4, 0.28, 0.2], tailLevel: 0.34, tailMs: 3.6, dampClosed: 0.22, dampOpen: 0.8 },
+  // cortianics
+  { reflectMs: [0.95, 1.6, 2.3], reflectGain: [0.38, 0.24, 0.15], tailLevel: 0.26, tailMs: 1.8, dampClosed: 0.34, dampOpen: 0.92 },
+] as const;
+
+/**
+ * The same table with every constant rounded to f32 up front. Without this the
+ * twin would multiply f64 literals where the module multiplies f32 ones, and
+ * the two would disagree at any openness between 0 and 1 (the endpoints hide
+ * it, because the interpolation collapses to an exact operand there).
+ */
+const _CABIN_PROFILES = _CABIN_PROFILES_RAW.map((p) => ({
+  reflectMs: Float32Array.from(p.reflectMs),
+  reflectGain: Float32Array.from(p.reflectGain),
+  tailLevel: Math.fround(p.tailLevel),
+  tailMs: Math.fround(p.tailMs),
+  dampClosed: Math.fround(p.dampClosed),
+  dampOpen: Math.fround(p.dampOpen),
+}));
+
+/** Number of cabin profiles the module knows about (C++ `cabin_profile_count`). */
+export const CABIN_IR_PROFILE_COUNT = _CABIN_PROFILES.length;
+
+function _jsFillCabinIr(
+  out: Float32Array,
+  count: number,
+  vehicleType: number,
+  openness: number,
+  sampleRate: number,
+): void {
+  if (count <= 0) return;
+  let sr = Math.fround(sampleRate);
+  if (!(sr > 1)) sr = 44100;
+  const open = Math.fround(Math.max(0, Math.min(1, openness)));
+  let v = Math.trunc(vehicleType);
+  if (!(v >= 0)) v = 0;
+  if (v >= _CABIN_PROFILES.length) v = _CABIN_PROFILES.length - 1;
+  // v is clamped into range above, so the profile always exists.
+  const p = _CABIN_PROFILES[v]!;
+
+  const n = Math.min(count, out.length);
+  out.fill(0, 0, n);
+  out[0] = 1;
+
+  // Every step below is rounded with Math.fround so this twin reproduces the
+  // C++/WASM f32 arithmetic op-for-op rather than accumulating in double.
+  const enclosure = Math.fround(1 - Math.fround(0.75 * open));
+  const msToTaps = Math.fround(sr / 1000);
+  for (let r = 0; r < 3; r++) {
+    const d = Math.trunc(Math.fround(p.reflectMs[r]! * msToTaps));
+    if (d > 0 && d < n) {
+      out[d] = Math.fround(out[d]! + Math.fround(p.reflectGain[r]! * enclosure));
+    }
+  }
+
+  let state = (Math.imul(v, 2654435761) + 1013904223) >>> 0;
+  const tailTaps = Math.fround(p.tailMs * msToTaps);
+  const decay = tailTaps > 1 ? Math.fround(1 / tailTaps) : 1;
+  let env = Math.fround(p.tailLevel * enclosure);
+  let prevN = 0;
+  for (let i = 1; i < n; i++) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    let noise = Math.fround(((state >>> 8) & 0xffffff) / 16777216);
+    noise = Math.fround(Math.fround(noise * 2) - 1);
+    out[i] = Math.fround(
+      out[i]! + Math.fround(Math.fround(Math.fround(noise - prevN) * 0.5) * env),
+    );
+    prevN = noise;
+    env = Math.fround(env - Math.fround(env * decay));
+  }
+
+  const damp = Math.fround(
+    p.dampClosed + Math.fround(Math.fround(p.dampOpen - p.dampClosed) * open),
+  );
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    y = Math.fround(y + Math.fround(damp * Math.fround(out[i]! - y)));
+    out[i] = y;
+  }
+
+  let dc = 0;
+  for (let i = 0; i < n; i++) dc = Math.fround(dc + out[i]!);
+  if (dc > 0) {
+    const norm = Math.fround(1 / dc);
+    for (let i = 0; i < n; i++) out[i] = Math.fround(out[i]! * norm);
+  }
+}
+
 const JS_FALLBACK: StreetViewWasmAPI = {
   seed: _jsSeed,
   noise2d: _jsNoise2d,
@@ -410,6 +532,7 @@ const JS_FALLBACK: StreetViewWasmAPI = {
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
   fillEngineNoise: _jsFillEngineNoise,
+  fillCabinIr: _jsFillCabinIr,
   lumaHistogramBt709: jsLumaHistogramBt709,
   reduceLumaBt709: jsReduceLumaBt709,
   downsample2d: jsDownsample2d,
@@ -502,6 +625,10 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       ptr: number, count: number,
       rpm: number, load: number, speed: number,
       time: number, sampleRate: number,
+    ) => void;
+    const fill_cabin_ir = exp['fill_cabin_ir'] as (
+      ptr: number, count: number,
+      vehicleType: number, openness: number, sampleRate: number,
     ) => void;
     const luma_histogram_bt709 = exp['luma_histogram_bt709'] as (
       rgba: number, w: number, h: number, bins: number,
@@ -604,6 +731,20 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       out.set(view.subarray(0, Math.min(out.length, count)));
     };
 
+    const fillCabinIr = (
+      out: Float32Array,
+      count: number,
+      vehicleType: number,
+      openness: number,
+      sampleRate: number,
+    ): void => {
+      if (count <= 0) return;
+      reserveScratch(count * 4);
+      fill_cabin_ir(SCRATCH_OFFSET, count, vehicleType, openness, sampleRate);
+      const view = new Float32Array(wasmMemory.buffer, SCRATCH_OFFSET, count);
+      out.set(view.subarray(0, Math.min(out.length, count)));
+    };
+
     const lumaHistogramBt709 = (
       rgba: Uint8Array | Uint8ClampedArray,
       width: number,
@@ -664,6 +805,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       fillEngineNoise,
+      fillCabinIr,
       lumaHistogramBt709,
       reduceLumaBt709,
       downsample2d,
