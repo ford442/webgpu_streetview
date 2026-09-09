@@ -580,7 +580,13 @@ export function getSceneMetrics(scene: THREE.Scene): PerformanceMetrics {
 
 export interface GPUPerformanceProfile {
   name: string;
-  pixelRatio: number;
+  /**
+   * Upper bound on `renderer.setPixelRatio`, not a pixel ratio itself. The
+   * device ratio is read at apply time (`resolvePixelRatio`) and clamped to
+   * this — a profile captured at import cannot freeze a stale
+   * `devicePixelRatio` from before the window moved to another display.
+   */
+  maxPixelRatio: number;
   shadowMapSize: number;
   antialias: boolean;
   maxTextureSize: number;
@@ -591,7 +597,7 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   // High-end desktop (RTX 3080+, M1 Max)
   high: {
     name: 'high',
-    pixelRatio: Math.min(window.devicePixelRatio, 2),
+    maxPixelRatio: 2,
     shadowMapSize: 2048,
     antialias: true,
     maxTextureSize: 4096,
@@ -601,7 +607,7 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   // Mid-range (GTX 1060, M1 Mac)
   medium: {
     name: 'medium',
-    pixelRatio: Math.min(window.devicePixelRatio, 1.5),
+    maxPixelRatio: 1.5,
     shadowMapSize: 1024,
     antialias: false,
     maxTextureSize: 2048,
@@ -611,7 +617,7 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   // Low-end (Integrated graphics, mobile)
   low: {
     name: 'low',
-    pixelRatio: 1,
+    maxPixelRatio: 1,
     shadowMapSize: 512,
     antialias: false,
     maxTextureSize: 1024,
@@ -655,7 +661,22 @@ export function detectGPUProfile(): GPUPerformanceProfile {
 }
 
 /**
- * Apply performance profile to a Three.js renderer
+ * The device pixel ratio a profile allows *right now*. Reads
+ * `window.devicePixelRatio` at call time so a profile object that outlives a
+ * display change still resolves to the current ratio.
+ */
+export function resolvePixelRatio(
+  profile: GPUPerformanceProfile,
+  devicePixelRatio: number = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+): number {
+  return Math.min(devicePixelRatio, profile.maxPixelRatio);
+}
+
+/**
+ * Apply performance profile to a Three.js renderer.
+ *
+ * Sole owner of `setPixelRatio` for the cabin renderer (#260) — callers must
+ * not set it themselves, or the two owners disagree about the dpr clamp.
  */
 export function applyPerformanceProfile(
   renderer: CabinCapableRenderer,
@@ -663,7 +684,7 @@ export function applyPerformanceProfile(
 ): void {
   const targetProfile = profile || detectGPUProfile();
   
-  renderer.setPixelRatio(targetProfile.pixelRatio);
+  renderer.setPixelRatio(resolvePixelRatio(targetProfile));
   
   console.log('[Performance] Applied profile:', targetProfile.name, targetProfile);
 }

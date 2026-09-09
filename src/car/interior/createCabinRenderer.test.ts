@@ -52,7 +52,7 @@ import {
 
 const GPU_PROFILE: GPUPerformanceProfile = {
     name: 'high',
-    pixelRatio: 2,
+    maxPixelRatio: 2,
     shadowMapSize: 1024,
     antialias: true,
     maxTextureSize: 2048,

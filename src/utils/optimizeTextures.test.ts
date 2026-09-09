@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
-import { optimizeTextures, applyPerformanceProfile, type GPUPerformanceProfile } from './performance';
+import {
+    optimizeTextures,
+    applyPerformanceProfile,
+    resolvePixelRatio,
+    GPU_PROFILES,
+    type GPUPerformanceProfile,
+} from './performance';
 
 /**
  * #258: these run on both cabin backends. The WebGL path must stay byte-for-byte
@@ -102,14 +108,53 @@ describe('optimizeTextures across cabin backends', () => {
     });
 
     it('applies the pixel ratio on either backend', () => {
-        const profile = { name: 'high', pixelRatio: 2 } as GPUPerformanceProfile;
+        const profile = { name: 'high', maxPixelRatio: 2 } as GPUPerformanceProfile;
+        const expected = resolvePixelRatio(profile);
 
         const webgl = fakeWebGLRenderer(16);
         applyPerformanceProfile(asRenderer(webgl), profile);
-        expect(webgl.setPixelRatio).toHaveBeenCalledWith(2);
+        expect(webgl.setPixelRatio).toHaveBeenCalledWith(expected);
 
         const webgpu = fakeWebGPURenderer();
         applyPerformanceProfile(asRenderer(webgpu), profile);
-        expect(webgpu.setPixelRatio).toHaveBeenCalledWith(2);
+        expect(webgpu.setPixelRatio).toHaveBeenCalledWith(expected);
+    });
+});
+
+/**
+ * #260: one owner for `setPixelRatio`, and the profile carries a *cap* rather
+ * than a device ratio frozen at module load.
+ */
+describe('pixel ratio ownership', () => {
+    const profile = { name: 'high', maxPixelRatio: 2 } as GPUPerformanceProfile;
+
+    it('clamps the device ratio to the profile cap', () => {
+        expect(resolvePixelRatio(profile, 3)).toBe(2);
+        expect(resolvePixelRatio(profile, 1.5)).toBe(1.5);
+        expect(resolvePixelRatio({ name: 'low', maxPixelRatio: 1 } as GPUPerformanceProfile, 3)).toBe(1);
+    });
+
+    it('reads devicePixelRatio at apply time, not at module load', () => {
+        const original = window.devicePixelRatio;
+        try {
+            Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });
+            const first = fakeWebGPURenderer();
+            applyPerformanceProfile(asRenderer(first), profile);
+            expect(first.setPixelRatio).toHaveBeenCalledWith(1);
+
+            // The window moves to a hi-dpi display after the profile was built.
+            Object.defineProperty(window, 'devicePixelRatio', { value: 3, configurable: true });
+            const second = fakeWebGPURenderer();
+            applyPerformanceProfile(asRenderer(second), profile);
+            expect(second.setPixelRatio).toHaveBeenCalledWith(2);
+        } finally {
+            Object.defineProperty(window, 'devicePixelRatio', { value: original, configurable: true });
+        }
+    });
+
+    it('ships caps, not captured ratios, in GPU_PROFILES', () => {
+        expect(GPU_PROFILES.high.maxPixelRatio).toBe(2);
+        expect(GPU_PROFILES.medium.maxPixelRatio).toBe(1.5);
+        expect(GPU_PROFILES.low.maxPixelRatio).toBe(1);
     });
 });
