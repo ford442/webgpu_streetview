@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
+import { type CabinRenderer } from './createCabinRenderer';
+import { createCabinPmrem, type CabinEnvTarget, type CabinPmrem } from './cabinPmrem';
 
 /**
  * PanoEnvironment
@@ -17,8 +18,8 @@ import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer
  *   dim the environment contribution at night.
  */
 export class PanoEnvironment {
-    private pmrem: THREE.PMREMGenerator | null = null;
-    private currentRT: THREE.WebGLRenderTarget | null = null;
+    private pmrem: CabinPmrem | null = null;
+    private currentRT: CabinEnvTarget | null = null;
     private shiftCanvas: HTMLCanvasElement;
     private intensity = 1;
 
@@ -34,11 +35,11 @@ export class PanoEnvironment {
      * equirect pano image. `centerHeading` is the compass heading (degrees) at
      * the horizontal centre of the image.
      *
-     * No-op on the `?cabin=webgpu` escape hatch — classic `THREE.PMREMGenerator`
-     * is WebGL-only; see `createCabinRenderer.ts`.
+     * Works on both cabin backends — `cabinPmrem.ts` picks the PMREM generator
+     * that matches the renderer. Only called on pano hops, so the renderer is
+     * long since initialized and the synchronous path is safe.
      */
     public setFromEquirect(equirect: HTMLCanvasElement, centerHeading: number): void {
-        if (isWebGPUCabinRenderer(this.renderer)) return;
         const W = equirect.width;
         const H = equirect.height;
         this.shiftCanvas.width = W;
@@ -58,7 +59,11 @@ export class PanoEnvironment {
         texture.mapping = THREE.EquirectangularReflectionMapping;
         texture.colorSpace = THREE.SRGBColorSpace;
 
-        if (!this.pmrem) this.pmrem = new THREE.PMREMGenerator(this.renderer);
+        if (!this.pmrem) this.pmrem = createCabinPmrem(this.renderer);
+        if (!this.pmrem) {
+            texture.dispose();
+            return;
+        }
         const newRT = this.pmrem.fromEquirectangular(texture);
         texture.dispose();
 

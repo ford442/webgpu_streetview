@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
-import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
+import { type CabinRenderer } from './createCabinRenderer';
+import { createCabinPmrem } from './cabinPmrem';
 
 export interface InteriorLights {
   hemisphereLight: THREE.HemisphereLight;
@@ -20,12 +21,66 @@ export interface InteriorLightingOptions {
 }
 
 /**
+ * Installs the dim studio-cube IBL that stands in until the first pano hop.
+ *
+ * Async because the WebGPU PMREM generator has to wait for `renderer.init()`
+ * (see `cabinPmrem.ts`); resolves immediately on WebGL. That wait is what makes
+ * the ownership check below load-bearing rather than defensive: `PanoEnvironment`
+ * can legitimately install the real pano IBL first, and this fallback must not
+ * stomp it when it finally resolves.
+ */
+async function installStudioEnvironmentFallback(
+  scene: THREE.Scene,
+  renderer: CabinRenderer,
+): Promise<void> {
+  const pmrem = createCabinPmrem(renderer);
+  if (!pmrem) return;
+
+  const envScene = new THREE.Scene();
+  const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
+  const envBoxMats = [
+    new THREE.MeshBasicMaterial({ color: 0xc8bba8, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xb8b0a4, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xd8d4cc, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xc4b8a8, side: THREE.BackSide }),
+    new THREE.MeshBasicMaterial({ color: 0xb0a898, side: THREE.BackSide }),
+  ];
+  const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
+  envScene.add(envBox);
+  const envLight = new THREE.PointLight(0xfff5e0, 0.9, 10);
+  envLight.position.set(0, 1.8, 0);
+  envScene.add(envLight);
+
+  // Whatever `scene.environment` is now is what this fallback is allowed to
+  // replace. Anything else means someone took ownership while we were awaiting.
+  const owned = scene.environment;
+  try {
+    const target = await pmrem.fromSceneAsync(envScene);
+    if (scene.environment === owned) {
+      scene.environment = target.texture;
+    } else {
+      // PanoEnvironment got there first and owns the environment from here on.
+      target.dispose();
+    }
+  } catch (err) {
+    console.warn('[LightingBuilder] studio environment IBL failed; cabin keeps analytic lights only', err);
+  } finally {
+    pmrem.dispose();
+    envBoxGeo.dispose();
+    envBoxMats.forEach(m => m.dispose());
+  }
+}
+
+/**
  * Builds the complete lighting rig for a car interior.
  *
  * IBL ownership: this installs a *dim* room-cube PMREM as a fallback only.
  * `PanoEnvironment` replaces `scene.environment` on the first successful
  * pano hop and owns it thereafter — do not write scene.environment from
- * here after construction.
+ * here after construction. The fallback install is asynchronous on WebGPU, so
+ * it re-checks ownership before assigning and drops its own target if the pano
+ * IBL landed first (`installStudioEnvironmentFallback`).
  *
  * Cabin sources (dash, dome, headlights, bounce, window fills) live on
  * `interiorGroup` so they stay in car-body space when the chassis yaws.
@@ -40,31 +95,7 @@ export function buildInteriorLighting(
 ): InteriorLights {
   const quality = options.quality ?? 'high';
 
-  // classic THREE.PMREMGenerator is WebGL-only; the `?cabin=webgpu` escape
-  // hatch skips the static studio-cube IBL fallback rather than crash. Real
-  // reflections on that path are follow-up work — see createCabinRenderer.ts.
-  if (!isWebGPUCabinRenderer(renderer)) {
-    const envScene = new THREE.Scene();
-    const envBoxGeo = new THREE.BoxGeometry(6, 4, 6);
-    const envBoxMats = [
-      new THREE.MeshBasicMaterial({ color: 0xc8bba8, side: THREE.BackSide }),
-      new THREE.MeshBasicMaterial({ color: 0xb8b0a4, side: THREE.BackSide }),
-      new THREE.MeshBasicMaterial({ color: 0xd8d4cc, side: THREE.BackSide }),
-      new THREE.MeshBasicMaterial({ color: 0x1a1a1e, side: THREE.BackSide }),
-      new THREE.MeshBasicMaterial({ color: 0xc4b8a8, side: THREE.BackSide }),
-      new THREE.MeshBasicMaterial({ color: 0xb0a898, side: THREE.BackSide }),
-    ];
-    const envBox = new THREE.Mesh(envBoxGeo, envBoxMats);
-    envScene.add(envBox);
-    const envLight = new THREE.PointLight(0xfff5e0, 0.9, 10);
-    envLight.position.set(0, 1.8, 0);
-    envScene.add(envLight);
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(envScene).texture;
-    pmrem.dispose();
-    envBoxGeo.dispose();
-    envBoxMats.forEach(m => m.dispose());
-  }
+  void installStudioEnvironmentFallback(scene, renderer);
 
   const hemisphereLight = new THREE.HemisphereLight(0xfff5e0, 0x1a1a28, 0.16);
   scene.add(hemisphereLight);
