@@ -1,9 +1,10 @@
 import { CarInterior } from '../CarInterior';
 import { RearviewMirror } from '../RearviewMirror';
 import { SelectivePostProcessing } from '../SelectivePostProcessing';
-import { ConvertibleMode } from '../variants';
+import { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../variants';
 import { DEFAULT_VEHICLE, vehicleManager, type VehicleType } from '../VehicleManager';
 import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
+import { notifyCabinFrameRendered } from './frameCapture';
 import { getState, setState, type CarModeState } from './state';
 
 /**
@@ -59,11 +60,19 @@ export function initCarMode(
     // Set initial vehicle type
     convertibleMode.setVehicleType(initialVehicle);
 
+    // Limousine/science-lab atmosphere — scene plugins layered onto the same
+    // shared interiorGroup, same pattern as ConvertibleMode above.
+    const limoAtmosphere = new LimoAtmosphere(interior.interiorGroup, initialVehicle);
+    const labAtmosphere = new ScienceLabAtmosphere(interior.interiorGroup);
+    labAtmosphere.setVehicleType(initialVehicle);
+
     const state: CarModeState = {
         interior,
         mirror,
         postProcessing,
         convertibleMode,
+        limoAtmosphere,
+        labAtmosphere,
         isActive: false,
         wipersEnabled: false,
         wiperSpeed: 1.0,
@@ -78,16 +87,31 @@ export function initCarMode(
         onGear: applyGearFromMesh,
     });
 
+    // Re-attach anything that lives outside the builder's own rebuild (mirror
+    // planes, ConvertibleMode's sport trim, the limo/lab atmosphere plugins)
+    // whenever the cabin is rebuilt for a vehicle switch — `interiorGroup.clear()`
+    // only detaches these, it doesn't dispose them.
+    const reattachCabinExtras = () => {
+        attachMirrors();
+        const live = getState();
+        live?.convertibleMode?.attachToCabin();
+        live?.limoAtmosphere.attachToCabin();
+        live?.labAtmosphere.attachToCabin();
+    };
+    interior.onCabinSocketsChanged = reattachCabinExtras;
+
     // Sync with vehicle manager
     vehicleManager.setVehicle(initialVehicle);
 
     // Listen for vehicle changes from manager
     vehicleManager.onChange((vehicle) => {
         const live = getState();
-        if (live?.convertibleMode) {
-            live.convertibleMode.setVehicleType(vehicle);
-            live.currentVehicle = vehicle;
-        }
+        if (!live) return;
+        live.interior.setVehicleType(vehicle);
+        live.convertibleMode?.setVehicleType(vehicle);
+        live.limoAtmosphere.setVehicleType(vehicle);
+        live.labAtmosphere.setVehicleType(vehicle);
+        live.currentVehicle = vehicle;
     });
 
     return state;
@@ -149,6 +173,10 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
         state.convertibleMode.update(deltaTime, carSpeed);
     }
 
+    // Update limo/lab atmosphere (mood lighting, equipment fans, etc.).
+    state.limoAtmosphere.update(deltaTime);
+    state.labAtmosphere.update(deltaTime);
+
     // Update car body rotation to stay level with ground (carHeading only)
     // This keeps dashboard, steering wheel, A-pillars fixed to the car body
     state.interior.setCarOrientation(carHeading);
@@ -169,6 +197,10 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
 
     // Render the car interior
     state.interior.render();
+
+    // Publish the one moment the cabin's drawing buffer is readable, so cinema
+    // can latch it for the composite clip (see runtime/frameCapture.ts).
+    notifyCabinFrameRendered();
 }
 
 /**
@@ -179,6 +211,8 @@ export function disposeCarMode(): void {
     if (!state) return;
 
     state.convertibleMode?.dispose();
+    state.limoAtmosphere.dispose();
+    state.labAtmosphere.dispose();
     state.interior.dispose();
     state.mirror.dispose();
     state.postProcessing.dispose();

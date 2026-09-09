@@ -1,7 +1,7 @@
 import type { CarInterior } from '../CarInterior';
 import type { RearviewMirror } from '../RearviewMirror';
 import type { SelectivePostProcessing } from '../SelectivePostProcessing';
-import type { ConvertibleMode } from '../variants';
+import type { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../variants';
 import type { VehicleType } from '../VehicleManager';
 import type { GearPosition, WiperStalkPosition } from '../interior/CabinControls';
 
@@ -23,6 +23,8 @@ export interface CarModeState {
     mirror: RearviewMirror;
     postProcessing: SelectivePostProcessing;
     convertibleMode: ConvertibleMode | null;
+    limoAtmosphere: LimoAtmosphere;
+    labAtmosphere: ScienceLabAtmosphere;
     isActive: boolean;
     wipersEnabled: boolean;
     wiperSpeed: number;

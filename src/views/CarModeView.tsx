@@ -66,6 +66,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   } = useEnvironmentSettings();
 
   const {
+    currentVehicle,
+    nextVehicle,
     windowTint,
     setWindowTint: setVehicleWindowTint,
     seatDistance,
@@ -161,8 +163,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   }, []);
 
   const handleToggleVehicle = useCallback(() => {
-    console.log('Toggle vehicle type');
-  }, []);
+    nextVehicle();
+  }, [nextVehicle]);
 
   const handleTimeOfDayChange = useCallback((value: string) => {
     applyTimeOfDayPreset(value as 'day' | 'sunrise' | 'sunset' | 'night');
@@ -222,7 +224,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         headlightsOn={headlightsOn}
         highBeam={highBeam}
         domeLightOn={domeLightOn}
-        currentVehicle="sedan"
+        currentVehicle={currentVehicle}
         rainIntensity={rainIntensity}
         snowIntensity={snowIntensity}
         wind={wind}

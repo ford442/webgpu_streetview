@@ -23,11 +23,14 @@ Create a unified vehicle selection system to switch between all vehicle variants
 - The transition is instant. A crossfade would need to coordinate with the
   hold-pause system (`AGENTS.md` § Hold-Pause Transition) so it doesn't fight
   the panorama's own transition.
-- `ScienceLabInterior` and `LimousineMode` still construct their own
-  `THREE.WebGLRenderer` instead of switching through `VehicleManager` alone.
-  Tracked by the cabin/pano device-unification effort — see
-  `src/car/interior/createCabinRenderer.ts`. **Do not add more `WebGLRenderer`
-  constructors.**
+- ~~`ScienceLabInterior` and `LimousineMode` still construct their own
+  `THREE.WebGLRenderer`~~ — closed. Both were folded into scene plugins
+  (`ScienceLabAtmosphere`, `LimoAtmosphere`) that share `interior.interiorGroup`
+  and switch through `VehicleManager` alone; the orphan renderer classes are
+  deleted and `src/car/variants/__tests__/atmospherePlugins.test.ts` greps the
+  directory to keep them gone. **Do not add more `WebGLRenderer` constructors.**
+  Cabin/pano device unification is separate — see
+  `src/car/interior/createCabinRenderer.ts`.
 
 ## Where the code lives
 

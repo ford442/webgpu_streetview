@@ -29,6 +29,9 @@ vi.mock('three', async (importOriginal) => {
 });
 
 vi.mock('three/webgpu', () => ({
+    // Captured alongside the renderer by `preloadWebGPUCabinRenderer` and
+    // consumed by `cabinPmrem.ts`.
+    PMREMGenerator: vi.fn(),
     WebGPURenderer: vi.fn().mockImplementation((opts: unknown) => {
         const instance = fakeRenderer({
             opts,

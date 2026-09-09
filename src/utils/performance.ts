@@ -1,6 +1,20 @@
 /** @fileoverview Performance optimization utilities including LOD, texture optimization, and frustum culling */
 import * as THREE from 'three';
+import type { WebGPURenderer } from 'three/webgpu';
 import { MATERIAL_TEXTURE_PROPS, readMaterialTexture } from './memoryProfiler';
+
+/**
+ * Which Three.js backend the cabin is running on. Defined here rather than in
+ * `car/interior/createCabinRenderer.ts` because that module already depends on
+ * this one (`GPUPerformanceProfile`) — one definition, one direction.
+ */
+export type CabinRendererBackend = 'webgl' | 'webgpu';
+
+/**
+ * Either cabin backend. The `three/webgpu` import is type-only and erases, so
+ * this does not pull the WebGPU renderer out of its lazy chunk.
+ */
+export type CabinCapableRenderer = THREE.WebGLRenderer | WebGPURenderer;
 
 // ============================================================
 // LOD (Level of Detail) System
@@ -202,11 +216,86 @@ export interface TextureOptimizationConfig {
 }
 
 /**
+ * Highest anisotropy the backend will honour.
+ *
+ * The two backends put this in different places and neither is safe to
+ * duck-type for: `WebGLRenderer` also carries a deprecated top-level
+ * `getMaxAnisotropy()` that forwards to `capabilities`, so probing for the
+ * method matches both. Hence the explicit `backend` argument rather than
+ * sniffing the renderer.
+ */
+function resolveMaxAnisotropy(
+  renderer: CabinCapableRenderer,
+  backend: CabinRendererBackend,
+): number {
+  if (backend === 'webgpu') {
+    // Renderer.getMaxAnisotropy() -> backend.getMaxAnisotropy(); the WebGPU
+    // backend answers a constant 16 and never touches the device, so this is
+    // safe before `init()` resolves.
+    return (renderer as WebGPURenderer).getMaxAnisotropy();
+  }
+  return (renderer as THREE.WebGLRenderer).capabilities.getMaxAnisotropy();
+}
+
+/**
+ * Probe compressed-texture support. WebGL only: this reads extensions off the
+ * raw GL context, and the WebGPU renderer's `getContext()` is an unrelated
+ * no-op returning `void`, not a GL context.
+ *
+ * The WebGPU equivalent is `GPUAdapter.features` (`texture-compression-bc` /
+ * `-etc2` / `-astc`) on the shared device, which this module does not own. Not
+ * threaded through, because the list has never been used for anything but the
+ * log line below — see the note on `optimizeTextures`.
+ */
+function probeCompressedFormats(renderer: THREE.WebGLRenderer): string[] {
+  const gl = renderer.getContext();
+  const supportedFormats: string[] = [];
+
+  // Check for S3TC (DXT) compression
+  const extS3TC = gl.getExtension('WEBGL_compressed_texture_s3tc');
+  if (extS3TC) {
+    supportedFormats.push('S3TC/DXT');
+  }
+
+  // Check for ETC2 compression (mobile)
+  const extETC = gl.getExtension('WEBGL_compressed_texture_etc');
+  if (extETC) {
+    supportedFormats.push('ETC2');
+  }
+
+  // Check for ASTC compression (mobile)
+  const extASTC = gl.getExtension('WEBGL_compressed_texture_astc');
+  if (extASTC) {
+    supportedFormats.push('ASTC');
+  }
+
+  // Check for PVRTC (iOS)
+  const extPVRTC = gl.getExtension('WEBGL_compressed_texture_pvrtc');
+  if (extPVRTC) {
+    supportedFormats.push('PVRTC');
+  }
+
+  return supportedFormats;
+}
+
+/**
  * Optimize textures for performance
  * Implements compression, size limits, and anisotropic filtering
+ *
+ * Runs on both cabin backends. The WebGL path is unchanged: same extension
+ * probe, same `capabilities.getMaxAnisotropy()`, same resulting
+ * `THREE.Texture.DEFAULT_ANISOTROPY`.
+ *
+ * Note for anyone extending this: setting `DEFAULT_ANISOTROPY` is the only
+ * effect this function actually has. `supportedFormats` is logged and then
+ * dropped, `maxTextureSize` / `compress` / `useKTX2` are echoed back in the
+ * return value but never applied to anything, and the one caller
+ * (`CarInteriorBootstrap`) ignores the return value. Porting the rest of it to
+ * WebGPU would be porting theatre — make it do something first.
  */
 export function optimizeTextures(
-  renderer: THREE.WebGLRenderer,
+  renderer: CabinCapableRenderer,
+  backend: CabinRendererBackend,
   config?: Partial<TextureOptimizationConfig>
 ): TextureOptimizationConfig {
   const fullConfig: TextureOptimizationConfig = {
@@ -216,51 +305,28 @@ export function optimizeTextures(
     anisotropy: 4,
     ...config
   };
-  
-  const capabilities = renderer.capabilities;
-  
-  // Check for compressed texture support
-  const gl = renderer.getContext();
-  const supportedFormats: string[] = [];
-  
-  // Check for S3TC (DXT) compression
-  const extS3TC = gl.getExtension('WEBGL_compressed_texture_s3tc');
-  if (extS3TC) {
-    supportedFormats.push('S3TC/DXT');
-  }
-  
-  // Check for ETC2 compression (mobile)
-  const extETC = gl.getExtension('WEBGL_compressed_texture_etc');
-  if (extETC) {
-    supportedFormats.push('ETC2');
-  }
-  
-  // Check for ASTC compression (mobile)
-  const extASTC = gl.getExtension('WEBGL_compressed_texture_astc');
-  if (extASTC) {
-    supportedFormats.push('ASTC');
-  }
-  
-  // Check for PVRTC (iOS)
-  const extPVRTC = gl.getExtension('WEBGL_compressed_texture_pvrtc');
-  if (extPVRTC) {
-    supportedFormats.push('PVRTC');
-  }
-  
+
+  const supportedFormats = backend === 'webgl'
+    ? probeCompressedFormats(renderer as THREE.WebGLRenderer)
+    : [];
+
   // Set optimal anisotropic filtering
-  const maxAnisotropy = capabilities.getMaxAnisotropy();
+  const maxAnisotropy = resolveMaxAnisotropy(renderer, backend);
   const targetAnisotropy = Math.min(fullConfig.anisotropy, maxAnisotropy);
-  
+
   // Configure texture defaults
   THREE.Texture.DEFAULT_ANISOTROPY = targetAnisotropy;
-  
+
   console.log('[Performance] Texture optimization configured:', {
+    backend,
     maxTextureSize: fullConfig.maxTextureSize,
     supportedFormats,
     anisotropy: targetAnisotropy,
-    maxTextureUnits: capabilities.maxTextures
+    maxTextureUnits: backend === 'webgl'
+      ? (renderer as THREE.WebGLRenderer).capabilities.maxTextures
+      : undefined,
   });
-  
+
   return {
     ...fullConfig,
     anisotropy: targetAnisotropy
@@ -592,7 +658,7 @@ export function detectGPUProfile(): GPUPerformanceProfile {
  * Apply performance profile to a Three.js renderer
  */
 export function applyPerformanceProfile(
-  renderer: THREE.WebGLRenderer,
+  renderer: CabinCapableRenderer,
   profile?: GPUPerformanceProfile
 ): void {
   const targetProfile = profile || detectGPUProfile();

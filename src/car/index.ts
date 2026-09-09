@@ -82,24 +82,10 @@ export {
     ConvertibleInterior,
 } from './variants';
 export type { ConvertibleState } from './variants';
-export {
-    ScienceLabInterior,
-    initScienceLabMode,
-    initScienceLabModeSystem,
-    toggleScienceLabMode,
-    updateScienceLabMode,
-    toggleUVLight,
-    toggleLabEquipment,
-    getLabState,
-    disposeScienceLabMode,
-} from './variants/ScienceLabMode';
-export type { LabState, ScienceLabModeState } from './variants/ScienceLabMode';
-export {
-    LimousineMode,
-    defaultLimoState,
-    initLimousineMode,
-} from './variants/LimousineMode';
-export type { LimoState } from './variants/LimousineMode';
+export { ScienceLabAtmosphere } from './variants/scienceLab/ScienceLabAtmosphere';
+export type { LabState } from './variants/scienceLab/ScienceLabAtmosphere';
+export { LimoAtmosphere, defaultLimoState } from './variants/limousine/LimoAtmospherePlugin';
+export type { LimoState } from './variants/limousine/LimoAtmospherePlugin';
 
 // Dashboard UI Components
 export { DashboardUI } from './DashboardUI';
@@ -193,5 +179,7 @@ export {
     setCarPostProcessingEnabled,
     setCarBloomStrength,
     getCarPerformanceString,
+    getCabinCanvas,
+    onCabinFrameRendered,
     disposeCarMode,
 } from './carModeRuntime';

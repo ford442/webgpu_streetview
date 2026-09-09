@@ -68,6 +68,8 @@ vi.mock('../variants', () => ({
         toggleRoof: vi.fn(() => true),
         toggleWindDeflector: vi.fn(() => true),
     })),
+    LimoAtmosphere: vi.fn().mockImplementation(() => autoStub()),
+    ScienceLabAtmosphere: vi.fn().mockImplementation(() => autoStub()),
 }));
 
 vi.mock('../SelectivePostProcessing', () => ({
@@ -75,6 +77,7 @@ vi.mock('../SelectivePostProcessing', () => ({
 }));
 
 import * as runtime from '../carModeRuntime';
+import { vehicleManager } from '../VehicleManager';
 
 /** Every name `src/car/index.ts` re-exports from this module. */
 const PUBLIC_API = [
@@ -205,6 +208,22 @@ describe('carModeRuntime — singleton state is shared across functions', () => 
         expect(runtime.toggleVehicleType()).toBe('convertible');
         expect(runtime.getCurrentVehicleType()).toBe('convertible');
         expect(runtime.toggleVehicleType()).toBe('sedan');
+    });
+
+    it('rebuilds the live cabin (not just the HUD label) when the vehicle changes', () => {
+        runtime.initCarMode(container());
+        const interior = madeInteriors[madeInteriors.length - 1]!;
+
+        runtime.setVehicleType('limousine');
+        expect(interior.setVehicleType).toHaveBeenCalledWith('limousine');
+
+        runtime.toggleVehicleType();
+        expect(interior.setVehicleType).toHaveBeenLastCalledWith('sedan');
+
+        // Anything driving VehicleManager directly (dashboard button, shared
+        // session sync) must also reach the cabin via the onChange bridge.
+        vehicleManager.setVehicle('science-lab');
+        expect(interior.setVehicleType).toHaveBeenLastCalledWith('science-lab');
     });
 });
 

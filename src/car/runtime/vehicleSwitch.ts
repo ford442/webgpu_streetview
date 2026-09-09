@@ -21,6 +21,9 @@ export function toggleVehicleType(): VehicleType {
     const newType = vehicleManager.getCurrentVehicle() === 'sedan' ? 'convertible' : 'sedan';
     vehicleManager.setVehicle(newType);
     state.currentVehicle = newType;
+    state.interior.setVehicleType(newType);
+    state.limoAtmosphere.setVehicleType(newType);
+    state.labAtmosphere.setVehicleType(newType);
 
     if (state.convertibleMode) {
         state.convertibleMode.setVehicleType(newType);
@@ -39,6 +42,9 @@ export function setVehicleType(type: VehicleType): void {
 
     vehicleManager.setVehicle(type);
     state.currentVehicle = type;
+    state.interior.setVehicleType(type);
+    state.limoAtmosphere.setVehicleType(type);
+    state.labAtmosphere.setVehicleType(type);
 
     if (state.convertibleMode) {
         state.convertibleMode.setVehicleType(type);

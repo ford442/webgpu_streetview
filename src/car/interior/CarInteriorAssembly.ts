@@ -361,6 +361,12 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     buildInteriorFromBuilder(host);
     setupWindowWeatherOverlay(host);
+    // Mirror planes, ConvertibleMode's sport trim and the limo/lab atmosphere
+    // plugins all live outside this rebuild — `interiorGroup.clear()` above
+    // only detached them, it didn't dispose them, so they need to be
+    // re-parented onto the freshly rebuilt group every time, not just when
+    // the (optional) glTF hero cabin swap below also runs.
+    host.onCabinSocketsChanged?.();
     void applyHeroCabinIfEnabled(host);
 
     if (host.vehicleConfig.hasRoof) {
