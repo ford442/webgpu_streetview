@@ -13,6 +13,7 @@ import {
   type ScraperHealthEvent,
 } from '../utils/scraperHealth';
 import { streetViewProbe } from '../utils/streetViewProbe';
+import { selectSourceCanvas } from './streetViewCanvasSelect';
 
 export type MapsLoadStatus =
     | 'idle'
@@ -33,29 +34,6 @@ interface StreetViewProps {
     onStatusChange?: (status: MapsLoadStatus) => void;
     /** Structured scrape health for AppShell / LoadingOverlay / probe. */
     onScraperHealth?: (health: ScraperHealth) => void;
-}
-
-function selectLargestCanvas(container: HTMLElement): {
-    best: HTMLCanvasElement | null;
-    canvasCount: number;
-    selectedArea: number;
-} {
-    const canvases = container.getElementsByTagName('canvas');
-    const canvasCount = canvases.length;
-    if (canvasCount === 0) {
-        return { best: null, canvasCount: 0, selectedArea: 0 };
-    }
-    let best = canvases[0]!;
-    let maxArea = best.width * best.height;
-    for (let i = 1; i < canvasCount; i++) {
-        const c = canvases[i]!;
-        const area = c.width * c.height;
-        if (area > maxArea) {
-            maxArea = area;
-            best = c;
-        }
-    }
-    return { best, canvasCount, selectedArea: maxArea };
 }
 
 const StreetView: React.FC<StreetViewProps> = ({
@@ -236,8 +214,23 @@ const StreetView: React.FC<StreetViewProps> = ({
                     if (!panoRef.current) return;
                     suppressErrorChrome();
 
-                    const { best, canvasCount, selectedArea } = selectLargestCanvas(panoRef.current);
+                    // Sticky: a mid-hop layout blip on a rival canvas must not
+                    // pull the scrape off the canvas we are already reading.
+                    // Stickiness is forfeited when the promoted canvas has
+                    // stopped showing imagery, so a genuine Google canvas swap
+                    // still recovers.
                     const active = activeCanvasRef.current;
+                    const activeAttached = !!(
+                        active &&
+                        active.isConnected &&
+                        panoRef.current.contains(active)
+                    );
+                    const activeFp = activeAttached && active ? getCanvasFingerprint(active) : '';
+                    const { best, canvasCount, selectedArea } = selectSourceCanvas(
+                        panoRef.current,
+                        activeFp ? active : null,
+                        minEdge
+                    );
 
                     if (active && (!active.isConnected || !panoRef.current.contains(active))) {
                         console.warn('[StreetView] Active canvas detached — re-acquiring');
@@ -279,7 +272,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                     }
 
                     everSawCandidateRef.current = true;
-                    const fp = getCanvasFingerprint(best);
+                    const fp = best === active && activeFp ? activeFp : getCanvasFingerprint(best);
                     if (!fp) {
                         stableCountRef.current = 0;
                         lastFingerprintRef.current = '';
@@ -373,7 +366,11 @@ const StreetView: React.FC<StreetViewProps> = ({
                 const selfCheck = () => {
                     if (!panoRef.current) return;
                     const active = activeCanvasRef.current;
-                    const { best, canvasCount, selectedArea } = selectLargestCanvas(panoRef.current);
+                    const { best, canvasCount, selectedArea } = selectSourceCanvas(
+                        panoRef.current,
+                        active,
+                        minEdge
+                    );
                     const attached = !!(
                         active &&
                         active.isConnected &&

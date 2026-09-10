@@ -124,7 +124,7 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Fourteen exports, identical in `bindings.cpp`, the CMake export list and the
+Fifteen exports, identical in `bindings.cpp`, the CMake export list and the
 TypeScript loader:
 
 | Export | TS wrapper | Notes |
@@ -140,6 +140,7 @@ TypeScript loader:
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
+| `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
 | `reduce_luma_bt709(rgba, w, h, out3)` | `reduceLumaBt709` | mean/min/max luma in `[0, 1]` |
 | `downsample_2d(src, sw, sh, dst, dw, dh)` | `downsample2d` | integer box-filter downsample, packed RGBA8 |
@@ -195,10 +196,19 @@ aligned; its output region sits at `65536 + count * 16`.
 | `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
 | `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
-| `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed mixed in the Web Audio graph; JS fill + oscillators if WASM is missing |
+| `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed filled on the main thread and queued to the cabin AudioWorklet; JS fill + oscillators if WASM or the worklet is missing |
+| `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR the worklet convolves the bed with; roof openness raises its high-frequency transfer |
 | gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
 
-Cabin **HRTF convolution** is not an export. Heading-relative pan uses `StereoPannerNode` in `WindAudio`. A true HRTF kernel would be a new wasm export after the emcc ship path — do not add WAT for it.
+The cabin audio graph fills PCM on the main thread (one loader, one JS
+fallback, one set of goldens) and posts it to an AudioWorklet, which drains the
+queue and runs the 128-tap FIR from `fill_cabin_ir`. The worklet asks for more
+as it drains, so the audio clock paces the fills; `createScriptProcessor` is
+gone from `src/car/audio/`. The processor source lives in
+`src/car/audio/cabinWorkletSource.ts` as text and is loaded via a Blob URL, so
+its constants stay single-sourced with the main thread and no extra chunk ships.
+
+Cabin **HRTF convolution** is still not an export. Heading-relative pan uses `StereoPannerNode` in `WindAudio`. A true HRTF kernel would be another wasm export alongside `fill_cabin_ir` — do not add WAT for it.
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;

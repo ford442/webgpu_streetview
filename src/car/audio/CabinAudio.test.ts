@@ -62,7 +62,9 @@ class StubAudioContext {
   state: AudioContextState = 'running';
   readonly destination = {};
   readonly createScriptProcessor = vi.fn();
-  readonly audioWorklet = { addModule: StubAudioContext.addModule };
+  readonly audioWorklet: { addModule: (url: string) => Promise<void> } = {
+    addModule: StubAudioContext.addModule,
+  };
   readonly resume = vi.fn(async () => {});
   readonly close = vi.fn(async () => {});
 
@@ -94,7 +96,8 @@ class StubAudioContext {
 
 /** A context with no AudioWorklet at all — an older Safari, in effect. */
 class NoWorkletAudioContext extends StubAudioContext {
-  override readonly audioWorklet = undefined as unknown as { addModule: () => Promise<void> };
+  override readonly audioWorklet =
+    undefined as unknown as { addModule: (url: string) => Promise<void> };
 }
 
 const scope = globalThis as unknown as Record<string, unknown>;

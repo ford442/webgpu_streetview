@@ -3,6 +3,7 @@ import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
 import { gearChainedHopIntervalMs } from '../car/VehicleDynamics';
 import { isGeocodeDenied } from '../search/geocodeAuth';
+import { DEFAULT_LINK_CONE_DEG, findBestLink } from '../utils/navigation';
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
@@ -27,6 +28,14 @@ export interface UseCruiseModeOptions {
    */
   hopsPerTick?: () => number;
 }
+
+/**
+ * Cone cruise is allowed to re-aim into when no link sits inside the tight
+ * manual cone. Wide enough to round a corner or to leave a pano the driver
+ * engaged cruise on while facing a wall, narrow enough that cruise never
+ * U-turns into oncoming travel.
+ */
+export const CRUISE_REAIM_CONE_DEG = 100;
 
 /** Spacing between the extra hops a 2/3 gear queues within one cruise tick. */
 export const CRUISE_CHAINED_HOP_INTERVAL_MS = 550;
@@ -116,6 +125,29 @@ export function useCruiseMode({
         const bestOffline = findBestOfflineLink(offlineNodesRef.current, panoIdBefore, cruiseHeadingRef.current);
         if (bestOffline) targetHint = { lat: bestOffline.lat, lng: bestOffline.lng };
       }
+      // The committed heading can point off-road — cruise engaged while facing
+      // a building, or a bend the last hop's bearing overshot. Manual hops keep
+      // the tight cone and simply do nothing; cruise instead re-aims onto the
+      // nearest link inside a wider cone so a hop happens and the road is
+      // followed, rather than burning the 3-strike stuck-hop budget.
+      const links = (panorama.getLinks?.() ?? [])
+        .filter((link): link is google.maps.StreetViewLink => link != null);
+      if (links.length > 0 && !findBestLink(links, cruiseHeadingRef.current, 'forward')) {
+        const reaimed = findBestLink(
+          links,
+          cruiseHeadingRef.current,
+          'forward',
+          CRUISE_REAIM_CONE_DEG
+        );
+        if (reaimed?.heading != null) {
+          console.log(
+            `[CruiseMode] No link within ${DEFAULT_LINK_CONE_DEG}° — re-aiming ` +
+              `${Math.round(cruiseHeadingRef.current)}° → ${Math.round(reaimed.heading)}°`
+          );
+          cruiseHeadingRef.current = reaimed.heading;
+        }
+      }
+
       setNavPending(true);
       try {
         await advanceSafe('forward', targetHint, cruiseHeadingRef.current);

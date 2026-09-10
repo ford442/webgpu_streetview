@@ -2,6 +2,16 @@
 // Dual-pass HDR weather effects: rain streaks + snow flakes + nighttime + headlights
 // 100% procedural, no textures, runs in rgba16float HDR
 // NEW: Atmospheric effects - fog, light shafts, heat shimmer, lens effects, dust, humidity
+//
+// SOURCE FRAGMENT (1 of 3, see also 02-weather-fx.wgsl, 03-night-and-composite.wgsl):
+// this file is concatenated with its siblings by scripts/gen-weather-post-shader.mjs
+// into public/shaders/weather-post.wgsl, which is the file the renderer actually
+// fetches at runtime and every WGSL test reads. Edit the fragments here, then run
+// `npm run gen:weather-shader` — do not hand-edit the generated file.
+//
+// This fragment: uniform layout, bind group declarations, the full-screen vertex
+// shader, camera-aware coordinate helpers, the depth proxy, noise/utility
+// functions, and color grading.
 
 struct WeatherParams {
     // 0-5: color grading params
@@ -278,6 +288,14 @@ fn applyTemperatureTint(col: vec3<f32>, temperature: f32, tint: f32) -> vec3<f32
     
     return col * tempMult;
 }
+
+// SOURCE FRAGMENT (2 of 3, see also 01-foundation.wgsl, 03-night-and-composite.wgsl):
+// concatenated by scripts/gen-weather-post-shader.mjs into
+// public/shaders/weather-post.wgsl — do not hand-edit the generated file.
+//
+// This fragment: rain/snow and the atmospheric effects (fog, volumetric light
+// shafts, heat shimmer, lens flare, chromatic aberration, vignette, dust,
+// humidity haze).
 
 // ============================================================================
 // WEATHER EFFECTS: RAIN AND SNOW (World-Space with Camera Panning)
@@ -659,6 +677,14 @@ fn applyHumidityHaze(col: vec3<f32>, uv: vec2<f32>, intensity: f32, t: f32) -> v
     
     return result;
 }
+
+// SOURCE FRAGMENT (3 of 3, see also 01-foundation.wgsl, 02-weather-fx.wgsl):
+// concatenated by scripts/gen-weather-post-shader.mjs into
+// public/shaders/weather-post.wgsl — do not hand-edit the generated file.
+//
+// This fragment: nighttime/starfield, headlights, cabin lighting, astronomical
+// (sunset/sunrise/moonlight) effects, refractive lens droplets, cinematic
+// camera FX, HDR tonemapping, and the fs_main entry point.
 
 // ============================================================================
 // NIGHTTIME EFFECTS

@@ -1,7 +1,19 @@
+/**
+ * Default half-angle of the cone a link must fall in to count as "this way".
+ * Deliberately tight so WASD/right-click steps go where the user is looking.
+ */
+export const DEFAULT_LINK_CONE_DEG = 45;
+
 export function findBestLink(
     links: google.maps.StreetViewLink[],
     currentHeading: number,
-    direction: 'forward' | 'backward' | 'left' | 'right'
+    direction: 'forward' | 'backward' | 'left' | 'right',
+    /**
+     * Widen the cone for callers that would rather follow the road than stall
+     * (cruise mode re-aims onto the nearest link instead of counting a stuck
+     * hop). Manual navigation keeps the tight default.
+     */
+    maxAngleDiff: number = DEFAULT_LINK_CONE_DEG
 ): google.maps.StreetViewLink | null {
     if (!links || links.length === 0) {
         return null;
@@ -24,7 +36,8 @@ export function findBestLink(
     }
 
     let bestLink: google.maps.StreetViewLink | null = null;
-    let smallestAngleDiff = 45; // Only return a link if it's reasonably close to the target direction
+    // Only return a link that is reasonably close to the target direction.
+    let smallestAngleDiff = maxAngleDiff;
 
     for (const link of links) {
         if (link.heading == null) continue;

@@ -104,7 +104,8 @@ webgpu_streetview/
 │   ├── images/                      # Static images
 │   └── shaders/                     # WGSL shader files loaded at runtime via fetch()
 │       ├── streetview.wgsl          # Pass 1: panorama → HDR intermediate
-│       ├── weather-post.wgsl        # Pass 2: HDR + weather/color grading → screen
+│       ├── weather-post.wgsl        # Pass 2: HDR + weather/color grading → screen (GENERATED, see below)
+│       ├── weather-post/            # Source fragments for weather-post.wgsl (edit these, not the generated file)
 │       ├── weather-post-compute.wgsl # Compute pipeline variant of weather post-process
 │       ├── carview.wgsl             # Car windshield post-process
 │       ├── texture.wgsl             # Debug passthrough
@@ -361,6 +362,7 @@ App.tsx
 - Source: HDR intermediate texture.
 - Fragment shader: color grading chain (vibrance → saturation → contrast → temperature/tint → exposure), then procedural rain + snow composited additively, plus atmospheric effects (fog, light shafts, heat shimmer, lens flare, chromatic aberration, dust, humidity haze), nighttime mode, headlights, dome light, astronomical lighting (sun/moon), ACES tonemapping.
 - Output target: swap-chain surface (screen).
+- WGSL has no `#include`, so this file is **generated**: `scripts/gen-weather-post-shader.mjs` concatenates the three source fragments in `public/shaders/weather-post/` (`01-foundation.wgsl`, `02-weather-fx.wgsl`, `03-night-and-composite.wgsl`) into `public/shaders/weather-post.wgsl`, which is what `WeatherPostProcessor.ts` fetches at runtime and what every WGSL test reads. Edit a fragment, then run `npm run gen:weather-shader` (also runs automatically via `prebuild`); `src/renderer/weatherPostShaderSplit.test.ts` fails if the generated file drifts from the fragments.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 

@@ -10,24 +10,27 @@ import { createCabinPmrem, type CabinEnvTarget, type CabinPmrem } from './cabinP
  * surroundings instead of a canned studio box.
  *
  * - The PMREM render target from the previous pano is disposed on every swap.
- * - The pano heading is baked into the equirect by shifting the image so that
- *   compass alignment matches three's equirect convention (u=0.5 → +X → east);
- *   three 0.160 has no `scene.environmentRotation`.
- * - `setIntensity` scales every material's `envMapIntensity` relative to its
- *   authored value (three 0.160 has no `scene.environmentIntensity`), used to
- *   dim the environment contribution at night.
+ * - Heading alignment is `scene.environmentRotation` (Y), not a pixel blit of
+ *   the equirect: three samples equirect maps with u=0.5 at world +X, and the
+ *   source image has `centerHeading` at u=0.5.
+ * - Night dim is `scene.environmentIntensity`. Note that on both backends the
+ *   *scene* environment ignores a material's authored `envMapIntensity`
+ *   entirely (WebGLRenderer overwrites that uniform with
+ *   `scene.environmentIntensity`; the node path picks one or the other in
+ *   `MaterialProperties.js`) — authored values only bite when a material sets
+ *   its own `envMap`, which no cabin material does. So there is nothing to
+ *   scale per material, and the old full-scene walk was already inert.
  */
 export class PanoEnvironment {
     private pmrem: CabinPmrem | null = null;
     private currentRT: CabinEnvTarget | null = null;
-    private shiftCanvas: HTMLCanvasElement;
     private intensity = 1;
 
     constructor(
         private readonly renderer: CabinRenderer,
         private scene: THREE.Scene
     ) {
-        this.shiftCanvas = document.createElement('canvas');
+        this.scene.environmentIntensity = this.intensity;
     }
 
     /**
@@ -40,22 +43,7 @@ export class PanoEnvironment {
      * long since initialized and the synchronous path is safe.
      */
     public setFromEquirect(equirect: HTMLCanvasElement, centerHeading: number): void {
-        const W = equirect.width;
-        const H = equirect.height;
-        this.shiftCanvas.width = W;
-        this.shiftCanvas.height = H;
-        const ctx = this.shiftCanvas.getContext('2d')!;
-
-        // three samples equirect maps with u=0.5 at world +X (compass east in
-        // this scene's frame, where heading H maps to (sin H, 0, -cos H)).
-        // The source image has `centerHeading` at u=0.5, so shift it right by
-        // (centerHeading - 90)° worth of pixels, wrapping the seam.
-        const shiftPx = Math.round((((centerHeading - 90) / 360) % 1 + 1) % 1 * W);
-        ctx.clearRect(0, 0, W, H);
-        ctx.drawImage(equirect, shiftPx, 0);
-        ctx.drawImage(equirect, shiftPx - W, 0);
-
-        const texture = new THREE.CanvasTexture(this.shiftCanvas);
+        const texture = new THREE.CanvasTexture(equirect);
         texture.mapping = THREE.EquirectangularReflectionMapping;
         texture.colorSpace = THREE.SRGBColorSpace;
 
@@ -69,42 +57,27 @@ export class PanoEnvironment {
 
         const oldEnv = this.scene.environment;
         this.scene.environment = newRT.texture;
+        this.scene.environmentRotation.y = headingRotationY(centerHeading);
         // Dispose the previous pano's render target; the very first swap
         // replaces the static studio env texture from LightingBuilder instead.
         if (this.currentRT) this.currentRT.dispose();
         else if (oldEnv) oldEnv.dispose();
         this.currentRT = newRT;
 
-        // New env texture resets nothing on materials, but re-assert the
-        // current dim level in case it was set before the first pano arrived.
-        this.applyIntensity();
+        // Re-assert the current dim level in case it was set before the first
+        // pano arrived (a fresh scene defaults to 1).
+        this.scene.environmentIntensity = this.intensity;
     }
 
     /**
-     * Scale the environment contribution on all scene materials (1 = authored
-     * daytime look, lower = night). No-op below a 1% change to avoid per-frame
-     * traversals.
+     * Scale the environment contribution (1 = authored daytime look, lower =
+     * night). No-op below a 1% change.
      */
     public setIntensity(factor: number): void {
         const clamped = Math.max(0, Math.min(1, factor));
         if (Math.abs(clamped - this.intensity) < 0.01) return;
         this.intensity = clamped;
-        this.applyIntensity();
-    }
-
-    private applyIntensity(): void {
-        this.scene.traverse((obj) => {
-            if (!(obj instanceof THREE.Mesh)) return;
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            for (const mat of mats) {
-                const std = mat as THREE.MeshStandardMaterial;
-                if (typeof std.envMapIntensity !== 'number') continue;
-                if (std.userData.baseEnvMapIntensity === undefined) {
-                    std.userData.baseEnvMapIntensity = std.envMapIntensity;
-                }
-                std.envMapIntensity = std.userData.baseEnvMapIntensity * this.intensity;
-            }
-        });
+        this.scene.environmentIntensity = clamped;
     }
 
     public dispose(): void {
@@ -117,4 +90,18 @@ export class PanoEnvironment {
             this.pmrem = null;
         }
     }
+}
+
+/**
+ * Y rotation (radians) that puts compass heading `centerHeading` — the middle
+ * column of the equirect — back where it belongs in world space.
+ *
+ * three samples equirect maps as `u = atan2(dir.z, dir.x) / 2π + 0.5`, so
+ * u=0.5 is world +X, which is compass east (heading 90°) in this scene's frame
+ * (heading H maps to `(sin H, 0, -cos H)`). `environmentRotation` rotates the
+ * lookup direction, and a Y rotation by `a` shifts the sampled angle by `-a`,
+ * which is exactly the old `(centerHeading - 90)/360 * width` pixel shift.
+ */
+export function headingRotationY(centerHeading: number): number {
+    return THREE.MathUtils.degToRad(centerHeading - 90);
 }
