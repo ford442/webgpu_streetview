@@ -10,6 +10,7 @@ import {
     SPEED_DIAL_MAX_KMH,
     TACHO_DIAL_MAX_RPM,
 } from './CarInteriorGauges';
+import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
 import { getWindAudio } from '../../effects/WindAudio';
 import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
 
@@ -63,6 +64,7 @@ export class CarInteriorAnimator {
   private tempFrac: number = 0.05;
   private gaugeClock: number = 0;
   private nightFactor: number = 0;
+  private headlightsOn: boolean = false;
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -270,10 +272,15 @@ export class CarInteriorAnimator {
       if (rig.fuelNeedle) rig.fuelNeedle.rotation.z = needleAngle(this.fuelLevel);
       if (rig.tempNeedle) rig.tempNeedle.rotation.z = needleAngle(this.tempFrac);
 
-      const breathe = this.reducedMotion ? 0 : 0.5 + 0.5 * Math.sin(t * 1.6);
-      const dialGlow = 0.16 + this.nightFactor * 0.5 + breathe * 0.04 + this.rpmFrac * 0.06;
+      const glowIn = {
+        effectiveNight: this.nightFactor,
+        headlightsOn: this.headlightsOn,
+        rpmFrac: this.rpmFrac,
+        breathe: this.reducedMotion ? 0 : 0.5 + 0.5 * Math.sin(t * 1.6),
+      };
+      const dialGlow = gaugeDialGlow(glowIn);
       for (const mat of rig.dialMaterials) mat.emissiveIntensity = dialGlow;
-      const needleGlow = 0.32 + this.nightFactor * 0.55 + breathe * 0.05 + this.rpmFrac * 0.18;
+      const needleGlow = gaugeNeedleGlow(glowIn);
       for (const mat of rig.needleMaterials) mat.emissiveIntensity = needleGlow;
       return;
     }
@@ -381,6 +388,11 @@ export class CarInteriorAnimator {
   /** 0-1 night intensity; drives gauge backlight brightness. */
   public setNightFactor(night: number): void {
     this.nightFactor = Math.max(0, Math.min(1, night));
+  }
+
+  /** Headlights state; adds the instrument-backlight bump at night. */
+  public setHeadlightsOn(on: boolean): void {
+    this.headlightsOn = on;
   }
 
   /** Called by external dynamics to drive target values for spring sim. */

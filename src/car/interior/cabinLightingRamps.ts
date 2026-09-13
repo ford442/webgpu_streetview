@@ -132,3 +132,48 @@ export function clusterGlowLevel(input: CabinRampInput): number {
 export function domeGlowLevel(input: CabinRampInput): number {
   return input.domeLightOn ? 0.7 + input.effectiveNight * 0.25 : 0;
 }
+
+export interface GaugeGlowInput {
+  /** 0 = full day, 1 = full night (max of preset + sun altitude). */
+  effectiveNight: number;
+  headlightsOn: boolean;
+  /** 0-1 tacho fraction: revs lift the dial wash and the needle tip. */
+  rpmFrac: number;
+  /** 0-1 ambient breathing phase; 0 under reduced motion. */
+  breathe: number;
+}
+
+/**
+ * Dial-face backlight (drives the gauge `emissiveMap`).
+ * Day floor is deliberately low — the dial well is shaded, so the face should
+ * read by IBL, not by a green wash that survives full sun. The headlight bump
+ * matches the rest of the rig: instrument backlighting comes up with the lamps.
+ */
+export function gaugeDialGlow(input: GaugeGlowInput): number {
+  const night = Math.max(0, Math.min(1, input.effectiveNight));
+  const rpm = Math.max(0, Math.min(1, input.rpmFrac));
+  return (
+    0.08 +
+    night * 0.62 +
+    (input.headlightsOn ? night * 0.1 : 0) +
+    input.breathe * 0.04 +
+    rpm * 0.06
+  );
+}
+
+/**
+ * Needle emissive. Needles are painted metal with a lit tip — by day they
+ * should catch highlights rather than emit, at night they are the sharpest
+ * thing in the cluster.
+ */
+export function gaugeNeedleGlow(input: GaugeGlowInput): number {
+  const night = Math.max(0, Math.min(1, input.effectiveNight));
+  const rpm = Math.max(0, Math.min(1, input.rpmFrac));
+  return (
+    0.14 +
+    night * 0.72 +
+    (input.headlightsOn ? night * 0.12 : 0) +
+    input.breathe * 0.05 +
+    rpm * 0.18
+  );
+}

@@ -5,6 +5,8 @@ import {
   cabinGlowScale,
   clusterGlowLevel,
   domeGlowLevel,
+  gaugeDialGlow,
+  gaugeNeedleGlow,
   iblIntensityFromNight,
   sunBaseIntensityFromStrength,
   sunNightFactorFromAltitude,
@@ -191,5 +193,48 @@ describe('cabinLightingRamps', () => {
     expect(domeGlowLevel({ ...base, clinical: true })).toBe(
       domeGlowLevel(base),
     );
+  });
+  it('keeps gauge dials and needles near-dark by day and brightest at night', () => {
+    const still = { rpmFrac: 0, breathe: 0, headlightsOn: false };
+    const day = { ...still, effectiveNight: 0 };
+    const night = { ...still, effectiveNight: 1 };
+
+    expect(gaugeDialGlow(day)).toBeLessThan(0.1);
+    expect(gaugeNeedleGlow(day)).toBeLessThan(0.2);
+    expect(gaugeDialGlow(night)).toBeGreaterThan(0.65);
+    expect(gaugeNeedleGlow(night)).toBeGreaterThan(0.8);
+    // The needle is the sharpest thing in the cluster at either extreme.
+    expect(gaugeNeedleGlow(night)).toBeGreaterThan(gaugeDialGlow(night));
+    expect(gaugeNeedleGlow(day)).toBeGreaterThan(gaugeDialGlow(day));
+  });
+
+  it('adds the headlight backlight bump only at night, and lifts with revs', () => {
+    const base = { effectiveNight: 0, rpmFrac: 0, breathe: 0 };
+    expect(gaugeDialGlow({ ...base, headlightsOn: true })).toBeCloseTo(
+      gaugeDialGlow({ ...base, headlightsOn: false }),
+      5,
+    );
+    expect(gaugeNeedleGlow({ ...base, headlightsOn: true })).toBeCloseTo(
+      gaugeNeedleGlow({ ...base, headlightsOn: false }),
+      5,
+    );
+
+    const night = { ...base, effectiveNight: 1 };
+    expect(gaugeDialGlow({ ...night, headlightsOn: true })).toBeGreaterThan(
+      gaugeDialGlow({ ...night, headlightsOn: false }),
+    );
+    expect(gaugeNeedleGlow({ ...night, headlightsOn: true })).toBeGreaterThan(
+      gaugeNeedleGlow({ ...night, headlightsOn: false }),
+    );
+    expect(gaugeNeedleGlow({ ...night, headlightsOn: false, rpmFrac: 1 })).toBeGreaterThan(
+      gaugeNeedleGlow({ ...night, headlightsOn: false }),
+    );
+  });
+
+  it('clamps gauge glow inputs so out-of-range night/rpm cannot blow out the cluster', () => {
+    const hot = { effectiveNight: 4, rpmFrac: 3, breathe: 0, headlightsOn: true };
+    const max = { effectiveNight: 1, rpmFrac: 1, breathe: 0, headlightsOn: true };
+    expect(gaugeDialGlow(hot)).toBeCloseTo(gaugeDialGlow(max), 5);
+    expect(gaugeNeedleGlow(hot)).toBeCloseTo(gaugeNeedleGlow(max), 5);
   });
 });

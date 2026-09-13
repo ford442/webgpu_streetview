@@ -312,6 +312,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.lightingManager.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
         this.panoEnvironment.setIntensity(this.lightingManager.getIblIntensity(nightIntensity));
         this.animator?.setNightFactor(this.lightingManager.getEffectiveNight(nightIntensity));
+        this.animator?.setHeadlightsOn(headlightsOn);
     }
 
     public isDomeSwitchHit(clientX: number, clientY: number): boolean {
