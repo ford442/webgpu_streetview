@@ -208,9 +208,10 @@ vectors captured from the shipping binary — bit-exact on the f32 paths, `1e-12
 relative on `haversine`.
 
 Configuring writes `cpp/build-host/compile_commands.json`
-(`CMAKE_EXPORT_COMPILE_COMMANDS=ON`); building links it to
-`cpp/compile_commands.json` automatically, and `cpp/.clangd` points at
-`build-host` too — clangd/clang-tidy just work in `cpp/`, no manual `ln -s`.
+(`CMAKE_EXPORT_COMPILE_COMMANDS=ON`). Only `build-host` copies that file to
+`cpp/compile_commands.json` (not a symlink; ASan/clang extra trees keep their
+own databases). `cpp/.clangd` points at `build-host`. `npm run lint:cpp` runs
+advisory clang-tidy against that database.
 
 Regenerate the goldens only when an algorithm deliberately changes:
 

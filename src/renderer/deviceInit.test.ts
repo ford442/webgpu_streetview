@@ -115,6 +115,9 @@ describe('deviceInit limits and features', () => {
         expect(matrix.timestampQueriesAvailable).toBe(true);
         expect(matrix.optionalFeaturesEnabled).toEqual(features);
         expect(matrix.optionalFeaturesAttempted).toEqual(OPTIONAL_FEATURES_ATTEMPTED);
+        expect(matrix.intermediateFormat).toBe('rgba16float');
+        expect(matrix.shaderFeatureUses.shaderF16).toBe(false);
+        expect(matrix.shaderFeatureUses.subgroups).toBe(false);
     });
 });
 
@@ -267,6 +270,16 @@ describe('uncaptured errors and labels', () => {
         expect(device.queue.label).toBe(DEVICE_LABELS.queue);
     });
 
+    it('records packed HDR intermediate on the capability matrix when the feature is enabled', () => {
+        const features = ['rg11b10ufloat-renderable'] as GPUFeatureName[];
+        const matrix = buildCapabilityMatrix('fragment', { maxTextureDimension2D: 4096 }, features, {
+            intermediateFormat: 'rg11b10ufloat',
+        });
+        expect(matrix.intermediateFormat).toBe('rg11b10ufloat');
+        expect(matrix.shaderFeatureUses.rg11b10Intermediate).toBe(true);
+        expect(matrix.shaderFeatureUses.dualSourcePrecip).toBe(false);
+    });
+
     it('records adapter and canvas policy on the capability matrix', () => {
         const matrix = buildCapabilityMatrix('fragment', { maxTextureDimension2D: 4096 }, [], {
             featureLevel: 'compatibility',
@@ -286,6 +299,8 @@ describe('uncaptured errors and labels', () => {
         expect(matrix.uncapturedErrorCount).toBe(0);
         expect(matrix.gpuChoresWorkgroupSize).toBe(8);
         expect(matrix.gpuChoresKillSwitch).toBe(false);
+        expect(matrix.intermediateFormat).toBe('rgba16float');
+        expect(matrix.shaderFeatureUses.shaderF16).toBe(false);
     });
 });
 

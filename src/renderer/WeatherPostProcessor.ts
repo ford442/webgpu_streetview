@@ -13,6 +13,12 @@ import {
     createLutBindGroupLayout,
     createLutSampler,
 } from './lutGpu';
+import {
+    assembleDualSourceWeatherShader,
+    deviceHasFeature,
+    DUAL_SOURCE_PRECIP_BLEND,
+} from './shaderFeatureVariants';
+import { OPTIONAL_DEVICE_FEATURES } from './deviceCapabilities';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -36,6 +42,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
+    private dualSourcePrecip = false;
 
     constructor(device: GPUDevice, context: GPUCanvasContext, _canvas: HTMLCanvasElement) {
         this.device = device;
@@ -80,6 +87,11 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             throw error;
         }
 
+        this.dualSourcePrecip = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
+        if (this.dualSourcePrecip) {
+            shaderCode = assembleDualSourceWeatherShader(shaderCode);
+        }
+
         const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
         const bindGroupLayout = this.device.createBindGroupLayout({
@@ -121,7 +133,9 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             fragment: {
                 module: shaderModule,
                 entryPoint: 'fs_main',
-                targets: [{ format: presentationFormat as GPUTextureFormat }],
+                targets: this.dualSourcePrecip
+                    ? [{ format: presentationFormat as GPUTextureFormat, blend: DUAL_SOURCE_PRECIP_BLEND }]
+                    : [{ format: presentationFormat as GPUTextureFormat }],
             },
             primitive: { topology: 'triangle-list' },
         });

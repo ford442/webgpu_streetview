@@ -118,26 +118,31 @@ else()
     # Host target (system compiler — no Emscripten, no browser)
     # -----------------------------------------------------------------------
     # Same algorithms, compiled natively so `ctest` can assert them against the
-    # golden vectors captured from the shipping WASM binary. bindings.cpp is
-    # not part of this target: it is entirely inside `#ifdef __EMSCRIPTEN__`
-    # and only exists to re-export the sw_* functions under their ABI names.
-    add_library(streetview_cpu STATIC src/noise_module.cpp)
+    # golden vectors captured from the shipping WASM binary.
+    # bindings.cpp is an empty TU on the host (#ifdef __EMSCRIPTEN__). Including
+    # it here puts it in compile_commands.json so `clang-tidy -p cpp/build-host`
+    # / `npm run lint:cpp` can see both algorithm sources.
+    add_library(streetview_cpu STATIC src/noise_module.cpp src/bindings.cpp)
     target_include_directories(streetview_cpu PUBLIC include)
     target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
 
-    # Belt-and-suspenders alongside cpp/.clangd's CompilationDatabase setting:
-    # a real cpp/compile_commands.json for tools that don't read .clangd (a
-    # standalone `clang-tidy` invocation without -p, some editor plugins).
-    # POST_BUILD (not configure-time file(CREATE_LINK)) because CMake writes
-    # compile_commands.json during the generate step, which runs after
-    # CMakeLists.txt processing — linking it here would race an empty/missing
-    # file on a first configure.
-    add_custom_command(TARGET streetview_cpu POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-                "${CMAKE_BINARY_DIR}/compile_commands.json"
-                "${CMAKE_SOURCE_DIR}/compile_commands.json"
-        COMMENT "Linking compile_commands.json into cpp/ for clangd/clang-tidy"
-    )
+    # Only the non-sanitizer `build-host` tree may write cpp/compile_commands.json.
+    # ASan (`build-asan`) and the clang extra tree (`build-clang`) keep their own
+    # databases inside the build dir. A symlink to ${CMAKE_BINARY_DIR} used to
+    # follow whichever host target last built, so `clang-tidy -p cpp` and editors
+    # that ignore cpp/.clangd picked up -fsanitize=address,undefined after
+    # `npm run test:cpp:asan`. Copy (not symlink) the host database so the file
+    # is a snapshot of build-host flags. POST_BUILD because CMake writes
+    # compile_commands.json during generate, after CMakeLists.txt processing.
+    get_filename_component(_sv_build_dir_name "${CMAKE_BINARY_DIR}" NAME)
+    if(NOT STREETVIEW_SANITIZERS AND _sv_build_dir_name STREQUAL "build-host")
+        add_custom_command(TARGET streetview_cpu POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CMAKE_BINARY_DIR}/compile_commands.json"
+                    "${CMAKE_SOURCE_DIR}/compile_commands.json"
+            COMMENT "Copying build-host compile_commands.json into cpp/ for clang-tidy -p cpp"
+        )
+    endif()
 
     if(STREETVIEW_SANITIZERS)
         if(MSVC)

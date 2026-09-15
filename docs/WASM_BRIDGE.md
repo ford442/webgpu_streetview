@@ -63,11 +63,14 @@ Both compile with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion
 iterating; `-Wdouble-promotion` is host-only — it flags an f32 value
 silently widened into an f64 expression, useful here since the algorithms
 mix f32 noise/audio with f64 haversine). C++20. Configuring writes
-`cpp/build-host/compile_commands.json`, and building links it to
-`cpp/compile_commands.json` automatically (a `POST_BUILD` step on the host
-target) — **clangd/clang-tidy just work in `cpp/`** with no setup beyond
-running `npm run test:cpp` once. The committed `cpp/.clangd` also points
-clangd at `build-host` directly, so it works even before that first build.
+`cpp/build-host/compile_commands.json`. Only that non-sanitizer `build-host`
+tree copies the database to `cpp/compile_commands.json` (a file copy, not a
+symlink). `npm run test:cpp:asan` writes `cpp/build-asan/compile_commands.json`
+and must not clobber the host copy — otherwise `clang-tidy -p cpp` picks up
+`-fsanitize=address,undefined`. The committed `cpp/.clangd` points clangd at
+`build-host` directly. `npm run lint:cpp` runs `clang-tidy -p cpp/build-host`
+on `noise_module.cpp` and `bindings.cpp`; CI (`wasm-cpp-host`) runs it as
+**advisory** (`WarningsAsErrors` empty). Do not commit `compile_commands.json`.
 
 CMake options:
 

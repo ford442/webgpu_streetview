@@ -33,4 +33,17 @@ describe('validate:shaders script', () => {
         const result = runValidateShaders();
         expect(result.status).toBe(0);
     });
+
+    it('documents that production f16 is rejected when naga is available', () => {
+        const probe = spawnSync('naga', ['--version'], { encoding: 'utf8' });
+        if (probe.status !== 0) {
+            return;
+        }
+
+        const result = runValidateShaders(['--expect-fail=scripts/f16-naga-spike.wgsl']);
+        // If this starts failing because naga accepted the spike, shader-f16
+        // may be ready to ship — do not flip shaderFeatureUses.shaderF16 without
+        // a naga-clean production shader.
+        expect(result.status).toBe(0);
+    });
 });

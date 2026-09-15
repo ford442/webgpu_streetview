@@ -67,6 +67,13 @@ interface DeviceDiagnostics {
   canvasDowngradeReason?: string;
   optionalFeaturesAttempted: GPUFeatureName[];
   optionalFeaturesEnabled: GPUFeatureName[];
+  intermediateFormat?: GPUTextureFormat;
+  shaderFeatureUses?: {
+    subgroups: boolean;
+    rg11b10Intermediate: boolean;
+    dualSourcePrecip: boolean;
+    shaderF16: boolean;
+  };
 }
 
 function readDeviceDiagnostics(): DeviceDiagnostics | null {
@@ -82,6 +89,8 @@ function readDeviceDiagnostics(): DeviceDiagnostics | null {
     canvasDowngradeReason: matrix.canvasDowngradeReason,
     optionalFeaturesAttempted: matrix.optionalFeaturesAttempted,
     optionalFeaturesEnabled: matrix.optionalFeaturesEnabled,
+    intermediateFormat: matrix.intermediateFormat,
+    shaderFeatureUses: matrix.shaderFeatureUses,
   };
 }
 
@@ -231,6 +240,9 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
                   {diagnostics.forceFallbackAdapter ? ' (fallback adapter)' : ''}
                 </div>
                 <div>canvas: {diagnostics.colorSpace} / {diagnostics.toneMapping}</div>
+                {diagnostics.intermediateFormat && (
+                  <div>intermediate: {diagnostics.intermediateFormat}</div>
+                )}
                 <div title={`${diagnostics.optionalFeaturesEnabled.length} enabled of ${diagnostics.optionalFeaturesAttempted.length} attempted`}>
                   optional features: {diagnostics.optionalFeaturesEnabled.length}/{diagnostics.optionalFeaturesAttempted.length}
                 </div>
@@ -250,6 +262,8 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
                       {
                         attempted: diagnostics.optionalFeaturesAttempted,
                         enabled: diagnostics.optionalFeaturesEnabled,
+                        intermediateFormat: diagnostics.intermediateFormat,
+                        shaderFeatureUses: diagnostics.shaderFeatureUses,
                       },
                       null,
                       2,

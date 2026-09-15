@@ -594,11 +594,11 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
   under both g++ and clang++. Needs only `cmake` and a C++20 compiler.
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
-  `cpp/build-host/compile_commands.json`; building links it to
-  `cpp/compile_commands.json` automatically and the committed `cpp/.clangd`
-  points at `build-host` too, so clangd/clang-tidy work with zero setup.
-  `cpp/.clang-tidy` is a small advisory bugprone/modernize set — not
-  CI-gating yet, run manually (`clang-tidy -p cpp/build-host cpp/src/*.cpp`).
+  `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
+  to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
+  points at `build-host`. `npm run lint:cpp` runs advisory clang-tidy
+  (`WarningsAsErrors` empty) on `noise_module.cpp` and `bindings.cpp`; CI
+  `wasm-cpp-host` runs it after the g++ host build.
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
   the JS fallback (runs with `npm test`).
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across

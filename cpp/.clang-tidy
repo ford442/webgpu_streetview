@@ -1,9 +1,8 @@
 ---
-# Advisory only for now (see docs/WASM_BRIDGE.md) — not wired into a gating
-# CI job yet. A deliberately small bugprone/modernize set: this is numeric,
-# extern "C" ABI code, not idiomatic modern C++, so checks aimed at class
-# hierarchies, ownership, or trailing-return-type style would be pure noise
-# here. Run manually: `clang-tidy -p cpp/build-host cpp/src/noise_module.cpp`.
+# Advisory: WarningsAsErrors is empty, so findings print but do not fail CI.
+# `npm run lint:cpp` / the wasm-cpp-host job run clang-tidy against
+# cpp/build-host (never build-asan). A deliberately small bugprone/modernize
+# set: this is numeric, extern "C" ABI code, not idiomatic modern C++.
 Checks: >
   -*,
   bugprone-*,

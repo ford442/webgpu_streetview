@@ -15,13 +15,13 @@ export const OPTIONAL_DEVICE_FEATURES = {
     timestampQuery: 'timestamp-query' as GPUFeatureName,
     /** Per-draw timestamps without splitting passes — overlay-only when used. */
     timestampQueryInsidePasses: TIMESTAMP_QUERY_INSIDE_PASSES,
-    /** Compute weather 16×16 and gpu-chores 8×8 reductions (shader use later). */
+    /** Compute weather 16×16 luma reduce + gpu-chores 8×8 hist coalescing. */
     subgroups: 'subgroups' as GPUFeatureName,
-    /** Bandwidth on weather intermediates — no WGSL f16 in this wave (naga). */
+    /** Bandwidth on weather intermediates — no production `f16` WGSL (naga rejects it). */
     shaderF16: 'shader-f16' as GPUFeatureName,
-    /** Cheaper HDR intermediate than rgba16float when alpha is unused (later). */
+    /** Packed HDR intermediate (`rg11b10ufloat`) when alpha is unused. */
     rg11b10ufloatRenderable: 'rg11b10ufloat-renderable' as GPUFeatureName,
-    /** Weather composite without an extra fullscreen target (later). */
+    /** Fragment weather precip as `@second_blend_source`; in-shader add is the fallback. */
     dualSourceBlending: 'dual-source-blending' as GPUFeatureName,
     /** Cabin windshield portal if/when cabin shares this device. */
     clipDistances: 'clip-distances' as GPUFeatureName,
@@ -48,6 +48,15 @@ export const COMPUTE_WEATHER_WORKGROUP_SIZE = 16;
 /** #216 gpu-chores histogram / downsample (@workgroup_size(8,8,1)). */
 export const COMPUTE_CHORES_WORKGROUP_SIZE = 8;
 
+/** Which requested optional features actually drive a production shader this boot. */
+export interface ShaderFeatureUses {
+    subgroups: boolean;
+    rg11b10Intermediate: boolean;
+    dualSourcePrecip: boolean;
+    /** Always false — naga rejects production `f16`; feature stays requested-but-unused. */
+    shaderF16: boolean;
+}
+
 /** Labels applied to the device/queue/swap-chain so PIX, RenderDoc and about:gpu traces are readable. */
 export const DEVICE_LABELS = {
     device: 'streetview-device',
@@ -69,6 +78,10 @@ export interface DeviceCapabilityMatrix {
     canvasColorSpace: 'srgb' | 'display-p3';
     canvasToneMapping: 'standard' | 'extended';
     viewFormats: GPUTextureFormat[];
+    /** Pass-1 HDR intermediate (`rgba16float` or packed `rg11b10ufloat`). */
+    intermediateFormat: GPUTextureFormat;
+    /** Which optional features are consumed by a production shader this boot. */
+    shaderFeatureUses: ShaderFeatureUses;
     /** Reason the requested HDR/P3 configure was rejected and re-configured as SDR sRGB. */
     canvasDowngradeReason?: string;
     uncapturedErrorCount: number;

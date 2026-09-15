@@ -1103,18 +1103,20 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // rather than punching through, and its scene darkening eases off at night
     // to keep the readable-night floor from #171 intact.
     let precipVisibility = 1.0 - fogMask * 0.75;
+    var precipAdd = vec3<f32>(0.0);
     if (p.rainIntensity > 0.001) {
         let r = rain(uv, t, panX, panY) * p.rainIntensity * precipVisibility;
         let rainTint = mix(vec3<f32>(0.78, 0.88, 1.15), vec3<f32>(0.60, 0.70, 1.02), p.nightIntensity);
-        col = col + r * rainTint * (1.0 + p.headlightsOn * p.nightIntensity * 0.5);
+        precipAdd = precipAdd + r * rainTint * (1.0 + p.headlightsOn * p.nightIntensity * 0.5);
         col = col * (1.0 - p.rainIntensity * mix(0.22, 0.10, p.nightIntensity));
     }
 
     if (p.snowIntensity > 0.001) {
         let s = snow(uv, t, panX, panY) * p.snowIntensity * precipVisibility;
         let snowLit = 1.0 + p.headlightsOn * p.nightIntensity * 0.35;
-        col = col + s * vec3<f32>(1.15, 1.18, 1.22) * snowLit;
+        precipAdd = precipAdd + s * vec3<f32>(1.15, 1.18, 1.22) * snowLit;
     }
+    col = col + precipAdd;
 
     // === REFRACTIVE LENS DROPLETS ===
     // Applied after rain streaks so droplets sit "on top" of streaks on the lens

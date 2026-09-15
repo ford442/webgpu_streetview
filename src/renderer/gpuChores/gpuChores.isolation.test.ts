@@ -21,6 +21,13 @@ describe('gpu-chores isolation (#216)', () => {
     expect(read('src', 'renderer', 'gpuChores', 'GpuChores.ts')).not.toMatch(/requestAdapter\s*\(/);
   });
 
+  it('loads a scalar hist by default and a subgroup hist when the feature is on', () => {
+    expect(read('public', 'shaders', 'gpu-chores-hist.wgsl')).toMatch(/atomicAdd/);
+    expect(read('public', 'shaders', 'gpu-chores-hist.wgsl')).not.toMatch(/enable subgroups/);
+    expect(read('public', 'shaders', 'gpu-chores-hist-subgroups.wgsl')).toMatch(/enable subgroups/);
+    expect(read('src', 'renderer', 'gpuChores', 'GpuChores.ts')).toMatch(/gpu-chores-hist-subgroups/);
+  });
+
   it('?no_gpu_compute does not select weather fragment/compute', () => {
     expect(read('src', 'renderer', 'createStreetViewRenderer.ts')).not.toMatch(/no_gpu_compute/);
     expect(read('src', 'renderer', 'gpuChores', 'gpuChoresPolicy.ts'))

@@ -17,6 +17,11 @@ const SHADERS = [
     'public/shaders/weather-particles.wgsl',
     'public/shaders/gpu-chores-hist.wgsl',
     'public/shaders/gpu-chores-downsample.wgsl',
+    // Subgroup / dual-source variants are assembled at pipeline-create time
+    // (`enable subgroups` / `enable dual_source_blending`). naga-cli rejects
+    // those enables without extra feature flags — scalar fallbacks above are
+    // the naga-clean contract. `gpu-chores-hist-subgroups.wgsl` is loaded only
+    // when the device enabled `subgroups`.
 ];
 
 function resolveNagaBinary() {
