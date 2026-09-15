@@ -167,7 +167,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `timestamp-query` | Requested when adapter exposes it | GPU pass timings in the performance overlay (P) |
 | `timestamp-query-inside-passes` | Requested when adapter exposes it | Overlay-only later; not used in shaders |
 | `subgroups` | Requested when adapter exposes it | **Used:** gpu-chores hist coalesced atomics (`gpu-chores-hist-subgroups.wgsl`) and compute-weather luma firefly reduce (`withSubgroupLumaReduce`). Scalar fallbacks stay naga-clean. `?gpu=compat` does not require the feature. |
-| `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** CI `naga-cli` rejects `scripts/f16-naga-spike.wgsl` (`enable f16`). Do not ship `f16` until naga accepts it. |
+| `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** Spike at `scripts/f16-naga-spike.wgsl` (not in the naga glob). naga-cli 30 accepts a toy `f16` shader; do not ship production `f16` until a real pass uses it. |
 | `rg11b10ufloat-renderable` | Requested when adapter exposes it | **Used:** Pass-1 HDR intermediate is `rg11b10ufloat` when enabled and alpha is unused; otherwise `rgba16float`. Recorded as `capabilityMatrix.intermediateFormat`. |
 | `dual-source-blending` | Requested when adapter exposes it | **Used:** fragment weather `fs_main` outputs precip as `@second_blend_source` (`assembleDualSourceWeatherShader`). In-shader `col + precipAdd` remains the naga-clean fallback. |
 | `clip-distances` | Requested when adapter exposes it | Cabin windshield later; do not `configure()` the canvas twice |

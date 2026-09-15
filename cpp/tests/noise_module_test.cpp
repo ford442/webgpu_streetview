@@ -403,7 +403,7 @@ TEST_CASE("fill_cabin_ir: distinct cabins, clamped arguments, safe edges") {
     // A single-tap buffer, a zero count and a null pointer must all be safe.
     std::vector<float> one(1, 9.0f);
     sw_fill_cabin_ir(one.data(), 1, 0, 0.0f, 44100.0f);
-    CHECK(one[0] == doctest::Approx(1.0f));
+    CHECK(one[0] == doctest::Approx(1.0));
 
     std::vector<float> untouched(8, 7.0f);
     sw_fill_cabin_ir(untouched.data(), 0, 0, 0.0f, 44100.0f);

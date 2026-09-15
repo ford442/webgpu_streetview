@@ -17,7 +17,7 @@ export const OPTIONAL_DEVICE_FEATURES = {
     timestampQueryInsidePasses: TIMESTAMP_QUERY_INSIDE_PASSES,
     /** Compute weather 16×16 luma reduce + gpu-chores 8×8 hist coalescing. */
     subgroups: 'subgroups' as GPUFeatureName,
-    /** Bandwidth on weather intermediates — no production `f16` WGSL (naga rejects it). */
+    /** Bandwidth on weather intermediates — no production `f16` WGSL yet. */
     shaderF16: 'shader-f16' as GPUFeatureName,
     /** Packed HDR intermediate (`rg11b10ufloat`) when alpha is unused. */
     rg11b10ufloatRenderable: 'rg11b10ufloat-renderable' as GPUFeatureName,
@@ -53,7 +53,7 @@ export interface ShaderFeatureUses {
     subgroups: boolean;
     rg11b10Intermediate: boolean;
     dualSourcePrecip: boolean;
-    /** Always false — naga rejects production `f16`; feature stays requested-but-unused. */
+    /** Always false — requested-but-unused until a production shader ships. */
     shaderF16: boolean;
 }
 

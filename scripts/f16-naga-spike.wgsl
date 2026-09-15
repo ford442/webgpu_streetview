@@ -1,9 +1,9 @@
 enable f16;
 
-// Naga spike for production `shader-f16`. CI `naga-cli` rejects this file
-// (`npm run validate:shaders -- --expect-fail=scripts/f16-naga-spike.wgsl`).
-// Do not ship `f16` in weather / chores WGSL until naga accepts it — the
-// feature stays on requestDevice as requested-but-unused.
+// Toy `enable f16` spike — not in the production `validate:shaders` glob.
+// naga-cli versions differ (22 rejected this file; 30 accepts it). Do not
+// flip `shaderFeatureUses.shaderF16` or ship `f16` in weather / chores WGSL
+// until a real production pass uses it. Feature stays requested-but-unused.
 // See docs/RENDERER_FALLBACK.md § Capability matrix.
 
 @fragment
