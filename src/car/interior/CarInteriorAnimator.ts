@@ -305,13 +305,21 @@ export class CarInteriorAnimator {
     const yawRad = -THREE.MathUtils.degToRad(carHeading);
     const pitchRad = THREE.MathUtils.degToRad(safePitch);
     const rollRad = THREE.MathUtils.degToRad(safeRoll);
+    // Yaw first so look/steer pitch-roll cannot gimbal the chassis around Y.
+    this.interiorGroup.rotation.order = 'YXZ';
     this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
   }
 
+  /**
+   * Aim the scene-root cabin camera.
+   * `headYaw` / `headPitch` are world-space degrees (Street View heading/pitch),
+   * not a car-relative offset — the camera is not parented to the chassis.
+   */
   public setHeadOrientation(headYaw: number, headPitch: number): void {
     const clampedPitch = Math.max(-45, Math.min(65, headPitch));
     const localYaw = -THREE.MathUtils.degToRad(headYaw);
     const localPitch = -THREE.MathUtils.degToRad(clampedPitch);
+    this.camera.rotation.order = 'YXZ';
     this.camera.rotation.set(localPitch, localYaw, 0);
   }
 

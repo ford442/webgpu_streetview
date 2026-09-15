@@ -1,4 +1,5 @@
 import { CarInterior } from '../CarInterior';
+import { cabinCameraWorldYaw } from '../carSpatialModel';
 import { RearviewMirror } from '../RearviewMirror';
 import { SelectivePostProcessing } from '../SelectivePostProcessing';
 import { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../variants';
@@ -180,13 +181,15 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     state.limoAtmosphere.update(deltaTime);
     state.labAtmosphere.update(deltaTime);
 
-    // Update car body rotation to stay level with ground (carHeading only)
-    // This keeps dashboard, steering wheel, A-pillars fixed to the car body
+    // Chassis yaw is carHeading only — free-look must not spin the overlay.
+    // The camera sits on the scene root, so it takes world look heading
+    // (carHeading + offset), matching the Street View panorama, not the
+    // car-relative offset (that misaligned the body by ~carHeading).
     state.interior.setCarOrientation(carHeading);
-
-    // Update head/camera orientation for looking around inside the car
-    // Head can look freely without affecting outside view
-    state.interior.setHeadOrientation(headYawOffset, headPitch);
+    state.interior.setHeadOrientation(
+      cabinCameraWorldYaw(carHeading, headYawOffset),
+      headPitch,
+    );
 
     // Re-register any bound rear sample against the *car body* heading — the
     // mirror lives in car-body space, so the head's view heading must not move

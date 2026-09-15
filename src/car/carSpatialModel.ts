@@ -8,6 +8,8 @@
  * - **Head / free-look** (`heading` / `pitch` in StreetViewProvider): independent
  *   look direction. In `controlMode === 'freeLook'` (and `headCoupling === 'free'`),
  *   mouse drag pans the head only — it must **not** rotate the chassis.
+ *   The cabin camera is scene-root, so it is aimed with world heading
+ *   (`cabinCameraWorldYaw`), not the car-relative offset.
  * - **Steering** rotates `carHeading` only when:
  *     1. `controlMode === 'carSteer'`, or
  *     2. temporary steer from grabbing the steering wheel (`isTempSteerMode`), or
@@ -46,6 +48,18 @@ export const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
 
 /** Parked wiper base angle (radians). */
 export const WIPER_PARK_ANGLE = Math.PI / 6;
+
+/**
+ * World-space yaw for the cabin camera (degrees, 0–360).
+ *
+ * The Three.js camera lives on the scene root, not under `interiorGroup`, so
+ * its yaw must be the same Street View heading the panorama uses — not the
+ * car-relative `headYawOffset`. Passing the offset yaws the overlay chassis
+ * with look (default `carHeading` is 34°, camera would sit at 0°).
+ */
+export function cabinCameraWorldYaw(carHeading: number, headYawOffset: number): number {
+  return ((carHeading + headYawOffset) % 360 + 360) % 360;
+}
 
 /**
  * StereoPannerNode pan from signed head-vs-chassis yaw.

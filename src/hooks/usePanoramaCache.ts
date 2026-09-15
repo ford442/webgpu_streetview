@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useMemo } from 'react';
 
 export interface CachedPano {
   panoId: string;
@@ -70,5 +70,5 @@ export function usePanoramaCache() {
     [get, set]
   );
 
-  return { get, set, fetch: fetchPano };
+  return useMemo(() => ({ get, set, fetch: fetchPano }), [get, set, fetchPano]);
 }

@@ -245,6 +245,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     }
 
     public setHeadOrientation(headYaw: number, headPitch: number): void {
+        // World-space look (Street View heading/pitch); camera is not under the chassis.
         this.animator.setHeadOrientation(headYaw, headPitch);
     }
 

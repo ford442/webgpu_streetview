@@ -86,9 +86,14 @@ export function useCruiseMode({
   const hopInFlightRef = useRef(false);
   const hopsPerTickRef = useRef(hopsPerTick);
   hopsPerTickRef.current = hopsPerTick;
+  // AppShell re-renders on scraper self-check (~2s) and look-around, which
+  // recreates `advanceSafe`. The hop interval must not restart on that
+  // identity churn — 2s < 3s meant cruise never issued a hop.
+  const advanceSafeRef = useRef(advanceSafe);
+  advanceSafeRef.current = advanceSafe;
 
   useEffect(() => {
-    if (!isCruiseMode || !panorama || !advanceSafe) {
+    if (!isCruiseMode || !panorama) {
       if (cruiseIntervalRef.current) {
         clearInterval(cruiseIntervalRef.current);
         cruiseIntervalRef.current = null;
@@ -150,7 +155,7 @@ export function useCruiseMode({
 
       setNavPending(true);
       try {
-        await advanceSafe('forward', targetHint, cruiseHeadingRef.current);
+        await advanceSafeRef.current('forward', targetHint, cruiseHeadingRef.current);
       } finally {
         setNavPending(false);
       }
@@ -221,14 +226,18 @@ export function useCruiseMode({
         }
       }
     };
+    void hop();
     cruiseIntervalRef.current = setInterval(hop, 3000);
     return () => {
       if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
       cruiseIntervalRef.current = null;
       hopInFlightRef.current = false;
     };
+    // Hop callbacks (`advanceSafe`, `setNavPending`, route-graph loader) are
+    // read from refs. Restarting this effect when they change is what used to
+    // cancel the 3s interval on every AppShell render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCruiseMode, panorama, advanceSafe, mapsAuthFailed]);
+  }, [isCruiseMode, panorama, mapsAuthFailed]);
 
   return { isCruiseMode, setIsCruiseMode };
 }

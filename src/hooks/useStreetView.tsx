@@ -96,6 +96,10 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const [heading, setHeadingState] = useState(initialHeading);
   const [pitch, setPitchState] = useState(initialPitch);
   const [zoom, setZoomState] = useState(1.0);
+  const headingRef = useRef(heading);
+  const pitchRef = useRef(pitch);
+  headingRef.current = heading;
+  pitchRef.current = pitch;
   
   // Location state
   const [position, setPositionState] = useState<google.maps.LatLng | null>(null);
@@ -232,7 +236,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const currentCanvas = canvasRef.current;
 
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
-    renderer?.beginHoldTransition(heading, pitch, currentCanvas ?? undefined);
+    renderer?.beginHoldTransition(headingRef.current, pitchRef.current, currentCanvas ?? undefined);
     streetViewProbe.holdArmed();
 
     holdBaselineFingerprintRef.current = currentCanvas
@@ -266,7 +270,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       cancelAnimationFrame(transitionRafRef.current);
       transitionRafRef.current = null;
     }
-  }, [heading, pitch]);
+  }, []);
 
   // Navigation function with GPU transition
   const advance = useCallback((
@@ -280,7 +284,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const links = pano.getLinks();
     if (!links) return;
 
-    const useHeading = currentHeading ?? heading;
+    const useHeading = currentHeading ?? headingRef.current;
 
     const bestLink = findBestLink(
       links.filter((link): link is google.maps.StreetViewLink => link !== null),
@@ -292,7 +296,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       armHold();
       pano.setPano(bestLink.pano);
     }
-  }, [heading, isTransitioning, armHold]);
+  }, [armHold]);
 
   // Teleport function — same hold-pause treatment as advance() so MiniMap
   // clicks, autopilot waypoints, and globe-teleport never flash the blurry

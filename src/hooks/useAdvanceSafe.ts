@@ -52,7 +52,7 @@ export function useAdvanceSafe() {
       // Finally call the original advance
       advance(dir, heading);
     },
-    [navigationIdlePromise, advance, panoCache]
+    [navigationIdlePromise, advance, panoCache.fetch]
   );
 
   const teleportSafe = useCallback(
@@ -69,7 +69,7 @@ export function useAdvanceSafe() {
       // Finally call the original teleport
       teleport(lat, lng, targetHeading, targetPitch);
     },
-    [navigationIdlePromise, teleport, panoCache]
+    [navigationIdlePromise, teleport, panoCache.fetch]
   );
 
   const teleportToPanoSafe = useCallback(

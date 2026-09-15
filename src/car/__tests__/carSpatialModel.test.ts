@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   cabinAudioPanFromHeadYaw,
+  cabinCameraWorldYaw,
   NIGHT_BASE_FLOOR,
   NIGHT_SKY_FLOOR,
   WEATHER_FALL_Y_SIGN,
@@ -80,5 +81,22 @@ describe('carSpatialModel cabin audio pan', () => {
     expect(cabinAudioPanFromHeadYaw(90, 0)).toBeCloseTo(1, 5);
     expect(cabinAudioPanFromHeadYaw(0, 0)).toBeCloseTo(0, 5);
     expect(cabinAudioPanFromHeadYaw(-45, 0)).toBeCloseTo(-0.5, 5);
+  });
+});
+
+describe('carSpatialModel cabin camera world yaw', () => {
+  it('matches Street View heading when the head is centered on the chassis', () => {
+    expect(cabinCameraWorldYaw(34, 0)).toBeCloseTo(34, 5);
+    expect(cabinCameraWorldYaw(0, 0)).toBeCloseTo(0, 5);
+  });
+
+  it('adds the signed look offset without dragging chassis yaw', () => {
+    expect(cabinCameraWorldYaw(34, 20)).toBeCloseTo(54, 5);
+    expect(cabinCameraWorldYaw(34, -15)).toBeCloseTo(19, 5);
+  });
+
+  it('wraps through 0/360', () => {
+    expect(cabinCameraWorldYaw(350, 20)).toBeCloseTo(10, 5);
+    expect(cabinCameraWorldYaw(10, -20)).toBeCloseTo(350, 5);
   });
 });

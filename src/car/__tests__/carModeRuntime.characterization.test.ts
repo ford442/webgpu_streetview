@@ -288,6 +288,17 @@ describe('carModeRuntime — lifecycle', () => {
         expect(interior.update).toHaveBeenCalled();
     });
 
+    it('aims the cabin camera with world heading so the chassis does not yaw with look', () => {
+        runtime.initCarMode(container());
+        runtime.toggleCarMode(true);
+        const interior = madeInteriors[0]!;
+
+        runtime.updateCarMode(34, 20, 10);
+
+        expect(interior.setCarOrientation).toHaveBeenCalledWith(34);
+        expect(interior.setHeadOrientation).toHaveBeenCalledWith(54, 10);
+    });
+
     it('dispose clears the singleton so the guards apply again', () => {
         runtime.initCarMode(container());
         runtime.setCarGear('P');

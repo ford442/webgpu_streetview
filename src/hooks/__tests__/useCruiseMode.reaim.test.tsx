@@ -51,7 +51,7 @@ async function runOneTick(harness: ReturnType<typeof makeHarness>, viewHeading: 
   );
   act(() => view.result.current.setIsCruiseMode(true));
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(1600);
   });
   act(() => view.result.current.setIsCruiseMode(false));
   await act(async () => {

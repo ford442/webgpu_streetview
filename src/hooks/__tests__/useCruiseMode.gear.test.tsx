@@ -41,13 +41,12 @@ function setup(hopsPerTick: () => number, panoIds: string[]) {
 }
 
 /**
- * Fire exactly one cruise tick, then disengage so the interval stops before
- * letting the tick's chained hops settle (disengaging does not cancel the
- * in-flight chain, which is what we want to observe).
+ * Let the hop that starts on engage finish, then disengage so the 3s interval
+ * cannot queue another tick. Disengaging does not cancel an in-flight chain.
  */
 async function runTick(view: { result: { current: { setIsCruiseMode: (v: boolean) => void } } }) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(1600);
   });
   act(() => view.result.current.setIsCruiseMode(false));
   await act(async () => {
@@ -83,12 +82,45 @@ describe('useCruiseMode gear-aware hops', () => {
     const { advanceSafe, view } = setup(() => 0, ['a', 'b']);
     act(() => view.result.current.setIsCruiseMode(true));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(1600);
     });
     expect(advanceSafe).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith('[CruiseMode] Skipping hop — gear parked (P/N)');
     expect(view.result.current.isCruiseMode).toBe(true);
     logSpy.mockRestore();
+  });
+
+  it('still hops when advanceSafe identity changes faster than the tick', async () => {
+    // AppShell re-renders on scraper self-check (~2s) with a new advanceSafe.
+    // That used to tear down the 3s interval before a hop could fire.
+    let hops = 0;
+    const harness = makePanorama(['a', 'b', 'c', 'd', 'e', 'f']);
+    const view = renderHook(
+      ({ nonce }: { nonce: number }) =>
+        useCruiseMode({
+          panorama: harness.pano,
+          advanceSafe: async () => {
+            void nonce;
+            hops += 1;
+            harness.step();
+          },
+          mapsAuthFailed: false,
+          heading: 0,
+          isTransitioning: false,
+          setNavPending: () => {},
+          hopsPerTick: () => 1,
+        }),
+      { initialProps: { nonce: 0 } }
+    );
+    act(() => view.result.current.setIsCruiseMode(true));
+    for (let i = 1; i <= 6; i++) {
+      view.rerender({ nonce: i });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+    }
+    expect(hops).toBeGreaterThan(0);
+    expect(view.result.current.isCruiseMode).toBe(true);
   });
 
   it('stops the chain early at a dead end', async () => {
@@ -104,7 +136,6 @@ describe('useCruiseMode gear-aware hops', () => {
     const { advanceSafe, view } = setup(() => hops, ['a', 'b', 'c', 'd']);
     act(() => view.result.current.setIsCruiseMode(true));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
       await vi.advanceTimersByTimeAsync(1600); // first hop resolved
     });
     hops = 0;

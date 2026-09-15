@@ -143,6 +143,7 @@ export function bootstrapCarInterior(
     container.appendChild(canvas);
 
     const interiorGroup = new THREE.Group();
+    interiorGroup.rotation.order = 'YXZ';
     const roofGroup = new THREE.Group();
     scene.add(interiorGroup);
     scene.add(roofGroup);
