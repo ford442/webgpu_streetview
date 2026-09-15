@@ -317,8 +317,14 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public setInteriorLighting(headlightsOn: boolean, nightIntensity: number, domeLightOn: boolean): void {
         this.lightingManager.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);
+        const effectiveNight = this.lightingManager.getEffectiveNight(nightIntensity);
+        // Preset/slider night must reach the screens too — setSunPosition only
+        // fires on pano hops, so without this the infotainment + VFD panels
+        // stay at day glow while the cluster goes night.
+        this.locationPanel?.setNightGlow(effectiveNight);
+        this.centerDisplay?.setNightGlow(effectiveNight);
         this.panoEnvironment.setIntensity(this.lightingManager.getIblIntensity(nightIntensity));
-        this.animator?.setNightFactor(this.lightingManager.getEffectiveNight(nightIntensity));
+        this.animator?.setNightFactor(effectiveNight);
         this.animator?.setHeadlightsOn(headlightsOn);
     }
 

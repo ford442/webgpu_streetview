@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
 import { createAccentMaterial } from './MaterialFactory';
+import { centerDisplayGlowFromNight } from './cabinLightingRamps';
 import { VehicleConfig } from '../VehicleManager';
 
 export type DisplayPage = 'nav' | 'media' | 'trip';
@@ -161,7 +162,7 @@ export class CenterDisplay {
 
     /** Boost the screen glow after dark (0 = day baseline, 1 = full night). */
     setNightGlow(night: number): void {
-        this.screenMat.emissiveIntensity = 0.28 + Math.max(0, Math.min(1, night)) * 0.42;
+        this.screenMat.emissiveIntensity = centerDisplayGlowFromNight(night);
     }
 
     /** Advance to the next page; returns the new page. */
