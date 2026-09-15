@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
+import { locationPanelGlowFromNight } from './cabinLightingRamps';
 
 /**
  * LocationPanel
@@ -84,7 +85,7 @@ export class LocationPanel {
 
   /** Boost the VFD glow after dark (0 = day baseline, 1 = full night). */
   setNightGlow(night: number): void {
-    this.material.emissiveIntensity = 0.6 + Math.max(0, Math.min(1, night)) * 0.6;
+    this.material.emissiveIntensity = locationPanelGlowFromNight(night);
   }
 
   private contentKey(): string {

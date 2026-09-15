@@ -133,6 +133,25 @@ export function domeGlowLevel(input: CabinRampInput): number {
   return input.domeLightOn ? 0.7 + input.effectiveNight * 0.25 : 0;
 }
 
+/**
+ * Infotainment screen glow (CenterDisplay.setNightGlow).
+ * Matches the `centerDisplay` emitter ramp above so the live screen and the
+ * dash placeholder behind it agree at every night factor: readable by day,
+ * brightest cabin object family at night without blooming.
+ */
+export function centerDisplayGlowFromNight(night: number): number {
+  return 0.24 + Math.max(0, Math.min(1, night)) * 0.42;
+}
+
+/**
+ * VFD location-panel glow (LocationPanel.setNightGlow).
+ * Hotter baseline than the infotainment screen so the road name stays
+ * legible in daylight; same clamping contract.
+ */
+export function locationPanelGlowFromNight(night: number): number {
+  return 0.6 + Math.max(0, Math.min(1, night)) * 0.6;
+}
+
 export interface GaugeGlowInput {
   /** 0 = full day, 1 = full night (max of preset + sun altitude). */
   effectiveNight: number;

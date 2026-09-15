@@ -3,11 +3,13 @@ import {
   cabinEmitterTargets,
   cabinFillTargets,
   cabinGlowScale,
+  centerDisplayGlowFromNight,
   clusterGlowLevel,
   domeGlowLevel,
   gaugeDialGlow,
   gaugeNeedleGlow,
   iblIntensityFromNight,
+  locationPanelGlowFromNight,
   sunBaseIntensityFromStrength,
   sunNightFactorFromAltitude,
   sunStrengthFromAltitude,
@@ -236,5 +238,28 @@ describe('cabinLightingRamps', () => {
     const max = { effectiveNight: 1, rpmFrac: 1, breathe: 0, headlightsOn: true };
     expect(gaugeDialGlow(hot)).toBeCloseTo(gaugeDialGlow(max), 5);
     expect(gaugeNeedleGlow(hot)).toBeCloseTo(gaugeNeedleGlow(max), 5);
+  });
+
+  it('drives both dash screens from the same night factor with clamped ramps', () => {
+    // Day floors: readable, not glowing.
+    expect(centerDisplayGlowFromNight(0)).toBeCloseTo(0.24, 5);
+    expect(locationPanelGlowFromNight(0)).toBeCloseTo(0.6, 5);
+    // Full night: brighter, VFD hotter than the LCD.
+    expect(centerDisplayGlowFromNight(1)).toBeCloseTo(0.66, 5);
+    expect(locationPanelGlowFromNight(1)).toBeCloseTo(1.2, 5);
+    expect(locationPanelGlowFromNight(1)).toBeGreaterThan(centerDisplayGlowFromNight(1));
+    // Infotainment screen agrees with the shared center-display emitter ramp.
+    const emit = cabinEmitterTargets({
+      effectiveNight: 1,
+      rain: 0,
+      headlightsOn: false,
+      domeLightOn: false,
+    });
+    expect(centerDisplayGlowFromNight(1)).toBeCloseTo(emit.centerDisplay, 5);
+    // Out-of-range preset values cannot blow out the screens.
+    expect(centerDisplayGlowFromNight(4)).toBeCloseTo(centerDisplayGlowFromNight(1), 5);
+    expect(centerDisplayGlowFromNight(-2)).toBeCloseTo(centerDisplayGlowFromNight(0), 5);
+    expect(locationPanelGlowFromNight(4)).toBeCloseTo(locationPanelGlowFromNight(1), 5);
+    expect(locationPanelGlowFromNight(-2)).toBeCloseTo(locationPanelGlowFromNight(0), 5);
   });
 });
