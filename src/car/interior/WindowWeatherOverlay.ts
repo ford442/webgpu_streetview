@@ -1,22 +1,32 @@
 import * as THREE from 'three';
 import {
   createWindowWeatherOverlayMaterial,
+  type WindowWeatherOverlayUniforms,
 } from '../../shaders/windowWeatherOverlay';
+import { getCabinMaterialBackend } from './cabinMaterialBackend';
+import { getCabinTslApi } from './cabinTslRegistry';
+
+type OverlayMaterial = THREE.Material & { uniforms: WindowWeatherOverlayUniforms };
 
 /**
  * Transparent shader decal on the windshield — rain streaks + condensation.
  * Driven by WeatherPanel rain/fog; wiper phase synced from CarInteriorAnimator.
+ * GLSL on WebGL, TSL NodeMaterial on the WebGPU cabin.
  */
 export class WindowWeatherOverlay {
   private mesh!: THREE.Mesh;
-  private material!: THREE.ShaderMaterial;
+  private material!: OverlayMaterial;
   private wipersActive = false;
   private lastRain = 0;
   private lastCondensation = 0;
 
   constructor(windshield: THREE.Mesh) {
     const geometry = windshield.geometry.clone();
-    this.material = createWindowWeatherOverlayMaterial();
+    const backend = getCabinMaterialBackend();
+    const tsl = backend === 'webgpu' ? getCabinTslApi() : undefined;
+    this.material = (tsl
+      ? tsl.createWindowWeatherOverlayMaterial()
+      : createWindowWeatherOverlayMaterial()) as OverlayMaterial;
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.name = 'windowWeatherOverlay';
     this.mesh.position.copy(windshield.position);
@@ -41,15 +51,15 @@ export class WindowWeatherOverlay {
   setWeather(rainNorm: number, fogNorm: number, humidity = 0): void {
     const u = this.material.uniforms;
     this.lastRain = Math.max(0, Math.min(1, rainNorm));
-    u.rainIntensity!.value = this.lastRain;
+    u.rainIntensity.value = this.lastRain;
     this.lastCondensation = Math.max(
       0,
       Math.min(1, fogNorm * 0.65 + humidity * 0.35 + rainNorm * 0.15),
     );
-    u.condensation!.value = this.lastCondensation;
+    u.condensation.value = this.lastCondensation;
     // While wiping with a dry windshield, seed a light mist so the clear path reads.
     if (this.wipersActive && this.lastRain < 0.08) {
-      u.rainIntensity!.value = 0.12;
+      u.rainIntensity.value = 0.12;
     }
     this.refreshVisibility();
   }
@@ -57,10 +67,10 @@ export class WindowWeatherOverlay {
   setWipersActive(active: boolean, phase: number): void {
     const u = this.material.uniforms;
     this.wipersActive = active;
-    u.wiperActive!.value = active;
-    u.wiperPhase!.value = phase;
+    u.wiperActive.value = active;
+    u.wiperPhase.value = phase;
     if (active && this.lastRain < 0.08) {
-      u.rainIntensity!.value = 0.12;
+      u.rainIntensity.value = 0.12;
     }
     this.refreshVisibility();
   }
@@ -72,7 +82,7 @@ export class WindowWeatherOverlay {
    */
   update(deltaTime: number): void {
     const u = this.material.uniforms;
-    u.time!.value += deltaTime;
+    u.time.value += deltaTime;
   }
 
   dispose(): void {

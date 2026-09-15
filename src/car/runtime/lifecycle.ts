@@ -6,6 +6,7 @@ import { DEFAULT_VEHICLE, vehicleManager, type VehicleType } from '../VehicleMan
 import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
 import { notifyCabinFrameRendered } from './frameCapture';
 import { getState, setState, type CarModeState } from './state';
+import type { CabinRendererHandle } from '../interior/createCabinRenderer';
 
 /**
  * Construction, per-frame update and teardown of the car cabin.
@@ -27,11 +28,13 @@ let lastTimestamp = 0;
 export function initCarMode(
     container: HTMLElement,
     initialVehicle: VehicleType = DEFAULT_VEHICLE,
-    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts` (`?cabin=webgpu`). */
+    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts`. */
     sharedDevice?: GPUDevice,
+    /** Pre-inited cabin renderer (awaited `init()` + WebGL fallback). */
+    readyHandle?: CabinRendererHandle,
 ): CarModeState {
     // Create the car interior Three.js overlay
-    const interior = new CarInterior(container, initialVehicle, sharedDevice);
+    const interior = new CarInterior(container, initialVehicle, sharedDevice, readyHandle);
 
     let mirror: RearviewMirror;
     try {

@@ -41,6 +41,8 @@ declare global {
     rendererAdapterInfo?: import('./renderer/deviceCapabilities').AdapterCapabilitySummary;
     /** Boot probe — set on WebGPU success and hard-fail (Chrome vs Edge brand + reason). */
     webgpuProbe?: import('./renderer/webgpuBootProbe').WebGpuProbeRecord;
+    /** Cabin overlay backend (PR 2 of #249). Set when car mode constructs a renderer. */
+    __CABIN_RENDERER_PROBE__?: import('./car/interior/cabinRendererProbe').CabinRendererProbe;
     streetViewRendererDebug?: {
       getBackend: () => {
         rendererType?: 'webgpu' | 'webgl';

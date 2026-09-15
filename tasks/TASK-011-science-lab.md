@@ -28,9 +28,10 @@ into it and deleted. `src/car/variants/__tests__/atmospherePlugins.test.ts`
 greps `src/car/variants/` for `new THREE.WebGLRenderer` and fails if one comes
 back. **Do not add one.**
 
-Cabin/pano device unification is separate work — see the `?cabin=webgpu` escape
-hatch in `src/car/interior/createCabinRenderer.ts` and the "Car Mode Rendering
-Stack" section of `AGENTS.md`.
+Cabin/pano device unification: capable adapters default the cabin to
+`THREE.WebGPURenderer({ device })` sharing Street View's `GPUDevice`. `?cabin=webgl`
+is the overlay hatch. See `src/car/interior/createCabinRenderer.ts` and the
+"Car Mode Rendering Stack" section of `AGENTS.md`.
 
 ## Known gaps
 

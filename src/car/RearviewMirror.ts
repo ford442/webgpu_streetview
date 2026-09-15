@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { RearViewSample } from './rearViewFeed';
 import { signedHeadingDelta } from './rearViewFeed';
 import type { CabinRenderer } from './interior/createCabinRenderer';
+import { createRearviewMirrorGlslMaterial, type RearviewMirrorUniforms } from '../shaders/rearviewMirrorGlass';
+import { getCabinTslApi } from './interior/cabinTslRegistry';
 
 /**
  * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
@@ -13,6 +15,8 @@ import type { CabinRenderer } from './interior/createCabinRenderer';
 function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
     return (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
 }
+
+type RearviewMaterial = THREE.Material & { uniforms: RearviewMirrorUniforms };
 
 /**
  * RearviewMirror — cabin rear-view glass.
@@ -40,9 +44,9 @@ function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
  */
 export class RearviewMirror {
     private mirrorPlane: THREE.Mesh;
-    /** The shader-driven glass. Uniform state is always kept up to date (see below) even when `activeMaterial` is showing something else. */
-    private mirrorMaterial: THREE.ShaderMaterial;
-    /** What the mirror meshes actually display: `mirrorMaterial` on WebGL, or a plain flat fallback on WebGPU — `ShaderMaterial`'s raw GLSL has no TSL/NodeMaterial equivalent there yet. */
+    /** The shader/TSL-driven glass. Uniform state is always kept up to date. */
+    private mirrorMaterial: RearviewMaterial;
+    /** What the mirror meshes actually display — GLSL on WebGL, TSL on WebGPU. */
     private readonly activeMaterial: THREE.Material;
     private isNightMode: boolean = false;
     private rearAvailable: boolean = false;
@@ -60,90 +64,13 @@ export class RearviewMirror {
         scene: THREE.Scene,
         private renderer: CabinRenderer
     ) {
-        // Honest unavailable glass: dark tint + soft vignette + label cue.
-        // No sampling of the forward Street View canvas.
-        this.mirrorMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                nightMode: { value: 0.0 },
-                rearAvailable: { value: 0.0 },
-                time: { value: 0.0 },
-                // True-rear Static sample, horizontally flipped at sample time.
-                rearTex: { value: null },
-                // UV pan (in texture units) compensating car rotation since capture.
-                rearPan: { value: 0.0 },
-                // 0..1 confidence — decays as the car rotates out of the sample's FOV.
-                rearFade: { value: 0.0 },
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float nightMode;
-                uniform float rearAvailable;
-                uniform float time;
-                uniform sampler2D rearTex;
-                uniform float rearPan;
-                uniform float rearFade;
-                varying vec2 vUv;
+        const webgpu = isWebGPUCabinRenderer(renderer);
+        const tsl = webgpu ? getCabinTslApi() : undefined;
+        this.mirrorMaterial = (tsl
+            ? tsl.createRearviewMirrorMaterial()
+            : createRearviewMirrorGlslMaterial()) as RearviewMaterial;
 
-                void main() {
-                    // Base glass — cool dark mirror when rear feed is unavailable.
-                    vec3 glass = vec3(0.06, 0.07, 0.09);
-                    if (nightMode > 0.5) {
-                        glass = vec3(0.03, 0.06, 0.04);
-                    }
-
-                    // Soft edge vignette so it still reads as a mirror bezel.
-                    float dist = distance(vUv, vec2(0.5));
-                    float vignette = 1.0 - smoothstep(0.25, 0.72, dist);
-                    glass *= mix(0.55, 1.0, vignette);
-
-                    // Subtle horizontal scan / frost so the glass does not look broken-black.
-                    float frost = 0.02 + 0.015 * sin(vUv.y * 40.0 + time * 0.4);
-                    glass += vec3(frost);
-
-                    // Center band label cue ("no rear feed") via luminance dip.
-                    // Readable as a dim horizontal readout without textured fonts.
-                    float band = smoothstep(0.42, 0.48, vUv.y) * (1.0 - smoothstep(0.52, 0.58, vUv.y));
-                    float bandX = smoothstep(0.18, 0.28, vUv.x) * (1.0 - smoothstep(0.72, 0.82, vUv.x));
-                    float label = band * bandX;
-                    vec3 labelColor = nightMode > 0.5
-                        ? vec3(0.15, 0.45, 0.18)
-                        : vec3(0.35, 0.38, 0.42);
-                    glass = mix(glass, labelColor, label * 0.85);
-
-                    // True-rear Static sample. A real mirror reverses left/right,
-                    // hence the 1.0 - x; rearPan re-registers the still against how
-                    // far the car has turned since it was captured.
-                    if (rearAvailable > 0.5) {
-                        vec2 rearUv = vec2(1.0 - vUv.x + rearPan, vUv.y);
-
-                        // Outside the sample's coverage there is no honest imagery
-                        // to show, so let the unavailable glass through instead of
-                        // smearing clamped edge texels.
-                        vec2 inside = step(vec2(0.0), rearUv) * step(rearUv, vec2(1.0));
-                        float coverage = inside.x * inside.y;
-
-                        vec3 rear = texture2D(rearTex, clamp(rearUv, 0.0, 1.0)).rgb;
-                        // Mirror glass: slightly dimmed, much dimmer at night.
-                        rear *= mix(0.92, 0.42, nightMode);
-                        rear *= mix(0.6, 1.0, vignette);
-
-                        glass = mix(glass, rear, clamp(rearFade, 0.0, 1.0) * coverage);
-                    }
-
-                    gl_FragColor = vec4(glass, 1.0);
-                }
-            `,
-        });
-
-        this.activeMaterial = isWebGPUCabinRenderer(renderer)
-            ? new THREE.MeshBasicMaterial({ color: 0x0f1116 })
-            : this.mirrorMaterial;
+        this.activeMaterial = this.mirrorMaterial;
 
         const mirrorGeo = new THREE.PlaneGeometry(0.28, 0.1);
         this.mirrorPlane = new THREE.Mesh(mirrorGeo, this.activeMaterial);

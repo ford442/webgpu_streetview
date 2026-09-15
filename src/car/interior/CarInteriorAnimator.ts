@@ -52,7 +52,7 @@ export class CarInteriorAnimator {
     convertibleOpen: false,
   };
   private cupSlosh = 0;
-  private cupLiquidMaterial?: THREE.ShaderMaterial;
+  private cupLiquidMaterial?: THREE.Material & { uniforms: import('../../shaders/cupLiquid').CupLiquidUniforms };
 
   // Gauge rig (from dashboard polish) — spring-driven needles + fuel/temp
   private gaugeRig: GaugeRig | null = null;
@@ -85,7 +85,7 @@ export class CarInteriorAnimator {
     private reducedMotion: boolean
   ) {}
 
-  public setCupLiquidMaterial(material: THREE.ShaderMaterial | undefined): void {
+  public setCupLiquidMaterial(material: THREE.Material & { uniforms: import('../../shaders/cupLiquid').CupLiquidUniforms } | undefined): void {
     this.cupLiquidMaterial = material;
   }
 

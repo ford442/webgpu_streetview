@@ -86,7 +86,7 @@ export interface CarInteriorAssemblyHost {
     lastMediaInfo: { name: string; tags: string; playing: boolean };
     sunShafts: SunShafts | null;
     centerDisplay: CenterDisplay | null;
-    cupLiquidMaterial?: THREE.ShaderMaterial;
+    cupLiquidMaterial?: THREE.Material & { uniforms: import('../../shaders/cupLiquid').CupLiquidUniforms };
     vanityMirror?: VanityMirror;
     vanityMirrorMesh?: THREE.Mesh;
     windowWeatherOverlay?: WindowWeatherOverlay;
