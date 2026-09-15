@@ -99,6 +99,15 @@ jobs:
           cmake --build cpp/build-host -j"$(nproc)"
           ctest --test-dir cpp/build-host --output-on-failure
 
+      # Advisory: cpp/.clang-tidy has WarningsAsErrors empty, so findings
+      # print but do not fail the job. Missing clang-tidy or a missing
+      # compilation database *does* fail so the step cannot silently skip.
+      - name: clang-tidy (advisory)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy
+          bash scripts/lint-cpp.sh
+
       # Two compilers because -Wconversion/-Wshadow diagnostics differ between
       # them, and emcc is clang — a clang-clean tree is what the WASM build needs.
       - name: Host build + golden tests (clang++, -Werror)
@@ -116,9 +125,21 @@ jobs:
           ctest --test-dir cpp/build-asan --output-on-failure
 
       # clangd in cpp/ depends on this; a CMake change that drops it is a
-      # silent developer-experience regression.
-      - name: compile_commands.json is emitted
-        run: test -f cpp/build-host/compile_commands.json
+      # silent developer-experience regression. After ASan, the repo-root
+      # copy (if present) must still be the host snapshot — never a symlink
+      # into build-asan and never sanitizer flags.
+      - name: compile_commands.json is emitted and is not the ASan tree
+        run: |
+          test -f cpp/build-host/compile_commands.json
+          if [ -L cpp/compile_commands.json ]; then
+            echo "cpp/compile_commands.json must be a copy of build-host, not a symlink"
+            ls -l cpp/compile_commands.json
+            exit 1
+          fi
+          if [ -f cpp/compile_commands.json ] && grep -q -- '-fsanitize=address' cpp/compile_commands.json; then
+            echo "cpp/compile_commands.json contains ASan flags after test:cpp:asan"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:

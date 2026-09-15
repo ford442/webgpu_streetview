@@ -24,6 +24,8 @@ import {
   type GpuChoresBackend,
 } from './gpuChoresPolicy';
 import { setGpuChoresStats } from './gpuChoresStatsStore';
+import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
+import { deviceHasFeature } from '../shaderFeatureVariants';
 
 export interface ChoresSample {
   backend: GpuChoresBackend;
@@ -92,8 +94,11 @@ export class GpuChores {
 
     try {
       const base = `${process.env.PUBLIC_URL || '/'}/shaders`;
+      const histFile = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.subgroups)
+        ? 'gpu-chores-hist-subgroups.wgsl'
+        : 'gpu-chores-hist.wgsl';
       const [histCode, downCode] = await Promise.all([
-        fetchShader(`${base}/gpu-chores-hist.wgsl`),
+        fetchShader(`${base}/${histFile}`),
         fetchShader(`${base}/gpu-chores-downsample.wgsl`),
       ]);
       const histModule = this.device.createShaderModule({ label: 'gpu-chores-hist', code: histCode });

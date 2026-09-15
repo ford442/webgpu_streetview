@@ -20,6 +20,10 @@ import {
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
 import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
+import {
+    resolveHdrIntermediateFormat,
+    resolveShaderFeatureUses,
+} from './shaderFeatureVariants';
 
 export interface CollectOptionalFeaturesOptions {
     /** Request timestamp-query when the adapter supports it (performance overlay). */
@@ -143,6 +147,8 @@ export interface CapabilityMatrixContext {
     featureLevel?: AdapterFeatureLevel | 'unknown';
     forceFallbackAdapter?: boolean;
     canvas?: AppliedCanvasConfiguration;
+    /** Pass-1 HDR intermediate; defaults to rgba16float when omitted. */
+    intermediateFormat?: GPUTextureFormat;
 }
 
 export function buildCapabilityMatrix(
@@ -152,6 +158,8 @@ export function buildCapabilityMatrix(
     context: CapabilityMatrixContext = {},
 ): DeviceCapabilityMatrix {
     const canvas = context.canvas;
+    const intermediateFormat = context.intermediateFormat
+        ?? resolveHdrIntermediateFormat(enabledFeatures);
     return {
         weatherPostProcessMode,
         requiredLimits,
@@ -165,6 +173,8 @@ export function buildCapabilityMatrix(
         canvasColorSpace: canvas?.colorSpace ?? 'srgb',
         canvasToneMapping: canvas?.toneMapping ?? 'standard',
         viewFormats: canvas?.viewFormats ?? [],
+        intermediateFormat,
+        shaderFeatureUses: resolveShaderFeatureUses(enabledFeatures, intermediateFormat),
         canvasDowngradeReason: canvas?.downgradeReason,
         uncapturedErrorCount: 0,
         gpuChoresWorkgroupSize: COMPUTE_CHORES_WORKGROUP_SIZE,

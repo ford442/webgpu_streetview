@@ -186,6 +186,7 @@ export function createFakeGpu(): FakeGpu {
     }
 
     const device = {
+        features: { has: () => false },
         createSampler: (d?: GPUSamplerDescriptor) => ({ kind: 'sampler', id: nextId++, descriptor: d }),
         createBuffer: (d: GPUBufferDescriptor) => {
             const buf: FakeBuffer = {

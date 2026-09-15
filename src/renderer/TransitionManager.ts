@@ -1,4 +1,5 @@
 import type { GpuPassTimer } from './gpuPassTimer';
+import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 
 export interface Pass1TimingContext {
     timer: GpuPassTimer;
@@ -29,10 +30,16 @@ export class TransitionManager {
     private previousFrameTexture?: GPUTexture;
     private inlineTransitionProgress: number = 0.0;
     private legacyTransitionsEnabled: boolean = false;
+    private intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT;
 
-    constructor(device: GPUDevice, sampler: GPUSampler) {
+    constructor(
+        device: GPUDevice,
+        sampler: GPUSampler,
+        intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT,
+    ) {
         this.device = device;
         this.sampler = sampler;
+        this.intermediateFormat = intermediateFormat;
     }
 
     public async init(enableLegacyTransitions: boolean = false): Promise<void> {
@@ -86,7 +93,7 @@ export class TransitionManager {
                 fragment: {
                     module: shaderModule,
                     entryPoint: 'fs_main',
-                    targets: [{ format: 'rgba16float' as GPUTextureFormat }],
+                    targets: [{ format: this.intermediateFormat }],
                 },
                 primitive: { topology: 'triangle-list' },
             });

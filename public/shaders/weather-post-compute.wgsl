@@ -846,6 +846,14 @@ fn applyTemporalHistory(col: vec3<f32>, coord: vec2<i32>, depth: f32) -> vec3<f3
     return mix(prev, col, 0.22);
 }
 
+// Scalar no-op. `withSubgroupLumaReduce()` in shaderFeatureVariants.ts
+// replaces this body and prepends `enable subgroups;` when the device
+// enabled that optional feature. Keep the source identical to
+// APPLY_OPTIONAL_LUMA_REDUCE_SCALAR.
+fn applyOptionalLumaReduce(col: vec3<f32>) -> vec3<f32> {
+    return col;
+}
+
 // ============================================================================
 // MAIN COMPUTE SHADER
 // ============================================================================
@@ -974,5 +982,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // dummy when quality < high or prefers-reduced-motion, which no-ops this.
     col = applyTemporalHistory(col, vec2<i32>(global_id.xy), viewDepth);
 
+    col = applyOptionalLumaReduce(col);
     textureStore(writeTexture, vec2<i32>(global_id.xy), vec4<f32>(col, 1.0));
 }

@@ -37,6 +37,7 @@
     "capture:look-goldens": "node scripts/capture-look-goldens.mjs",
     "test:cpp": "cmake -S cpp -B cpp/build-host -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build cpp/build-host && ctest --test-dir cpp/build-host --output-on-failure",
     "test:cpp:asan": "cmake -S cpp -B cpp/build-asan -DCMAKE_BUILD_TYPE=Debug -DSTREETVIEW_SANITIZERS=ON && cmake --build cpp/build-asan && ctest --test-dir cpp/build-asan --output-on-failure",
+    "lint:cpp": "bash scripts/lint-cpp.sh",
     "check:install": "node scripts/check-install.mjs",
     "pretest": "node scripts/check-install.mjs",
     "test": "vitest run",

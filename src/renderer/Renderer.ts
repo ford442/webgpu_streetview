@@ -39,6 +39,7 @@ import {
 } from './webgpuBootProbe';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
+import { resolveHdrIntermediateFormat } from './shaderFeatureVariants';
 
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
@@ -221,11 +222,18 @@ export class Renderer implements StreetViewRenderer {
                 p3: appliedCanvas.colorSpace === 'display-p3',
             };
 
+            const intermediateFormat = resolveHdrIntermediateFormat(requiredFeatures);
+            this.textures.setIntermediateFormat(intermediateFormat);
+
             const capabilityMatrix = buildCapabilityMatrix(
                 this.weatherPostProcessMode,
                 limitCheck.requiredLimits!,
                 requiredFeatures,
-                { ...describeAdapterSelection(adapterOptions), canvas: appliedCanvas },
+                {
+                    ...describeAdapterSelection(adapterOptions),
+                    canvas: appliedCanvas,
+                    intermediateFormat,
+                },
             );
             logAdapterCapabilities(
                 adapter,
@@ -284,7 +292,11 @@ export class Renderer implements StreetViewRenderer {
             this.gpuChores = new GpuChores(this.device);
             void this.gpuChores.ensureReady();
 
-            this.transitionManager = new TransitionManager(this.device, this.sampler);
+            this.transitionManager = new TransitionManager(
+                this.device,
+                this.sampler,
+                this.textures.intermediateFormat,
+            );
             try {
                 await this.transitionManager.init(!!options?.legacyTransitions);
             } catch (e) {
@@ -467,7 +479,7 @@ export class Renderer implements StreetViewRenderer {
             fragment: {
                 module: shaderModule,
                 entryPoint: 'fs_main',
-                targets: [{ format: 'rgba16float' as GPUTextureFormat }],
+                targets: [{ format: this.textures.intermediateFormat }],
             },
             primitive: { topology: 'triangle-strip' },
         });

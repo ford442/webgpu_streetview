@@ -1,6 +1,7 @@
 import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
+import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 
 export interface TextureLifecycleDeps {
     getDevice: () => GPUDevice;
@@ -24,6 +25,7 @@ export class TextureLifecycle {
     public intermediateTextureView!: GPUTextureView;
     public intermediateWidth = 0;
     public intermediateHeight = 0;
+    public intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT;
     public bindGroup!: GPUBindGroup;
 
     constructor(private readonly deps: TextureLifecycleDeps) {}
@@ -56,6 +58,13 @@ export class TextureLifecycle {
         this.videoTextureHeight = height;
     }
 
+    setIntermediateFormat(format: GPUTextureFormat): void {
+        if (this.intermediateFormat === format) return;
+        this.intermediateFormat = format;
+        this.intermediateWidth = 0;
+        this.intermediateHeight = 0;
+    }
+
     ensureIntermediateTexture(width: number, height: number): void {
         if (this.intermediateTexture &&
             this.intermediateWidth === width &&
@@ -72,7 +81,7 @@ export class TextureLifecycle {
 
         this.intermediateTexture = this.deps.getDevice().createTexture({
             size: [width, height],
-            format: 'rgba16float',
+            format: this.intermediateFormat,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
 

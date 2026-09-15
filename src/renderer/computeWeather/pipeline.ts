@@ -1,4 +1,6 @@
 import { BLIT_SHADER } from './constants';
+import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
+import { deviceHasFeature, withSubgroupLumaReduce } from '../shaderFeatureVariants';
 
 /**
  * Pipeline and bind-group construction for the compute weather pass.
@@ -78,6 +80,10 @@ export async function createWeatherComputePipeline(
     } catch (error) {
         console.error(`[Renderer] Failed to load weather-post-compute shader from ${shaderUrl}:`, error);
         throw error;
+    }
+
+    if (deviceHasFeature(device, OPTIONAL_DEVICE_FEATURES.subgroups)) {
+        shaderCode = withSubgroupLumaReduce(shaderCode);
     }
 
     const computeModule = device.createShaderModule({ code: shaderCode });
