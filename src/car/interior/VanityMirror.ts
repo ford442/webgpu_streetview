@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { CabinRenderer } from './createCabinRenderer';
+import { createVanityMirrorGlslMaterial, type VanityMirrorUniforms } from '../../shaders/vanityMirror';
+import { getCabinTslApi } from './cabinTslRegistry';
 
 /**
  * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
@@ -14,13 +16,15 @@ function isWebGPUCabinRenderer(renderer: CabinRenderer): boolean {
   return (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
 }
 
+type VanityMaterial = THREE.Material & { uniforms: VanityMirrorUniforms };
+
 /**
  * Sun-visor vanity mirror — samples the Street View pano with a tight,
  * downward-biased crop and horizontal flip (like RearviewMirror, smaller RT).
  */
 export class VanityMirror {
   private readonly renderTarget: THREE.WebGLRenderTarget;
-  private readonly mirrorMaterial: THREE.ShaderMaterial;
+  private readonly mirrorMaterial: VanityMaterial;
   private readonly mirrorPlane: THREE.Mesh;
   private readonly mirrorScreenScene: THREE.Scene;
   private readonly mirrorScreenMesh: THREE.Mesh;
@@ -44,41 +48,14 @@ export class VanityMirror {
       format: THREE.RGBAFormat,
     });
 
-    this.mirrorMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        tDiffuse: { value: this.renderTarget.texture },
-        warmth: { value: 0.18 },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float warmth;
-        varying vec2 vUv;
-        void main() {
-          vec2 uv = vec2(1.0 - vUv.x, vUv.y);
-          vec3 color = texture2D(tDiffuse, uv).rgb;
-          color = mix(color, color * vec3(1.05, 0.98, 0.92), warmth);
-          float edge = smoothstep(0.45, 0.2, distance(vUv, vec2(0.5)));
-          color *= mix(0.75, 1.0, edge);
-          gl_FragColor = vec4(color, 0.92);
-        }
-      `,
-      transparent: true,
-    });
+    const webgpu = isWebGPUCabinRenderer(renderer);
+    const tsl = webgpu ? getCabinTslApi() : undefined;
+    this.mirrorMaterial = (tsl
+      ? tsl.createVanityMirrorMaterial(this.renderTarget.texture)
+      : createVanityMirrorGlslMaterial(this.renderTarget.texture)) as VanityMaterial;
 
     this.mirrorPlane = mirrorPlane;
-    // WebGPURenderer has no TSL/NodeMaterial equivalent for this custom GLSL
-    // warmth/vignette shader yet — show the plain render-target crop instead
-    // of crashing. The render-target pipeline itself (below) is backend-agnostic.
-    this.mirrorPlane.material = isWebGPUCabinRenderer(renderer)
-      ? new THREE.MeshBasicMaterial({ map: this.renderTarget.texture })
-      : this.mirrorMaterial;
+    this.mirrorPlane.material = this.mirrorMaterial;
 
     this.mirrorCamera = new THREE.PerspectiveCamera(60, VanityMirror.WIDTH / VanityMirror.HEIGHT, 0.1, 100);
     this.mirrorCamera.position.set(0, 0, 1);
@@ -137,9 +114,6 @@ export class VanityMirror {
   dispose(): void {
     this.renderTarget.dispose();
     this.mirrorMaterial.dispose();
-    if (this.mirrorPlane.material !== this.mirrorMaterial) {
-      (this.mirrorPlane.material as THREE.Material).dispose();
-    }
     this.mirrorScreenMesh.geometry.dispose();
     this.mirrorScreenMat.dispose();
     this.streetViewTexture?.dispose();

@@ -29,7 +29,7 @@ import {
     setupWindowWeatherOverlay,
     type CarInteriorAssemblyHost,
 } from './CarInteriorAssembly';
-import { createCabinRenderer, type CabinRenderer } from './createCabinRenderer';
+import { createCabinRenderer, type CabinRenderer, type CabinRendererHandle } from './createCabinRenderer';
 
 export interface CarInteriorBootstrapResult {
     scene: THREE.Scene;
@@ -87,8 +87,10 @@ export function bootstrapCarInterior(
     vehicleType: VehicleType,
     host: CarInteriorAssemblyHost,
     applySeatPosition: () => void,
-    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts` (`?cabin=webgpu`). */
+    /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts`. */
     sharedDevice?: GPUDevice,
+    /** Pre-inited handle from `createCabinRendererAsync` (production path). */
+    readyHandle?: CabinRendererHandle,
 ): CarInteriorBootstrapResult {
     const scene = new THREE.Scene();
     const vehicleConfig = getVehicleConfig(vehicleType);
@@ -114,7 +116,7 @@ export function bootstrapCarInterior(
     camera.rotation.order = 'YXZ';
     camera.rotation.set(0, 0, 0);
 
-    const cabinRenderer = createCabinRenderer({ gpuProfile, sharedDevice });
+    const cabinRenderer = readyHandle ?? createCabinRenderer({ gpuProfile, sharedDevice });
     const { renderer, isReady: isRendererReady } = cabinRenderer;
     renderer.setSize(container.clientWidth, container.clientHeight);
 

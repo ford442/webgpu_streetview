@@ -77,3 +77,19 @@ export function createDashboardGlowUniforms(): DashboardGlowUniforms {
     falloff: { value: 2.0 },
   };
 }
+
+export function createDashboardGlowGlslMaterial(
+  uniforms: DashboardGlowUniforms,
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: uniforms as unknown as Record<string, THREE.IUniform>,
+    vertexShader: dashboardGlowVertexShader,
+    fragmentShader: dashboardGlowFragmentShader,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+}

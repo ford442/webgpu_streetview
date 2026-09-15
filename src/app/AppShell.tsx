@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect, useMemo } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import CinemaOverlay from '../components/CinemaOverlay';
 import type { ClipOverlaySource } from '../utils/canvasRecorder';
+import { captureCompositedStill } from '../utils/canvasRecorder';
 import { parseDeepLinkParams } from '../utils/deepLink';
 import { parseStudioLinkParams, buildStudioShareUrl } from '../utils/studioLink';
 import { pickHistoricalEntryForYear } from '../utils/historicalImagery';
@@ -289,18 +290,12 @@ export function AppShell() {
     if (!position) return;
     const output = renderer.getOutputCanvas?.();
     const chores = renderer.getGpuChores?.();
-    const thumbnailDataUrl = output
-      ? makePickerThumbDataUrl(
-          output,
-          chores
-            ? (rgba, w, h, dw, dh) => chores.downsampleRgba(rgba, w, h, dw, dh)
-            : undefined,
-        ) ?? undefined
+    const downsample = chores
+      ? (rgba: Uint8ClampedArray, w: number, h: number, dw: number, dh: number) =>
+          chores.downsampleRgba(rgba, w, h, dw, dh)
       : undefined;
-    addSnapshot({
+    const meta = {
       name: locationName || `Snapshot ${new Date().toLocaleString()}`,
-      dataUrl: renderer.getCanvasDataURL(),
-      thumbnailDataUrl,
       lat: position.lat(),
       lng: position.lng(),
       heading,
@@ -311,8 +306,28 @@ export function AppShell() {
       imageDate: currentImageDate ?? undefined,
       lookId: env.activeLookId ?? undefined,
       vehicleType: currentVehicle,
+    };
+
+    if (!output) {
+      addSnapshot({
+        ...meta,
+        dataUrl: renderer.getCanvasDataURL(),
+        thumbnailDataUrl: undefined,
+      });
+      return;
+    }
+
+    // Free-look has no cabin canvas — skip the overlay wait so stills stay
+    // immediate. Car mode latches the cabin the same way cinema clips do.
+    const overlay = viewMode === 'car' ? cabinOverlay : null;
+    void captureCompositedStill(output, overlay, { timeoutMs: 400 }).then((still) => {
+      addSnapshot({
+        ...meta,
+        dataUrl: still.dataUrl,
+        thumbnailDataUrl: makePickerThumbDataUrl(still.canvas, downsample) ?? undefined,
+      });
     });
-  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName, currentImageDate, env.activeLookId, currentVehicle]);
+  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName, currentImageDate, env.activeLookId, currentVehicle, cabinOverlay, viewMode]);
 
   const handleSnapshotTeleport = useCallback(
     async (lat: number, lng: number, targetHeading: number, targetPitch: number, panoId?: string) => {

@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { WindowWeatherOverlay } from './WindowWeatherOverlay';
 
 function overlayPhase(overlay: WindowWeatherOverlay): number {
-  const mat = overlay.getMesh().material as THREE.ShaderMaterial;
-  return mat.uniforms.wiperPhase!.value as number;
+  const mat = overlay.getMesh().material as unknown as { uniforms: { wiperPhase: { value: number } } };
+  return mat.uniforms.wiperPhase.value;
 }
 
 describe('WindowWeatherOverlay wiper phase', () => {

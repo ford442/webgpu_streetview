@@ -110,9 +110,28 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     if (!carModeStateRef.current && container) {
       containerRef.current = container;
       void loadCarRuntime()
-        .then(({ initCarMode }) => {
+        .then(async ({ initCarMode }) => {
+          if (carModeStateRef.current || containerRef.current !== container) return;
+          const {
+            preloadWebGPUCabinRenderer,
+            resolveCabinRendererPreference,
+            createCabinRendererAsync,
+          } = await import('../car/interior/createCabinRenderer');
+          const { detectGPUProfile } = await import('../utils/performance');
+          let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
+          if (resolveCabinRendererPreference(window.location.search) === 'webgpu') {
+            await preloadWebGPUCabinRenderer().catch((err) => {
+              console.error('[ViewModeProvider] Failed to preload the WebGPU cabin renderer; falling back to WebGL.', err);
+            });
+            readyHandle = await createCabinRendererAsync({
+              gpuProfile: detectGPUProfile(),
+              search: window.location.search,
+            });
+          }
           if (!carModeStateRef.current && containerRef.current === container) {
-            carModeStateRef.current = initCarMode(container);
+            carModeStateRef.current = initCarMode(container, undefined, undefined, readyHandle);
+          } else if (readyHandle) {
+            try { readyHandle.renderer.dispose(); } catch { /* unused overlay */ }
           }
         })
         .catch((err) => {

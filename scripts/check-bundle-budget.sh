@@ -25,11 +25,10 @@ declare -A CHUNK_GZIP_BUDGET_OVERRIDES=(
   # (measured ~108 KiB, was ~32 KiB pre-bump) — see AGENTS.md "Car Mode
   # Rendering Stack".
   ["carModeRuntime"]=143360   # 140 KiB
-  # three/webgpu (the node-material/TSL renderer) loads only behind the
-  # experimental `?cabin=webgpu` escape hatch (createCabinRenderer.ts /
-  # preloadWebGPUCabinRenderer) as its own further-lazy chunk — nobody on the
-  # default WebGL path fetches it. Budgeted generously since three/webgpu is
-  # inherently large and this never ships to default users.
+  # three/webgpu (the node-material/TSL renderer) loads as its own further-lazy
+  # chunk via preloadWebGPUCabinRenderer — default-on for capable adapters,
+  # skipped for `?cabin=webgl`. Budgeted generously since three/webgpu is
+  # inherently large; do not statically import it from the car-mode chunk.
   ["three.webgpu"]=204800     # 200 KiB
 )
 

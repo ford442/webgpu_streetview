@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import {
+  createDashboardGlowGlslMaterial,
   createDashboardGlowUniforms,
-  dashboardGlowFragmentShader,
-  dashboardGlowVertexShader,
+  type DashboardGlowUniforms,
 } from '../../shaders/dashboardGlow';
+import { getCabinMaterialBackend } from './cabinMaterialBackend';
+import { getCabinTslApi } from './cabinTslRegistry';
 
 export type CabinGlowKind = 'cluster' | 'dome';
 
 export interface CabinGlowSprite {
   mesh: THREE.Mesh;
   kind: CabinGlowKind;
-  uniforms: ReturnType<typeof createDashboardGlowUniforms> | null;
+  uniforms: DashboardGlowUniforms | null;
   baseColor: THREE.Color;
 }
 
@@ -27,10 +29,10 @@ function additiveBasic(color: THREE.Color): THREE.MeshBasicMaterial {
   });
 }
 
-function additiveShader(
+function additiveGlow(
   color: THREE.Color,
   reducedMotion: boolean,
-): { material: THREE.ShaderMaterial; uniforms: ReturnType<typeof createDashboardGlowUniforms> } {
+): { material: THREE.Material; uniforms: DashboardGlowUniforms } {
   const uniforms = createDashboardGlowUniforms();
   uniforms.glowColor.value.copy(color);
   uniforms.intensity.value = 0;
@@ -38,23 +40,17 @@ function additiveShader(
   uniforms.pulseSpeed.value = 1.1;
   uniforms.glowRadius.value = 0.28;
   uniforms.falloff.value = 2.4;
-  const material = new THREE.ShaderMaterial({
-    uniforms: uniforms as unknown as Record<string, THREE.IUniform>,
-    vertexShader: dashboardGlowVertexShader,
-    fragmentShader: dashboardGlowFragmentShader,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
-  return { material, uniforms };
+  const backend = getCabinMaterialBackend();
+  const tsl = backend === 'webgpu' ? getCabinTslApi() : undefined;
+  const material = tsl
+    ? tsl.createDashboardGlowMaterial(uniforms)
+    : createDashboardGlowGlslMaterial(uniforms);
+  return { material, uniforms: (tsl ? material.uniforms : uniforms) as DashboardGlowUniforms };
 }
 
 /**
  * Soft additive quad for cluster bezels / dome fixture.
- * Medium: MeshBasicMaterial. High: dashboardGlow shader (tight radius).
+ * Medium: MeshBasicMaterial. High: dashboardGlow shader / TSL twin (tight radius).
  * Parent to the interior group so glow stays in car-body space.
  */
 export function createCabinGlowSprite(opts: {
@@ -69,7 +65,7 @@ export function createCabinGlowSprite(opts: {
   let material: THREE.Material;
   let uniforms: CabinGlowSprite['uniforms'] = null;
   if (opts.useShader) {
-    const shader = additiveShader(color, opts.reducedMotion);
+    const shader = additiveGlow(color, opts.reducedMotion);
     material = shader.material;
     uniforms = shader.uniforms;
   } else {

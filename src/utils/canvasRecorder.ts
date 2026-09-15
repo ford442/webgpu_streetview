@@ -242,6 +242,61 @@ export class CanvasClipRecorder {
   }
 }
 
+export interface CompositedStill {
+  dataUrl: string;
+  canvas: HTMLCanvasElement;
+  includedCabin: boolean;
+}
+
+/**
+ * One-shot still of the graded road with the cabin latched the same way
+ * cinema clips do (`ClipOverlaySource.subscribe` fires inside
+ * `notifyCabinFrameRendered`). Times out to road-only when car mode is off
+ * or the cabin did not draw within `timeoutMs`.
+ */
+export async function captureCompositedStill(
+  source: HTMLCanvasElement,
+  overlay: ClipOverlaySource | null,
+  options: { timeoutMs?: number; burnAttribution?: boolean } = {},
+): Promise<CompositedStill> {
+  const timeoutMs = options.timeoutMs ?? 400;
+  const burnAttribution = options.burnAttribution ?? false;
+  const { canvas, ctx } = createCompositeCanvas(source);
+
+  let overlayCanvas: HTMLCanvasElement | null = null;
+  if (overlay) {
+    overlayCanvas = await new Promise<HTMLCanvasElement | null>((resolve) => {
+      const { canvas: latch, ctx: latchCtx } = createCompositeCanvas(source);
+      let settled = false;
+      const finish = (result: HTMLCanvasElement | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unsub();
+        resolve(result);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      const unsub = overlay.subscribe(() => {
+        const live = overlay.getCanvas();
+        latchCtx.clearRect(0, 0, latch.width, latch.height);
+        if (live && live.width > 0 && live.height > 0) {
+          latchCtx.drawImage(live, 0, 0, latch.width, latch.height);
+          finish(latch);
+          return;
+        }
+        finish(null);
+      });
+    });
+  }
+
+  blitFrameWithAttribution(source, ctx, burnAttribution, overlayCanvas);
+  return {
+    dataUrl: canvas.toDataURL('image/png', 1.0),
+    canvas,
+    includedCabin: overlayCanvas !== null,
+  };
+}
+
 /** Trigger a download of a recorded clip blob. */
 export function downloadClip(blob: Blob, mimeType: string, baseName = 'streetview-clip'): void {
   const ext = mimeType.includes('webm') ? 'webm' : 'mp4';

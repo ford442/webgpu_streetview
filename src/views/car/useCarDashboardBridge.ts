@@ -31,14 +31,16 @@ import { applyVehicleTelemetry } from '../../car/telemetryFeed';
 import { CabinAudio } from '../../car/audio/CabinAudio';
 import { SpringPhysics } from '../../animation/PhysicsAnimations';
 import {
+  createCabinRendererAsync,
   preloadWebGPUCabinRenderer,
   resolveCabinRendererPreference,
 } from '../../car/interior/createCabinRenderer';
+import { detectGPUProfile } from '../../utils/performance';
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
   registerCarModeState: (state: CarModeState) => void;
-  /** Street View's shared `GPUDevice`, for the `?cabin=webgpu` escape hatch — see `createCabinRenderer.ts`. */
+  /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts`. */
   sharedGpuDevice?: GPUDevice;
   controlMode: ControlMode;
   heading: number;
@@ -133,18 +135,33 @@ export function useCarDashboardBridge({
     }
     let cancelled = false;
     void (async () => {
-      // The `?cabin=webgpu` escape hatch needs its renderer module fetched
-      // (its own further-lazy chunk — see createCabinRenderer.ts) before
-      // initCarMode() can adopt the shared device; the default WebGL path
-      // never awaits anything here, so init stays synchronous for it.
+      // Default cabin is WebGPU on capable adapters. Preload the further-lazy
+      // `three/webgpu` + TSL chunk, await renderer.init(), and fall back to a
+      // WebGL overlay if either step fails. Street View weather stays up.
+      let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
       if (resolveCabinRendererPreference(window.location.search) === 'webgpu') {
         await preloadWebGPUCabinRenderer().catch((err) => {
           console.error('[CarModeView] Failed to preload the WebGPU cabin renderer; falling back to WebGL.', err);
         });
+        readyHandle = await createCabinRendererAsync({
+          gpuProfile: detectGPUProfile(),
+          sharedDevice: sharedGpuDevice,
+          search: window.location.search,
+        });
       }
-      if (cancelled || !containerRef.current) return;
+      if (cancelled || !containerRef.current) {
+        if (readyHandle) {
+          try { readyHandle.renderer.dispose(); } catch { /* overlay never mounted */ }
+        }
+        return;
+      }
       try {
-        carModeStateRef.current = initCarMode(containerRef.current, undefined, sharedGpuDevice);
+        carModeStateRef.current = initCarMode(
+          containerRef.current,
+          undefined,
+          sharedGpuDevice,
+          readyHandle,
+        );
         registerCarModeState(carModeStateRef.current);
         toggleCarMode(true);
         const audio = new CabinAudio();
@@ -167,7 +184,7 @@ export function useCarDashboardBridge({
     };
     // sharedGpuDevice: re-run if it flips from undefined to a real device
     // (WebGPU init can still be resolving when car mode first mounts) — the
-    // ?cabin=webgpu path must not get stuck on the WebGL fallback for the
+    // WebGPU cabin path must not get stuck on the WebGL overlay for the
     // rest of the session just because it lost that race once.
   }, [containerRef, registerCarModeState, sharedGpuDevice]);
 

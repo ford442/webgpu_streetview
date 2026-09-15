@@ -32,6 +32,16 @@ vi.mock('three', async (importOriginal) => {
     };
 });
 
+vi.mock('./cabinTslMaterials', () => ({
+    cabinTslApi: {
+        createVanityMirrorMaterial: vi.fn(),
+        createRearviewMirrorMaterial: vi.fn(),
+        createWindowWeatherOverlayMaterial: vi.fn(),
+        createCupLiquidMaterial: vi.fn(),
+        createDashboardGlowMaterial: vi.fn(),
+    },
+}));
+
 vi.mock('three/webgpu', () => ({
     WebGPURenderer: vi.fn(),
     PMREMGenerator: vi.fn().mockImplementation((renderer: unknown) => {

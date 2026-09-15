@@ -35,7 +35,14 @@ void main() {
 }
 `;
 
-export function createCupLiquidMaterial(color: THREE.ColorRepresentation = 0x3a2010): THREE.ShaderMaterial {
+export interface CupLiquidUniforms {
+  time: { value: number };
+  liquidColor: { value: THREE.Color };
+  fillLevel: { value: number };
+  slosh: { value: number };
+}
+
+export function createCupLiquidGlslMaterial(color: THREE.ColorRepresentation = 0x3a2010): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
@@ -48,4 +55,9 @@ export function createCupLiquidMaterial(color: THREE.ColorRepresentation = 0x3a2
     transparent: true,
     side: THREE.DoubleSide,
   });
+}
+
+/** @deprecated Prefer createCupLiquidGlslMaterial — kept as the WebGL factory name. */
+export function createCupLiquidMaterial(color: THREE.ColorRepresentation = 0x3a2010): THREE.ShaderMaterial {
+  return createCupLiquidGlslMaterial(color);
 }

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import { createCupLiquidMaterial } from '../../shaders/cupLiquid';
+import { createCupLiquidMaterial, type CupLiquidUniforms } from '../../shaders/cupLiquid';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 import type { InteriorInteractive } from './InteriorMicroInteractions';
+import { getCabinMaterialBackend } from './cabinMaterialBackend';
+import { getCabinTslApi } from './cabinTslRegistry';
 import {
   GEAR_POSITIONS,
   SHIFTER_DETENTS,
@@ -19,9 +21,11 @@ export interface CabinLeverCallbacks {
   onGear?: (gear: GearPosition) => void;
 }
 
+export type CupLiquidMaterial = THREE.Material & { uniforms: CupLiquidUniforms };
+
 export interface CarInteriorDetailBuildResult {
   interactives: InteriorInteractive[];
-  cupLiquidMaterial?: THREE.ShaderMaterial;
+  cupLiquidMaterial?: CupLiquidMaterial;
   sunVisorGroup?: THREE.Group;
   vanityMirrorMesh?: THREE.Mesh;
 }
@@ -41,7 +45,7 @@ export class CarInteriorDetailProps {
     }
 
     const interactives: InteriorInteractive[] = [];
-    let cupLiquidMaterial: THREE.ShaderMaterial | undefined;
+    let cupLiquidMaterial: CupLiquidMaterial | undefined;
     let sunVisorGroup: THREE.Group | undefined;
 
     // --- Gear shifter ---
@@ -125,7 +129,11 @@ export class CarInteriorDetailProps {
     cupGroup.add(holder);
 
     const cupGeo = new THREE.CylinderGeometry(0.032, 0.03, 0.09, 16);
-    cupLiquidMaterial = createCupLiquidMaterial(0x4a2818);
+    const backend = getCabinMaterialBackend();
+    const tsl = backend === 'webgpu' ? getCabinTslApi() : undefined;
+    cupLiquidMaterial = (tsl
+      ? tsl.createCupLiquidMaterial(0x4a2818)
+      : createCupLiquidMaterial(0x4a2818)) as CupLiquidMaterial;
     const cupLiquid = new THREE.Mesh(cupGeo, cupLiquidMaterial);
     cupLiquid.position.y = 0.04;
     cupLiquid.name = 'cupLiquid';

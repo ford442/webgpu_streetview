@@ -74,7 +74,13 @@ The cabin is still a separate canvas on its own renderer, so this is a 2D compos
 
 **Fallback is road-only**, silently and correctly: outside car mode, before the lazy car chunk has loaded, or if car mode is toggled off mid-clip, nothing fires the tap, the latch stays transparent, and the clip is just the graded road.
 
-A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. **Stills are still road-only** — `handleTakeSnapshot` reads `renderer.getCanvasDataURL()` directly, and compositing a one-shot still needs to await a cabin frame through the same tap; that is not wired yet. Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
+A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. **Car-mode stills latch the cabin the same way** — `handleTakeSnapshot` waits for the next `notifyCabinFrameRendered` tap (400ms timeout) and composites road + cabin through `captureCompositedStill`. Free-look stills skip that wait (no cabin canvas). **Remaining road-only cases:**
+
+- [ ] Historical compare before/after (`useHistoricalCompare` still reads `renderer.getCanvasDataURL()`)
+- [ ] Timed-out / inactive cabin overlay (same silent fallback as clips)
+- [ ] One-frame compositor (PR 3 of #249) so stills and clips share a single swapchain instead of a 2D latch
+
+Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
 
 ## Billing / imagery
 

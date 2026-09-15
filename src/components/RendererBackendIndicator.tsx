@@ -89,6 +89,32 @@ function readProbe(): WebGpuProbeRecord | null {
   return window.webgpuProbe ?? null;
 }
 
+function readCabinProbe(): {
+  backend: string;
+  preference: string;
+  ready: boolean;
+  initFailed?: boolean;
+  fallbackReason?: string;
+} | null {
+  const win = window as Window & {
+    __CABIN_RENDERER_PROBE__?: {
+      backend: string;
+      preference: string;
+      ready: boolean;
+      initFailed?: boolean;
+      fallbackReason?: string;
+    };
+    webgpuProbe?: { cabin?: {
+      backend: string;
+      preference: string;
+      ready: boolean;
+      initFailed?: boolean;
+      fallbackReason?: string;
+    } };
+  };
+  return win.__CABIN_RENDERER_PROBE__ ?? win.webgpuProbe?.cabin ?? null;
+}
+
 function chipLabel(info: RendererBackendInfo): string {
   if (info.backendType === 'webgpu') return 'WebGPU';
   if (info.backendType === 'webgl') return 'WebGL2 (reference only)';
@@ -103,6 +129,7 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
   const [expanded, setExpanded] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics | null>(null);
   const [probe, setProbe] = useState<WebGpuProbeRecord | null>(null);
+  const [cabinProbe, setCabinProbe] = useState<ReturnType<typeof readCabinProbe>>(null);
 
   const isWebGPU = backendInfo?.backendType === 'webgpu';
   const isFailed = backendInfo != null && backendInfo.backendType !== 'webgpu';
@@ -110,15 +137,16 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
   useEffect(() => {
     if (!expanded) return undefined;
     setProbe(readProbe());
+    setCabinProbe(readCabinProbe());
     if (isWebGPU) {
       setDiagnostics(readDeviceDiagnostics());
-      const timer = window.setInterval(() => {
-        setDiagnostics(readDeviceDiagnostics());
-        setProbe(readProbe());
-      }, 1000);
-      return () => window.clearInterval(timer);
     }
-    return undefined;
+    const timer = window.setInterval(() => {
+      setProbe(readProbe());
+      setCabinProbe(readCabinProbe());
+      if (isWebGPU) setDiagnostics(readDeviceDiagnostics());
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, [expanded, isWebGPU]);
 
   if (!backendInfo) return null;
@@ -165,6 +193,18 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
                       <div style={{ color: '#ffcc66' }}>webgl preference ignored (no live GL weather)</div>
                     )}
                   </>
+                )}
+                {cabinProbe && (
+                  <div title={cabinProbe.fallbackReason}>
+                    cabin: {cabinProbe.backend}
+                    {cabinProbe.initFailed ? ' (init fallback)' : ''}
+                    {cabinProbe.backend !== cabinProbe.preference ? ` (wanted ${cabinProbe.preference})` : ''}
+                  </div>
+                )}
+                {cabinProbe?.fallbackReason && (
+                  <div style={{ color: '#ffcc66', wordBreak: 'break-word' }} title={cabinProbe.fallbackReason}>
+                    cabin: {cabinProbe.fallbackReason}
+                  </div>
                 )}
                 {(probe?.reason || backendInfo.fallbackReason) && (
                   <div

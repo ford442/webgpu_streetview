@@ -36,7 +36,7 @@ import {
 import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
-import type { CabinRenderer } from './interior/createCabinRenderer';
+import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -98,7 +98,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public windowWeatherOverlay?: WindowWeatherOverlay;
     public microInteractions!: InteriorMicroInteractions;
     public leverCallbacks: CabinLeverCallbacks = {};
-    public cupLiquidMaterial?: THREE.ShaderMaterial;
+    public cupLiquidMaterial?: THREE.Material & { uniforms: import('../shaders/cupLiquid').CupLiquidUniforms };
     public vanityMirror?: VanityMirror;
     public vanityMirrorMesh?: THREE.Mesh;
     public postProcessingEnabled = false;
@@ -124,7 +124,12 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public lightingManager!: CarInteriorLightingManager;
   public seatOffset = 0;
 
-    constructor(container: HTMLElement, vehicleType: VehicleType = 'sedan', sharedDevice?: GPUDevice) {
+    constructor(
+        container: HTMLElement,
+        vehicleType: VehicleType = 'sedan',
+        sharedDevice?: GPUDevice,
+        readyHandle?: CabinRendererHandle,
+    ) {
         this.vehicleType = vehicleType;
         this.vehicleConfig = getVehicleConfig(vehicleType);
         this.roofTargetY = this.vehicleConfig.hasRoof ? 1.6 : -1.0;
@@ -136,6 +141,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
             this,
             () => this.applySeatPosition(),
             sharedDevice,
+            readyHandle,
         );
 
         this.scene = boot.scene;
