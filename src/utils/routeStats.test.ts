@@ -59,7 +59,7 @@ describe('computeRouteStats', () => {
         );
     });
 
-    it('agrees with the pure-TS haversineDistance in navigation.ts', () => {
+    it('agrees with navigation.ts haversineDistance (both call the same WASM/fallback haversine)', () => {
         const points = [
             { lat: 37.7749, lng: -122.4194 },
             { lat: 34.0522, lng: -118.2437 },
@@ -74,7 +74,9 @@ describe('computeRouteStats', () => {
                 'km',
             );
         }
-        // navigation.ts uses R = 6371 km; the WASM module uses 6371000 m.
+        // navigation.ts's haversineDistance converts the shared meters result
+        // to km via R=6371 (vs. the WASM module's R=6371000 for the raw
+        // meters call), so the two are equal only up to that unit conversion.
         expect(stats.totalMeters / 1000).toBeCloseTo(expectedKm, 6);
     });
 

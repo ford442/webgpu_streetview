@@ -104,4 +104,4 @@ Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Str
 
 ## Audio
 
-Wind/rain bed stays in the Web Audio graph. v1 spatialization is `StereoPannerNode` from head-vs-car yaw. **HRTF convolution is out of scope** until a follow-up wasm export after emcc (no new WAT).
+Wind/rain bed stays in the Web Audio graph. Heading-relative spatialization is analytic HRTF convolution (`fill_hrtf`, a wasm export alongside `fill_cabin_ir` — see `docs/WASM_BRIDGE.md`), via two `ConvolverNode`s in `WindAudio`; `StereoPannerNode` remains the pre-load/failure fallback.

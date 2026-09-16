@@ -154,6 +154,27 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
                       float openness, float sample_rate);
 
 /**
+ * Fill a pair of short per-ear impulse responses modelling a heading-relative
+ * binaural shadow (interaural time + level difference). This is an analytic
+ * directional model, not a measured HRTF: the near ear gets an undelayed
+ * unit impulse, the far ear gets a delayed, attenuated, low-pass-smeared one.
+ * At azimuth 0 the two are identical (centered, no filtering).
+ *
+ * Only add/sub/mul/div are used (no transcendentals) — same constraint as
+ * sw_fill_cabin_ir — so the emcc binary, the host build and the JS twin agree
+ * to the last f32 bit.
+ *
+ * @param left        Caller-owned float array of length `count` (left ear).
+ * @param right       Caller-owned float array of length `count` (right ear).
+ * @param count       Number of taps per ear. <= 0 is a no-op.
+ * @param azimuth_deg Signed angle of the source relative to forward, clamped
+ *                    to [-90, 90]. Positive = toward the right ear.
+ * @param sample_rate Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ */
+void sw_fill_hrtf(float* left, float* right, int count,
+                  float azimuth_deg, float sample_rate);
+
+/**
  * 256-bin Rec.709 luma histogram of packed RGBA8 (row-major, 4 bytes/pixel).
  * `bins` is 256 uint32 counts; zeroed then filled. No-op when width/height <= 0.
  */

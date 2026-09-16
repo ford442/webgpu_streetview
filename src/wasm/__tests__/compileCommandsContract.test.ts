@@ -19,6 +19,8 @@ describe('C++ compile_commands contract', () => {
     });
 
     it('puts bindings.cpp on the host target so lint:cpp sees it in the database', () => {
-        expect(cmake).toMatch(/add_library\(streetview_cpu STATIC src\/noise_module\.cpp src\/bindings\.cpp\)/);
+        expect(cmake).toMatch(
+            /add_library\(streetview_cpu STATIC src\/noise_module\.cpp src\/hrtf_module\.cpp src\/bindings\.cpp\)/,
+        );
     });
 });

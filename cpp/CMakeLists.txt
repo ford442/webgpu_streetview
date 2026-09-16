@@ -59,8 +59,8 @@ if(EMSCRIPTEN)
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
     #       fill_particle_seeds, haversine, batch_haversine,
     #       normalize_angle, signed_angle_diff, fill_engine_noise,
-    #       fill_cabin_ir, luma_histogram_bt709, reduce_luma_bt709,
-    #       downsample_2d
+    #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
+    #       reduce_luma_bt709, downsample_2d
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
@@ -69,6 +69,7 @@ if(EMSCRIPTEN)
     #     ignored.
     add_executable(streetview-wasm
         src/noise_module.cpp
+        src/hrtf_module.cpp
         src/bindings.cpp
     )
     target_include_directories(streetview-wasm PRIVATE include)
@@ -101,7 +102,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -122,7 +123,7 @@ else()
     # bindings.cpp is an empty TU on the host (#ifdef __EMSCRIPTEN__). Including
     # it here puts it in compile_commands.json so `clang-tidy -p cpp/build-host`
     # / `npm run lint:cpp` can see both algorithm sources.
-    add_library(streetview_cpu STATIC src/noise_module.cpp src/bindings.cpp)
+    add_library(streetview_cpu STATIC src/noise_module.cpp src/hrtf_module.cpp src/bindings.cpp)
     target_include_directories(streetview_cpu PUBLIC include)
     target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
 

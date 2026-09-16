@@ -127,7 +127,7 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Fifteen exports, identical in `bindings.cpp`, the CMake export list and the
+Sixteen exports, identical in `bindings.cpp`, the CMake export list and the
 TypeScript loader:
 
 | Export | TS wrapper | Notes |
@@ -144,6 +144,7 @@ TypeScript loader:
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
+| `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |
 | `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
 | `reduce_luma_bt709(rgba, w, h, out3)` | `reduceLumaBt709` | mean/min/max luma in `[0, 1]` |
 | `downsample_2d(src, sw, sh, dst, dw, dh)` | `downsample2d` | integer box-filter downsample, packed RGBA8 |
@@ -201,6 +202,7 @@ aligned; its output region sits at `65536 + count * 16`.
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
 | `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed filled on the main thread and queued to the cabin AudioWorklet; JS fill + oscillators if WASM or the worklet is missing |
 | `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR the worklet convolves the bed with; roof openness raises its high-frequency transfer |
+| `WindAudio` (car mode) | `fill_hrtf` | per-ear IR pair convolved with the wind/rain bed via two `ConvolverNode`s, rebuilt when head-vs-car heading moves; `StereoPannerNode` remains the pre-load/failure fallback |
 | gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
 
 The cabin audio graph fills PCM on the main thread (one loader, one JS
@@ -211,7 +213,15 @@ gone from `src/car/audio/`. The processor source lives in
 `src/car/audio/cabinWorkletSource.ts` as text and is loaded via a Blob URL, so
 its constants stay single-sourced with the main thread and no extra chunk ships.
 
-Cabin **HRTF convolution** is still not an export. Heading-relative pan uses `StereoPannerNode` in `WindAudio`. A true HRTF kernel would be another wasm export alongside `fill_cabin_ir` — do not add WAT for it.
+Heading-relative **binaural convolution** is `fill_hrtf`, alongside `fill_cabin_ir`
+(`cpp/src/hrtf_module.cpp` — a separate translation unit from `noise_module.cpp`,
+which already covers six unrelated concerns). It is an analytic ITD/ILD shadow
+model, not a measured HRTF (no `cpp/data/` table). `WindAudio` fans its gain
+node into two `ConvolverNode`s (one per ear) recombined via a
+`ChannelMergerNode`, rebuilding both `AudioBuffer`s only when
+`signedAngleDiff(head, car)` has moved enough to matter. `StereoPannerNode`
+remains as the fallback while WASM is still loading, or if building the
+convolver graph throws.
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;
@@ -249,11 +259,13 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
   Mirror the change in the JS fallback, rebuild (`npm run build:wasm`),
   regenerate (`npm run gen:wasm-goldens`) and re-run `npm run test:cpp && npm test`.
   The golden diff is the behavioural record.
-- **New export?** `noise_module.cpp` + `streetview_wasm.h` + `bindings.cpp` +
-  `CMakeLists.txt` + `src/wasm/index.ts` (API type, JS fallback, WASM wrapper)
-  — then `npm run build:wasm`. Add coverage to `cpp/tests/noise_module_test.cpp`
-  and vectors to `scripts/gen-wasm-goldens.mjs` in the same change; the ABI lock
-  only checks that the *name* exists everywhere, not that the maths agrees.
+- **New export?** `noise_module.cpp` (or its own translation unit, like
+  `hrtf_module.cpp`) + `streetview_wasm.h` + `bindings.cpp` + `CMakeLists.txt`
+  + `src/wasm/abi.ts` (API type) + `src/wasm/jsFallback.ts` (JS twin) +
+  `src/wasm/index.ts` (WASM marshalling wrapper) — then `npm run build:wasm`.
+  Add coverage to `cpp/tests/noise_module_test.cpp` and vectors to
+  `scripts/gen-wasm-goldens.mjs` in the same change; the ABI lock only checks
+  that the *name* exists everywhere, not that the maths agrees.
 - **Rebuilt the wasm?** Commit `public/wasm/streetview-wasm.wasm` **and** its
   `.sha256`, or `verify-build.sh` fails — and regenerate the goldens, or the
   binary-hash assertions fail.

@@ -210,6 +210,29 @@ const cabinIr = CABIN_IR_CASES.map((c) => {
   return { ...c, expected: readF32(c.count) };
 });
 
+// HRTF: centered (left==right, the invariant WindAudio relies on at azimuth
+// 0), symmetric left/right pair (mirror-symmetry sanity), a hard-left/right
+// extreme at a different sample rate, and out-of-range clamping.
+const HRTF_CASES = [
+  { label: 'centered', count: 32, azimuthDeg: 0, sampleRate: 44100 },
+  { label: 'right-45', count: 32, azimuthDeg: 45, sampleRate: 44100 },
+  { label: 'left-45', count: 32, azimuthDeg: -45, sampleRate: 44100 },
+  { label: 'right-90', count: 24, azimuthDeg: 90, sampleRate: 48000 },
+  { label: 'clamped', count: 16, azimuthDeg: 400, sampleRate: 0 },
+];
+
+const hrtf = HRTF_CASES.map((c) => {
+  const bytesPerEar = c.count * 4;
+  reserve(bytesPerEar * 2);
+  const rightOff = SCRATCH + bytesPerEar;
+  exp.fill_hrtf(SCRATCH, rightOff, c.count, c.azimuthDeg, c.sampleRate);
+  return {
+    ...c,
+    expectedLeft: Array.from(new Float32Array(memory.buffer, SCRATCH, c.count)),
+    expectedRight: Array.from(new Float32Array(memory.buffer, rightOff, c.count)),
+  };
+});
+
 const CHORES_IMAGE = {
   width: 4,
   height: 2,
@@ -271,6 +294,7 @@ const goldens = {
   signedAngleDiff,
   engineNoise,
   cabinIr,
+  hrtf,
   lumaHistogram,
   lumaReduce,
   downsample2d,
@@ -450,6 +474,18 @@ cabinIr.forEach((c, i) => {
   lines.push(`inline constexpr float kCabinIrOpenness${i} = ${f32(c.openness)};`);
   lines.push(`inline constexpr float kCabinIrSampleRate${i} = ${f32(c.sampleRate)};`);
   lines.push(f32Array(`kCabinIrExpected${i}`, c.expected));
+  lines.push('');
+});
+
+lines.push('// --- fill_hrtf -------------------------------------------------------');
+lines.push(`inline constexpr int kHrtfCaseCount = ${hrtf.length};`);
+hrtf.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kHrtfCount${i} = ${c.count};`);
+  lines.push(`inline constexpr float kHrtfAzimuth${i} = ${f32(c.azimuthDeg)};`);
+  lines.push(`inline constexpr float kHrtfSampleRate${i} = ${f32(c.sampleRate)};`);
+  lines.push(f32Array(`kHrtfExpectedLeft${i}`, c.expectedLeft));
+  lines.push(f32Array(`kHrtfExpectedRight${i}`, c.expectedRight));
   lines.push('');
 });
 

@@ -39,6 +39,10 @@ interface CompiledExports {
     ptr: number, count: number,
     vehicleType: number, openness: number, sampleRate: number,
   ) => void;
+  fill_hrtf: (
+    leftPtr: number, rightPtr: number, count: number,
+    azimuthDeg: number, sampleRate: number,
+  ) => void;
 }
 
 function jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -85,6 +89,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(typeof exp.batch_haversine).toBe('function');
     expect(typeof exp.fill_engine_noise).toBe('function');
     expect(typeof exp.fill_cabin_ir).toBe('function');
+    expect(typeof exp.fill_hrtf).toBe('function');
   });
 
   test('haversine matches the JS reference formula', () => {
@@ -284,6 +289,28 @@ describe('compiled streetview-wasm.wasm binary', () => {
     const jsBuf = new Float32Array(count);
     fallback.fillCabinIr(jsBuf, count, ...args);
     expect(Array.from(jsBuf)).toEqual(fromWasm);
+    _resetWasmModule();
+  });
+
+  test('fill_hrtf matches the JS fallback bit-for-bit', async () => {
+    const { loadWasmModule, _resetWasmModule } = await import('../index');
+    _resetWasmModule();
+    const fallback = await loadWasmModule();
+    expect(fallback.isWasm).toBe(false);
+
+    const count = 32;
+    const leftPtr = WASM_SCRATCH_OFFSET;
+    const rightPtr = leftPtr + count * 4;
+    const args = [45, 44100] as const;
+    exp.fill_hrtf(leftPtr, rightPtr, count, ...args);
+    const leftFromWasm = Array.from(new Float32Array(exp.memory.buffer, leftPtr, count));
+    const rightFromWasm = Array.from(new Float32Array(exp.memory.buffer, rightPtr, count));
+
+    const leftJs = new Float32Array(count);
+    const rightJs = new Float32Array(count);
+    fallback.fillHrtf(leftJs, rightJs, count, ...args);
+    expect(Array.from(leftJs)).toEqual(leftFromWasm);
+    expect(Array.from(rightJs)).toEqual(rightFromWasm);
     _resetWasmModule();
   });
 

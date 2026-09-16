@@ -60,6 +60,10 @@ interface Goldens {
     label: string; count: number; vehicleType: number;
     openness: number; sampleRate: number; expected: number[];
   }[];
+  hrtf: {
+    label: string; count: number; azimuthDeg: number; sampleRate: number;
+    expectedLeft: number[]; expectedRight: number[];
+  }[];
   lumaHistogram: { width: number; height: number; rgba: number[]; expectedBins: number[] };
   lumaReduce: { width: number; height: number; rgba: number[]; expected: number[] };
   downsample2d: {
@@ -252,6 +256,20 @@ describe('WASM golden parity (JS fallback)', () => {
       api.fillCabinIr(out, c.count, c.vehicleType, c.openness, c.sampleRate);
       c.expected.forEach((expected, i) => {
         expectClose(out[i]!, expected, TOLERANCES.exact, `cabinIr[${c.label}][${i}]`);
+      });
+    });
+  });
+
+  it('fillHrtf matches the goldens', () => {
+    goldens.hrtf.forEach((c) => {
+      const left = new Float32Array(c.count);
+      const right = new Float32Array(c.count);
+      api.fillHrtf(left, right, c.count, c.azimuthDeg, c.sampleRate);
+      c.expectedLeft.forEach((expected, i) => {
+        expectClose(left[i]!, expected, TOLERANCES.exact, `hrtf[${c.label}].left[${i}]`);
+      });
+      c.expectedRight.forEach((expected, i) => {
+        expectClose(right[i]!, expected, TOLERANCES.exact, `hrtf[${c.label}].right[${i}]`);
       });
     });
   });

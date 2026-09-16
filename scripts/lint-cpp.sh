@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="${ROOT}/cpp/build-host"
 SOURCES=(
   "${ROOT}/cpp/src/noise_module.cpp"
+  "${ROOT}/cpp/src/hrtf_module.cpp"
   "${ROOT}/cpp/src/bindings.cpp"
 )
 

@@ -66,6 +66,12 @@ export class CarInteriorAnimator {
   private nightFactor: number = 0;
   private headlightsOn: boolean = false;
 
+  // Last orientation setCarOrientation()/setHeadOrientation() were called
+  // with — cached so syncWindAudio() can drive WindAudio.setHeadingPan()
+  // every frame without every caller having to also pass heading into update().
+  private lastCarHeading = 0;
+  private lastHeadYaw = 0;
+
   constructor(
     private camera: THREE.PerspectiveCamera,
     private interiorGroup: THREE.Group,
@@ -232,6 +238,7 @@ export class CarInteriorAnimator {
         });
       } else {
         wind.update(speed);
+        wind.setHeadingPan(this.lastHeadYaw, this.lastCarHeading);
       }
     } else if (wind.isPlaying()) {
       wind.stop();
@@ -300,6 +307,7 @@ export class CarInteriorAnimator {
   }
 
   public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
+    this.lastCarHeading = carHeading;
     const safePitch = this.isActive ? bodyPitch : 0;
     const safeRoll = this.isActive ? bodyRoll : 0;
     const yawRad = -THREE.MathUtils.degToRad(carHeading);
@@ -316,6 +324,7 @@ export class CarInteriorAnimator {
    * not a car-relative offset — the camera is not parented to the chassis.
    */
   public setHeadOrientation(headYaw: number, headPitch: number): void {
+    this.lastHeadYaw = headYaw;
     const clampedPitch = Math.max(-45, Math.min(65, headPitch));
     const localYaw = -THREE.MathUtils.degToRad(headYaw);
     const localPitch = -THREE.MathUtils.degToRad(clampedPitch);

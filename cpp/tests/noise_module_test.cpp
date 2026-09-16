@@ -428,6 +428,108 @@ TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") 
     sw_fill_engine_noise(nullptr, 16, 2000.0f, 0.5f, 50.0f, 1.0f, 44100.0f);
 }
 
+TEST_CASE("fill_hrtf matches the shipping WASM goldens") {
+    struct Case {
+        int count;
+        float azimuth, sample_rate;
+        const float* expected_left;
+        const float* expected_right;
+    };
+    const Case cases[] = {
+        { goldens::kHrtfCount0, goldens::kHrtfAzimuth0, goldens::kHrtfSampleRate0,
+          goldens::kHrtfExpectedLeft0, goldens::kHrtfExpectedRight0 },
+        { goldens::kHrtfCount1, goldens::kHrtfAzimuth1, goldens::kHrtfSampleRate1,
+          goldens::kHrtfExpectedLeft1, goldens::kHrtfExpectedRight1 },
+        { goldens::kHrtfCount2, goldens::kHrtfAzimuth2, goldens::kHrtfSampleRate2,
+          goldens::kHrtfExpectedLeft2, goldens::kHrtfExpectedRight2 },
+        { goldens::kHrtfCount3, goldens::kHrtfAzimuth3, goldens::kHrtfSampleRate3,
+          goldens::kHrtfExpectedLeft3, goldens::kHrtfExpectedRight3 },
+        { goldens::kHrtfCount4, goldens::kHrtfAzimuth4, goldens::kHrtfSampleRate4,
+          goldens::kHrtfExpectedLeft4, goldens::kHrtfExpectedRight4 },
+    };
+    static_assert(sizeof(cases) / sizeof(cases[0]) == goldens::kHrtfCaseCount,
+                  "hrtf golden case count drifted from the generated header");
+
+    for (int c = 0; c < goldens::kHrtfCaseCount; ++c) {
+        const Case& k = cases[c];
+        INFO("case " << c);
+        std::vector<float> left(static_cast<size_t>(k.count), 0.0f);
+        std::vector<float> right(static_cast<size_t>(k.count), 0.0f);
+        sw_fill_hrtf(left.data(), right.data(), k.count, k.azimuth, k.sample_rate);
+        for (int i = 0; i < k.count; ++i) {
+            INFO(at(i));
+            CHECK(bit_equal(left[static_cast<size_t>(i)], k.expected_left[i]));
+            CHECK(bit_equal(right[static_cast<size_t>(i)], k.expected_right[i]));
+        }
+    }
+}
+
+namespace {
+
+struct HrtfPair {
+    std::vector<float> left;
+    std::vector<float> right;
+};
+
+HrtfPair hrtf(float azimuth_deg, int count = 32, float sample_rate = 44100.0f) {
+    HrtfPair p{ std::vector<float>(static_cast<size_t>(count), -9.0f),
+                std::vector<float>(static_cast<size_t>(count), -9.0f) };
+    sw_fill_hrtf(p.left.data(), p.right.data(), count, azimuth_deg, sample_rate);
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("fill_hrtf: centered azimuth leaves both ears identical") {
+    const HrtfPair p = hrtf(0.0f);
+    CHECK(p.left == p.right);
+    CHECK(p.left[0] == doctest::Approx(1.0f));
+}
+
+TEST_CASE("fill_hrtf: azimuth and its mirror swap ears exactly") {
+    for (float az : { 15.0f, 45.0f, 70.0f, 90.0f }) {
+        INFO("azimuth " << az);
+        const HrtfPair pos = hrtf(az);
+        const HrtfPair neg = hrtf(-az);
+        CHECK(pos.left == neg.right);
+        CHECK(pos.right == neg.left);
+        // Off-axis: the near ear leads and stays louder than the far ear.
+        CHECK(pos.right[0] == doctest::Approx(1.0f));
+        CHECK(pos.left[0] < 1.0f);
+    }
+}
+
+TEST_CASE("fill_hrtf: out-of-range azimuth clamps instead of extrapolating") {
+    const HrtfPair at90 = hrtf(90.0f);
+    const HrtfPair beyond = hrtf(400.0f);
+    CHECK(at90.left == beyond.left);
+    CHECK(at90.right == beyond.right);
+
+    const HrtfPair atNeg90 = hrtf(-90.0f);
+    const HrtfPair beyondNeg = hrtf(-1000.0f);
+    CHECK(atNeg90.left == beyondNeg.left);
+    CHECK(atNeg90.right == beyondNeg.right);
+}
+
+TEST_CASE("fill_hrtf: degenerate input is safe") {
+    // sample_rate <= 1 falls back to 44100, like fill_cabin_ir/fill_engine_noise.
+    HrtfPair a = hrtf(45.0f, 32, 44100.0f);
+    HrtfPair b = hrtf(45.0f, 32, 0.0f);
+    CHECK(a.left == b.left);
+    CHECK(a.right == b.right);
+
+    // A single-tap buffer, a zero count and null pointers must all be safe.
+    std::vector<float> one_l(1, 9.0f), one_r(1, 9.0f);
+    sw_fill_hrtf(one_l.data(), one_r.data(), 1, 45.0f, 44100.0f);
+    CHECK(one_r[0] == doctest::Approx(1.0f));
+
+    std::vector<float> untouched_l(4, 7.0f), untouched_r(4, 7.0f);
+    sw_fill_hrtf(untouched_l.data(), untouched_r.data(), 0, 45.0f, 44100.0f);
+    CHECK(untouched_l[0] == 7.0f);
+    CHECK(untouched_r[0] == 7.0f);
+    sw_fill_hrtf(nullptr, nullptr, 16, 45.0f, 44100.0f);
+}
+
 TEST_CASE("luma_histogram_bt709 matches the shipping WASM goldens") {
     std::vector<unsigned> bins(256, 99u);
     sw_luma_histogram_bt709(goldens::kChoresRgba, goldens::kChoresWidth,

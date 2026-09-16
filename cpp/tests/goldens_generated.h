@@ -16,7 +16,7 @@
 
 namespace goldens {
 
-inline constexpr const char* kWasmSha256 = "d8f180e01d2494cf967b66cc2f51077e59b0f1fae41c30d92f1a9da7b0df5658";
+inline constexpr const char* kWasmSha256 = "f3ff597ec97a919e8f82c131085dc5f5a5a668b3c27f99daf1fb7a2ac11db745";
 inline constexpr unsigned kNoiseSeed = 1337u;
 
 // --- noise2d -------------------------------------------------------------
@@ -348,6 +348,103 @@ inline constexpr float kCabinIrExpected4[] = {
     0.006857330910861492f, 0.016340719535946846f, -0.014933238737285137f, 0.004097364842891693f, -0.009913875721395016f, 0.020007049664855003f,
     0.002078287536278367f, -0.021393001079559326f, -0.01905553601682186f, 0.015165646560490131f, 0.012552721425890923f, -0.014801457524299622f,
     0.0033842120319604874f, 0.01794457621872425f,
+};
+
+// --- fill_hrtf -------------------------------------------------------
+inline constexpr int kHrtfCaseCount = 5;
+// case 0: centered
+inline constexpr int kHrtfCount0 = 32;
+inline constexpr float kHrtfAzimuth0 = 0.0f;
+inline constexpr float kHrtfSampleRate0 = 44100.0f;
+inline constexpr float kHrtfExpectedLeft0[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f,
+};
+inline constexpr float kHrtfExpectedRight0[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f,
+};
+
+// case 1: right-45
+inline constexpr int kHrtfCount1 = 32;
+inline constexpr float kHrtfAzimuth1 = 45.0f;
+inline constexpr float kHrtfSampleRate1 = 44100.0f;
+inline constexpr float kHrtfExpectedLeft1[] = {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.33924999833106995f, 0.18319500982761383f,
+    0.09892530739307404f, 0.05341966822743416f, 0.0288466215133667f, 0.015577176585793495f, 0.008411675691604614f, 0.004542305134236813f,
+    0.0024528447538614273f, 0.0013245361624285579f,
+};
+inline constexpr float kHrtfExpectedRight1[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f,
+};
+
+// case 2: left-45
+inline constexpr int kHrtfCount2 = 32;
+inline constexpr float kHrtfAzimuth2 = -45.0f;
+inline constexpr float kHrtfSampleRate2 = 44100.0f;
+inline constexpr float kHrtfExpectedLeft2[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f,
+};
+inline constexpr float kHrtfExpectedRight2[] = {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.33924999833106995f, 0.18319500982761383f,
+    0.09892530739307404f, 0.05341966822743416f, 0.0288466215133667f, 0.015577176585793495f, 0.008411675691604614f, 0.004542305134236813f,
+    0.0024528447538614273f, 0.0013245361624285579f,
+};
+
+// case 3: right-90
+inline constexpr int kHrtfCount3 = 24;
+inline constexpr float kHrtfAzimuth3 = 90.0f;
+inline constexpr float kHrtfSampleRate3 = 48000.0f;
+inline constexpr float kHrtfExpectedLeft3[] = {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.18199998140335083f,
+};
+inline constexpr float kHrtfExpectedRight3[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+};
+
+// case 4: clamped
+inline constexpr int kHrtfCount4 = 16;
+inline constexpr float kHrtfAzimuth4 = 400.0f;
+inline constexpr float kHrtfSampleRate4 = 0.0f;
+inline constexpr float kHrtfExpectedLeft4[] = {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.18199998140335083f,
+};
+inline constexpr float kHrtfExpectedRight4[] = {
+    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 0.0f,
 };
 
 // --- luma_histogram_bt709 / reduce / downsample_2d -------------------

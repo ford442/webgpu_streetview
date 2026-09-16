@@ -115,6 +115,15 @@ void fill_cabin_ir(float* buf, int count, int vehicle_type,
     sw_fill_cabin_ir(buf, count, vehicle_type, openness, sample_rate);
 }
 
+/**
+ * Heading-relative binaural shadow IR pair. Matches ABI export: 'fill_hrtf'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void fill_hrtf(float* left, float* right, int count,
+               float azimuth_deg, float sample_rate) {
+    sw_fill_hrtf(left, right, count, azimuth_deg, sample_rate);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void luma_histogram_bt709(const unsigned char* rgba, int width, int height,
                           unsigned int* bins) {
