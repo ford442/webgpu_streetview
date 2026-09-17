@@ -284,7 +284,7 @@ export function bootstrapCarInterior(
     );
     lightingManager.setReducedMotion(reducedMotion);
     lightingManager.setEmitterGlows(host.emitterGlowSprites ?? []);
-    lightingManager.setLabDisplayMats(host.labDisplayMats ?? []);
+    lightingManager.setAuxDisplayMats(host.auxDisplayMats ?? []);
     host.lightingManager = lightingManager;
 
     return {

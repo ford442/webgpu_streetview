@@ -7,6 +7,7 @@ import { CarInteriorDashboardBuilder } from './CarInteriorDashboardBuilder';
 import { CarInteriorSeatBuilder } from './CarInteriorSeatBuilder';
 import { createGlassMaterial } from '../../materials/PBRMaterials';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
+import { registerGlowMaterial } from './MaterialFactory';
 
 export interface CarInteriorMaterials {
     dashboard: THREE.MeshStandardMaterial;
@@ -32,8 +33,11 @@ export interface CarInteriorBuildResult {
     domeLightFixtureMesh: THREE.Mesh;
     domeSwitchMesh: THREE.Mesh;
     glowSprites: CabinGlowSprite[];
-    /** Science-lab monitor screens; driven like the center display at night. */
-    labDisplayMats: THREE.MeshStandardMaterial[];
+    /**
+     * Auxiliary screen materials (science-lab monitors, Cortianics center HUD).
+     * Driven on the center-display ramp: readable by day, brightest at night.
+     */
+    auxDisplayMats: THREE.MeshStandardMaterial[];
     /** Wiper stalk lever (absent on vehicles without a steering wheel). */
     wiperStalkMesh?: THREE.Mesh;
     wiperStalkPivot?: THREE.Group;
@@ -55,7 +59,7 @@ export class CarInteriorBuilder {
 
     public buildAll(): CarInteriorBuildResult {
         this.result.glowSprites = [];
-        this.result.labDisplayMats = [];
+        this.result.auxDisplayMats = [];
         if (this.vehicleConfig.hasDashboard) {
             const dashboardBuilder = new CarInteriorDashboardBuilder(
                 this.interiorGroup,
@@ -653,7 +657,7 @@ export class CarInteriorBuilder {
                 (this.result.glowSprites ??= []).push(glow);
             }
         }
-        (this.result.labDisplayMats ??= []).push(monitorMat);
+        (this.result.auxDisplayMats ??= []).push(monitorMat);
 
         const rackGeo = new THREE.BoxGeometry(1.8, 0.6, 0.3);
         const rackMat = new THREE.MeshStandardMaterial({
@@ -737,30 +741,32 @@ export class CarInteriorBuilder {
         rightOverlay.rotation.set(-0.2, 0, 0.1);
         this.interiorGroup.add(rightOverlay);
 
-        const hud = new THREE.Mesh(
-            new THREE.BoxGeometry(0.32, 0.085, 0.045),
-            new THREE.MeshStandardMaterial({
-                color: 0x10151c,
-                emissive: 0x5a7f8a,
-                emissiveIntensity: 0.46,
-                roughness: 0.28,
-                metalness: 0.62,
-            }),
-        );
+        // Screen, not trim: keep a daylight floor and let the center-display
+        // ramp take it to full brightness at night.
+        const hudMat = new THREE.MeshStandardMaterial({
+            color: 0x10151c,
+            emissive: 0x5a7f8a,
+            emissiveIntensity: 0.24,
+            roughness: 0.28,
+            metalness: 0.62,
+        });
+        (this.result.auxDisplayMats ??= []).push(hudMat);
+        const hud = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.085, 0.045), hudMat);
         hud.name = 'CortianicsCenterHud';
         hud.position.set(0.18, 0.995, -0.74);
         this.interiorGroup.add(hud);
 
-        const ambientStrip = new THREE.Mesh(
-            new THREE.BoxGeometry(0.72, 0.018, 0.02),
-            new THREE.MeshStandardMaterial({
-                color: 0x55120f,
-                emissive: 0xdc201c,
-                emissiveIntensity: 0.45,
-                roughness: 0.35,
-                metalness: 0.2,
-            }),
-        );
+        // Accent trim: joins the cabin glow registry so the red strip fades to a
+        // hint in daylight instead of holding a night wash under full sun.
+        const ambientStripMat = new THREE.MeshStandardMaterial({
+            color: 0x55120f,
+            emissive: 0xdc201c,
+            emissiveIntensity: 0,
+            roughness: 0.35,
+            metalness: 0.2,
+        });
+        registerGlowMaterial(ambientStripMat, 0.45);
+        const ambientStrip = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.018, 0.02), ambientStripMat);
         ambientStrip.name = 'CortianicsAmbientStrip';
         ambientStrip.position.set(0.18, 0.93, -0.76);
         this.interiorGroup.add(ambientStrip);
