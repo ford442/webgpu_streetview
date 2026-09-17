@@ -304,6 +304,7 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     let rainInt = p_rainIntensity();
     let wind = p_wind();
+    let cameraPitch = p_cameraPitch();
     for (var i: i32 = 0; i < 4; i = i + 1) {
         let layer = f32(i);
         var st = uv * vec2<f32>(1.0, 3.0 + layer * 1.5);
@@ -322,13 +323,23 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         let streak = smoothstep(0.96, 1.0, 1.0 - length(stTilted * vec2<f32>(0.45, 3.2)));
         c = c + streak * (0.7 + seed * 0.8);
     }
-    return c * 0.75;
+
+    // Perspective cue: streaks fade toward a haze above the shared horizon and
+    // gain presence approaching the camera below it, so rain reads as falling
+    // through the same depth the fog/DOF horizon uses instead of a flat,
+    // pitch-invariant overlay (the "floats on a flat screen-Y plane" gap).
+    let horizonY = viewHorizonY(cameraPitch);
+    let depth = viewDepthProxy(uv, horizonY);
+    let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
+    let nearBoost = mix(1.0, 1.3, 1.0 - depth);
+    return c * 0.75 * mix(0.35, 1.0, skyFade) * nearBoost;
 }
 
 fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     let wind = p_wind();
     let snowInt = p_snowIntensity();
+    let cameraPitch = p_cameraPitch();
     for (var i: i32 = 0; i < 5; i = i + 1) {
         let layer = f32(i);
         var st = uv * (4.0 + layer * 3.2);
@@ -348,7 +359,13 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
         let flake = smoothstep(0.18 + rnd * 0.07, 0.0, length(stTilted));
         c = c + flake * (0.85 + rnd * 0.6);
     }
-    return c * 1.35;
+
+    // Same horizon/depth perspective cue as rain() — see comment there.
+    let horizonY = viewHorizonY(cameraPitch);
+    let depth = viewDepthProxy(uv, horizonY);
+    let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
+    let nearBoost = mix(1.0, 1.3, 1.0 - depth);
+    return c * 1.35 * mix(0.35, 1.0, skyFade) * nearBoost;
 }
 
 // ============================================================================

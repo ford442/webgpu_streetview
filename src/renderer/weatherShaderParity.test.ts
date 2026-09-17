@@ -46,8 +46,20 @@ function normalizeSnowBody(code: string): string {
   return normalizeWgsl(code)
     .replace('let wind=p_wind();', '')
     .replace('let snowInt=p_snowIntensity();', '')
+    .replace('let cameraPitch=p_cameraPitch();', '')
     .replace(/p\.wind/g, 'wind')
-    .replace(/p\.snowIntensity/g, 'snowInt');
+    .replace(/p\.snowIntensity/g, 'snowInt')
+    .replace(/p\.cameraPitch/g, 'cameraPitch');
+}
+
+function normalizeRainBody(code: string): string {
+  return normalizeWgsl(code)
+    .replace('let rainInt=p_rainIntensity();', '')
+    .replace('let wind=p_wind();', '')
+    .replace('let cameraPitch=p_cameraPitch();', '')
+    .replace(/p\.wind/g, 'wind')
+    .replace(/p\.rainIntensity/g, 'rainInt')
+    .replace(/p\.cameraPitch/g, 'cameraPitch');
 }
 
 /**
@@ -81,6 +93,28 @@ describe('weather shader parity guard', () => {
     const computeSnow = normalizeSnowBody(extractFunctionBody(compute, 'snow'));
 
     expect(computeSnow).toBe(fragmentSnow);
+  });
+
+  it('keeps rain motion math aligned between fragment and compute paths', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    const fragmentRain = normalizeRainBody(extractFunctionBody(fragment, 'rain'));
+    const computeRain = normalizeRainBody(extractFunctionBody(compute, 'rain'));
+
+    expect(computeRain).toBe(fragmentRain);
+  });
+
+  it('ties rain/snow to the shared horizon helper instead of a flat screen-Y overlay', () => {
+    const fragment = readShader('weather-post.wgsl');
+
+    for (const fnName of ['rain', 'snow']) {
+      const body = extractFunctionBody(fragment, fnName);
+      expect(body).toContain('viewHorizonY(p.cameraPitch)');
+      expect(body).toContain('viewDepthProxy(uv, horizonY)');
+      expect(body).toContain('skyFade');
+      expect(body).toContain('nearBoost');
+    }
   });
 
   it.each(['viewHorizonY', 'viewDepthProxy', 'fogHeightFalloff'])(

@@ -54,10 +54,16 @@ usable one from screen Y and camera pitch:
 - Below it ⇒ `0.06 / (uv.y − horizonY)`, a hyperbolic falloff standing in for
   `eyeHeight / tan(angleBelowHorizon)`.
 
-This one function now feeds height fog, precipitation attenuation and the DOF
-circle of confusion, so those three effects agree about where the ground is.
-In the compute path the value is also written to the `r32float` storage texture
-at binding 6 every dispatch.
+This one function now feeds height fog, the DOF circle of confusion, and
+`rain()`/`snow()` directly, so all three agree about where the ground is —
+`rain()`/`snow()` fade to a haze above the horizon and gain presence
+approaching the camera below it, instead of a flat, pitch-invariant overlay.
+(Precipitation *visibility*, i.e. fading rain/snow out when the fog is thick,
+is a separate, coarser attenuation: it reuses the fog coverage value —
+`fogAmountAt()`'s result — as `precipVisibility = 1 - fogMask * 0.75`, so
+particles suspended in fog don't punch through it.) In the compute path the
+raw depth value is also written to the `r32float` storage texture at binding 6
+every dispatch.
 
 ---
 
