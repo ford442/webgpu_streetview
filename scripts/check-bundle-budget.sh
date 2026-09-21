@@ -7,6 +7,7 @@
 #   MAIN_GZIP_BUDGET_BYTES  — gzipped main.*.js (re-baselined for Vite ESM)
 #   CESIUM_MAX_HITS         — "Cesium" string matches in main (CDN loader URL = 1)
 #   CHUNK_GZIP_BUDGET_BYTES — per lazy *.chunk.js (catches Cesium leaking into a chunk)
+#   SINGLETON_MODULES       — modules that must not be duplicated across chunks
 
 set -euo pipefail
 
@@ -100,6 +101,45 @@ else
   if [ "$ERRORS" -eq 0 ]; then
     echo "✅ lazy chunk gzip within budget"
   fi
+fi
+
+# Single-instance modules. These hold module-level state that one chunk writes
+# and another reads — the eager renderer reads the cabin overlay the lazy car
+# chunk publishes. Rollup normally hoists a shared module into the entry chunk,
+# but if it ever duplicates one, each chunk gets its own copy of that state and
+# the handoff silently stops working with no type or test error. Read the
+# emitted sourcemaps and assert each name appears in exactly one chunk.
+SINGLETON_MODULES="src/renderer/cabinOverlayRegistry.ts src/car/runtime/frameCapture.ts"
+if ! node -e '
+const fs = require("fs");
+const path = require("path");
+const dir = process.argv[1];
+const names = process.argv.slice(2);
+const maps = fs.readdirSync(dir).filter((f) => f.endsWith(".map"));
+if (maps.length === 0) {
+  console.log("ℹ️  No sourcemaps emitted — skipping singleton-module check");
+  process.exit(0);
+}
+let failed = false;
+for (const name of names) {
+  const owners = maps.filter((mapFile) => {
+    const map = JSON.parse(fs.readFileSync(path.join(dir, mapFile), "utf8"));
+    return (map.sources || []).some((s) => s.replace(/^(\.\.\/)+/, "") === name);
+  });
+  if (owners.length === 1) continue;
+  failed = true;
+  if (owners.length === 0) {
+    console.log(`❌ ERROR: ${name} is in no chunk — did it get renamed or tree-shaken?`);
+  } else {
+    console.log(`❌ ERROR: ${name} was duplicated into ${owners.length} chunks: ${owners.join(", ")}`);
+    console.log("   Each copy gets its own module-level state, so the cross-chunk handoff breaks silently.");
+  }
+}
+process.exit(failed ? 1 : 0);
+' "$BUILD_DIR/static/js" $SINGLETON_MODULES; then
+  ERRORS=$((ERRORS + 1))
+else
+  echo "✅ single-instance module check passed"
 fi
 
 if [ "$ERRORS" -gt 0 ]; then

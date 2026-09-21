@@ -7,11 +7,29 @@ Street View post-processing has a **WebGPU-required** boot contract:
 
 Failed WebGPU boot probe → **hard-fail** (blocking overlay on the pano). The app does **not** construct a WebGL weather context and does **not** elevate raw Street View as a weather session.
 
-The Three.js car interior remains a separate transparent overlay above the WebGPU backend when WebGPU is ready. On capable adapters (`webgpuProbe.ok` + the shared Street View `GPUDevice`) the default cabin is `THREE.WebGPURenderer({ device })` — one `GPUDevice`, still two canvases until the one-frame compositor. `?cabin=webgl` is the escape hatch back to a second WebGL context. `?cabin=webgpu` still forces the shared-device path. The cabin must **not** call `configure()` on the panorama canvas (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`). Failed `WebGPURenderer.init()` falls back to the WebGL overlay; Street View weather stays up.
+On capable adapters (`webgpuProbe.ok` + the shared Street View `GPUDevice`) the default cabin is `THREE.WebGPURenderer({ device })` and it is **no longer a second canvas**: `src/car/interior/cabinFrameTarget.ts` points that renderer at a `THREE.RenderTarget` via `setOutputRenderTarget`, publishes the target's `GPUTexture` on `src/renderer/cabinOverlayRegistry.ts`, and `src/renderer/cabinComposite.ts` draws it over the swap chain in the road frame's own command encoder (pass 1 → weather → cabin → submit). One `requestDevice`, one `configureCanvasContext`, one presented frame. The cabin canvas stays in the DOM but `visibility: hidden` while the compositor owns the frame — three still owns it and `setSize` / pointer plumbing measure it. `?cabin=webgl` is the escape hatch back to a second WebGL context and its CSS overlay. `?cabin=webgpu` still forces the shared-device path. The cabin must **not** call `configure()` on the panorama canvas (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`). Failed `WebGPURenderer.init()` falls back to the WebGL overlay; Street View weather stays up.
 
 Custom cabin GLSL (`ShaderMaterial`) lives in `src/shaders/` and is the WebGL-hatch path only. Production `src/car/` does not construct `THREE.ShaderMaterial`. The WebGPU cabin loads TSL NodeMaterial twins from `src/car/interior/cabinTslMaterials.ts` with the further-lazy `three/webgpu` chunk (`preloadWebGPUCabinRenderer`). The twins follow the GLSL uniform math (vanity warmth/vignette, rearview glass + true-rear sample, windshield rain/condensation/wipers, cup liquid, dashboard emitter glow). **Known look delta:** none intended; a GPU screenshot compare is a follow-up (this path cannot be visually A/B'd in jsdom). Weather-post ACES owns the road — the WebGPU cabin uses `NoToneMapping` so the overlay is not double-ACES'd. `?hdr=1` / `?p3=1` still go through `configureCanvasContext`; the cabin overlay follows `?p3` as output-referred `display-p3` and does not become an HDR swapchain. Probe: `window.__CABIN_RENDERER_PROBE__` (also mirrored onto `webgpuProbe.cabin`).
 
-Because the two are separate canvases, **cinema capture composites them in 2D** rather than recording one swapchain: `car/runtime/frameCapture.ts` publishes the post-`interior.render()` moment (the only frame in which the cabin's drawing buffer is readable — the cabin renderer has no `preserveDrawingBuffer`) and `utils/canvasRecorder.ts` latches the cabin there. Road-only is the automatic fallback whenever car mode is not rendering. See `docs/SHARED_SESSIONS.md` § Cinema capture. Once the cabin shares the device this composite collapses into the swapchain and the latch can go.
+On the composited path **cinema clips and snapshots are the presented frame** — no 2D re-composite. `needsCabinOverlayLatch()` (`renderer/cabinComposite.ts`) reads `renderer.isCabinCompositedInFrame()`, and `useAppCapture` / `CinemaOverlay` pass no overlay when it is false.
+
+The 2D latch is still the path for the WebGL hatch and for any frame the compositor is not driving: `car/runtime/frameCapture.ts` publishes the post-`interior.render()` moment (the only frame in which a WebGL drawing buffer is readable — the cabin renderer has no `preserveDrawingBuffer`) and `utils/canvasRecorder.ts` latches the cabin there. Road-only stays the automatic fallback whenever car mode is not rendering. See `docs/SHARED_SESSIONS.md` § Cinema capture.
+
+### When the compositor stands down
+
+Any of these leaves the cabin on the CSS overlay + 2D latch, with Street View weather unaffected:
+
+| Condition | Where |
+| --- | --- |
+| `?cabin=webgl`, or a failed `WebGPURenderer.init()` | `CabinFrameTarget.create` refuses a non-WebGPU cabin |
+| three build without `setOutputRenderTarget` | `CabinFrameTarget.create` |
+| Backend never exposes a `GPUTexture` for the target | `CabinFrameTarget.endFrame` latches once, restores the canvas |
+| `cabin-composite.wgsl` failed to load / compile | `Renderer.init` logs and leaves `cabinComposite` null |
+| Car mode off, or cabin has not drawn yet | `CabinCompositePass.isActive()` is false, pass is not encoded |
+
+`window.__CABIN_RENDERER_PROBE__.composited` / `.compositeReason` report which of these is in effect.
+
+Because the cabin no longer has a canvas of its own to animate on, the road loop stops adaptive frame-skipping while it is composited (`shouldRenderHeldFrameThisTick({ cabinComposited })`) — a skipped road frame would otherwise freeze the wipers and gauges too.
 
 ## Backend Selection
 
@@ -76,7 +94,9 @@ Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chroma
   - `alphaMode: 'opaque'`
   - `colorSpace: 'srgb'`
   - `usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC` — **`COPY_SRC` must never be dropped**; cinema clip capture and snapshots depend on it.
-  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+), gated on `float32-filterable` being enabled. Without that feature the request is soft-logged and the canvas stays SDR. Pass 2 still writes ACES (HDR-aware grade / skip-ACES-crush is a later slice). Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 40 floats.
+  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+), gated on `float32-filterable` being enabled. Without that feature the request is soft-logged and the canvas stays SDR. Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 40 floats.
+
+    When the **applied** tone mapping is `extended` (never the requested flag — a rejected configure falls back to SDR and `bootDevice` rewrites the policy from `appliedCanvas`), both weather shaders are assembled with an output-referred `aces_tonemap` instead of the SDR one (`assembleExtendedToneMappingShader` in `shaderFeatureVariants.ts`). The ACES shoulder is evaluated against `EXTENDED_TONEMAP_HEADROOM` (4.0, SDR-relative) rather than assuming SDR white is the peak, so sun flare and headlights land in display headroom instead of clamping flat at 1.0. At headroom 1.0 the body is algebraically the SDR one. **No new uniform slot, no layout change** — the swap is a pipeline-create-time source substitution, the same mechanism as the subgroup and dual-source variants, and `npm run validate:shaders` naga-checks both assembled variants. Default SDR boot compiles the byte-identical historical shader; `shaderFeatureUses.extendedToneMapping` on the capability matrix says which ran.
   - `?p3=1` => `colorSpace: 'display-p3'`. `?p3=auto` follows `matchMedia('(color-gamut: p3)')`; `?hdr=auto` follows `matchMedia('(dynamic-range: high)')`. Both flags default to `off`, so nothing changes without an explicit opt-in.
   - `viewFormats` stays `[]` on HDR configure — there is no GPU UI overlay sampling an sRGB view of the swap-chain.
   - If the browser rejects the requested descriptor, the renderer re-configures as SDR sRGB, records `canvasDowngradeReason` on the capability matrix, and uses the applied format as its presentation format.
@@ -167,10 +187,10 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `timestamp-query` | Requested when adapter exposes it | GPU pass timings in the performance overlay (P) |
 | `timestamp-query-inside-passes` | Requested when adapter exposes it | Overlay-only later; not used in shaders |
 | `subgroups` | Requested when adapter exposes it | **Used:** gpu-chores hist coalesced atomics (`gpu-chores-hist-subgroups.wgsl`) and compute-weather luma firefly reduce (`withSubgroupLumaReduce`). Scalar fallbacks stay naga-clean. `?gpu=compat` does not require the feature. |
-| `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** CI `naga-cli` rejects `scripts/f16-naga-spike.wgsl` (`enable f16`). Do not ship `f16` until naga accepts it. |
+| `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** `scripts/f16-naga-spike.wgsl` is the probe; naga-cli is installed unpinned in CI and newer builds now accept `enable f16`, so the guard in `validateShaders.test.ts` asserts the shipped state (no `enable f16;` in production WGSL, `shaderFeatureUses.shaderF16` false) rather than a validator version. Flipping it needs a production shader that actually uses `f16`. |
 | `rg11b10ufloat-renderable` | Requested when adapter exposes it | **Used:** Pass-1 HDR intermediate is `rg11b10ufloat` when enabled and alpha is unused; otherwise `rgba16float`. Recorded as `capabilityMatrix.intermediateFormat`. |
 | `dual-source-blending` | Requested when adapter exposes it | **Used:** fragment weather `fs_main` outputs precip as `@second_blend_source` (`assembleDualSourceWeatherShader`). In-shader `col + precipAdd` remains the naga-clean fallback. |
-| `clip-distances` | Requested when adapter exposes it | Cabin windshield later; do not `configure()` the canvas twice |
+| `clip-distances` | Requested when adapter exposes it | Cabin windshield portal is still pending (see the one-frame compositor issue, PR 2); do not `configure()` the canvas twice |
 | `core-features-and-limits` | Requested when adapter exposes it **and** not `?gpu=compat` | Must not undo compatibility mode |
 | `optionalFeaturesAttempted` / `Enabled` | Attempted = `OPTIONAL_FEATURES_ATTEMPTED`; enabled = `requestDevice` list | Chip count; `?gpu=features` dumps JSON including `intermediateFormat` and `shaderFeatureUses` |
 | `intermediateFormat` | `rgba16float` (default) or `rg11b10ufloat` | Packed format only when `rg11b10ufloat-renderable` is enabled |
@@ -182,7 +202,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `forceFallbackAdapter` | `true` only for `?gpu=fallback` | Software adapter for CI and probe runs |
 | `canvasFormat` | Preferred canvas format, or `rgba16float` under `?hdr=1` | Pipelines follow whatever configure actually applied |
 | `canvasColorSpace` | `'srgb'` (default) / `'display-p3'` (`?p3=1`) | |
-| `canvasToneMapping` | `'standard'` (default) / `'extended'` (`?hdr=1`) | |
+| `canvasToneMapping` | `'standard'` (default) / `'extended'` (`?hdr=1`) | Drives the output-referred `aces_tonemap` swap; mirrored as `shaderFeatureUses.extendedToneMapping` |
 | `viewFormats` | `[]` today | Reserved for future sRGB-variant views |
 | `canvasDowngradeReason` | Set when an HDR/P3 configure was rejected | Renderer re-configures SDR sRGB and keeps going |
 | `uncapturedErrorCount` / `lastUncapturedError` | Counted from `uncapturederror` | Shown on the backend chip |

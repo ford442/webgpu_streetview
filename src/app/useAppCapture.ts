@@ -4,6 +4,7 @@ import { captureCompositedStill } from '../utils/canvasRecorder';
 import { useSnapshots } from '../hooks/useSnapshots';
 import { makePickerThumbDataUrl } from '../renderer/gpuChores/pickerThumb';
 import type { StreetViewRenderer } from '../renderer/RendererBackend';
+import { needsCabinOverlayLatch } from '../renderer/cabinComposite';
 import type { LookId } from '../config/lookPacks';
 import type { VehicleType } from '../car/VehicleManager';
 import type { ConnectedChromeSnapshots } from './shell/ConnectedChrome';
@@ -43,6 +44,11 @@ export interface UseAppCaptureResult {
    * lazy car chunk has loaded. Before it does (or outside car mode) the canvas
    * is simply null and the capture is road-only.
    * See `car/runtime/frameCapture.ts`.
+   *
+   * **Only needed when the renderer is not already compositing the cabin.**
+   * On the one-frame path (`renderer.isCabinCompositedInFrame()`, see
+   * `renderer/cabinComposite.ts`) the road canvas *is* the composited frame,
+   * so capture passes `null` instead and skips the latch entirely.
    */
   cabinOverlay: ClipOverlaySource;
   /** Capture the composited road + cabin frame into the snapshot gallery. */
@@ -121,9 +127,11 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
       return;
     }
 
-    // Free-look has no cabin canvas — skip the overlay wait so stills stay
-    // immediate. Car mode latches the cabin the same way cinema clips do.
-    const overlay = viewMode === 'car' ? cabinOverlay : null;
+    // Free-look has no cabin canvas, and the one-frame compositor already put
+    // the cabin in this canvas — either way skip the overlay wait so stills
+    // stay immediate. Only the CSS-overlay cabin still needs the 2D latch.
+    const needsLatch = viewMode === 'car' && needsCabinOverlayLatch(renderer);
+    const overlay = needsLatch ? cabinOverlay : null;
     void captureCompositedStill(output, overlay, { timeoutMs: 400 }).then((still) => {
       addSnapshot({
         ...meta,

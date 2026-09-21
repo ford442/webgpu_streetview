@@ -174,7 +174,11 @@ export function buildCapabilityMatrix(
         canvasToneMapping: canvas?.toneMapping ?? 'standard',
         viewFormats: canvas?.viewFormats ?? [],
         intermediateFormat,
-        shaderFeatureUses: resolveShaderFeatureUses(enabledFeatures, intermediateFormat),
+        shaderFeatureUses: resolveShaderFeatureUses(
+            enabledFeatures,
+            intermediateFormat,
+            canvas?.toneMapping ?? 'standard',
+        ),
         canvasDowngradeReason: canvas?.downgradeReason,
         uncapturedErrorCount: 0,
         gpuChoresWorkgroupSize: COMPUTE_CHORES_WORKGROUP_SIZE,

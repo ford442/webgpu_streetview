@@ -9,6 +9,9 @@
  */
 import { OPTIONAL_DEVICE_FEATURES, type ShaderFeatureUses } from './deviceCapabilities';
 
+/** Tone mapping mode `configureCanvasContext` applied to the swap chain. */
+export type CanvasToneMapping = 'standard' | 'extended';
+
 export type { ShaderFeatureUses };
 
 /** Default Pass-1 HDR intermediate (alpha kept). */
@@ -44,6 +47,68 @@ export function resolveHdrIntermediateFormat(
         return HDR_INTERMEDIATE_FORMAT_PACKED;
     }
     return HDR_INTERMEDIATE_FORMAT;
+}
+
+/**
+ * Exact `aces_tonemap` body shared verbatim by `public/shaders/weather-post/
+ * 03-night-and-composite.wgsl` (and therefore the generated `weather-post.wgsl`)
+ * and `public/shaders/weather-post-compute.wgsl` — keep all three in lockstep.
+ */
+export const ACES_TONEMAP_SDR_BODY =
+    'fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {\n'
+    + '    let a = 2.51;\n'
+    + '    let b = 0.03;\n'
+    + '    let c = 2.43;\n'
+    + '    let d = 0.59;\n'
+    + '    let e = 0.14;\n'
+    + '    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));\n'
+    + '}';
+
+/**
+ * SDR-relative peak the extended-range grade rolls highlights into.
+ *
+ * `toneMapping: { mode: 'extended' }` (see `deviceInit.ts`) tells the browser the
+ * swap chain carries values above SDR white; 4.0 is a conservative headroom that
+ * every HDR display Chrome reports today can show, and the browser clamps what it
+ * cannot. Keep it ≥ 1.0 — at exactly 1.0 the extended body is algebraically the
+ * SDR body, which is what `weatherShaderParity.test.ts` pins.
+ */
+export const EXTENDED_TONEMAP_HEADROOM = 4.0;
+
+const ACES_TONEMAP_EXTENDED_BODY =
+    'fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {\n'
+    + '    // Output-referred variant, assembled only when the applied canvas tone\n'
+    + '    // mapping is `extended` (`?hdr=1` on a capable display). The ACES shoulder\n'
+    + '    // is evaluated against the display headroom instead of assuming SDR white\n'
+    + '    // is the peak, so sun flare / headlights land in the extended range the\n'
+    + '    // swap chain can actually show instead of being clamped flat at 1.0.\n'
+    + '    // At headroom 1.0 this reduces exactly to the SDR body above.\n'
+    + '    let a = 2.51;\n'
+    + '    let b = 0.03;\n'
+    + '    let c = 2.43;\n'
+    + '    let d = 0.59;\n'
+    + '    let e = 0.14;\n'
+    + `    let headroom = ${EXTENDED_TONEMAP_HEADROOM.toFixed(1)};\n`
+    + '    let x = color / headroom;\n'
+    + '    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0)) * headroom;\n'
+    + '}';
+
+/**
+ * Swap the SDR ACES crush for the output-referred grade.
+ *
+ * Callers pass the tone mapping `configureCanvasContext` actually applied, never
+ * the requested flag — a rejected `?hdr=1` configure falls back to SDR sRGB and
+ * must keep the SDR body. A shader whose body has drifted from
+ * `ACES_TONEMAP_SDR_BODY` is returned unchanged (test fakes, truncated fetches)
+ * so the pipeline still builds on the historical curve.
+ */
+export function assembleExtendedToneMappingShader(
+    shaderCode: string,
+    canvasToneMapping: CanvasToneMapping,
+): string {
+    if (canvasToneMapping !== 'extended') return shaderCode;
+    if (!shaderCode.includes(ACES_TONEMAP_SDR_BODY)) return shaderCode;
+    return shaderCode.replace(ACES_TONEMAP_SDR_BODY, ACES_TONEMAP_EXTENDED_BODY);
 }
 
 /** Exact scalar body in `public/shaders/weather-post-compute.wgsl` — keep in lockstep. */
@@ -129,11 +194,13 @@ export const DUAL_SOURCE_PRECIP_BLEND: GPUBlendState = {
 export function resolveShaderFeatureUses(
     enabledFeatures: readonly GPUFeatureName[],
     intermediateFormat: GPUTextureFormat,
+    canvasToneMapping: CanvasToneMapping = 'standard',
 ): ShaderFeatureUses {
     return {
         subgroups: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.subgroups),
         rg11b10Intermediate: intermediateFormat === HDR_INTERMEDIATE_FORMAT_PACKED,
         dualSourcePrecip: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.dualSourceBlending),
         shaderF16: false,
+        extendedToneMapping: canvasToneMapping === 'extended',
     };
 }

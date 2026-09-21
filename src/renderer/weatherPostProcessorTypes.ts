@@ -3,6 +3,7 @@
  * Renderer.ts selects either implementation at init based on weatherPostProcessMode.
  */
 import type { GpuPassTimer } from './gpuPassTimer';
+import type { CanvasToneMapping } from './shaderFeatureVariants';
 
 export interface WeatherPassTimingContext {
     timer: GpuPassTimer;
@@ -12,8 +13,19 @@ export interface WeatherPassTimingContext {
     blitEndIndex?: number;
 }
 
+export interface WeatherPostInitOptions {
+    /**
+     * Tone mapping `configureCanvasContext` actually **applied** to the swap
+     * chain — never the requested `?hdr` flag. `'extended'` assembles the
+     * output-referred grade (`assembleExtendedToneMappingShader`) so highlights
+     * survive into display headroom; `'standard'` (the default, and every
+     * default boot) keeps the historical SDR ACES pixels.
+     */
+    canvasToneMapping?: CanvasToneMapping;
+}
+
 export interface WeatherPostProcessorLike {
-    init(presentationFormat: GPUTextureFormat): Promise<void>;
+    init(presentationFormat: GPUTextureFormat, options?: WeatherPostInitOptions): Promise<void>;
     updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
     updateNoiseBuffer(tile: Float32Array): void;
     /**
@@ -32,7 +44,16 @@ export interface WeatherPostProcessorLike {
     updateCameraParams(heading: number, pitch: number): void;
     updateColorParams(params: Float32Array): void;
     updateWeatherAnimation(): void;
-    renderWeatherOnly(intermediateTextureView: GPUTextureView): void;
+    /**
+     * Weather-only frame (no fresh panorama upload). Owns its own encoder and
+     * submit, so `afterWeather` is the only place another pass can join the
+     * frame — `Renderer` uses it for the cabin composite, which has to land on
+     * the same swap-chain texture before it is presented.
+     */
+    renderWeatherOnly(
+        intermediateTextureView: GPUTextureView,
+        afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+    ): void;
     renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void;
     dispose(): void;
 }

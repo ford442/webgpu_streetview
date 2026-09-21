@@ -4,7 +4,11 @@ import {
     WeatherParamIndex,
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
-import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
+import type {
+    WeatherPostInitOptions,
+    WeatherPostProcessorLike,
+    WeatherPassTimingContext,
+} from './weatherPostProcessorTypes';
 import type { LutVolume } from './lut';
 import {
     createIdentityLutTexture,
@@ -15,6 +19,7 @@ import {
 } from './lutGpu';
 import {
     assembleDualSourceWeatherShader,
+    assembleExtendedToneMappingShader,
     deviceHasFeature,
     DUAL_SOURCE_PRECIP_BLEND,
 } from './shaderFeatureVariants';
@@ -73,7 +78,10 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.lutTexture = this.dummyLutTexture;
     }
 
-    public async init(presentationFormat: GPUTextureFormat): Promise<void> {
+    public async init(
+        presentationFormat: GPUTextureFormat,
+        options: WeatherPostInitOptions = {},
+    ): Promise<void> {
         const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/weather-post.wgsl`;
         let shaderCode: string;
         try {
@@ -86,6 +94,13 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             console.error(`[Renderer] Failed to load weather-post shader from ${shaderUrl}:`, error);
             throw error;
         }
+
+        // Output-referred grade first: it rewrites the `aces_tonemap` body, which
+        // the dual-source assembler never touches, so the two stay independent.
+        shaderCode = assembleExtendedToneMappingShader(
+            shaderCode,
+            options.canvasToneMapping ?? 'standard',
+        );
 
         this.dualSourcePrecip = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
         if (this.dualSourcePrecip) {
@@ -248,7 +263,10 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderWeatherOnly(intermediateTextureView: GPUTextureView): void {
+    public renderWeatherOnly(
+        intermediateTextureView: GPUTextureView,
+        afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+    ): void {
         if (!this.device || !this.weatherPipeline || !this.weatherBindGroup) return;
 
         try {
@@ -281,6 +299,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
             postPass.draw(3, 1, 0, 0);
             postPass.end();
+
+            afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
         } catch (e) {

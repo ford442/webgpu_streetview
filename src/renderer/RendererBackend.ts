@@ -93,6 +93,13 @@ export interface StreetViewRenderer {
     samplePanoramaStats?(): void;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
+     * WebGPU only — true when this renderer already draws car mode's cabin into
+     * the frame it presents (the one-frame compositor, `cabinComposite.ts`).
+     * Cinema and snapshots use it to skip the 2D cabin latch; absent or false
+     * means the caller must still composite the cabin canvas itself.
+     */
+    isCabinCompositedInFrame?(): boolean;
+    /**
      * The single shared `GPUDevice` backing this renderer, for car mode to
      * adopt (`createCabinRenderer.ts`) instead of requesting its own. WebGPU
      * only — absent (or undefined) on any backend without a real device.

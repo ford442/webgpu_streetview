@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { StreetViewRenderer } from '../renderer/RendererBackend';
+import { needsCabinOverlayLatch } from '../renderer/cabinComposite';
 import {
   CanvasClipRecorder,
   isClipRecordingSupported,
@@ -85,10 +86,14 @@ const CinemaOverlay: React.FC<CinemaOverlayProps> = ({
   const handleStartRecording = useCallback(() => {
     if (!renderer?.canvas || recState === 'recording') return;
     cleanupRecorder();
+    // The one-frame compositor already draws the cabin into this canvas, so
+    // the 2D latch is only wired up for the CSS-overlay cabin
+    // (`?cabin=webgl`, or a backend that would not hand over its texture).
+    const needsLatch = needsCabinOverlayLatch(renderer);
     const recorder = new CanvasClipRecorder(renderer.canvas, {
       fps: 30,
       burnAttribution: true,
-      overlay: cabinOverlay ?? undefined,
+      overlay: needsLatch ? cabinOverlay ?? undefined : undefined,
     });
     if (recorder.getState() === 'unsupported') {
       setRecState('unsupported');

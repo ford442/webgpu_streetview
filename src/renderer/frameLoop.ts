@@ -4,6 +4,7 @@ import type { TextureLifecycle } from './textureLifecycle';
 import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import type { WeatherPostProcessMode } from './RendererBackend';
 import { encodeStreetViewPass, type Pass1TimingContext } from './streetViewPass';
+import type { CabinCompositePass } from './cabinComposite';
 
 export interface FramePassTimings {
     pass1?: Pass1TimingContext;
@@ -68,6 +69,15 @@ export interface EncodeFrameOptions {
     uniforms: Float32Array;
     transitionManager: TransitionManager | undefined;
     weatherPostProcessor: WeatherPostProcessorLike | undefined;
+    /**
+     * Car mode's cabin, as a texture on this same device. Encoded last, over
+     * the swap chain the weather pass just wrote. Undefined / inactive in
+     * free-look and on the `?cabin=webgl` hatch, where the pass is skipped and
+     * the frame is byte-identical to the pre-compositor one.
+     */
+    cabinComposite?: CabinCompositePass | null;
+    /** The swap-chain view for this frame, so the composite loads what weather stored. */
+    getSwapChainView?: () => GPUTextureView | null;
     gpuPassTimer: GpuPassTimer | null;
     timings: FramePassTimings;
 }
@@ -78,8 +88,10 @@ export interface EncodeFrameOptions {
  *
  * Pass 1 is either the transition manager's own crossfade pass or the plain
  * panorama draw; weather always reads the HDR intermediate pass 1 just wrote,
- * so the two can never be reordered. The timestamp resolve must be the last
- * thing encoded, after every span it measures has been closed.
+ * so the two can never be reordered. In car mode the cabin composite follows
+ * weather on the same swap-chain view (`loadOp: 'load'`), which is what makes
+ * cinema and snapshots one frame. The timestamp resolve must be the last thing
+ * encoded, after every span it measures has been closed.
  *
  * Callers are responsible for the hold-pause guard — this function encodes
  * whatever texture state it is handed and never touches the live Maps canvas.
@@ -94,6 +106,8 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): void {
         uniforms,
         transitionManager,
         weatherPostProcessor,
+        cabinComposite,
+        getSwapChainView,
         gpuPassTimer,
         timings,
     } = options;
@@ -124,9 +138,35 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): void {
 
     weatherPostProcessor?.renderPass(commandEncoder, timings.weather);
 
+    encodeCabinComposite(commandEncoder, cabinComposite, getSwapChainView);
+
     if (gpuPassTimer) {
         gpuPassTimer.resolveAndScheduleRead(commandEncoder);
     }
 
     device.queue.submit([commandEncoder.finish()]);
+}
+
+/**
+ * Draw the cabin over the road frame, if car mode published one. Split out so
+ * both encode paths (`encodeAndSubmitFrame` and the weather-only encoder in the
+ * post-processors' `renderWeatherOnly`) go through the same guard.
+ *
+ * A failure here must never take the road frame down — the composite is the
+ * overlay, and dropping it degrades to the pre-compositor look for one frame.
+ */
+export function encodeCabinComposite(
+    commandEncoder: GPUCommandEncoder,
+    cabinComposite: CabinCompositePass | null | undefined,
+    getSwapChainView: (() => GPUTextureView | null) | undefined,
+): boolean {
+    if (!cabinComposite || !getSwapChainView || !cabinComposite.isReady()) return false;
+    try {
+        const view = getSwapChainView();
+        if (!view) return false;
+        return cabinComposite.encode(commandEncoder, view);
+    } catch (e) {
+        console.warn('[frameLoop] cabin composite pass skipped this frame:', e);
+        return false;
+    }
 }

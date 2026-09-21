@@ -1,5 +1,9 @@
 import { WeatherParamIndex } from './weatherUniformLayout';
-import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weatherPostProcessorTypes';
+import type {
+    WeatherPostInitOptions,
+    WeatherPostProcessorLike,
+    WeatherPassTimingContext,
+} from './weatherPostProcessorTypes';
 import type { LutVolume } from './lut';
 import { ComputeWeatherResources } from './computeWeather/resources';
 import { ComputeWeatherParticles } from './computeWeather/particles';
@@ -81,13 +85,17 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.params = new WeatherParamBlock(device, () => this.resources.extraBuffer);
     }
 
-    public async init(presentationFormat: GPUTextureFormat): Promise<void> {
+    public async init(
+        presentationFormat: GPUTextureFormat,
+        options: WeatherPostInitOptions = {},
+    ): Promise<void> {
         const base = process.env.PUBLIC_URL || '/';
 
         this.computePipeline = await createWeatherComputePipeline(
             this.device,
             `${base}/shaders/weather-post-compute.wgsl`,
             this.lut.createLayout(),
+            options.canvasToneMapping ?? 'standard',
         );
         this.lut.rebuild();
 
@@ -282,7 +290,10 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderWeatherOnly(intermediateTextureView: GPUTextureView): void {
+    public renderWeatherOnly(
+        intermediateTextureView: GPUTextureView,
+        afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+    ): void {
         if (!this.device || !this.computePipeline) return;
 
         try {
@@ -293,6 +304,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
             this.dispatch(commandEncoder);
             this.blit(commandEncoder);
+
+            afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
         } catch (e) {

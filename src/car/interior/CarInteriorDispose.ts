@@ -10,11 +10,14 @@ import type { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import type { VanityMirror } from './VanityMirror';
 import type { LocationPanel } from './LocationPanel';
 import type { CabinRenderer } from './createCabinRenderer';
+import type { CarInteriorRenderer } from './CarInteriorRenderer';
 
 export interface CarInteriorDisposeHost {
     animationId: number;
     clockUpdateInterval?: number;
     renderer: CabinRenderer;
+    /** Owns the one-frame compositor's offscreen target — released first. */
+    rendererDelegate?: CarInteriorRenderer;
     scene: THREE.Scene;
     canvas: HTMLCanvasElement;
     panoEnvironment: PanoEnvironment;
@@ -56,6 +59,11 @@ export function disposeCarInteriorResources(host: CarInteriorDisposeHost): void 
         textures: stats.current.textureCount,
         memory: MemoryProfiler.formatBytes(stats.current.estimatedBytes),
     });
+
+    // Before `renderer.dispose()`: the frame target has to hand the cabin back
+    // to its own canvas and free the offscreen colour/depth textures while the
+    // backend that owns them is still alive.
+    host.rendererDelegate?.dispose();
 
     host.renderer.dispose();
     host.scene.traverse((obj) => {

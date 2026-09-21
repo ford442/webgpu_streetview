@@ -48,6 +48,13 @@ vi.mock('../CarInterior', () => ({
             roofGroup: {},
             renderer: {},
             canvas: { style: { cssText: '' }, parentElement: null },
+            // The one-frame compositor asks the delegate for its cabin texture
+            // on every toggle; the default stub is the WebGL-hatch shape
+            // (no overlay source, not composited).
+            rendererDelegate: autoStub({
+                getCabinOverlaySource: vi.fn(() => null),
+                isCompositedIntoRoadFrame: vi.fn(() => false),
+            }),
             leftMirrorPlane: {},
             rightMirrorPlane: {},
         });
@@ -78,6 +85,10 @@ vi.mock('../SelectivePostProcessing', () => ({
 
 import * as runtime from '../carModeRuntime';
 import { vehicleManager } from '../VehicleManager';
+import {
+    getCabinOverlaySource,
+    resetCabinOverlaySourceForTests,
+} from '../../renderer/cabinOverlayRegistry';
 
 /** Every name `src/car/index.ts` re-exports from this module. */
 const PUBLIC_API = [
@@ -108,6 +119,7 @@ beforeEach(() => {
     // Each test starts with no live car mode.
     runtime.disposeCarMode();
     runtime.setCabinLeverHandlers({});
+    resetCabinOverlaySourceForTests();
 });
 
 describe('carModeRuntime — public surface', () => {
@@ -254,6 +266,62 @@ describe('carModeRuntime — lever handlers reach the registered listener', () =
 
         runtime.setWiperStalkPosition('low');
         expect(onWiperStalk).not.toHaveBeenCalled();
+    });
+});
+
+describe('carModeRuntime — one-frame compositor handoff', () => {
+    it('publishes the cabin texture while car mode is on and retracts it after', () => {
+        runtime.initCarMode(container());
+        const interior = madeInteriors[0]!;
+        const delegate = interior.rendererDelegate as {
+            getCabinOverlaySource: ReturnType<typeof vi.fn>;
+        };
+        const source = { getTexture: () => null };
+        delegate.getCabinOverlaySource.mockReturnValue(source);
+
+        runtime.toggleCarMode(true);
+        expect(getCabinOverlaySource()).toBe(source);
+
+        runtime.toggleCarMode(false);
+        expect(getCabinOverlaySource()).toBeNull();
+    });
+
+    it('retracts before dispose, so nothing samples a torn-down texture', () => {
+        runtime.initCarMode(container());
+        const interior = madeInteriors[0]!;
+        const delegate = interior.rendererDelegate as {
+            getCabinOverlaySource: ReturnType<typeof vi.fn>;
+        };
+        delegate.getCabinOverlaySource.mockReturnValue({ getTexture: () => null });
+        runtime.toggleCarMode(true);
+
+        runtime.disposeCarMode();
+        expect(getCabinOverlaySource()).toBeNull();
+    });
+
+    it('publishes nothing on the WebGL hatch, which keeps the CSS overlay visible', () => {
+        runtime.initCarMode(container());
+        const interior = madeInteriors[0]!;
+        runtime.toggleCarMode(true);
+
+        expect(getCabinOverlaySource()).toBeNull();
+        expect((interior.canvas as { style: { cssText: string } }).style.cssText)
+            .toContain('visibility: visible');
+    });
+
+    it('hides the cabin canvas once the compositor owns the frame', () => {
+        runtime.initCarMode(container());
+        const interior = madeInteriors[0]!;
+        const delegate = interior.rendererDelegate as {
+            isCompositedIntoRoadFrame: ReturnType<typeof vi.fn>;
+        };
+        delegate.isCompositedIntoRoadFrame.mockReturnValue(true);
+
+        runtime.toggleCarMode(true);
+        const css = (interior.canvas as { style: { cssText: string } }).style.cssText;
+        // Still `display: block` — three and the pointer plumbing measure it.
+        expect(css).toContain('display: block');
+        expect(css).toContain('visibility: hidden');
     });
 });
 
