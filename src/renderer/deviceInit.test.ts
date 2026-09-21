@@ -323,6 +323,6 @@ describe('single device contract', () => {
         };
         for (const root of roots) walk(root);
 
-        expect(hits).toEqual(['src/renderer/Renderer.ts']);
+        expect(hits).toEqual(['src/renderer/bootDevice.ts']);
     });
 });

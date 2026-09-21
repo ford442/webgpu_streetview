@@ -18,7 +18,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Layer | Technology | Version |
 |-------|------------|---------|
 | Frontend Framework | React | 19.1.1 |
-| Language | TypeScript | 4.9.5 |
+| Language | TypeScript | ~5.4.5 |
 | Build Tool | Vite 5 + Vitest | — |
 | Rendering API | WebGPU | Native browser API |
 | 3D Overlay | Three.js | 0.180.0 (pinned) |
@@ -351,6 +351,22 @@ App.tsx
 
 ### WebGPU Dual-Pass Pipeline (`src/renderer/Renderer.ts`)
 
+`Renderer.ts` is a **façade** exposing `StreetViewRenderer`; the moving parts
+live in named modules beside it. Add a boot step, a pass, or a frame stage to
+the module that owns it, not to the façade:
+
+| Module | Owns |
+|---|---|
+| `deviceInit.ts` | adapter request options, limit checks, canvas output (HDR/P3) policy, capability matrix |
+| `bootDevice.ts` | the boot sequence and **the only `requestDevice` call site** (`deviceInit.test.ts` pins the path) |
+| `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
+| `frameLoop.ts` | uniform packing, timestamp slot assignment, and the per-frame encode order (pass 1 → weather → resolve → submit) |
+| `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
+| `holdTransition.ts` | hold-pause state; the guard that keeps the live Maps canvas off the GPU while a pano reloads |
+
+What stays on the class is what needs the instance: `init`/`dispose`/device
+lost, the hold-pause guards, and the public renderer surface.
+
 **Pass 1** — `streetview.wgsl`
 - Source: Google Maps canvas → `copyExternalImageToTexture` → `rgba8unorm-srgb` GPU texture (stored in `videoTexture`).
 - Vertex shader: fullscreen triangle-strip (no geometry buffer).
@@ -418,7 +434,11 @@ Small math errors here cause users to walk backwards or loop in circles. Test ch
 
 ### Car Mode Rendering Stack
 
-Car mode layers a separate Three.js WebGL scene on a transparent canvas above the WebGPU output:
+Car mode layers a separate Three.js cabin scene on a transparent canvas above
+the WebGPU output. The **production default is `THREE.WebGPURenderer({ device })`
+on Street View's shared `GPUDevice`** — not a WebGL overlay; `?cabin=webgl` is
+only the escape hatch. It is still **two canvases** (panorama + cabin) until the
+one-frame compositor lands (#273):
 
 ```
 Browser Output (top to bottom)
@@ -437,7 +457,21 @@ Browser Output (top to bottom)
 - **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
 - **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
 
-**Default cabin WebGPU** (`car/interior/createCabinRenderer.ts` — PR 2 of the #249 split, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. On capable adapters (`webgpuProbe.ok` + Street View's shared `GPUDevice` from `Renderer.ts#getSharedGpuDevice` — still the only `requestDevice` call site) the default is `THREE.WebGPURenderer({ device })`. `?cabin=webgl` is the escape hatch back to a second WebGL overlay. Failed `WebGPURenderer.init()` falls back to WebGL; Street View weather stays up. The cabin never `configure()`s the panorama canvas. Custom GLSL (`ShaderMaterial`) is WebGL-only — TSL NodeMaterial twins live in `cabinTslMaterials.ts` and load with the further-lazy `three/webgpu` chunk (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`). Isolation: `src/car/` must not contain `new THREE.ShaderMaterial` (GLSL factories stay in `src/shaders/`). The WebGPU cabin uses `NoToneMapping` so weather-post ACES is the only filmic pass; output color space follows `?p3` (HDR swap-chain stays on `configureCanvasContext`). `three/webgpu` stays its own chunk — see `scripts/check-bundle-budget.sh`. PMREM environment maps work on both backends through `car/interior/cabinPmrem.ts`: `THREE.PMREMGenerator` only drives a `WebGLRenderer`, but `three/webgpu` exports a separate `PMREMGenerator` with the same call shape, captured from the same lazy chunk as the renderer. Callers use its async `fromSceneAsync` for the studio-cube fallback because the WebGPU generator warns and defers when called before `renderer.init()` resolves — which is exactly when the lighting rig is built — so `LightingBuilder` re-checks that it still owns `scene.environment` before assigning, and drops its own target if `PanoEnvironment`'s pano IBL landed first. `optimizeTextures` and `applyPerformanceProfile` (`utils/performance.ts`) run on both backends: they take the `CabinRendererBackend` explicitly rather than sniffing the renderer, because neither `getMaxAnisotropy` nor `getContext` discriminates — `WebGLRenderer` carries a deprecated top-level `getMaxAnisotropy()` and the WebGPU `Renderer` has its own unrelated `getContext(): void`. Max anisotropy comes from `capabilities.getMaxAnisotropy()` on WebGL and `renderer.getMaxAnisotropy()` (a constant 16, no device access) on WebGPU; the compressed-texture extension probe stays WebGL-only. **`applyPerformanceProfile` is the only caller of `setPixelRatio`** (#260): `GPUPerformanceProfile.maxPixelRatio` is a *cap*, not a ratio, and `resolvePixelRatio()` clamps the live `window.devicePixelRatio` against it at apply time — `GPU_PROFILES` is a module-level constant, so a ratio captured there would freeze whatever display the tab loaded on. Do not add a second `setPixelRatio` call site. (The science-lab/limousine variants' own `WebGLRenderer`s are already gone — see **Variants are scene plugins** below. Clip-distance windshield sampling of the HDR weather intermediate is PR 3 / the one-frame compositor — not this default flip.)
+**Default cabin WebGPU** (`car/interior/createCabinRenderer.ts` — PR 2 of the #249 split, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. On capable adapters (`webgpuProbe.ok` + Street View's shared `GPUDevice` from `Renderer.ts#getSharedGpuDevice`, requested in `renderer/bootDevice.ts` — still the only `requestDevice` call site) the default is `THREE.WebGPURenderer({ device })`. `?cabin=webgl` is the escape hatch back to a second WebGL overlay. Failed `WebGPURenderer.init()` falls back to WebGL; Street View weather stays up. The cabin never `configure()`s the panorama canvas. Custom GLSL (`ShaderMaterial`) is WebGL-only — TSL NodeMaterial twins live in `cabinTslMaterials.ts` and load with the further-lazy `three/webgpu` chunk (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`). Isolation: `src/car/` must not contain `new THREE.ShaderMaterial` (GLSL factories stay in `src/shaders/`). The WebGPU cabin uses `NoToneMapping` so weather-post ACES is the only filmic pass; output color space follows `?p3` (HDR swap-chain stays on `configureCanvasContext`). `three/webgpu` stays its own chunk — see `scripts/check-bundle-budget.sh`. PMREM environment maps work on both backends through `car/interior/cabinPmrem.ts`: `THREE.PMREMGenerator` only drives a `WebGLRenderer`, but `three/webgpu` exports a separate `PMREMGenerator` with the same call shape, captured from the same lazy chunk as the renderer. Callers use its async `fromSceneAsync` for the studio-cube fallback because the WebGPU generator warns and defers when called before `renderer.init()` resolves — which is exactly when the lighting rig is built — so `LightingBuilder` re-checks that it still owns `scene.environment` before assigning, and drops its own target if `PanoEnvironment`'s pano IBL landed first. `optimizeTextures` and `applyPerformanceProfile` (`utils/performance.ts`) run on both backends: they take the `CabinRendererBackend` explicitly rather than sniffing the renderer, because neither `getMaxAnisotropy` nor `getContext` discriminates — `WebGLRenderer` carries a deprecated top-level `getMaxAnisotropy()` and the WebGPU `Renderer` has its own unrelated `getContext(): void`. Max anisotropy comes from `capabilities.getMaxAnisotropy()` on WebGL and `renderer.getMaxAnisotropy()` (a constant 16, no device access) on WebGPU; the compressed-texture extension probe stays WebGL-only. **`applyPerformanceProfile` is the only caller of `setPixelRatio`** (#260): `GPUPerformanceProfile.maxPixelRatio` is a *cap*, not a ratio, and `resolvePixelRatio()` clamps the live `window.devicePixelRatio` against it at apply time — `GPU_PROFILES` is a module-level constant, so a ratio captured there would freeze whatever display the tab loaded on. Do not add a second `setPixelRatio` call site. (The science-lab/limousine variants' own `WebGLRenderer`s are already gone — see **Variants are scene plugins** below. Clip-distance windshield sampling of the HDR weather intermediate is PR 3 / the one-frame compositor — not this default flip.)
+
+**`CarInteriorBuilder` orchestrates, it does not model.** The class holds no
+geometry: it decides which sibling builders run, in what order, and merges
+their handles into one `CarInteriorBuildResult`. The builders are
+`CarInteriorDashboardBuilder` (dash, gauges, center display),
+`CarInteriorSteeringBuilder` (wheel, column, wiper stalk),
+`CarInteriorDoorBuilder` (door cards, console, instanced switch batch),
+`CarInteriorSeatBuilder`, `CarInteriorShellBuilder` (floor, mats, roof, dome
+light), `CarInteriorGlazingBuilder` (windshield, rear window, wipers),
+`CarInteriorMirrorBuilder`, and `CarInteriorVariantBuilder` (per-vehicle
+extras). Add cabin geometry to the builder that owns it, not to `buildAll()`.
+The call order in `buildAll()` is load-bearing: `glowSprites` is consumed in
+list order, so dashboard sprites come first, variant sprites next, and the dome
+sprite last.
 
 **Variants are scene plugins.** `ConvertibleMode`, `LimoAtmosphere` (`variants/limousine/LimoAtmospherePlugin.ts`) and `ScienceLabAtmosphere` (`variants/scienceLab/ScienceLabAtmosphere.ts`) each add only their vehicle-specific trim to the **shared** `interior.interiorGroup` and toggle `root.visible` from `setVehicleType()`. None of them owns a renderer, a canvas, or a camera — the driver seat, floor, roof and glass come from `CarInteriorBuilder` for every vehicle. They are constructed once in `car/runtime/lifecycle.ts` and updated from `updateCarMode()`. Because `rebuildCarInteriorForVehicle()` calls `interiorGroup.clear()` (detach, not dispose), everything living outside the builder — mirror planes and all three plugins — is re-parented through the `onCabinSocketsChanged` hook. `variants/__tests__/atmospherePlugins.test.ts` greps `src/car/variants/` for `new THREE.WebGLRenderer` and fails if one reappears: **do not add one.**
 

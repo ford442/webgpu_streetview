@@ -3,27 +3,11 @@ import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
 import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
-import {
-    configureCanvasContext,
-    checkRequiredLimits,
-    collectOptionalDeviceFeatures,
-    logAdapterCapabilities,
-    resolveAdapterRequestOptions,
-    buildCapabilityMatrix,
-    describeAdapterSelection,
-    attachUncapturedErrorHandler,
-    labelDevice,
-    getCanvasOutputFlags,
-    readDisplayOutputCapabilities,
-    resolveCanvasOutputPolicy,
-    type CanvasOutputPolicy,
-} from './deviceInit';
-import { DEVICE_LABELS } from './deviceCapabilities';
+import { configureCanvasContext, type CanvasOutputPolicy } from './deviceInit';
 import { GpuPassTimer } from './gpuPassTimer';
 import { resetGpuPassTimings } from './gpuPassTimingStore';
 import { clampSamplerAnisotropy, getSamplerAnisotropyForQuality } from './samplerAnisotropy';
 import type { QualityLevel } from '../config/visualPresets';
-import type { WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import { HoldTransitionController } from './holdTransition';
 import { TextureLifecycle } from './textureLifecycle';
 import {
@@ -31,16 +15,44 @@ import {
     RendererInitOptions,
     StreetViewRenderer,
     WeatherPostProcessMode,
-    getRendererPreference,
 } from './RendererBackend';
 import {
-    adapterInfoFromGpuAdapter,
-    publishWebGpuProbe,
-} from './webgpuBootProbe';
+    bootDevice,
+    publishBootSuccess,
+    publishBootFailure,
+    type BootProbeContext,
+} from './bootDevice';
+import {
+    buildSamplerDescriptor,
+    createStreetViewPipeline,
+} from './streetViewPass';
+import {
+    buildFramePassTimings,
+    encodeAndSubmitFrame,
+    packFrameUniforms,
+} from './frameLoop';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
-import { resolveHdrIntermediateFormat } from './shaderFeatureVariants';
 
+/**
+ * Street View's WebGPU renderer — a façade over four named modules:
+ *
+ * | Module | Owns |
+ * |---|---|
+ * | `deviceInit.ts` | adapter/limit/canvas-output policy |
+ * | `bootDevice.ts` | boot sequence and the single `requestDevice` call site |
+ * | `streetViewPass.ts` | pass-1 pipeline, bind group layout, sampler, encode |
+ * | `frameLoop.ts` | per-frame encode order and uniform packing |
+ *
+ * What stays here is what needs the instance: lifetime (init/dispose/device
+ * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
+ * rest of the app and the hold-pause probe call into.
+ *
+ * **Hold-pause danger zone**: while `holdTransition.isHoldActive()` nothing may
+ * upload the live Google Maps canvas — it is mid-reload and would flash a
+ * blurry or black frame. Every entry point that can reach an upload checks the
+ * flag first; see `renderStreetView` and `samplePanoramaStats`.
+ */
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
     private _fallbackReason?: string;
@@ -100,175 +112,41 @@ export class Renderer implements StreetViewRenderer {
         this.isDestroyed = false;
         this.isDisposed = false;
 
-        const preference = getRendererPreference();
-        const webglPreferenceDeferred = preference === 'webgl';
-
-        if (!navigator.gpu) {
-            this._fallbackReason = 'WebGPU is not supported in this browser';
-            publishWebGpuProbe({
-                ok: false,
-                stage: 'navigator',
-                reason: this._fallbackReason,
-                preference,
-                webglPreferenceDeferred,
-            });
-            console.warn('WebGPU not supported. Hard-fail — no live GL weather.');
-            return false;
-        }
-
+        let probe: BootProbeContext | undefined;
         try {
-            const adapterOptions = await resolveAdapterRequestOptions(options);
-            const adapter = await navigator.gpu.requestAdapter(adapterOptions);
-            if (!adapter) {
-                this._fallbackReason = 'No compatible WebGPU adapter found';
-                publishWebGpuProbe({
-                    ok: false,
-                    stage: 'adapter',
-                    reason: this._fallbackReason,
-                    preference,
-                    webglPreferenceDeferred,
-                });
-                console.warn('No WebGPU adapter found. Hard-fail — no live GL weather.');
-                return false;
-            }
-
-            const probeAdapter = adapterInfoFromGpuAdapter(adapter);
-
-            const limitCheck = checkRequiredLimits(adapter, this.weatherPostProcessMode);
-            if (!limitCheck.ok) {
-                this._fallbackReason = limitCheck.reason;
-                publishWebGpuProbe({
-                    ok: false,
-                    stage: 'limits',
-                    reason: this._fallbackReason,
-                    preference,
-                    webglPreferenceDeferred,
-                    adapter: probeAdapter,
-                });
-                console.warn('[Renderer] WebGPU adapter limits are insufficient:', limitCheck.reason);
-                return false;
-            }
-
-            const requiredFeatures = collectOptionalDeviceFeatures(adapter, {
-                featureLevel: describeAdapterSelection(adapterOptions).featureLevel,
-            });
-
-            try {
-                this.device = await adapter.requestDevice({
-                    label: DEVICE_LABELS.device,
-                    requiredFeatures,
-                    requiredLimits: limitCheck.requiredLimits,
-                });
-            } catch (deviceError) {
-                this._fallbackReason = deviceError instanceof Error
-                    ? deviceError.message
-                    : String(deviceError);
-                publishWebGpuProbe({
-                    ok: false,
-                    stage: 'device',
-                    reason: this._fallbackReason,
-                    preference,
-                    webglPreferenceDeferred,
-                    adapter: probeAdapter,
-                });
-                console.warn('[Renderer] requestDevice failed:', this._fallbackReason);
-                return false;
-            }
-            labelDevice(this.device);
-
-            this.device.lost.then((info) => {
-                console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
-                this.dispose({ destroyDevice: false, unconfigureContext: true, markDestroyed: true });
-                this.onLostCallback?.(info);
-            });
-
-            const context = this.canvas.getContext('webgpu');
-            if (!context) {
-                this._fallbackReason = 'Could not acquire a WebGPU canvas context';
-                publishWebGpuProbe({
-                    ok: false,
-                    stage: 'canvas',
-                    reason: this._fallbackReason,
-                    preference,
-                    webglPreferenceDeferred,
-                    adapter: probeAdapter,
-                });
-                console.warn('Could not get WebGPU context. Hard-fail — no live GL weather.');
-                return false;
-            }
-
-            this.context = context;
-            const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
-            this.canvasOutputPolicy = resolveCanvasOutputPolicy({
-                preferredFormat,
-                enabledFeatures: requiredFeatures,
-                flags: getCanvasOutputFlags(),
-                ...readDisplayOutputCapabilities(),
-            });
-            if (this.canvasOutputPolicy.hdrRejectedReason) {
-                console.info('[Renderer] HDR canvas not enabled:', this.canvasOutputPolicy.hdrRejectedReason);
-            }
-            const appliedCanvas = configureCanvasContext(
-                this.context,
-                this.device,
-                preferredFormat,
-                this.canvasOutputPolicy,
-            );
-            // The HDR path swaps the swap-chain format, so pipelines follow what was applied.
-            this.presentationFormat = appliedCanvas.format;
-            // Resize re-configures; keep the policy in sync with what the browser accepted.
-            this.canvasOutputPolicy = {
-                hdr: appliedCanvas.toneMapping === 'extended',
-                p3: appliedCanvas.colorSpace === 'display-p3',
-            };
-
-            const intermediateFormat = resolveHdrIntermediateFormat(requiredFeatures);
-            this.textures.setIntermediateFormat(intermediateFormat);
-
-            const capabilityMatrix = buildCapabilityMatrix(
-                this.weatherPostProcessMode,
-                limitCheck.requiredLimits!,
-                requiredFeatures,
-                {
-                    ...describeAdapterSelection(adapterOptions),
-                    canvas: appliedCanvas,
-                    intermediateFormat,
+            const boot = await bootDevice({
+                canvas: this.canvas,
+                weatherPostProcessMode: this.weatherPostProcessMode,
+                initOptions: options,
+                onDeviceLost: (info) => {
+                    this.dispose({ destroyDevice: false, unconfigureContext: true, markDestroyed: true });
+                    this.onLostCallback?.(info);
                 },
-            );
-            logAdapterCapabilities(
-                adapter,
-                adapterOptions.powerPreference,
-                this.weatherPostProcessMode,
-                requiredFeatures,
-                capabilityMatrix,
-            );
-            attachUncapturedErrorHandler(this.device, capabilityMatrix);
+            });
 
-            // Boot-probe compute smoke: catch Edge/Chrome shader backend gaps before weather mounts.
-            try {
-                await this.runComputeBootProbe();
-            } catch (computeError) {
-                this._fallbackReason = computeError instanceof Error
-                    ? computeError.message
-                    : String(computeError);
-                publishWebGpuProbe({
-                    ok: false,
-                    stage: 'compute',
-                    reason: this._fallbackReason,
-                    preference,
-                    webglPreferenceDeferred,
-                    adapter: probeAdapter,
-                    capabilityMatrix,
-                });
-                console.warn('[Renderer] Compute boot probe failed:', this._fallbackReason);
-                this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
+            if (!boot.ok) {
+                this._fallbackReason = boot.reason;
+                // The compute-probe failure hands back a live device; adopt it
+                // so our own teardown runs and the flags stay truthful.
+                if (boot.device && boot.context) {
+                    this.device = boot.device;
+                    this.context = boot.context;
+                    this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
+                }
                 return false;
             }
+
+            probe = boot.probe;
+            this.device = boot.device;
+            this.context = boot.context;
+            this.presentationFormat = boot.presentationFormat;
+            this.canvasOutputPolicy = boot.canvasOutputPolicy;
+            this.textures.setIntermediateFormat(boot.intermediateFormat);
 
             this.samplerAnisotropy = 1;
-            this.sampler = this.device.createSampler(this.buildSamplerDescriptor(1));
+            this.sampler = this.device.createSampler(buildSamplerDescriptor(1));
 
-            if (capabilityMatrix.timestampQueriesAvailable) {
+            if (boot.timestampQueriesAvailable) {
                 this.gpuPassTimer = new GpuPassTimer(this.device);
             } else {
                 this.gpuPassTimer = null;
@@ -282,7 +160,8 @@ export class Renderer implements StreetViewRenderer {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            await this.createPipeline();
+            this.pipeline = await createStreetViewPipeline(this.device, this.textures.intermediateFormat);
+            this.textures.updateBindGroup();
 
             this.weatherPostProcessor = this.weatherPostProcessMode === 'compute'
                 ? new ComputeWeatherPostProcessor(this.device, this.context, this.canvas)
@@ -303,44 +182,16 @@ export class Renderer implements StreetViewRenderer {
                 console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
             }
 
-            publishWebGpuProbe({
-                ok: true,
-                stage: 'ok',
-                reason: '',
-                preference,
-                webglPreferenceDeferred,
-                adapter: probeAdapter,
-                capabilityMatrix,
-            });
-
+            publishBootSuccess(probe);
             return true;
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
-            publishWebGpuProbe({
-                ok: false,
-                stage: 'device',
-                reason: this._fallbackReason,
-                preference,
-                webglPreferenceDeferred,
-            });
-            console.warn('WebGPU init failed:', e instanceof Error ? e.message : String(e));
+            if (probe) {
+                publishBootFailure(probe, 'device', this._fallbackReason);
+            }
+            console.warn('WebGPU init failed:', this._fallbackReason);
             return false;
         }
-    }
-
-    /** Tiny @compute pipeline create — surfaces backend compile failures during boot. */
-    private async runComputeBootProbe(): Promise<void> {
-        const shader = this.device.createShaderModule({
-            label: 'streetview-boot-compute-probe',
-            code: `@compute @workgroup_size(1) fn main() {}`,
-        });
-        this.device.createComputePipeline({
-            label: 'streetview-boot-compute-probe-pipeline',
-            layout: 'auto',
-            compute: { module: shader, entryPoint: 'main' },
-        });
-        // Yield so async compilation / uncapturederror can surface before we continue.
-        await this.device.queue.onSubmittedWorkDone();
     }
 
     public getWeatherPostProcessMode(): WeatherPostProcessMode {
@@ -352,9 +203,10 @@ export class Renderer implements StreetViewRenderer {
     }
 
     /**
-     * The single shared `GPUDevice` (see `requestDevice` above — the only
-     * allowed call site). Car mode adopts this device instead of creating its
-     * own; never expose it before `init()` has resolved or after teardown.
+     * The single shared `GPUDevice` (see `bootDevice.ts` — the only allowed
+     * `requestDevice` call site). Car mode adopts this device instead of
+     * creating its own; never expose it before `init()` has resolved or after
+     * teardown.
      */
     public getSharedGpuDevice(): GPUDevice | undefined {
         return this.isDestroyed || this.isDisposed ? undefined : this.device;
@@ -409,81 +261,7 @@ export class Renderer implements StreetViewRenderer {
         const anisotropy = clampSamplerAnisotropy(requested, this.device);
         if (anisotropy === this.samplerAnisotropy) return;
         this.samplerAnisotropy = anisotropy;
-        this.sampler = this.device.createSampler(this.buildSamplerDescriptor(anisotropy));
-        this.textures.updateBindGroup();
-    }
-
-    private buildSamplerDescriptor(maxAnisotropy: number): GPUSamplerDescriptor {
-        return {
-            magFilter: 'linear',
-            minFilter: 'linear',
-            mipmapFilter: 'linear',
-            addressModeU: 'clamp-to-edge',
-            addressModeV: 'clamp-to-edge',
-            addressModeW: 'clamp-to-edge',
-            maxAnisotropy,
-        };
-    }
-
-    private async createPipeline(): Promise<void> {
-        const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/streetview.wgsl`;
-        let shaderCode: string;
-        try {
-            const response = await fetch(shaderUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to load streetview.wgsl: ${response.status} ${response.statusText}`);
-            }
-            shaderCode = await response.text();
-        } catch (error) {
-            console.error(`[Renderer] Failed to load streetview shader from ${shaderUrl}:`, error);
-            throw error;
-        }
-
-        const shaderModule = this.device.createShaderModule({ code: shaderCode });
-
-        const bindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    sampler: { type: 'filtering' as GPUSamplerBindingType },
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    texture: { sampleType: 'float' as GPUTextureSampleType },
-                },
-                {
-                    binding: 2,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    buffer: { type: 'uniform' as GPUBufferBindingType },
-                },
-                {
-                    binding: 3,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    texture: { sampleType: 'float' as GPUTextureSampleType },
-                },
-            ],
-        });
-
-        const pipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout],
-        });
-
-        this.pipeline = this.device.createRenderPipeline({
-            layout: pipelineLayout,
-            vertex: {
-                module: shaderModule,
-                entryPoint: 'vs_main',
-            },
-            fragment: {
-                module: shaderModule,
-                entryPoint: 'fs_main',
-                targets: [{ format: this.textures.intermediateFormat }],
-            },
-            primitive: { topology: 'triangle-strip' },
-        });
-
+        this.sampler = this.device.createSampler(buildSamplerDescriptor(anisotropy));
         this.textures.updateBindGroup();
     }
 
@@ -664,82 +442,35 @@ export class Renderer implements StreetViewRenderer {
         this.submitPanoramaFrame(heading, pitch, zoom);
     }
 
+    /** Pack this frame's uniforms and hand the encode order to `frameLoop`. */
     private submitPanoramaFrame(heading?: number, pitch?: number, zoom?: number): void {
         try {
-            const time = (Date.now() - this.startTime) / 1000;
             this.weatherPostProcessor?.updateWeatherAnimation();
 
-            const z = zoom || 1;
             const panX = ((heading || 0) % 360) / 360;
             const panY = ((pitch || 0) + 90) / 180;
-
             this.transitionManager?.recordLastPan(panX, panY);
 
-            const capturePan = this.holdTransition.getCapturePan();
-            const uniforms = new Float32Array([
-                time, z, panX, panY,
-                this.transitionManager?.inlineProgress ?? 0.0,
-                this.holdTransition.isHoldActive() ? 1.0 : 0.0,
-                capturePan.x,
-                capturePan.y,
-            ]);
-            this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
-
-            const canvasWidth = this.canvas.width;
-            const canvasHeight = this.canvas.height;
-            this.textures.ensureIntermediateTexture(canvasWidth, canvasHeight);
-
-            const commandEncoder = this.device.createCommandEncoder();
-            const pass1Timing = this.gpuPassTimer
-                ? { timer: this.gpuPassTimer, startIndex: 0, endIndex: 1 }
-                : undefined;
-            const weatherTiming: WeatherPassTimingContext | undefined = this.gpuPassTimer
-                ? {
-                    timer: this.gpuPassTimer,
-                    weatherStartIndex: 2,
-                    weatherEndIndex: 3,
-                    blitStartIndex: this.weatherPostProcessMode === 'compute' ? 4 : undefined,
-                    blitEndIndex: this.weatherPostProcessMode === 'compute' ? 5 : undefined,
-                }
-                : undefined;
-
-            const didTransition = this.transitionManager?.renderTransitionPass(
-                commandEncoder,
-                this.textures.intermediateTextureView,
-                this.textures.videoTexture!,
-                this.pipeline,
-                this.textures.bindGroup,
-                pass1Timing,
-            );
-
-            if (!didTransition) {
-                const mainPass = commandEncoder.beginRenderPass({
-                    colorAttachments: [{
-                        view: this.textures.intermediateTextureView,
-                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                        loadOp: 'clear' as GPULoadOp,
-                        storeOp: 'store' as GPUStoreOp,
-                    }],
-                });
-                if (pass1Timing) {
-                    pass1Timing.timer.markPassStart(mainPass, pass1Timing.startIndex);
-                }
-                mainPass.setPipeline(this.pipeline);
-                mainPass.setBindGroup(0, this.textures.bindGroup);
-                mainPass.draw(4, 1, 0, 0);
-                if (pass1Timing) {
-                    pass1Timing.timer.markPassEnd(mainPass, pass1Timing.endIndex);
-                }
-                mainPass.end();
-            }
-
-            this.weatherPostProcessor?.renderPass(commandEncoder, weatherTiming);
-
-            if (this.gpuPassTimer) {
-                this.gpuPassTimer.resolveAndScheduleRead(commandEncoder);
-            }
-
-            this.device.queue.submit([commandEncoder.finish()]);
+            encodeAndSubmitFrame({
+                device: this.device,
+                canvas: this.canvas,
+                textures: this.textures,
+                pipeline: this.pipeline,
+                uniformBuffer: this.uniformBuffer,
+                uniforms: packFrameUniforms({
+                    time: (Date.now() - this.startTime) / 1000,
+                    zoom: zoom || 1,
+                    panX,
+                    panY,
+                    inlineTransitionProgress: this.transitionManager?.inlineProgress ?? 0.0,
+                    holdActive: this.holdTransition.isHoldActive(),
+                    capturePan: this.holdTransition.getCapturePan(),
+                }),
+                transitionManager: this.transitionManager,
+                weatherPostProcessor: this.weatherPostProcessor,
+                gpuPassTimer: this.gpuPassTimer,
+                timings: buildFramePassTimings(this.gpuPassTimer, this.weatherPostProcessMode),
+            });
         } catch {
             // Suppress sporadic frame errors
         }
@@ -754,6 +485,8 @@ export class Renderer implements StreetViewRenderer {
     ): void {
         if (this.isDestroyed || !this.device || !this.pipeline) return;
 
+        // Hold-pause: the live Maps canvas is mid-reload, so re-render the
+        // frozen frame instead of uploading whatever is on it right now.
         if (this.holdTransition.isHoldActive()) {
             this.renderHeldFrame(heading, pitch, zoom);
             return;

@@ -3,14 +3,13 @@ import { WebGPUCanvas, LoadingOverlay } from '../../components';
 import { MainView } from '../../views';
 import type { UseAppConnectionResult } from '../useAppConnection';
 import type { MapsBootstrapState } from '../useMapsBootstrap';
-import type { MapsLoadingOverlayConfig } from '../mapsLoadingOverlay';
+import { buildMapsLoadingOverlay } from '../mapsLoadingOverlay';
 
 export interface StreetViewStageProps {
   maps: MapsBootstrapState;
   connection: UseAppConnectionResult;
   setCanvas: (canvas: HTMLCanvasElement | null) => void;
   setPanorama: (pano: google.maps.StreetViewPanorama | null) => void;
-  mapsLoadingOverlay: MapsLoadingOverlayConfig | null;
 }
 
 /** Hidden Maps scraper, WebGPU canvas, MainView, and loading overlay stack. */
@@ -19,8 +18,26 @@ export function StreetViewStage({
   connection,
   setCanvas,
   setPanorama,
-  mapsLoadingOverlay,
 }: StreetViewStageProps) {
+  // Derived from the same `maps` + `connection` bags the stage already holds,
+  // so the shell does not have to thread a second view of them through.
+  const mapsLoadingOverlay = buildMapsLoadingOverlay({
+    isConnected: connection.isConnected,
+    effectiveMapsKey: maps.effectiveMapsKey,
+    mapsLoadStatus: maps.mapsLoadStatus,
+    isRetryingMapsAuth: maps.isRetryingMapsAuth,
+    webgpuStatus: connection.webgpuStatus,
+    isCanvasReady: connection.isCanvasReady,
+    canvasError: maps.canvasError,
+    mapsAuthError: maps.mapsAuthError,
+    scraperHealth: maps.scraperHealth,
+    handleRetryMapsAuth: maps.handleRetryMapsAuth,
+    webgpuFailureReason:
+      connection.rendererBackendInfo?.fallbackReason ||
+      (typeof window !== 'undefined' ? window.webgpuProbe?.reason : undefined) ||
+      null,
+  });
+
   return (
     <>
       <div

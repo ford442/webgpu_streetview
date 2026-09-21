@@ -54,11 +54,16 @@
 
 ## Residual / open (track as issues)
 
-| Item | Notes |
-|------|-------|
-| Cruise hold-pause polish (#6 above) | Hold-pause is shipped; tune feel via `panoramaStability.ts` + probe |
-| Gauge SSOT / compact HUD (#7) | See foundation split: `CarModeView` hooks under `src/views/car/` |
-| Shader design pass (#8) | **Looks pack** — named looks + WebGL haze/rain-darken parity; see `docs/looks/README.md` |
-| Foundation module splits | ✅ `GlobeView` + `MobileUI` contracts (`src/components/globe/`, `src/components/mobile/`) |
+Each row points at the live issue that owns it. Do not re-open the numbered
+sections above — they are history.
+
+| Item | Owning issue | Notes |
+|------|--------------|-------|
+| Foundation housekeeping: `AppShell` / `Renderer` / `CarInteriorBuilder` splits + doc SSOT | **#274** | AppShell ≤ ~350 LOC, `Renderer` a façade over `deviceInit` + `streetViewPass` + `frameLoop`, `CarInteriorBuilder` orchestration only. Still exactly one `requestDevice`. |
+| One-frame compositor (wet windshield, clip distances, skip-ACES) | **#273** | Collapses the panorama + cabin two-canvas composite into one frame. Not #274's scope. |
+| Cabin lighting look pass | **#223** | Interior light ramps / glow registry polish. |
+| Cruise hold-pause feel | **#273** | Hold-pause itself is shipped and its probe surface (`window.__STREETVIEW_PROBE__`) is frozen; remaining feel work rides the one-frame compositor. Tune via `panoramaStability.ts`. |
+| Gauge SSOT / compact HUD | **#163 / #164** | Affix gauges to the physical dash; see `CarModeView` hooks under `src/views/car/`. |
+| Shader design pass (rain / sunset cohesion) | **#8 above → looks pack** | Named looks + WebGL haze/rain-darken parity shipped; residual is reference PNG capture into `docs/looks/<id>-webgpu.png`. |
 
 For architecture and danger zones, read [`AGENTS.md`](./AGENTS.md) first.
