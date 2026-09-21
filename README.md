@@ -607,7 +607,7 @@ Index  Field            Range / Notes
 | `CLAUDE.md` | Short pointer to AGENTS.md |
 | `docs/DEVELOPER_CONTEXT.md` | Architecture deep-dive, complexity hotspots, data flows |
 | `docs/SHARED_SESSIONS.md` | WebRTC rooms, STUN/TURN via `iceServers.ts` |
-| `src/docs/GRAPHICS.md` | Graphics pipeline, material system, shader reference |
+| `docs/GRAPHICS.md` | Graphics pipeline — weather/atmosphere looks, cohesion model, camera FX (`src/docs/GRAPHICS.md` is a stub pointing here) |
 | `weekly_plan.md` | Active residuals (not archived checklists) |
 
 ---

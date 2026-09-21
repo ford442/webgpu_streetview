@@ -18,7 +18,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Layer | Technology | Version |
 |-------|------------|---------|
 | Frontend Framework | React | 19.1.1 |
-| Language | TypeScript | 4.9.5 |
+| Language | TypeScript | ~5.4.5 |
 | Build Tool | Vite 5 + Vitest | — |
 | Rendering API | WebGPU | Native browser API |
 | 3D Overlay | Three.js | 0.180.0 (pinned) |
@@ -418,7 +418,11 @@ Small math errors here cause users to walk backwards or loop in circles. Test ch
 
 ### Car Mode Rendering Stack
 
-Car mode layers a separate Three.js WebGL scene on a transparent canvas above the WebGPU output:
+Car mode layers a separate Three.js cabin scene on a transparent canvas above
+the WebGPU output. The **production default is `THREE.WebGPURenderer({ device })`
+on Street View's shared `GPUDevice`** — not a WebGL overlay; `?cabin=webgl` is
+only the escape hatch. It is still **two canvases** (panorama + cabin) until the
+one-frame compositor lands (#273):
 
 ```
 Browser Output (top to bottom)

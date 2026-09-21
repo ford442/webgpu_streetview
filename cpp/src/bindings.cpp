@@ -26,7 +26,7 @@
 
 extern "C" {
 
-/** Seed the permutation table. Canonical export name matches WAT: 'seed'. */
+/** Seed the permutation table. Canonical ABI export name: 'seed'. */
 EMSCRIPTEN_KEEPALIVE
 void seed(unsigned int s) { sw_seed(s); }
 

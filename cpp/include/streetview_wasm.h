@@ -8,7 +8,11 @@
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine,
  *   normalize_angle, signed_angle_diff, fill_engine_noise, fill_cabin_ir,
- *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *   fill_hrtf, luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *
+ * This comment is a convenience copy — the SSOT for the export set is
+ * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
+ * CMakeLists.txt, the TS loader, this header, and the committed binary.
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
  * canonical names for Emscripten EXPORTED_FUNCTIONS.
