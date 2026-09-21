@@ -17,7 +17,8 @@ This file is a short pointer so Claude Code sessions land on the right doc witho
 - **Hold-pause** (`Renderer.ts`, `WebGPUCanvas.tsx`, `useStreetView.tsx`) — never upload live GMaps canvas while `holdActive`; use `window.__STREETVIEW_PROBE__`.
 - **Input hijacking** — UI overlays must `stopPropagation` on mouse/keyboard events.
 - **Maps API keys** — runtime `public/config.js` / deploy `MAPS_API_KEY`; referrer allowlist per host.
-- **Shader uniform layout** — `src/renderer/weatherUniformLayout.ts` must match both weather WGSL passes.
+- **Shader uniform layout** — `src/renderer/weatherUniformLayout.ts` must match both weather WGSL passes. Shader *variants* (subgroups, dual-source precip, the `?hdr` output-referred grade) are source substitutions at pipeline-create time in `shaderFeatureVariants.ts` — keep their literal bodies byte-identical to the shipped `.wgsl`.
+- **One-frame compositor** — the default WebGPU cabin renders into a `GPUTexture` (`car/interior/cabinFrameTarget.ts`) that `renderer/cabinComposite.ts` draws over the swap chain. `renderer/cabinOverlayRegistry.ts` must stay a single module instance across chunks; cinema/snapshots skip the 2D latch only when `isCabinCompositedInFrame()` is true.
 - **WASM numeric layer** — algorithms live in `cpp/src/noise_module.cpp` and ship via emcc (`npm run build:wasm`). Changing the C++ means regenerating `cpp/tests/goldens*` (`npm run gen:wasm-goldens`) and re-running `npm run test:cpp`.
 
 ## Commands

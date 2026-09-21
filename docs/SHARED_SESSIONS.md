@@ -70,15 +70,20 @@ Keyed Playwright covering a live guest join is a follow-up; unit tests cover seq
 
 Cinema WebM records the **Street View renderer canvas** (graded road / weather) with the **cabin composited over it** whenever car mode is on.
 
-The cabin is still a separate canvas on its own renderer, so this is a 2D composite, not one swapchain — the single-GPUDevice cabin work will make it one. The compositing has to respect the cabin's drawing buffer lifetime: `createCabinRenderer.ts` does not pay for `preserveDrawingBuffer`, so the cabin canvas is only readable inside the frame that drew it. `car/runtime/frameCapture.ts` therefore publishes that moment (`updateCarMode()` calls `notifyCabinFrameRendered()` right after `interior.render()`), the recorder copies the cabin into a plain 2D latch there, and its own `requestAnimationFrame` composites road → latch → attribution footer at capture rate. Reading the cabin from the recorder's rAF instead would race the car render loop and latch blank frames.
+### One-frame path (default WebGPU cabin)
+
+On the default shared-device WebGPU cabin there is **nothing to composite**: the cabin is drawn into the Street View swap chain in the road frame's own command encoder (`renderer/cabinComposite.ts`), so the recorded canvas already *is* road + cabin. `needsCabinOverlayLatch(renderer)` returns false, `CinemaOverlay` builds the recorder with no overlay, and `handleTakeSnapshot` skips the wait entirely — stills are immediate and already include the cabin.
+
+### 2D latch (WebGL hatch and every fallback)
+
+`?cabin=webgl`, a failed `WebGPURenderer.init()`, or any of the stand-down cases in `docs/RENDERER_FALLBACK.md` put the cabin back on its own canvas, and cinema re-composites in 2D. That has to respect the cabin's drawing-buffer lifetime: `createCabinRenderer.ts` does not pay for `preserveDrawingBuffer`, so the cabin canvas is only readable inside the frame that drew it. `car/runtime/frameCapture.ts` publishes that moment (`updateCarMode()` calls `notifyCabinFrameRendered()` right after `interior.render()`), the recorder copies the cabin into a plain 2D latch there, and its own `requestAnimationFrame` composites road → latch → attribution footer at capture rate. Reading the cabin from the recorder's rAF instead would race the car render loop and latch blank frames.
 
 **Fallback is road-only**, silently and correctly: outside car mode, before the lazy car chunk has loaded, or if car mode is toggled off mid-clip, nothing fires the tap, the latch stays transparent, and the clip is just the graded road.
 
-A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. **Car-mode stills latch the cabin the same way** — `handleTakeSnapshot` waits for the next `notifyCabinFrameRendered` tap (400ms timeout) and composites road + cabin through `captureCompositedStill`. Free-look stills skip that wait (no cabin canvas). **Remaining road-only cases:**
+A JSON sidecar (`panoIds`, `imageDates`, `lookId`, `vehicleType`) downloads with the clip. **Car-mode stills latch the cabin the same way** on this path — `handleTakeSnapshot` waits for the next `notifyCabinFrameRendered` tap (400ms timeout) and composites road + cabin through `captureCompositedStill`. Free-look stills skip that wait (no cabin canvas). **Remaining road-only cases:**
 
 - [ ] Historical compare before/after (`useHistoricalCompare` still reads `renderer.getCanvasDataURL()`)
-- [ ] Timed-out / inactive cabin overlay (same silent fallback as clips)
-- [ ] One-frame compositor (PR 3 of #249) so stills and clips share a single swapchain instead of a 2D latch
+- [ ] Timed-out / inactive cabin overlay on the 2D-latch path (same silent fallback as clips)
 
 Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Street View Static API.
 
@@ -99,7 +104,9 @@ Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Str
 | `src/utils/weatherPresetSync.ts` | Weather preset serialize/parse |
 | `src/utils/studioLink.ts` | Share URLs: `?look=&year=&vehicle=` plus location |
 | `src/utils/cinemaSidecar.ts` | WebM metadata JSON |
-| `src/car/runtime/frameCapture.ts` | Cabin canvas + post-render tap that lets cinema composite the cabin |
+| `src/renderer/cabinComposite.ts` | Cabin-over-road pass + `needsCabinOverlayLatch` |
+| `src/car/interior/cabinFrameTarget.ts` | Cabin → `GPUTexture` redirect (three `setOutputRenderTarget`) |
+| `src/car/runtime/frameCapture.ts` | Cabin canvas + post-render tap for the 2D-latch fallback |
 | `src/utils/exifGps.ts` | JPEG GPS + UserComment film-set fields |
 
 ## Audio

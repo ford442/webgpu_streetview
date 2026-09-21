@@ -281,7 +281,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
             const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
             const isTransitioning = isTransitioningRef.current;
-            const skipFrame = shouldBypassAdaptiveSkip(panoramaUpdatePaused, isTransitioning)
+            // In car mode the cabin is drawn into this frame rather than
+            // stacked over it in CSS (`renderer/cabinComposite.ts`), so a
+            // skipped road frame would also freeze the cabin.
+            const cabinComposited =
+                currentRendererRef.current?.isCabinCompositedInFrame?.() === true;
+            const skipFrame = shouldBypassAdaptiveSkip(
+                panoramaUpdatePaused,
+                isTransitioning,
+                cabinComposited,
+            )
                 ? false
                 : shouldSkipFrameRef.current();
 
@@ -297,6 +306,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 sourceChanged: sourceChangeFlagRef.current,
                 frameCount: frameCountRef.current,
                 frameSkip: FRAME_SKIP,
+                cabinComposited,
             });
 
             // Google Maps canvas already reflects heading/pitch via setPov — pass through

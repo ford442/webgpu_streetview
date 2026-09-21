@@ -29,10 +29,13 @@ import {
 import {
     buildFramePassTimings,
     encodeAndSubmitFrame,
+    encodeCabinComposite,
     packFrameUniforms,
 } from './frameLoop';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
+import { CabinCompositePass } from './cabinComposite';
+import { getCabinOverlaySource } from './cabinOverlayRegistry';
 
 /**
  * Street View's WebGPU renderer — a façade over four named modules:
@@ -43,6 +46,7 @@ import { histDownsampleSize } from './gpuChores/lumaMath';
  * | `bootDevice.ts` | boot sequence and the single `requestDevice` call site |
  * | `streetViewPass.ts` | pass-1 pipeline, bind group layout, sampler, encode |
  * | `frameLoop.ts` | per-frame encode order and uniform packing |
+ * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
  * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
@@ -77,6 +81,7 @@ export class Renderer implements StreetViewRenderer {
     private weatherPostProcessMode: WeatherPostProcessMode = 'fragment';
     private gpuPassTimer: GpuPassTimer | null = null;
     private gpuChores: GpuChores | null = null;
+    private cabinComposite: CabinCompositePass | null = null;
     private samplerAnisotropy: number = 1;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
@@ -166,7 +171,25 @@ export class Renderer implements StreetViewRenderer {
             this.weatherPostProcessor = this.weatherPostProcessMode === 'compute'
                 ? new ComputeWeatherPostProcessor(this.device, this.context, this.canvas)
                 : new WeatherPostProcessor(this.device, this.context, this.canvas);
-            await this.weatherPostProcessor.init(this.presentationFormat);
+            await this.weatherPostProcessor.init(this.presentationFormat, {
+                // What `configureCanvasContext` actually applied, not what `?hdr`
+                // asked for — a rejected HDR configure stays on the SDR ACES curve.
+                canvasToneMapping: this.canvasOutputPolicy.hdr ? 'extended' : 'standard',
+            });
+
+            // Non-fatal: a cabin composite that fails to build leaves car mode on
+            // the CSS overlay + 2D cinema latch, and the road frame is unaffected.
+            this.cabinComposite = new CabinCompositePass(this.device);
+            try {
+                await this.cabinComposite.init(this.presentationFormat);
+            } catch (e) {
+                console.warn(
+                    '[Renderer] Cabin composite pass unavailable — car mode stays on the CSS overlay:',
+                    e,
+                );
+                this.cabinComposite.dispose();
+                this.cabinComposite = null;
+            }
 
             this.gpuChores = new GpuChores(this.device);
             void this.gpuChores.ensureReady();
@@ -296,6 +319,8 @@ export class Renderer implements StreetViewRenderer {
             this.weatherPostProcessor?.dispose();
             this.gpuChores?.destroy();
             this.gpuChores = null;
+            this.cabinComposite?.dispose();
+            this.cabinComposite = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
             if (unconfigureContext) {
@@ -377,7 +402,38 @@ export class Renderer implements StreetViewRenderer {
         const canvasWidth = this.canvas.width;
         const canvasHeight = this.canvas.height;
         this.textures.ensureIntermediateTexture(canvasWidth, canvasHeight);
-        this.weatherPostProcessor?.renderWeatherOnly(this.textures.intermediateTextureView);
+        const cabin = this.resolveCabinComposite();
+        this.weatherPostProcessor?.renderWeatherOnly(
+            this.textures.intermediateTextureView,
+            (encoder) => encodeCabinComposite(encoder, cabin, () => this.getSwapChainView()),
+        );
+    }
+
+    /**
+     * Pick up whatever car mode published this frame (`cabinOverlayRegistry`).
+     * Called from both encode paths and from `isCabinCompositedInFrame`, so the
+     * answer capture reads is the same one the next frame will draw.
+     */
+    private resolveCabinComposite(): CabinCompositePass | null {
+        if (!this.cabinComposite || this.isDestroyed) return null;
+        this.cabinComposite.setSource(getCabinOverlaySource());
+        return this.cabinComposite;
+    }
+
+    private getSwapChainView(): GPUTextureView | null {
+        if (this.isDestroyed || !this.context) return null;
+        return this.context.getCurrentTexture().createView();
+    }
+
+    /**
+     * True when the road frame this renderer presents already contains the
+     * cabin. Cinema and snapshots read it to skip the 2D overlay latch — see
+     * `utils/canvasRecorder.ts` and `car/runtime/frameCapture.ts`. False in
+     * free-look, on the `?cabin=webgl` hatch, and any frame the cabin has not
+     * produced a texture for, which are exactly the cases the latch still covers.
+     */
+    public isCabinCompositedInFrame(): boolean {
+        return this.resolveCabinComposite()?.isActive() ?? false;
     }
 
     public beginTransition(mode: string = 'zoom'): void {
@@ -468,6 +524,8 @@ export class Renderer implements StreetViewRenderer {
                 }),
                 transitionManager: this.transitionManager,
                 weatherPostProcessor: this.weatherPostProcessor,
+                cabinComposite: this.resolveCabinComposite(),
+                getSwapChainView: () => this.getSwapChainView(),
                 gpuPassTimer: this.gpuPassTimer,
                 timings: buildFramePassTimings(this.gpuPassTimer, this.weatherPostProcessMode),
             });

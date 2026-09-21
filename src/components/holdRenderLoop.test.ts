@@ -33,6 +33,38 @@ describe('holdRenderLoop', () => {
     ).toBe(false);
   });
 
+  it('never skips a road frame while the cabin is composited into it', () => {
+    // The cabin no longer has a canvas of its own to animate on, so a skipped
+    // road frame would freeze the wipers and gauges too.
+    expect(shouldBypassAdaptiveSkip(false, false, true)).toBe(true);
+    expect(
+      shouldRenderHeldFrameThisTick({
+        panoramaUpdatePaused: false,
+        skipFrame: true,
+        isTransitioning: false,
+        sourceChanged: false,
+        frameCount: 1,
+        frameSkip: 2,
+        cabinComposited: true,
+      })
+    ).toBe(true);
+  });
+
+  it('keeps the historical skip policy when the cabin is a second canvas', () => {
+    expect(shouldBypassAdaptiveSkip(false, false, false)).toBe(false);
+    expect(
+      shouldRenderHeldFrameThisTick({
+        panoramaUpdatePaused: false,
+        skipFrame: false,
+        isTransitioning: false,
+        sourceChanged: false,
+        frameCount: 1,
+        frameSkip: 2,
+        cabinComposited: false,
+      })
+    ).toBe(false);
+  });
+
   it('keeps rendering during the release crossfade (transitioning but no longer paused)', () => {
     expect(
       shouldRenderHeldFrameThisTick({

@@ -139,7 +139,14 @@ class StreetViewProbe {
 
   /** Call once per rendered frame while holdActive is true. No-op unless pixel
    * watch is enabled. Heuristic only: flags abrupt jumps, not gradual drift from
-   * weather animation or intentional look-around panning. */
+   * weather animation or intentional look-around panning.
+   *
+   * In car mode the sampled canvas also contains the composited cabin
+   * (`renderer/cabinComposite.ts`), so cabin animation is inside this signal.
+   * The sample is a 64px box at the centre of the frame — the windshield, not
+   * the dash — and `scripts/hold-pause-probe.mjs` never enters car mode, but
+   * read a warning there as "something changed", not "GMaps leaked", until you
+   * have ruled the cabin out. */
   checkPixelDrift(canvas: HTMLCanvasElement): void {
     if (!this.pixelWatchEnabled) return;
     const brightness = sampleBrightness(canvas);

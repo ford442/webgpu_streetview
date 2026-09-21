@@ -1,6 +1,11 @@
 import { BLIT_SHADER } from './constants';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
-import { deviceHasFeature, withSubgroupLumaReduce } from '../shaderFeatureVariants';
+import {
+    assembleExtendedToneMappingShader,
+    deviceHasFeature,
+    withSubgroupLumaReduce,
+    type CanvasToneMapping,
+} from '../shaderFeatureVariants';
 
 /**
  * Pipeline and bind-group construction for the compute weather pass.
@@ -69,6 +74,8 @@ export async function createWeatherComputePipeline(
     device: GPUDevice,
     shaderUrl: string,
     lutBindGroupLayout: GPUBindGroupLayout,
+    /** Tone mapping actually applied to the swap chain — see `WeatherPostInitOptions`. */
+    canvasToneMapping: CanvasToneMapping = 'standard',
 ): Promise<GPUComputePipeline> {
     let shaderCode: string;
     try {
@@ -81,6 +88,8 @@ export async function createWeatherComputePipeline(
         console.error(`[Renderer] Failed to load weather-post-compute shader from ${shaderUrl}:`, error);
         throw error;
     }
+
+    shaderCode = assembleExtendedToneMappingShader(shaderCode, canvasToneMapping);
 
     if (deviceHasFeature(device, OPTIONAL_DEVICE_FEATURES.subgroups)) {
         shaderCode = withSubgroupLumaReduce(shaderCode);

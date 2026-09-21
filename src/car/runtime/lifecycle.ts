@@ -6,6 +6,7 @@ import { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../varian
 import { DEFAULT_VEHICLE, vehicleManager, type VehicleType } from '../VehicleManager';
 import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
 import { notifyCabinFrameRendered } from './frameCapture';
+import { publishCabinOverlaySource } from '../../renderer/cabinOverlayRegistry';
 import { getState, setState, type CarModeState } from './state';
 import type { CabinRendererHandle } from '../interior/createCabinRenderer';
 
@@ -135,9 +136,22 @@ export function toggleCarMode(enabled: boolean): void {
     state.isActive = enabled;
     state.interior.setActive(enabled);
 
-    // Show/hide the Three.js canvas
+    // One-frame compositor: while car mode is on, hand the cabin texture to the
+    // Street View renderer so it draws the cabin into the frame it presents
+    // (`renderer/cabinComposite.ts`). Retract on toggle-off, or the renderer
+    // would keep compositing a cabin nobody is updating. Null on the
+    // `?cabin=webgl` hatch, which keeps the CSS overlay below.
+    const overlaySource = enabled
+        ? state.interior.rendererDelegate.getCabinOverlaySource() ?? null
+        : null;
+    publishCabinOverlaySource(overlaySource);
+
+    // Show/hide the Three.js canvas. `visibility` is also what CabinFrameTarget
+    // toggles while it owns the frame, so a composited cabin stays hidden here
+    // and only the compositor draws it.
     if (state.interior.canvas) {
         const c = state.interior.canvas;
+        const composited = enabled && state.interior.rendererDelegate.isCompositedIntoRoadFrame();
         c.style.cssText = `
             position: absolute;
             top: 0;
@@ -147,7 +161,7 @@ export function toggleCarMode(enabled: boolean): void {
             z-index: 50;
             pointer-events: none;
             display: ${enabled ? 'block' : 'none'};
-            visibility: ${enabled ? 'visible' : 'hidden'};
+            visibility: ${enabled && !composited ? 'visible' : 'hidden'};
         `;
     }
 }
@@ -215,6 +229,10 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
 export function disposeCarMode(): void {
     const state = getState();
     if (!state) return;
+
+    // Before anything is torn down: the renderer must stop reading a texture
+    // whose owner is about to be disposed.
+    publishCabinOverlaySource(null);
 
     state.convertibleMode?.dispose();
     state.limoAtmosphere.dispose();

@@ -258,6 +258,12 @@ existing 6 grading uniforms (vibrance → saturation → contrast → temperatur
 → exposure) with **ACES still last**. No 3D LUT texture, no extra uniform slots,
 no billable APIs.
 
+Looks stay scene-referred, the tonemap stays output-referred: under `?hdr=1` on
+a capable display the ACES step becomes the extended-range variant (shoulder
+evaluated against display headroom rather than SDR white) so a look's highlights
+are rolled into headroom instead of clipped. Everything before the tonemap is
+identical on both paths — see `docs/RENDERER_FALLBACK.md` § HDR/P3 canvas.
+
 The look bible (before/after notes, curve stops, palette cards) is
 [`docs/looks/README.md`](./looks/README.md).
 
@@ -317,6 +323,11 @@ Guarded by `src/renderer/webglLookParity.test.ts` and
 
 - Shared WGSL helper changed? Update **both** `weather-post.wgsl` and
   `weather-post-compute.wgsl`; `weatherShaderParity.test.ts` will fail otherwise.
+- Touched `aces_tonemap`? Its body is also a literal in
+  `shaderFeatureVariants.ts` (`ACES_TONEMAP_SDR_BODY`) and in
+  `scripts/validate-shaders.mjs`, because the `?hdr` output-referred grade is a
+  source substitution at pipeline-create time, not a uniform. Both are pinned
+  byte-for-byte by tests — change all three together.
 - New uniform? It must fit the existing 40 floats or every consumer in
   `weatherUniformLayout.ts`'s header comment changes in lockstep.
 - Preset retune? Put the intended look in §3 above and the measured delta in §4.

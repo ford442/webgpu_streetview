@@ -55,6 +55,12 @@ export interface ShaderFeatureUses {
     dualSourcePrecip: boolean;
     /** Always false — naga rejects production `f16`; feature stays requested-but-unused. */
     shaderF16: boolean;
+    /**
+     * `aces_tonemap` assembled as the output-referred grade because the applied
+     * canvas tone mapping is `extended` (`?hdr=1` accepted). False on every
+     * default boot, where the SDR ACES pixels are unchanged.
+     */
+    extendedToneMapping: boolean;
 }
 
 /** Labels applied to the device/queue/swap-chain so PIX, RenderDoc and about:gpu traces are readable. */
