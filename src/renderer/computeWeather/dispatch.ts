@@ -1,4 +1,7 @@
-import type { WeatherPassTimingContext } from '../weatherPostProcessorTypes';
+import {
+    blitPassTimestampWrites,
+    type WeatherPassTimingContext,
+} from '../weatherPostProcessorTypes';
 import { WORKGROUP_SIZE } from './constants';
 
 /**
@@ -21,7 +24,12 @@ export function recordWeatherPass(
     commandEncoder: GPUCommandEncoder,
     { pipeline, bindGroup, lutBindGroup, width, height, timing }: WeatherPassArgs,
 ): void {
-    const computePass = commandEncoder.beginComputePass();
+    const computePass = commandEncoder.beginComputePass({
+        timestampWrites: timing?.timer.computePassTimestampWrites(
+            timing.weatherStartIndex,
+            timing.weatherEndIndex,
+        ),
+    });
     if (timing) {
         timing.timer.markPassStart(computePass, timing.weatherStartIndex);
     }
@@ -57,6 +65,7 @@ export function recordBlitPass(
             loadOp: 'clear' as GPULoadOp,
             storeOp: 'store' as GPUStoreOp,
         }],
+        timestampWrites: blitPassTimestampWrites(timing),
     });
     const timed = timing?.blitStartIndex !== undefined && timing.blitEndIndex !== undefined;
     if (timed) {

@@ -8,6 +8,8 @@ import {
   getLegacyTransitionsEnabled,
   getRendererDebugOptions,
   getRendererPreference,
+  getWeatherPostProcessMode,
+  getWeatherPostProcessModePolicy,
   RendererDebugOptions,
 } from './RendererBackend';
 
@@ -345,5 +347,47 @@ describe('getCanvasOutputFlags', () => {
   it('treats an unrecognized value as off', () => {
     setSearch('?hdr=bogus');
     expect(getCanvasOutputFlags().hdr).toBe('off');
+  });
+});
+
+describe('getWeatherPostProcessModePolicy', () => {
+  const resetSearch = () => window.history.pushState({}, '', '/');
+
+  beforeEach(() => {
+    resetSearch();
+    localStorage.clear();
+  });
+  afterEach(resetSearch);
+
+  it('reports the preset fallback as the source when nothing is explicit', () => {
+    expect(getWeatherPostProcessModePolicy('compute')).toEqual({ mode: 'compute', source: 'preset' });
+    expect(getWeatherPostProcessModePolicy('fragment')).toEqual({ mode: 'fragment', source: 'preset' });
+  });
+
+  it('lets the URL flag win over the preset default', () => {
+    window.history.pushState({}, '', '/?weather=fragment');
+    expect(getWeatherPostProcessModePolicy('compute')).toEqual({ mode: 'fragment', source: 'url' });
+  });
+
+  it('lets a stored preference win over the preset default', () => {
+    localStorage.setItem('streetview.weatherMode', 'compute');
+    expect(getWeatherPostProcessModePolicy('fragment')).toEqual({ mode: 'compute', source: 'storage' });
+  });
+
+  it('prefers the URL flag over the stored preference', () => {
+    localStorage.setItem('streetview.weatherMode', 'compute');
+    window.history.pushState({}, '', '/?weather=fragment');
+    expect(getWeatherPostProcessModePolicy('compute')).toEqual({ mode: 'fragment', source: 'url' });
+  });
+
+  it('ignores an unknown mode from either source', () => {
+    localStorage.setItem('streetview.weatherMode', 'raytrace');
+    window.history.pushState({}, '', '/?weather=raytrace');
+    expect(getWeatherPostProcessModePolicy('compute')).toEqual({ mode: 'compute', source: 'preset' });
+  });
+
+  it('keeps getWeatherPostProcessMode as the mode-only view of the same policy', () => {
+    window.history.pushState({}, '', '/?weather=compute');
+    expect(getWeatherPostProcessMode('fragment')).toBe('compute');
   });
 });

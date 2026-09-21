@@ -3,7 +3,7 @@
  * Written on both success and failure; WebGL weather is not a rescue path.
  */
 
-import type { RendererBackendPreference } from './RendererBackend';
+import type { RendererBackendPreference, WeatherPostProcessMode } from './RendererBackend';
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 
 export type WebGpuProbeStage =
@@ -16,6 +16,18 @@ export type WebGpuProbeStage =
   | 'ok';
 
 export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';
+
+/**
+ * The one-step High→fragment weather degrade, when it happened. Recorded so a
+ * preset that quietly stopped running compute weather is visible in DevTools /
+ * Playwright rather than silently lying about the preset.
+ */
+export interface WebGpuProbeWeatherDegrade {
+  from: WeatherPostProcessMode;
+  to: WeatherPostProcessMode;
+  /** The adapter-limit reason the first boot attempt failed with. */
+  reason: string;
+}
 
 export interface WebGpuProbeAdapterInfo {
   vendor: string;
@@ -34,6 +46,8 @@ export interface WebGpuProbeRecord {
   webglPreferenceDeferred: boolean;
   adapter?: WebGpuProbeAdapterInfo;
   capabilityMatrix?: DeviceCapabilityMatrix;
+  /** Present only when the boot degraded the preset's weather mode. */
+  weatherDegrade?: WebGpuProbeWeatherDegrade;
   updatedAt: number;
 }
 
@@ -80,6 +94,7 @@ export interface PublishWebGpuProbeOptions {
   webglPreferenceDeferred?: boolean;
   adapter?: WebGpuProbeAdapterInfo;
   capabilityMatrix?: DeviceCapabilityMatrix;
+  weatherDegrade?: WebGpuProbeWeatherDegrade;
   browserBrand?: BrowserBrand;
   now?: number;
 }
@@ -101,6 +116,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
       options.webglPreferenceDeferred ?? previous?.webglPreferenceDeferred ?? false,
     adapter: options.adapter ?? previous?.adapter,
     capabilityMatrix: options.capabilityMatrix ?? previous?.capabilityMatrix,
+    weatherDegrade: options.weatherDegrade ?? previous?.weatherDegrade,
     updatedAt: options.now ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()),
   };
 

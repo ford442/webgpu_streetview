@@ -13,6 +13,27 @@ export interface WeatherPassTimingContext {
     blitEndIndex?: number;
 }
 
+/**
+ * The weather span as pass-descriptor `timestampWrites`. Undefined when there
+ * is no timer or the device took the legacy in-pass fallback; both render and
+ * compute descriptors accept the same shape.
+ */
+export function weatherPassTimestampWrites(
+    timing?: WeatherPassTimingContext,
+): GPURenderPassTimestampWrites | undefined {
+    return timing?.timer.renderPassTimestampWrites(timing.weatherStartIndex, timing.weatherEndIndex);
+}
+
+/** The compute-path blit span. Undefined on the fragment path, which has no blit. */
+export function blitPassTimestampWrites(
+    timing?: WeatherPassTimingContext,
+): GPURenderPassTimestampWrites | undefined {
+    if (!timing || timing.blitStartIndex === undefined || timing.blitEndIndex === undefined) {
+        return undefined;
+    }
+    return timing.timer.renderPassTimestampWrites(timing.blitStartIndex, timing.blitEndIndex);
+}
+
 export interface WeatherPostInitOptions {
     /**
      * Tone mapping `configureCanvasContext` actually **applied** to the swap

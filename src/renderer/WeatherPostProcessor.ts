@@ -4,10 +4,11 @@ import {
     WeatherParamIndex,
 } from './weatherUniformLayout';
 import { createDefaultWeatherParams } from './packWeatherParams';
-import type {
-    WeatherPostInitOptions,
-    WeatherPostProcessorLike,
-    WeatherPassTimingContext,
+import {
+    weatherPassTimestampWrites,
+    type WeatherPostInitOptions,
+    type WeatherPostProcessorLike,
+    type WeatherPassTimingContext,
 } from './weatherPostProcessorTypes';
 import type { LutVolume } from './lut';
 import {
@@ -318,6 +319,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
                 loadOp: 'clear' as GPULoadOp,
                 storeOp: 'store' as GPUStoreOp,
             }],
+            timestampWrites: weatherPassTimestampWrites(timing),
         });
         if (timing) {
             timing.timer.markPassStart(postPass, timing.weatherStartIndex);

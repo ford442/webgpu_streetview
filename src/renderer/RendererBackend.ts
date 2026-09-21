@@ -281,29 +281,47 @@ export function getRendererDebugOptions(): RendererDebugOptions {
     return { effectIsolation, wireframe };
 }
 
+/** Where the resolved weather mode came from. Only `'preset'` may be degraded. */
+export type WeatherPostProcessModeSource = 'url' | 'storage' | 'preset';
+
+export interface WeatherPostProcessModePolicy {
+    mode: WeatherPostProcessMode;
+    source: WeatherPostProcessModeSource;
+}
+
 /**
  * Resolve the weather post-processing pipeline: `?weather=compute` or
  * `?weather=fragment` in the URL wins, then a persisted `localStorage`
  * choice, then `fallback` (typically the current visual quality preset's
  * default — see src/config/visualPresets.ts). WebGPU-only.
+ *
+ * The `source` matters for the one-step High→fragment degrade in
+ * `createStreetViewRenderer`: an explicit choice is never second-guessed, only
+ * a preset default is.
  */
-export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fragment'): WeatherPostProcessMode {
+export function getWeatherPostProcessModePolicy(
+    fallback: WeatherPostProcessMode = 'fragment',
+): WeatherPostProcessModePolicy {
     const params = readSearchParams();
     const explicit = params.get('weather')?.toLowerCase();
     if (explicit && VALID_WEATHER_MODES.has(explicit)) {
-        return explicit as WeatherPostProcessMode;
+        return { mode: explicit as WeatherPostProcessMode, source: 'url' };
     }
 
     try {
         const stored = window.localStorage.getItem('streetview.weatherMode');
         if (stored && VALID_WEATHER_MODES.has(stored)) {
-            return stored as WeatherPostProcessMode;
+            return { mode: stored as WeatherPostProcessMode, source: 'storage' };
         }
     } catch {
         // Storage may be unavailable in hardened browsers.
     }
 
-    return fallback;
+    return { mode: fallback, source: 'preset' };
+}
+
+export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fragment'): WeatherPostProcessMode {
+    return getWeatherPostProcessModePolicy(fallback).mode;
 }
 
 export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean {
