@@ -1,11 +1,5 @@
-import { useRef, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
-import CinemaOverlay from '../components/CinemaOverlay';
-import type { ClipOverlaySource } from '../utils/canvasRecorder';
-import { captureCompositedStill } from '../utils/canvasRecorder';
-import { parseDeepLinkParams } from '../utils/deepLink';
-import { parseStudioLinkParams, buildStudioShareUrl } from '../utils/studioLink';
-import { pickHistoricalEntryForYear } from '../utils/historicalImagery';
 import { getWindAudio } from '../effects/WindAudio';
 import {
   useStreetView,
@@ -17,48 +11,36 @@ import {
   useVehicleSettings,
 } from '../hooks';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
-import { useSharedSession } from '../hooks/useSharedSession';
-import { useBookmarks } from '../hooks/useBookmarks';
 import { useLocationHistory } from '../hooks/useLocationHistory';
-import { useSnapshots } from '../hooks/useSnapshots';
 import { useGlobeMode } from '../hooks/useGlobeMode';
-import { useKeyboardShortcuts, useAnnouncer, SkipLink } from '../hooks/useKeyboardShortcuts';
+import { useAnnouncer } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
 import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
 import { vehicleManager, type VehicleType } from '../car/VehicleManager';
-import { getCabinView, setCabinView } from '../car/cabinView';
-import type { DirectorSnapshot } from '../hooks/useTours';
-import type { TourDirectorKeyframe } from '../utils/tourDirector';
-import { serializeWeatherPreset } from '../utils/weatherPresetSync';
 import { useAutopilot } from '../hooks/useAutopilot';
-import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
-import AppBanners from '../components/AppBanners';
 import BuildBadge from '../components/BuildBadge';
+import { getCarRuntime } from './carRuntimeCache';
 import { useAppPanels } from './useAppPanels';
 import { useAppTelemetry } from './useAppTelemetry';
 import { useMapsBootstrap } from './useMapsBootstrap';
-import { buildMapsLoadingOverlay } from './mapsLoadingOverlay';
-import { useSharedSessionSync } from './useSharedSessionSync';
+import { useAppSharedSession } from './useAppSharedSession';
 import { useRadioAudio } from './useRadioAudio';
 import { useHistoricalExperience } from './useHistoricalExperience';
 import { useTourBindings } from './useTourBindings';
 import { useAppAccessibility } from './useAppAccessibility';
 import { useAppConnection } from './useAppConnection';
+import { useAppBookmarks } from './useAppBookmarks';
+import { useAppCapture } from './useAppCapture';
+import { useAppDirector } from './useAppDirector';
+import { useAppBootLinks } from './useAppBootLinks';
+import { useAppShortcuts } from './useAppShortcuts';
 import { ConnectedChrome } from './shell/ConnectedChrome';
-import { MapsAuthModal } from './shell/MapsAuthModal';
-import { OfflineStatusToast } from './shell/OfflineStatusToast';
-import { GeocodeDeniedToast } from './shell/GeocodeDeniedToast';
+import { CinemaLayer } from './shell/CinemaLayer';
+import { ShellNotices } from './shell/ShellNotices';
 import { StreetViewStage } from './shell/StreetViewStage';
-import { makePickerThumbDataUrl } from '../renderer/gpuChores/pickerThumb';
-
-/** Cached car runtime for sync cruise gear hops once car mode has loaded. */
-let carRuntimeModule: typeof import('../car/carModeRuntime') | null = null;
-void loadCarRuntime().then((module) => {
-  carRuntimeModule = module;
-});
 
 /** Main app layout: composition shell for feature controllers + chrome. */
 export function AppShell() {
@@ -89,7 +71,6 @@ export function AppShell() {
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
-  const sharedSession = useSharedSession();
   const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
@@ -106,73 +87,16 @@ export function AppShell() {
     setMapsLoadStatus: maps.setMapsLoadStatus,
   });
   const cinema = useCinemaMode(connection.isConnected && !connection.showWelcome);
-  const {
-    isCinemaMode,
-    letterbox,
-    gradingLocked,
-    toggleCinemaMode,
-    exitCinemaMode,
-    setLetterbox,
-    setGradingLocked,
-  } = cinema;
+  const { isCinemaMode } = cinema;
 
-  const weatherPresetBroadcast = useMemo(
-    () =>
-      serializeWeatherPreset({
-        timeOfDay: env.timeOfDay,
-        rainIntensity: env.rainIntensity,
-        snowIntensity: env.snowIntensity,
-        fogDensity: env.fogDensity,
-      }),
-    [env.timeOfDay, env.rainIntensity, env.snowIntensity, env.fogDensity],
-  );
+  const { weatherPresetBroadcast, getDirectorSnapshot, applyDirectorKeyframe } = useAppDirector(env);
 
   useEffect(() => {
     getWindAudio().setHeadingPan(heading, carHeading);
   }, [heading, carHeading]);
 
-  const getDirectorSnapshot = useCallback((): DirectorSnapshot | null => ({
-    timeOfDay: env.timeOfDay,
-    vehicle: vehicleManager.getCurrentVehicle(),
-    rainIntensity: env.rainIntensity,
-    snowIntensity: env.snowIntensity,
-    fogDensity: env.fogDensity,
-  }), [env.timeOfDay, env.rainIntensity, env.snowIntensity, env.fogDensity]);
-
-  const applyDirectorKeyframe = useCallback(
-    (frame: TourDirectorKeyframe) => {
-      if (frame.timeOfDay) env.applyTimeOfDayPreset(frame.timeOfDay);
-      if (frame.rainIntensity !== undefined) env.setRainIntensity(frame.rainIntensity);
-      if (frame.snowIntensity !== undefined) env.setSnowIntensity(frame.snowIntensity);
-      if (frame.fogDensity !== undefined) env.setFogDensity(frame.fogDensity);
-      if (frame.colorGradingPreset) env.applyColorGradingPreset(frame.colorGradingPreset);
-      if (frame.vehicle) vehicleManager.setVehicle(frame.vehicle);
-    },
-    [env],
-  );
-
-  const {
-    bookmarks,
-    addBookmark,
-    removeBookmark,
-    isSyncing: isBookmarkSyncing,
-    syncError: bookmarkSyncError,
-    loadCloudBookmarks,
-    saveBookmarkToCloud,
-    removeCloudBookmark,
-    syncAllToCloud,
-  } = useBookmarks();
+  const bookmarks = useAppBookmarks(panorama, heading, pitch);
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
-  const {
-    snapshots,
-    addSnapshot,
-    removeSnapshot,
-    updateSnapshotName,
-    downloadSnapshot,
-    clearAllSnapshots,
-    getSnapshotDeepLink,
-    shareSnapshot,
-  } = useSnapshots();
   const globeMode = useGlobeMode();
 
   const historical = useHistoricalExperience({
@@ -187,38 +111,47 @@ export function AppShell() {
       ? historical.historicalEntries[historical.historicalCurrentIndex]?.imageDate ?? null
       : null;
 
+  const capture = useAppCapture({
+    panorama,
+    renderer,
+    viewMode,
+    heading,
+    pitch,
+    zoom,
+    locationName,
+    currentImageDate,
+    lookId: env.activeLookId,
+    vehicleType: currentVehicle,
+    teleportSafe,
+    teleportToPanoSafe,
+    setHeading,
+    setPitch,
+  });
+
   const setSessionVehicle = useCallback((type: VehicleType) => {
     vehicleManager.setVehicle(type);
     void loadCarRuntime().then((m) => m.setVehicleType(type));
   }, []);
 
-  useSharedSessionSync({
-    sharedSession,
+  const sharedSession = useAppSharedSession({
+    env,
     panorama,
     heading,
     pitch,
     zoom,
     viewMode,
+    carHeading,
+    vehicleType: currentVehicle,
+    imageDate: currentImageDate,
+    weatherPreset: weatherPresetBroadcast,
+    hdr: connection.webgpuStatus === 'ready',
     teleportToPanoSafe,
     setHeading,
     setPitch,
     setZoom,
-    weatherPreset: weatherPresetBroadcast,
-    applyTimeOfDayPreset: env.applyTimeOfDayPreset,
-    setRainIntensity: env.setRainIntensity,
-    setSnowIntensity: env.setSnowIntensity,
-    setFogDensity: env.setFogDensity,
-    lookId: env.activeLookId,
-    imageDate: currentImageDate,
-    vehicleType: currentVehicle,
-    cabinView: getCabinView(),
-    carHeading,
-    hdr: connection.webgpuStatus === 'ready',
-    applyLookPack: env.applyLookPack,
-    setVehicleType: setSessionVehicle,
     setViewMode,
     setCarHeading,
-    setCabinView,
+    setSessionVehicle,
   });
 
   const { tourPanelProps } = useTourBindings({
@@ -249,176 +182,28 @@ export function AppShell() {
     // In car mode the gearshift is the speed selector: P/N park cruise, D
     // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
     // has no gearbox, so it always cruises one hop at a time.
-    hopsPerTick: () => (viewModeRef.current === 'car' ? (carRuntimeModule?.getGearHopCount() ?? 1) : 1),
+    hopsPerTick: () => (viewModeRef.current === 'car' ? (getCarRuntime()?.getGearHopCount() ?? 1) : 1),
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
-
-  // Cinema composites the cabin over the graded road canvas. Both hooks read
-  // `carRuntimeModule` at call time, so this object is stable for the life of
-  // the shell and stays correct whether or not the lazy car chunk has loaded —
-  // before it does (or outside car mode) the cabin canvas is simply null and
-  // the clip is road-only. See `car/runtime/frameCapture.ts`.
-  const cabinOverlay = useMemo<ClipOverlaySource>(() => ({
-    getCanvas: () => carRuntimeModule?.getCabinCanvas() ?? null,
-    subscribe: (onRendered) => carRuntimeModule?.onCabinFrameRendered(onRendered) ?? (() => {}),
-  }), []);
 
   useEffect(() => {
     publishCruiseFlag(isCruiseMode);
     return () => publishCruiseFlag(false);
   }, [isCruiseMode]);
 
-  const handleAddBookmark = useCallback(
-    (name: string) => {
-      if (!panorama) return;
-      const position = panorama.getPosition();
-      if (!position) return;
-      addBookmark({
-        name,
-        lat: position.lat(),
-        lng: position.lng(),
-        heading,
-        pitch,
-      });
-    },
-    [panorama, addBookmark, heading, pitch],
-  );
-
-  const handleTakeSnapshot = useCallback(() => {
-    if (!panorama || !renderer) return;
-    const position = panorama.getPosition();
-    if (!position) return;
-    const output = renderer.getOutputCanvas?.();
-    const chores = renderer.getGpuChores?.();
-    const downsample = chores
-      ? (rgba: Uint8ClampedArray, w: number, h: number, dw: number, dh: number) =>
-          chores.downsampleRgba(rgba, w, h, dw, dh)
-      : undefined;
-    const meta = {
-      name: locationName || `Snapshot ${new Date().toLocaleString()}`,
-      lat: position.lat(),
-      lng: position.lng(),
-      heading,
-      pitch,
-      zoom,
-      locationName,
-      panoId: panorama.getPano() || undefined,
-      imageDate: currentImageDate ?? undefined,
-      lookId: env.activeLookId ?? undefined,
-      vehicleType: currentVehicle,
-    };
-
-    if (!output) {
-      addSnapshot({
-        ...meta,
-        dataUrl: renderer.getCanvasDataURL(),
-        thumbnailDataUrl: undefined,
-      });
-      return;
-    }
-
-    // Free-look has no cabin canvas — skip the overlay wait so stills stay
-    // immediate. Car mode latches the cabin the same way cinema clips do.
-    const overlay = viewMode === 'car' ? cabinOverlay : null;
-    void captureCompositedStill(output, overlay, { timeoutMs: 400 }).then((still) => {
-      addSnapshot({
-        ...meta,
-        dataUrl: still.dataUrl,
-        thumbnailDataUrl: makePickerThumbDataUrl(still.canvas, downsample) ?? undefined,
-      });
-    });
-  }, [panorama, renderer, addSnapshot, heading, pitch, zoom, locationName, currentImageDate, env.activeLookId, currentVehicle, cabinOverlay, viewMode]);
-
-  const handleSnapshotTeleport = useCallback(
-    async (lat: number, lng: number, targetHeading: number, targetPitch: number, panoId?: string) => {
-      if (panoId) {
-        await teleportToPanoSafe(panoId);
-      } else {
-        await teleportSafe(lat, lng, targetHeading, targetPitch);
-      }
-      setHeading(targetHeading);
-      setPitch(targetPitch);
-    },
-    [teleportToPanoSafe, teleportSafe, setHeading, setPitch],
-  );
-
-  // Consume `?lat=&lng=&heading=&pitch=&zoom=&pano=` deep-link params once Maps/panorama are ready.
-  const deepLinkConsumedRef = useRef(false);
-  const studioBootRef = useRef(parseStudioLinkParams());
-  const yearBootConsumedRef = useRef(!studioBootRef.current.year);
-  const yearSawHistoricalLoadRef = useRef(false);
-  const vehicleBootConsumedRef = useRef(!studioBootRef.current.vehicleType);
-
-  useEffect(() => {
-    if (vehicleBootConsumedRef.current) return;
-    const vehicle = studioBootRef.current.vehicleType;
-    if (!vehicle) {
-      vehicleBootConsumedRef.current = true;
-      return;
-    }
-    vehicleBootConsumedRef.current = true;
-    setSessionVehicle(vehicle);
-  }, [setSessionVehicle]);
-
-  useEffect(() => {
-    if (deepLinkConsumedRef.current) return;
-    if (!connection.isConnected || !panorama || !isPanoramaReady) return;
-    deepLinkConsumedRef.current = true;
-
-    const params = parseDeepLinkParams();
-    if (!params) return;
-
-    (async () => {
-      try {
-        if (params.panoId) {
-          await teleportToPanoSafe(params.panoId);
-        } else {
-          await teleportSafe(params.lat, params.lng, params.heading, params.pitch);
-        }
-        setHeading(params.heading);
-        setPitch(params.pitch);
-        setZoom(params.zoom);
-      } catch (error) {
-        console.warn('[deepLink] Failed to apply deep link params:', error);
-      }
-    })();
-  }, [
-    connection.isConnected,
+  useAppBootLinks({
+    isConnected: connection.isConnected,
     panorama,
     isPanoramaReady,
-    teleportToPanoSafe,
+    historicalEntries: historical.historicalEntries,
+    isHistoricalLoading: historical.isHistoricalLoading,
     teleportSafe,
+    teleportToPanoSafe,
     setHeading,
     setPitch,
     setZoom,
-  ]);
-
-  // Solo `?year=YYYY` — pick from the existing historical timeline (no new crawl).
-  useEffect(() => {
-    if (yearBootConsumedRef.current) return;
-    if (!connection.isConnected || !isPanoramaReady) return;
-    if (historical.isHistoricalLoading) {
-      yearSawHistoricalLoadRef.current = true;
-      return;
-    }
-    if (!yearSawHistoricalLoadRef.current && historical.historicalEntries.length === 0) {
-      return;
-    }
-    const year = studioBootRef.current.year;
-    yearBootConsumedRef.current = true;
-    if (!year) return;
-    const entry = pickHistoricalEntryForYear(historical.historicalEntries, year);
-    if (entry && entry.panoId !== panorama?.getPano()) {
-      void teleportToPanoSafe(entry.panoId);
-    }
-  }, [
-    connection.isConnected,
-    isPanoramaReady,
-    historical.isHistoricalLoading,
-    historical.historicalEntries,
-    panorama,
-    teleportToPanoSafe,
-  ]);
+    setSessionVehicle,
+  });
 
   const getCurrentPosition = useCallback(() => {
     const pos = panorama?.getPosition();
@@ -453,67 +238,23 @@ export function AppShell() {
     setNavPending: connection.setNavPending,
   });
 
-  useKeyboardShortcuts(
-    buildAppKeyboardShortcuts({
-      showPerformanceStats,
-      setShowPerformanceStats,
-      timeOfDay: env.timeOfDay,
-      applyTimeOfDayPreset: env.applyTimeOfDayPreset,
-      isRadioPlaying,
-      toggleRadio,
-      isMapOpen: panels.isMapOpen,
-      setIsMapOpen: panels.setIsMapOpen,
-      isBookmarkPanelOpen: panels.isBookmarkPanelOpen,
-      setIsBookmarkPanelOpen: panels.setIsBookmarkPanelOpen,
-      isHistoryPanelOpen: panels.isHistoryPanelOpen,
-      setIsHistoryPanelOpen: panels.setIsHistoryPanelOpen,
-      isSnapshotGalleryOpen: panels.isSnapshotGalleryOpen,
-      setIsSnapshotGalleryOpen: panels.setIsSnapshotGalleryOpen,
-      isColorGradingPanelOpen: panels.isColorGradingPanelOpen,
-      setIsColorGradingPanelOpen: panels.setIsColorGradingPanelOpen,
-      isAccessibilityPanelOpen: panels.isAccessibilityPanelOpen,
-      setIsAccessibilityPanelOpen: panels.setIsAccessibilityPanelOpen,
-      isWeatherPanelOpen: panels.isWeatherPanelOpen,
-      setIsWeatherPanelOpen: panels.setIsWeatherPanelOpen,
-      isLooksPanelOpen: panels.isLooksPanelOpen,
-      setIsLooksPanelOpen: panels.setIsLooksPanelOpen,
-      isTourPanelOpen: panels.isTourPanelOpen,
-      setIsTourPanelOpen: panels.setIsTourPanelOpen,
-      isCinemaMode,
-      toggleCinemaMode,
-      exitCinemaMode,
-      viewMode,
-      toggleViewMode,
-      wipersEnabled: env.wipersEnabled,
-      toggleWipers: env.toggleWipers,
-      headlightsOn: env.headlightsOn,
-      toggleHeadlights: env.toggleHeadlights,
-      toggleDomeLight: env.toggleDomeLight,
-      isRoofOpen: env.isRoofOpen,
-      toggleRoof: env.toggleRoof,
-      isCruiseMode,
-      setIsCruiseMode,
-      globeMode,
-      announce,
-    }),
-    connection.isConnected && !connection.showWelcome && !isCinemaMode,
-  );
-
-  const mapsLoadingOverlay = buildMapsLoadingOverlay({
-    isConnected: connection.isConnected,
-    effectiveMapsKey: maps.effectiveMapsKey,
-    mapsLoadStatus: maps.mapsLoadStatus,
-    isRetryingMapsAuth: maps.isRetryingMapsAuth,
-    webgpuStatus: connection.webgpuStatus,
-    isCanvasReady: connection.isCanvasReady,
-    canvasError: maps.canvasError,
-    mapsAuthError: maps.mapsAuthError,
-    scraperHealth: maps.scraperHealth,
-    handleRetryMapsAuth: maps.handleRetryMapsAuth,
-    webgpuFailureReason:
-      connection.rendererBackendInfo?.fallbackReason ||
-      (typeof window !== 'undefined' ? window.webgpuProbe?.reason : undefined) ||
-      null,
+  useAppShortcuts({
+    panels,
+    env,
+    globeMode,
+    viewMode,
+    toggleViewMode,
+    isCruiseMode,
+    setIsCruiseMode,
+    isCinemaMode,
+    toggleCinemaMode: cinema.toggleCinemaMode,
+    exitCinemaMode: cinema.exitCinemaMode,
+    isRadioPlaying,
+    toggleRadio,
+    showPerformanceStats,
+    setShowPerformanceStats,
+    announce,
+    enabled: connection.isConnected && !connection.showWelcome && !isCinemaMode,
   });
 
   return (
@@ -529,30 +270,7 @@ export function AppShell() {
         backgroundColor: '#000',
       }}
     >
-      <SkipLink targetId="main-content">Skip to main content</SkipLink>
-
-      <AppBanners
-        showMissingKeyBanner={maps.showMissingKeyBanner}
-        setShowMissingKeyBanner={maps.setShowMissingKeyBanner}
-        showAuthFailedBanner={maps.showAuthFailedBanner}
-        setShowAuthFailedBanner={maps.setShowAuthFailedBanner}
-        isRecoveringMapsAuth={maps.isRetryingMapsAuth}
-        scrapeLost={
-          maps.scraperHealth.everStable && maps.scraperHealth.status === 'lost'
-        }
-        scrapeLostDetail={maps.scraperHealth.lastErrorDetail}
-      />
-
-      <OfflineStatusToast visible={connection.isConnected && !isOnline} />
-      <GeocodeDeniedToast />
-
-      <MapsAuthModal
-        open={maps.mapsAuthFailed}
-        mapsAuthError={maps.mapsAuthError}
-        isRetryingMapsAuth={maps.isRetryingMapsAuth}
-        onRetry={maps.handleRetryMapsAuth}
-        onDismiss={maps.dismissAuthBlock}
-      />
+      <ShellNotices maps={maps} isConnected={connection.isConnected} isOnline={isOnline} />
 
       {connection.showWelcome && <WelcomeModal onStart={connection.handleStart} search={placeSearch} />}
 
@@ -573,31 +291,9 @@ export function AppShell() {
             isTransitioning,
             teleportToPanoSafe,
           }}
-          bookmarks={{
-            bookmarks,
-            handleAddBookmark,
-            removeBookmark,
-            isBookmarkSyncing,
-            bookmarkSyncError,
-            loadCloudBookmarks,
-            saveBookmarkToCloud,
-            removeCloudBookmark,
-            syncAllToCloud,
-          }}
+          bookmarks={bookmarks}
           history={{ history, removeFromHistory, clearHistory }}
-          snapshots={{
-            snapshots,
-            isOnline,
-            hasServiceWorker,
-            removeSnapshot,
-            updateSnapshotName,
-            downloadSnapshot,
-            clearAllSnapshots,
-            getSnapshotDeepLink,
-            shareSnapshot,
-            onTeleport: handleSnapshotTeleport,
-            onTakeSnapshot: handleTakeSnapshot,
-          }}
+          snapshots={{ ...capture.gallery, isOnline, hasServiceWorker }}
           environment={env}
           historical={historical}
           accessibilitySettings={accessibilitySettings}
@@ -629,36 +325,19 @@ export function AppShell() {
         />
       )}
 
-      {connection.isConnected && isCinemaMode && (
-        <CinemaOverlay
-          visible={isCinemaMode}
-          letterbox={letterbox}
-          onToggleLetterbox={() => setLetterbox(!letterbox)}
-          gradingLocked={gradingLocked}
-          onToggleGradingLock={() => setGradingLocked(!gradingLocked)}
+      {connection.isConnected && (
+        <CinemaLayer
+          cinema={cinema}
           renderer={renderer}
-          onExit={exitCinemaMode}
-          onTakeSnapshot={handleTakeSnapshot}
-          cabinOverlay={cabinOverlay}
+          panorama={panorama}
+          heading={heading}
+          pitch={pitch}
+          zoom={zoom}
           lookId={env.activeLookId}
           vehicleType={currentVehicle}
-          panoId={panorama?.getPano() ?? null}
           imageDate={currentImageDate}
-          shareUrl={(() => {
-            const pos = panorama?.getPosition();
-            if (!pos) return undefined;
-            return buildStudioShareUrl({
-              lat: pos.lat(),
-              lng: pos.lng(),
-              heading,
-              pitch,
-              zoom,
-              panoId: panorama?.getPano() || undefined,
-              lookId: env.activeLookId,
-              year: currentImageDate,
-              vehicleType: currentVehicle,
-            });
-          })()}
+          cabinOverlay={capture.cabinOverlay}
+          onTakeSnapshot={capture.handleTakeSnapshot}
         />
       )}
 
@@ -667,7 +346,6 @@ export function AppShell() {
         connection={connection}
         setCanvas={setCanvas}
         setPanorama={setPanorama}
-        mapsLoadingOverlay={mapsLoadingOverlay}
       />
 
       <BuildBadge />
