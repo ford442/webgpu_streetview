@@ -30,6 +30,10 @@ interface CompiledExports {
   signed_angle_diff: (from: number, to: number) => number;
   haversine: (lat1: number, lon1: number, lat2: number, lon2: number) => number;
   batch_haversine: (ptr: number, count: number, out: number) => number;
+  offset_latlng: (
+    lat: number, lng: number, distanceMeters: number,
+    bearingDeg: number, out2: number,
+  ) => void;
   fill_engine_noise: (
     ptr: number, count: number,
     rpm: number, load: number, speed: number,
@@ -338,6 +342,24 @@ describe('compiled streetview-wasm.wasm binary', () => {
       expectedTotal += expected;
     }
     expect(total).toBeCloseTo(expectedTotal, 6);
+  });
+
+  test('offset_latlng agrees with the JS twin and lands the requested distance away', async () => {
+    const { loadWasmModule, _resetWasmModule } = await import('../index');
+    _resetWasmModule();
+    const fallback = await loadWasmModule();
+    expect(fallback.isWasm).toBe(false);
+
+    const ptr = WASM_SCRATCH_OFFSET;
+    for (let bearing = 0; bearing < 360; bearing += 45) {
+      exp.offset_latlng(40.7128, -74.006, 10, bearing, ptr);
+      const out = new Float64Array(exp.memory.buffer, ptr, 2);
+      const twin = fallback.offsetLatLng(40.7128, -74.006, 10, bearing);
+      expect(out[0]).toBeCloseTo(twin.lat, 12);
+      expect(out[1]).toBeCloseTo(twin.lng, 12);
+      expect(exp.haversine(40.7128, -74.006, out[0]!, out[1]!)).toBeCloseTo(10, 6);
+    }
+    _resetWasmModule();
   });
 
   test('batch_haversine returns 0 and writes nothing for fewer than two points', () => {

@@ -1,7 +1,9 @@
 /**
  * cpp/tests/noise_module_test.cpp
  *
- * Native (non-Emscripten) golden-vector tests for cpp/src/noise_module.cpp.
+ * Native (non-Emscripten) golden-vector tests for the whole C++ numeric layer
+ * — cpp/src/noise_module.cpp, geodesy_module.cpp, audio_module.cpp,
+ * hrtf_module.cpp and luma_module.cpp.
  *
  * These run with the *host* compiler — no emcc, no browser, no Node — so a
  * regression in the C++ source of truth is caught by `ctest` on any machine:
@@ -223,6 +225,55 @@ TEST_CASE("batch_haversine leaves the output untouched for fewer than two points
     CHECK(out[0] == -1.0);
     CHECK(sw_batch_haversine(points, 0, out) == 0.0);
     CHECK(out[0] == -1.0);
+}
+
+TEST_CASE("offset_latlng matches the shipping WASM goldens") {
+    for (int i = 0; i < goldens::kOffsetCount; ++i) {
+        INFO(at(i));
+        double out[2] = { 0.0, 0.0 };
+        sw_offset_latlng(goldens::kOffsetLat[i], goldens::kOffsetLng[i],
+                         goldens::kOffsetDistance[i], goldens::kOffsetBearing[i], out);
+        CHECK(rel_diff(out[0], goldens::kOffsetExpectedLat[i]) <= kHaversineRelTolerance);
+        CHECK(rel_diff(out[1], goldens::kOffsetExpectedLng[i]) <= kHaversineRelTolerance);
+    }
+}
+
+TEST_CASE("offset_latlng round-trips through haversine") {
+    // Walking `d` metres along a bearing must land `d` metres away. This is the
+    // property the historical-imagery ring crawl actually depends on, and it
+    // ties the two geodesy kernels to the same Earth radius.
+    const double lat = 40.7128;
+    const double lng = -74.006;
+    for (int i = 0; i < 8; ++i) {
+        const double bearing = 45.0 * static_cast<double>(i);
+        INFO(at(i));
+        double out[2] = { 0.0, 0.0 };
+        sw_offset_latlng(lat, lng, 10.0, bearing, out);
+        CHECK(rel_diff(sw_haversine(lat, lng, out[0], out[1]), 10.0) <= 1e-9);
+    }
+}
+
+TEST_CASE("offset_latlng: zero distance is a no-op and nullptr is safe") {
+    double out[2] = { -1.0, -1.0 };
+    sw_offset_latlng(51.5074, -0.1278, 0.0, 123.5, out);
+    CHECK(rel_diff(out[0], 51.5074) <= kHaversineRelTolerance);
+    CHECK(rel_diff(out[1], -0.1278) <= kHaversineRelTolerance);
+    // Reachable directly from the WASM ABI, so it must not dereference null.
+    sw_offset_latlng(51.5074, -0.1278, 10.0, 0.0, nullptr);
+}
+
+TEST_CASE("offset_latlng: north raises the latitude, south lowers it") {
+    const double lat = 40.7128;
+    const double lng = -74.006;
+    double north[2] = { 0.0, 0.0 };
+    double south[2] = { 0.0, 0.0 };
+    sw_offset_latlng(lat, lng, 100.0, 0.0, north);
+    sw_offset_latlng(lat, lng, 100.0, 180.0, south);
+    CHECK(north[0] > lat);
+    CHECK(south[0] < lat);
+    // Due north/south leaves the meridian alone.
+    CHECK(rel_diff(north[1], lng) <= kHaversineRelTolerance);
+    CHECK(rel_diff(south[1], lng) <= kHaversineRelTolerance);
 }
 
 TEST_CASE("normalize_angle matches the shipping WASM goldens") {

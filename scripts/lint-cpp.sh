@@ -6,9 +6,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="${ROOT}/cpp/build-host"
+# Every .cpp in cpp/src must be listed here — a new translation unit that is
+# not in this list is silently never linted.
 SOURCES=(
   "${ROOT}/cpp/src/noise_module.cpp"
+  "${ROOT}/cpp/src/geodesy_module.cpp"
+  "${ROOT}/cpp/src/audio_module.cpp"
   "${ROOT}/cpp/src/hrtf_module.cpp"
+  "${ROOT}/cpp/src/luma_module.cpp"
   "${ROOT}/cpp/src/bindings.cpp"
 )
 

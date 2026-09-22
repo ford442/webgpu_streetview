@@ -57,7 +57,7 @@ if(EMSCRIPTEN)
     #   - No embind (--bind) — raw C exports are used instead.
     #   - Exported function names match bindings.cpp:
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
-    #       fill_particle_seeds, haversine, batch_haversine,
+    #       fill_particle_seeds, haversine, batch_haversine, offset_latlng,
     #       normalize_angle, signed_angle_diff, fill_engine_noise,
     #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
     #       reduce_luma_bt709, downsample_2d
@@ -69,7 +69,10 @@ if(EMSCRIPTEN)
     #     ignored.
     add_executable(streetview-wasm
         src/noise_module.cpp
+        src/geodesy_module.cpp
+        src/audio_module.cpp
         src/hrtf_module.cpp
+        src/luma_module.cpp
         src/bindings.cpp
     )
     target_include_directories(streetview-wasm PRIVATE include)
@@ -102,7 +105,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -122,8 +125,16 @@ else()
     # golden vectors captured from the shipping WASM binary.
     # bindings.cpp is an empty TU on the host (#ifdef __EMSCRIPTEN__). Including
     # it here puts it in compile_commands.json so `clang-tidy -p cpp/build-host`
-    # / `npm run lint:cpp` can see both algorithm sources.
-    add_library(streetview_cpu STATIC src/noise_module.cpp src/hrtf_module.cpp src/bindings.cpp)
+    # / `npm run lint:cpp` can see every algorithm source. Keep this list, the
+    # emcc list above and scripts/lint-cpp.sh SOURCES in step when a TU is added.
+    add_library(streetview_cpu STATIC
+        src/noise_module.cpp
+        src/geodesy_module.cpp
+        src/audio_module.cpp
+        src/hrtf_module.cpp
+        src/luma_module.cpp
+        src/bindings.cpp
+    )
     target_include_directories(streetview_cpu PUBLIC include)
     target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
 

@@ -663,8 +663,9 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM,
 panorama luma hist/reduce/downsample)
 exists as three implementations — the shipping `public/wasm/streetview-wasm.wasm`,
-the C++ in `cpp/src/noise_module.cpp`, and the pure-JS fallback in
-`src/wasm/index.ts`. They are pinned to **one set of golden vectors** captured
+the C++ in `cpp/src/*_module.cpp` (one translation unit per domain: noise,
+geodesy, audio, hrtf, luma), and the pure-JS fallback in
+`src/wasm/jsFallback.ts`. They are pinned to **one set of golden vectors** captured
 from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
@@ -674,8 +675,10 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
   points at `build-host`. `npm run lint:cpp` runs advisory clang-tidy
-  (`WarningsAsErrors` empty) on `noise_module.cpp` and `bindings.cpp`; CI
-  `wasm-cpp-host` runs it after the g++ host build.
+  (`WarningsAsErrors` empty) over `SOURCES` in `scripts/lint-cpp.sh`, which
+  must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
+  host build. A new translation unit also goes in both CMake source lists and
+  `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
   the JS fallback (runs with `npm test`).
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
@@ -687,7 +690,9 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code — the JS fallback is a degrade/test twin, not a third place to
-invent behaviour. Full detail: `docs/WASM_BRIDGE.md`.
+invent behaviour. Geodesy in particular has exactly one copy per formula:
+`haversineDistance` (`navigation.ts`) and `offsetLatLng`
+(`historicalImagery.ts`) are thin dispatches onto the WASM exports. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

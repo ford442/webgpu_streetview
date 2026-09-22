@@ -11,11 +11,24 @@
  *     *different* capture (Google occasionally keeps an older pano reachable
  *     a few meters from the newest one along the same stretch of road).
  *
+ * The ring geometry is not computed here: `offsetLatLng` delegates to the
+ * WASM `offset_latlng` export (or its JS fallback twin), the same way
+ * `haversineDistance` in navigation.ts delegates to `haversine`. See
+ * docs/WASM_BRIDGE.md — the app keeps one copy of each geodesy formula.
+ *
  * `crawlHistoricalImagery` samples a small ring of points around the given
  * center (plus the center itself) and dedupes whatever distinct
  * `imageDate` values come back. This is a best-effort scan, not a complete
  * archive — most locations will only ever yield 1-2 distinct dates.
  */
+
+import { getWasmModule, loadWasmModule } from '../wasm';
+import { JS_FALLBACK as jsFallback } from '../wasm/jsFallback';
+
+// Warm the module at import time; `offsetLatLng` below stays synchronous (the
+// crawl builds its ring before the first await), so it reads the JS twin until
+// this resolves — same shape as src/utils/navigation.ts.
+void loadWasmModule();
 
 export interface HistoricalPanoEntry {
   panoId: string;
@@ -42,32 +55,21 @@ const DEFAULT_OPTIONS: Required<CrawlOptions> = {
   searchRadiusMeters: 50,
 };
 
-const EARTH_RADIUS_METERS = 6371000;
-
-/** Offsets a lat/lng by `distanceMeters` along `bearingDeg` (0 = north, clockwise). */
+/**
+ * Offsets a lat/lng by `distanceMeters` along `bearingDeg` (0 = north,
+ * clockwise).
+ *
+ * The formula itself lives in `cpp/src/geodesy_module.cpp` (`sw_offset_latlng`)
+ * with a bit-compatible twin in `src/wasm/jsFallback.ts`; this is a thin
+ * dispatch so the timeline crawl and the C++ numeric layer can never drift.
+ */
 export function offsetLatLng(
   lat: number,
   lng: number,
   distanceMeters: number,
   bearingDeg: number
 ): { lat: number; lng: number } {
-  const bearing = (bearingDeg * Math.PI) / 180;
-  const latRad = (lat * Math.PI) / 180;
-  const lngRad = (lng * Math.PI) / 180;
-  const angularDistance = distanceMeters / EARTH_RADIUS_METERS;
-
-  const newLatRad = Math.asin(
-    Math.sin(latRad) * Math.cos(angularDistance) +
-      Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing)
-  );
-  const newLngRad =
-    lngRad +
-    Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latRad),
-      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(newLatRad)
-    );
-
-  return { lat: (newLatRad * 180) / Math.PI, lng: (newLngRad * 180) / Math.PI };
+  return (getWasmModule() ?? jsFallback).offsetLatLng(lat, lng, distanceMeters, bearingDeg);
 }
 
 /** Builds the ring of sample points (center first) used by the crawl. */

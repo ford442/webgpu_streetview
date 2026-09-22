@@ -50,6 +50,10 @@ interface Goldens {
   particleSeeds: { count: number; seed: number; expected: number[] };
   haversine: { lat1: number; lon1: number; lat2: number; lon2: number; expected: number }[];
   batchHaversine: { points: number[]; expectedSegments: number[]; expectedTotal: number };
+  offsetLatLng: {
+    lat: number; lng: number; distanceMeters: number; bearingDeg: number;
+    expectedLat: number; expectedLng: number;
+  }[];
   normalizeAngle: { angle: number; expected: number }[];
   signedAngleDiff: { from: number; to: number; expected: number }[];
   engineNoise: {
@@ -91,7 +95,7 @@ const TOLERANCES = {
    * double and rounds once while the module rounds after each operation.
    */
   f32RoundingOrder: 5e-7,
-  /** Both sides use the host's Math.sin/cos/atan2 in double precision. */
+  /** Both sides use the host's Math.sin/cos/asin/atan2 in double precision. */
   haversineRelative: 1e-12,
   /**
    * Integer-LCG and fmod paths, plus the cabin IR (whose JS twin rounds with
@@ -218,6 +222,16 @@ describe('WASM golden parity (JS fallback)', () => {
       expectRelClose(segments[i]!, expected, TOLERANCES.haversineRelative, `segment[${i}]`);
     });
     expectRelClose(total, expectedTotal, TOLERANCES.haversineRelative, 'batchHaversine total');
+  });
+
+  it('offsetLatLng matches the goldens', () => {
+    goldens.offsetLatLng.forEach(
+      ({ lat, lng, distanceMeters, bearingDeg, expectedLat, expectedLng }, i) => {
+        const out = api.offsetLatLng(lat, lng, distanceMeters, bearingDeg);
+        expectRelClose(out.lat, expectedLat, TOLERANCES.haversineRelative, `offsetLatLng[${i}].lat`);
+        expectRelClose(out.lng, expectedLng, TOLERANCES.haversineRelative, `offsetLatLng[${i}].lng`);
+      },
+    );
   });
 
   it('normalizeAngle matches the goldens', () => {

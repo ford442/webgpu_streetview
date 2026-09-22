@@ -83,8 +83,8 @@ jobs:
           if-no-files-found: ignore
 
   # Native (non-Emscripten) build of the C++ source of truth plus the golden
-  # vector tests. This is the job that makes cpp/src/noise_module.cpp a real
-  # source rather than an untested parity twin: it needs no emcc, no browser and
+  # vector tests. This is the job that makes the cpp/src/*_module.cpp sources a
+  # real source rather than an untested parity twin: it needs no emcc, no browser and
   # no Node, runs in seconds, and asserts the C++ against vectors captured from
   # the binary that actually ships. See docs/WASM_BRIDGE.md.
   wasm-cpp-host:
