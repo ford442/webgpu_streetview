@@ -169,7 +169,18 @@ window.streetViewRendererDebug.setWeatherMode('fragment');
 window.streetViewRendererDebug.getWeatherMode();
 ```
 
-Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weatherMode`) and reloads the page. With no explicit URL flag or stored preference, the mode falls back to the detected visual quality preset's `weatherPostProcessMode` (`src/config/visualPresets.ts`) — every preset defaults to `'fragment'` except `ultra`, which defaults to `'compute'`.
+Like `setBackend`, `setWeatherMode` persists to `localStorage` (`streetview.weatherMode`) and reloads the page. With no explicit URL flag or stored preference, the mode falls back to the detected visual quality preset's `weatherPostProcessMode` (`src/config/visualPresets.ts`): **Low and Medium default to `'fragment'`; High and Ultra default to `'compute'`.** High budgets 2000 particles, which only the compute path can allocate.
+
+### High → fragment: the one-step degrade
+
+Compute weather raises the required adapter limits (`checkRequiredLimits`), so a High-preset boot can fail the limit gate on an adapter that would have run fragment weather fine (Intel iGPUs are the case in point). `createStreetViewRenderer` re-boots **once** on fragment weather when, and only when, all of:
+
+- the first boot failed at `webgpuProbe.stage === 'limits'`, and
+- the compute mode came from the quality **preset** — `getWeatherPostProcessModePolicy().source === 'preset'`.
+
+An explicit `?weather=compute` or a stored `streetview.weatherMode = 'compute'` is never second-guessed: it still hard-fails, because an explicit request that silently runs something else is a lie about the pipeline. The degrade is likewise never silent — it is published on `window.webgpuProbe.weatherDegrade` as `{ from, to, reason }`, and a failing fragment retry hard-fails rather than degrading a second time.
+
+GPU particles follow the mode, not the degrade: after a degrade the boot is on fragment weather, so `isParticlePrecipitationEnabled` is false. Low and Medium never allocate the particle textures even under a forced `?weather=compute`.
 
 **This is WebGPU-only.** There is no live WebGL2 weather session. `?weather=compute` selects the compute WGSL path; the GLSL reference is fragment-only SDR.
 
@@ -184,8 +195,9 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | Surface | Policy | Notes |
 | --- | --- | --- |
 | `float32-filterable` | Requested when adapter exposes it | HDR intermediate + compute weather storage reads |
-| `timestamp-query` | Requested when adapter exposes it | GPU pass timings in the performance overlay (P) |
-| `timestamp-query-inside-passes` | Requested when adapter exposes it | Overlay-only later; not used in shaders |
+| `timestamp-query` | Requested when adapter exposes it | **Used:** GPU pass timings in the performance overlay (P), via `timestampWrites` on the render/compute pass descriptor |
+| `timestamp-query-inside-passes` | Requested when adapter exposes it | Legacy fallback only — see `timestampWriteStrategy` below. Not used in shaders |
+| `timestampWriteStrategy` | `'pass-descriptor'` / `'inside-passes'` / `'none'` | Which stamping path `GpuPassTimer` actually took this boot |
 | `subgroups` | Requested when adapter exposes it | **Used:** gpu-chores hist coalesced atomics (`gpu-chores-hist-subgroups.wgsl`) and compute-weather luma firefly reduce (`withSubgroupLumaReduce`). Scalar fallbacks stay naga-clean. `?gpu=compat` does not require the feature. |
 | `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** `scripts/f16-naga-spike.wgsl` is the probe; naga-cli is installed unpinned in CI and newer builds now accept `enable f16`, so the guard in `validateShaders.test.ts` asserts the shipped state (no `enable f16;` in production WGSL, `shaderFeatureUses.shaderF16` false) rather than a validator version. Flipping it needs a production shader that actually uses `f16`. |
 | `rg11b10ufloat-renderable` | Requested when adapter exposes it | **Used:** Pass-1 HDR intermediate is `rg11b10ufloat` when enabled and alpha is unused; otherwise `rgba16float`. Recorded as `capabilityMatrix.intermediateFormat`. |
@@ -210,6 +222,20 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `gpuChoresKillSwitch` | `true` when `?no_gpu_compute` | Chores fall back to WASM/JS; **weather fragment/compute is unchanged** |
 
 GPU timings (when `timestamp-query` is enabled) are published on `window.rendererGpuTimings` and shown in **Performance Stats** (press P): Pass1 (panorama → HDR), weather (fragment or compute), and blit (compute only).
+
+### How spans are stamped
+
+`src/renderer/gpuPassTimer.ts` declares each span on the pass descriptor — `timestampWrites: { querySet, beginningOfPassWriteIndex, endOfPassWriteIndex }` on `beginRenderPass` / `beginComputePass` — rather than calling the deprecated `GPUCommandEncoder.writeTimestamp` / pass-encoder `writeTimestamp`. Slot map: 0/1 pass 1, 2/3 weather, 4/5 the compute blit.
+
+`GpuPassTimer` probes the device once at construction (a dropped, never-submitted encoder) and records the result as `capabilityMatrix.timestampWriteStrategy`:
+
+| Strategy | When | Browsers |
+| --- | --- | --- |
+| `'pass-descriptor'` | `timestamp-query` enabled and the descriptor probe is accepted | Chrome / Edge 121+, Firefox Nightly, Safari TP — i.e. everything that ships `timestamp-query` today |
+| `'inside-passes'` | The descriptor probe throws **and** `timestamp-query-inside-passes` is enabled | Legacy-only implementations that still expose pass-encoder `writeTimestamp` |
+| `'none'` | No `timestamp-query`, or neither path is usable | SwiftShader, CI smoke, `?gpu=fallback` |
+
+On `'none'` every entry point is a no-op, the query set is never resolved, and the overlay reads `available: false`. `markPassStart` / `markPassEnd` are no-ops except on `'inside-passes'`; nothing calls encoder-level `writeTimestamp` any more. `timestamp-query-inside-passes` therefore stays in `OPTIONAL_FEATURES_ATTEMPTED` only to keep that fallback reachable — drop it there if the fallback is ever removed.
 
 ## gpu-chores (panorama analysis, #216)
 

@@ -44,6 +44,20 @@ export interface RecordedPass {
     dispatches: Array<[number, number]>;
     draws: number[];
     ended: boolean;
+    /**
+     * `timestampWrites` as handed to `beginRenderPass` / `beginComputePass` —
+     * the modern timing path, which is what tests assert on.
+     */
+    timestampWrites?: {
+        querySet: unknown;
+        beginningOfPassWriteIndex?: number;
+        endOfPassWriteIndex?: number;
+    } | undefined;
+    /**
+     * Legacy in-pass `writeTimestamp` calls. Should stay empty on any device
+     * that takes the pass-descriptor path.
+     */
+    writeTimestampCalls: Array<{ querySet: unknown; index: number }>;
 }
 
 export interface RecordedBindGroup {
@@ -57,6 +71,30 @@ export interface RecordedBindGroup {
 export interface RecordedEncoder {
     passes: RecordedPass[];
     copies: Array<{ src: unknown; dst: unknown; size: unknown }>;
+    querySetResolves: Array<{ querySet: unknown; firstQuery: number; queryCount: number }>;
+}
+
+/** A created query set, so timing tests can identify which one a pass named. */
+export interface RecordedQuerySet {
+    kind: 'querySet';
+    id: number;
+    descriptor: GPUQuerySetDescriptor;
+    destroyed: boolean;
+    destroy: () => void;
+}
+
+export interface FakeGpuOptions {
+    /**
+     * Device features `device.features.has` reports. Default: none, matching
+     * the historical fake (SwiftShader-ish, no timestamps).
+     */
+    features?: string[];
+    /**
+     * Make `beginComputePass`/`beginRenderPass` throw when handed a
+     * `timestampWrites` descriptor — the stand-in for an implementation that
+     * only supports `timestamp-query-inside-passes`.
+     */
+    rejectPassDescriptorTimestampWrites?: boolean;
 }
 
 /** A created bind group *layout*, so tests can assert declared sample types. */
@@ -81,6 +119,7 @@ export interface FakeGpu {
     bindGroups: RecordedBindGroup[];
     bindGroupLayouts: RecordedBindGroupLayout[];
     encoders: RecordedEncoder[];
+    querySets: RecordedQuerySet[];
     computePipelines: Array<{ id: number; entryPoint: string }>;
     renderPipelines: Array<{ id: number }>;
     writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }>;
@@ -126,14 +165,16 @@ export function installShaderFetch(options: { particles?: boolean } = {}): void 
     };
 }
 
-export function createFakeGpu(): FakeGpu {
+export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     let nextId = 1;
+    const features = new Set(options.features ?? []);
 
     const textures: FakeTexture[] = [];
     const buffers: FakeBuffer[] = [];
     const bindGroups: RecordedBindGroup[] = [];
     const bindGroupLayouts: RecordedBindGroupLayout[] = [];
     const encoders: RecordedEncoder[] = [];
+    const querySets: RecordedQuerySet[] = [];
     const computePipelines: Array<{ id: number; entryPoint: string }> = [];
     const renderPipelines: Array<{ id: number }> = [];
     const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }> = [];
@@ -158,9 +199,22 @@ export function createFakeGpu(): FakeGpu {
      * One object is both the recording and the pass API, so a `setPipeline`
      * call made through the encoder is visible on the object tests inspect.
      */
-    function makePass(type: 'compute' | 'render'): RecordedPass {
+    function makePass(
+        type: 'compute' | 'render',
+        descriptor?: { timestampWrites?: RecordedPass['timestampWrites'] },
+    ): RecordedPass {
+        if (options.rejectPassDescriptorTimestampWrites && descriptor?.timestampWrites) {
+            throw new TypeError('timestampWrites is not supported on this pass descriptor');
+        }
         const pass: RecordedPass = {
-            type, pipeline: null, bindGroups: [], dispatches: [], draws: [], ended: false,
+            type,
+            pipeline: null,
+            bindGroups: [],
+            dispatches: [],
+            draws: [],
+            ended: false,
+            timestampWrites: descriptor?.timestampWrites,
+            writeTimestampCalls: [],
         };
         return Object.assign(pass, {
             setPipeline: (p: unknown) => { pass.pipeline = p; },
@@ -168,25 +222,47 @@ export function createFakeGpu(): FakeGpu {
             dispatchWorkgroups: (x: number, y: number) => { pass.dispatches.push([x, y]); },
             draw: (n: number) => { pass.draws.push(n); },
             end: () => { pass.ended = true; },
-            writeTimestamp: () => {},
+            writeTimestamp: (querySet: unknown, index: number) => {
+                pass.writeTimestampCalls.push({ querySet, index });
+            },
         });
     }
 
     function createCommandEncoder(): GPUCommandEncoder {
-        const rec: RecordedEncoder = { passes: [], copies: [] };
+        const rec: RecordedEncoder = { passes: [], copies: [], querySetResolves: [] };
         encoders.push(rec);
         return {
-            beginComputePass: () => { const p = makePass('compute'); rec.passes.push(p); return p; },
-            beginRenderPass: () => { const p = makePass('render'); rec.passes.push(p); return p; },
+            beginComputePass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+                const p = makePass('compute', d);
+                rec.passes.push(p);
+                return p;
+            },
+            beginRenderPass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+                const p = makePass('render', d);
+                rec.passes.push(p);
+                return p;
+            },
             copyTextureToTexture: (src: unknown, dst: unknown, size: unknown) => {
                 rec.copies.push({ src, dst, size });
+            },
+            copyBufferToBuffer: () => {},
+            resolveQuerySet: (querySet: unknown, firstQuery: number, queryCount: number) => {
+                rec.querySetResolves.push({ querySet, firstQuery, queryCount });
             },
             finish: () => ({ kind: 'commandBuffer' }),
         } as unknown as GPUCommandEncoder;
     }
 
     const device = {
-        features: { has: () => false },
+        features: { has: (name: string) => features.has(name) },
+        createQuerySet: (d: GPUQuerySetDescriptor) => {
+            const qs: RecordedQuerySet = {
+                kind: 'querySet', id: nextId++, descriptor: d, destroyed: false,
+                destroy: () => { qs.destroyed = true; },
+            };
+            querySets.push(qs);
+            return qs;
+        },
         createSampler: (d?: GPUSamplerDescriptor) => ({ kind: 'sampler', id: nextId++, descriptor: d }),
         createBuffer: (d: GPUBufferDescriptor) => {
             const buf: FakeBuffer = {
@@ -260,6 +336,7 @@ export function createFakeGpu(): FakeGpu {
         bindGroups,
         bindGroupLayouts,
         encoders,
+        querySets,
         computePipelines,
         renderPipelines,
         writeBufferCalls,

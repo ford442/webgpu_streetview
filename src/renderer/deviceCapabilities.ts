@@ -1,4 +1,5 @@
 import type { AdapterFeatureLevel, WeatherPostProcessMode } from './RendererBackend';
+import type { TimestampWriteStrategy } from './gpuPassTimer';
 
 /**
  * Not yet in `GPUFeatureName` for `@webgpu/types` 0.1.64. Requested only when
@@ -76,6 +77,13 @@ export interface DeviceCapabilityMatrix {
     optionalFeaturesAttempted: GPUFeatureName[];
     optionalFeaturesEnabled: GPUFeatureName[];
     timestampQueriesAvailable: boolean;
+    /**
+     * How pass timings are stamped this boot — see `TimestampWriteStrategy`.
+     * `buildCapabilityMatrix` records the path we expect from the enabled
+     * features; `Renderer` corrects it once `GpuPassTimer` has probed the
+     * device, so the overlay always shows the path actually taken.
+     */
+    timestampWriteStrategy: TimestampWriteStrategy;
     temporalDepthPingPong: boolean;
     /** `'unknown'` when the browser does not expose `GPURequestAdapterOptions.featureLevel`. */
     featureLevel: AdapterFeatureLevel | 'unknown';

@@ -166,6 +166,12 @@ export function buildCapabilityMatrix(
         optionalFeaturesAttempted: [...OPTIONAL_FEATURES_ATTEMPTED],
         optionalFeaturesEnabled: enabledFeatures,
         timestampQueriesAvailable: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.timestampQuery),
+        // The spec path on every browser shipping timestamp-query today; the
+        // legacy inside-passes fallback only replaces this if GpuPassTimer's
+        // descriptor probe is rejected.
+        timestampWriteStrategy: enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.timestampQuery)
+            ? 'pass-descriptor'
+            : 'none',
         temporalDepthPingPong: weatherPostProcessMode === 'compute',
         featureLevel: context.featureLevel ?? 'unknown',
         forceFallbackAdapter: context.forceFallbackAdapter ?? false,

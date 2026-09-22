@@ -5,14 +5,15 @@ import {
     getLegacyTransitionsEnabled,
     getRendererDebugOptions,
     getRendererPreference,
-    getWeatherPostProcessMode,
+    getWeatherPostProcessModePolicy,
     RendererBackendType,
     RendererDebugOptions,
     RendererInitOptions,
     StreetViewRenderer,
+    WeatherPostProcessMode,
 } from './RendererBackend';
 import { getPreset, detectRecommendedQuality } from '../config/visualPresets';
-import { publishWebGpuProbe } from './webgpuBootProbe';
+import { publishWebGpuProbe, type WebGpuProbeStage } from './webgpuBootProbe';
 
 export interface RendererCreateResult {
     renderer: StreetViewRenderer | null;
@@ -35,8 +36,10 @@ export async function createStreetViewRenderer(
     const preference = getRendererPreference();
     const debugOptions = getRendererDebugOptions();
     const webglPreferenceDeferred = preference === 'webgl';
-    const presetDefaultWeatherMode = getPreset(detectRecommendedQuality()).weatherPostProcessMode;
-    const weatherPostProcessMode = getWeatherPostProcessMode(presetDefaultWeatherMode);
+    const quality = detectRecommendedQuality();
+    const presetDefaultWeatherMode = getPreset(quality).weatherPostProcessMode;
+    const weatherPolicy = getWeatherPostProcessModePolicy(presetDefaultWeatherMode);
+    const weatherPostProcessMode = weatherPolicy.mode;
     const legacyTransitions = getLegacyTransitionsEnabled(false);
 
     publishWebGpuProbe({
@@ -54,14 +57,49 @@ export async function createStreetViewRenderer(
         );
     }
 
-    const renderer = new Renderer(canvas);
-    const initOptions: RendererInitOptions = {
+    const attempt = await attemptRendererBoot(canvas, {
         ...options,
         weatherPostProcessMode,
         legacyTransitions,
-    };
+    });
+    let renderer = attempt.renderer;
+    let success = attempt.success;
 
-    const success = await renderer.init(initOptions);
+    // One-step degrade, and one only: an adapter that cannot meet the compute
+    // weather limits re-boots on fragment weather, but only when compute came
+    // from the quality preset rather than `?weather=compute` / the stored
+    // preference. The degrade is published on `webgpuProbe.weatherDegrade` —
+    // it is never silent, because the preset would otherwise claim a pipeline
+    // it is not running. An explicit compute request still hard-fails.
+    if (!success
+        && weatherPostProcessMode === 'compute'
+        && weatherPolicy.source === 'preset'
+        && failedOnAdapterLimits()) {
+        const reason = renderer.fallbackReason || 'Adapter limits below compute weather minimums';
+        console.warn(
+            `[Renderer] ${quality} preset compute weather exceeds this adapter's limits `
+            + `(${reason}); degrading once to fragment weather.`,
+        );
+        renderer.destroy();
+
+        const degraded: DegradeRecord = { from: 'compute', to: 'fragment', reason };
+        const retry = await attemptRendererBoot(canvas, {
+            ...options,
+            weatherPostProcessMode: 'fragment',
+            legacyTransitions,
+        });
+        renderer = retry.renderer;
+        success = retry.success;
+        publishWebGpuProbe({
+            ok: success,
+            stage: success ? 'ok' : (readProbeStage() ?? 'limits'),
+            reason: success ? '' : (renderer.fallbackReason || reason),
+            preference,
+            webglPreferenceDeferred,
+            weatherDegrade: degraded,
+        });
+    }
+
     if (success) {
         exposeRendererDebugGlobals(
             'webgpu',
@@ -105,4 +143,31 @@ export async function createStreetViewRenderer(
         fallbackReason,
         debugOptions,
     };
+}
+
+interface DegradeRecord {
+    from: WeatherPostProcessMode;
+    to: WeatherPostProcessMode;
+    reason: string;
+}
+
+/** Construct a Renderer and run its init, so the degrade path can do it twice. */
+async function attemptRendererBoot(
+    canvas: HTMLCanvasElement,
+    initOptions: RendererInitOptions,
+): Promise<{ renderer: Renderer; success: boolean }> {
+    const renderer = new Renderer(canvas);
+    const success = await renderer.init(initOptions);
+    return { renderer, success };
+}
+
+/** The stage `bootDevice` last published, or undefined outside a browser. */
+function readProbeStage(): WebGpuProbeStage | undefined {
+    if (typeof window === 'undefined') return undefined;
+    return window.webgpuProbe?.stage;
+}
+
+/** True when `bootDevice` rejected the adapter at the required-limits gate. */
+function failedOnAdapterLimits(): boolean {
+    return readProbeStage() === 'limits';
 }

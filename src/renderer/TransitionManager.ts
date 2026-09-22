@@ -1,4 +1,5 @@
 import type { GpuPassTimer } from './gpuPassTimer';
+import { pass1TimestampWrites } from './streetViewPass';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 
 export interface Pass1TimingContext {
@@ -246,6 +247,7 @@ export class TransitionManager {
                     loadOp: 'clear' as GPULoadOp,
                     storeOp: 'store' as GPUStoreOp,
                 }],
+                timestampWrites: pass1TimestampWrites(pass1Timing),
             });
 
             const tBindGroup = this.device.createBindGroup({

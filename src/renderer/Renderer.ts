@@ -153,6 +153,10 @@ export class Renderer implements StreetViewRenderer {
 
             if (boot.timestampQueriesAvailable) {
                 this.gpuPassTimer = new GpuPassTimer(this.device);
+                // The matrix is the same object the probe and
+                // `window.rendererAdapterInfo` hold, so correcting it here is
+                // what the overlay reads back.
+                boot.capabilityMatrix.timestampWriteStrategy = this.gpuPassTimer.strategy;
             } else {
                 this.gpuPassTimer = null;
                 resetGpuPassTimings();

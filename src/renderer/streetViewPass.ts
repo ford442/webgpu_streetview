@@ -8,6 +8,19 @@ export interface Pass1TimingContext {
 }
 
 /**
+ * The pass-1 span as `GPURenderPassDescriptor.timestampWrites`.
+ *
+ * Undefined when there is no timer, or when this device fell back to the
+ * legacy in-pass `writeTimestamp` — a dictionary member set to undefined is
+ * the same as omitting it, so this can be spread straight into the descriptor.
+ */
+export function pass1TimestampWrites(
+    timing?: Pass1TimingContext,
+): GPURenderPassTimestampWrites | undefined {
+    return timing?.timer.renderPassTimestampWrites(timing.startIndex, timing.endIndex);
+}
+
+/**
  * Pass 1 — the equirect panorama draw that turns the uploaded Maps frame into
  * the HDR intermediate the weather post-process reads.
  *
@@ -119,6 +132,7 @@ export function encodeStreetViewPass(
             loadOp: 'clear' as GPULoadOp,
             storeOp: 'store' as GPUStoreOp,
         }],
+        timestampWrites: pass1TimestampWrites(timing),
     });
     if (timing) {
         timing.timer.markPassStart(mainPass, timing.startIndex);

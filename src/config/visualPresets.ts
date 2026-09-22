@@ -144,7 +144,10 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
   high: {
     name: 'High',
     quality: 'high',
-    weatherPostProcessMode: 'fragment',
+    // High budgets 2000 particles, so it wants the GPU precipitation the
+    // compute path allocates (weatherParticles.ts). Low/Medium stay fragment.
+    // `?weather=fragment` and the stored preference still override this.
+    weatherPostProcessMode: 'compute',
 
     textureResolution: 256,
     anisotropy: 8,
