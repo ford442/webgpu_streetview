@@ -108,6 +108,10 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
     const batch_haversine = exp['batch_haversine'] as (
       ptr: number, count: number, out: number
     ) => number;
+    const offset_latlng = exp['offset_latlng'] as (
+      lat: number, lng: number, distanceMeters: number,
+      bearingDeg: number, out2: number,
+    ) => void;
     const fill_engine_noise = exp['fill_engine_noise'] as (
       ptr: number, count: number,
       rpm: number, load: number, speed: number,
@@ -199,6 +203,18 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       const view = new Float64Array(wasmMemory.buffer, outOffset, count - 1);
       segmentsOut.set(view.subarray(0, Math.min(segmentsOut.length, count - 1)));
       return total;
+    };
+
+    const offsetLatLng = (
+      lat: number,
+      lng: number,
+      distanceMeters: number,
+      bearingDeg: number,
+    ): { lat: number; lng: number } => {
+      reserveScratch(16); // two f64s; SCRATCH_OFFSET is 8-byte aligned
+      offset_latlng(lat, lng, distanceMeters, bearingDeg, SCRATCH_OFFSET);
+      const view = new Float64Array(wasmMemory.buffer, SCRATCH_OFFSET, 2);
+      return { lat: view[0]!, lng: view[1]! };
     };
 
     const fillEngineNoise = (
@@ -306,6 +322,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
       fillParticleSeeds,
       haversine: haversine_wasm,
       batchHaversine,
+      offsetLatLng,
       normalizeAngle: normalize_angle,
       signedAngleDiff: signed_angle_diff,
       fillEngineNoise,

@@ -2,7 +2,7 @@
  * src/wasm/jsFallback.ts
  * Pure-JavaScript implementation of the streetview-wasm ABI.
  *
- * This mirrors the C++ logic exactly (see cpp/src/noise_module.cpp) so the
+ * This mirrors the C++ logic exactly (see cpp/src/*_module.cpp) so the
  * app works even when the .wasm file has not been compiled yet, or when
  * `WebAssembly` is unavailable. It is a degrade/test twin, not a third place
  * to invent behaviour — see docs/WASM_BRIDGE.md.
@@ -137,11 +137,11 @@ function _jsFillFbmBuffer(
   }
 }
 
-/** 2π as an f32, matching the literal in the WAT/C++ particle-seed code. */
+/** 2π as an f32, matching the literal in the C++ particle-seed code. */
 const _TWO_PI_F32 = Math.fround(6.2831853);
 
 function _jsFillParticleSeeds(out: Float32Array, count: number, seed: number): void {
-  // Same LCG and bit slice as the WAT/C++ implementations so a given seed
+  // Same LCG and bit slice as the C++ implementation so a given seed
   // produces the same particle set on every backend.
   let state = seed >>> 0;
   const nextUnit = (): number => {
@@ -154,7 +154,7 @@ function _jsFillParticleSeeds(out: Float32Array, count: number, seed: number): v
     out[base + 1] = nextUnit();
     out[base + 2] = 0.5 + nextUnit();
     // Single-precision multiply (fround of both operand and product) so the
-    // phase matches the WAT/C++ f32 arithmetic exactly rather than rounding
+    // phase matches the C++ f32 arithmetic exactly rather than rounding
     // twice through a double intermediate.
     out[base + 3] = Math.fround(nextUnit() * _TWO_PI_F32);
   }
@@ -185,6 +185,41 @@ function _jsBatchHaversine(points: Float64Array, segmentsOut: Float64Array): num
     total += d;
   }
   return total;
+}
+
+/** Earth radius used by every geodesy kernel — matches cpp/src/geodesy_module.cpp. */
+const _EARTH_RADIUS_METERS = 6371000;
+
+function _jsOffsetLatLng(
+  lat: number,
+  lng: number,
+  distanceMeters: number,
+  bearingDeg: number,
+): { lat: number; lng: number } {
+  // Operation-for-operation the same as sw_offset_latlng in
+  // cpp/src/geodesy_module.cpp; both run in double precision, so the two agree
+  // to within host-vs-emcc libm rounding (see wasmGoldenParity.test.ts).
+  const toRad = Math.PI / 180;
+  const toDeg = 180 / Math.PI;
+  const bearing = bearingDeg * toRad;
+  const latRad = lat * toRad;
+  const lngRad = lng * toRad;
+  const angular = distanceMeters / _EARTH_RADIUS_METERS;
+
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinAng = Math.sin(angular);
+  const cosAng = Math.cos(angular);
+
+  const newLatRad = Math.asin(sinLat * cosAng + cosLat * sinAng * Math.cos(bearing));
+  const newLngRad =
+    lngRad +
+    Math.atan2(
+      Math.sin(bearing) * sinAng * cosLat,
+      cosAng - sinLat * Math.sin(newLatRad),
+    );
+
+  return { lat: newLatRad * toDeg, lng: newLngRad * toDeg };
 }
 
 function _jsNormalizeAngle(a: number): number {
@@ -413,6 +448,7 @@ export const JS_FALLBACK: StreetViewWasmAPI = {
   fillParticleSeeds: _jsFillParticleSeeds,
   haversine: _jsHaversine,
   batchHaversine: _jsBatchHaversine,
+  offsetLatLng: _jsOffsetLatLng,
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
   fillEngineNoise: _jsFillEngineNoise,

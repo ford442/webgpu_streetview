@@ -97,6 +97,23 @@ export interface StreetViewWasmAPI {
    */
   batchHaversine(points: Float64Array, segmentsOut: Float64Array): number;
 
+  /**
+   * Destination point from a WGS-84 start, a distance in metres and an initial
+   * bearing (0 = north, clockwise) — the spherical direct geodetic problem.
+   *
+   * The only copy of this formula in the app: `src/utils/historicalImagery.ts`
+   * builds its sample ring with it instead of re-deriving `asin`/`atan2` in
+   * TypeScript.
+   *
+   * @returns Degrees. Longitude is not re-wrapped to [-180, 180].
+   */
+  offsetLatLng(
+    lat: number,
+    lng: number,
+    distanceMeters: number,
+    bearingDeg: number,
+  ): { lat: number; lng: number };
+
   /** Normalise an angle to [0, 360). */
   normalizeAngle(angle: number): number;
 

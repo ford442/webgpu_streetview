@@ -16,7 +16,7 @@
 
 namespace goldens {
 
-inline constexpr const char* kWasmSha256 = "f3ff597ec97a919e8f82c131085dc5f5a5a668b3c27f99daf1fb7a2ac11db745";
+inline constexpr const char* kWasmSha256 = "083cd05fe86746bd662b831a13a765d0387139305e91f8775787e463e2ab5e9c";
 inline constexpr unsigned kNoiseSeed = 1337u;
 
 // --- noise2d -------------------------------------------------------------
@@ -136,6 +136,51 @@ inline constexpr double kPolylineExpectedSegments[] = {
     276.2109133163144, 354.98021664254475,
 };
 inline constexpr double kPolylineExpectedTotal = 1120.405366731646;
+
+// --- offset_latlng -------------------------------------------------------
+inline constexpr double kOffsetLat[] = {
+    40.7128, 40.7128, 40.7128,
+    40.7128, 40.7128, 40.7128,
+    40.7128, 40.7128, 40.7128,
+    0.0, -33.8688, 51.5074,
+    89.5,
+};
+inline constexpr double kOffsetLng[] = {
+    -74.006, -74.006, -74.006,
+    -74.006, -74.006, -74.006,
+    -74.006, -74.006, -74.006,
+    179.999, 151.2093, -0.1278,
+    0.0,
+};
+inline constexpr double kOffsetDistance[] = {
+    10.0, 10.0, 10.0,
+    10.0, 10.0, 10.0,
+    10.0, 10.0, 0.0,
+    500.0, 10.0, 10.0,
+    100000.0,
+};
+inline constexpr double kOffsetBearing[] = {
+    0.0, 45.0, 90.0,
+    135.0, 180.0, 225.0,
+    270.0, 315.0, 123.5,
+    90.0, 22.5, -45.0,
+    180.0,
+};
+inline constexpr double kOffsetExpectedLat[] = {
+    40.7128899321606, 40.712863591610244, 40.71279999993927,
+    40.712736408329036, 40.71271006783942, 40.712736408329036,
+    40.71279999993927, 40.712863591610244, 40.7128,
+    2.7533783124046386e-19, -33.868716913510575, 51.50746359159622,
+    88.60067839408164,
+};
+inline constexpr double kOffsetExpectedLng[] = {
+    -74.006, -74.00591610467727, -74.00588135421009,
+    -74.00591610483752, -74.006, -74.00608389516248,
+    -74.00611864578991, -74.00608389532273, -74.006,
+    180.00349660802956, 151.20934144870083, -0.12790216957668663,
+    4.509789942009651e-15,
+};
+inline constexpr int kOffsetCount = 13;
 
 // --- normalize_angle -----------------------------------------------------
 inline constexpr float kNormalizeAngleIn[] = {

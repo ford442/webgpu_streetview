@@ -4,7 +4,9 @@
  *
  * Provides thin aliases with canonical names (`seed`, `noise2d`, …) that
  * match the TypeScript loader ABI in src/wasm/index.ts.  The underlying
- * implementation lives in noise_module.cpp (sw_* functions).
+ * implementations (sw_* functions) live one translation unit per domain:
+ * noise_module.cpp, geodesy_module.cpp, audio_module.cpp, hrtf_module.cpp
+ * and luma_module.cpp.
  *
  * When building with Emscripten:
  *   - CMakeLists.txt exports `_seed`, `_noise2d`, etc. via EXPORTED_FUNCTIONS.
@@ -86,6 +88,16 @@ double haversine(double lat1, double lon1, double lat2, double lon2) {
 EMSCRIPTEN_KEEPALIVE
 double batch_haversine(const double* points, int count, double* out) {
     return sw_batch_haversine(points, count, out);
+}
+
+/**
+ * Destination point from a start, a distance in metres and a bearing.
+ * Writes {lat, lng} degrees to `out2`. Matches ABI export: 'offset_latlng'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void offset_latlng(double lat, double lng, double distance_meters,
+                   double bearing_deg, double* out2) {
+    sw_offset_latlng(lat, lng, distance_meters, bearing_deg, out2);
 }
 
 /** Normalize angle to [0, 360). Matches ABI export: 'normalize_angle'. */

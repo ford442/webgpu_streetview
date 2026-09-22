@@ -330,6 +330,42 @@ describe('batchHaversine', () => {
   });
 });
 
+// ---- offsetLatLng -----------------------------------------------------------
+describe('offsetLatLng', () => {
+  test('lands exactly the requested distance away', async () => {
+    const wasm = await getFallback();
+    for (let bearing = 0; bearing < 360; bearing += 45) {
+      const out = wasm.offsetLatLng(40.7128, -74.006, 10, bearing);
+      expect(wasm.haversine(40.7128, -74.006, out.lat, out.lng)).toBeCloseTo(10, 6);
+    }
+  });
+
+  test('a zero-metre step returns the start point', async () => {
+    const wasm = await getFallback();
+    const out = wasm.offsetLatLng(51.5074, -0.1278, 0, 137);
+    expect(out.lat).toBeCloseTo(51.5074, 12);
+    expect(out.lng).toBeCloseTo(-0.1278, 12);
+  });
+
+  test('north/south move the latitude and leave the meridian alone', async () => {
+    const wasm = await getFallback();
+    const north = wasm.offsetLatLng(40.7128, -74.006, 100, 0);
+    const south = wasm.offsetLatLng(40.7128, -74.006, 100, 180);
+    expect(north.lat).toBeGreaterThan(40.7128);
+    expect(south.lat).toBeLessThan(40.7128);
+    expect(north.lng).toBeCloseTo(-74.006, 12);
+    expect(south.lng).toBeCloseTo(-74.006, 12);
+  });
+
+  test('east/west move the longitude in opposite directions', async () => {
+    const wasm = await getFallback();
+    const east = wasm.offsetLatLng(40.7128, -74.006, 100, 90);
+    const west = wasm.offsetLatLng(40.7128, -74.006, 100, 270);
+    expect(east.lng).toBeGreaterThan(-74.006);
+    expect(west.lng).toBeLessThan(-74.006);
+  });
+});
+
 // ---- normalizeAngle ---------------------------------------------------------
 describe('normalizeAngle', () => {
   const cases: [number, number][] = [

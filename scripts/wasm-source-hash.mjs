@@ -14,6 +14,10 @@ import { fileURLToPath } from 'url';
 
 export const WASM_SOURCE_FILES = [
   'cpp/src/noise_module.cpp',
+  'cpp/src/geodesy_module.cpp',
+  'cpp/src/audio_module.cpp',
+  'cpp/src/hrtf_module.cpp',
+  'cpp/src/luma_module.cpp',
   'cpp/src/bindings.cpp',
   'cpp/include/streetview_wasm.h',
   'cpp/CMakeLists.txt',

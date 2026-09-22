@@ -7,7 +7,7 @@
  * There are three implementations of the same algorithms:
  *
  *   1. public/wasm/streetview-wasm.wasm  – what actually ships
- *   2. cpp/src/noise_module.cpp          – the C++ source of truth
+ *   2. cpp/src/*_module.cpp              – the C++ source of truth
  *   3. src/wasm/index.ts (JS_FALLBACK)   – the jsdom/degrade twin
  *
  * The goldens are captured **from the shipping binary** (1) and then asserted
@@ -111,6 +111,22 @@ const POLYLINE = [
   [40.7158, -74.002], [40.7168, -73.999], [40.7178, -73.995],
 ];
 
+// Destination-point cases. The first eight are exactly the ring
+// `buildSamplePoints()` in src/utils/historicalImagery.ts walks (10 m at
+// 45-degree steps); the rest cover a zero-distance no-op, a bearing that has
+// to wrap past the antimeridian, a southern-hemisphere start, a negative
+// bearing and a distance far larger than any the crawl uses.
+const OFFSET_CASES = [
+  ...Array.from({ length: 8 }, (_, i) => ({
+    lat: 40.7128, lng: -74.006, distanceMeters: 10, bearingDeg: 45 * i,
+  })),
+  { lat: 40.7128, lng: -74.006, distanceMeters: 0, bearingDeg: 123.5 },
+  { lat: 0, lng: 179.999, distanceMeters: 500, bearingDeg: 90 },
+  { lat: -33.8688, lng: 151.2093, distanceMeters: 10, bearingDeg: 22.5 },
+  { lat: 51.5074, lng: -0.1278, distanceMeters: 10, bearingDeg: -45 },
+  { lat: 89.5, lng: 0, distanceMeters: 100000, bearingDeg: 180 },
+];
+
 const ANGLES = [0, 0.5, 45, 180, 359.5, 360, 361, -1, -180, -359.5, -720.25, 1080.75];
 const ANGLE_PAIRS = [
   [0, 90], [90, 0], [10, 350], [350, 10], [0, 180], [180, 0],
@@ -175,6 +191,13 @@ const batchHaversine = {
   expectedSegments: Array.from(new Float64Array(memory.buffer, outOffset, pointCount - 1)),
   expectedTotal: batchTotal,
 };
+
+reserve(16);
+const offsetLatLng = OFFSET_CASES.map((c) => {
+  exp.offset_latlng(c.lat, c.lng, c.distanceMeters, c.bearingDeg, SCRATCH);
+  const v = new Float64Array(memory.buffer, SCRATCH, 2);
+  return { ...c, expectedLat: v[0], expectedLng: v[1] };
+});
 
 const normalizeAngle = ANGLES.map((angle) => ({
   angle, expected: exp.normalize_angle(angle),
@@ -290,6 +313,7 @@ const goldens = {
   particleSeeds,
   haversine,
   batchHaversine,
+  offsetLatLng,
   normalizeAngle,
   signedAngleDiff,
   engineNoise,
@@ -436,6 +460,16 @@ lines.push(`inline constexpr int kPolylinePointCount = ${pointCount};`);
 lines.push(f64Array('kPolylinePoints', batchHaversine.points));
 lines.push(f64Array('kPolylineExpectedSegments', batchHaversine.expectedSegments));
 lines.push(`inline constexpr double kPolylineExpectedTotal = ${f64(batchHaversine.expectedTotal)};`);
+lines.push('');
+
+lines.push('// --- offset_latlng -------------------------------------------------------');
+lines.push(f64Array('kOffsetLat', offsetLatLng.map((o) => o.lat)));
+lines.push(f64Array('kOffsetLng', offsetLatLng.map((o) => o.lng)));
+lines.push(f64Array('kOffsetDistance', offsetLatLng.map((o) => o.distanceMeters)));
+lines.push(f64Array('kOffsetBearing', offsetLatLng.map((o) => o.bearingDeg)));
+lines.push(f64Array('kOffsetExpectedLat', offsetLatLng.map((o) => o.expectedLat)));
+lines.push(f64Array('kOffsetExpectedLng', offsetLatLng.map((o) => o.expectedLng)));
+lines.push(`inline constexpr int kOffsetCount = ${offsetLatLng.length};`);
 lines.push('');
 
 lines.push('// --- normalize_angle -----------------------------------------------------');

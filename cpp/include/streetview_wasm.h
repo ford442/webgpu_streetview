@@ -6,7 +6,7 @@
  * The canonical external ABI (exported from the Emscripten STANDALONE_WASM
  * build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
- *   fill_particle_seeds, haversine, batch_haversine,
+ *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
  *   normalize_angle, signed_angle_diff, fill_engine_noise, fill_cabin_ir,
  *   fill_hrtf, luma_histogram_bt709, reduce_luma_bt709, downsample_2d
  *
@@ -15,7 +15,13 @@
  * CMakeLists.txt, the TS loader, this header, and the committed binary.
  *
  * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
- * canonical names for Emscripten EXPORTED_FUNCTIONS.
+ * canonical names for Emscripten EXPORTED_FUNCTIONS. The implementations are
+ * split one translation unit per domain:
+ *   noise_module.cpp    seed / noise2d / fbm2d / fill_* tiles / particle seeds
+ *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles
+ *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
+ *   hrtf_module.cpp     fill_hrtf
+ *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d
  *
  * Build with Emscripten (standalone raw-WASM mode, no JS glue):
  *   emcmake cmake ... && emmake make
@@ -102,6 +108,24 @@ double sw_haversine(double lat1, double lon1, double lat2, double lon2);
 double sw_batch_haversine(const double* points, int count, double* out);
 
 /**
+ * Destination point from a WGS-84 start, a distance in metres and a bearing.
+ *
+ * Spherical-Earth (R = 6371000 m) direct geodetic problem — the same formula
+ * `offsetLatLng()` in src/utils/historicalImagery.ts used to carry in
+ * TypeScript, kept here so the app has exactly one copy of it.
+ *
+ * @param lat              Start latitude in degrees.
+ * @param lng              Start longitude in degrees.
+ * @param distance_meters  Great-circle distance to travel, in metres.
+ * @param bearing_deg      Initial bearing in degrees (0 = north, clockwise).
+ * @param out2             Caller-owned array of 2 doubles; receives
+ *                         {latitude, longitude} in degrees. Longitude is not
+ *                         re-wrapped to [-180, 180]. nullptr is a no-op.
+ */
+void sw_offset_latlng(double lat, double lng, double distance_meters,
+                      double bearing_deg, double* out2);
+
+/**
  * Normalise an angle to [0, 360).
  */
 float sw_normalize_angle(float angle);
@@ -115,7 +139,7 @@ float sw_signed_angle_diff(float from, float to);
 /**
  * Fill a mono PCM buffer with engine + road noise.
  * Samples are f32 in [-1, 1]. Deterministic for a given (rpm, load, speed,
- * time, sampleRate) so the JS fallback can match the WAT/C++ path.
+ * time, sampleRate) so the JS fallback can match the compiled path.
  *
  * @param buf          Caller-owned float array of length `count`.
  * @param count        Number of samples to write.

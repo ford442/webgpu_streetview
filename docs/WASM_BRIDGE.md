@@ -17,7 +17,11 @@ pixels in WGSL, cabin geometry in Three.js.
 
 | File | Role |
 |---|---|
-| `cpp/src/noise_module.cpp` | **algorithm source of truth** (`sw_*`), host-tested |
+| `cpp/src/noise_module.cpp` | **algorithm source of truth** (`sw_*`) — Perlin/fBm tiles + particle seeds |
+| `cpp/src/geodesy_module.cpp` | haversine, batch haversine, `offset_latlng`, angle helpers |
+| `cpp/src/audio_module.cpp` | engine PCM, cabin IR |
+| `cpp/src/hrtf_module.cpp` | analytic binaural shadow IR pair |
+| `cpp/src/luma_module.cpp` | Rec.709 histogram / reduce / box downsample |
 | `cpp/src/bindings.cpp` | raw `extern "C"` wrappers with the canonical export names |
 | `cpp/include/streetview_wasm.h` | `sw_*` declarations + per-function contracts |
 | `cpp/CMakeLists.txt` | host target (`streetview_cpu`) **and** the Emscripten link flags |
@@ -41,8 +45,8 @@ node scripts/check-wasm-abi.mjs  # the built binary exports the whole ABI
 
 `npm run build` runs `build:wasm` before Vite, and `scripts/verify-build.sh`
 fails the build when `public/wasm/streetview-wasm.wasm.sha256` no longer matches
-the C++ inputs (`noise_module.cpp`, `bindings.cpp`, `streetview_wasm.h`,
-`CMakeLists.txt`) — i.e. when someone edited the algorithms and forgot to rebuild.
+the C++ inputs (every `cpp/src/*.cpp`, `streetview_wasm.h`, `CMakeLists.txt` —
+the list lives in `scripts/wasm-source-hash.mjs`) — i.e. when someone edited the algorithms and forgot to rebuild.
 Locally, if `emcc` is missing but that hash still matches, the committed binary
 is reused. CI (`CI=true`) fails without emcc.
 
@@ -69,8 +73,15 @@ symlink). `npm run test:cpp:asan` writes `cpp/build-asan/compile_commands.json`
 and must not clobber the host copy — otherwise `clang-tidy -p cpp` picks up
 `-fsanitize=address,undefined`. The committed `cpp/.clangd` points clangd at
 `build-host` directly. `npm run lint:cpp` runs `clang-tidy -p cpp/build-host`
-on `noise_module.cpp` and `bindings.cpp`; CI (`wasm-cpp-host`) runs it as
-**advisory** (`WarningsAsErrors` empty). Do not commit `compile_commands.json`.
+over every translation unit listed in `scripts/lint-cpp.sh` `SOURCES`; CI
+(`wasm-cpp-host`) runs it as **advisory** (`WarningsAsErrors` empty). Do not
+commit `compile_commands.json`.
+
+**Adding a translation unit** means adding it in four places: the emcc
+`add_executable`, the host `add_library(streetview_cpu …)`, `SOURCES` in
+`scripts/lint-cpp.sh`, and `WASM_SOURCE_FILES` in
+`scripts/wasm-source-hash.mjs`. `src/wasm/__tests__/compileCommandsContract.test.ts`
+diffs all four against `cpp/src/*.cpp` and fails when one is forgotten.
 
 CMake options:
 
@@ -104,7 +115,7 @@ public/wasm/streetview-wasm.wasm   (what ships)
             │                          │
             │ Vitest                   │ ctest (host CI, no emcc)
             ▼                          ▼
-   src/wasm/index.ts JS_FALLBACK   cpp/src/noise_module.cpp
+   src/wasm/jsFallback.ts          cpp/src/*_module.cpp
 ```
 
 - `cpp/tests/noise_module_test.cpp` asserts the C++ against the generated
@@ -127,7 +138,7 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Sixteen exports, identical in `bindings.cpp`, the CMake export list and the
+Seventeen exports, identical in `bindings.cpp`, the CMake export list and the
 TypeScript loader:
 
 | Export | TS wrapper | Notes |
@@ -142,6 +153,7 @@ TypeScript loader:
 | `signed_angle_diff(f32, f32) → f32` | `signedAngleDiff` | `[-180, 180)` — exactly-opposite inputs give -180 |
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
+| `offset_latlng(lat, lng, metres, bearing, out2) → void` | `offsetLatLng` | destination point; writes `{lat, lng}` degrees. The only copy of the formula — `historicalImagery.ts` builds its sample ring with it |
 | `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |
@@ -151,15 +163,17 @@ TypeScript loader:
 
 Plus the exported `memory`, which the loader needs to marshal buffers.
 
-**Adding an export means touching** `noise_module.cpp` / `streetview_wasm.h`,
+**Adding an export means touching** the right `cpp/src/*_module.cpp` /
+`streetview_wasm.h`,
 `bindings.cpp`, `CMakeLists.txt` `EXPORTED_FUNCTIONS`, and the TS loader.
 `src/wasm/__tests__/wasmAbiLock.test.ts` fails if any of them drifts, and
 `scripts/check-wasm-abi.mjs` fails if the compiled binary is missing a name
 `bindings.cpp` declares — otherwise a missing wrapper would only show up as a
 silent JS-fallback at runtime.
 
-Write the algorithm in `noise_module.cpp` **first**. Do not add a hand-written
-`.wat`.
+Write the algorithm in C++ **first**, in the translation unit for its domain
+(noise, geodesy, audio, hrtf, luma) — not in `jsFallback.ts`, and never in a
+hand-written `.wat`.
 
 ### Determinism and float precision
 
@@ -170,7 +184,7 @@ relative (host libm vs the libm emcc linked).
 
 The JS fallback mirrors the same algorithms — where a value would otherwise
 round twice through a double intermediate, the fallback applies `Math.fround`
-explicitly (see `_TWO_PI_F32` in `src/wasm/index.ts`). It is exact on the
+explicitly (see `_TWO_PI_F32` in `src/wasm/jsFallback.ts`). It is exact on the
 integer-LCG paths (particle seeds) and the angle helpers, and within ~2.2e-7 on
 the noise/fBm/PCM buffers, because it accumulates in double and rounds once at
 the `Float32Array` store while the module rounds after every operation. Measured
@@ -214,8 +228,8 @@ gone from `src/car/audio/`. The processor source lives in
 its constants stay single-sourced with the main thread and no extra chunk ships.
 
 Heading-relative **binaural convolution** is `fill_hrtf`, alongside `fill_cabin_ir`
-(`cpp/src/hrtf_module.cpp` — a separate translation unit from `noise_module.cpp`,
-which already covers six unrelated concerns). It is an analytic ITD/ILD shadow
+(`cpp/src/hrtf_module.cpp`; `fill_cabin_ir` and the engine bed live in
+`cpp/src/audio_module.cpp`). It is an analytic ITD/ILD shadow
 model, not a measured HRTF (no `cpp/data/` table). `WindAudio` fans its gain
 node into two `ConvolverNode`s (one per ear) recombined via a
 `ChannelMergerNode`, rebuilding both `AudioBuffer`s only when
@@ -254,13 +268,13 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
 
 ## 5. Editing checklist
 
-- **Changing an algorithm?** Edit `cpp/src/noise_module.cpp` first and run
+- **Changing an algorithm?** Edit the owning `cpp/src/*_module.cpp` first and run
   `npm run test:cpp` — it will fail against the goldens, which is the point.
   Mirror the change in the JS fallback, rebuild (`npm run build:wasm`),
   regenerate (`npm run gen:wasm-goldens`) and re-run `npm run test:cpp && npm test`.
   The golden diff is the behavioural record.
-- **New export?** `noise_module.cpp` (or its own translation unit, like
-  `hrtf_module.cpp`) + `streetview_wasm.h` + `bindings.cpp` + `CMakeLists.txt`
+- **New export?** The `cpp/src/*_module.cpp` for its domain (a new one if it
+  fits none) + `streetview_wasm.h` + `bindings.cpp` + `CMakeLists.txt`
   + `src/wasm/abi.ts` (API type) + `src/wasm/jsFallback.ts` (JS twin) +
   `src/wasm/index.ts` (WASM marshalling wrapper) — then `npm run build:wasm`.
   Add coverage to `cpp/tests/noise_module_test.cpp` and vectors to
@@ -280,9 +294,10 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
 
 ## 6. Compile path (done)
 
-One algorithm source: `noise_module.cpp`, shipped as emcc STANDALONE_WASM.
+One algorithm source, split one translation unit per domain under `cpp/src/`,
+shipped as emcc STANDALONE_WASM.
 
-1. ✅ **Host build + goldens.** `noise_module.cpp` compiles and tests with the
+1. ✅ **Host build + goldens.** `cpp/src/*.cpp` compile and test with the
    system compiler under `-Werror` and sanitizers, against vectors captured
    from the shipping binary.
 2. ✅ **Ship path is emcc.** `npm run build:wasm` / `npm run build` compile C++.

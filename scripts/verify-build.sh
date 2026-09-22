@@ -48,8 +48,9 @@ else
     echo "✅ build/wasm/streetview-wasm.wasm present (${WASM_BYTES} bytes)"
   fi
 
-  # Staleness check: C++ input hash recorded at the last emcc build vs current
-  # noise_module.cpp / bindings.cpp / header / CMakeLists.txt.
+  # Staleness check: the C++ input hash recorded at the last emcc build vs the
+  # current one over every cpp/src/*.cpp, the header and CMakeLists.txt — the
+  # list lives in scripts/wasm-source-hash.mjs.
   if [ -f "$WASM_HASH_FILE" ] && command -v node &>/dev/null; then
     RECORDED_HASH=$(tr -d '[:space:]' < "$WASM_HASH_FILE")
     CURRENT_HASH=$(node "$SCRIPT_ROOT/scripts/wasm-source-hash.mjs")
