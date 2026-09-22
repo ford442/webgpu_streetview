@@ -98,8 +98,6 @@ export {
     COLORS,
 } from './DashboardLayout';
 export {
-    SpeedGauge,
-    RpmGauge,
     GearIndicator,
     TelemetryChip,
 } from './Gauges';
