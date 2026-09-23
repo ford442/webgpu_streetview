@@ -294,11 +294,10 @@ export class CarInteriorAnimator {
 
     // legacy needle path (no-op if the static helper was removed; rig path is authoritative)
     if (this.speedometerNeedle && this.tachometerNeedle) {
-      // best-effort direct rotation using old state numbers
-      const s = Math.max(0, Math.min(1, this.speedometer / SPEED_DIAL_MAX_KMH));
-      const r = Math.max(0, Math.min(1, this.tachometer / 8000));
-      this.speedometerNeedle.rotation.z = -0.8 + s * 1.6; // rough
-      this.tachometerNeedle.rotation.z = -0.8 + r * 1.6;
+      const s = this.speedometer / SPEED_DIAL_MAX_KMH;
+      const r = this.tachometer / TACHO_DIAL_MAX_RPM;
+      this.speedometerNeedle.rotation.z = needleAngle(s);
+      this.tachometerNeedle.rotation.z = needleAngle(r);
     }
   }
 

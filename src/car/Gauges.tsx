@@ -90,7 +90,8 @@ export const GearIndicator: React.FC<GearIndicatorProps> = ({
 // TelemetryChip — compact HUD readout (3D cluster is canonical)
 // ============================================================================
 
-const formatRpm = (rpm: number): string => {
+/** Pure formatter shared by the compact chip — kept side-effect-free so it can be unit tested. */
+export const formatRpm = (rpm: number): string => {
   if (rpm >= 1000) {
     const k = rpm / 1000;
     return k >= 10 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
@@ -98,7 +99,7 @@ const formatRpm = (rpm: number): string => {
   return String(Math.round(rpm));
 };
 
-const getGearColor = (gear: string): string => {
+export const getGearColor = (gear: string): string => {
   switch (gear.toUpperCase()) {
     case 'P':
       return '#4CAF50';
