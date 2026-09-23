@@ -129,8 +129,15 @@ export function clusterGlowLevel(input: CabinRampInput): number {
   return night * 0.85 + (input.headlightsOn ? night * 0.1 : 0);
 }
 
+/**
+ * Additive halo around the dome disc. Night-weighted: by day the fixture
+ * mesh itself reads as "on", and a full halo against a sunlit headliner
+ * looks like a sticker, so keep it a faint hint until the sun is down.
+ */
 export function domeGlowLevel(input: CabinRampInput): number {
-  return input.domeLightOn ? 0.7 + input.effectiveNight * 0.25 : 0;
+  if (!input.domeLightOn) return 0;
+  const night = Math.max(0, Math.min(1, input.effectiveNight));
+  return 0.12 + night * 0.83;
 }
 
 /**
