@@ -296,7 +296,8 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
 }
 
 export async function applyHeroCabinIfEnabled(host: CarInteriorAssemblyHost): Promise<void> {
-    if (!isGltfInteriorEnabled()) return;
+    // Low never fetches the hero GLB (bundle + mobile budget); procedural only.
+    if (host.quality === 'low' || !isGltfInteriorEnabled()) return;
     try {
         const kit = await loadGltfInteriorKit();
         if (!kit) return;

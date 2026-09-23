@@ -6,8 +6,10 @@
  * stays green — GLTFLoader is dynamic-imported only from this module, never
  * from bootstrap on the default path.
  *
- * Draco / meshopt stay out until a hero mesh actually needs them (the sedan
- * cabin is an uncompressed GLB).
+ * Draco / meshopt stay out until a hero mesh actually needs them: the sedan
+ * cabin (`scripts/author-sedan-cabin.mjs`) is a plain GLB (~600 KB raw,
+ * ~240 KB gzip) fetched only on this opt-in path, so no decoder WASM is
+ * worth shipping yet. See public/models/README.md.
  */
 
 import * as THREE from 'three';
