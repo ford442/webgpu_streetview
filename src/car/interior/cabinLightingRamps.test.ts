@@ -68,6 +68,16 @@ describe('cabinLightingRamps', () => {
     expect(fill.bounce).toBeLessThan(0.3);
   });
 
+  it('dome halo is night-weighted: faint by day, strong at night', () => {
+    const base = { rain: 0, headlightsOn: false, domeLightOn: true };
+    const day = domeGlowLevel({ ...base, effectiveNight: 0 });
+    const night = domeGlowLevel({ ...base, effectiveNight: 1 });
+    expect(day).toBeGreaterThan(0);
+    expect(day).toBeLessThan(0.2);
+    expect(night).toBeGreaterThan(0.9);
+    expect(domeGlowLevel({ ...base, domeLightOn: false, effectiveNight: 1 })).toBe(0);
+  });
+
   it('night + dome on: overhead fixture is a real source; fills stay low', () => {
     const fill = cabinFillTargets({
       effectiveNight: 1,
