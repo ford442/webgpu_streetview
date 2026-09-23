@@ -279,6 +279,15 @@ export class CarInteriorAnimator {
       if (rig.fuelNeedle) rig.fuelNeedle.rotation.z = needleAngle(this.fuelLevel);
       if (rig.tempNeedle) rig.tempNeedle.rotation.z = needleAngle(this.tempFrac);
 
+      // Hero glTF cabin: the (hidden) procedural rig keeps the dial physics,
+      // so mirror its pose onto rebound socket needles or they would freeze.
+      if (this.speedometerNeedle && this.speedometerNeedle !== rig.speedNeedle) {
+        this.speedometerNeedle.rotation.z = rig.speedNeedle.rotation.z;
+      }
+      if (this.tachometerNeedle && this.tachometerNeedle !== rig.tachoNeedle) {
+        this.tachometerNeedle.rotation.z = rig.tachoNeedle.rotation.z;
+      }
+
       const glowIn = {
         effectiveNight: this.nightFactor,
         headlightsOn: this.headlightsOn,
