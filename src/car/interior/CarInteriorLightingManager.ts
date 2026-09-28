@@ -9,6 +9,7 @@ import {
     iblIntensityFromNight,
     sunBaseIntensityFromStrength,
     sunNightFactorFromAltitude,
+    sunIntensityUnderWeather,
     sunStrengthFromAltitude,
 } from './cabinLightingRamps';
 
@@ -37,6 +38,7 @@ export class CarInteriorLightingManager {
     private isDomeLightOn: boolean = false;
     /** 0 = sun up, 1 = full night; derived from real sun altitude. */
     private sunNightFactor: number = 0;
+    private headlightsOn = false;
     /** 0-1 rain intensity: overcast skies dim and diffuse the daylight. */
     private weatherIntensity: number = 0;
     /** Sun intensity before weather attenuation (set with the sun state). */
@@ -173,17 +175,18 @@ export class CarInteriorLightingManager {
         this.reducedMotion = reduced;
     }
 
+    // Headlight state is tracked explicitly: the spot's intensity is lerped
+    // every frame, so reading it back as "on" lags (and never hits 0 exactly).
     public toggleHeadlights(): void {
-        if (this.headlightsLight) {
-            this.headlightsLight.intensity = this.headlightsLight.intensity > 0 ? 0 : 0.2;
-        }
+        this.setHeadlights(!this.headlightsOn);
     }
 
     public getHeadlightsState(): boolean {
-        return this.headlightsLight ? this.headlightsLight.intensity > 0 : false;
+        return this.headlightsLight ? this.headlightsOn : false;
     }
 
     public setHeadlights(on: boolean): void {
+        this.headlightsOn = on;
         if (this.headlightsLight) {
             this.headlightsLight.intensity = on ? 0.2 : 0;
         }
@@ -221,7 +224,7 @@ export class CarInteriorLightingManager {
         const emit = cabinEmitterTargets(rampIn);
 
         if (this.sunLight) {
-            const sunTarget = this.sunBaseIntensity * (1 - rain * 0.75);
+            const sunTarget = sunIntensityUnderWeather(this.sunBaseIntensity, rain);
             this.sunLight.intensity += (sunTarget - this.sunLight.intensity) * 0.05;
         }
         this.lerpIntensity(this.hemisphereLight, fill.hemi * (1 + breathe));

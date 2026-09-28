@@ -36,6 +36,15 @@ import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
 import { CabinCompositePass } from './cabinComposite';
 import { getCabinOverlaySource } from './cabinOverlayRegistry';
+import {
+    createNeutralRoadLook,
+    createRoadFrameSource,
+    publishRoadFrameSource,
+    readRoadLookInto,
+    retractRoadFrameSource,
+    type RoadFrameSource,
+} from './roadFrameRegistry';
+import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 
 /**
  * Street View's WebGPU renderer — a façade over four named modules:
@@ -47,6 +56,7 @@ import { getCabinOverlaySource } from './cabinOverlayRegistry';
  * | `streetViewPass.ts` | pass-1 pipeline, bind group layout, sampler, encode |
  * | `frameLoop.ts` | per-frame encode order and uniform packing |
  * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
+ * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
  * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
@@ -82,6 +92,9 @@ export class Renderer implements StreetViewRenderer {
     private gpuPassTimer: GpuPassTimer | null = null;
     private gpuChores: GpuChores | null = null;
     private cabinComposite: CabinCompositePass | null = null;
+    /** What the cabin's windshield portal reads — see `roadFrameRegistry.ts`. */
+    private roadFrameSource: RoadFrameSource | null = null;
+    private readonly roadLook = createNeutralRoadLook();
     private samplerAnisotropy: number = 1;
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
@@ -164,10 +177,10 @@ export class Renderer implements StreetViewRenderer {
 
             this.textures.createTexture(1, 1);
 
-            this.uniformBuffer = this.device.createBuffer({
+            this.uniformBuffer = createTrackedBuffer(this.device, {
                 size: 32,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
+            }, 'sv-uniforms');
 
             this.pipeline = await createStreetViewPipeline(this.device, this.textures.intermediateFormat);
             this.textures.updateBindGroup();
@@ -208,6 +221,22 @@ export class Renderer implements StreetViewRenderer {
             } catch (e) {
                 console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
             }
+
+            // The portal reads the pass-1 intermediate only — never `videoTexture`,
+            // so during a hold it can only ever see the frozen frame.
+            this.roadFrameSource = createRoadFrameSource({
+                getDevice: () => this.device,
+                getIntermediate: () => ({
+                    texture: this.textures.intermediateTexture,
+                    format: this.textures.intermediateFormat,
+                    width: this.textures.intermediateWidth,
+                    height: this.textures.intermediateHeight,
+                }),
+                isHoldActive: () => this.holdTransition.isHoldActive(),
+                getLook: () => this.roadLook,
+                isAlive: () => !this.isDestroyed && !this.isDisposed,
+            });
+            publishRoadFrameSource(this.roadFrameSource);
 
             publishBootSuccess(probe);
             return true;
@@ -316,9 +345,13 @@ export class Renderer implements StreetViewRenderer {
         }
         if (markDestroyed) this.isDestroyed = true;
         this.isDisposed = true;
+        // Before the textures go: the cabin must stop being offered a texture
+        // that is about to be destroyed.
+        retractRoadFrameSource(this.roadFrameSource);
+        this.roadFrameSource = null;
         try {
             this.textures.destroyTextures();
-            if (this.uniformBuffer) this.uniformBuffer.destroy();
+            destroyTracked(this.uniformBuffer);
             this.transitionManager?.dispose();
             this.weatherPostProcessor?.dispose();
             this.gpuChores?.destroy();
@@ -358,6 +391,7 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public setShaderEffects(enabled: boolean): void {
+        this.roadLook.graded = enabled;
         this.weatherPostProcessor?.setShaderEffects(enabled);
     }
 
@@ -370,6 +404,7 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public updateWeatherParams(params: Float32Array): void {
+        readRoadLookInto(params, this.roadLook);
         this.weatherPostProcessor?.updateWeatherParams(params);
     }
 
@@ -378,6 +413,8 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public updateColorParams(params: Float32Array): void {
+        // The first six floats only — `readRoadLookInto` leaves the rest alone.
+        readRoadLookInto(params.subarray(0, 6), this.roadLook);
         this.weatherPostProcessor?.updateColorParams(params);
     }
 

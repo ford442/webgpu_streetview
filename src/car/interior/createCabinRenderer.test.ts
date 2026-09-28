@@ -62,6 +62,10 @@ import {
     resolveCabinRendererPreference,
     resolveCabinOutputColorSpace,
 } from './createCabinRenderer';
+import {
+    getWindshieldPortalSupport,
+    resetWindshieldPortalSupportForTests,
+} from './windshieldPortalSupport';
 
 const GPU_PROFILE: GPUPerformanceProfile = {
     name: 'high',
@@ -79,6 +83,7 @@ beforeEach(() => {
     webgpuInstances.length = 0;
     vi.clearAllMocks();
     resetWebGPUCabinRendererForTests();
+    resetWindshieldPortalSupportForTests();
     delete (window as Window & { webgpuProbe?: unknown }).webgpuProbe;
     delete (window as Window & { __CABIN_RENDERER_PROBE__?: unknown }).__CABIN_RENDERER_PROBE__;
 });
@@ -290,5 +295,111 @@ describe('preloadWebGPUCabinRenderer', () => {
     it('resolves cleanly and is safe to call more than once', async () => {
         await expect(preloadWebGPUCabinRenderer()).resolves.toBeUndefined();
         await expect(preloadWebGPUCabinRenderer()).resolves.toBeUndefined();
+    });
+});
+
+describe('windshield portal support follows the cabin backend', () => {
+    const CLIP_DEVICE = { features: new Set(['clip-distances']) } as unknown as GPUDevice;
+    const NO_CLIP_DEVICE = { features: new Set(['float32-filterable']) } as unknown as GPUDevice;
+
+    it('is enabled on the shared WebGPU device when it has clip-distances', async () => {
+        await preloadWebGPUCabinRenderer();
+        createCabinRenderer({ gpuProfile: GPU_PROFILE, search: '', sharedDevice: CLIP_DEVICE, probeOk: true });
+
+        expect(getWindshieldPortalSupport()).toMatchObject({ enabled: true, clipDistances: true });
+        // The gate remembers the device the cabin adopted, so the portal can refuse a road frame from another.
+        expect(getWindshieldPortalSupport().device).toBe(CLIP_DEVICE);
+        expect(window.__CABIN_RENDERER_PROBE__?.portal).toMatchObject({ active: false, clipDistances: true });
+    });
+
+    it('falls back — with the reason on the probe — when the device has no clip-distances', async () => {
+        await preloadWebGPUCabinRenderer();
+        createCabinRenderer({ gpuProfile: GPU_PROFILE, search: '', sharedDevice: NO_CLIP_DEVICE, probeOk: true });
+
+        expect(getWindshieldPortalSupport().enabled).toBe(false);
+        expect(window.__CABIN_RENDERER_PROBE__?.backend).toBe('webgpu');
+        expect(window.__CABIN_RENDERER_PROBE__?.portal?.clipDistances).toBe(false);
+        expect(window.__CABIN_RENDERER_PROBE__?.portal?.reason).toMatch(/clip-distances/);
+    });
+
+    it('honours ?portal=off even when everything is available', async () => {
+        await preloadWebGPUCabinRenderer();
+        createCabinRenderer({
+            gpuProfile: GPU_PROFILE,
+            search: '?portal=off',
+            sharedDevice: CLIP_DEVICE,
+            probeOk: true,
+        });
+
+        expect(getWindshieldPortalSupport().enabled).toBe(false);
+        expect(getWindshieldPortalSupport().clipDistances).toBe(true);
+        expect(window.__CABIN_RENDERER_PROBE__?.portal?.reason).toMatch(/portal=off/);
+    });
+
+    it('is off on the ?cabin=webgl hatch — the WebGL cabin cannot bind the road texture', async () => {
+        await preloadWebGPUCabinRenderer();
+        createCabinRenderer({
+            gpuProfile: GPU_PROFILE,
+            search: '?cabin=webgl',
+            sharedDevice: CLIP_DEVICE,
+            probeOk: true,
+        });
+
+        expect(getWindshieldPortalSupport().enabled).toBe(false);
+        expect(window.__CABIN_RENDERER_PROBE__?.portal?.reason).toMatch(/WebGL/);
+    });
+
+    it('turns back off when a failed WebGPU init falls back to the WebGL cabin', async () => {
+        await preloadWebGPUCabinRenderer();
+        const { WebGPURenderer } = await import('three/webgpu');
+        vi.mocked(WebGPURenderer).mockImplementationOnce((opts: unknown) => {
+            const instance = fakeRenderer({
+                opts,
+                isWebGPURenderer: true,
+                init: vi.fn().mockRejectedValue(new Error('init boom')),
+            });
+            webgpuInstances.push(instance);
+            return instance as never;
+        });
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const handle = await createCabinRendererAsync({
+            gpuProfile: GPU_PROFILE,
+            search: '',
+            sharedDevice: CLIP_DEVICE,
+            probeOk: true,
+        });
+
+        // The device still has clip-distances, but the cabin that would bind the road texture is gone.
+        expect(handle.backend).toBe('webgl');
+        expect(getWindshieldPortalSupport().enabled).toBe(false);
+        expect(getWindshieldPortalSupport().reason).toMatch(/WebGL/);
+
+        warnSpy.mockRestore();
+    });
+
+    it('keeps the portal verdict on the probe when the async WebGPU init succeeds', async () => {
+        // `createCabinRendererAsync` republishes the probe once the renderer is ready; that
+        // must not drop what `noteHandle` said, or a cabin that never builds a weather layer
+        // (quality low) would leave the probe silent about why the portal is off.
+        await preloadWebGPUCabinRenderer();
+        await createCabinRendererAsync({
+            gpuProfile: GPU_PROFILE,
+            search: '',
+            sharedDevice: NO_CLIP_DEVICE,
+            probeOk: true,
+        });
+        const probe = window.__CABIN_RENDERER_PROBE__;
+        expect(probe?.ready).toBe(true);
+        expect(probe?.backend).toBe('webgpu');
+        expect(probe?.portal?.reason).toMatch(/clip-distances/);
+    });
+
+    it('is off when no shared device is available', async () => {
+        await preloadWebGPUCabinRenderer();
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        createCabinRenderer({ gpuProfile: GPU_PROFILE, search: '?cabin=webgpu', probeOk: true });
+        expect(getWindshieldPortalSupport().enabled).toBe(false);
+        warnSpy.mockRestore();
     });
 });

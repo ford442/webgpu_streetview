@@ -24,6 +24,7 @@ import { CarInteriorAnimator } from './CarInteriorAnimator';
 import { CarInteriorRenderer } from './CarInteriorRenderer';
 import { CarInteriorLightingManager } from './CarInteriorLightingManager';
 import type { GaugeRig } from './CarInteriorGauges';
+import type { DigitalClock } from './DigitalClock';
 import type { CabinLeverCallbacks } from './CarInteriorDetailProps';
 import type { CabinGlowSprite } from './CabinEmitterGlow';
 import {
@@ -79,7 +80,7 @@ export interface CarInteriorAssemblyHost {
     tachometerNeedle: THREE.Mesh;
     gaugeRig: GaugeRig | null;
     digitalClockMesh: THREE.Mesh | null;
-    clockUpdateInterval?: number;
+    digitalClock: DigitalClock | null;
     locationPanel: LocationPanel | null;
     lastLocationInfo: import('../../utils/panoLocation').PanoLocationInfo | null;
     lastCompassHeading: number;
@@ -134,7 +135,7 @@ export function setupWindowWeatherOverlay(host: CarInteriorAssemblyHost): void {
     host.windowWeatherOverlay = undefined;
     if (host.windshieldGlassMesh && host.quality !== 'low') {
         host.windowWeatherOverlay = new WindowWeatherOverlay(host.windshieldGlassMesh);
-        host.interiorGroup.add(host.windowWeatherOverlay.getMesh());
+        host.interiorGroup.add(host.windowWeatherOverlay.getRoot());
     }
     if (host.dustMoteSystem && !host.interiorGroup.children.includes(host.dustMoteSystem.getObject())) {
         host.interiorGroup.add(host.dustMoteSystem.getObject());
@@ -196,6 +197,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
     if (!host.vehicleConfig.hasGauges) {
         host.gaugeRig = null;
         host.digitalClockMesh = null;
+        host.digitalClock = null;
     }
     if (host.vehicleConfig.hasGauges) {
         const gaugeResult = CarInteriorGauges.build(
@@ -209,7 +211,8 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         host.tachometerNeedle = gaugeResult.tachometerNeedle;
         host.gaugeRig = gaugeResult.gaugeRig ?? null;
         host.digitalClockMesh = gaugeResult.digitalClockMesh ?? null;
-        host.clockUpdateInterval = gaugeResult.clockUpdateInterval;
+        host.digitalClock = gaugeResult.digitalClock ?? null;
+        host.digitalClock?.setLocation(host.lastLocationInfo);
     }
 
     host.lightingManager?.rebindCabin({
@@ -341,10 +344,8 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
     host.interiorGroup.add(host.driverSeatGroup);
     host.lightingManager?.attachCabinLights(host.interiorGroup);
 
-    if (host.clockUpdateInterval !== undefined) {
-        clearInterval(host.clockUpdateInterval);
-        host.clockUpdateInterval = undefined;
-    }
+    host.digitalClock?.dispose();
+    host.digitalClock = null;
 
     host.applySeatPosition();
     host.rendererDelegate?.setCameraFov(resolveCameraFov(host.vehicleConfig));

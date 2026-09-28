@@ -1,6 +1,7 @@
 import { PARTICLE_DENSITY_SCALE, PARTICLE_MAX_DT } from '../weatherParticles';
 import { WeatherParamIndex } from '../weatherUniformLayout';
 import { PARTICLE_UNIFORMS_BYTE_SIZE, WORKGROUP_SIZE } from './constants';
+import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
 
 /**
  * GPU precipitation for the compute weather path (`weather-particles.wgsl`).
@@ -35,10 +36,10 @@ export class ComputeWeatherParticles {
     private splatPipeline: GPUComputePipeline | null = null;
 
     constructor(private readonly device: GPUDevice) {
-        this.uniformsBuffer = device.createBuffer({
+        this.uniformsBuffer = createTrackedBuffer(device, {
             size: PARTICLE_UNIFORMS_BYTE_SIZE,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        }, 'particles-uniformsBuffer');
     }
 
     /**
@@ -92,14 +93,14 @@ export class ComputeWeatherParticles {
         if (this.density && this.densityWidth === width && this.densityHeight === height) {
             return;
         }
-        if (this.density) this.density.destroy();
+        destroyTracked(this.density);
         this.densityWidth = width;
         this.densityHeight = height;
-        this.density = this.device.createTexture({
+        this.density = createTrackedTexture(this.device, {
             size: [width, height],
             format: 'rgba32float',
             usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
-        });
+        }, 'particles-density');
     }
 
     private ensureStateTextures(gridW: number, gridH: number): void {
@@ -112,7 +113,7 @@ export class ComputeWeatherParticles {
             return;
         }
         for (let i = 0; i < 2; i++) {
-            if (this.states[i]) this.states[i]!.destroy();
+            destroyTracked(this.states[i]);
             this.states[i] = null;
         }
         this.gridWidth = gridW;
@@ -120,8 +121,8 @@ export class ComputeWeatherParticles {
         const usage = GPUTextureUsage.STORAGE_BINDING
             | GPUTextureUsage.TEXTURE_BINDING
             | GPUTextureUsage.COPY_DST;
-        this.states[0] = this.device.createTexture({ size: [gridW, gridH], format: 'rgba32float', usage });
-        this.states[1] = this.device.createTexture({ size: [gridW, gridH], format: 'rgba32float', usage });
+        this.states[0] = createTrackedTexture(this.device, { size: [gridW, gridH], format: 'rgba32float', usage }, 'particles-states');
+        this.states[1] = createTrackedTexture(this.device, { size: [gridW, gridH], format: 'rgba32float', usage }, 'particles-states');
         this.readIndex = 0;
         this.writeIndex = 1;
     }
@@ -285,10 +286,10 @@ export class ComputeWeatherParticles {
     public dispose(): void {
         try {
             for (let i = 0; i < 2; i++) {
-                if (this.states[i]) this.states[i]!.destroy();
+                destroyTracked(this.states[i]);
             }
-            if (this.density) this.density.destroy();
-            if (this.uniformsBuffer) this.uniformsBuffer.destroy();
+            destroyTracked(this.density);
+            destroyTracked(this.uniformsBuffer);
         } catch {
             // ignore cleanup errors
         }

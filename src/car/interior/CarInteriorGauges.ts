@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { VehicleConfig } from '../VehicleManager';
 import { resolveGaugeLayout, type GaugeLayoutConfig } from '../vehicleLayout';
+import { DigitalClock } from './DigitalClock';
 
 export const SPEED_DIAL_MAX_KMH = 180;
 export const TACHO_DIAL_MAX_RPM = 8000;
@@ -52,9 +53,8 @@ export interface CarInteriorGaugeResult {
     tachometerNeedle: THREE.Mesh;
     gaugeRig: GaugeRig;
     digitalClockMesh?: THREE.Mesh;
-    clockCanvas?: HTMLCanvasElement;
-    clockCtx?: CanvasRenderingContext2D;
-    clockUpdateInterval?: number;
+    /** Owns the clock's canvas/texture; ticked per frame by CarInterior.update(). */
+    digitalClock?: DigitalClock;
 }
 
 interface DialSpec {
@@ -395,104 +395,9 @@ export class CarInteriorGauges {
         interiorGroup: THREE.Group,
         vehicleConfig: { accentColor: string },
         gpuProfile: { name: string }
-    ): { digitalClockMesh: THREE.Mesh; clockCanvas: HTMLCanvasElement; clockCtx: CanvasRenderingContext2D; clockUpdateInterval: number } {
-        const clockCanvas = document.createElement('canvas');
-        clockCanvas.width = 256;
-        clockCanvas.height = 80;
-        const clockCtx = clockCanvas.getContext('2d', { alpha: true })!;
-
-        const clockTexture = new THREE.CanvasTexture(clockCanvas);
-        clockTexture.anisotropy = gpuProfile.name === 'high' ? 8 : 4;
-        clockTexture.generateMipmaps = true;
-
-        const accentHex = parseInt(vehicleConfig.accentColor.replace('#', '0x'));
-        const clockMaterial = new THREE.MeshStandardMaterial({
-            map: clockTexture,
-            emissive: new THREE.Color(accentHex),
-            emissiveIntensity: 0.75,
-            emissiveMap: clockTexture,
-            roughness: 0.25,
-            metalness: 0.15,
-            transparent: true,
-            opacity: 0.95,
-            side: THREE.DoubleSide,
-        });
-
-        const clockGeo = new THREE.PlaneGeometry(0.22, 0.072);
-        const digitalClockMesh = new THREE.Mesh(clockGeo, clockMaterial);
-        digitalClockMesh.position.set(0.42, 0.91, -0.732);
-        digitalClockMesh.rotation.set(-0.18, 0, 0);
-        interiorGroup.add(digitalClockMesh);
-
-        CarInteriorGauges.updateDigitalClock(clockCtx, clockCanvas, digitalClockMesh, vehicleConfig.accentColor);
-        const clockUpdateInterval = window.setInterval(() => {
-            CarInteriorGauges.updateDigitalClock(clockCtx, clockCanvas, digitalClockMesh, vehicleConfig.accentColor);
-        }, 500);
-
-        return { digitalClockMesh, clockCanvas, clockCtx, clockUpdateInterval };
-    }
-
-    static updateDigitalClock(
-        ctx: CanvasRenderingContext2D,
-        canvas: HTMLCanvasElement,
-        mesh: THREE.Mesh,
-        accentColor: string
-    ): void {
-        const W = canvas.width;
-        const H = canvas.height;
-
-        ctx.fillStyle = '#0a0a12';
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.025)';
-        ctx.lineWidth = 1;
-        for (let x = 8; x < W; x += 6) {
-            ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x, H - 6); ctx.stroke();
-        }
-        for (let y = 8; y < H; y += 6) {
-            ctx.beginPath(); ctx.moveTo(6, y); ctx.lineTo(W - 6, y); ctx.stroke();
-        }
-
-        const bevel = ctx.createLinearGradient(0, 0, 0, H);
-        bevel.addColorStop(0,    'rgba(255,255,255,0.12)');
-        bevel.addColorStop(0.12, 'rgba(0,0,0,0.45)');
-        bevel.addColorStop(0.88, 'rgba(0,0,0,0.45)');
-        bevel.addColorStop(1,    'rgba(255,255,255,0.08)');
-        ctx.fillStyle = bevel;
-        ctx.fillRect(6, 6, W - 12, H - 12);
-
-        const now = new Date();
-        const hh = now.getHours().toString().padStart(2, '0');
-        const mm = now.getMinutes().toString().padStart(2, '0');
-        const colonVisible = (now.getSeconds() % 2) === 0;
-        const timeString = colonVisible ? `${hh}:${mm}` : `${hh} ${mm}`;
-
-        const color = accentColor || '#00ffcc';
-
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 14;
-        ctx.fillStyle = color;
-        ctx.font = '700 46px "Courier New", "Consolas", monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(timeString, W / 2 + 0.5, H / 2 + 1.5);
-
-        ctx.shadowBlur = 0;
-        ctx.fillText(timeString, W / 2, H / 2 + 1);
-
-        ctx.strokeStyle = '#2a2a38';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(3, 3, W - 6, H - 6);
-
-        ctx.strokeStyle = '#555566';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(5, 5, W - 10, H - 10);
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(8, 8); ctx.lineTo(W - 8, 8); ctx.stroke();
-
-        const clockMat = mesh.material as THREE.MeshStandardMaterial;
-        if (clockMat.map) clockMat.map.needsUpdate = true;
+    ): { digitalClockMesh: THREE.Mesh; digitalClock: DigitalClock } {
+        const digitalClock = new DigitalClock(vehicleConfig.accentColor, gpuProfile.name);
+        interiorGroup.add(digitalClock.mesh);
+        return { digitalClockMesh: digitalClock.mesh, digitalClock };
     }
 }

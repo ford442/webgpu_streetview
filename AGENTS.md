@@ -118,7 +118,6 @@ webgpu_streetview/
 │   │   ├── AppShell.tsx             # Layout + mount composition only (≤~350 LOC)
 │   │   ├── shell/                   # Colocated chrome / stage UI modules
 │   │   │   ├── ConnectedChrome.tsx  # Toolbar + feature panels + globe (when connected)
-│   │   │   ├── MapsAuthModal.tsx    # Hard Maps auth-failure alertdialog
 │   │   │   ├── OfflineStatusToast.tsx
 │   │   │   └── StreetViewStage.tsx  # Scraper + WebGPU + MainView + loading overlay
 │   │   ├── useAppPanels.ts          # Panel open/close state
@@ -202,7 +201,7 @@ webgpu_streetview/
 │   │   │   ├── LightingBuilder.ts
 │   │   │   ├── LODManager.ts
 │   │   │   ├── InteractionHelper.ts
-│   │   │   ├── ClockRenderer.ts
+│   │   │   ├── DigitalClock.ts          # Dash clock: pano-local HH:MM:SS, upload-gated
 │   │   │   ├── PostProcessingManager.ts
 │   │   │   ├── RainSystem.ts
 │   │   │   └── PerformanceProfiler.ts
@@ -280,6 +279,8 @@ webgpu_streetview/
 │       ├── navigation.test.ts       # Unit tests for navigation math
 │       ├── routeStats.ts            # Route length stats via WASM batch_haversine
 │       ├── geoTimeUtils.ts          # Sun/moon position, time-of-day colors
+│       ├── localTime.ts             # HH:MM:SS in an IANA zone (Intl, DST-correct)
+│       ├── panoTimeZone.ts          # Offline lat/lng → IANA zone (lazy tz-lookup chunk)
 │       ├── cesiumImagery.ts         # Globe imagery/terrain resolution (Ion token → CartoCDN fallback)
 │       ├── performance.ts           # Performance helpers
 │       ├── memoryProfiler.ts        # Heap usage tracking
@@ -492,15 +493,24 @@ Consequences worth knowing:
   `.compositeReason`. See `docs/RENDERER_FALLBACK.md` § "When the compositor
   stands down".
 
+**Windshield portal** (`WindowWeatherOverlay` → `WindshieldPortal`, `car/interior/cabinPortalMaterial.ts`): the WebGPU cabin's wet-glass layer when the shared device has `clip-distances`. The glass stays a hole onto the road frame; the portal draws **droplet lenses** that refract the road's **pass-1 HDR intermediate**, plus the decal's condensation mist, gated by a **persistent wet mask** the wipers wipe (`windshieldWetMask.ts`, stepped from `CarInteriorAnimator`'s wiper phase — the one writer). The mesh is trimmed to the glass aperture by `WorldPlaneClippingGroup`, which three emits as hardware clip distances. Without `clip-distances` (or on `?cabin=webgl`, `?portal=off`, before the first road frame, after device loss) the glass keeps today's hole + decal overlay — `WindowWeatherOverlay` always builds the decal and swaps it in that frame. Full design, the known look deltas, and the fallback matrix: `docs/RENDERER_FALLBACK.md` § "Windshield portal". Things to know before touching it:
+
+- **The road → cabin handoff is `renderer/roadFrameRegistry.ts`**, a single-slot registry the eager `Renderer` publishes and the lazy car chunk reads (the reverse of `cabinOverlayRegistry`). It must stay a single module instance — `scripts/check-bundle-budget.sh` asserts it. It exposes the **intermediate only**: never the Maps canvas, never `videoTexture`, never the rear feed. `Renderer` retracts only its *own* source (a device-lost re-init can publish before the old teardown runs).
+- **The portal samples ungraded HDR**, so `createRoadDisplay` mirrors the slice of `weather-post`'s `fs_main` that dominates the look (grade → night → vignette → rain darkening → ACES) from the packed weather values (`RoadLook`). Change one side and you must change the other: `windshieldPortal.parity.test.ts` (reads the shipped WGSL) and `e2e/windshield-portal.spec.ts` (real `weather-post` vs the mirror, on a GPU) both fail when they drift. If you add a stage to `fs_main` that shifts colour globally, mirror it or list it as a known delta.
+- **Never dispose the road's texture through the cabin.** `roadFrameBinding.ts` wraps it in `THREE.ExternalTexture` behind `neuterDestroy` (three's `dispose()` would `destroy()` the road's live intermediate) and makes a *new* wrapper whenever the texture identity changes (three caches views by size), disposing the old one (safe *because* of `neuterDestroy`). The cabin re-reads the frame every frame before `render()`, and refuses a frame whose `device` is not the cabin's.
+- **Derivatives before branches.** The TSL takes `dFdx`/`dFdy` for the glass→screen Jacobian in uniform control flow and reads every texture with an explicit level; a `textureSample` or derivative inside `If` is a WGSL validation error.
+- **Output encoding.** The cabin target is `rgba8unorm-srgb` and three sRGB-encodes in its output pass, while the road writes ACES values to the swap chain unencoded; the portal therefore `sRGBTransferEOTF`s its lens colour so the encode lands on the road's own value. Read the cabin texture's raw bytes and you will see them double-encoded — decode before comparing.
+- `?portal=off` forces the fallback on a capable device; `?no_clip_distances` leaves the feature out of `requestDevice` (`collectOptionalDeviceFeatures({ enableClipDistances: false })`), which is the honest way to test the no-`clip-distances` path.
+
 - **`CarInterior.ts`** builds all geometry procedurally using `THREE.BoxGeometry`, `THREE.CylinderGeometry`, and custom `THREE.Shape` extrusions — no external GLTF/OBJ files.
 - **`DashboardUI.tsx`** is a React overlay; its buttons call functions exported from `src/car/index.ts` directly (not through React state).
 - **`RearviewMirror.ts`** renders the cabin rear-view glass. It never samples the forward Street View canvas (a forward *perspective* capture cannot be UV-shifted into a rear view). With a true rear sample bound via `setRearSample()` it shows that imagery, mirror-flipped and UV-registered against the car heading; with none it shows the honest "unavailable" glass.
 - **`rearViewFeed.ts`** is the only source of true rear imagery: a Street View **Static API** sample at `carHeading + 180`. The Static API is **billable per request**, so the feed is opt-in, throttled, deduped, session-budgeted, and killable — see `BILLING_SAFETY_CHECKLIST.md` § "Billable In-App Features" before changing any default. Driven by `useRearViewFeed`; toggled from the car dashboard's **Rear** button.
 - **Vehicles**: `sedan` | `convertible` | `science-lab` | `limousine`. Configs live in `VehicleManager.ts`. Vehicle switching is managed by the `VehicleManager` singleton.
-- **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `ClockRenderer`, `InteractionHelper`, `PerformanceProfiler`.
+- **`car/interior/`** contains low-level builders: `GeometryFactory`, `MaterialFactory`, `LightingBuilder`, `LODManager`, `PostProcessingManager`, `RainSystem`, `DigitalClock`, `InteractionHelper`, `PerformanceProfiler`.
 - **`car/ui/`** contains reusable dashboard primitives: `Button`, `IconButton`, `Slider`, `ToggleGroup`, `AudioVisualizer`, `ControlPanel`, `Icon`, and theme injection utilities.
 
-**Default cabin WebGPU** (`car/interior/createCabinRenderer.ts` — PR 2 of the #249 split, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. On capable adapters (`webgpuProbe.ok` + Street View's shared `GPUDevice` from `Renderer.ts#getSharedGpuDevice`, requested in `renderer/bootDevice.ts` — still the only `requestDevice` call site) the default is `THREE.WebGPURenderer({ device })`. `?cabin=webgl` is the escape hatch back to a second WebGL overlay. Failed `WebGPURenderer.init()` falls back to WebGL; Street View weather stays up. The cabin never `configure()`s the panorama canvas. Custom GLSL (`ShaderMaterial`) is WebGL-only — TSL NodeMaterial twins live in `cabinTslMaterials.ts` and load with the further-lazy `three/webgpu` chunk (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`). Isolation: `src/car/` must not contain `new THREE.ShaderMaterial` (GLSL factories stay in `src/shaders/`). The WebGPU cabin uses `NoToneMapping` so weather-post ACES is the only filmic pass; output color space follows `?p3` (HDR swap-chain stays on `configureCanvasContext`). `three/webgpu` stays its own chunk — see `scripts/check-bundle-budget.sh`. PMREM environment maps work on both backends through `car/interior/cabinPmrem.ts`: `THREE.PMREMGenerator` only drives a `WebGLRenderer`, but `three/webgpu` exports a separate `PMREMGenerator` with the same call shape, captured from the same lazy chunk as the renderer. Callers use its async `fromSceneAsync` for the studio-cube fallback because the WebGPU generator warns and defers when called before `renderer.init()` resolves — which is exactly when the lighting rig is built — so `LightingBuilder` re-checks that it still owns `scene.environment` before assigning, and drops its own target if `PanoEnvironment`'s pano IBL landed first. `optimizeTextures` and `applyPerformanceProfile` (`utils/performance.ts`) run on both backends: they take the `CabinRendererBackend` explicitly rather than sniffing the renderer, because neither `getMaxAnisotropy` nor `getContext` discriminates — `WebGLRenderer` carries a deprecated top-level `getMaxAnisotropy()` and the WebGPU `Renderer` has its own unrelated `getContext(): void`. Max anisotropy comes from `capabilities.getMaxAnisotropy()` on WebGL and `renderer.getMaxAnisotropy()` (a constant 16, no device access) on WebGPU; the compressed-texture extension probe stays WebGL-only. **`applyPerformanceProfile` is the only caller of `setPixelRatio`** (#260): `GPUPerformanceProfile.maxPixelRatio` is a *cap*, not a ratio, and `resolvePixelRatio()` clamps the live `window.devicePixelRatio` against it at apply time — `GPU_PROFILES` is a module-level constant, so a ratio captured there would freeze whatever display the tab loaded on. Do not add a second `setPixelRatio` call site. (The science-lab/limousine variants' own `WebGLRenderer`s are already gone — see **Variants are scene plugins** below. Clip-distance windshield sampling of the HDR weather intermediate is still open — see the one-frame compositor issue, PR 2.)
+**Default cabin WebGPU** (`car/interior/createCabinRenderer.ts` — PR 2 of the #249 split, "one `GPUDevice`, one frame"): the single construction point for the cabin's Three.js renderer. On capable adapters (`webgpuProbe.ok` + Street View's shared `GPUDevice` from `Renderer.ts#getSharedGpuDevice`, requested in `renderer/bootDevice.ts` — still the only `requestDevice` call site) the default is `THREE.WebGPURenderer({ device })`. `?cabin=webgl` is the escape hatch back to a second WebGL overlay. Failed `WebGPURenderer.init()` falls back to WebGL; Street View weather stays up. The cabin never `configure()`s the panorama canvas. Custom GLSL (`ShaderMaterial`) is WebGL-only — TSL NodeMaterial twins live in `cabinTslMaterials.ts` and load with the further-lazy `three/webgpu` chunk (`preloadWebGPUCabinRenderer()`, awaited in `useCarDashboardBridge.ts` before `initCarMode()`). Isolation: `src/car/` must not contain `new THREE.ShaderMaterial` (GLSL factories stay in `src/shaders/`). The WebGPU cabin uses `NoToneMapping` so weather-post ACES is the only filmic pass; output color space follows `?p3` (HDR swap-chain stays on `configureCanvasContext`). `three/webgpu` stays its own chunk — see `scripts/check-bundle-budget.sh`. PMREM environment maps work on both backends through `car/interior/cabinPmrem.ts`: `THREE.PMREMGenerator` only drives a `WebGLRenderer`, but `three/webgpu` exports a separate `PMREMGenerator` with the same call shape, captured from the same lazy chunk as the renderer. Callers use its async `fromSceneAsync` for the studio-cube fallback because the WebGPU generator warns and defers when called before `renderer.init()` resolves — which is exactly when the lighting rig is built — so `LightingBuilder` re-checks that it still owns `scene.environment` before assigning, and drops its own target if `PanoEnvironment`'s pano IBL landed first. `optimizeTextures` and `applyPerformanceProfile` (`utils/performance.ts`) run on both backends: they take the `CabinRendererBackend` explicitly rather than sniffing the renderer, because neither `getMaxAnisotropy` nor `getContext` discriminates — `WebGLRenderer` carries a deprecated top-level `getMaxAnisotropy()` and the WebGPU `Renderer` has its own unrelated `getContext(): void`. Max anisotropy comes from `capabilities.getMaxAnisotropy()` on WebGL and `renderer.getMaxAnisotropy()` (a constant 16, no device access) on WebGPU; the compressed-texture extension probe stays WebGL-only. **`applyPerformanceProfile` is the only caller of `setPixelRatio`** (#260): `GPUPerformanceProfile.maxPixelRatio` is a *cap*, not a ratio, and `resolvePixelRatio()` clamps the live `window.devicePixelRatio` against it at apply time — `GPU_PROFILES` is a module-level constant, so a ratio captured there would freeze whatever display the tab loaded on. Do not add a second `setPixelRatio` call site. (The science-lab/limousine variants' own `WebGLRenderer`s are already gone — see **Variants are scene plugins** below. The windshield's road-sampling **portal** is the WebGPU cabin's wet-glass layer — see **Windshield portal** above.)
 
 **`CarInteriorBuilder` orchestrates, it does not model.** The class holds no
 geometry: it decides which sibling builders run, in what order, and merges
@@ -636,6 +646,9 @@ Changing either layout without updating `weatherUniformLayout.ts`, `Renderer.ts`
 ### 7. Google Maps Canvas Opacity Requirement
 The hidden Street View container must maintain `opacity: 1`. Google Maps stops updating its internal render canvas when opacity is low. Visibility is controlled via `zIndex` and `pointerEvents`, never `opacity`.
 
+### 8. Road HDR handoff and `ExternalTexture` ownership (`roadFrameRegistry.ts`, `roadFrameBinding.ts`)
+The windshield portal reads the road renderer's HDR intermediate through `THREE.ExternalTexture`. The road renderer owns that texture and replaces it on resize. Never let the cabin destroy it (`neuterDestroy`), never cache it across frames, never widen `RoadHdrFrame` to include `videoTexture` or the Maps canvas (the hold-pause guarantee — the portal sees only the frozen frame during a hop — rests on the frame carrying the intermediate and nothing else), and keep `roadFrameRegistry` a single module instance. See **Windshield portal** under *Car Mode Rendering Stack*.
+
 ---
 
 ## Testing Strategy
@@ -711,7 +724,12 @@ invent behaviour. Geodesy in particular has exactly one copy per formula:
 - `src/car/__tests__/rearViewFeed.test.ts` — Static-API URL/cache-key builders and the cost-control policy: throttle, dedupe, blockers, session budget, failure circuit breaker, kill switch.
 - `src/car/__tests__/RearviewMirror.test.ts` — Honest-unavailable fallback plus the true-rear path (bind/clear, UV pan registration, coverage fade, head-pitch independence).
 - `src/renderer/gpuChores/*.test.ts` — BT.709 hist/reduce/downsample goldens, `?no_gpu_compute` policy, single-device isolation from weather compute.
+- `src/renderer/roadFrameRegistry.test.ts`, `src/renderer/Renderer.roadFrame.test.ts` — the road → cabin HDR handoff: what a `RoadHdrFrame` may contain (intermediate only), compare-and-clear retraction, and the real `Renderer`'s publish / resize / hold / look-capture / teardown wiring (GPU collaborators mocked; `TextureLifecycle` and the hold controller are real).
+- `src/car/interior/windshieldWetMask.test.ts`, `windshieldWiperGeometry.test.ts`, `windshieldAperture.test.ts`, `roadFrameBinding.test.ts`, `windshieldPortalSupport.test.ts` — the portal's wet mask (persistence, phase-driven, real-time regrowth), wiper constants pinned to the decal GLSL, aperture planes + the world-space clipping group, the destroy-proof `ExternalTexture` binding, and the strict portal gate.
+- `src/car/interior/windshieldPortal.parity.test.ts` — drift tripwire: reads the shipped `weather-post.wgsl` and fails, by name, when a constant or the stage order the portal's display mirror assumes changes.
+- `src/car/interior/WindowWeatherOverlay.test.ts` — portal vs decal selection, the per-frame swap back to the decal when the road frame goes away, wiper phase as the single driver, texture ownership on dispose, and the probe.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
+- `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin. Skips where there is no adapter. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
@@ -776,6 +794,16 @@ Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed
 6. **Wipers / quality gate**
    - Medium or High quality: toggle wipers from the HUD (or stalk). Blades must sweep; HUD active state matches animator (`getWiperState().enabled`).
    - Low quality: toggle still flips HUD state and blades jump to a raised static "on" pose (no full sweep animation — documented tradeoff). Off returns to park.
+
+### Windshield Portal Manual Checklist
+Run this after touching `WindowWeatherOverlay.ts`, `WindshieldPortal.ts`, `cabinPortalMaterial.ts`, `windshieldWetMask.ts`, `roadFrameRegistry.ts`, `roadFrameBinding.ts`, or the `Renderer.ts` publish block (needs a WebGPU host with a real GPU; the automated equivalent is `e2e/windshield-portal.spec.ts`):
+
+1. **Portal live.** Car mode, WebGPU default, rain slider up. `window.__CABIN_RENDERER_PROBE__.portal` → `{ active: true, clipDistances: true, frameFormat: 'rg11b10ufloat' | 'rgba16float' }`. Droplets on the glass show a small inverted picture of the road behind them, with a dark rim and a highlight; mist thickens with fog/humidity.
+2. **Wipers.** Toggle the wipers (HUD or stalk). Each stroke leaves a **clean strip behind the blade** that slowly re-wets (in ~3 s in heavy rain, ~18 s on near-dry glass); the strip follows the blade mesh. Turning the wipers off lets the glass re-wet; intermittent mode keeps re-wetting through the dwell.
+3. **Fallback.** Reload with `?portal=off`, then with `?no_clip_distances`, then with `?cabin=webgl`. Each shows the hole + decal overlay (thin streaks, mist, a moving wiper sector) with **no console errors**, and the probe's `portal.reason` says why.
+4. **Hold-pause.** Cruise with rain on for 10+ hops. During each hop the droplets refract the *held* frame (probe `portal.held: true`), and `window.__STREETVIEW_PROBE__.getWarnings()` stays empty. The portal must never cause a live Maps upload.
+5. **Resize.** Drag the window edge while rain is on. No flash to black in the glass, no `Destroyed texture … used in a submit` validation error in the console.
+6. **Night.** Night preset + rain: droplet interiors read as dark as the road around them, not as a bright daytime picture.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
@@ -896,4 +924,4 @@ Single-product Vite + React project; `npm install` / `npm ci` is the only depend
 
 ---
 
-*Last Updated: July 22, 2026*
+*Last Updated: September 28, 2026*

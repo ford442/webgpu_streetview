@@ -34,7 +34,6 @@ export type { MaterialSet } from './interior/MaterialFactory';
 export { GeometryFactory } from './interior/GeometryFactory';
 export { LODManager } from './interior/LODManager';
 export { InteractionHelper } from './interior/InteractionHelper';
-export { ClockRenderer } from './interior/ClockRenderer';
 export { PostProcessingManager } from './interior/PostProcessingManager';
 export { RainSystem } from './interior/RainSystem';
 export { DustMoteSystem } from './interior/DustMoteSystem';

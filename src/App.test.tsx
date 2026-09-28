@@ -202,7 +202,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
   });
 
-  it('shows a blocking auth error overlay and retries Maps with the current runtime key', async () => {
+  it('shows an auth banner + overlay error (no modal) and retries Maps with the current runtime key', async () => {
     render(<App />);
     startExploring();
 
@@ -214,19 +214,18 @@ describe('App', () => {
       }));
     });
 
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('Google Maps API key error');
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('check referrer restrictions');
-    expect(screen.getByRole('button', { name: /Retry Maps/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Reload page/i })).toBeInTheDocument();
+    expect(screen.getByText(/Google Maps API authentication failed/)).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Retry$/i })).toBeInTheDocument();
 
     window.MAPS_API_KEY = 'fixed-runtime-key';
-    fireEvent.click(screen.getByRole('button', { name: /Retry Maps/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Retry$/i }));
 
     await waitFor(() => {
       expect(mockLoadMapsApi).toHaveBeenCalledWith('fixed-runtime-key');
     });
     expect(mockRemoveFailedBootstrap).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Google Maps API authentication failed/)).not.toBeInTheDocument();
   });
 
   it('auto-recovers from a failed old key when a corrected runtime key is injected', async () => {
@@ -248,7 +247,7 @@ describe('App', () => {
         source: 'gm_authFailure',
       }));
     });
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('Google Maps API key error');
+    expect(screen.getByText(/Google Maps API authentication failed/)).toBeInTheDocument();
 
     window.MAPS_API_KEY = 'fixed-runtime-key';
     act(() => {
@@ -256,7 +255,7 @@ describe('App', () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Google Maps API authentication failed/)).not.toBeInTheDocument();
     });
     expect(screen.getByRole('status')).toHaveTextContent('Retrying with new Maps key');
     expect(screen.getByText('Retrying with new key...')).toBeInTheDocument();

@@ -1,6 +1,26 @@
 import type { CabinRendererBackend } from '../../utils/performance';
 import type { WebGpuProbeRecord } from '../../renderer/webgpuBootProbe';
 
+/**
+ * State of the windshield portal (`WindshieldPortal.ts`) — the WebGPU cabin's
+ * road-sampling wet-glass layer. Mirrored on `__CABIN_RENDERER_PROBE__.portal`.
+ */
+export interface CabinPortalProbe {
+    /** The portal is the live windshield layer this frame (not the hole + decal fallback). */
+    active: boolean;
+    /** Why it is not active: the support gate, or no road frame yet. Undefined when active. */
+    reason?: string;
+    /** The shared device has `clip-distances`. */
+    clipDistances: boolean;
+    /** Format of the road HDR frame being sampled, while active. */
+    frameFormat?: string;
+    /**
+     * True while the frame being sampled is the hold-pause snapshot — the portal
+     * only ever reads the pass-1 intermediate, so a hop shows the held frame.
+     */
+    held?: boolean;
+}
+
 export interface CabinRendererProbe {
     backend: CabinRendererBackend;
     preference: CabinRendererBackend;
@@ -16,6 +36,8 @@ export interface CabinRendererProbe {
     composited?: boolean;
     /** Why the one-frame compositor is not in use, when it is not. */
     compositeReason?: string;
+    /** The windshield portal — see `CabinPortalProbe`. */
+    portal?: CabinPortalProbe;
     updatedAt: number;
 }
 
@@ -51,6 +73,22 @@ export function publishCabinCompositeState(
         ...current,
         composited,
         compositeReason,
+        updatedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+    });
+}
+
+/**
+ * Update only the windshield-portal field. Like `publishCabinCompositeState`,
+ * a no-op before car mode has published a cabin probe at all.
+ */
+export function publishCabinPortalState(portal: CabinPortalProbe): void {
+    if (typeof window === 'undefined') return;
+    const win = window as ProbeWindow;
+    const current = readCabinRendererProbe(win);
+    if (!current) return;
+    publishCabinRendererProbe({
+        ...current,
+        portal,
         updatedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
     });
 }

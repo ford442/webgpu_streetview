@@ -8,8 +8,12 @@ import type {
 import { isWebGpuProbeOk } from '../../renderer/webgpuBootProbe';
 import { setCabinMaterialBackend } from './cabinMaterialBackend';
 import { getCabinTslApi, setCabinTslApi } from './cabinTslRegistry';
-import { publishCabinRendererProbe } from './cabinRendererProbe';
+import { publishCabinRendererProbe, readCabinRendererProbe } from './cabinRendererProbe';
 import type { CabinTslApi } from './cabinTslMaterials';
+import {
+    resolveWindshieldPortalSupport,
+    setWindshieldPortalSupport,
+} from './windshieldPortalSupport';
 
 export type { CabinRendererBackend };
 
@@ -163,17 +167,38 @@ function applyCommonCabinRendererDefaults(
     renderer.outputColorSpace = resolveCabinOutputColorSpace(search);
 }
 
-function noteHandle(handle: CabinRendererHandle, preference: CabinRendererBackend, extra?: Partial<{
-    initFailed: boolean;
-    fallbackReason: string;
-}>): CabinRendererHandle {
+function noteHandle(
+    handle: CabinRendererHandle,
+    preference: CabinRendererBackend,
+    extra: Partial<{
+        initFailed: boolean;
+        fallbackReason: string;
+    }> | undefined,
+    context: { device?: GPUDevice; search: string },
+): CabinRendererHandle {
     setCabinMaterialBackend(handle.backend);
+    // Decided here, next to the backend, so the two can never disagree: a WebGL
+    // fallback always turns the portal off. The interior reads it when it builds
+    // its `WindowWeatherOverlay`.
+    const portal = resolveWindshieldPortalSupport({
+        backend: handle.backend,
+        device: context.device,
+        search: context.search,
+    });
+    setWindshieldPortalSupport(portal);
     publishCabinRendererProbe({
         backend: handle.backend,
         preference,
         ready: handle.isReady(),
         initFailed: extra?.initFailed,
         fallbackReason: extra?.fallbackReason,
+        portal: {
+            active: false,
+            reason: portal.enabled
+                ? 'Portal enabled — waiting for the interior and a road frame.'
+                : portal.reason,
+            clipDistances: portal.clipDistances,
+        },
         updatedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
     });
     return handle;
@@ -202,6 +227,8 @@ export function createCabinRenderer(options: CreateCabinRendererOptions): CabinR
             return noteHandle(
                 createWebGPUCabinRenderer(WebGPURendererClass, options.sharedDevice, options.gpuProfile, search),
                 preference,
+                undefined,
+                { device: options.sharedDevice, search },
             );
         }
         const reason = !options.sharedDevice
@@ -210,12 +237,15 @@ export function createCabinRenderer(options: CreateCabinRendererOptions): CabinR
                 ? 'WebGPU cabin module has not finished loading — staying on the WebGL cabin overlay.'
                 : 'WebGPU cabin unavailable — staying on the WebGL cabin overlay.';
         console.warn(`[createCabinRenderer] ${reason}`);
-        return noteHandle(createWebGLCabinRenderer(options.gpuProfile, search), preference, {
-            fallbackReason: reason,
-        });
+        return noteHandle(
+            createWebGLCabinRenderer(options.gpuProfile, search),
+            preference,
+            { fallbackReason: reason },
+            { search },
+        );
     }
 
-    return noteHandle(createWebGLCabinRenderer(options.gpuProfile, search), preference);
+    return noteHandle(createWebGLCabinRenderer(options.gpuProfile, search), preference, undefined, { search });
 }
 
 /**
@@ -234,6 +264,9 @@ export async function createCabinRendererAsync(
     try {
         await handle.whenReady;
         publishCabinRendererProbe({
+            // Keep what `noteHandle` published (the portal gate's verdict) — only
+            // readiness changed.
+            ...readCabinRendererProbe(),
             backend: 'webgpu',
             preference,
             ready: true,
@@ -252,10 +285,15 @@ export async function createCabinRendererAsync(
             // Dispose of a half-inited WebGPURenderer is best-effort.
         }
         const fallback = createWebGLCabinRenderer(options.gpuProfile, search);
-        return noteHandle(fallback, preference, {
-            initFailed: true,
-            fallbackReason: message,
-        });
+        return noteHandle(
+            fallback,
+            preference,
+            {
+                initFailed: true,
+                fallbackReason: message,
+            },
+            { search },
+        );
     }
 }
 

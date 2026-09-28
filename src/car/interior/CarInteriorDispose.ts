@@ -9,12 +9,13 @@ import type { DustMoteSystem } from './DustMoteSystem';
 import type { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import type { VanityMirror } from './VanityMirror';
 import type { LocationPanel } from './LocationPanel';
+import type { DigitalClock } from './DigitalClock';
 import type { CabinRenderer } from './createCabinRenderer';
 import type { CarInteriorRenderer } from './CarInteriorRenderer';
 
 export interface CarInteriorDisposeHost {
     animationId: number;
-    clockUpdateInterval?: number;
+    digitalClock: DigitalClock | null;
     renderer: CabinRenderer;
     /** Owns the one-frame compositor's offscreen target — released first. */
     rendererDelegate?: CarInteriorRenderer;
@@ -47,10 +48,9 @@ function disposeMaterialTextures(material: THREE.Material): void {
 export function disposeCarInteriorResources(host: CarInteriorDisposeHost): void {
     cancelAnimationFrame(host.animationId);
 
-    if (host.clockUpdateInterval !== undefined) {
-        clearInterval(host.clockUpdateInterval);
-        host.clockUpdateInterval = undefined;
-    }
+    // Cancels any in-flight zone lookup; the texture itself is also swept below.
+    host.digitalClock?.dispose();
+    host.digitalClock = null;
 
     const memoryProfiler = getMemoryProfiler();
     const stats = memoryProfiler.getStats();

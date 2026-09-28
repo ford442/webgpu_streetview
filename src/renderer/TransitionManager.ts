@@ -1,6 +1,7 @@
 import type { GpuPassTimer } from './gpuPassTimer';
 import { pass1TimestampWrites } from './streetViewPass';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
+import { createTrackedBuffer, createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
 
 export interface Pass1TimingContext {
     timer: GpuPassTimer;
@@ -65,11 +66,11 @@ export class TransitionManager {
             ],
         });
 
-        this.transitionUniformBuffer = this.device.createBuffer({
+        this.transitionUniformBuffer = createTrackedBuffer(this.device, {
             label: 'Transition Uniforms',
             size: 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        }, 'transition-transitionUniformBuffer');
 
         const pipelineLayout = this.device.createPipelineLayout({
             bindGroupLayouts: [this.transitionBindGroupLayout],
@@ -128,13 +129,13 @@ export class TransitionManager {
         if (!this.prevTexture ||
             this.prevTexture.width  !== videoTexture.width ||
             this.prevTexture.height !== videoTexture.height) {
-            if (this.prevTexture) this.prevTexture.destroy();
-            this.prevTexture = this.device.createTexture({
+            destroyTracked(this.prevTexture);
+            this.prevTexture = createTrackedTexture(this.device, {
                 label: 'Previous Panorama Snapshot',
                 size: { width: videoTexture.width, height: videoTexture.height },
                 format: videoTexture.format,
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-            });
+            }, 'transition-prevTexture');
         }
 
         const encoder = this.device.createCommandEncoder({ label: 'Snapshot encoder' });
@@ -191,13 +192,13 @@ export class TransitionManager {
         if (!this.previousFrameTexture ||
             this.previousFrameTexture.width  !== videoTexture.width ||
             this.previousFrameTexture.height !== videoTexture.height) {
-            if (this.previousFrameTexture) this.previousFrameTexture.destroy();
-            this.previousFrameTexture = this.device.createTexture({
+            destroyTracked(this.previousFrameTexture);
+            this.previousFrameTexture = createTrackedTexture(this.device, {
                 label: 'Previous Frame Snapshot',
                 size: { width: videoTexture.width, height: videoTexture.height },
                 format: videoTexture.format,
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-            });
+            }, 'transition-previousFrameTexture');
         }
 
         const encoder = this.device.createCommandEncoder({ label: 'Capture Current Frame' });
@@ -277,9 +278,9 @@ export class TransitionManager {
 
     public dispose(): void {
         try {
-            if (this.prevTexture) this.prevTexture.destroy();
-            if (this.previousFrameTexture) this.previousFrameTexture.destroy();
-            if (this.transitionUniformBuffer) this.transitionUniformBuffer.destroy();
+            destroyTracked(this.prevTexture);
+            destroyTracked(this.previousFrameTexture);
+            destroyTracked(this.transitionUniformBuffer);
             this.transitionPipelines.clear();
         } catch (e) {
             // ignore cleanup errors

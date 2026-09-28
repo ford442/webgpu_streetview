@@ -10,6 +10,7 @@ import {
     labelDevice,
     getCanvasOutputFlags,
     readDisplayOutputCapabilities,
+    readNoClipDistancesFlag,
     resolveCanvasOutputPolicy,
     type CanvasOutputPolicy,
 } from './deviceInit';
@@ -126,6 +127,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
 
     const requiredFeatures = collectOptionalDeviceFeatures(adapter, {
         featureLevel: describeAdapterSelection(adapterOptions).featureLevel,
+        enableClipDistances: !readNoClipDistancesFlag(),
     });
 
     let device: GPUDevice;

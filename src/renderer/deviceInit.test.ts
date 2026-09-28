@@ -10,6 +10,7 @@ import {
     describeAdapterSelection,
     HDR_CANVAS_FORMAT,
     labelDevice,
+    readNoClipDistancesFlag,
     resolveCanvasOutputPolicy,
 } from './deviceInit';
 import { buildAdapterRequestOptions, type AdapterSelectionPolicy } from './RendererBackend';
@@ -87,6 +88,35 @@ describe('deviceInit limits and features', () => {
             { featureLevel: 'core' },
         );
         expect(features).toEqual(['float32-filterable']);
+    });
+
+    it('collectOptionalDeviceFeatures still requests clip-distances by default — the windshield portal depends on it', () => {
+        const features = collectOptionalDeviceFeatures(makeAdapter({}, ['clip-distances', 'subgroups']));
+        expect(features).toContain('clip-distances');
+    });
+
+    it('collectOptionalDeviceFeatures leaves clip-distances out under the ?no_clip_distances kill switch, and only that', () => {
+        const features = collectOptionalDeviceFeatures(
+            makeAdapter({}, ['clip-distances', 'subgroups', 'float32-filterable']),
+            { enableClipDistances: false },
+        );
+        expect(features).not.toContain('clip-distances');
+        expect(features).toContain('subgroups');
+        expect(features).toContain('float32-filterable');
+    });
+
+    it.each([
+        ['?no_clip_distances', true],
+        ['?no_clip_distances=1', true],
+        ['?no_clip_distances=true', true],
+        ['no_clip_distances', true],
+        ['?no_clip_distances=0', false],
+        ['?no_clip_distances=false', false],
+        ['?no_clip_distances=off', false],
+        ['?portal=off', false],
+        ['', false],
+    ])('readNoClipDistancesFlag(%j) -> %s', (search, expected) => {
+        expect(readNoClipDistancesFlag(search)).toBe(expected);
     });
 
     it('collectOptionalDeviceFeatures skips core-features-and-limits under ?gpu=compat', () => {

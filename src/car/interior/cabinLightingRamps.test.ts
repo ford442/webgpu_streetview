@@ -13,6 +13,7 @@ import {
   sunBaseIntensityFromStrength,
   sunNightFactorFromAltitude,
   sunStrengthFromAltitude,
+  sunIntensityUnderWeather,
 } from './cabinLightingRamps';
 
 const DEG = Math.PI / 180;
@@ -94,7 +95,11 @@ describe('cabinLightingRamps', () => {
     expect(fill.dome).toBeGreaterThan(0.7);
     expect(fill.hemi).toBeLessThan(0.02);
     expect(emit.domeFixture).toBeGreaterThan(1.2);
-    expect(emit.cluster).toBeGreaterThan(0.8);
+    // The dials carry the cluster's light; the backplate well stays under them
+    // so the cluster doesn't read as one flat neon slab.
+    const dial = gaugeDialGlow({ effectiveNight: 1, headlightsOn: false, rpmFrac: 0, breathe: 0 });
+    expect(emit.cluster).toBeGreaterThan(0.08);
+    expect(emit.cluster).toBeLessThan(dial * 0.5);
     expect(domeGlowLevel({
       effectiveNight: 1,
       rain: 0,
@@ -271,5 +276,12 @@ describe('cabinLightingRamps', () => {
     expect(centerDisplayGlowFromNight(-2)).toBeCloseTo(centerDisplayGlowFromNight(0), 5);
     expect(locationPanelGlowFromNight(4)).toBeCloseTo(locationPanelGlowFromNight(1), 5);
     expect(locationPanelGlowFromNight(-2)).toBeCloseTo(locationPanelGlowFromNight(0), 5);
+  });
+
+  it('rain cuts the sun by at most 75% and clamps out-of-range rain', () => {
+    expect(sunIntensityUnderWeather(1.55, 0)).toBeCloseTo(1.55);
+    expect(sunIntensityUnderWeather(1.55, 1)).toBeCloseTo(1.55 * 0.25);
+    expect(sunIntensityUnderWeather(1.55, 2)).toBeCloseTo(1.55 * 0.25);
+    expect(sunIntensityUnderWeather(1.55, -1)).toBeCloseTo(1.55);
   });
 });

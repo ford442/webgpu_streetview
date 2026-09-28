@@ -19,6 +19,10 @@ import type { RearviewMirrorUniforms } from '../../shaders/rearviewMirrorGlass';
 import type { VanityMirrorUniforms } from '../../shaders/vanityMirror';
 import type { WindowWeatherOverlayUniforms } from '../../shaders/windowWeatherOverlay';
 import type { CupLiquidUniforms } from '../../shaders/cupLiquid';
+import {
+    WorldPlaneClippingGroup,
+    createWindshieldPortalTslMaterial,
+} from './cabinPortalMaterial';
 
 const {
     Discard,
@@ -344,6 +348,10 @@ export interface CabinTslApi {
     createVanityMirrorMaterial: typeof createVanityMirrorTslMaterial;
     createRearviewMirrorMaterial: typeof createRearviewMirrorTslMaterial;
     createWindowWeatherOverlayMaterial: typeof createWindowWeatherOverlayTslMaterial;
+    /** Windshield portal — only built when the shared device has `clip-distances`. */
+    createWindshieldPortalMaterial: typeof createWindshieldPortalTslMaterial;
+    /** A `ClippingGroup` whose parent-local planes are re-projected to world space every matrix update. */
+    createWorldPlaneClippingGroup: (localPlanes: THREE.Plane[]) => THREE.Object3D;
     createCupLiquidMaterial: typeof createCupLiquidTslMaterial;
     createDashboardGlowMaterial: typeof createDashboardGlowTslMaterial;
 }
@@ -352,6 +360,8 @@ export const cabinTslApi: CabinTslApi = {
     createVanityMirrorMaterial: createVanityMirrorTslMaterial,
     createRearviewMirrorMaterial: createRearviewMirrorTslMaterial,
     createWindowWeatherOverlayMaterial: createWindowWeatherOverlayTslMaterial,
+    createWindshieldPortalMaterial: createWindshieldPortalTslMaterial,
+    createWorldPlaneClippingGroup: (localPlanes) => new WorldPlaneClippingGroup(localPlanes),
     createCupLiquidMaterial: createCupLiquidTslMaterial,
     createDashboardGlowMaterial: createDashboardGlowTslMaterial,
 };

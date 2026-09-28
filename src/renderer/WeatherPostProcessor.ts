@@ -25,6 +25,7 @@ import {
     DUAL_SOURCE_PRECIP_BLEND,
 } from './shaderFeatureVariants';
 import { OPTIONAL_DEVICE_FEATURES } from './deviceCapabilities';
+import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -61,17 +62,17 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             addressModeV: 'clamp-to-edge',
         });
 
-        this.weatherParamsBuffer = this.device.createBuffer({
+        this.weatherParamsBuffer = createTrackedBuffer(this.device, {
             size: WEATHER_PARAMS_BYTE_SIZE,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        }, 'weather-weatherParamsBuffer');
 
         // Zero-initialized until the first WASM-computed tile lands — the
         // shader only samples it when wasmNoiseEnabled (params[35]) is set.
-        this.noiseBuffer = this.device.createBuffer({
+        this.noiseBuffer = createTrackedBuffer(this.device, {
             size: NOISE_BUFFER_BYTES,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
+        }, 'weather-noiseBuffer');
 
         this.weatherParams.set(createDefaultWeatherParams());
         this.lutSampler = createLutSampler(this.device);
@@ -336,8 +337,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     public dispose(): void {
         try {
-            if (this.weatherParamsBuffer) this.weatherParamsBuffer.destroy();
-            if (this.noiseBuffer) this.noiseBuffer.destroy();
+            destroyTracked(this.weatherParamsBuffer);
+            destroyTracked(this.noiseBuffer);
             if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) this.lutTexture.destroy();
             if (this.dummyLutTexture) this.dummyLutTexture.destroy();
         } catch (e) {

@@ -2,6 +2,7 @@ import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
+import { createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
 
 export interface TextureLifecycleDeps {
     getDevice: () => GPUDevice;
@@ -31,15 +32,15 @@ export class TextureLifecycle {
     constructor(private readonly deps: TextureLifecycleDeps) {}
 
     createTexture(width: number, height: number): void {
-        if (this.texture) this.texture.destroy();
+        destroyTracked(this.texture);
 
-        this.texture = this.deps.getDevice().createTexture({
+        this.texture = createTrackedTexture(this.deps.getDevice(), {
             size: [width, height],
             format: 'rgba8unorm-srgb',
             usage: GPUTextureUsage.TEXTURE_BINDING |
                 GPUTextureUsage.COPY_DST |
                 GPUTextureUsage.RENDER_ATTACHMENT,
-        });
+        }, 'sv-source');
     }
 
     createVideoTexture(width: number, height: number): void {
@@ -47,13 +48,13 @@ export class TextureLifecycle {
             return;
         }
 
-        if (this.videoTexture) this.videoTexture.destroy();
+        destroyTracked(this.videoTexture);
 
-        this.videoTexture = this.deps.getDevice().createTexture({
+        this.videoTexture = createTrackedTexture(this.deps.getDevice(), {
             size: [width, height],
             format: 'rgba8unorm-srgb',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
-        });
+        }, 'sv-video');
         this.videoTextureWidth = width;
         this.videoTextureHeight = height;
     }
@@ -72,18 +73,16 @@ export class TextureLifecycle {
             return;
         }
 
-        if (this.intermediateTexture) {
-            this.intermediateTexture.destroy();
-        }
+        destroyTracked(this.intermediateTexture);
 
         this.intermediateWidth = width;
         this.intermediateHeight = height;
 
-        this.intermediateTexture = this.deps.getDevice().createTexture({
+        this.intermediateTexture = createTrackedTexture(this.deps.getDevice(), {
             size: [width, height],
             format: this.intermediateFormat,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-        });
+        }, 'sv-intermediate');
 
         this.intermediateTextureView = this.intermediateTexture.createView();
         this.deps.getWeatherPostProcessor()?.updateWeatherBindGroup(this.intermediateTextureView, width, height);
@@ -171,8 +170,8 @@ export class TextureLifecycle {
     }
 
     destroyTextures(): void {
-        if (this.texture) this.texture.destroy();
-        if (this.videoTexture) this.videoTexture.destroy();
-        if (this.intermediateTexture) this.intermediateTexture.destroy();
+        destroyTracked(this.texture);
+        destroyTracked(this.videoTexture);
+        destroyTracked(this.intermediateTexture);
     }
 }

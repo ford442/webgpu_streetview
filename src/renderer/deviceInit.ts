@@ -29,6 +29,13 @@ export interface CollectOptionalFeaturesOptions {
     /** Request timestamp-query when the adapter supports it (performance overlay). */
     enableTimestampQueries?: boolean;
     /**
+     * Request `clip-distances` when the adapter supports it. Defaults on; the
+     * `?no_clip_distances` kill switch turns it off so the cabin's windshield
+     * portal can be exercised on its hole + overlay fallback without needing an
+     * adapter that lacks the feature.
+     */
+    enableClipDistances?: boolean;
+    /**
      * Skip `core-features-and-limits` when the adapter was requested in
      * compatibility mode (`?gpu=compat`) so we do not undo that knob.
      */
@@ -113,6 +120,24 @@ export function checkRequiredLimits(
     };
 }
 
+/**
+ * `?no_clip_distances` — do not request `clip-distances` on the shared device.
+ * Same grammar as `?no_gpu_compute`: present (or truthy) is on, `0|false|off` is off.
+ */
+export function readNoClipDistancesFlag(
+    search: string = typeof window !== 'undefined' ? window.location.search : '',
+): boolean {
+    try {
+        const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+        const raw = params.get('no_clip_distances');
+        if (raw === null) return false;
+        const v = raw.toLowerCase();
+        return !(v === '0' || v === 'false' || v === 'off');
+    } catch {
+        return false;
+    }
+}
+
 export function collectOptionalDeviceFeatures(
     adapter: GPUAdapter,
     options: CollectOptionalFeaturesOptions = {},
@@ -133,7 +158,7 @@ export function collectOptionalDeviceFeatures(
     tryAdd(OPTIONAL_DEVICE_FEATURES.shaderF16);
     tryAdd(OPTIONAL_DEVICE_FEATURES.rg11b10ufloatRenderable);
     tryAdd(OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
-    tryAdd(OPTIONAL_DEVICE_FEATURES.clipDistances);
+    tryAdd(OPTIONAL_DEVICE_FEATURES.clipDistances, options.enableClipDistances !== false);
     tryAdd(
         OPTIONAL_DEVICE_FEATURES.coreFeaturesAndLimits,
         options.featureLevel !== 'compatibility',

@@ -105,11 +105,13 @@ fi
 
 # Single-instance modules. These hold module-level state that one chunk writes
 # and another reads — the eager renderer reads the cabin overlay the lazy car
-# chunk publishes. Rollup normally hoists a shared module into the entry chunk,
-# but if it ever duplicates one, each chunk gets its own copy of that state and
-# the handoff silently stops working with no type or test error. Read the
-# emitted sourcemaps and assert each name appears in exactly one chunk.
-SINGLETON_MODULES="src/renderer/cabinOverlayRegistry.ts src/car/runtime/frameCapture.ts"
+# chunk publishes, and the lazy car chunk reads the road HDR frame the eager
+# renderer publishes (roadFrameRegistry — the windshield portal's only road
+# input). Rollup normally hoists a shared module into the entry chunk, but if it
+# ever duplicates one, each chunk gets its own copy of that state and the
+# handoff silently stops working with no type or test error. Read the emitted
+# sourcemaps and assert each name appears in exactly one chunk.
+SINGLETON_MODULES="src/renderer/cabinOverlayRegistry.ts src/renderer/roadFrameRegistry.ts src/car/runtime/frameCapture.ts"
 if ! node -e '
 const fs = require("fs");
 const path = require("path");

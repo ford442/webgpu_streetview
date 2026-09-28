@@ -3,6 +3,7 @@ import {
     NOISE_BUFFER_BYTES,
 } from './constants';
 import { WEATHER_PARAMS_BYTE_SIZE } from '../weatherUniformLayout';
+import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
 
 /**
  * Device-lifetime GPU resources for the compute weather pass: samplers, the
@@ -58,36 +59,36 @@ export class ComputeWeatherResources {
             compare: 'less',
         });
 
-        this.extraBuffer = device.createBuffer({
+        this.extraBuffer = createTrackedBuffer(device, {
             size: WEATHER_PARAMS_BYTE_SIZE,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-        this.computeUniformsBuffer = device.createBuffer({
+        }, 'cw-extraBuffer');
+        this.computeUniformsBuffer = createTrackedBuffer(device, {
             size: COMPUTE_UNIFORMS_BYTE_SIZE,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        this.noiseBuffer = device.createBuffer({
+        }, 'cw-computeUniformsBuffer');
+        this.noiseBuffer = createTrackedBuffer(device, {
             size: NOISE_BUFFER_BYTES,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
+        }, 'cw-noiseBuffer');
 
-        this.dummyDataTextureC = device.createTexture({
+        this.dummyDataTextureC = createTrackedTexture(device, {
             size: [1, 1],
             format: 'rgba8unorm',
             usage: GPUTextureUsage.TEXTURE_BINDING,
-        });
+        }, 'cw-dummyDataTextureC');
         // Binding 7 is a readable rgba32float (density). Binding 8 is a
         // write-only storage texture (particle state).
-        this.dummyDataTextureA = device.createTexture({
+        this.dummyDataTextureA = createTrackedTexture(device, {
             size: [1, 1],
             format: 'rgba32float',
             usage: GPUTextureUsage.TEXTURE_BINDING,
-        });
-        this.dummyDataTextureB = device.createTexture({
+        }, 'cw-dummyDataTextureA');
+        this.dummyDataTextureB = createTrackedTexture(device, {
             size: [1, 1],
             format: 'rgba32float',
             usage: GPUTextureUsage.STORAGE_BINDING,
-        });
+        }, 'cw-dummyDataTextureB');
     }
 
     /** True once every device-lifetime resource a bind group needs exists. */
@@ -115,30 +116,30 @@ export class ComputeWeatherResources {
         if (this.writeTexture && this.writeWidth === width && this.writeHeight === height) {
             return false;
         }
-        if (this.writeTexture) this.writeTexture.destroy();
+        destroyTracked(this.writeTexture);
         for (let i = 0; i < 2; i++) {
-            if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
+            destroyTracked(this.depthTextures[i]);
             this.depthTextures[i] = null;
         }
 
         this.writeWidth = width;
         this.writeHeight = height;
         const size: [number, number] = [Math.max(1, width), Math.max(1, height)];
-        this.writeTexture = this.device.createTexture({
+        this.writeTexture = createTrackedTexture(this.device, {
             size,
             format: 'rgba32float',
             usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
-        });
-        if (this.colorHistoryTexture) this.colorHistoryTexture.destroy();
-        this.colorHistoryTexture = this.device.createTexture({
+        }, 'cw-writeTexture');
+        destroyTracked(this.colorHistoryTexture);
+        this.colorHistoryTexture = createTrackedTexture(this.device, {
             size,
             format: 'rgba32float',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        });
+        }, 'cw-colorHistoryTexture');
         this.historyReady = false;
         const depthUsage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
-        this.depthTextures[0] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
-        this.depthTextures[1] = this.device.createTexture({ size, format: 'r32float', usage: depthUsage });
+        this.depthTextures[0] = createTrackedTexture(this.device, { size, format: 'r32float', usage: depthUsage }, 'cw-depthTextures');
+        this.depthTextures[1] = createTrackedTexture(this.device, { size, format: 'r32float', usage: depthUsage }, 'cw-depthTextures');
         this.depthReadIndex = 0;
         this.depthWriteIndex = 1;
         return true;
@@ -171,17 +172,17 @@ export class ComputeWeatherResources {
 
     public dispose(): void {
         try {
-            if (this.extraBuffer) this.extraBuffer.destroy();
-            if (this.computeUniformsBuffer) this.computeUniformsBuffer.destroy();
-            if (this.noiseBuffer) this.noiseBuffer.destroy();
-            if (this.writeTexture) this.writeTexture.destroy();
-            if (this.colorHistoryTexture) this.colorHistoryTexture.destroy();
+            destroyTracked(this.extraBuffer);
+            destroyTracked(this.computeUniformsBuffer);
+            destroyTracked(this.noiseBuffer);
+            destroyTracked(this.writeTexture);
+            destroyTracked(this.colorHistoryTexture);
             for (let i = 0; i < 2; i++) {
-                if (this.depthTextures[i]) this.depthTextures[i]!.destroy();
+                destroyTracked(this.depthTextures[i]);
             }
-            if (this.dummyDataTextureA) this.dummyDataTextureA.destroy();
-            if (this.dummyDataTextureB) this.dummyDataTextureB.destroy();
-            if (this.dummyDataTextureC) this.dummyDataTextureC.destroy();
+            destroyTracked(this.dummyDataTextureA);
+            destroyTracked(this.dummyDataTextureB);
+            destroyTracked(this.dummyDataTextureC);
         } catch {
             // ignore cleanup errors
         }

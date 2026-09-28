@@ -29,6 +29,7 @@ import { PanoEnvironment } from './interior/PanoEnvironment';
 import { PerformanceProfiler } from './interior/PerformanceProfiler';
 import { LocationPanel } from './interior/LocationPanel';
 import type { GaugeRig } from './interior/CarInteriorGauges';
+import type { DigitalClock } from './interior/DigitalClock';
 import {
     rebuildCarInteriorForVehicle,
     type CarInteriorAssemblyHost,
@@ -76,7 +77,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public rightMirrorPlane?: THREE.Mesh;
     public onCabinSocketsChanged?: () => void;
     public digitalClockMesh: THREE.Mesh | null = null;
-    public clockUpdateInterval?: number;
+    public digitalClock: DigitalClock | null = null;
     public locationPanel: LocationPanel | null = null;
     public lastLocationInfo: PanoLocationInfo | null = null;
     public lastCompassHeading = 0;
@@ -202,6 +203,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.lastLocationInfo = info;
         this.locationPanel?.setLocation(info);
         this.centerDisplay?.setLocation(info);
+        this.digitalClock?.setLocation(info);
     }
 
     public setCompassHeading(heading: number): void {
@@ -224,6 +226,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public update(deltaTime: number, carSpeedKmh = 0): void {
         this.animator.update(deltaTime, carSpeedKmh);
         this.centerDisplay?.update(deltaTime);
+        this.digitalClock?.update();
         if (this.sunShafts) {
             const carHeadingRad = -this.interiorGroup.rotation.y;
             this.sunShafts.update(

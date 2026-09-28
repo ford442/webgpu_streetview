@@ -56,7 +56,6 @@ export interface MapsBootstrapState {
   scraperRef: RefObject<HTMLDivElement | null>;
   handleMapsStatusChange: (status: MapsLoadStatus) => void;
   handleRetryMapsAuth: () => void;
-  dismissAuthBlock: () => void;
 }
 
 /**
@@ -146,12 +145,6 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
           : 'Google Maps API key error — retry failed.',
       );
     });
-  }, []);
-
-  const dismissAuthBlock = useCallback(() => {
-    setMapsAuthFailed(false);
-    setMapsAuthError(null);
-    setShowAuthFailedBanner(true);
   }, []);
 
   // Reactive key poller / listener: recovers from config.js race (#84).
@@ -253,6 +246,5 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
     scraperRef,
     handleMapsStatusChange,
     handleRetryMapsAuth,
-    dismissAuthBlock,
   };
 }

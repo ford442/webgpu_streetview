@@ -1,7 +1,6 @@
 import AppBanners from '../../components/AppBanners';
 import { SkipLink } from '../../hooks/useKeyboardShortcuts';
 import type { MapsBootstrapState } from '../useMapsBootstrap';
-import { MapsAuthModal } from './MapsAuthModal';
 import { OfflineStatusToast } from './OfflineStatusToast';
 import { GeocodeDeniedToast } from './GeocodeDeniedToast';
 
@@ -13,7 +12,8 @@ interface ShellNoticesProps {
 
 /**
  * Global, always-mounted notice layer: skip link, Maps key/auth/scrape
- * banners, the offline and geocode-denied toasts, and the blocking auth modal.
+ * banners, and the offline and geocode-denied toasts. Maps auth failure
+ * shows as a banner (plus the loading-overlay error), never a viewport takeover.
  *
  * None of these depend on view mode or cinema state, so they sit above the
  * stage for the whole life of the shell.
@@ -35,14 +35,6 @@ export function ShellNotices({ maps, isConnected, isOnline }: ShellNoticesProps)
 
       <OfflineStatusToast visible={isConnected && !isOnline} />
       <GeocodeDeniedToast />
-
-      <MapsAuthModal
-        open={maps.mapsAuthFailed}
-        mapsAuthError={maps.mapsAuthError}
-        isRetryingMapsAuth={maps.isRetryingMapsAuth}
-        onRetry={maps.handleRetryMapsAuth}
-        onDismiss={maps.dismissAuthBlock}
-      />
     </>
   );
 }

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { CabinOverlaySource } from '../../renderer/cabinComposite';
 import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
+import { estimateTextureBytes } from '../../renderer/gpuTextureBytes';
+import { getMemoryProfiler } from '../../utils/memoryProfiler';
 
 /**
  * The cabin's half of the one-frame compositor.
@@ -93,6 +95,8 @@ export interface CabinFrameTargetCreateResult {
     reason?: string;
 }
 
+let nextMemoryId = 0;
+
 export class CabinFrameTarget {
     private target: THREE.RenderTarget | null = null;
     private width = 0;
@@ -100,6 +104,7 @@ export class CabinFrameTarget {
     /** Latched once the backend refuses the texture — stop re-asking every frame. */
     private failureReason: string | undefined;
     private disposed = false;
+    private readonly memoryId = `cabin-frame-target#${nextMemoryId++}`;
 
     private constructor(
         private readonly renderer: WebGPURenderer,
@@ -189,6 +194,7 @@ export class CabinFrameTarget {
             // Best-effort: a renderer already torn down owns these resources.
         }
         this.target = null;
+        getMemoryProfiler().untrackGPUTexture(this.memoryId);
     }
 
     private fail(reason: string): void {
@@ -236,6 +242,7 @@ export class CabinFrameTarget {
             this.target.texture.name = 'cabinFrameTarget';
             this.width = width;
             this.height = height;
+            this.trackMemory();
             return;
         }
 
@@ -243,6 +250,20 @@ export class CabinFrameTarget {
             this.target.setSize(width, height);
             this.width = width;
             this.height = height;
+            this.trackMemory();
         }
+    }
+
+    /**
+     * three owns the GPUTextures, so the Memory Stats entry is sized from the
+     * target: rgba8 colour + depth24plus per sample, plus the resolve texture
+     * when multisampled. Same id every time, so a resize replaces the entry.
+     */
+    private trackMemory(): void {
+        const samples = Math.max(1, this.target?.samples ?? 0);
+        const perSample = estimateTextureBytes({ width: this.width, height: this.height, format: 'rgba8unorm', sampleCount: samples })
+            + estimateTextureBytes({ width: this.width, height: this.height, format: 'depth24plus', sampleCount: samples });
+        const resolve = samples > 1 ? estimateTextureBytes({ width: this.width, height: this.height, format: 'rgba8unorm' }) : 0;
+        getMemoryProfiler().trackGPUTexture(this.memoryId, perSample + resolve);
     }
 }

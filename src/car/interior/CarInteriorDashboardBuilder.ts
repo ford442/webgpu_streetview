@@ -7,6 +7,31 @@ import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 
+/** Main dash block extents, car-body space (metres). */
+export const DASH = { halfW: 1.0, bottom: 0.6, top: 1.0, face: -0.75, depth: 0.5 } as const;
+
+/**
+ * Opening in the dash face around the instrument cluster: the cluster bezel
+ * plus a small lip, running up from the dash's lower edge. Clamped so the
+ * block keeps a top rail and side walls for any vehicle layout.
+ */
+export function dashClusterNotch(layout: ReturnType<typeof resolveGaugeLayout>): {
+    x0: number;
+    x1: number;
+    top: number;
+} {
+    const lip = 0.015;
+    const halfW = (Math.abs(layout.tacho.x - layout.speed.x) + layout.dialRadius * 2 + 0.08) / 2 + lip;
+    const cx = (layout.speed.x + layout.tacho.x) / 2;
+    const top = Math.max(layout.speed.y, layout.tacho.y) + layout.dialRadius + 0.04 + lip;
+    const edge = DASH.halfW - 0.05;
+    return {
+        x0: Math.max(-edge, cx - halfW),
+        x1: Math.min(edge, cx + halfW),
+        top: Math.min(DASH.top - 0.08, top),
+    };
+}
+
 export class CarInteriorDashboardBuilder {
     /** Radial/tubular segment counts scale with quality tier. */
     private readonly segments: number;
@@ -29,9 +54,24 @@ export class CarInteriorDashboardBuilder {
         glowSprites: CabinGlowSprite[];
     } {
         const gaugeLayout = resolveGaugeLayout(this.vehicleConfig);
-        const dashGeo = new THREE.BoxGeometry(2.0, 0.4, 0.5);
+        // Dash block (x ±1, y 0.6–1.0, z -1.25…-0.75) with a notch up from its
+        // lower edge so the cluster, which sits behind the dash face, reads as
+        // a recessed well instead of being sealed inside a solid box.
+        const notch = dashClusterNotch(gaugeLayout);
+        const dashShape = new THREE.Shape();
+        dashShape.moveTo(-DASH.halfW, DASH.bottom);
+        dashShape.lineTo(notch.x0, DASH.bottom);
+        dashShape.lineTo(notch.x0, notch.top);
+        dashShape.lineTo(notch.x1, notch.top);
+        dashShape.lineTo(notch.x1, DASH.bottom);
+        dashShape.lineTo(DASH.halfW, DASH.bottom);
+        dashShape.lineTo(DASH.halfW, DASH.top);
+        dashShape.lineTo(-DASH.halfW, DASH.top);
+        dashShape.closePath();
+        const dashGeo = new THREE.ExtrudeGeometry(dashShape, { depth: DASH.depth, bevelEnabled: false });
         const dash = new THREE.Mesh(dashGeo, this.materials.dashboard);
-        dash.position.set(0, 0.8, -1.0);
+        dash.name = 'dashBlock';
+        dash.position.set(0, 0, DASH.face - DASH.depth);
         this.interiorGroup.add(dash);
 
         const dashTopGeo = new THREE.CylinderGeometry(0.15, 0.15, 2.0, this.segments, 1, false, 0, Math.PI);

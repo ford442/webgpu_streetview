@@ -51,6 +51,11 @@ export function sunBaseIntensityFromStrength(strength: number): number {
   return strength * 1.55;
 }
 
+/** Sun after rain/overcast: same 0.75 direct-light cut as the window fills. */
+export function sunIntensityUnderWeather(base: number, rain: number): number {
+  return base * (1 - Math.max(0, Math.min(1, rain)) * 0.75);
+}
+
 /** Pano IBL contribution: keep enough by day for leather/dash, dim hard at night. */
 export function iblIntensityFromNight(effectiveNight: number): number {
   const n = Math.max(0, Math.min(1, effectiveNight));
@@ -115,8 +120,10 @@ export function cabinEmitterTargets(input: CabinRampInput): CabinEmitterTargets 
   const hl = input.headlightsOn ? night * 0.08 : 0;
 
   return {
-    // Screens stay readable by day; cluster is the brightest cabin object at night.
-    cluster: 0.2 + night * 0.72 + hl,
+    // Cluster backplate: the dark well the dials sit in. It glows only enough
+    // to separate the well from the dash; the dials (gaugeDialGlow) carry the
+    // light, or the whole cluster reads as one flat neon slab at night.
+    cluster: 0.03 + night * 0.09 + hl * 0.5,
     centerDisplay: 0.24 + night * 0.42 + hl * 0.5,
     clock: 0.28 + night * 0.48,
     domeFixture: input.domeLightOn ? 1.55 : 0.015,
@@ -126,7 +133,10 @@ export function cabinEmitterTargets(input: CabinRampInput): CabinEmitterTargets 
 
 export function clusterGlowLevel(input: CabinRampInput): number {
   const night = Math.max(0, Math.min(1, input.effectiveNight));
-  return night * 0.85 + (input.headlightsOn ? night * 0.1 : 0);
+  // The halo quad spans the whole cluster well, so any real strength floods
+  // it into one flat slab (measured: it was the well's largest contributor).
+  // Keep it a faint lift; ticks, numerals and needles carry the cluster.
+  return night * 0.1 + (input.headlightsOn ? night * 0.02 : 0);
 }
 
 /**
