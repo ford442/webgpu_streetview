@@ -4,7 +4,7 @@
  * dual-source precip when the adapter enabled them; scalar / rgba16float /
  * in-shader-composite fallbacks stay naga-clean.
  *
- * `shader-f16` stays requested-but-unused: CI naga rejects production `f16`
+ * `shader-f16` stays requested-but-unused until a production pass uses `f16`
  * (see scripts/f16-naga-spike.wgsl and docs/RENDERER_FALLBACK.md).
  */
 import { OPTIONAL_DEVICE_FEATURES, type ShaderFeatureUses } from './deviceCapabilities';
