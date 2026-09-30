@@ -454,7 +454,7 @@ TEST_CASE("fill_cabin_ir: distinct cabins, clamped arguments, safe edges") {
     // A single-tap buffer, a zero count and a null pointer must all be safe.
     std::vector<float> one(1, 9.0f);
     sw_fill_cabin_ir(one.data(), 1, 0, 0.0f, 44100.0f);
-    CHECK(one[0] == doctest::Approx(1.0f));
+    CHECK(one[0] == doctest::Approx(1.0));
 
     std::vector<float> untouched(8, 7.0f);
     sw_fill_cabin_ir(untouched.data(), 0, 0, 0.0f, 44100.0f);
@@ -534,7 +534,7 @@ HrtfPair hrtf(float azimuth_deg, int count = 32, float sample_rate = 44100.0f) {
 TEST_CASE("fill_hrtf: centered azimuth leaves both ears identical") {
     const HrtfPair p = hrtf(0.0f);
     CHECK(p.left == p.right);
-    CHECK(p.left[0] == doctest::Approx(1.0f));
+    CHECK(p.left[0] == doctest::Approx(1.0));
 }
 
 TEST_CASE("fill_hrtf: azimuth and its mirror swap ears exactly") {
@@ -545,7 +545,7 @@ TEST_CASE("fill_hrtf: azimuth and its mirror swap ears exactly") {
         CHECK(pos.left == neg.right);
         CHECK(pos.right == neg.left);
         // Off-axis: the near ear leads and stays louder than the far ear.
-        CHECK(pos.right[0] == doctest::Approx(1.0f));
+        CHECK(pos.right[0] == doctest::Approx(1.0));
         CHECK(pos.left[0] < 1.0f);
     }
 }
@@ -572,7 +572,7 @@ TEST_CASE("fill_hrtf: degenerate input is safe") {
     // A single-tap buffer, a zero count and null pointers must all be safe.
     std::vector<float> one_l(1, 9.0f), one_r(1, 9.0f);
     sw_fill_hrtf(one_l.data(), one_r.data(), 1, 45.0f, 44100.0f);
-    CHECK(one_r[0] == doctest::Approx(1.0f));
+    CHECK(one_r[0] == doctest::Approx(1.0));
 
     std::vector<float> untouched_l(4, 7.0f), untouched_r(4, 7.0f);
     sw_fill_hrtf(untouched_l.data(), untouched_r.data(), 0, 45.0f, 44100.0f);
