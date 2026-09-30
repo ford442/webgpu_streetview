@@ -3,7 +3,9 @@ import {
   buildSamplePoints,
   dedupeByDate,
   formatImageDate,
+  MAX_PANORAMA_CALLS_PER_CRAWL,
   pickHistoricalEntryForYear,
+  yearStripLabels,
   readHistoricalCache,
   writeHistoricalCache,
   type HistoricalPanoEntry,
@@ -40,6 +42,12 @@ describe('buildSamplePoints', () => {
     expect(points).toHaveLength(7);
   });
 
+  it('caps the ring so one crawl never exceeds MAX_PANORAMA_CALLS_PER_CRAWL', () => {
+    expect(buildSamplePoints(10, 20, { sampleCount: 500 })).toHaveLength(MAX_PANORAMA_CALLS_PER_CRAWL);
+    expect(buildSamplePoints(10, 20)).toHaveLength(9);
+    expect(buildSamplePoints(10, 20, { sampleCount: -3 })).toHaveLength(1);
+  });
+
   it('spreads ring points away from the center', () => {
     const points = buildSamplePoints(10, 20, { radiusMeters: 25, sampleCount: 4 });
     for (const p of points.slice(1)) {
@@ -65,6 +73,15 @@ describe('dedupeByDate', () => {
     ]);
     expect(result).toHaveLength(2);
     expect(result.map((e) => e.panoId)).toEqual(['a', 'c']);
+  });
+
+  it('collapses repeat hits on the same panoId', () => {
+    const result = dedupeByDate([
+      entry('a', '2020-01'),
+      entry('a', '2020-01'),
+      entry('b', '2019-01'),
+    ]);
+    expect(result.map((e) => e.panoId)).toEqual(['b', 'a']);
   });
 
   it('drops entries with an empty imageDate', () => {
@@ -148,5 +165,13 @@ describe('historical imagery localStorage cache', () => {
     } finally {
       Date.now = realNow;
     }
+  });
+});
+
+describe('yearStripLabels', () => {
+  const e = (imageDate: string): HistoricalPanoEntry => ({ panoId: imageDate, imageDate, lat: 0, lng: 0, copyright: null });
+
+  it('uses the bare year when unique, month + year when a year repeats', () => {
+    expect(yearStripLabels([e('2012-06'), e('2019-03'), e('2019-11')])).toEqual(['2012', 'Mar 2019', 'Nov 2019']);
   });
 });
