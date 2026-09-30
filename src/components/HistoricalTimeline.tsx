@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { formatImageDate, type HistoricalPanoEntry } from '../utils/historicalImagery';
+import React, { useMemo } from 'react';
+import { formatImageDate, yearStripLabels, type HistoricalPanoEntry } from '../utils/historicalImagery';
 
 export interface HistoricalTimelineProps {
   isOpen: boolean;
@@ -32,34 +32,41 @@ const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
   isComparing = false,
   onExitCompare,
 }) => {
-  const [sliderIndex, setSliderIndex] = useState<number | null>(null);
-
-  const activeIndex = sliderIndex ?? (currentIndex >= 0 ? currentIndex : entries.length - 1);
-  const activeEntry = entries[activeIndex] ?? null;
-
-  const trackDots = useMemo(
-    () => entries.map((e, i) => ({ entry: e, index: i })),
-    [entries]
-  );
+  const labels = useMemo(() => yearStripLabels(entries), [entries]);
+  const onScreen = currentIndex >= 0 ? currentIndex : entries.length - 1;
+  const activeEntry = entries[onScreen] ?? null;
 
   if (!isOpen) return null;
 
-  const handleSlide = (index: number) => {
-    setSliderIndex(index);
-  };
-
-  const handleCommit = (index: number) => {
+  // Selecting a year is a hold-pause hop via onSelectDate (teleportToPanoSafe);
+  // the strip never touches the Maps canvas itself.
+  const handleSelect = (index: number) => {
     const entry = entries[index];
-    if (!entry || entry.panoId === entries[currentIndex]?.panoId) return;
+    if (!entry || isTransitioning || index === currentIndex) return;
     onSelectDate(entry);
   };
 
-  const dotStyle = (active: boolean): React.CSSProperties => ({
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    backgroundColor: active ? '#4FC3F7' : 'rgba(255,255,255,0.35)',
+  const handleStripKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const next = at < 0 ? onScreen : at + (e.key === 'ArrowRight' ? 1 : -1);
+    buttons[Math.max(0, Math.min(buttons.length - 1, next))]?.focus();
+  };
+
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    padding: '5px 10px',
+    border: `1px solid ${active ? '#4FC3F7' : '#3a5068'}`,
+    borderRadius: '999px',
+    backgroundColor: active ? 'rgba(79,195,247,0.25)' : 'rgba(0,0,0,0.4)',
+    color: active ? '#4FC3F7' : '#ccc',
+    cursor: active || isTransitioning ? 'default' : 'pointer',
+    fontSize: '12px',
+    fontFamily: 'monospace',
+    whiteSpace: 'nowrap',
     flexShrink: 0,
+    opacity: isTransitioning && !active ? 0.5 : 1,
   });
 
   return (
@@ -67,6 +74,10 @@ const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
+      onKeyUp={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
         left: '50%',
@@ -127,76 +138,69 @@ const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
         )}
 
         {!isLoading && !error && !hasTimeline && (
-          <div style={{ color: '#ccc', fontSize: '12px', lineHeight: 1.5 }}>
+          <div style={{ color: '#ccc', fontSize: '12px', lineHeight: 1.5 }} data-testid="historical-empty">
             {entries.length === 1
-              ? `Only one capture date (${formatImageDate(entries[0]!.imageDate)}) is available near this location.`
-              : 'No historical imagery found near this location.'}
+              ? `Google only published one capture here (${formatImageDate(entries[0]!.imageDate)}). There is no older imagery to travel to from this spot.`
+              : 'Google has no Street View capture dates near this spot.'}
           </div>
         )}
 
         {hasTimeline && (
           <>
             <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                marginBottom: 8,
-              }}
+              role="group"
+              aria-label="Capture years"
+              onKeyDown={handleStripKey}
+              style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}
             >
-              <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>
-                {activeEntry ? formatImageDate(activeEntry.imageDate) : ''}
-              </span>
-              <span style={{ color: '#777', fontSize: '11px' }}>
-                {activeIndex + 1} / {entries.length}
-              </span>
+              {entries.map((entry, i) => {
+                const active = i === onScreen;
+                return (
+                  <button
+                    key={entry.panoId}
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={`Travel to ${formatImageDate(entry.imageDate)}`}
+                    disabled={isTransitioning && !active}
+                    onClick={() => handleSelect(i)}
+                    style={chipStyle(active)}
+                  >
+                    {labels[i]}
+                  </button>
+                );
+              })}
             </div>
 
-            <input
-              type="range"
-              min={0}
-              max={entries.length - 1}
-              step={1}
-              value={activeIndex}
-              disabled={isTransitioning}
-              onChange={(e) => handleSlide(parseInt(e.target.value, 10))}
-              onMouseUp={(e) => handleCommit(parseInt((e.target as HTMLInputElement).value, 10))}
-              onTouchEnd={(e) => handleCommit(parseInt((e.target as HTMLInputElement).value, 10))}
-              onKeyUp={(e) => handleCommit(parseInt((e.target as HTMLInputElement).value, 10))}
-              style={{ width: '100%', accentColor: '#4FC3F7', opacity: isTransitioning ? 0.5 : 1 }}
-              aria-label="Scrub through available capture dates"
-            />
-
-            {/* Density dots along the track */}
-            <div style={{ display: 'flex', gap: 4, marginTop: 4, marginBottom: 12 }}>
-              {trackDots.map(({ index }) => (
-                <div key={index} style={dotStyle(index === activeIndex)} />
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {onCompare && (
-                <button
-                  onClick={() =>
-                    isComparing ? onExitCompare?.() : activeEntry && onCompare(activeEntry)
-                  }
-                  disabled={isTransitioning || !activeEntry || activeIndex === currentIndex}
-                  style={{
-                    padding: '6px 12px',
-                    border: `1px solid ${isComparing ? '#4FC3F7' : '#555'}`,
-                    borderRadius: '4px',
-                    backgroundColor: isComparing ? 'rgba(79,195,247,0.25)' : 'rgba(0,0,0,0.5)',
-                    color: isComparing ? '#4FC3F7' : '#ccc',
-                    cursor: (isTransitioning || !activeEntry) ? 'default' : 'pointer',
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    opacity: (isTransitioning || !activeEntry || activeIndex === currentIndex) ? 0.5 : 1,
-                  }}
-                >
-                  {isComparing ? 'Exit compare' : '⇄ Compare with current'}
-                </button>
-              )}
-            </div>
+            {onCompare && (
+              <div style={{ marginTop: 12 }}>
+                {isComparing ? (
+                  <button type="button" onClick={() => onExitCompare?.()} style={chipStyle(true)}>
+                    Exit compare
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#888', fontSize: '11px' }}>⇄ Compare now with</span>
+                    {entries.map((entry, i) =>
+                      i === onScreen ? null : (
+                        <button
+                          key={entry.panoId}
+                          type="button"
+                          disabled={isTransitioning}
+                          onClick={() => onCompare(entry)}
+                          aria-label={`Compare with ${formatImageDate(entry.imageDate)}`}
+                          style={chipStyle(false)}
+                        >
+                          {labels[i]}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, color: '#777', fontSize: '10px' }}>
+                  Compare stills show the road view only (no cabin).
+                </div>
+              </div>
+            )}
           </>
         )}
 

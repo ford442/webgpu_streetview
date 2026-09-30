@@ -49,6 +49,16 @@ export interface CrawlOptions {
   searchRadiusMeters?: number;
 }
 
+/**
+ * Hard ceiling on `StreetViewService.getPanorama` calls issued by one crawl
+ * (center + ring). A crawl runs at most once per settled position (debounced
+ * in `useHistoricalImagery`) and is skipped entirely on a fresh localStorage
+ * cache hit for the ~11 m grid cell, so this is also the per-gesture maximum.
+ * Street View Service only — never the Static API. See
+ * docs/HISTORICAL_TIME_MACHINE.md.
+ */
+export const MAX_PANORAMA_CALLS_PER_CRAWL = 12;
+
 const DEFAULT_OPTIONS: Required<CrawlOptions> = {
   radiusMeters: 10,
   sampleCount: 8,
@@ -78,7 +88,9 @@ export function buildSamplePoints(
   centerLng: number,
   opts: CrawlOptions = {}
 ): Array<{ lat: number; lng: number }> {
-  const { radiusMeters, sampleCount } = { ...DEFAULT_OPTIONS, ...opts };
+  const { radiusMeters, sampleCount: requested } = { ...DEFAULT_OPTIONS, ...opts };
+  // Center point counts against the cap too.
+  const sampleCount = Math.max(0, Math.min(Math.floor(requested), MAX_PANORAMA_CALLS_PER_CRAWL - 1));
   const points = [{ lat: centerLat, lng: centerLng }];
   for (let i = 0; i < sampleCount; i++) {
     const bearing = (360 / sampleCount) * i;
@@ -90,12 +102,16 @@ export function buildSamplePoints(
 /**
  * Dedupe a list of raw (panoId, imageDate) results down to one entry per
  * distinct `imageDate`, keeping the first (closest-sampled) occurrence, and
- * sorts the result chronologically ascending.
+ * sorts the result chronologically ascending. Repeat hits on the same
+ * `panoId` (several ring points snapping to one pano) collapse first.
  */
 export function dedupeByDate(entries: HistoricalPanoEntry[]): HistoricalPanoEntry[] {
   const seen = new Map<string, HistoricalPanoEntry>();
+  const seenPanos = new Set<string>();
   for (const entry of entries) {
     if (!entry.imageDate) continue;
+    if (seenPanos.has(entry.panoId)) continue;
+    seenPanos.add(entry.panoId);
     if (!seen.has(entry.imageDate)) {
       seen.set(entry.imageDate, entry);
     }
@@ -232,4 +248,20 @@ export function pickHistoricalEntryForYear(
   const y = String(year ?? '').trim();
   if (!/^\d{4}$/.test(y)) return null;
   return entries.find((e) => e.imageDate.startsWith(y)) ?? null;
+}
+
+/**
+ * Chip labels for the year strip: bare year when it is unique in the list,
+ * "Mon YYYY" when Google published more than one capture that year.
+ */
+export function yearStripLabels(entries: readonly HistoricalPanoEntry[]): string[] {
+  const perYear = new Map<string, number>();
+  for (const e of entries) {
+    const y = e.imageDate.slice(0, 4);
+    perYear.set(y, (perYear.get(y) ?? 0) + 1);
+  }
+  return entries.map((e) => {
+    const y = e.imageDate.slice(0, 4);
+    return (perYear.get(y) ?? 0) > 1 ? formatImageDate(e.imageDate) : y;
+  });
 }
