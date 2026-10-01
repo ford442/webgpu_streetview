@@ -114,6 +114,15 @@ export function advancePanoramaStabilityTick(
   return { outcome: { type: 'continue' }, state: next };
 }
 
+/**
+ * The `WxH` part of a `getCanvasFingerprint` result, or '' for an empty one.
+ * Lets callers tell a backing-size change apart from a content change.
+ */
+export function fingerprintSize(fp: string): string {
+  const dash = fp.indexOf('-');
+  return dash > 0 ? fp.slice(0, dash) : '';
+}
+
 let sharedOffscreenCanvas: HTMLCanvasElement | null = null;
 let sharedOffscreenCtx: CanvasRenderingContext2D | null = null;
 

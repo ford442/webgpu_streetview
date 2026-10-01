@@ -73,17 +73,30 @@ export class GpuPassTimer {
     private readonly querySet: GPUQuerySet;
     private readonly resolveBuffer: GPUBuffer;
     private readonly readBuffer: GPUBuffer;
+    /**
+     * True from the frame that copies into `readBuffer` until that buffer has
+     * been unmapped again. Copying into a buffer whose map is pending or
+     * active makes the whole frame's submit fail validation ("used in submit
+     * while mapped"), which drops the frame and flashes the clear colour.
+     */
     private pendingRead = false;
+    private destroyed = false;
     /** Which stamping path this device took — mirrored onto the capability matrix. */
     public readonly strategy: TimestampWriteStrategy;
 
     constructor(private readonly device: GPUDevice) {
-        this.querySet = device.createQuerySet({ type: 'timestamp', count: QUERY_COUNT });
+        this.querySet = device.createQuerySet({
+            label: 'gpu-pass-timer-queries',
+            type: 'timestamp',
+            count: QUERY_COUNT,
+        });
         this.resolveBuffer = device.createBuffer({
+            label: 'gpu-pass-timer-resolve',
             size: QUERY_COUNT * 8,
             usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
         });
         this.readBuffer = device.createBuffer({
+            label: 'gpu-pass-timer-read',
             size: QUERY_COUNT * 8,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
         });
@@ -162,24 +175,31 @@ export class GpuPassTimer {
     }
 
     resolveAndScheduleRead(encoder: GPUCommandEncoder): void {
-        if (this.strategy === 'none') return;
+        if (this.strategy === 'none' || this.destroyed) return;
+        // Never copy into readBuffer while its previous map is still in flight.
         if (this.pendingRead) return;
         encoder.resolveQuerySet(this.querySet, 0, QUERY_COUNT, this.resolveBuffer, 0);
         encoder.copyBufferToBuffer(this.resolveBuffer, 0, this.readBuffer, 0, QUERY_COUNT * 8);
         this.pendingRead = true;
         const readBuffer = this.readBuffer;
-        this.device.queue.onSubmittedWorkDone().then(() => {
-            this.pendingRead = false;
-            void this.readTimings(readBuffer);
-        }).catch(() => {
-            this.pendingRead = false;
-        });
+        // The frame loop submits synchronously after encoding, so this settles
+        // after the copy above is on the queue. `pendingRead` stays set until
+        // readTimings has unmapped the buffer.
+        this.device.queue.onSubmittedWorkDone().then(
+            () => this.readTimings(readBuffer),
+            () => { this.pendingRead = false; },
+        );
     }
 
     private async readTimings(buffer: GPUBuffer): Promise<void> {
+        let mapped = false;
         try {
             await buffer.mapAsync(GPUMapMode.READ);
-            const data = new BigUint64Array(buffer.getMappedRange());
+            mapped = true;
+            // Copy out so the data outlives the mapping.
+            const data = new BigUint64Array(buffer.getMappedRange().slice(0));
+            buffer.unmap();
+            mapped = false;
             const delta = (a: number, b: number): number | null => {
                 if (data[b]! <= data[a]!) return null;
                 return Number(data[b]! - data[a]!) * NS_TO_MS;
@@ -191,13 +211,18 @@ export class GpuPassTimer {
                 available: true,
             });
             publishGpuPassTimingsToWindow();
-            buffer.unmap();
         } catch {
             // Timestamp readback can fail on device loss or unsupported queues.
+        } finally {
+            if (mapped) {
+                try { buffer.unmap(); } catch { /* already unmapped / destroyed */ }
+            }
+            this.pendingRead = false;
         }
     }
 
     destroy(): void {
+        this.destroyed = true;
         this.querySet.destroy();
         this.resolveBuffer.destroy();
         this.readBuffer.destroy();

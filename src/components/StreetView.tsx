@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
 import {
+  fingerprintSize,
   getCanvasFingerprint,
   STABILITY_POLL_INTERVAL_MS,
   STABILITY_REQUIRED_STABLE_TICKS,
@@ -13,7 +14,11 @@ import {
   type ScraperHealthEvent,
 } from '../utils/scraperHealth';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import { selectSourceCanvas } from './streetViewCanvasSelect';
+import {
+    CANVAS_TAKEOVER_CONFIRM_MS,
+    createTakeoverState,
+    selectSourceCanvas,
+} from './streetViewCanvasSelect';
 
 export type MapsLoadStatus =
     | 'idle'
@@ -51,6 +56,14 @@ const StreetView: React.FC<StreetViewProps> = ({
     const lastKeyRef = useRef<string>('');
     const lastFingerprintRef = useRef<string>('');
     const stableCountRef = useRef<number>(0);
+    /** Rival canvas bidding to replace the promoted one (see streetViewCanvasSelect). */
+    const takeoverRef = useRef(createTakeoverState());
+    /**
+     * Until this time (performance.now ms), fingerprint changes on the promoted
+     * canvas are a backing-size settle, not new content. One is opened whenever
+     * the promoted canvas changes size.
+     */
+    const sizeFluxUntilRef = useRef(0);
     const everSawCandidateRef = useRef(false);
     const everPromotedRef = useRef(false);
     const healthRef = useRef<ScraperHealth>(createInitialScraperHealth());
@@ -138,6 +151,8 @@ const StreetView: React.FC<StreetViewProps> = ({
         activeCanvasRef.current = null;
         lastFingerprintRef.current = '';
         stableCountRef.current = 0;
+        takeoverRef.current = createTakeoverState();
+        sizeFluxUntilRef.current = 0;
 
         let isMounted = true;
         let cleanup: (() => void) | null = null;
@@ -229,7 +244,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     const { best, canvasCount, selectedArea } = selectSourceCanvas(
                         panoRef.current,
                         activeFp ? active : null,
-                        minEdge
+                        minEdge,
+                        takeoverRef.current
                     );
 
                     if (active && (!active.isConnected || !panoRef.current.contains(active))) {
@@ -237,6 +253,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                         activeCanvasRef.current = null;
                         lastFingerprintRef.current = '';
                         stableCountRef.current = 0;
+                        takeoverRef.current = createTakeoverState();
+                        sizeFluxUntilRef.current = 0;
                         emitHealth({
                             type: 'lost',
                             reason: 'detached',
@@ -297,6 +315,21 @@ const StreetView: React.FC<StreetViewProps> = ({
 
                     const sameElement = best === activeCanvasRef.current;
                     const sameFp = fp === lastFingerprintRef.current;
+
+                    // The promoted canvas changing backing size (e.g. 2560↔1011
+                    // while the car dashboard lays out) is not new content: absorb
+                    // fingerprint churn for a settle window instead of restarting
+                    // stability and re-announcing the same canvas.
+                    if (sameElement && !sameFp) {
+                        const now = performance.now();
+                        if (fingerprintSize(fp) !== fingerprintSize(lastFingerprintRef.current)) {
+                            sizeFluxUntilRef.current = now + CANVAS_TAKEOVER_CONFIRM_MS;
+                        }
+                        if (now < sizeFluxUntilRef.current) {
+                            lastFingerprintRef.current = fp;
+                            return;
+                        }
+                    }
 
                     if (!sameFp) {
                         lastFingerprintRef.current = fp;
@@ -369,7 +402,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     const { best, canvasCount, selectedArea } = selectSourceCanvas(
                         panoRef.current,
                         active,
-                        minEdge
+                        minEdge,
+                        takeoverRef.current
                     );
                     const attached = !!(
                         active &&

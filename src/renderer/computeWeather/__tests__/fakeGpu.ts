@@ -34,6 +34,11 @@ export interface FakeBuffer {
     id: number;
     descriptor: GPUBufferDescriptor;
     destroyed: boolean;
+    /** Spec `GPUBuffer.mapState`; a submit that touches a non-unmapped buffer is an error. */
+    mapState: GPUBufferMapState;
+    mapAsync: (mode: number) => Promise<void>;
+    getMappedRange: () => ArrayBuffer;
+    unmap: () => void;
     destroy: () => void;
 }
 
@@ -72,6 +77,8 @@ export interface RecordedEncoder {
     passes: RecordedPass[];
     copies: Array<{ src: unknown; dst: unknown; size: unknown }>;
     querySetResolves: Array<{ querySet: unknown; firstQuery: number; queryCount: number }>;
+    /** `copyBufferToBuffer` calls, with the destination's map state at record time. */
+    bufferCopies: Array<{ src: FakeBuffer; dst: FakeBuffer; size: number; dstMapState: GPUBufferMapState }>;
 }
 
 /** A created query set, so timing tests can identify which one a pass named. */
@@ -95,6 +102,11 @@ export interface FakeGpuOptions {
      * only supports `timestamp-query-inside-passes`.
      */
     rejectPassDescriptorTimestampWrites?: boolean;
+    /**
+     * Hold every `mapAsync` pending until the test calls `gpu.settleMaps()`,
+     * so a readback can be observed mid-flight. Default: maps resolve at once.
+     */
+    manualMaps?: boolean;
 }
 
 /** A created bind group *layout*, so tests can assert declared sample types. */
@@ -125,6 +137,13 @@ export interface FakeGpu {
     writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }>;
     writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }>;
     submits: number;
+    /**
+     * Validation errors a real device would raise on submit — currently a
+     * buffer copied into while its map is pending or active.
+     */
+    submitErrors: string[];
+    /** Resolve (or reject) every pending `mapAsync` when `manualMaps` is set. */
+    settleMaps: (ok?: boolean) => void;
     /** All passes across all encoders, in creation order. */
     allPasses: () => RecordedPass[];
     /** The single most recently created encoder. */
@@ -148,6 +167,7 @@ export function installGpuGlobals(): void {
         STORAGE_BINDING: 0x08, RENDER_ATTACHMENT: 0x10,
     };
     g.GPUShaderStage = { VERTEX: 0x1, FRAGMENT: 0x2, COMPUTE: 0x4 };
+    g.GPUMapMode = { READ: 0x1, WRITE: 0x2 };
 }
 
 /**
@@ -180,6 +200,8 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }> = [];
     const writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }> = [];
     const state = { submits: 0 };
+    const submitErrors: string[] = [];
+    const pendingMaps: Array<{ buf: FakeBuffer; resolve: () => void; reject: (e: Error) => void }> = [];
 
     function makeTexture(descriptor: GPUTextureDescriptor, label: string): FakeTexture {
         const tex: FakeTexture = {
@@ -229,7 +251,7 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     }
 
     function createCommandEncoder(): GPUCommandEncoder {
-        const rec: RecordedEncoder = { passes: [], copies: [], querySetResolves: [] };
+        const rec: RecordedEncoder = { passes: [], copies: [], querySetResolves: [], bufferCopies: [] };
         encoders.push(rec);
         return {
             beginComputePass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
@@ -245,11 +267,13 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             copyTextureToTexture: (src: unknown, dst: unknown, size: unknown) => {
                 rec.copies.push({ src, dst, size });
             },
-            copyBufferToBuffer: () => {},
+            copyBufferToBuffer: (src: FakeBuffer, _so: number, dst: FakeBuffer, _do: number, size: number) => {
+                rec.bufferCopies.push({ src, dst, size, dstMapState: dst.mapState });
+            },
             resolveQuerySet: (querySet: unknown, firstQuery: number, queryCount: number) => {
                 rec.querySetResolves.push({ querySet, firstQuery, queryCount });
             },
-            finish: () => ({ kind: 'commandBuffer' }),
+            finish: () => ({ kind: 'commandBuffer', rec }),
         } as unknown as GPUCommandEncoder;
     }
 
@@ -267,7 +291,32 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         createBuffer: (d: GPUBufferDescriptor) => {
             const buf: FakeBuffer = {
                 kind: 'buffer', id: nextId++, descriptor: d, destroyed: false,
-                destroy: () => { buf.destroyed = true; },
+                mapState: 'unmapped',
+                mapAsync: () => {
+                    if (buf.mapState !== 'unmapped') {
+                        return Promise.reject(new Error('OperationError: buffer already mapped'));
+                    }
+                    buf.mapState = 'pending';
+                    return new Promise<void>((resolve, reject) => {
+                        const entry = {
+                            buf,
+                            resolve: () => { buf.mapState = 'mapped'; resolve(); },
+                            reject: (e: Error) => { buf.mapState = 'unmapped'; reject(e); },
+                        };
+                        if (options.manualMaps) pendingMaps.push(entry);
+                        else entry.resolve();
+                    });
+                },
+                getMappedRange: () => {
+                    if (buf.mapState !== 'mapped') throw new Error('OperationError: buffer not mapped');
+                    return new ArrayBuffer(d.size);
+                },
+                unmap: () => {
+                    const i = pendingMaps.findIndex((m) => m.buf === buf);
+                    if (i >= 0) pendingMaps.splice(i, 1)[0]!.reject(new Error('AbortError: unmapped'));
+                    buf.mapState = 'unmapped';
+                },
+                destroy: () => { buf.unmap(); buf.destroyed = true; },
             };
             buffers.push(buf);
             return buf;
@@ -312,7 +361,18 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             writeTexture: (dst: { texture: FakeTexture }, _data: unknown, _layout: unknown, size: unknown) => {
                 writeTextureCalls.push({ texture: dst.texture, size });
             },
-            submit: () => { state.submits += 1; },
+            submit: (cmds: Array<{ rec?: RecordedEncoder }>) => {
+                state.submits += 1;
+                for (const cmd of cmds ?? []) {
+                    for (const c of cmd.rec?.bufferCopies ?? []) {
+                        if (c.dst.mapState !== 'unmapped') {
+                            submitErrors.push(
+                                `[Buffer "${c.dst.descriptor.label ?? '(unlabeled)'}"] used in submit while mapped`,
+                            );
+                        }
+                    }
+                }
+            },
             onSubmittedWorkDone: async () => {},
         },
     } as unknown as GPUDevice;
@@ -342,6 +402,13 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         writeBufferCalls,
         writeTextureCalls,
         get submits() { return state.submits; },
+        submitErrors,
+        settleMaps: (ok = true) => {
+            for (const m of pendingMaps.splice(0)) {
+                if (ok) m.resolve();
+                else m.reject(new Error('OperationError: map failed'));
+            }
+        },
         allPasses: () => encoders.flatMap((e) => e.passes),
         lastEncoder: () => encoders[encoders.length - 1]!,
         createCommandEncoder,

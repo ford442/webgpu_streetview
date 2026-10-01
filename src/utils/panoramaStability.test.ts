@@ -1,5 +1,6 @@
 import {
   advancePanoramaStabilityTick,
+  fingerprintSize,
   createPanoramaStabilityState,
   getCanvasFingerprint,
   hasPanoramaContentChanged,
@@ -197,5 +198,16 @@ describe('advancePanoramaStabilityTick', () => {
     }
 
     expect(outcome).toEqual({ type: 'force-ready', reason: 'timeout' });
+  });
+});
+
+describe('fingerprintSize', () => {
+  it('extracts the backing size, including for negative hashes', () => {
+    expect(fingerprintSize('2560x1323-12345')).toBe('2560x1323');
+    expect(fingerprintSize('1011x1323--987')).toBe('1011x1323');
+  });
+
+  it('is empty for an empty fingerprint', () => {
+    expect(fingerprintSize('')).toBe('');
   });
 });

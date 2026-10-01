@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CANVAS_TAKEOVER_AREA_RATIO,
+  CANVAS_TAKEOVER_CONFIRM_MS,
+  createTakeoverState,
   selectLargestCanvas,
   selectSourceCanvas,
 } from '../streetViewCanvasSelect';
@@ -91,5 +93,78 @@ describe('selectSourceCanvas hysteresis', () => {
     container(active);
     const rival = canvas(782, 1110);
     expect(selectSourceCanvas(container(rival), active, MIN_EDGE).best).toBe(rival);
+  });
+});
+
+describe('selectSourceCanvas takeover confirmation', () => {
+  it('ignores a narrower sibling during the car-mode flap', () => {
+    const active = canvas(2560, 1323);
+    const rival = canvas(1011, 1323);
+    const takeover = createTakeoverState();
+    expect(selectSourceCanvas(container(active, rival), active, MIN_EDGE, takeover, 0).best).toBe(active);
+    expect(takeover.rival).toBeNull();
+  });
+
+  it('holds a ~2.5× rival until it has won for the whole confirm window', () => {
+    const active = canvas(1011, 1323);
+    const rival = canvas(2560, 1323);
+    const div = container(active, rival);
+    const takeover = createTakeoverState();
+
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, 0).best).toBe(active);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS - 50).best).toBe(active);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS).best).toBe(rival);
+    expect(takeover.rival).toBeNull();
+  });
+
+  it('restarts the window when the rival flips back mid-flap', () => {
+    const active = canvas(1011, 1323);
+    const rival = canvas(2560, 1323);
+    const div = container(active, rival);
+    const takeover = createTakeoverState();
+
+    selectSourceCanvas(div, active, MIN_EDGE, takeover, 0);
+    // The flap: the rival drops back to the promoted size for a poll.
+    rival.width = 1011;
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, 100).best).toBe(active);
+    expect(takeover.rival).toBeNull();
+    rival.width = 2560;
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, 200).best).toBe(active);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS + 100).best).toBe(active);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS + 200).best).toBe(rival);
+  });
+
+  it('restarts the window when a different rival takes the lead', () => {
+    const active = canvas(800, 600);
+    const first = canvas(2000, 600);
+    const second = canvas(2400, 600);
+    const div = container(active, first);
+    const takeover = createTakeoverState();
+
+    selectSourceCanvas(div, active, MIN_EDGE, takeover, 0);
+    div.appendChild(second);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, 500).best).toBe(active);
+    expect(takeover.rival).toBe(second);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS + 100).best).toBe(active);
+    expect(selectSourceCanvas(div, active, MIN_EDGE, takeover, CANVAS_TAKEOVER_CONFIRM_MS + 500).best).toBe(second);
+  });
+
+  it('still re-acquires immediately when the promoted canvas is detached or degenerate', () => {
+    const takeover = createTakeoverState();
+    const rival = canvas(782, 1110);
+
+    const detached = canvas(2331, 1110);
+    expect(selectSourceCanvas(container(rival), detached, MIN_EDGE, takeover, 0).best).toBe(rival);
+
+    const collapsed = canvas(2331, 1110);
+    const other = canvas(782, 1110);
+    const div = container(collapsed, other);
+    collapsed.width = 0;
+    expect(selectSourceCanvas(div, collapsed, MIN_EDGE, takeover, 0).best).toBe(other);
+
+    const foreign = canvas(2331, 1110);
+    container(foreign);
+    const local = canvas(782, 1110);
+    expect(selectSourceCanvas(container(local), foreign, MIN_EDGE, takeover, 0).best).toBe(local);
   });
 });

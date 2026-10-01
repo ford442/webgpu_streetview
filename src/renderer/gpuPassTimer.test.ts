@@ -193,3 +193,107 @@ describe('pass encoders declare timestampWrites instead of stamping inside the p
     ]);
   });
 });
+
+describe('GpuPassTimer readback', () => {
+  beforeEach(() => {
+    installGpuGlobals();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Let queued promise callbacks (work-done → mapAsync → finally) run. */
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
+  function readBufferOf(gpu: FakeGpu) {
+    return gpu.buffers.find((b) => b.descriptor.label === 'gpu-pass-timer-read')!;
+  }
+
+  /** One frame as frameLoop does it: encode, resolve, submit synchronously. */
+  function frame(gpu: FakeGpu, timer: GpuPassTimer) {
+    const encoder = gpu.createCommandEncoder();
+    timer.resolveAndScheduleRead(encoder);
+    gpu.device.queue.submit([encoder.finish()]);
+    return gpu.lastEncoder();
+  }
+
+  it('labels its resolve and readback buffers', () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY] });
+    makeTimer(gpu);
+    expect(gpu.buffers.map((b) => b.descriptor.label).sort()).toEqual([
+      'gpu-pass-timer-read',
+      'gpu-pass-timer-resolve',
+    ]);
+  });
+
+  it('never copies into the readback buffer until the previous map has unmapped', async () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY], manualMaps: true });
+    const timer = makeTimer(gpu);
+    const readBuffer = readBufferOf(gpu);
+
+    const a = frame(gpu, timer);
+    expect(a.bufferCopies).toHaveLength(1);
+    await flush();
+    // Work done fired; the map is in flight.
+    expect(readBuffer.mapState).toBe('pending');
+
+    // The next frames must not touch the buffer while the map is pending…
+    const b = frame(gpu, timer);
+    expect(b.bufferCopies).toEqual([]);
+    expect(b.querySetResolves).toEqual([]);
+
+    // …or while it is mapped and being read.
+    gpu.settleMaps();
+    expect(readBuffer.mapState).toBe('mapped');
+    const c = frame(gpu, timer);
+    expect(c.bufferCopies).toEqual([]);
+
+    await flush();
+    expect(readBuffer.mapState).toBe('unmapped');
+
+    const d = frame(gpu, timer);
+    expect(d.bufferCopies).toHaveLength(1);
+    expect(d.bufferCopies[0]!.dstMapState).toBe('unmapped');
+    expect(gpu.submitErrors).toEqual([]);
+  });
+
+  it('clears the pending flag when onSubmittedWorkDone rejects', async () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY] });
+    const timer = makeTimer(gpu);
+    const queue = gpu.device.queue as { onSubmittedWorkDone: () => Promise<undefined> };
+    queue.onSubmittedWorkDone = () => Promise.reject(new Error('device lost'));
+
+    frame(gpu, timer);
+    await flush();
+    expect(frame(gpu, timer).bufferCopies).toHaveLength(1);
+    expect(readBufferOf(gpu).mapState).toBe('unmapped');
+  });
+
+  it('clears the pending flag without unmapping when mapAsync rejects', async () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY], manualMaps: true });
+    const timer = makeTimer(gpu);
+    const readBuffer = readBufferOf(gpu);
+    const unmap = vi.spyOn(readBuffer, 'unmap');
+
+    frame(gpu, timer);
+    await flush();
+    gpu.settleMaps(false);
+    await flush();
+
+    expect(unmap).not.toHaveBeenCalled();
+    expect(readBuffer.mapState).toBe('unmapped');
+    expect(frame(gpu, timer).bufferCopies).toHaveLength(1);
+    expect(gpu.submitErrors).toEqual([]);
+  });
+
+  it('stops scheduling reads once destroyed', () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY] });
+    const timer = makeTimer(gpu);
+    timer.destroy();
+    expect(frame(gpu, timer).bufferCopies).toEqual([]);
+  });
+});
