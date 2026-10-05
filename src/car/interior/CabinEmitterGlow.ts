@@ -16,6 +16,18 @@ export interface CabinGlowSprite {
   baseColor: THREE.Color;
 }
 
+/**
+ * Per-path gains for the ramp `level` (cabinLightingRamps). The two paths put
+ * the same level on screen very differently: Medium is a flat additive
+ * opacity across the quad, High is the shader's peak intensity at the halo
+ * centre with an untonemapped additive add on WebGPU — so each gets its own
+ * knob, and the ramp curves stay the single source of *when* a halo lifts.
+ */
+export const BASIC_GLOW_GAIN = 0.45;
+export const SHADER_GLOW_GAIN = 0.55;
+/** Breathing amplitude of the shader halo; 0 under reduced motion. */
+export const GLOW_PULSE_AMOUNT = 0.08;
+
 function additiveBasic(color: THREE.Color): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     color,
@@ -36,7 +48,7 @@ function additiveGlow(
   const uniforms = createDashboardGlowUniforms();
   uniforms.glowColor.value.copy(color);
   uniforms.intensity.value = 0;
-  uniforms.pulseAmount.value = reducedMotion ? 0 : 0.08;
+  uniforms.pulseAmount.value = reducedMotion ? 0 : GLOW_PULSE_AMOUNT;
   uniforms.pulseSpeed.value = 1.1;
   uniforms.glowRadius.value = 0.28;
   uniforms.falloff.value = 2.4;
@@ -78,6 +90,13 @@ export function createCabinGlowSprite(opts: {
   return { mesh, kind: opts.kind, uniforms, baseColor: color };
 }
 
+/**
+ * Per-frame drive from CarInteriorLightingManager (runs after the animator has
+ * posed the chassis / roof for this frame). The shader measures its falloff
+ * from `glowCenter` in world space, so the sprite re-centres that uniform on
+ * itself every call — the chassis yaws and the roof slides, and a halo left at
+ * the shader default sits ~2 m from every fixture and renders nothing.
+ */
 export function setCabinGlowLevel(
   sprite: CabinGlowSprite,
   level: number,
@@ -86,13 +105,14 @@ export function setCabinGlowLevel(
 ): void {
   const t = Math.max(0, Math.min(1, level));
   if (sprite.uniforms) {
-    sprite.uniforms.intensity.value = t;
+    sprite.mesh.getWorldPosition(sprite.uniforms.glowCenter.value);
+    sprite.uniforms.intensity.value = t * SHADER_GLOW_GAIN;
     sprite.uniforms.time.value = reducedMotion ? 0 : timeSec;
-    sprite.uniforms.pulseAmount.value = reducedMotion ? 0 : 0.08;
+    sprite.uniforms.pulseAmount.value = reducedMotion ? 0 : GLOW_PULSE_AMOUNT;
     sprite.mesh.visible = t > 0.02;
     return;
   }
   const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
-  mat.opacity = t * 0.45;
+  mat.opacity = t * BASIC_GLOW_GAIN;
   sprite.mesh.visible = t > 0.02;
 }

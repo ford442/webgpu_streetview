@@ -316,6 +316,8 @@ export function createDashboardGlowTslMaterial(
     material.depthWrite = false;
     material.depthTest = true;
     material.blending = THREE.AdditiveBlending;
+    // Output is premultiplied (colour × glow, alpha = glow) — see the GLSL twin.
+    material.premultipliedAlpha = true;
     material.side = THREE.DoubleSide;
     material.colorNode = Fn(() => {
         const vUv = uv();
