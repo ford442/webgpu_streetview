@@ -33,6 +33,7 @@ import {
     loadGltfInteriorKit,
 } from '../gltfInteriorKit';
 import type { CabinRenderer } from './createCabinRenderer';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from '../carSpatialModel';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -373,9 +374,9 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     if (host.vehicleConfig.hasRoof) {
         host.isRoofOpen = false;
-        host.roofTargetY = 1.6;
+        host.roofTargetY = ROOF_CLOSED_Y;
     } else {
         host.isRoofOpen = true;
-        host.roofTargetY = -1.0;
+        host.roofTargetY = ROOF_OPEN_Y;
     }
 }

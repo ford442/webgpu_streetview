@@ -38,6 +38,7 @@ import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
 import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from './carSpatialModel';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -133,7 +134,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     ) {
         this.vehicleType = vehicleType;
         this.vehicleConfig = getVehicleConfig(vehicleType);
-        this.roofTargetY = this.vehicleConfig.hasRoof ? 1.6 : -1.0;
+        this.roofTargetY = this.vehicleConfig.hasRoof ? ROOF_CLOSED_Y : ROOF_OPEN_Y;
         this.isRoofOpen = !this.vehicleConfig.hasRoof;
 
         const boot = bootstrapCarInterior(
@@ -219,7 +220,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public toggleRoof(): void {
         this.isRoofOpen = !this.isRoofOpen;
-        this.roofTargetY = this.isRoofOpen ? -1.0 : 1.6;
+        this.roofTargetY = this.isRoofOpen ? ROOF_OPEN_Y : ROOF_CLOSED_Y;
         this.animator?.setRoofTargetY(this.roofTargetY);
     }
 

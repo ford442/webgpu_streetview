@@ -156,7 +156,9 @@ export class CarInteriorShellBuilder {
             roughness: 0.28, metalness: 0.15,
         });
         const domeLightFixtureMesh = new THREE.Mesh(fixtureGeo, fixtureMat);
-        domeLightFixtureMesh.position.set(0, 1.59, 0.3);
+        // Hangs just under the headliner (sedan roof slab underside is 1.575,
+        // the Cortianics glass 1.57). At 1.59 the disc sat inside the slab.
+        domeLightFixtureMesh.position.set(0, 1.56, 0.3);
         mountGroup.add(domeLightFixtureMesh);
 
         if (this.quality !== 'low') {
