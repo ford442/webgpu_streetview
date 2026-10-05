@@ -13,7 +13,8 @@ import { resetCabinMaterialBackendForTests } from './cabinMaterialBackend';
  * quality they use the dashboardGlow shader, whose falloff is measured from a
  * `glowCenter` uniform in *world* space — so the sprite has to keep that
  * uniform on itself every frame or the halo renders nothing (the default
- * center is ~2 m away from every fixture).
+ * center is ~2 m away from every fixture). Medium uses a MeshBasicMaterial
+ * with a radial alpha map so the quad doesn't read as a square sticker.
  */
 describe('cabin emitter glow sprites', () => {
   beforeEach(() => resetCabinMaterialBackendForTests());
@@ -103,6 +104,7 @@ describe('cabin emitter glow sprites', () => {
   });
 
   it('drives the medium quad by opacity with the basic gain', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext' as never).mockReturnValue(null as never);
     const sprite = createCabinGlowSprite({
       kind: 'cluster',
       color: 0x4caf50,
@@ -122,5 +124,51 @@ describe('cabin emitter glow sprites', () => {
 
     setCabinGlowLevel(sprite, 0.01, 0, false);
     expect(sprite.mesh.visible).toBe(false);
+  });
+
+  it('gives the medium quad a radial alpha map when a 2D canvas is available', () => {
+    const gradient = { addColorStop: vi.fn() };
+    const ctx = {
+      createRadialGradient: vi.fn(() => gradient),
+      fillRect: vi.fn(),
+      fillStyle: '',
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext' as never).mockReturnValue(ctx as never);
+
+    const sprite = createCabinGlowSprite({
+      kind: 'dome',
+      color: 0xffe8b0,
+      width: 0.42,
+      height: 0.42,
+      useShader: false,
+      reducedMotion: false,
+    });
+    const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
+    expect(mat.alphaMap).toBeInstanceOf(THREE.CanvasTexture);
+    expect(gradient.addColorStop).toHaveBeenCalled();
+    // Each sprite owns its own texture: CarInteriorDispose disposes alphaMap
+    // per material, so a shared one would die with the first cabin teardown.
+    const other = createCabinGlowSprite({
+      kind: 'dome',
+      color: 0xffe8b0,
+      width: 0.42,
+      height: 0.42,
+      useShader: false,
+      reducedMotion: false,
+    });
+    expect((other.mesh.material as THREE.MeshBasicMaterial).alphaMap).not.toBe(mat.alphaMap);
+  });
+
+  it('builds the medium quad without an alpha map when the canvas has no 2D context', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext' as never).mockReturnValue(null as never);
+    const sprite = createCabinGlowSprite({
+      kind: 'dome',
+      color: 0xffe8b0,
+      width: 0.42,
+      height: 0.42,
+      useShader: false,
+      reducedMotion: false,
+    });
+    expect((sprite.mesh.material as THREE.MeshBasicMaterial).alphaMap).toBeNull();
   });
 });
