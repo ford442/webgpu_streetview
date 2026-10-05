@@ -8,6 +8,10 @@
  *
  * Query: w, h, frames, night (0-1), alt (sun altitude, rad), az, dome, hl,
  * rain, vehicle, quality (low|medium|high, default medium), yaw (head yaw offset, deg), pitch (deg).
+ * Diagnostics: `probe` (emitter attribution over `region=x0,y0,x1,y1` as frame
+ * fractions, default the cluster well), `sprites=0` (hide the glow halos for a
+ * with/without pair), `glowgain=<n>` (force shader-halo intensity), and
+ * `out.sprites` (each halo's world/screen position).
  */
 import { createCabinRendererAsync, preloadWebGPUCabinRenderer } from '/src/car/interior/createCabinRenderer';
 import { CabinCompositePass } from '/src/renderer/cabinComposite';
@@ -16,6 +20,7 @@ import { initCarMode, toggleCarMode, updateCarMode } from '/src/car/runtime/life
 import { getState } from '/src/car/runtime/state';
 import { GPU_PROFILES } from '/src/utils/performance';
 import type { VehicleType } from '/src/car/VehicleManager';
+import * as THREE from 'three';
 
 const realFetch = window.fetch.bind(window);
 window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -50,6 +55,8 @@ const rain = Number(q.get('rain') ?? 0);
 const vehicle = (q.get('vehicle') ?? 'sedan') as VehicleType;
 const yaw = Number(q.get('yaw') ?? 0);
 const pitch = Number(q.get('pitch') ?? 0);
+const hideSprites = q.get('sprites') === '0';
+const regionRect = (q.get('region') ?? '0.36,0.52,0.6,0.68').split(',').map(Number) as [number, number, number, number];
 
 const out: Record<string, unknown> = {};
 (window as unknown as { __out: unknown }).__out = out;
@@ -127,6 +134,36 @@ async function main() {
     }
     await device.queue.onSubmittedWorkDone();
 
+    // Where each glow halo landed: world position and screen NDC (x,y in -1..1).
+    const lmGlows = (interior.lightingManager as unknown as { emitterGlows?: { kind: string; mesh: THREE.Mesh; uniforms: { intensity: { value: number }; glowCenter: { value: THREE.Vector3 } } | null }[] }).emitterGlows ?? [];
+    const cam = interior.camera;
+    cam.updateMatrixWorld(true);
+    out.sprites = lmGlows.map((g) => {
+        const world = g.mesh.getWorldPosition(new THREE.Vector3());
+        const ndc = world.clone().project(cam);
+        const mat = g.mesh.material as THREE.MeshBasicMaterial;
+        return {
+            kind: g.kind,
+            visible: g.mesh.visible,
+            world: world.toArray().map((v) => +v.toFixed(3)),
+            ndc: [+ndc.x.toFixed(3), +ndc.y.toFixed(3), +ndc.z.toFixed(3)],
+            level: g.uniforms ? +g.uniforms.intensity.value.toFixed(3) : +mat.opacity.toFixed(3),
+            glowCenter: g.uniforms ? g.uniforms.glowCenter.value.toArray().map((v) => +v.toFixed(3)) : null,
+            shader: !!g.uniforms,
+        };
+    });
+    // `glowgain=<n>`: force every shader halo to a fixed intensity (does the
+    // TSL material draw at all?). `sprites=0`: hide the halos for a with/without pair.
+    const glowGain = q.has('glowgain') ? Number(q.get('glowgain')) : null;
+    if (hideSprites || glowGain !== null) {
+        for (const g of lmGlows) {
+            if (hideSprites) g.mesh.visible = false;
+            if (glowGain !== null && g.uniforms) g.uniforms.intensity.value = glowGain;
+        }
+        interior.render();
+        await device.queue.onSubmittedWorkDone();
+    }
+
     const source = interior.rendererDelegate.getCabinOverlaySource();
     if (!source) throw new Error('cabin is not composited (no frame target)');
 
@@ -177,8 +214,8 @@ async function main() {
         const region = (p: Uint8ClampedArray) => {
             const acc = [0, 0, 0];
             let n = 0;
-            for (let y = Math.floor(H * 0.52); y < Math.floor(H * 0.68); y++) {
-                for (let x = Math.floor(W * 0.36); x < Math.floor(W * 0.6); x++) {
+            for (let y = Math.floor(H * regionRect[1]); y < Math.floor(H * regionRect[3]); y++) {
+                for (let x = Math.floor(W * regionRect[0]); x < Math.floor(W * regionRect[2]); x++) {
                     const i = (y * W + x) * 4;
                     acc[0]! += p[i]!; acc[1]! += p[i + 1]!; acc[2]! += p[i + 2]!; n++;
                 }
