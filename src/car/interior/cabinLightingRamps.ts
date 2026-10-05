@@ -126,7 +126,9 @@ export function cabinEmitterTargets(input: CabinRampInput): CabinEmitterTargets 
     cluster: 0.03 + night * 0.09 + hl * 0.5,
     centerDisplay: 0.24 + night * 0.42 + hl * 0.5,
     clock: 0.28 + night * 0.48,
-    domeFixture: input.domeLightOn ? 1.55 : 0.015,
+    // Fixture emissive 0xffe8b0: above ~1.1 the WebGPU cabin (NoToneMapping)
+    // clips it to a flat white disc; 1.1 stays a warm lit diffuser.
+    domeFixture: input.domeLightOn ? 1.1 : 0.015,
     domeSwitch: input.domeLightOn ? 0.45 : 0,
   };
 }

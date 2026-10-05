@@ -24,7 +24,7 @@ export interface CabinGlowSprite {
  * knob, and the ramp curves stay the single source of *when* a halo lifts.
  */
 export const BASIC_GLOW_GAIN = 0.45;
-export const SHADER_GLOW_GAIN = 0.55;
+export const SHADER_GLOW_GAIN = 1.0;
 /** Breathing amplitude of the shader halo; 0 under reduced motion. */
 export const GLOW_PULSE_AMOUNT = 0.08;
 
@@ -78,8 +78,11 @@ function additiveGlow(
   uniforms.intensity.value = 0;
   uniforms.pulseAmount.value = reducedMotion ? 0 : GLOW_PULSE_AMOUNT;
   uniforms.pulseSpeed.value = 1.1;
-  uniforms.glowRadius.value = 0.28;
-  uniforms.falloff.value = 2.4;
+  // Measured against the dome: the fixture disc is r 0.11 and the quad r 0.21.
+  // At radius 0.28 / falloff 2.4 the corona died inside the disc; this keeps
+  // ~0.4 of the peak just outside the fixture and fades to the quad edge.
+  uniforms.glowRadius.value = 0.3;
+  uniforms.falloff.value = 1.3;
   const backend = getCabinMaterialBackend();
   const tsl = backend === 'webgpu' ? getCabinTslApi() : undefined;
   const material = tsl

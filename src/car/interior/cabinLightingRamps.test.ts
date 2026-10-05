@@ -94,7 +94,8 @@ describe('cabinLightingRamps', () => {
     });
     expect(fill.dome).toBeGreaterThan(0.7);
     expect(fill.hemi).toBeLessThan(0.02);
-    expect(emit.domeFixture).toBeGreaterThan(1.2);
+    expect(emit.domeFixture).toBeGreaterThan(1.0);
+    expect(emit.domeFixture).toBeLessThanOrEqual(1.1);
     // The dials carry the cluster's light; the backplate well stays under them
     // so the cluster doesn't read as one flat neon slab.
     const dial = gaugeDialGlow({ effectiveNight: 1, headlightsOn: false, rpmFrac: 0, breathe: 0 });
