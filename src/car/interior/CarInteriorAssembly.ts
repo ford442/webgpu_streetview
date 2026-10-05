@@ -14,7 +14,7 @@ import { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import { SunShafts } from './SunShafts';
 import { CenterDisplay } from './CenterDisplay';
 import { VanityMirror } from './VanityMirror';
-import { createMaterials, resetGlowRegistry } from './MaterialFactory';
+import { beginCabinGlowRegistry, createMaterials } from './MaterialFactory';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { RainSystem } from './RainSystem';
@@ -146,7 +146,7 @@ export function setupWindowWeatherOverlay(host: CarInteriorAssemblyHost): void {
 }
 
 export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
-    if (resetGlowRegistry) resetGlowRegistry();
+    beginCabinGlowRegistry(host.vehicleConfig, { accent: host.accentMaterial });
 
     if (!host.proceduralCabinGroup) {
         host.proceduralCabinGroup = new THREE.Group();

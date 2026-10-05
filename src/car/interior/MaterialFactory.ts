@@ -140,6 +140,31 @@ export function registerGlowMaterial(
   glowRegistry.push({ material, base: baseIntensity });
 }
 
+/** Base emissive of the shared `materials.accent` (shifter knob, stalk tips). */
+export const ACCENT_TRIM_GLOW_BASE = 0.2;
+
+/** Registry base for an accent piece: the neon theme lifts every accent 1.6x. */
+export function accentGlowBase(config: VehicleConfig, emissiveIntensity: number): number {
+  return emissiveIntensity * (config.theme === 'neon' ? 1.6 : 1);
+}
+
+/**
+ * Start the registry for a (re)built interior. `createMaterials` runs before
+ * the builders and registers the shared accent material; the reset here would
+ * silently drop it, leaving the shifter knob and stalk tip at a fixed glow
+ * while every other accent piece ramps with night — so the shared pieces are
+ * re-registered as part of the reset.
+ */
+export function beginCabinGlowRegistry(
+  config: VehicleConfig,
+  shared: { accent?: THREE.MeshStandardMaterial }
+): void {
+  resetGlowRegistry();
+  if (shared.accent) {
+    registerGlowMaterial(shared.accent, accentGlowBase(config, ACCENT_TRIM_GLOW_BASE));
+  }
+}
+
 /**
  * Scale every registered glow material for the current cabin state.
  * @param night        0-1 effective night factor
@@ -170,19 +195,19 @@ export function createAccentMaterial(
   emissiveIntensity: number
 ): THREE.MeshPhysicalMaterial {
   const accentHex = parseInt(config.accentColor.replace('#', '0x'));
-  const themeBoost = config.theme === 'neon' ? 1.6 : 1;
+  const base = accentGlowBase(config, emissiveIntensity);
   const material = new THREE.MeshPhysicalMaterial({
     color: accentHex,
     roughness: 0.3,
     metalness: 0.65,
     emissive: accentHex,
-    emissiveIntensity: emissiveIntensity * themeBoost,
+    emissiveIntensity: base,
     envMapIntensity: 0.8,
     clearcoat: 0.9,
     clearcoatRoughness: 0.12,
     side: THREE.DoubleSide,
   });
-  registerGlowMaterial(material, emissiveIntensity * themeBoost);
+  registerGlowMaterial(material, base);
   return material;
 }
 
@@ -336,7 +361,7 @@ export function createMaterials(
     side: THREE.FrontSide,
   });
 
-  const accent = createAccentMaterial(config, 0.2);
+  const accent = createAccentMaterial(config, ACCENT_TRIM_GLOW_BASE);
 
   // Polished chrome for vent surrounds, rings, handles.
   const chrome = new THREE.MeshPhysicalMaterial({
