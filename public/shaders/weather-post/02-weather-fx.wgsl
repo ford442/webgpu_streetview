@@ -43,7 +43,7 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     // gain presence approaching the camera below it, so rain reads as falling
     // through the same depth the fog/DOF horizon uses instead of a flat,
     // pitch-invariant overlay (the "floats on a flat screen-Y plane" gap).
-    let horizonY = viewHorizonY(p.cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
@@ -81,7 +81,7 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     }
 
     // Same horizon/depth perspective cue as rain() — see comment there.
-    let horizonY = viewHorizonY(p.cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
@@ -117,7 +117,7 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
 fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32) -> f32 {
     if (intensity < 0.001 && density < 0.001) { return 0.0; }
 
-    let horizonY = viewHorizonY(p.cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let profile = fogHeightFalloff(uv, horizonY, height);
 

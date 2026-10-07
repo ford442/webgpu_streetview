@@ -11,6 +11,7 @@ import type { QualityLevel } from '../config/visualPresets';
 import { HoldTransitionController } from './holdTransition';
 import { TextureLifecycle } from './textureLifecycle';
 import {
+    PanoramaStatsOptions,
     RendererDebugOptions,
     RendererInitOptions,
     StreetViewRenderer,
@@ -35,6 +36,12 @@ import {
 } from './frameLoop';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
+import {
+    HORIZON_ROWS_HEIGHT,
+    HORIZON_ROWS_WIDTH,
+    rowLumaMeans,
+} from './gpuChores/horizonEstimate';
+import { publishHorizonRows } from './gpuChores/gpuChoresStatsStore';
 import { CabinCompositePass } from './cabinComposite';
 import { getCabinOverlaySource } from './cabinOverlayRegistry';
 import {
@@ -288,17 +295,19 @@ export class Renderer implements StreetViewRenderer {
     /**
      * #216: sample panorama luma (hist/reduce) on the shared device, or WASM/JS.
      * Skipped while a hold is active so we never read a loading live canvas.
+     * `horizonRows` also publishes per-row luma for the image-derived horizon
+     * (gpuChores/horizonEstimate.ts), tagged with the pitch it was sampled at.
      */
-    public samplePanoramaStats(): void {
+    public samplePanoramaStats(opts?: PanoramaStatsOptions): void {
         if (this.isDestroyed || !this.gpuChores || this.holdTransition.isHoldActive()) return;
-        void this.samplePanoramaStatsAsync();
+        void this.samplePanoramaStatsAsync(opts);
     }
 
     public getOutputCanvas(): HTMLCanvasElement {
         return this.canvas;
     }
 
-    private async samplePanoramaStatsAsync(): Promise<void> {
+    private async samplePanoramaStatsAsync(opts?: PanoramaStatsOptions): Promise<void> {
         const chores = this.gpuChores;
         if (!chores || this.isDestroyed || this.holdTransition.isHoldActive()) return;
         await chores.ensureReady();
@@ -306,12 +315,24 @@ export class Renderer implements StreetViewRenderer {
         const tex = this.textures.videoTexture;
         if (tex) {
             const sample = await chores.sampleTexture(tex);
-            if (sample || this.isDestroyed || this.holdTransition.isHoldActive()) return;
+            if (this.isDestroyed || this.holdTransition.isHoldActive()) return;
+            if (sample) {
+                if (opts?.horizonRows) {
+                    const rgba = await chores.downsampleTexture(tex, HORIZON_ROWS_WIDTH, HORIZON_ROWS_HEIGHT);
+                    if (rgba && !this.isDestroyed && !this.holdTransition.isHoldActive()) {
+                        publishHorizonRows(
+                            rowLumaMeans(rgba, HORIZON_ROWS_WIDTH, HORIZON_ROWS_HEIGHT),
+                            opts.pitch,
+                        );
+                    }
+                }
+                return;
+            }
         }
-        this.samplePanoramaStatsCpu(chores);
+        this.samplePanoramaStatsCpu(chores, opts);
     }
 
-    private samplePanoramaStatsCpu(chores: GpuChores): void {
+    private samplePanoramaStatsCpu(chores: GpuChores, opts?: PanoramaStatsOptions): void {
         if (typeof document === 'undefined' || this.canvas.width < 2 || this.canvas.height < 2) return;
         const q = histDownsampleSize(this.canvas.width, this.canvas.height);
         const tmp = document.createElement('canvas');
@@ -323,6 +344,15 @@ export class Renderer implements StreetViewRenderer {
             ctx.drawImage(this.canvas, 0, 0, q.width, q.height);
             const img = ctx.getImageData(0, 0, q.width, q.height);
             chores.analyzePreparedRgba(img.data, q.width, q.height);
+            if (opts?.horizonRows) {
+                const rgba = chores.downsampleRgba(
+                    img.data, q.width, q.height, HORIZON_ROWS_WIDTH, HORIZON_ROWS_HEIGHT,
+                );
+                publishHorizonRows(
+                    rowLumaMeans(rgba, HORIZON_ROWS_WIDTH, HORIZON_ROWS_HEIGHT),
+                    opts.pitch,
+                );
+            }
         } catch {
             // Canvas taint / GPU canvas readback can fail — skip this tick.
         }

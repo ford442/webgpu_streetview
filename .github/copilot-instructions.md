@@ -65,7 +65,7 @@ Car mode entry point is `src/car/index.ts`. Vehicle configs (`sedan | convertibl
 All UI overlays (panels, modals, dashboard buttons, text inputs) **must** call `e.stopPropagation()` on every mouse and keyboard event. Input handlers are attached to `window`, so missing `stopPropagation` causes the panorama to spin when the user types or clicks.
 
 ### Shader Uniform Buffer Layout
-`weather-post.wgsl` expects exactly **40 floats (160 bytes)**. If you change the layout, update both `Renderer.ts` (the `weatherParams` Float32Array comment block at lines ~37-49) and the WGSL struct. The current layout:
+`weather-post.wgsl` expects exactly **44 floats (176 bytes)**. If you change the layout, update both `Renderer.ts` (the `weatherParams` Float32Array comment block at lines ~37-49) and the WGSL struct. The current layout:
 ```
 [0-5]   vibrance, saturation, contrast, exposure, temperature, tint
 [6-10]  time, rainIntensity, snowIntensity, wind, speed
@@ -76,9 +76,12 @@ All UI overlays (panels, modals, dashboard buttons, text inputs) **must** call `
         heatShimmerIntensity, lensFlareIntensity, chromaticAberration, dustIntensity, humidityHaze
 [32]    shaderEffectsEnabled
 [33-34] cameraHeading, cameraPitch
-[35]    padding
+[35]    wasmNoiseEnabled
 [36]    sunrise
-[37-39] padding
+[37]    anamorphicStreak
+[38-39] dofStrength, motionBlurStrength
+[40-41] horizonEstimateY, horizonBlend
+[42-43] padding
 ```
 
 `streetview.wgsl` Pass 1 uniform buffer is **8 floats (32 bytes)**:

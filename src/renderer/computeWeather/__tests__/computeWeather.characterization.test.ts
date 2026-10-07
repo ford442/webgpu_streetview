@@ -167,7 +167,7 @@ describe('compute weather — bind group wiring', () => {
         const bg = lastWeatherBindGroup(gpu);
         const extra = bindingBuffer(bg.entries.get(10))!;
         const noise = bindingBuffer(bg.entries.get(12))!;
-        // 40 floats = 160 bytes, the shared weather uniform layout.
+        // 44 floats = 176 bytes, the shared weather uniform layout.
         expect(extra.descriptor.size).toBe(WEATHER_PARAMS_FLOAT_COUNT * 4);
         // One 64x64 f32 noise tile.
         expect(noise.descriptor.size).toBe(64 * 64 * 4);

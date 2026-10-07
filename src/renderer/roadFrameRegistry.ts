@@ -72,7 +72,7 @@ export function createNeutralRoadLook(): RoadLook {
     };
 }
 
-/** Copy the look fields out of a packed 40-float weather block. Allocation-free. */
+/** Copy the look fields out of a packed 44-float weather block. Allocation-free. */
 export function readRoadLookInto(params: ArrayLike<number>, into: RoadLook): RoadLook {
     const I = WeatherParamIndex;
     // A short array (a test, or `updateColorParams`' 6-float slice) leaves the

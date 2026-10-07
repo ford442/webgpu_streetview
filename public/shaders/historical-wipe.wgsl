@@ -6,7 +6,7 @@
 // (`TransitionManager.previousFrame`) — over the side the edge has not yet
 // swept. It never samples the live upload texture.
 //
-// Own 4-float uniform; the 40-float weather block is untouched.
+// Own 4-float uniform; the 44-float weather block is untouched.
 // Mirror: `isRevealedAt` in src/renderer/historicalWipe.ts.
 
 struct VertexOutput {

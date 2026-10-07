@@ -5,7 +5,7 @@
  * fragment weather path stays purely procedural so the default look does not
  * change. Low and Medium quality never allocate the storage textures.
  *
- * Particle *controls* (wind, rain, snow, speed) already live in the 40-float
+ * Particle *controls* (wind, rain, snow, speed) already live in the 44-float
  * weather block — this module does not add uniforms.
  *
  * Fall direction matches `WEATHER_FALL_Y_SIGN` in src/car/carSpatialModel.ts

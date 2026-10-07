@@ -380,14 +380,14 @@ lost, the hold-pause guards, and the public renderer surface.
 - Source: HDR intermediate texture.
 - Fragment shader: color grading chain (vibrance → saturation → contrast → temperature/tint → exposure), then procedural rain + snow composited additively, plus atmospheric effects (fog, light shafts, heat shimmer, lens flare, chromatic aberration, dust, humidity haze), nighttime mode, headlights, dome light, astronomical lighting (sun/moon), ACES tonemapping.
 - Output target: swap-chain surface (screen).
-- **Tonemap variant**: when `configureCanvasContext` actually applied `toneMapping: { mode: 'extended' }` (`?hdr=1` on a capable display), `assembleExtendedToneMappingShader` swaps the `aces_tonemap` body for an output-referred one that evaluates the ACES shoulder against `EXTENDED_TONEMAP_HEADROOM` instead of assuming SDR white is the peak, so highlights survive into display headroom rather than clamping at 1.0. Source substitution at pipeline-create time — **no new uniform slot, the 40-float layout is untouched** — and both assembled variants are naga-checked by `npm run validate:shaders`. Default SDR boot compiles the byte-identical historical shader.
+- **Tonemap variant**: when `configureCanvasContext` actually applied `toneMapping: { mode: 'extended' }` (`?hdr=1` on a capable display), `assembleExtendedToneMappingShader` swaps the `aces_tonemap` body for an output-referred one that evaluates the ACES shoulder against `EXTENDED_TONEMAP_HEADROOM` instead of assuming SDR white is the peak, so highlights survive into display headroom rather than clamping at 1.0. Source substitution at pipeline-create time — **no new uniform slot, the 44-float layout is untouched** — and both assembled variants are naga-checked by `npm run validate:shaders`. Default SDR boot compiles the byte-identical historical shader.
 - WGSL has no `#include`, so this file is **generated**: `scripts/gen-weather-post-shader.mjs` concatenates the three source fragments in `public/shaders/weather-post/` (`01-foundation.wgsl`, `02-weather-fx.wgsl`, `03-night-and-composite.wgsl`) into `public/shaders/weather-post.wgsl`, which is what `WeatherPostProcessor.ts` fetches at runtime and what every WGSL test reads. Edit a fragment, then run `npm run gen:weather-shader` (also runs automatically via `prebuild`); `src/renderer/weatherPostShaderSplit.test.ts` fails if the generated file drifts from the fragments.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
 **Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
-`ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 40-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
+`ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
 
@@ -616,7 +616,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 **Never** rely on a single baked key for multiple hosts with different restrictions. Always prefer the runtime override for the official demo. Do not commit new keys.
 
 ### 6. Shader Uniform Layouts
-`weather-post.wgsl` (fragment pass, active by default) and `weather-post-compute.wgsl` (compute pass, opt-in via `?weather=compute` — see `docs/RENDERER_FALLBACK.md`) both expect the same 40-float (160-byte) parameter layout. The single source of truth is `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) — both `WeatherPostProcessor.ts` and `ComputeWeatherPostProcessor.ts` import it instead of hardcoding indices:
+`weather-post.wgsl` (fragment pass, active by default) and `weather-post-compute.wgsl` (compute pass, opt-in via `?weather=compute` — see `docs/RENDERER_FALLBACK.md`) both expect the same 44-float (176-byte) parameter layout. The single source of truth is `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) — both `WeatherPostProcessor.ts` and `ComputeWeatherPostProcessor.ts` import it instead of hardcoding indices:
 ```
 [0-5]   vibrance, saturation, contrast, exposure, temperature, tint
 [6-10]  time, rainIntensity, snowIntensity, wind, speed
@@ -629,7 +629,9 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 [35]    wasmNoiseEnabled
 [36]    sunrise
 [37]    anamorphicStreak
-[38-39] padding
+[38-39] dofStrength, motionBlurStrength
+[40-41] horizonEstimateY, horizonBlend (image-derived horizon, gpuChores/horizonEstimate.ts)
+[42-43] padding
 ```
 
 The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
