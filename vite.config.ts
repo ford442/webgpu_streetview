@@ -18,10 +18,29 @@ function gitShortHash(): string {
 }
 
 /**
+ * Build-time env keys that may be inlined into the client bundle.
+ * Everything here is visible to any visitor — never add a secret.
+ */
+const PUBLIC_ENV_KEYS = [
+  'REACT_APP_MAPS_API_KEY',
+  'VITE_MAPS_API_KEY',
+  'REACT_APP_GOOGLE_MAPS_MAP_ID',
+  'REACT_APP_STORAGE_API_URL',
+  'REACT_APP_ENABLE_SW',
+  'REACT_APP_SUPABASE_URL',
+  'VITE_SUPABASE_URL',
+  'REACT_APP_SUPABASE_ANON_KEY',
+  'VITE_SUPABASE_ANON_KEY',
+  'REACT_APP_TURN_URL',
+  'REACT_APP_TURN_USERNAME',
+  'REACT_APP_TURN_CREDENTIAL',
+] as const;
+
+/**
  * CRA → Vite migration config.
  * - base './' keeps Contabo /streetview relative asset paths (former homepage: ".")
  * - outDir build/ + static/js/main.[hash].js preserves deploy.py key baking
- * - REACT_APP_* still injected via process.env.* define (compat shim)
+ * - Allowlisted REACT_APP_* / VITE_* keys injected via process.env.* define (compat shim)
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['REACT_APP_', 'VITE_']);
@@ -39,8 +58,21 @@ export default defineConfig(({ mode }) => {
     'process.env.REACT_APP_BUILD_TIME': JSON.stringify(buildTime),
   };
 
-  for (const [key, value] of Object.entries(env)) {
-    processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+  // Only allowlisted, client-visible keys are inlined. A blanket loop over every
+  // REACT_APP_* / VITE_* var would bake any stray secret in a developer's .env
+  // into the public bundle. Add a key here only when src/ reads it AND it is safe
+  // to ship to every visitor. The Cesium Ion token is intentionally absent: it is
+  // supplied at runtime via public/config.js (window.CESIUM_ION_TOKEN).
+  for (const key of PUBLIC_ENV_KEYS) {
+    const value = env[key];
+    if (value !== undefined) {
+      processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+    }
+  }
+  // Always defined (empty) so `process.env.X` reads never hit a ReferenceError in
+  // the browser and the runtime config.js path stays reachable.
+  for (const key of ['REACT_APP_CESIUM_ION_TOKEN']) {
+    processEnvDefines[`process.env.${key}`] = JSON.stringify('');
   }
 
   // Ensure Maps key define exists even when unset (empty string) so the deploy

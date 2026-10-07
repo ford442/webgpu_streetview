@@ -38,6 +38,25 @@ for file in "$ROOT"/deploy.py "$ROOT"/scripts/*.sh; do
   scan_file "$file" "password[[:space:]]*=[[:space:]]*['\"][^'\"]{6,}['\"]" 'hardcoded password= assignment'
 done
 
+# Env files must never be tracked (only .env.example is allowed), and a tracked
+# example file must not carry real-looking values.
+TRACKED_ENV="$(git -C "$ROOT" ls-files | grep -E '(^|/)\.env(\..*)?$' | grep -v -E '\.env\.example$' || true)"
+if [ -n "$TRACKED_ENV" ]; then
+  echo "❌ Tracked env file(s) — only .env.example may be committed:"
+  echo "$TRACKED_ENV"
+  ERRORS=$((ERRORS + 1))
+fi
+for file in "$ROOT"/.env*; do
+  [ -f "$file" ] || continue
+  case "$(basename "$file")" in
+    .env.example) ;;
+    *) continue ;;
+  esac
+  scan_file "$file" 'AIza[0-9A-Za-z_-]{35}' 'Google API key'
+  scan_file "$file" 'eyJ[0-9A-Za-z_-]{20,}\.[0-9A-Za-z_-]{10,}' 'JWT-shaped token (Cesium Ion / Supabase)'
+  scan_file "$file" '^[A-Z_]*(TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z_]*=.+' 'non-empty secret-looking assignment'
+done
+
 if [ $ERRORS -gt 0 ]; then
   echo ""
   echo "❌ DEPLOY SECRET CHECK FAILED with $ERRORS issue(s)."

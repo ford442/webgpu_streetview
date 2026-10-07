@@ -35,3 +35,12 @@ node_modules/
 public/wasm/*.js
 __pycache__/
 *.pyc
+
+# Agent / editor / ad-hoc capture clutter (never commit)
+.playwright-mcp/
+repro-screenshots/
+verification/
+.idea/
+.jules/
+.env*
+!.env.example

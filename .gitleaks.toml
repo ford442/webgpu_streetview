@@ -1,0 +1,13 @@
+title = "webgpu_streetview gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated / vendored artifacts that look like high-entropy tokens"
+paths = [
+  '''package-lock\.json$''',
+  '''cpp/tests/goldens.*''',
+  '''public/wasm/.*''',
+  '''public/models/.*''',
+]
