@@ -94,7 +94,7 @@ export default defineConfig(({ mode }) => {
         ? []
         : [
             checker({
-              typescript: true,
+              typescript: { tsconfigPath: 'tsconfig.app.json' },
               overlay: { initialIsOpen: false },
             }),
           ]),

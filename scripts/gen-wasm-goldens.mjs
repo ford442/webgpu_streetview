@@ -58,6 +58,7 @@ const importObject = {
   },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
+/** @type {Record<string, any>} Raw wasm exports: functions, memory, globals. */
 const exp = instance.exports;
 const memory = exp.memory;
 if (typeof exp._initialize === 'function') exp._initialize();

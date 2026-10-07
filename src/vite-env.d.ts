@@ -1,5 +1,4 @@
 /// <reference types="vite/client" />
-/// <reference types="vitest/globals" />
 /// <reference types="@webgpu/types" />
 
 import type {
@@ -62,9 +61,6 @@ declare global {
     };
     __GPU_CHORES__?: import('./renderer/gpuChores').GpuChoresBreadcrumbs;
   }
-
-  // Jest-compat alias installed in setupTests for CRA-era tests.
-  var jest: typeof import('vitest').vi;
 }
 
 export {};
