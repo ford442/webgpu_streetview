@@ -33,6 +33,9 @@ export interface AppToolbarProps {
   isSharedSessionActive: boolean;
   isStoragePanelOpen: boolean;
   setIsStoragePanelOpen: (v: boolean) => void;
+  /** Street View coverage map (omit to hide the button). */
+  isMapOpen?: boolean;
+  setIsMapOpen?: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -70,6 +73,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   isSharedSessionActive,
   isStoragePanelOpen,
   setIsStoragePanelOpen,
+  isMapOpen = false,
+  setIsMapOpen,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
@@ -194,6 +199,16 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
       >
         💾 Offline
       </button>
+      {setIsMapOpen && (
+        <button
+          className={`control-btn${isMapOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          aria-pressed={isMapOpen}
+          onClick={e => { e.stopPropagation(); setIsMapOpen(!isMapOpen); }}
+        >
+          🛰 Coverage
+        </button>
+      )}
       <button
         className="control-btn"
         style={{ minWidth: 110 }}

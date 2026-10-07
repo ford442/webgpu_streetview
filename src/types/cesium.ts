@@ -69,6 +69,8 @@ export interface CesiumScene {
 export interface CesiumPropertyBag {
   bookmarkLat?: { getValue(): number };
   bookmarkLng?: { getValue(): number };
+  /** Coverage-map graph nodes and covered POI pins. */
+  panoId?: { getValue(): string };
 }
 
 export interface CesiumViewer {
@@ -115,6 +117,7 @@ export interface CesiumNamespace {
     toDegrees(radians: number): number;
   };
   VerticalOrigin: { CENTER: number; BOTTOM: number };
+  HeightReference: { NONE: number; CLAMP_TO_GROUND: number };
   LabelStyle: { FILL_AND_OUTLINE: number };
   Entity: new (options: Record<string, unknown>) => CesiumEntity;
   EllipsoidTerrainProvider: new () => CesiumTerrainProvider;

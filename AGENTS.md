@@ -171,6 +171,8 @@ webgpu_streetview/
 │   │   ├── AccessibilityPanel.tsx   # A11y settings panel
 │   │   ├── PerformanceStatsOverlay.tsx # Live FPS / GPU stats
 │   │   ├── GlobeView.tsx            # Cesium globe mount + viewer lifecycle
+│   │   ├── CoverageMap.tsx          # Street View coverage map (Google / Cesium toggle), lazy; billing in BILLING_SAFETY_CHECKLIST.md
+│   │   ├── coverageMap/             # Google top-down map + Cesium pano-graph scene
 │   │   ├── globe/                   # Camera flights, input, journey, POI/autopilot
 │   │   ├── ScoutCard.tsx            # Location scout UI
 │   │   └── …                        # panels (Weather, Looks, Bookmarks, Snapshots, …)

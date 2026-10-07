@@ -49,6 +49,8 @@ import StorageManagementPanel from '../../components/StorageManagementPanel';
 import GlobeReturnButton from '../../components/GlobeReturnButton';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
+/** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */
+const CoverageMap = lazy(() => import('../../components/CoverageMap'));
 
 /** GlobeView only needs the heading as its entry pose — keep it off the shell's render path. */
 function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>, 'currentHeading'>) {
@@ -281,6 +283,8 @@ export function ConnectedChrome({
     setIsSharedSessionPanelOpen,
     isStoragePanelOpen,
     setIsStoragePanelOpen,
+    isMapOpen,
+    setIsMapOpen,
   } = panels;
 
   return (
@@ -361,6 +365,8 @@ export function ConnectedChrome({
         isSharedSessionActive={sharedSession.isConnected}
         isStoragePanelOpen={isStoragePanelOpen}
         setIsStoragePanelOpen={setIsStoragePanelOpen}
+        isMapOpen={isMapOpen}
+        setIsMapOpen={setIsMapOpen}
         viewMode={viewMode}
         toggleViewMode={toggleViewMode}
         onGlobeToggle={globeMode.toggle}
@@ -565,6 +571,17 @@ export function ConnectedChrome({
           onClose={() => setIsTripPanelOpen(false)}
           {...tripPanelProps}
         />
+      )}
+
+      {isMapOpen && !globeMode.isEngaged && (
+        <Suspense fallback={null}>
+          <CoverageMap
+            panorama={panorama}
+            pois={search.nearbyPois}
+            onTeleportPano={(panoId) => void teleportToPanoSafe(panoId)}
+            onClose={() => setIsMapOpen(false)}
+          />
+        </Suspense>
       )}
 
       {globeMode.transition === 'loading' && (
