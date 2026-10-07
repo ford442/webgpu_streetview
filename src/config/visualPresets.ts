@@ -5,6 +5,8 @@
  * shadow quality, post-processing effects, animation quality, and lighting complexity.
  */
 
+import { readFlag } from './flags';
+
 // ============================================================
 // Types
 // ============================================================
@@ -269,12 +271,8 @@ const VALID_QUALITY_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'hig
 export function getActiveQualityLevel(): QualityLevel {
   if (typeof window === 'undefined') return DEFAULT_QUALITY;
 
-  try {
-    const param = new URLSearchParams(window.location.search).get('quality')?.toLowerCase();
-    if (param && VALID_QUALITY_LEVELS.has(param)) return param as QualityLevel;
-  } catch {
-    // Malformed URL — fall through to storage / detection.
-  }
+  const param = readFlag('quality');
+  if (param) return param;
 
   try {
     const stored = window.localStorage.getItem('streetview.quality');

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { renderHook, act } from '@testing-library/react';
 import { useTouchControls } from '../useTouchControls';
 import { useDeviceDetection } from '../useDeviceDetection';

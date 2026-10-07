@@ -45,7 +45,7 @@ export interface UseHistoricalCompareParams {
  * drew it, road-only otherwise — see `captureCompareStill`), hold-pause hops to the historical panorama,
  * captures it as "before", then hops straight back — no second live render
  * context is ever created (the dual-context path from the feature plan is a
- * separate, deferred piece of work; see docs/feature_expansion_plan.md §2.2).
+ * separate, deferred piece of work; see docs/archive/feature_expansion_plan.md §2.2).
  */
 export function useHistoricalCompare({
   renderer,

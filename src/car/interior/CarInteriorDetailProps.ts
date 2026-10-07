@@ -45,8 +45,6 @@ export class CarInteriorDetailProps {
     }
 
     const interactives: InteriorInteractive[] = [];
-    let cupLiquidMaterial: CupLiquidMaterial | undefined;
-    let sunVisorGroup: THREE.Group | undefined;
 
     // --- Gear shifter ---
     const shifterGroup = new THREE.Group();
@@ -131,7 +129,7 @@ export class CarInteriorDetailProps {
     const cupGeo = new THREE.CylinderGeometry(0.032, 0.03, 0.09, 16);
     const backend = getCabinMaterialBackend();
     const tsl = backend === 'webgpu' ? getCabinTslApi() : undefined;
-    cupLiquidMaterial = (tsl
+    const cupLiquidMaterial = (tsl
       ? tsl.createCupLiquidMaterial(0x4a2818)
       : createCupLiquidMaterial(0x4a2818)) as CupLiquidMaterial;
     const cupLiquid = new THREE.Mesh(cupGeo, cupLiquidMaterial);
@@ -140,7 +138,7 @@ export class CarInteriorDetailProps {
     cupGroup.add(cupLiquid);
 
     // --- Sun visor + vanity mirror ---
-    sunVisorGroup = new THREE.Group();
+    const sunVisorGroup = new THREE.Group();
     sunVisorGroup.position.set(-0.28, 1.48, -0.55);
     sunVisorGroup.rotation.x = -0.08;
     interiorGroup.add(sunVisorGroup);
@@ -168,7 +166,7 @@ export class CarInteriorDetailProps {
       pressDepth: 0.008,
       pressAxis: 'y',
       onPress: () => {
-        sunVisorGroup!.rotation.x += sunVisorGroup!.rotation.x < -0.2 ? 0.35 : -0.35;
+        sunVisorGroup.rotation.x += sunVisorGroup.rotation.x < -0.2 ? 0.35 : -0.35;
       },
     });
 

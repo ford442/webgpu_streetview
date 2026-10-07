@@ -5,7 +5,7 @@ const WAYPOINT_INTERVAL_MS = 5000;
 export interface UseAutopilotOptions {
   teleportSafe: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => Promise<void>;
   handleGlobeTeleport: (lat: number, lng: number) => Promise<void>;
-  panoCache: { fetch: (lat: number, lng: number) => Promise<any> };
+  panoCache: { fetch: (lat: number, lng: number) => Promise<unknown> };
   isTransitioning: boolean;
   setNavPending: (pending: boolean) => void;
 }

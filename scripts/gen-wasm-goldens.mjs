@@ -58,6 +58,7 @@ const importObject = {
   },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
+/** @type {Record<string, any>} Raw wasm exports: functions, memory, globals. */
 const exp = instance.exports;
 const memory = exp.memory;
 if (typeof exp._initialize === 'function') exp._initialize();
@@ -341,7 +342,7 @@ const goldens = {
 };
 
 function vectorsOnly(obj) {
-  const { $comment, wasmSha256: _sha, ...rest } = obj;
+  const { $comment: _comment, wasmSha256: _sha, ...rest } = obj;
   return rest;
 }
 

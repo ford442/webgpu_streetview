@@ -20,7 +20,7 @@ export class AudioAnalyzer {
   private analyser: AnalyserNode | null = null;
   // correct DOM type for a media-element based audio source
   private mediaSource: MediaElementAudioSourceNode | null = null;
-  private dataArray: Uint8Array | null = null;
+  private dataArray: Uint8Array<ArrayBuffer> | null = null;
   private isRunning: boolean = false;
   private audioElement: HTMLAudioElement | null = null;
   private stationName: string = '';

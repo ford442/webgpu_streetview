@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
@@ -6,6 +5,7 @@ import checker from 'vite-plugin-checker';
 import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import publicEnvKeys from './scripts/public-env-keys.json';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,10 +18,17 @@ function gitShortHash(): string {
 }
 
 /**
+ * Build-time env keys that may be inlined into the client bundle (single source of
+ * truth: scripts/public-env-keys.json, also read by scripts/check-build-env-leak.mjs).
+ * Everything here is visible to any visitor — never add a secret.
+ */
+const PUBLIC_ENV_KEYS: string[] = publicEnvKeys;
+
+/**
  * CRA → Vite migration config.
  * - base './' keeps Contabo /streetview relative asset paths (former homepage: ".")
  * - outDir build/ + static/js/main.[hash].js preserves deploy.py key baking
- * - REACT_APP_* still injected via process.env.* define (compat shim)
+ * - Allowlisted REACT_APP_* / VITE_* keys injected via process.env.* define (compat shim)
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['REACT_APP_', 'VITE_']);
@@ -39,8 +46,21 @@ export default defineConfig(({ mode }) => {
     'process.env.REACT_APP_BUILD_TIME': JSON.stringify(buildTime),
   };
 
-  for (const [key, value] of Object.entries(env)) {
-    processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+  // Only allowlisted, client-visible keys are inlined. A blanket loop over every
+  // REACT_APP_* / VITE_* var would bake any stray secret in a developer's .env
+  // into the public bundle. Add a key here only when src/ reads it AND it is safe
+  // to ship to every visitor. The Cesium Ion token is intentionally absent: it is
+  // supplied at runtime via public/config.js (window.CESIUM_ION_TOKEN).
+  for (const key of PUBLIC_ENV_KEYS) {
+    const value = env[key];
+    if (value !== undefined) {
+      processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+    }
+  }
+  // Always defined (empty) so `process.env.X` reads never hit a ReferenceError in
+  // the browser and the runtime config.js path stays reachable.
+  for (const key of ['REACT_APP_CESIUM_ION_TOKEN']) {
+    processEnvDefines[`process.env.${key}`] = JSON.stringify('');
   }
 
   // Ensure Maps key define exists even when unset (empty string) so the deploy
@@ -74,13 +94,17 @@ export default defineConfig(({ mode }) => {
         ? []
         : [
             checker({
-              typescript: true,
+              typescript: { tsconfigPath: 'tsconfig.app.json' },
               overlay: { initialIsOpen: false },
             }),
           ]),
     ],
     define: processEnvDefines,
-    envPrefix: ['VITE_', 'REACT_APP_'],
+    // Vite inlines EVERY variable with these prefixes wherever `import.meta.env` is
+    // referenced as an object (some dependencies do), so this must stay an opt-in
+    // namespace nothing else uses. Build-time config reaches src/ only through the
+    // allowlisted `process.env.*` defines above.
+    envPrefix: ['VITE_PUBLIC_'],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
@@ -101,6 +125,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'build',
+      // The app cannot run without WebGPU, so there is no point down-levelling for
+      // older engines: Chrome/Edge 113 (first WebGPU), Firefox 141, Safari 26.
+      target: ['chrome113', 'edge113', 'firefox141', 'safari26'],
       emptyOutDir: true,
       sourcemap: true,
       // Match former CRA layout so deploy.py / verify-build / budgets keep working.
@@ -120,7 +147,9 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       globals: true,
-      environment: 'jsdom',
+      // Pure math/GPU-packing suites pay nothing; DOM suites opt in with
+      // `// @vitest-environment jsdom` on their first line.
+      environment: 'node',
       setupFiles: ['./src/setupTests.ts'],
       include: ['src/**/*.{test,spec}.{ts,tsx}'],
       exclude: ['node_modules', 'build', 'e2e'],

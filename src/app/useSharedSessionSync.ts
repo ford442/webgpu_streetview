@@ -8,6 +8,7 @@ import {
   type CabinView,
   type HostBroadcastExtras,
 } from './sharedSessionSync';
+import { povStore } from '../state/povStore';
 import { parseWeatherPreset } from '../utils/weatherPresetSync';
 import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
 import type { VehicleType } from '../car/VehicleManager';
@@ -15,9 +16,6 @@ import type { VehicleType } from '../car/VehicleManager';
 export interface UseSharedSessionSyncParams {
   sharedSession: UseSharedSessionResult;
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
   viewMode: 'freelook' | 'car';
   teleportToPanoSafe: (panoId: string) => Promise<void>;
   setHeading: (heading: number) => void;
@@ -33,7 +31,6 @@ export interface UseSharedSessionSyncParams {
   imageDate?: string | null;
   vehicleType?: string | null;
   cabinView?: CabinView | null;
-  carHeading?: number;
   hdr?: boolean;
   applyLookPack?: (id: string) => void;
   setVehicleType?: (type: VehicleType) => void;
@@ -49,9 +46,6 @@ export interface UseSharedSessionSyncParams {
 export function useSharedSessionSync({
   sharedSession,
   panorama,
-  heading,
-  pitch,
-  zoom,
   viewMode,
   teleportToPanoSafe,
   setHeading,
@@ -66,7 +60,6 @@ export function useSharedSessionSync({
   imageDate,
   vehicleType,
   cabinView,
-  carHeading,
   hdr,
   applyLookPack,
   setVehicleType,
@@ -93,6 +86,8 @@ export function useSharedSessionSync({
   useEffect(() => {
     if (sessionRole !== 'host' || !sessionConnected) return;
     const interval = setInterval(() => {
+      // POV is read from the store at send time (it is not React state).
+      const { heading, pitch, zoom, carHeading } = povStore.get();
       const extras: HostBroadcastExtras = {
         ...(weatherPreset ? { weatherPreset } : {}),
         lookId: lookId ?? undefined,
@@ -117,16 +112,12 @@ export function useSharedSessionSync({
     sessionConnected,
     broadcastState,
     panorama,
-    heading,
-    pitch,
-    zoom,
     viewMode,
     weatherPreset,
     lookId,
     imageDate,
     vehicleType,
     cabinView,
-    carHeading,
     hdr,
   ]);
 

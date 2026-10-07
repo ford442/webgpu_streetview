@@ -103,7 +103,9 @@ async function dismissWelcome(page) {
       await btn.click({ timeout: 4000 });
       return;
     }
-  } catch {}
+  } catch {
+    /* fall through to Escape */
+  }
   await page.keyboard.press('Escape').catch(() => {});
 }
 

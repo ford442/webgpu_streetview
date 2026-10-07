@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import type { PanoLocationInfo } from '../../utils/panoLocation';
 import { resolveTimeZone } from '../../utils/panoTimeZone';
 import { DigitalClock } from './DigitalClock';

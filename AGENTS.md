@@ -18,16 +18,16 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Layer | Technology | Version |
 |-------|------------|---------|
 | Frontend Framework | React | 19.1.1 |
-| Language | TypeScript | ~5.4.5 |
-| Build Tool | Vite 5 + Vitest | — |
+| Language | TypeScript | ~5.9.3 |
+| Build Tool | Vite 7 + Vitest 3 | `build.target` = the WebGPU floor (Chrome/Edge 113, Firefox 141, Safari 26) |
 | Rendering API | WebGPU | Native browser API |
 | 3D Overlay | Three.js | 0.180.0 (pinned) |
 | Shader Language | WGSL | WebGPU Shading Language |
 | Maps Integration | Google Maps JavaScript API | Weekly |
-| State Management | React Context + Hooks | Provider pattern |
+| State Management | React Context + Hooks; hot POV in `src/state/povStore.ts` | Provider pattern; POV is an external store (see *State Management*) |
 | Testing | Vitest + React Testing Library | jest-dom |
 | Globe Integration | Cesium (CDN-loaded, no npm dep) | 1.140.0 |
-| Additional | suncalc, ajv, web-vitals | Various |
+| Additional | suncalc (auto-night), @supabase/supabase-js (signaling) | Various |
 
 ### Browser Support
 - **Production**: `>0.2%, not dead, not op_mini all`
@@ -69,7 +69,11 @@ npm test
 # Watch mode
 npm run test:watch
 
-# Typecheck
+# THE ONE GATE — typecheck + lint + knip + secret scan + unit tests + WGSL (naga) + C++ goldens (if cmake).
+# Run this before pushing; CI runs the same thing. `-- --fast` skips tests and C++.
+npm run verify
+
+# Typecheck (tsc -b: app, tests, vite/playwright configs, e2e, scripts)
 npm run typecheck
 
 # Playwright E2E (keyless smoke vs full/keyed — see Testing Strategy)
@@ -92,7 +96,9 @@ MAPS_API_KEY='AIzaSy...' python deploy.py
 # Uploads build/ via Contabo storage manager → test.1ink.us or go.1ink.us
 ```
 
-Env notes: Vite accepts `REACT_APP_*` (compat) and `VITE_*`. Prefer `REACT_APP_MAPS_API_KEY` in `.env.local` for continuity, or `VITE_MAPS_API_KEY`. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production.
+Env notes: only the keys in `scripts/public-env-keys.json` are inlined into the bundle (via `process.env.*` defines in `vite.config.ts`); `envPrefix` is the unused `VITE_PUBLIC_` so `import.meta.env` cannot leak anything either. `scripts/check-build-env-leak.mjs` (run by `verify-build.sh`) fails the build if any other `.env` value shows up in `build/`. Put a dev key in `.env.local` (`REACT_APP_MAPS_API_KEY` or `VITE_MAPS_API_KEY`); `.env.example` / `.env.deploy.example` are the only tracked env files. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production. The Cesium Ion token is runtime-only (`window.CESIUM_ION_TOKEN`).
+
+URL flags (`?hdr`, `?cabin`, `?portal`, `?no_gpu_compute`, …) are declared once in `src/config/flags.ts` and parsed only there — one grammar (`1|true|on|yes` / `0|false|off|no`, bare presence = true, case-insensitive). The table is generated into [`docs/FLAGS.md`](docs/FLAGS.md) (`npm run gen:flags-doc`); `flags.test.ts` fails on drift or on any other `location.search` / `new URLSearchParams(<string>)` under `src/`.
 ---
 
 ## Project Structure
@@ -153,9 +159,7 @@ webgpu_streetview/
 │   │   ├── WebGPUCanvas.tsx         # Mounts renderer, drives render loop, syncs weather params
 │   │   ├── FreeLookInputHandler.tsx # Window-level mouse/keyboard for free look
 │   │   ├── CarInputHandler.tsx      # Window-level input for car mode (3 control modes)
-│   │   ├── MiniMap.tsx              # Secondary map with heading, route, teleport
 │   │   ├── Compass.tsx              # Cardinal direction overlay
-│   │   ├── Controls.tsx             # Legacy overlay controls
 │   │   ├── WelcomeModal.tsx         # Startup welcome modal
 │   │   ├── LoadingOverlay.tsx       # Granular loading states UI
 │   │   ├── BookmarkPanel.tsx        # Saved locations panel with cloud sync
@@ -169,8 +173,7 @@ webgpu_streetview/
 │   │   ├── GlobeView.tsx            # Cesium globe mount + viewer lifecycle
 │   │   ├── globe/                   # Camera flights, input, journey, POI/autopilot
 │   │   ├── ScoutCard.tsx            # Location scout UI
-│   │   ├── MobileUI.tsx             # Touch chrome compositor
-│   │   └── mobile/                  # Touch layer, settings/vehicle sheet, help sheet
+│   │   └── …                        # panels (Weather, Looks, Bookmarks, Snapshots, …)
 │   ├── renderer/
 │   │   ├── Renderer.ts              # WebGPU orchestrator: device, dual-pass pipeline, transitions
 │   │   └── types.ts                 # RenderMode type
@@ -188,7 +191,6 @@ webgpu_streetview/
 │   │   ├── CarInterior.ts           # Procedural interior geometry
 │   │   ├── DashboardUI.tsx          # React dashboard overlay
 │   │   ├── DashboardLayout.tsx      # Dashboard zone layout primitives
-│   │   ├── Gauges.tsx               # Speedometer / tachometer
 │   │   ├── Controls.tsx             # Dashboard buttons / sliders
 │   │   ├── RearviewMirror.ts        # Rear-view glass (true Static feed, else honest unavailable)
 │   │   ├── rearViewFeed.ts          # Throttled/budgeted Street View Static rear imagery (billable)
@@ -239,7 +241,7 @@ webgpu_streetview/
 │   │   ├── useTouchControls.ts      # Touch gesture handling
 │   │   ├── useDeviceDetection.ts    # Mobile / capability detection
 │   │   ├── useGlobeMode.ts          # Cesium globe state
-│   │   ├── useAutoNight.ts          # Automatic night mode
+│   │   ├── useAutoNight.ts          # Real-clock sun/moon → nightIntensity (mounted by app/AutoNightDriver.tsx)
 │   │   ├── useAdvanceSafe.ts        # Safe navigation with panorama-ready guards
 │   │   ├── usePanoramaCache.ts      # Panorama pre-fetch cache
 │   │   └── __tests__/               # Hook tests (mobile.test.tsx)
@@ -263,9 +265,8 @@ webgpu_streetview/
 │   │   └── index.ts
 │   ├── config/
 │   │   ├── visualPresets.ts         # Low/Medium/High/Ultra quality + auto-detect
-│   │   ├── cryptoCompanies.ts
-│   │   ├── astronomicalConstants.ts
-│   │   └── index.ts
+│   │   ├── flags.ts                 # Typed URL-flag registry + the only query-string parser
+│   │   └── lookPacks.ts             # Named looks
 │   ├── store/
 │   │   ├── loadingState.ts          # Loading state store singleton
 │   │   └── index.ts
@@ -289,11 +290,15 @@ webgpu_streetview/
 ├── deploy.py                        # Contabo bundle deploy (reads DEPLOY_TOKEN from env)
 ├── package.json
 ├── tsconfig.json
-├── .env                             # REACT_APP_* environment variables
+├── .env.example                     # Build-time env template (real values: untracked .env.local)
+├── .env.deploy.example              # deploy.py environment template
+├── knip.json                        # Unused file / dependency policy (CI)
+├── tsconfig.{base,app,test,node,scripts}.json  # + e2e/tsconfig.json; root tsconfig.json is the tsc -b solution
 ├── CLAUDE.md                        # AI quick-reference (danger zones)
-├── DEVELOPER_CONTEXT.md             # Architecture deep-dive
-├── README.md                        # Human-facing README
-└── feature_expansion_plan.md        # Roadmap
+├── docs/DEVELOPER_CONTEXT.md        # Architecture deep-dive
+├── docs/FLAGS.md                    # Generated URL flag table
+├── docs/archive/                    # Historical plans / task specs / PR bodies (not current)
+└── README.md                        # Human-facing README
 ```
 
 ---
@@ -302,10 +307,12 @@ webgpu_streetview/
 
 ### State Management: Provider Pattern
 
-State is no longer owned solely by `App.tsx`. Three React Context providers wrap the app via `src/app/AppProviders.tsx`:
+State is no longer owned solely by `App.tsx`. Three React Context providers (plus `AutoNightDriver`, which renders nothing) wrap the app via `src/app/AppProviders.tsx`:
+
+> **Hot POV state is NOT in React.** `heading`, `pitch`, `zoom` and `carHeading` change on every mouse move / key repeat / cruise tick, so they live in the external store `src/state/povStore.ts` (`povStore.get()/setHeading()/…`). Writers (input handlers, tours, shared sessions) call the stable setters; per-frame readers (`WebGPUCanvas`, the car runtime bridge) read `povStore.get()` imperatively; components subscribe with `usePovSelector` / `useThrottledPov` (HUD readouts, ≤10 Hz) or push into imperative sinks with `usePovEffect`. Never add POV back to a context value — `src/app/AppShell.renders.test.tsx` fails if `AppShell` re-renders on POV writes. Provider values are memoized; keep them so.
 
 1. **`StreetViewProvider`** (`src/hooks/useStreetView.tsx`)
-   - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, heading, pitch, zoom, position, and `isTransitioning`.
+   - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, position, and `isTransitioning` (heading/pitch/zoom are `povStore` writers re-exported as `setHeading`/`setPitch`/`setZoom`; the Maps `setPov` sync subscribes to the store and stays paused during hold).
    - `advance(direction, currentHeading?)` calls `findBestLink` and triggers `pano.setPano()`.
    - `teleport(lat, lng, targetHeading?, targetPitch?)` moves the panorama — shares the same `armHold()` hold-pause as `advance()` (see *Hold-Pause Transition* below).
    - `isTransitioning`/`isPanoramaReady` (hold-pause state) are set on advance/teleport and cleared once the new canvas passes the stability check in `src/utils/panoramaStability.ts` (not a fixed delay).
@@ -313,17 +320,19 @@ State is no longer owned solely by `App.tsx`. Three React Context providers wrap
 
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
    - Owns `viewMode: 'freelook' | 'car'`.
-   - Manages car body `carHeading` (independent of head-look heading).
+   - Exposes `setCarHeading` (the value lives in `povStore.carHeading`, independent of head-look heading).
    - Tracks `controlMode`: `freeLook` | `uiMouse` | `carSteer`.
    - Tracks `headCoupling`: `rigid` (head turns with car) | `free` (head independent).
    - Supports temporary steering mode (`startTempSteerMode` / `endTempSteerMode`) triggered by clicking the steering wheel.
    - Initializes / toggles the Three.js car mode via `initCarMode()` from `src/car/index.ts`.
 
 3. **`EnvironmentSettingsProvider`** (`src/hooks/useEnvironmentSettings.tsx`)
+   - Exposed as memoized slices — `useWeatherSettings()`, `useLightingSettings()`, `useGradeSettings()`, `useCarEnvSettings()` — so a consumer re-renders only when its slice changes; `useEnvironmentSettings()` is the aggregate (re-renders on any change, use it only in the shell).
    - Owns all weather and color-grading uniforms: `rainIntensity`, `snowIntensity`, `wind`, `vibrance`, `saturation`, `contrast`, `exposure`, `temperature`, `tint`, `timeOfDay`, `fogDensity`, `nightIntensity`, `headlightsOn`, `domeLightOn`, `highBeam`, `isRoofOpen`, `shaderEffectsEnabled`, etc.
    - Exposes `applyTimeOfDayPreset('day' | 'sunrise' | 'sunset' | 'night')` and `applyColorGradingPreset(string)`.
    - Computes `ambientLightColor` CSS string for dashboard glass tinting.
-   - Consumed by `WebGPUCanvas.tsx` and forwarded to `Renderer.updateWeatherParams()` every frame.
+   - Consumed by `WebGPUCanvas.tsx` (slice hooks) and forwarded to `Renderer.updateWeatherParams()` every frame.
+   - **Auto-night** (`autoNightMode`, on by default unless a `?look=` boot patch is present): `app/AutoNightDriver.tsx` mounts `hooks/useAutoNight.ts`, which drives `nightIntensity` and the sun/moon uniforms from the real clock at the panorama's position (`utils/autoNightModel.ts`, SunCalc). Picking a time-of-day preset or look turns it off; the weather panel's **Auto** button turns it back on.
 
 ### View Routing
 
@@ -415,7 +424,7 @@ SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for `webglLookPa
 
 Supported legacy modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
 
-### Hold-Pause Transition (cruise hops, MiniMap/autopilot/globe teleports)
+### Hold-Pause Transition (cruise hops, autopilot/globe/search teleports)
 
 `useStreetView.tsx`'s `armHold()` (shared by `advance()` and `teleport()`) does three things before changing the panorama:
 1. `renderer.beginHoldTransition(heading, pitch)` — GPU-snapshots `videoTexture` into `previousFrameTexture`, records `capturePanX/Y`, sets `holdActive = true`.
@@ -608,7 +617,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 - **Primary (prod deploys)**: Runtime `window.MAPS_API_KEY` via `public/config.js` (injected by `deploy.py` when you pass `MAPS_API_KEY=...`).
 - **Fallback**: `REACT_APP_MAPS_API_KEY` baked at build time.
 - The committed `public/config.js` must **never** contain a real key (now empty + example file provided).
-- `.env` (plain) is gitignored; real dev keys only in `.env.local`.
+- Every `.env*` file except the `*.example` templates is gitignored (and `check-deploy-secrets.sh` / gitleaks fail if one is tracked); real dev keys only in `.env.local`.
 - Every production key **must** list **all** demo hosts under HTTP referrers:
   ```
   https://test.1ink.us/*
@@ -672,7 +681,7 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - **Artifacts**: traces / screenshots / video under `test-results/` and `playwright-report/` (gitignored); CI uploads them on failure
 
 ### Unit tests (Vitest/jsdom) vs. browser E2E (Playwright)
-- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
+- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
 
@@ -726,7 +735,6 @@ invent behaviour. Geodesy in particular has exactly one copy per formula:
 - `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
-- `src/utils/panoramaLookAround.test.ts` — Pure math for the hold-pause look-around UV shift (`wrapPanDelta`, `heldLookAroundUvDelta`, zoom scaling).
 - `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
 - `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
@@ -761,7 +769,7 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
    - **Fail signal**: any `[StreetViewProbe] INVARIANT VIOLATION: ...` warning in the console. This means the `holdActive` guard was bypassed and live Google Maps content reached the screen.
    - You should see one `[StreetViewProbe] hold armed at T=...` / `first stable at T+...ms` / `released at T+...ms (hold total)` triple per hop, with the released delta consistent (roughly 400–1900ms: `STABILITY_MIN_DELAY_MS`..`STABILITY_MAX_WAIT_MS` plus the 250ms release crossfade) and no repeated "Stability fallback" log spam.
 2. During a hop (while held), click-drag the mouse to look around. The frozen pano should pan with the drag; rain/snow/fog should keep animating. Releasing the mouse should not change which way you're facing once the new pano loads.
-3. Click a MiniMap point (or trigger an autopilot waypoint / globe Orbital Drop) far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
+3. Trigger a search result, an autopilot waypoint, or a globe Orbital Drop far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
 4. Optional deeper check: `window.__STREETVIEW_PROBE__.enablePixelWatch()` in DevTools, then repeat step 1. Inspect `window.__STREETVIEW_PROBE__.getWarnings()` afterward — should be empty.
 5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
@@ -905,12 +913,12 @@ MAPS_API_KEY='...' python deploy.py
 
 1. **WebGPU Support**: Requires modern Chrome/Edge. Falls back to hidden canvas view if unavailable.
 2. **Canvas Scraping Fragility**: Any Google Maps DOM restructure will silently break the canvas feed.
-3. **Mobile**: WebGPU on mobile is limited; a touch-friendly `MobileUI.tsx` fallback is active but car mode is desktop-focused.
+3. **Mobile**: WebGPU on mobile is limited; touch gestures (`useTouchControls`) and device-tuned quality presets exist but car mode is desktop-focused.
 4. **Accessibility**: Keyboard navigation works globally; screen-reader support is present via `useAnnouncer` and ARIA live regions but can be enhanced.
 5. **Offline**: Limited offline mode — app shell + saved snapshots/metadata via service worker and IndexedDB. Google Street View tiles are **not** cached (Maps ToS). See README § Offline Mode.
 6. **API Key Exposure**: Fallback key may be visible in build-time env; prefer runtime `config.js` for production.
-7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
-8. **Build tool**: Vite 5 (CRA removed). Relative `base: './'` preserves Contabo `/streetview` deploys; `build/static/js/main.[hash].js` layout keeps `deploy.py` key baking.
+7. **API Rate Limits**: Maps JavaScript API and the opt-in Street View Static rearview feed are quota/billing-bound (`BILLING_SAFETY_CHECKLIST.md`). Nothing in `src/` calls the Directions API.
+8. **Build tool**: Vite 7 (CRA removed). Relative `base: './'` preserves Contabo `/streetview` deploys; `build/static/js/main.[hash].js` layout keeps `deploy.py` key baking.
 9. **Hidden Google Maps error UI flicker**: When the Maps key is invalid or referrer-blocked, Google injects `.gm-err-*` elements into the hidden Street View scraper div. Because the scraper must stay `opacity:1` for Google to keep rendering, those error elements can flash and produce visible flicker. The fix is to suppress them via CSS scoped to `.streetview-scraper` and/or remove them on `gm_authFailure`.
 
 ---
@@ -929,13 +937,13 @@ MAPS_API_KEY='...' python deploy.py
 Single-product Vite + React project; `npm install` / `npm ci` is the only dependency step (runs automatically on VM startup). Standard commands live in **Build, Test, and Deploy Commands** above — reuse those rather than inventing new ones.
 
 - **Run the app**: `npm start` (Vite on `http://localhost:3000`). Use `npm run lint` before pushing; CI runs lint then `npm run build`. Bundle gzip / Cesium-in-main budgets are enforced by `scripts/check-bundle-budget.sh` via `verify-build.sh`.
-- **Type check**: `npm run typecheck` (`tsc --noEmit`).
-- **Tests**: `npm test` (Vitest). `src/setupTests.ts` polyfills `TextDecoder`/`TextEncoder`, which jsdom does not implement (some transitive deps expect them at module-load time).
-- **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
+- **Type check**: `npm run typecheck` (`tsc -b`). **Everything**: `npm run verify`.
+- **Tests**: `npm test` (Vitest, **node environment by default** — a suite that needs the DOM starts with `// @vitest-environment jsdom`). `src/setupTests.ts` registers jest-dom, `fake-indexeddb`, and polyfills `TextDecoder`/`TextEncoder`.
+- **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. `.env` is no longer tracked — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
 - **Symptom → cause: stuck at "Connecting to Google Maps... 15%" with a black canvas and NO error banner.** This means the key string is valid enough to load the Maps JS library (`window.__mapsApiLoadState.status === 'ready'`) but Google fires `gm_authFailure` when the Street View panorama actually renders, so no `<canvas>` is ever produced and the loading gate never advances. The usual cause is the key's **HTTP-referrer restriction not allowing the current origin** (e.g. a key scoped to `test.1ink.us`/`go.1ink.us` will fail on `http://localhost:3000`), or disabled billing / Maps JavaScript API. Fix it in Google Cloud Console (add `http://localhost:3000/*` to the key's allowlist); it is not a code or VM bug. Note the dev server is plain **http**, so the allowlist entry must be `http://localhost:3000/*` — an `https://localhost:3000/*` entry will NOT match and still fails. To see the exact reason, capture full browser console output while loading a minimal panorama page: Google logs the precise error (`RefererNotAllowedMapError`, `ApiNotActivatedMapError`, `BillingNotEnabledMapError`, or `InvalidKeyMapError`) plus the exact "site URL to be authorized". Referrer changes can take several minutes to propagate.
 - **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the boot probe **hard-fails** (blocking overlay; no WebGL weather session). Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
 - `package-lock.json` is tracked. Prefer `npm ci` in automation (CI already does); always commit lockfile updates with dependency changes.
 
 ---
 
-*Last Updated: September 28, 2026*
+*Last Updated: October 7, 2026*

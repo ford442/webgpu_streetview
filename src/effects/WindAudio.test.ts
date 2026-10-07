@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * WindAudio's HRTF graph, against a stub Web Audio implementation.
  *

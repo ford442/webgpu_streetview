@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import { getWindAudio } from '../effects/WindAudio';
+import { usePovEffect } from '../state/povStore';
 import {
   useStreetView,
   useViewMode,
@@ -48,9 +49,6 @@ export function AppShell() {
     setCanvas,
     setPanorama,
     panorama,
-    heading,
-    pitch,
-    zoom,
     canvas,
     isTransitioning,
     isPanoramaReady,
@@ -63,7 +61,7 @@ export function AppShell() {
   } = useStreetView();
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const routePrefetch = useRoutePrefetch();
-  const { viewMode, toggleViewMode, setViewMode, carHeading, setCarHeading } = useViewMode();
+  const { viewMode, toggleViewMode, setViewMode, setCarHeading } = useViewMode();
   // Read by the cruise tick, which must see the live mode without re-arming.
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -91,11 +89,11 @@ export function AppShell() {
 
   const { weatherPresetBroadcast, getDirectorSnapshot, applyDirectorKeyframe } = useAppDirector(env);
 
-  useEffect(() => {
-    getWindAudio().setHeadingPan(heading, carHeading);
-  }, [heading, carHeading]);
+  // Wind pan follows head/car heading imperatively — POV is not React state, so
+  // head-look does not re-render the shell.
+  usePovEffect((p) => p, (p) => getWindAudio().setHeadingPan(p.heading, p.carHeading));
 
-  const bookmarks = useAppBookmarks(panorama, heading, pitch);
+  const bookmarks = useAppBookmarks(panorama);
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
   const globeMode = useGlobeMode();
 
@@ -115,9 +113,6 @@ export function AppShell() {
     panorama,
     renderer,
     viewMode,
-    heading,
-    pitch,
-    zoom,
     locationName,
     currentImageDate,
     lookId: env.activeLookId,
@@ -136,11 +131,7 @@ export function AppShell() {
   const sharedSession = useAppSharedSession({
     env,
     panorama,
-    heading,
-    pitch,
-    zoom,
     viewMode,
-    carHeading,
     vehicleType: currentVehicle,
     imageDate: currentImageDate,
     weatherPreset: weatherPresetBroadcast,
@@ -156,9 +147,6 @@ export function AppShell() {
 
   const { tourPanelProps } = useTourBindings({
     panorama,
-    heading,
-    pitch,
-    zoom,
     locationName,
     teleportToPanoSafe,
     setHeading,
@@ -175,7 +163,6 @@ export function AppShell() {
     panorama,
     advanceSafe,
     mapsAuthFailed: maps.mapsAuthFailed,
-    heading,
     isTransitioning,
     setNavPending: connection.setNavPending,
     loadOfflineRouteGraphNodes: routePrefetch.loadAllCachedNodes,
@@ -215,9 +202,6 @@ export function AppShell() {
     teleportSafe,
     teleportToPanoSafe,
     getCurrentPosition,
-    heading,
-    pitch,
-    zoom,
   });
 
   const handleGlobeTeleport = useGlobeTeleport({
@@ -287,7 +271,6 @@ export function AppShell() {
             toggleRadio,
             sharedSession,
             panorama,
-            heading,
             isTransitioning,
             teleportToPanoSafe,
           }}
@@ -331,9 +314,6 @@ export function AppShell() {
           cinema={cinema}
           renderer={renderer}
           panorama={panorama}
-          heading={heading}
-          pitch={pitch}
-          zoom={zoom}
           lookId={env.activeLookId}
           vehicleType={currentVehicle}
           imageDate={currentImageDate}

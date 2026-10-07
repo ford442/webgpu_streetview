@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * How a hold release reveals the new panorama: the year-chip wipe, the
  * reduced-motion cut, or (anything else) the usual crossfade.

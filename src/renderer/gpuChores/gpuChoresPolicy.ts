@@ -6,23 +6,13 @@
  * so rain still draws without chores.
  */
 
+import { currentSearch, readFlag } from '../../config/flags';
 import { isWebGpuProbeOk, type WebGpuProbeRecord } from '../webgpuBootProbe';
 
 export type GpuChoresBackend = 'webgpu' | 'wasm' | 'js';
 
-export function readNoGpuComputeFlag(
-  search: string = typeof window !== 'undefined' ? window.location.search : '',
-): boolean {
-  try {
-    const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-    const raw = params.get('no_gpu_compute');
-    if (raw === null) return params.has('no_gpu_compute');
-    const v = raw.toLowerCase();
-    if (v === '0' || v === 'false' || v === 'off') return false;
-    return true;
-  } catch {
-    return false;
-  }
+export function readNoGpuComputeFlag(search: string = currentSearch()): boolean {
+  return readFlag('no_gpu_compute', search);
 }
 
 export interface GpuChoresLimitsVerdict {

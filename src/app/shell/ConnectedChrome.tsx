@@ -1,4 +1,5 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useMemo, type ComponentProps } from 'react';
+import { useThrottledPov } from '../../state/povStore';
 import type { TimeOfDay } from '../../hooks';
 import { pickLookSnapshot, type LookId } from '../../config/lookPacks';
 import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
@@ -14,7 +15,7 @@ import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
 import type { AppPanels } from '../useAppPanels';
-export type { ChromeStageActions, ChromeStageState, MobileChromeContract } from './chromePanelContracts';
+export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
 import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
@@ -46,6 +47,12 @@ import GlobeReturnButton from '../../components/GlobeReturnButton';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 
+/** GlobeView only needs the heading as its entry pose — keep it off the shell's render path. */
+function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>, 'currentHeading'>) {
+  const heading = useThrottledPov((p) => p.heading, 2);
+  return <GlobeView {...props} currentHeading={heading} />;
+}
+
 export interface ConnectedChromeSession {
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
@@ -56,7 +63,6 @@ export interface ConnectedChromeSession {
   toggleRadio: () => void;
   sharedSession: UseSharedSessionResult;
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
   isTransitioning: boolean;
   teleportToPanoSafe: (panoId: string, options?: TeleportToPanoOptions) => Promise<void>;
 }
@@ -102,6 +108,8 @@ export interface ConnectedChromeEnvironment {
   tint: number;
   headlightsOn: boolean;
   shaderEffectsEnabled: boolean;
+  autoNightMode: boolean;
+  setAutoNightMode: (enabled: boolean) => void;
   setVibrance: (v: number) => void;
   setSaturation: (v: number) => void;
   setContrast: (v: number) => void;
@@ -202,7 +210,6 @@ export function ConnectedChrome({
     toggleRadio,
     sharedSession,
     panorama,
-    heading,
     isTransitioning,
     teleportToPanoSafe,
   } = session;
@@ -466,6 +473,8 @@ export function ConnectedChrome({
           isOpen={isWeatherPanelOpen}
           onApplyLook={env.applyLookPack}
           activeLookId={env.activeLookId}
+          autoNightMode={env.autoNightMode}
+          onToggleAutoNight={() => env.setAutoNightMode(!env.autoNightMode)}
         />
       )}
 
@@ -573,11 +582,10 @@ export function ConnectedChrome({
       )}
       {globeMode.isVisible && (
         <Suspense fallback={null}>
-          <GlobeView
+          <GlobeViewAtCurrentHeading
             transition={globeMode.transition}
             currentLat={panorama?.getPosition()?.lat() ?? 39.2575}
             currentLng={panorama?.getPosition()?.lng() ?? -121.0218}
-            currentHeading={heading}
             pois={globePois}
             bookmarks={globeBookmarks}
             mapsApiKey={effectiveMapsKey}

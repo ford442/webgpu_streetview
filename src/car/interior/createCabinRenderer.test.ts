@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { GPUPerformanceProfile } from '../../utils/performance';
 import * as THREE from 'three';
@@ -110,8 +111,13 @@ describe('resolveCabinRendererPreference', () => {
     });
 
     it('ignores a near-miss cabin value and follows the probe', () => {
-        expect(resolveCabinRendererPreference('?cabin=WEBGPU', true)).toBe('webgpu');
-        expect(resolveCabinRendererPreference('?cabin=WEBGPU', false)).toBe('webgl');
+        expect(resolveCabinRendererPreference('?cabin=webgl2', true)).toBe('webgpu');
+        expect(resolveCabinRendererPreference('?cabin=webgl2', false)).toBe('webgl');
+    });
+
+    it('is case-insensitive like every other flag (config/flags.ts)', () => {
+        expect(resolveCabinRendererPreference('?cabin=WEBGL', true)).toBe('webgl');
+        expect(resolveCabinRendererPreference('?cabin=WebGPU', false)).toBe('webgpu');
     });
 });
 

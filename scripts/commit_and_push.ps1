@@ -6,7 +6,7 @@ Usage:
 
 This script will:
  - detect if there are any git changes
- - stage all changes (git add -A)
+ - stage changes to already-tracked files only (git add -u) — never new/untracked files, so a stray .env or screenshot can't be committed
  - create a commit with the provided or auto message
  - push to the current branch (git push -u origin BRANCH)
 
@@ -50,7 +50,7 @@ if (-not $Message) {
 }
 
 Write-Host "Staging all changes..."
-$add = ExecGit('add -A')
+$add = ExecGit('add -u')
 if ($add.ExitCode -ne 0) { Write-Error "git add failed: $($add.StdErr)"; exit $add.ExitCode }
 
 Write-Host "Committing with message: $Message"

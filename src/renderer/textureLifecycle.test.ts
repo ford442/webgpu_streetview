@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The live upload path must not read the Maps canvas back every frame.
  *

@@ -61,7 +61,7 @@ export function wipeProgressAt(elapsedMs: number, durationMs: number = HISTORICA
 }
 
 /** Pack the wipe uniform. Progress is clamped; any non-negative direction is +1. */
-export function packWipeUniforms(progress: number, direction: WipeDirection): Float32Array {
+export function packWipeUniforms(progress: number, direction: WipeDirection): Float32Array<ArrayBuffer> {
     const data = new Float32Array(WIPE_UNIFORM_FLOAT_COUNT);
     data[WipeUniformIndex.progress] = Math.min(1, Math.max(0, progress));
     data[WipeUniformIndex.direction] = direction < 0 ? -1 : 1;

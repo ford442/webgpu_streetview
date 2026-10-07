@@ -102,12 +102,12 @@ export function downsample2d(
   if (src.length < srcW * srcH * 4 || dst.length < dstW * dstH * 4) return dst;
 
   for (let dy = 0; dy < dstH; dy += 1) {
-    let y0 = Math.floor((dy * srcH) / dstH);
+    const y0 = Math.floor((dy * srcH) / dstH);
     let y1 = Math.floor(((dy + 1) * srcH) / dstH);
     if (y1 <= y0) y1 = y0 + 1;
     if (y1 > srcH) y1 = srcH;
     for (let dx = 0; dx < dstW; dx += 1) {
-      let x0 = Math.floor((dx * srcW) / dstW);
+      const x0 = Math.floor((dx * srcW) / dstW);
       let x1 = Math.floor(((dx + 1) * srcW) / dstW);
       if (x1 <= x0) x1 = x0 + 1;
       if (x1 > srcW) x1 = srcW;

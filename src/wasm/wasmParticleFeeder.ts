@@ -13,6 +13,7 @@
  *   if (seeds) renderer.updateParticleSeeds(seeds, gridW, gridH);
  */
 
+import { readFlag } from '../config/flags';
 import { loadWasmModule, type StreetViewWasmAPI } from './index';
 
 /**
@@ -24,10 +25,8 @@ import { loadWasmModule, type StreetViewWasmAPI } from './index';
 export function getWasmParticlePreference(): boolean {
     if (typeof window === 'undefined') return true;
     try {
-        const params = new URLSearchParams(window.location.search);
-        const explicit = params.get('wasmParticles');
-        if (explicit === 'off') return false;
-        if (explicit === 'on') return true;
+        const explicit = readFlag('wasmParticles');
+        if (explicit !== undefined) return explicit;
 
         const stored = window.localStorage.getItem('streetview.wasmParticles');
         if (stored === 'off') return false;
@@ -40,7 +39,7 @@ export function getWasmParticlePreference(): boolean {
 export class WasmParticleFeeder {
     private wasm: StreetViewWasmAPI | null = null;
     private loading: Promise<void> | null = null;
-    private buffer: Float32Array = new Float32Array(0);
+    private buffer: Float32Array<ArrayBuffer> = new Float32Array(0);
     private lastCount = -1;
     private lastPrecipActive = false;
 
@@ -80,7 +79,7 @@ export class WasmParticleFeeder {
         count: number,
         precipActive: boolean,
         seed: number,
-    ): Float32Array | null {
+    ): Float32Array<ArrayBuffer> | null {
         this.ensureLoaded();
         if (!this.wasm) return null;
         if (count <= 0) return null;

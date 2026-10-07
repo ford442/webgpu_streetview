@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * One broken pass must never take the road frame down, and one failed boot
  * must never re-init itself in a loop.

@@ -51,7 +51,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private lutTexture: GPUTexture | null = null;
     private lutBindGroupLayout: GPUBindGroupLayout | null = null;
     private lutBindGroup: GPUBindGroup | null = null;
-    private weatherParams: Float32Array = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
+    private weatherParams: Float32Array<ArrayBuffer> = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
     private dualSourcePrecip = false;
@@ -195,12 +195,12 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
      * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts).
      * `tile` must be NOISE_TILE_SIZE * NOISE_TILE_SIZE elements, row-major.
      */
-    public updateNoiseBuffer(tile: Float32Array): void {
+    public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
         if (!this.noiseBuffer || !this.device) return;
         this.device.queue.writeBuffer(this.noiseBuffer, 0, tile);
     }
 
-    public updateParticleSeeds(_seeds: Float32Array, _width: number, _height: number): void {
+    public updateParticleSeeds(_seeds: Float32Array<ArrayBuffer>, _width: number, _height: number): void {
         // Fragment weather path stays procedural — GPU particles are compute-only.
     }
 
@@ -247,7 +247,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         return this.shaderEffectsEnabled;
     }
 
-    public updateWeatherParams(params: Float32Array): void {
+    public updateWeatherParams(params: Float32Array<ArrayBuffer>): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params.subarray(0, Math.min(WEATHER_PARAMS_FLOAT_COUNT, params.length)));
             this.weatherParamsDirty = true;
@@ -262,7 +262,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public updateColorParams(params: Float32Array): void {
+    public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params.slice(0, 6), 0);
             this.weatherParamsDirty = true;
@@ -275,7 +275,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[WeatherParamIndex.time] = time % 10000.0;
             this.weatherParamsDirty = true;
-        } catch (e) {
+        } catch {
             // Ignore errors during weather-only updates
         }
     }
@@ -327,7 +327,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
-        } catch (e) {
+        } catch {
             // Suppress errors during weather-only rendering
         }
     }
@@ -364,7 +364,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             destroyTracked(this.noiseBuffer);
             if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) this.lutTexture.destroy();
             if (this.dummyLutTexture) this.dummyLutTexture.destroy();
-        } catch (e) {
+        } catch {
             // ignore cleanup errors
         }
         this.weatherParamsBuffer = null;

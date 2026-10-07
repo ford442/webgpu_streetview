@@ -1,5 +1,6 @@
 // Vitest + Testing Library matchers (CRA used Jest automatically via setupTests).
 import '@testing-library/jest-dom/vitest';
+import 'fake-indexeddb/auto'; // offline layer (IndexedDB) works under jsdom/node instead of logging `indexedDB is not defined`
 import { vi } from 'vitest';
 import { TextDecoder, TextEncoder } from 'util';
 

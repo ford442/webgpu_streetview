@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gearHopCount, GEAR_POSITIONS, setCabinLeverHandlers, setCarGear, type GearPosition, type WiperStalkPosition, cycleWiperStalk } from '../../car';
 import { gearChainedHopIntervalMs } from '../../car/VehicleDynamics';
+import { povStore } from '../../state/povStore';
 
 export interface UseGearHopAdvanceOptions {
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;
-  carHeading: number;
   setWipers: (enabled: boolean) => void;
 }
 
@@ -21,7 +21,6 @@ export interface UseGearHopAdvanceResult {
 
 export function useGearHopAdvance({
   advance,
-  carHeading,
   setWipers,
 }: UseGearHopAdvanceOptions): UseGearHopAdvanceResult {
   const [wiperStalk, setWiperStalkState] = useState<WiperStalkPosition>('off');
@@ -30,8 +29,6 @@ export function useGearHopAdvance({
   gearRef.current = gear;
   const pendingHopsRef = useRef<number[]>([]);
   const [chainingHops, setChainingHops] = useState(0);
-  const carHeadingRef = useRef(carHeading);
-  carHeadingRef.current = carHeading;
 
   const cancelPendingHops = useCallback(() => {
     for (const id of pendingHopsRef.current) window.clearTimeout(id);
@@ -51,19 +48,19 @@ export function useGearHopAdvance({
     }
 
     cancelPendingHops();
-    advance(resolved, carHeading);
+    advance(resolved, povStore.get().carHeading);
     if ((resolved !== 'forward' && resolved !== 'backward') || hops < 2) return;
 
     setChainingHops(hops);
     for (let i = 1; i < hops; i++) {
       const id = window.setTimeout(() => {
         if (gearRef.current !== selected) return;
-        advance(resolved, carHeadingRef.current);
+        advance(resolved, povStore.get().carHeading);
         if (i === hops - 1) setChainingHops(0);
       }, i * gearChainedHopIntervalMs(hops));
       pendingHopsRef.current.push(id);
     }
-  }, [advance, carHeading, cancelPendingHops]);
+  }, [advance, cancelPendingHops]);
 
   useEffect(() => {
     setCabinLeverHandlers({

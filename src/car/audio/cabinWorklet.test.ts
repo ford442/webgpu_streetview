@@ -54,7 +54,6 @@ function instantiate(): Processor {
     expect(name).toBe(CABIN_PROCESSOR_NAME);
     ctor = processorCtor;
   };
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
   new Function('AudioWorkletProcessor', 'registerProcessor', CABIN_WORKLET_SOURCE)(
     StubAudioWorkletProcessor,
     registerProcessor,

@@ -150,7 +150,7 @@ async function main() {
     const bpr = Math.ceil((W * 4) / 256) * 256;
 
     /** Road + the cabin's latest frame, read back as tightly packed RGBA. */
-    const shoot = async (): Promise<Uint8ClampedArray> => {
+    const shoot = async (): Promise<Uint8ClampedArray<ArrayBuffer>> => {
         const enc = device.createCommandEncoder();
         const pass = enc.beginRenderPass({
             colorAttachments: [{ view: outTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }],

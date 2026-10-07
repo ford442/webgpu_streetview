@@ -34,7 +34,7 @@ import { resolveIceServers } from '../utils/iceServers';
  * TURN is optional — configure via REACT_APP_TURN_* or runtime window.TURN_*
  * in public/config.js. See docs/SHARED_SESSIONS.md.
  *
- * See docs/feature_expansion_plan.md §14.3.
+ * See docs/archive/feature_expansion_plan.md §14.3.
  */
 
 export interface SessionState {

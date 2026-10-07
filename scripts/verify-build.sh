@@ -20,6 +20,13 @@ if [ ! -d "$BUILD_DIR" ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# 0. No non-allowlisted env value may be inlined into the bundle.
+# ---------------------------------------------------------------------------
+if ! node "$SCRIPT_ROOT/scripts/check-build-env-leak.mjs" "$BUILD_DIR"; then
+  ERRORS=$((ERRORS+1))
+fi
+
 echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
 
 # ---------------------------------------------------------------------------

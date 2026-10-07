@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "index.html",
+    "src/**/*.{test,spec}.{ts,tsx}",
+    "e2e/**/*.ts",
+    "scripts/**/*.{mjs,js,ts}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}"
+  ],
+  "include": [
+    "files",
+    "dependencies",
+    "devDependencies",
+    "unlisted",
+    "binaries",
+    "unresolved"
+  ],
+  "ignoreBinaries": [
+    "cmake",
+    "ctest",
+    "naga"
+  ],
+  "ignoreDependencies": [
+    "@types/google.maps"
+  ],
+  "ignoreUnresolved": [
+    "^/src/"
+  ]
+}

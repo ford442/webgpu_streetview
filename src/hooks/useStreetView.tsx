@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { findBestLink } from '../utils/navigation';
 import { StreetViewRenderer } from '../renderer/RendererBackend';
 import {
@@ -7,6 +7,7 @@ import {
   getCanvasFingerprint,
   STABILITY_POLL_INTERVAL_MS,
 } from '../utils/panoramaStability';
+import { povStore } from '../state/povStore';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
 import { HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer/historicalWipe';
 
@@ -21,9 +22,6 @@ export interface StreetViewState {
   canvas: HTMLCanvasElement | null;
   
   // View state
-  heading: number;
-  pitch: number;
-  zoom: number;
   
   // Location
   position: google.maps.LatLng | null;
@@ -102,14 +100,12 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const [renderer, setRendererState] = useState<StreetViewRenderer | null>(null);
   const rendererRef = useRef<StreetViewRenderer | null>(null);
   
-  // View state
-  const [heading, setHeadingState] = useState(initialHeading);
-  const [pitch, setPitchState] = useState(initialPitch);
-  const [zoom, setZoomState] = useState(1.0);
-  const headingRef = useRef(heading);
-  const pitchRef = useRef(pitch);
-  headingRef.current = heading;
-  pitchRef.current = pitch;
+  // View POV lives in the external povStore (src/state/povStore.ts), NOT in
+  // React state: heading/pitch change on every pointermove and must not
+  // re-render every context consumer. Seed it once, before children render.
+  useState(() => {
+    povStore.reset({ heading: initialHeading, pitch: initialPitch, zoom: 1 });
+  });
   
   // Location state
   const [position, setPositionState] = useState<google.maps.LatLng | null>(null);
@@ -144,23 +140,28 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     isPanoramaUpdatePausedRef.current = isTransitioning && !isPanoramaReady;
   }, [isTransitioning, isPanoramaReady]);
   
-  // Sync heading/pitch to Google Maps — skip while hold is active so look-around
-  // is driven only by WebGPU UV delta on the frozen snapshot (not loading pano POV).
-  useEffect(() => {
+  // Sync heading/pitch/zoom to Google Maps — skipped while hold is active so
+  // look-around is driven only by WebGPU UV delta on the frozen snapshot (not
+  // loading pano POV). Runs imperatively off the store and again whenever
+  // the hold state changes.
+  const syncPovToPano = useCallback(() => {
     const pano = panoramaRef.current;
     if (!pano || isPanoramaUpdatePausedRef.current) return;
+    const { heading, pitch, zoom } = povStore.get();
     pano.setPov({ heading, pitch });
-  }, [heading, pitch, isTransitioning, isPanoramaReady]);
-  
-  // Sync zoom to Google Maps panorama (also paused during hold)
-  useEffect(() => {
-    const pano = panoramaRef.current;
-    if (!pano || isPanoramaUpdatePausedRef.current) return;
     const panoZoom = Math.floor(zoom);
     if (panoZoom !== pano.getZoom()) {
       pano.setZoom(panoZoom);
     }
-  }, [zoom, isTransitioning, isPanoramaReady]);
+  }, []);
+
+  useEffect(() => {
+    syncPovToPano();
+  }, [syncPovToPano, panorama, isTransitioning, isPanoramaReady]);
+
+  // The store is written by input handlers (mouse/keys at ~frame rate), so a direct
+  // call per change is already about one Maps write per frame.
+  useEffect(() => povStore.subscribe(syncPovToPano), [syncPovToPano]);
 
   // Resolve any pending ready promises when panorama becomes ready
   useEffect(() => {
@@ -181,29 +182,10 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     resolveNavigationIdleWaiters();
   }, [isPanoramaReady, isTransitioning, resolveNavigationIdleWaiters]);
 
-  const setHeading = useCallback((value: number | ((prev: number) => number)) => {
-    setHeadingState(prev => {
-      const newValue = typeof value === 'function' ? value(prev) : value;
-      // Normalize to 0-360
-      return ((newValue % 360) + 360) % 360;
-    });
-  }, []);
-  
-  const setPitch = useCallback((value: number | ((prev: number) => number)) => {
-    setPitchState(prev => {
-      const newValue = typeof value === 'function' ? value(prev) : value;
-      // Clamp to -90 to 90
-      return Math.max(-90, Math.min(90, newValue));
-    });
-  }, []);
-  
-  const setZoom = useCallback((value: number | ((prev: number) => number)) => {
-    setZoomState(prev => {
-      const newValue = typeof value === 'function' ? value(prev) : value;
-      // Clamp to 1-3
-      return Math.max(1.0, Math.min(3.0, newValue));
-    });
-  }, []);
+  // Stable writers into the store (heading wraps to 0–360, pitch clamps ±90, zoom 1–3).
+  const setHeading = povStore.setHeading;
+  const setPitch = povStore.setPitch;
+  const setZoom = povStore.setZoom;
   
   const setPanorama = useCallback((pano: google.maps.StreetViewPanorama | null) => {
     panoramaRef.current = pano;
@@ -248,7 +230,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const currentCanvas = canvasRef.current;
 
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
-    renderer?.beginHoldTransition(headingRef.current, pitchRef.current, currentCanvas ?? undefined);
+    const pov = povStore.get();
+    renderer?.beginHoldTransition(pov.heading, pov.pitch, currentCanvas ?? undefined);
     streetViewProbe.holdArmed();
     pendingRevealRef.current = null;
 
@@ -297,7 +280,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const links = pano.getLinks();
     if (!links) return;
 
-    const useHeading = currentHeading ?? headingRef.current;
+    const useHeading = currentHeading ?? povStore.get().heading;
 
     const bestLink = findBestLink(
       links.filter((link): link is google.maps.StreetViewLink => link !== null),
@@ -336,7 +319,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (targetPitch !== undefined) {
       setPitch(targetPitch);
     }
-  }, [isTransitioning, armHold, setHeading, setPitch]);
+  }, [armHold, setHeading, setPitch]);
 
   // Jump directly to a known panorama id (historical capture, saved bookmark
   // pano, etc). Heading/pitch are left untouched so a POV comparison stays
@@ -348,7 +331,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     armHold();
     pendingRevealRef.current = options?.reveal ?? null;
     pano.setPano(panoId);
-  }, [isTransitioning, armHold]);
+  }, [armHold]);
 
   // Listen for panorama changes
   useEffect(() => {
@@ -546,12 +529,11 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     };
   }, []);
   
-  const value: StreetViewState = {
+  // Memoized: consumers re-render only when something they can observe changed.
+  // (POV is NOT part of this value — see povStore.)
+  const value = useMemo<StreetViewState>(() => ({
     panorama,
     canvas,
-    heading,
-    pitch,
-    zoom,
     position,
     locationName,
     renderer,
@@ -572,7 +554,11 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     readyPromise,
     navigationIdlePromise,
     transitionSource,
-  };
+  }), [
+    panorama, canvas, position, locationName, renderer, setRenderer, setPanorama,
+    setHeading, setPitch, setZoom, setPosition, advance, teleport, teleportToPano,
+    isTransitioning, isPanoramaReady, readyPromise, navigationIdlePromise, transitionSource,
+  ]);
   
   return (
     <StreetViewContext.Provider value={value}>

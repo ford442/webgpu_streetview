@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { povStore } from '../../state/povStore';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { useCruiseMode } from '../useCruiseMode';
@@ -31,7 +33,6 @@ function setup(hopsPerTick: () => number, panoIds: string[]) {
       panorama: harness.pano,
       advanceSafe,
       mapsAuthFailed: false,
-      heading: 0,
       isTransitioning: false,
       setNavPending: () => {},
       hopsPerTick,
@@ -53,6 +54,8 @@ async function runTick(view: { result: { current: { setIsCruiseMode: (v: boolean
     await vi.advanceTimersByTimeAsync(10000);
   });
 }
+
+beforeEach(() => povStore.reset({ heading: 0 }));
 
 describe('useCruiseMode gear-aware hops', () => {
   beforeEach(() => {
@@ -105,7 +108,6 @@ describe('useCruiseMode gear-aware hops', () => {
             harness.step();
           },
           mapsAuthFailed: false,
-          heading: 0,
           isTransitioning: false,
           setNavPending: () => {},
           hopsPerTick: () => 1,
@@ -169,7 +171,6 @@ describe('useCruiseMode geocode denial is not a stuck hop', () => {
         panorama: harness.pano,
         advanceSafe,
         mapsAuthFailed: false,
-        heading: 0,
         isTransitioning: false,
         setNavPending: () => {},
         hopsPerTick: () => 1,

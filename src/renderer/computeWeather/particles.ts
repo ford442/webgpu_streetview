@@ -146,7 +146,7 @@ export class ComputeWeatherParticles {
      *
      * @returns true when the seeds were accepted.
      */
-    public uploadSeeds(seeds: Float32Array, width: number, height: number, time: number): boolean {
+    public uploadSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number, time: number): boolean {
         if (width < 1 || height < 1) return false;
         if (seeds.length < width * height * 4) return false;
         this.ensureStateTextures(width, height);

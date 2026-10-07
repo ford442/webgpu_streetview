@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { povStore } from '../../state/povStore';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { useCruiseMode } from '../useCruiseMode';
@@ -28,6 +30,7 @@ function makeHarness(linkHeadings: number[]) {
 /** Engage cruise, run exactly one tick, and report the heading it hopped with. */
 async function runOneTick(harness: ReturnType<typeof makeHarness>, viewHeading: number) {
   const headings: (number | undefined)[] = [];
+  povStore.reset({ heading: viewHeading });
   const advanceSafe = vi.fn(
     async (
       _dir: 'forward',
@@ -43,7 +46,6 @@ async function runOneTick(harness: ReturnType<typeof makeHarness>, viewHeading: 
       panorama: harness.pano,
       advanceSafe,
       mapsAuthFailed: false,
-      heading: viewHeading,
       isTransitioning: false,
       setNavPending: () => {},
       hopsPerTick: () => 1,

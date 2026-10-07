@@ -13,6 +13,7 @@
  */
 
 import * as THREE from 'three';
+import { readFlag } from '../config/flags';
 import {
   GLTF_INTERIOR_ASSET,
   GLTF_INTERIOR_SOCKETS,
@@ -27,17 +28,13 @@ export type { GltfInteriorSocket };
 
 export function isGltfInteriorEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  try {
-    if (new URLSearchParams(window.location.search).get('gltfInterior') === '1') {
-      try {
-        window.localStorage.setItem(GLTF_INTERIOR_STORAGE_KEY, '1');
-      } catch {
-        /* ignore quota */
-      }
-      return true;
+  if (readFlag('gltfInterior') === true) {
+    try {
+      window.localStorage.setItem(GLTF_INTERIOR_STORAGE_KEY, '1');
+    } catch {
+      /* ignore quota */
     }
-  } catch {
-    /* ignore malformed search */
+    return true;
   }
   try {
     return window.localStorage.getItem(GLTF_INTERIOR_STORAGE_KEY) === '1';

@@ -551,7 +551,7 @@ export class Renderer implements StreetViewRenderer {
         return this.weatherPostProcessor?.getShaderEffectsEnabled() ?? true;
     }
 
-    public updateWeatherParams(params: Float32Array): void {
+    public updateWeatherParams(params: Float32Array<ArrayBuffer>): void {
         readRoadLookInto(params, this.roadLook);
         this.weatherPostProcessor?.updateWeatherParams(params);
     }
@@ -560,17 +560,17 @@ export class Renderer implements StreetViewRenderer {
         this.weatherPostProcessor?.updateCameraParams(heading, pitch);
     }
 
-    public updateColorParams(params: Float32Array): void {
+    public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         // The first six floats only — `readRoadLookInto` leaves the rest alone.
         readRoadLookInto(params.subarray(0, 6), this.roadLook);
         this.weatherPostProcessor?.updateColorParams(params);
     }
 
-    public updateNoiseBuffer(tile: Float32Array): void {
+    public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
         this.weatherPostProcessor?.updateNoiseBuffer(tile);
     }
 
-    public updateParticleSeeds(seeds: Float32Array, width: number, height: number): void {
+    public updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void {
         this.weatherPostProcessor?.updateParticleSeeds(seeds, width, height);
     }
 

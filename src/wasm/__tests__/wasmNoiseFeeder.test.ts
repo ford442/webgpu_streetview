@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   WasmNoiseFeeder,
   NOISE_TILE_SIZE,

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createStreetViewRenderer } from './createStreetViewRenderer';
 
 // No mocking here on purpose: jsdom provides `navigator.gpu === undefined`

@@ -112,7 +112,7 @@ export function createRearviewMirrorTslMaterial(): UniformMaterial<RearviewMirro
         const vUv = uv();
         const nightGlass = vec3(0.03, 0.06, 0.04);
         const dayGlass = vec3(0.06, 0.07, 0.09);
-        let glass = mix(dayGlass, nightGlass, step(float(0.5), nightMode)).toVar();
+        const glass = mix(dayGlass, nightGlass, step(float(0.5), nightMode)).toVar();
 
         const dist = distance(vUv, vec2(0.5));
         const vignette = float(1.0).sub(smoothstep(float(0.25), float(0.72), dist));

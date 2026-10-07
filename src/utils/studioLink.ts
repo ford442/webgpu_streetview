@@ -9,6 +9,7 @@
 import { buildDeepLinkUrl, parseDeepLinkParams, type DeepLinkParams } from './deepLink';
 import { LOOK_PARAM_KEYS, applyLookSearchParams } from './lookLink';
 import { isLookId, type LookId } from '../config/lookPacks';
+import { currentSearch, readSearchParams } from '../config/flags';
 import { isValidVehicleType, type VehicleType } from '../car/VehicleManager';
 
 export const STUDIO_PARAM_KEYS = {
@@ -42,9 +43,9 @@ function parseYear(raw: string | null): string | undefined {
 
 /** Parse `year` + `vehicle` (and named `look` if present) from a query string. */
 export function parseStudioLinkParams(
-  search: string = typeof window !== 'undefined' ? window.location.search : '',
+  search: string = currentSearch(),
 ): Pick<StudioLinkParams, 'lookId' | 'year' | 'vehicleType'> {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const params = readSearchParams(search);
   const lookRaw = params.get(LOOK_PARAM_KEYS.look);
   const vehicleRaw = params.get(STUDIO_PARAM_KEYS.vehicle);
   return {
@@ -55,7 +56,7 @@ export function parseStudioLinkParams(
 }
 
 export function readBootStudio(
-  search: string = typeof window !== 'undefined' ? window.location.search : '',
+  search: string = currentSearch(),
 ): Pick<StudioLinkParams, 'lookId' | 'year' | 'vehicleType'> {
   try {
     return parseStudioLinkParams(search);

@@ -19,6 +19,7 @@ import {
     type AdapterCapabilitySummary,
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
+import { currentSearch, readFlag } from '../config/flags';
 import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 import {
     resolveHdrIntermediateFormat,
@@ -201,20 +202,10 @@ export function checkRequiredLimits(
 
 /**
  * `?no_clip_distances` — do not request `clip-distances` on the shared device.
- * Same grammar as `?no_gpu_compute`: present (or truthy) is on, `0|false|off` is off.
+ * Uniform bool grammar (see config/flags.ts).
  */
-export function readNoClipDistancesFlag(
-    search: string = typeof window !== 'undefined' ? window.location.search : '',
-): boolean {
-    try {
-        const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-        const raw = params.get('no_clip_distances');
-        if (raw === null) return false;
-        const v = raw.toLowerCase();
-        return !(v === '0' || v === 'false' || v === 'off');
-    } catch {
-        return false;
-    }
+export function readNoClipDistancesFlag(search: string = currentSearch()): boolean {
+    return readFlag('no_clip_distances', search);
 }
 
 export function collectOptionalDeviceFeatures(

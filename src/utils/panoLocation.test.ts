@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { isGeocodeDenied, resetGeocodeAuthForTests } from '../search/geocodeAuth';
 import {

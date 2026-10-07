@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { downsample2d } from './lumaMath';
 import { makePickerThumbDataUrl } from './pickerThumb';

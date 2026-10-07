@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `bootDevice` against a fake `navigator.gpu`: context before device, no
  * leaked device on a post-device failure, and no `onDeviceLost` for a device

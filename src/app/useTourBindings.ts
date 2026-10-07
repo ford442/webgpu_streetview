@@ -1,3 +1,4 @@
+import { povStore } from '../state/povStore';
 import { useCallback, useMemo } from 'react';
 import { useTours, type CurrentPOV, type DirectorSnapshot, type Tour, type TourWaypoint } from '../hooks/useTours';
 import type { UseRoutePrefetchResult } from '../hooks/useRoutePrefetch';
@@ -5,9 +6,6 @@ import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '.
 
 export interface UseTourBindingsParams {
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
   locationName: string;
   teleportToPanoSafe: (panoId: string) => Promise<void>;
   setHeading: (heading: number) => void;
@@ -77,9 +75,6 @@ export interface UseTourBindingsResult {
  */
 export function useTourBindings({
   panorama,
-  heading,
-  pitch,
-  zoom,
   locationName,
   teleportToPanoSafe,
   setHeading,
@@ -98,12 +93,13 @@ export function useTourBindings({
     const pos = panorama.getPosition();
     const panoId = panorama.getPano();
     if (!pos || !panoId) return null;
+    const pov = povStore.get();
     return {
       panoId,
       position: { lat: pos.lat(), lng: pos.lng() },
-      pov: { heading, pitch, zoom },
+      pov: { heading: pov.heading, pitch: pov.pitch, zoom: pov.zoom },
     };
-  }, [panorama, heading, pitch, zoom]);
+  }, [panorama]);
 
   const onPrepareOfflineGraph = useCallback(
     (tour: Tour) => {

@@ -198,6 +198,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     return () => {
       cancelled = true;
     };
+    // Entry runs once per `transition` change; the entry pose is captured via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition]);
 
@@ -251,7 +252,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
       cleanupViewer();
       onExitRef.current();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition]);
 
   function cleanupViewer() {
