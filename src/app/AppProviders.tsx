@@ -1,3 +1,4 @@
+import { AutoNightDriver } from './AutoNightDriver';
 import { StreetViewProvider, ViewModeProvider, EnvironmentSettingsProvider } from '../hooks';
 
 export interface AppProvidersProps {
@@ -9,7 +10,10 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <StreetViewProvider>
       <ViewModeProvider>
-        <EnvironmentSettingsProvider>{children}</EnvironmentSettingsProvider>
+        <EnvironmentSettingsProvider>
+          <AutoNightDriver />
+          {children}
+        </EnvironmentSettingsProvider>
       </ViewModeProvider>
     </StreetViewProvider>
   );

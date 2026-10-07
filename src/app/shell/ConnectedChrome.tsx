@@ -102,6 +102,8 @@ export interface ConnectedChromeEnvironment {
   tint: number;
   headlightsOn: boolean;
   shaderEffectsEnabled: boolean;
+  autoNightMode: boolean;
+  setAutoNightMode: (enabled: boolean) => void;
   setVibrance: (v: number) => void;
   setSaturation: (v: number) => void;
   setContrast: (v: number) => void;
@@ -466,6 +468,8 @@ export function ConnectedChrome({
           isOpen={isWeatherPanelOpen}
           onApplyLook={env.applyLookPack}
           activeLookId={env.activeLookId}
+          autoNightMode={env.autoNightMode}
+          onToggleAutoNight={() => env.setAutoNightMode(!env.autoNightMode)}
         />
       )}
 
