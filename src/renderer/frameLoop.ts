@@ -66,8 +66,8 @@ export const FRAME_UNIFORM_FLOAT_COUNT = 8;
  */
 export function packFrameUniforms(
     input: FrameUniformInput,
-    out: Float32Array = new Float32Array(FRAME_UNIFORM_FLOAT_COUNT),
-): Float32Array {
+    out: Float32Array<ArrayBuffer> = new Float32Array(FRAME_UNIFORM_FLOAT_COUNT),
+): Float32Array<ArrayBuffer> {
     out[0] = input.time;
     out[1] = input.zoom;
     out[2] = input.panX;
@@ -84,7 +84,7 @@ export interface EncodeFrameOptions {
     canvas: HTMLCanvasElement;
     textures: TextureLifecycle;
     uniformBuffer: GPUBuffer;
-    uniforms: Float32Array;
+    uniforms: Float32Array<ArrayBuffer>;
     /** The frame's passes; only ready + enabled ones are encoded. */
     passes: FramePassRegistry;
     /** Per-frame context handed to every pass (`textures` and `timings` are filled in here). */

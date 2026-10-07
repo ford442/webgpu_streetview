@@ -113,7 +113,7 @@ export class WasmNoiseFeeder {
    * Triggers the (idempotent) module load as a side effect so the first
    * caller doesn't need a separate bootstrap step.
    */
-  public sampleTile(frameCount: number, time: number): Float32Array | null {
+  public sampleTile(frameCount: number, time: number): Float32Array<ArrayBuffer> | null {
     this.ensureLoaded();
     if (!this.wasm) return null;
     if (frameCount % NOISE_UPDATE_INTERVAL_FRAMES !== 0) return null;

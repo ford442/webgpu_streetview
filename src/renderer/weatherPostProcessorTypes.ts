@@ -48,12 +48,12 @@ export interface WeatherPostInitOptions {
 export interface WeatherPostProcessorLike {
     init(presentationFormat: GPUTextureFormat, options?: WeatherPostInitOptions): Promise<void>;
     updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
-    updateNoiseBuffer(tile: Float32Array): void;
+    updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void;
     /**
      * Upload WASM `fill_particle_seeds` output into compute-path storage
      * textures A/B. No-op on the fragment weather path.
      */
-    updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
+    updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void;
     /** Bind a 3D look LUT, or null for the identity (ACES-only) path. */
     setLookLut(volume: import('./lut').LutVolume | null): void;
     /** Compute-only 1-frame color history. No-op on fragment. */
@@ -61,9 +61,9 @@ export interface WeatherPostProcessorLike {
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;
-    updateWeatherParams(params: Float32Array): void;
+    updateWeatherParams(params: Float32Array<ArrayBuffer>): void;
     updateCameraParams(heading: number, pitch: number): void;
-    updateColorParams(params: Float32Array): void;
+    updateColorParams(params: Float32Array<ArrayBuffer>): void;
     updateWeatherAnimation(): void;
     /**
      * Weather-only frame (no fresh panorama upload). Owns its own encoder and

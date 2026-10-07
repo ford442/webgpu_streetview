@@ -168,7 +168,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.rebuildComputeBindGroup(intermediateTextureView);
     }
 
-    public updateNoiseBuffer(tile: Float32Array): void {
+    public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
         if (!this.resources.noiseBuffer || !this.device) return;
         this.device.queue.writeBuffer(this.resources.noiseBuffer, 0, tile);
     }
@@ -178,7 +178,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
      * textures. Enables bindings 7/8 for subsequent dispatches. `seeds.length`
      * must be `width * height * 4`.
      */
-    public updateParticleSeeds(seeds: Float32Array, width: number, height: number): void {
+    public updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void {
         if (!this.device) return;
         if (!this.particles.uploadSeeds(seeds, width, height, this.params.getTime())) return;
         if (this.lastIntermediateView) {
@@ -204,7 +204,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         return this.params.getCamera();
     }
 
-    public updateWeatherParams(params: Float32Array): void {
+    public updateWeatherParams(params: Float32Array<ArrayBuffer>): void {
         this.params.setAll(params);
     }
 
@@ -212,7 +212,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.params.setCamera(heading, pitch);
     }
 
-    public updateColorParams(params: Float32Array): void {
+    public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         this.params.setColor(params);
     }
 

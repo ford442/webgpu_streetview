@@ -15,7 +15,7 @@ function alignedBytesPerRow(unpadded: number): number {
   return Math.ceil(unpadded / 256) * 256;
 }
 
-function padLutPixels(size: number, pixels: Uint8Array): { data: Uint8Array; bytesPerRow: number } {
+function padLutPixels(size: number, pixels: Uint8Array): { data: Uint8Array<ArrayBuffer>; bytesPerRow: number } {
   const rowBytes = size * 4;
   const bytesPerRow = alignedBytesPerRow(rowBytes);
   const data = new Uint8Array(bytesPerRow * size * size);

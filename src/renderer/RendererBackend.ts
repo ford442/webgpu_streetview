@@ -51,26 +51,26 @@ export interface StreetViewRenderer {
     getMaxTextureDimension2D?(): number | undefined;
     destroy(): void;
     setCarMode(active: boolean): void;
-    updateEffects(effectsData: Float32Array): void;
+    updateEffects(effectsData: Float32Array<ArrayBuffer>): void;
     getCanvasDataURL(): string;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;
-    updateWeatherParams(params: Float32Array): void;
+    updateWeatherParams(params: Float32Array<ArrayBuffer>): void;
     updateCameraParams(heading: number, pitch: number): void;
-    updateColorParams(params: Float32Array): void;
+    updateColorParams(params: Float32Array<ArrayBuffer>): void;
     /**
      * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts) for
      * shaders to sample as CPU-driven turbulence. `tile` must have
      * `NOISE_TILE_SIZE * NOISE_TILE_SIZE` elements, row-major. No-op on
      * backends that don't support it (fragment path without a noise sampler).
      */
-    updateNoiseBuffer(tile: Float32Array): void;
+    updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void;
     /**
      * Upload WASM particle seeds for the compute weather path. No-op on
      * backends that stay procedural (fragment WebGPU).
      */
-    updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
+    updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void;
     /** 3D look LUT. Null = identity (today's ACES path). No-op on WebGL. */
     setLookLut?(volume: import('./lut').LutVolume | null): void;
     /** Compute-only temporal history. No-op on fragment WebGPU and WebGL. */

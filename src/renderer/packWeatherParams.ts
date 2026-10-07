@@ -58,7 +58,7 @@ export interface PackWeatherParamsOptions {
  * Matches the historical literal `.set([...])` arrays in WeatherPostProcessor /
  * ComputeWeatherPostProcessor (speed=1, headlight look at center, effects on).
  */
-export function createDefaultWeatherParams(): Float32Array {
+export function createDefaultWeatherParams(): Float32Array<ArrayBuffer> {
     const params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     params[WeatherParamIndex.speed] = 1.0;
     params[WeatherParamIndex.headlightHeading] = 0.5;
@@ -74,7 +74,7 @@ export function createDefaultWeatherParams(): Float32Array {
  * together by resolveWeatherCohesion so presets tell one physical story —
  * see weatherCohesion.ts and docs/GRAPHICS.md.
  */
-export function packWeatherParams(options: PackWeatherParamsOptions): Float32Array {
+export function packWeatherParams(options: PackWeatherParamsOptions): Float32Array<ArrayBuffer> {
     const { env: e, timeSeconds, cameraHeading, cameraPitch, wasmNoiseActive } = options;
     const params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     const I = WeatherParamIndex;
