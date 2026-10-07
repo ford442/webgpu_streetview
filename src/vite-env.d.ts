@@ -18,7 +18,6 @@ declare global {
     readonly REACT_APP_MAPS_API_KEY?: string;
     readonly REACT_APP_GOOGLE_MAPS_MAP_ID?: string;
     readonly REACT_APP_STORAGE_API_URL?: string;
-    readonly REACT_APP_CESIUM_ION_TOKEN?: string;
     readonly REACT_APP_ENABLE_SW?: string;
     readonly REACT_APP_BUILD_VERSION?: string;
     readonly REACT_APP_BUILD_TIME?: string;

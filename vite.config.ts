@@ -5,6 +5,7 @@ import checker from 'vite-plugin-checker';
 import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import publicEnvKeys from './scripts/public-env-keys.json';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,23 +18,11 @@ function gitShortHash(): string {
 }
 
 /**
- * Build-time env keys that may be inlined into the client bundle.
+ * Build-time env keys that may be inlined into the client bundle (single source of
+ * truth: scripts/public-env-keys.json, also read by scripts/check-build-env-leak.mjs).
  * Everything here is visible to any visitor — never add a secret.
  */
-const PUBLIC_ENV_KEYS = [
-  'REACT_APP_MAPS_API_KEY',
-  'VITE_MAPS_API_KEY',
-  'REACT_APP_GOOGLE_MAPS_MAP_ID',
-  'REACT_APP_STORAGE_API_URL',
-  'REACT_APP_ENABLE_SW',
-  'REACT_APP_SUPABASE_URL',
-  'VITE_SUPABASE_URL',
-  'REACT_APP_SUPABASE_ANON_KEY',
-  'VITE_SUPABASE_ANON_KEY',
-  'REACT_APP_TURN_URL',
-  'REACT_APP_TURN_USERNAME',
-  'REACT_APP_TURN_CREDENTIAL',
-] as const;
+const PUBLIC_ENV_KEYS: string[] = publicEnvKeys;
 
 /**
  * CRA → Vite migration config.
@@ -111,7 +100,11 @@ export default defineConfig(({ mode }) => {
           ]),
     ],
     define: processEnvDefines,
-    envPrefix: ['VITE_', 'REACT_APP_'],
+    // Vite inlines EVERY variable with these prefixes wherever `import.meta.env` is
+    // referenced as an object (some dependencies do), so this must stay an opt-in
+    // namespace nothing else uses. Build-time config reaches src/ only through the
+    // allowlisted `process.env.*` defines above.
+    envPrefix: ['VITE_PUBLIC_'],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
