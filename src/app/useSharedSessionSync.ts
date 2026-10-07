@@ -9,6 +9,16 @@ import {
   type HostBroadcastExtras,
 } from './sharedSessionSync';
 import { povStore } from '../state/povStore';
+import { tripStore } from '../state/tripStore';
+import { decodeRouteStops, encodeRouteStops } from '../services/routing/routeLink';
+import { clearTrip, planTrip } from '../services/routing/tripController';
+import { createConfiguredRouteProvider } from '../services/routing/routingConfig';
+
+/** The host's planned trip as a route payload, read at send time. */
+function currentTripRoute(): string | undefined {
+  const { route, stops } = tripStore.get();
+  return route && stops.length >= 2 ? encodeRouteStops(stops) : undefined;
+}
 import { parseWeatherPreset } from '../utils/weatherPresetSync';
 import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
 import type { VehicleType } from '../car/VehicleManager';
@@ -74,6 +84,7 @@ export function useSharedSessionSync({
   const lastViewModeRef = useRef<string | null>(null);
   const lastCabinViewRef = useRef<string | null>(null);
   const appliedInitialLookRef = useRef(false);
+  const lastRouteRef = useRef<string | null>(null);
 
   const {
     role: sessionRole,
@@ -96,6 +107,7 @@ export function useSharedSessionSync({
         cabinView: cabinView ?? undefined,
         carHeading,
         hdr,
+        route: currentTripRoute(),
       };
       const payload = buildHostBroadcastPayload(
         panorama,
@@ -163,6 +175,17 @@ export function useSharedSessionSync({
     if (film.cabinView && film.cabinView !== lastCabinViewRef.current) {
       lastCabinViewRef.current = film.cabinView;
       setCabinView?.(film.cabinView);
+    }
+
+    // The host's trip: plan the same route locally (one route request per
+    // change), and drop it when the host clears theirs.
+    if (film.route && film.route !== lastRouteRef.current) {
+      lastRouteRef.current = film.route;
+      const stops = decodeRouteStops(film.route);
+      if (stops) void planTrip(stops, createConfiguredRouteProvider());
+    } else if (!film.route && lastRouteRef.current) {
+      lastRouteRef.current = null;
+      clearTrip();
     }
 
     if (

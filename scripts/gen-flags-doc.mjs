@@ -45,6 +45,8 @@ function describeValues(def) {
     }
     case 'tokens':
       return def.values ? `comma list: ${def.values.map((v) => `\`${v}\``).join(', ')}` : 'comma list';
+    case 'string':
+      return `\`${def.format}\``;
   }
 }
 
@@ -63,7 +65,7 @@ Every flag is parsed by \`src/config/flags.ts\` (\`readFlag\`). The grammar is t
 - **true** — bare presence (\`?flag\`, \`?flag=\`) or \`1 | true | on | yes\`
 - **false** — \`0 | false | off | no\`
 - **unset** — absent, or an unrecognised value (the flag's default applies)
-- Values are case-insensitive.
+- Values are case-insensitive (\`string\` payloads keep their case and are validated by their owner).
 
 Where a flag also has a persisted \`localStorage\` choice, precedence is URL → storage → preset/auto-detect.
 

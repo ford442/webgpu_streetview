@@ -60,6 +60,7 @@ export {
 export {
     setCarLocationInfo,
     setCarCompassHeading,
+    setCarRouteGuidance,
     setCarPanoEnvironment,
     setCarSunPosition,
     updateCarGauges,

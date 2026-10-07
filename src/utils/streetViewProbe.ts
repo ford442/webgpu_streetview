@@ -18,6 +18,7 @@
  */
 
 import { getMapsCallBudget, type MapsCallBudgetStats } from '../services/maps/callBudget';
+import { tripProbeSnapshot } from '../state/tripStore';
 import type { ScraperHealth } from './scraperHealth';
 import { createInitialScraperHealth } from './scraperHealth';
 
@@ -190,6 +191,8 @@ declare global {
       getScraperHealth: () => ScraperHealth;
       /** Session call meter (services/maps/callBudget.ts). */
       getCallBudget: () => MapsCallBudgetStats;
+      /** Routed trip status / progress / re-snaps (state/tripStore.ts). */
+      getTrip: () => ReturnType<typeof tripProbeSnapshot>;
       enablePixelWatch: () => void;
       disablePixelWatch: () => void;
       clear: () => void;
@@ -204,6 +207,7 @@ export function installStreetViewProbe(): void {
     getWarnings: () => streetViewProbe.getWarnings(),
     getScraperHealth: () => streetViewProbe.getScraperHealth(),
     getCallBudget: () => getMapsCallBudget().getStats(),
+    getTrip: () => tripProbeSnapshot(),
     enablePixelWatch: () => streetViewProbe.enablePixelWatch(),
     disablePixelWatch: () => streetViewProbe.disablePixelWatch(),
     clear: () => streetViewProbe.clear(),

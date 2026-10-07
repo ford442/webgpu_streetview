@@ -38,6 +38,7 @@ import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
 import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
+import type { RouteGuidance } from '../services/routing/guidanceFormat';
 
 /**
  * CarInterior - Manages the 3D car interior shell, materials, and roof animation.
@@ -81,6 +82,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public locationPanel: LocationPanel | null = null;
     public lastLocationInfo: PanoLocationInfo | null = null;
     public lastCompassHeading = 0;
+    public lastRouteGuidance: RouteGuidance | null = null;
     public centerDisplay: CenterDisplay | null = null;
     public lastMediaInfo: { name: string; tags: string; playing: boolean } = { name: '', tags: '', playing: false };
     public sunShafts: SunShafts | null = null;
@@ -204,6 +206,11 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.locationPanel?.setLocation(info);
         this.centerDisplay?.setLocation(info);
         this.digitalClock?.setLocation(info);
+    }
+
+    public setRouteGuidance(guidance: RouteGuidance | null): void {
+        this.lastRouteGuidance = guidance;
+        this.centerDisplay?.setRouteGuidance(guidance);
     }
 
     public setCompassHeading(heading: number): void {

@@ -11,7 +11,8 @@
  *   unset  — absent, or an unrecognised value (falls back to the flag's default)
  * Values are case-insensitive. `enum` / `tri` flags accept their listed values
  * (`tri` additionally maps the bool spellings to `on`/`off`); anything else is
- * unset. `tokens` flags are comma-separated lists (`?gpu=high,compat`).
+ * unset. `tokens` flags are comma-separated lists (`?gpu=high,compat`). `string`
+ * flags are a raw payload (trimmed, case kept); their owner validates them.
  *
  * The flag table in `docs/FLAGS.md` is generated from FLAGS (`npm run gen:flags-doc`);
  * `flags.test.ts` fails when it drifts and when any other file under src/ parses
@@ -48,7 +49,14 @@ export interface TokensFlagDef {
   values?: readonly string[];
   doc: string;
 }
-export type FlagDef = BoolFlagDef | EnumFlagDef | TriFlagDef | NumberFlagDef | TokensFlagDef;
+/** Raw payload (trimmed, case preserved); empty reads as unset. The owning module validates it. */
+export interface StringFlagDef {
+  kind: 'string';
+  /** Shape of the payload, for docs/FLAGS.md. */
+  format: string;
+  doc: string;
+}
+export type FlagDef = BoolFlagDef | EnumFlagDef | TriFlagDef | NumberFlagDef | TokensFlagDef | StringFlagDef;
 
 export const FLAGS = {
   // ── Renderer / device ────────────────────────────────────────────────────
@@ -110,6 +118,11 @@ export const FLAGS = {
     kind: 'bool',
     doc: 'Use the authored glTF interior kit. Turning it on persists to localStorage.',
   },
+  // ── Trips ────────────────────────────────────────────────────────────────
+  route: {
+    kind: 'string', format: 'lat,lng;lat,lng[;…]',
+    doc: 'Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it.',
+  },
   // ── WASM feeders ─────────────────────────────────────────────────────────
   wasmNoise: {
     kind: 'bool',
@@ -136,6 +149,7 @@ export type FlagValue<N extends FlagName> = (typeof FLAGS)[N] extends infer D
   : D extends { kind: 'number'; default: number } ? number
   : D extends { kind: 'number' } ? number | undefined
   : D extends { kind: 'tokens' } ? string[]
+  : D extends { kind: 'string' } ? string | undefined
   : never
   : never;
 
@@ -197,6 +211,10 @@ function parseFlag(def: FlagDef, raw: string | null): unknown {
       const n = Number(raw);
       if (!Number.isFinite(n)) return def.default;
       return Math.min(def.max ?? Infinity, Math.max(def.min ?? -Infinity, n));
+    }
+    case 'string': {
+      const v = raw?.trim();
+      return v ? v : undefined;
     }
     case 'tokens':
       return (raw ?? '')

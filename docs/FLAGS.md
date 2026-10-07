@@ -8,7 +8,7 @@ Every flag is parsed by `src/config/flags.ts` (`readFlag`). The grammar is the s
 - **true** — bare presence (`?flag`, `?flag=`) or `1 | true | on | yes`
 - **false** — `0 | false | off | no`
 - **unset** — absent, or an unrecognised value (the flag's default applies)
-- Values are case-insensitive.
+- Values are case-insensitive (`string` payloads keep their case and are validated by their owner).
 
 Where a flag also has a persisted `localStorage` choice, precedence is URL → storage → preset/auto-detect.
 
@@ -31,5 +31,6 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?cabin` | enum | `webgl` \| `webgpu` | — | Cabin overlay backend. Default follows the WebGPU probe; `webgl` is the escape hatch. |
 | `?portal` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `true` | Windshield portal. `?portal=off` forces the hole + decal overlay. |
 | `?gltfInterior` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Use the authored glTF interior kit. Turning it on persists to localStorage. |
+| `?route` | string | `lat,lng;lat,lng[;…]` | — | Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it. |
 | `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM-driven noise effect. `off` disables it; unset defers to localStorage, then on. |
 | `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM GPU particle field. `off` disables it; unset defers to localStorage, then on. |

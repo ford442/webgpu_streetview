@@ -8,6 +8,7 @@ import {
 } from '../hooks/useEnvironmentSettings';
 import { useVehicleSettings, MAX_SEAT_DISTANCE } from '../hooks/useVehicleSettings';
 import { usePanoInfoPanel } from '../hooks/usePanoInfoPanel';
+import { useCabinRouteGuidance } from './car/useCabinRouteGuidance';
 import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
 import { useRearViewFeed } from '../hooks/useRearViewFeed';
 import CarInputHandler from '../components/CarInputHandler';
@@ -78,6 +79,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   } = useVehicleSettings();
 
   usePanoInfoPanel(panorama, position);
+  useCabinRouteGuidance();
   useCabinEnvironment(panorama, position);
 
   const rearFeed = useRearViewFeed({ apiKey: mapsApiKey, active: true });

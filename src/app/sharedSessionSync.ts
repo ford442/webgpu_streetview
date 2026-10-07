@@ -2,6 +2,7 @@ import type { SessionState } from '../hooks/useSharedSession';
 import { isLookId } from '../config/lookPacks';
 import { isValidVehicleType, type VehicleType } from '../car/VehicleManager';
 import { isCabinView, type CabinView } from '../car/cabinView';
+import { decodeRouteStops } from '../services/routing/routeLink';
 
 export type { CabinView } from '../car/cabinView';
 
@@ -24,6 +25,7 @@ export interface HostBroadcastExtras {
   cabinView?: CabinView | null;
   carHeading?: number;
   hdr?: boolean;
+  route?: string | null;
 }
 
 export interface NormalizedSessionFilmSet {
@@ -33,6 +35,7 @@ export interface NormalizedSessionFilmSet {
   cabinView?: CabinView;
   carHeading?: number;
   hdr?: boolean;
+  route?: string;
 }
 
 /**
@@ -47,6 +50,7 @@ export function normalizeIncomingSessionFields(
     cabinView?: unknown;
     carHeading?: unknown;
     hdr?: unknown;
+    route?: unknown;
   },
 ): NormalizedSessionFilmSet {
   const out: NormalizedSessionFilmSet = {};
@@ -67,6 +71,9 @@ export function normalizeIncomingSessionFields(
   }
   if (typeof incoming.hdr === 'boolean') {
     out.hdr = incoming.hdr;
+  }
+  if (typeof incoming.route === 'string' && decodeRouteStops(incoming.route)) {
+    out.route = incoming.route;
   }
   return out;
 }
@@ -99,6 +106,7 @@ export function buildHostBroadcastPayload(
         cabinView: extras.cabinView ?? undefined,
         carHeading: extras.carHeading,
         hdr: extras.hdr,
+        route: extras.route ?? undefined,
       })
     : {};
 

@@ -19,6 +19,8 @@ export interface AppPanels {
   setIsHistoricalTimelineOpen: (open: boolean) => void;
   isTourPanelOpen: boolean;
   setIsTourPanelOpen: (open: boolean) => void;
+  isTripPanelOpen: boolean;
+  setIsTripPanelOpen: (open: boolean) => void;
   isSharedSessionPanelOpen: boolean;
   setIsSharedSessionPanelOpen: (open: boolean) => void;
   isMapOpen: boolean;
@@ -38,6 +40,7 @@ export function useAppPanels(): AppPanels {
   const [isAccessibilityPanelOpen, setIsAccessibilityPanelOpen] = useState(false);
   const [isHistoricalTimelineOpen, setIsHistoricalTimelineOpen] = useState(false);
   const [isTourPanelOpen, setIsTourPanelOpen] = useState(false);
+  const [isTripPanelOpen, setIsTripPanelOpen] = useState(false);
   const [isSharedSessionPanelOpen, setIsSharedSessionPanelOpen] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isStoragePanelOpen, setIsStoragePanelOpen] = useState(false);
@@ -61,6 +64,8 @@ export function useAppPanels(): AppPanels {
     setIsHistoricalTimelineOpen,
     isTourPanelOpen,
     setIsTourPanelOpen,
+    isTripPanelOpen,
+    setIsTripPanelOpen,
     isSharedSessionPanelOpen,
     setIsSharedSessionPanelOpen,
     isMapOpen,
