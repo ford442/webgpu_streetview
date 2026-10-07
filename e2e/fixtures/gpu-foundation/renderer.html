@@ -1,0 +1,15 @@
+<!doctype html>
+<!--
+  The real Street View Renderer on a real GPU device. Driven by
+  e2e/gpu-foundation.spec.ts — not part of the product.
+  See renderer.ts for what it builds and what it reports on window.__out.
+-->
+<html>
+  <head><meta charset="utf-8" /><title>gpu foundation: renderer</title></head>
+  <body style="margin:0;background:#000">
+    <div id="stage" style="position:relative;width:400px;height:300px">
+      <canvas id="gpu" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+    </div>
+    <script type="module" src="./renderer.ts"></script>
+  </body>
+</html>

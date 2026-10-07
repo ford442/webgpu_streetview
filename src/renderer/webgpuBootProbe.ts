@@ -5,6 +5,7 @@
 
 import type { RendererBackendPreference, WeatherPostProcessMode } from './RendererBackend';
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
+import { getPassStatuses, type PassStatusRecord } from './passStatus';
 
 export type WebGpuProbeStage =
   | 'navigator'
@@ -13,6 +14,8 @@ export type WebGpuProbeStage =
   | 'device'
   | 'canvas'
   | 'compute'
+  /** A required pass (pass 1, or weather with no present fallback) failed validation. */
+  | 'pipeline'
   | 'ok';
 
 export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';
@@ -48,6 +51,11 @@ export interface WebGpuProbeRecord {
   capabilityMatrix?: DeviceCapabilityMatrix;
   /** Present only when the boot degraded the preset's weather mode. */
   weatherDegrade?: WebGpuProbeWeatherDegrade;
+  /**
+   * Per-pass `ready | failed(reason)` — see `passStatus.ts`. A failed optional
+   * pass is disabled and listed here while `ok` stays true.
+   */
+  passes: PassStatusRecord;
   updatedAt: number;
 }
 
@@ -117,6 +125,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
     adapter: options.adapter ?? previous?.adapter,
     capabilityMatrix: options.capabilityMatrix ?? previous?.capabilityMatrix,
     weatherDegrade: options.weatherDegrade ?? previous?.weatherDegrade,
+    passes: getPassStatuses(),
     updatedAt: options.now ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()),
   };
 

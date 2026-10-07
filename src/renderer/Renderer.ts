@@ -23,17 +23,24 @@ import {
     publishBootFailure,
     type BootProbeContext,
 } from './bootDevice';
+import { buildSamplerDescriptor } from './streetViewPass';
 import {
-    buildSamplerDescriptor,
-    createStreetViewPipeline,
-} from './streetViewPass';
-import {
-    type EncodeFrameOptions,
+    FRAME_UNIFORM_FLOAT_COUNT,
     buildFramePassTimings,
     encodeAndSubmitFrame,
     encodeCabinComposite,
     packFrameUniforms,
 } from './frameLoop';
+import { FramePassRegistry, RequiredPassError } from './framePasses/FramePassRegistry';
+import {
+    createCabinCompositeFramePass,
+    createHistoricalWipeFramePass,
+    createStreetViewFramePass,
+    createWeatherFramePass,
+} from './framePasses/builtinPasses';
+import { PresentFallbackPostProcessor } from './PresentFallbackPostProcessor';
+import { reportPassFailed, reportPassReady, resetPassStatuses } from './passStatus';
+import { areGpuPassTimingsWanted } from './gpuPassTimingStore';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
 import {
@@ -56,7 +63,7 @@ import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import { HistoricalWipePass } from './HistoricalWipePass';
 import type { WipeDirection } from './historicalWipe';
 
-type EncodeFrameOptionsWipe = NonNullable<EncodeFrameOptions['historicalWipe']> | null;
+type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
 
 /**
  * Street View's WebGPU renderer — a façade over four named modules:
@@ -66,7 +73,9 @@ type EncodeFrameOptionsWipe = NonNullable<EncodeFrameOptions['historicalWipe']> 
  * | `deviceInit.ts` | adapter/limit/canvas-output policy |
  * | `bootDevice.ts` | boot sequence and the single `requestDevice` call site |
  * | `streetViewPass.ts` | pass-1 pipeline, bind group layout, sampler, encode |
- * | `frameLoop.ts` | per-frame encode order and uniform packing |
+ * | `framePasses/` | the ordered pass registry — init, ready/failed state, encode |
+ * | `frameLoop.ts` | per-frame encode + submit and uniform packing |
+ * | `gpuPipelineFactory.ts` | validation-safe module/pipeline creation |
  * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
  * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
  * | `HistoricalWipePass.ts` | the year-chip wipe from the hold snapshot, over pass 1 |
@@ -111,7 +120,16 @@ export class Renderer implements StreetViewRenderer {
     private readonly roadLook = createNeutralRoadLook();
     private samplerAnisotropy: number = 1;
 
+    private passes: FramePassRegistry | null = null;
+    private readonly frameUniforms = new Float32Array(FRAME_UNIFORM_FLOAT_COUNT);
+
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
+    /**
+     * Set before *we* destroy the device. Its `lost` promise then resolves with
+     * `reason: 'destroyed'`, and forwarding that is what turned one failed boot
+     * into a re-init loop (destroy → lost → reinit → fail → destroy …).
+     */
+    private teardownIntended = false;
     private isDestroyed: boolean = false;
     private isDisposed: boolean = false;
     private startTime: number = Date.now();
@@ -141,8 +159,10 @@ export class Renderer implements StreetViewRenderer {
         this.onLostCallback = options?.onLost;
         this.weatherPostProcessMode = options?.weatherPostProcessMode || 'fragment';
         this._fallbackReason = undefined;
+        this.teardownIntended = false;
         this.isDestroyed = false;
         this.isDisposed = false;
+        resetPassStatuses();
 
         let probe: BootProbeContext | undefined;
         try {
@@ -150,21 +170,12 @@ export class Renderer implements StreetViewRenderer {
                 canvas: this.canvas,
                 weatherPostProcessMode: this.weatherPostProcessMode,
                 initOptions: options,
-                onDeviceLost: (info) => {
-                    this.dispose({ destroyDevice: false, unconfigureContext: true, markDestroyed: true });
-                    this.onLostCallback?.(info);
-                },
+                onDeviceLost: (info) => this.handleDeviceLost(info),
             });
 
             if (!boot.ok) {
+                // bootDevice already destroyed any device it created.
                 this._fallbackReason = boot.reason;
-                // The compute-probe failure hands back a live device; adopt it
-                // so our own teardown runs and the flags stay truthful.
-                if (boot.device && boot.context) {
-                    this.device = boot.device;
-                    this.context = boot.context;
-                    this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
-                }
                 return false;
             }
 
@@ -192,59 +203,59 @@ export class Renderer implements StreetViewRenderer {
             this.textures.createTexture(1, 1);
 
             this.uniformBuffer = createTrackedBuffer(this.device, {
+                label: 'streetview-uniforms',
                 size: 32,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             }, 'sv-uniforms');
 
-            this.pipeline = await createStreetViewPipeline(this.device, this.textures.intermediateFormat);
-            this.textures.updateBindGroup();
-
+            const intermediateFormat = this.textures.intermediateFormat;
             this.weatherPostProcessor = this.weatherPostProcessMode === 'compute'
                 ? new ComputeWeatherPostProcessor(this.device, this.context, this.canvas)
                 : new WeatherPostProcessor(this.device, this.context, this.canvas);
-            await this.weatherPostProcessor.init(this.presentationFormat, {
-                // What `configureCanvasContext` actually applied, not what `?hdr`
-                // asked for — a rejected HDR configure stays on the SDR ACES curve.
-                canvasToneMapping: this.canvasOutputPolicy.hdr ? 'extended' : 'standard',
-            });
-
-            // Non-fatal: a cabin composite that fails to build leaves car mode on
-            // the CSS overlay + 2D cinema latch, and the road frame is unaffected.
             this.cabinComposite = new CabinCompositePass(this.device);
-            try {
-                await this.cabinComposite.init(this.presentationFormat);
-            } catch (e) {
-                console.warn(
-                    '[Renderer] Cabin composite pass unavailable — car mode stays on the CSS overlay:',
-                    e,
-                );
-                this.cabinComposite.dispose();
+            this.historicalWipe = new HistoricalWipePass(this.device);
+            this.transitionManager = new TransitionManager(this.device, this.sampler, intermediateFormat);
+
+            const passes = this.buildPassRegistry(intermediateFormat);
+            this.passes = passes;
+
+            // Every pass fetches and compiles concurrently. A required pass
+            // (pass 1) failing rejects; any other is disabled and reported on
+            // `webgpuProbe.passes`, and the frame loop skips it.
+            const [passOutcome] = await Promise.allSettled([
+                passes.initAll(),
+                this.transitionManager.init(!!options?.legacyTransitions).then(
+                    () => {
+                        if (options?.legacyTransitions) reportPassReady('transitions');
+                    },
+                    (e: unknown) => {
+                        // Transitions are optional: hops keep the inline crossfade.
+                        reportPassFailed('transitions', e);
+                    },
+                ),
+            ]);
+            if (passOutcome.status === 'rejected') throw passOutcome.reason;
+            if (this.isDisposed) return false;
+
+            this.textures.updateBindGroup();
+
+            // A pass that did not come up is dropped, exactly as before the
+            // registry: the wipe falls back to the crossfade, the cabin to the
+            // CSS overlay + 2D latch (`isCabinCompositedInFrame()` → false).
+            if (!passes.isReady('cabin-composite')) {
+                this.cabinComposite?.dispose();
                 this.cabinComposite = null;
+            }
+            if (!passes.isReady('historical-wipe')) {
+                this.historicalWipe?.dispose();
+                this.historicalWipe = null;
+            }
+            if (!passes.isReady('weather')) {
+                await this.adoptPresentFallback(passes);
             }
 
             this.gpuChores = new GpuChores(this.device);
             void this.gpuChores.ensureReady();
-
-            this.transitionManager = new TransitionManager(
-                this.device,
-                this.sampler,
-                this.textures.intermediateFormat,
-            );
-            try {
-                await this.transitionManager.init(!!options?.legacyTransitions);
-            } catch (e) {
-                console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
-            }
-
-            // Non-fatal: without it year-chip hops keep the pass-1 crossfade.
-            this.historicalWipe = new HistoricalWipePass(this.device);
-            try {
-                await this.historicalWipe.init(this.textures.intermediateFormat);
-            } catch (e) {
-                console.warn('[Renderer] Historical wipe unavailable — year hops crossfade:', e);
-                this.historicalWipe.dispose();
-                this.historicalWipe = null;
-            }
 
             // The portal reads the pass-1 intermediate only — never `videoTexture`,
             // so during a hold it can only ever see the frozen frame.
@@ -267,11 +278,83 @@ export class Renderer implements StreetViewRenderer {
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
             if (probe) {
-                publishBootFailure(probe, 'device', this._fallbackReason);
+                publishBootFailure(probe, e instanceof RequiredPassError ? 'pipeline' : 'device', this._fallbackReason);
             }
             console.warn('WebGPU init failed:', this._fallbackReason);
+            // Never leak the device of a failed boot — and never report its
+            // loss: this teardown is ours.
+            this.destroy();
             return false;
         }
+    }
+
+    /** The frame, as registered passes in encode order. See `framePasses/builtinPasses.ts`. */
+    private buildPassRegistry(intermediateFormat: GPUTextureFormat): FramePassRegistry {
+        const passes = new FramePassRegistry();
+        passes.register(createStreetViewFramePass({
+            device: this.device,
+            intermediateFormat,
+            onPipeline: (pipeline) => {
+                this.pipeline = pipeline;
+            },
+            getPipeline: () => this.pipeline,
+            getTransitionManager: () => this.transitionManager,
+        }));
+        passes.register(createHistoricalWipeFramePass({
+            pass: this.historicalWipe!,
+            intermediateFormat,
+            resolve: () => this.resolveHistoricalWipe(),
+        }));
+        passes.register(createWeatherFramePass({
+            id: 'weather',
+            processor: this.weatherPostProcessor,
+            presentationFormat: this.presentationFormat,
+            // What `configureCanvasContext` actually applied, not what `?hdr`
+            // asked for — a rejected HDR configure stays on the SDR ACES curve.
+            initOptions: {
+                canvasToneMapping: this.canvasOutputPolicy.hdr ? 'extended' : 'standard',
+            },
+        }));
+        passes.register(createCabinCompositeFramePass({
+            pass: this.cabinComposite!,
+            presentationFormat: this.presentationFormat,
+            resolve: () => this.resolveCabinComposite(),
+        }));
+        return passes;
+    }
+
+    /**
+     * Weather failed validation: present pass 1 through the inline ACES blit so
+     * the road frame still shows. Only if *that* fails too is the boot lost.
+     */
+    private async adoptPresentFallback(passes: FramePassRegistry): Promise<void> {
+        this.weatherPostProcessor?.dispose();
+        const fallback = new PresentFallbackPostProcessor(this.device, this.context);
+        passes.register(createWeatherFramePass({
+            id: 'present-fallback',
+            processor: fallback,
+            presentationFormat: this.presentationFormat,
+            lazy: true,
+        }));
+        if (!(await passes.initPass('present-fallback'))) {
+            throw new RequiredPassError('present-fallback', 'weather and its present fallback both failed');
+        }
+        this.weatherPostProcessor = fallback;
+        if (this.textures.intermediateTextureView) {
+            fallback.updateWeatherBindGroup(this.textures.intermediateTextureView);
+        }
+    }
+
+    /**
+     * A loss we did not cause: tear down without touching the (dead) device and
+     * tell the owner, which decides whether to re-init (`deviceLossRecovery.ts`).
+     */
+    private handleDeviceLost(info: GPUDeviceLostInfo): void {
+        if (this.teardownIntended) return;
+        console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
+        const onLost = this.onLostCallback;
+        this.dispose({ destroyDevice: false, unconfigureContext: true, markDestroyed: true });
+        onLost?.(info);
     }
 
     public getWeatherPostProcessMode(): WeatherPostProcessMode {
@@ -374,7 +457,16 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public destroy() {
+        // Intentional: the `lost` promise this resolves must not re-init.
+        this.teardownIntended = true;
+        this.onLostCallback = undefined;
         this.dispose({ destroyDevice: true, unconfigureContext: true, markDestroyed: true });
+    }
+
+    /** The device's 2D texture limit — the canvas backing store must fit inside it. */
+    public getMaxTextureDimension2D(): number | undefined {
+        const limit = Number(this.getSharedGpuDevice()?.limits?.maxTextureDimension2D);
+        return Number.isFinite(limit) && limit > 0 ? limit : undefined;
     }
 
     private dispose({
@@ -396,17 +488,24 @@ export class Renderer implements StreetViewRenderer {
         // that is about to be destroyed.
         retractRoadFrameSource(this.roadFrameSource);
         this.roadFrameSource = null;
+        if (destroyDevice) this.teardownIntended = true;
         try {
             this.textures.destroyTextures();
             destroyTracked(this.uniformBuffer);
             this.transitionManager?.dispose();
-            this.weatherPostProcessor?.dispose();
+            if (this.passes) {
+                // Weather (and the present fallback), the wipe and the cabin composite.
+                this.passes.destroyAll();
+                this.passes = null;
+            } else {
+                this.weatherPostProcessor?.dispose();
+                this.cabinComposite?.dispose();
+                this.historicalWipe?.dispose();
+            }
+            this.cabinComposite = null;
+            this.historicalWipe = null;
             this.gpuChores?.destroy();
             this.gpuChores = null;
-            this.cabinComposite?.dispose();
-            this.cabinComposite = null;
-            this.historicalWipe?.dispose();
-            this.historicalWipe = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
             if (unconfigureContext) {
@@ -600,7 +699,7 @@ export class Renderer implements StreetViewRenderer {
      * frame is already the "before", and the wipe must not run ahead of the
      * release that makes the live frame safe to show.
      */
-    private resolveHistoricalWipe(): EncodeFrameOptionsWipe {
+    private resolveHistoricalWipe(): ResolvedHistoricalWipe {
         if (this.holdTransition.isHoldActive() || !this.historicalWipe?.isActive()) return null;
         return { pass: this.historicalWipe, before: this.transitionManager?.previousFrame };
     }
@@ -625,11 +724,14 @@ export class Renderer implements StreetViewRenderer {
             const panY = ((pitch || 0) + 90) / 180;
             this.transitionManager?.recordLastPan(panX, panY);
 
+            const passes = this.passes;
+            if (!passes) return;
+            // Timestamp queries only while the overlay is open to read them.
+            const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;
             encodeAndSubmitFrame({
                 device: this.device,
                 canvas: this.canvas,
                 textures: this.textures,
-                pipeline: this.pipeline,
                 uniformBuffer: this.uniformBuffer,
                 uniforms: packFrameUniforms({
                     time: (Date.now() - this.startTime) / 1000,
@@ -639,14 +741,11 @@ export class Renderer implements StreetViewRenderer {
                     inlineTransitionProgress: this.transitionManager?.inlineProgress ?? 0.0,
                     holdActive: this.holdTransition.isHoldActive(),
                     capturePan: this.holdTransition.getCapturePan(),
-                }),
-                transitionManager: this.transitionManager,
-                weatherPostProcessor: this.weatherPostProcessor,
-                cabinComposite: this.resolveCabinComposite(),
-                historicalWipe: this.resolveHistoricalWipe(),
-                getSwapChainView: () => this.getSwapChainView(),
-                gpuPassTimer: this.gpuPassTimer,
-                timings: buildFramePassTimings(this.gpuPassTimer, this.weatherPostProcessMode),
+                }, this.frameUniforms),
+                passes,
+                frame: { getSwapChainView: () => this.getSwapChainView() },
+                gpuPassTimer: timer,
+                timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });
         } catch {
             // Suppress sporadic frame errors

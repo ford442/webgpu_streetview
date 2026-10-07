@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 import { getMemoryProfiler, type MemoryStats } from '../utils/memoryProfiler';
-import { getGpuPassTimings, type GpuPassTimings } from '../renderer/gpuPassTimingStore';
+import {
+  getGpuPassTimings,
+  setGpuPassTimingsWanted,
+  type GpuPassTimings,
+} from '../renderer/gpuPassTimingStore';
 import { getGpuChoresStats, type GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 import { getAutoExposureStatus, type AutoExposureStatus } from '../renderer/autoExposure';
 
@@ -31,6 +35,12 @@ export function useAppTelemetry(): AppTelemetry {
     criticalThreshold: 30,
     enableAdaptiveQuality: true,
   });
+
+  // GPU timestamp queries run only while the overlay is open to read them.
+  useEffect(() => {
+    setGpuPassTimingsWanted(showPerformanceStats);
+    return () => setGpuPassTimingsWanted(false);
+  }, [showPerformanceStats]);
 
   useEffect(() => {
     if (!showPerformanceStats) return;

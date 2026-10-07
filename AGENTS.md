@@ -362,7 +362,10 @@ the module that owns it, not to the façade:
 | `deviceInit.ts` | adapter request options, limit checks, canvas output (HDR/P3) policy, capability matrix |
 | `bootDevice.ts` | the boot sequence and **the only `requestDevice` call site** (`deviceInit.test.ts` pins the path) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
-| `frameLoop.ts` | uniform packing, timestamp slot assignment, and the per-frame encode order (pass 1 → weather → resolve → submit) |
+| `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
+| `framePasses/` | the ordered pass registry (`streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded |
+| `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
+| `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
 | `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
 | `holdTransition.ts` | hold-pause state; the guard that keeps the live Maps canvas off the GPU while a pano reloads |
 
@@ -738,7 +741,9 @@ invent behaviour. Geodesy in particular has exactly one copy per formula:
 - `src/car/interior/windshieldPortal.parity.test.ts` — drift tripwire: reads the shipped `weather-post.wgsl` and fails, by name, when a constant or the stage order the portal's display mirror assumes changes.
 - `src/car/interior/WindowWeatherOverlay.test.ts` — portal vs decal selection, the per-frame swap back to the decal when the road frame goes away, wiper phase as the single driver, texture ownership on dispose, and the probe.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
-- `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin. Skips where there is no adapter. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
+- `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
+- Both GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
