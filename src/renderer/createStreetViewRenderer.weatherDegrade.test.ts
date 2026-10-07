@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { vi, type Mock } from 'vitest';
 import { createStreetViewRenderer } from './createStreetViewRenderer';
 import { Renderer } from './Renderer';

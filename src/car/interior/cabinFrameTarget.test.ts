@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The cabin's half of the one-frame compositor.
  *

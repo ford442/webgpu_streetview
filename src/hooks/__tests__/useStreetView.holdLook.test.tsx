@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { povStore } from '../../state/povStore';
 import React, { act } from 'react';
 import { renderHook } from '@testing-library/react';

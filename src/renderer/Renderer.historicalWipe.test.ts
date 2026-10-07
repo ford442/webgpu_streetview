@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The year-chip wipe as the real `Renderer` encodes it: its "before" is the
  * hold-pause snapshot, it never runs while a hold is active, and nothing on its

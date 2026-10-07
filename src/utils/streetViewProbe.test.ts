@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { installStreetViewProbe, streetViewProbe } from './streetViewProbe';
 
 // Test-only view of window for installing/removing globals without `any`.

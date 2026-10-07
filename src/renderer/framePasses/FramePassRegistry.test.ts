@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FramePassRegistry, RequiredPassError, type FrameContext, type FramePass } from './FramePassRegistry';
 import { getPassStatuses, resetPassStatuses, type FramePassId } from '../passStatus';

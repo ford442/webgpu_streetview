@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { clearAuthFailure, loadMapsApi, onMapsAuthFailure } from './loader';
 
 // Test-only view of window for installing/removing globals without `any`.

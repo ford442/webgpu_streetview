@@ -147,7 +147,9 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       globals: true,
-      environment: 'jsdom',
+      // Pure math/GPU-packing suites pay nothing; DOM suites opt in with
+      // `// @vitest-environment jsdom` on their first line.
+      environment: 'node',
       setupFiles: ['./src/setupTests.ts'],
       include: ['src/**/*.{test,spec}.{ts,tsx}'],
       exclude: ['node_modules', 'build', 'e2e'],
