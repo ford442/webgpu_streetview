@@ -20,6 +20,8 @@ export class AudioAnalyzer {
   private analyser: AnalyserNode | null = null;
   // correct DOM type for a media-element based audio source
   private mediaSource: MediaElementAudioSourceNode | null = null;
+  /** Station level, between the element and the analyser (fades on retune). */
+  private gain: GainNode | null = null;
   private dataArray: Uint8Array<ArrayBuffer> | null = null;
   private isRunning: boolean = false;
   private audioElement: HTMLAudioElement | null = null;
@@ -82,7 +84,9 @@ export class AudioAnalyzer {
       if (!this.mediaSource) {
         // use createMediaElementSource (standard) to create a MediaElementAudioSourceNode
         this.mediaSource = this.audioContext.createMediaElementSource(this.audioElement);
-        this.mediaSource.connect(this.analyser);
+        this.gain = this.audioContext.createGain();
+        this.mediaSource.connect(this.gain);
+        this.gain.connect(this.analyser);
         this.analyser.connect(this.audioContext.destination);
       }
 
@@ -114,6 +118,36 @@ export class AudioAnalyzer {
       this.isRunning = true;
     } catch (e) {
       console.error('AudioAnalyzer start failed:', e);
+    }
+  }
+
+  /**
+   * Retune to another stream with a fade-through: fade the current station
+   * out, switch the source, fade the new one in. Falls back to a plain switch
+   * when the graph has no gain stage yet.
+   */
+  async crossfadeTo(streamUrl: string, durationMs: number = 1600): Promise<void> {
+    if (!this.audioElement) return;
+    const ctx = this.audioContext;
+    const gain = this.gain;
+    const half = Math.max(0.05, durationMs / 2000);
+    if (ctx && gain) {
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + half);
+      await new Promise((r) => setTimeout(r, half * 1000));
+    }
+    this.audioElement.src = streamUrl;
+    try {
+      await this.audioElement.play();
+      this.isRunning = true;
+    } catch (e) {
+      console.error('AudioAnalyzer retune failed:', e);
+    }
+    if (ctx && gain) {
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(1, ctx.currentTime + half);
     }
   }
 
@@ -214,6 +248,7 @@ export class AudioAnalyzer {
       this.audioElement = null;
     }
     this.mediaSource = null;
+    this.gain = null;
     this.analyser = null;
     this.dataArray = null;
     if (this.audioContext && this.audioContext.state !== 'closed') {

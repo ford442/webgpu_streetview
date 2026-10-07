@@ -114,7 +114,9 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     stationName,
     stationTags,
     handleToggleRadio,
-  } = useCabinRadioBinding({ panorama });
+    stationPinned,
+    togglePinStation,
+  } = useCabinRadioBinding({ panorama, position });
 
   const {
     telemetry,
@@ -244,6 +246,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         ambientLightColor={ambientLightColor}
         stationName={stationName}
         stationTags={stationTags}
+        stationPinned={stationPinned}
+        onTogglePinStation={togglePinStation}
         speedKmh={telemetry.speedKmh}
         rpm={telemetry.rpm}
         gear={gear === 'D' || gear === '2' || gear === '3' ? telemetry.gear : gear}

@@ -123,6 +123,10 @@ export const FLAGS = {
     kind: 'string', format: 'lat,lng;lat,lng[;…]',
     doc: 'Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it.',
   },
+  liveWeather: {
+    kind: 'bool',
+    doc: 'Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default).',
+  },
   // ── WASM feeders ─────────────────────────────────────────────────────────
   wasmNoise: {
     kind: 'bool',
