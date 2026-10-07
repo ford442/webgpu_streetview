@@ -326,7 +326,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 scheduleRecovery(recovery.onReinitFailed());
             } else {
                 console.warn(
-                    'WebGPU renderer initialization failed. Hard-fail — no live GL weather.',
+                    'WebGPU renderer initialization failed. Hard-fail — add ?webgl2=1 for the WebGL2 fallback.',
                     result.fallbackReason || '',
                 );
                 onWebGPUStatusRef.current?.(false);

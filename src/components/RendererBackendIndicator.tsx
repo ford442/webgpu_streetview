@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { wantsGpuFeatureDump, type RendererBackendType } from '../renderer/RendererBackend';
 import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
+import { WEBGL2_FALLBACK_ACTIVE_MESSAGE, WEBGPU_REQUIRED_MESSAGE } from '../renderer/webgl2FallbackMessages';
 
 export interface RendererBackendInfo {
   backendType: RendererBackendType | null;
@@ -42,6 +43,24 @@ const panelStyle: React.CSSProperties = {
   minWidth: '220px',
   maxWidth: '320px',
 };
+
+const bannerStyle = (color: string): React.CSSProperties => ({
+  position: 'fixed',
+  top: '10px',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 1000,
+  maxWidth: 'calc(100vw - 32px)',
+  backgroundColor: 'rgba(0, 0, 0, 0.88)',
+  color,
+  border: `2px solid ${color}`,
+  borderRadius: '6px',
+  padding: '8px 14px',
+  fontFamily: 'monospace',
+  fontSize: '13px',
+  fontWeight: 'bold',
+  textAlign: 'center',
+});
 
 const switchButtonStyle = (active: boolean, disabled = false): React.CSSProperties => ({
   flex: 1,
@@ -126,7 +145,7 @@ function readCabinProbe(): {
 
 function chipLabel(info: RendererBackendInfo): string {
   if (info.backendType === 'webgpu') return 'WebGPU';
-  if (info.backendType === 'webgl') return 'WebGL2 (reference only)';
+  if (info.backendType === 'webgl') return 'WebGL2 fallback';
   const probe = readProbe();
   if (probe && !probe.ok) {
     return `WebGPU failed (${probe.browserBrand})`;
@@ -160,10 +179,23 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
 
   if (!backendInfo) return null;
 
-  const chipColor = isFailed ? '#ff6666' : '#00ff00';
+  const isWebGL2Fallback = backendInfo.backendType === 'webgl';
+  const chipColor = isWebGL2Fallback ? '#ffcc33' : isFailed ? '#ff6666' : '#00ff00';
 
   return (
     <>
+      {isFailed && (
+        <div
+          role={isWebGL2Fallback ? 'status' : 'alert'}
+          data-testid={isWebGL2Fallback ? 'webgl2-fallback-banner' : 'webgpu-required-banner'}
+          style={bannerStyle(isWebGL2Fallback ? '#ffcc33' : '#ff6666')}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+        >
+          {isWebGL2Fallback ? WEBGL2_FALLBACK_ACTIVE_MESSAGE : WEBGPU_REQUIRED_MESSAGE}
+        </div>
+      )}
       {expanded && (
         <div style={panelStyle} onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', marginBottom: '4px' }}>
@@ -175,14 +207,14 @@ export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> =
             </button>
             <button
               style={{ ...switchButtonStyle(false, true), marginRight: 0 }}
-              title="WebGL weather is a GLSL reference — not a live backend"
+              title="WebGL2 is an opt-in fallback: reload with ?webgl2=1 (used only if WebGPU fails)"
               disabled
             >
-              WebGL2 (reference)
+              {isWebGL2Fallback ? 'WebGL2 (fallback)' : 'WebGL2 (?webgl2=1)'}
             </button>
           </div>
           <div style={{ color: '#888', fontSize: '9px', marginBottom: '8px' }}>
-            WebGPU required — WebGL weather is not a live backend
+            WebGPU required — WebGL2 only via ?webgl2=1
           </div>
 
           {(probe || backendInfo.fallbackReason) && (

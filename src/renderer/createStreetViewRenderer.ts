@@ -14,6 +14,8 @@ import {
 } from './RendererBackend';
 import { getPreset, detectRecommendedQuality } from '../config/visualPresets';
 import { publishWebGpuProbe, type WebGpuProbeStage } from './webgpuBootProbe';
+import { readFlag } from '../config/flags';
+import { WEBGL2_FALLBACK_ACTIVE_MESSAGE } from './webgl2FallbackMessages';
 
 export interface RendererCreateResult {
     renderer: StreetViewRenderer | null;
@@ -25,9 +27,9 @@ export interface RendererCreateResult {
 /**
  * Create the Street View post-process renderer.
  *
- * WebGPU is required. The WebGL2 weather class was removed from the runtime
- * module graph; GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts`
- * for tests/docs only. `?renderer=webgl` still probes WebGPU only.
+ * WebGPU is required by default — a WebGPU failure hard-fails visibly. Only
+ * `?webgl2=1` opts into `WebGL2FallbackRenderer`, and only after WebGPU fails;
+ * there is never an automatic fallback. `?renderer=webgl` still probes WebGPU.
  */
 export async function createStreetViewRenderer(
     canvas: HTMLCanvasElement,
@@ -134,8 +136,14 @@ export async function createStreetViewRenderer(
         webglPreferenceDeferred,
     });
 
-    exposeRendererHardFailGlobals(fallbackReason, debugOptions);
     renderer.destroy();
+
+    if (readFlag('webgl2')) {
+        const gl = await attemptWebGL2Boot(canvas, debugOptions, fallbackReason);
+        if (gl) return gl;
+    }
+
+    exposeRendererHardFailGlobals(fallbackReason, debugOptions);
 
     return {
         renderer: null,
@@ -143,6 +151,37 @@ export async function createStreetViewRenderer(
         fallbackReason,
         debugOptions,
     };
+}
+
+/**
+ * `?webgl2=1` only. Loaded lazily so the default WebGPU bundle never carries it.
+ * Null when WebGL2 is unavailable too (e.g. the canvas already holds a
+ * `webgpu` context), and the caller hard-fails as usual.
+ */
+async function attemptWebGL2Boot(
+    canvas: HTMLCanvasElement,
+    debugOptions: RendererDebugOptions,
+    webgpuFailure: string,
+): Promise<RendererCreateResult | null> {
+    const { WebGL2FallbackRenderer } = await import('./webgl/WebGL2FallbackRenderer');
+    const reason = `WebGPU failed: ${webgpuFailure}`;
+    const renderer = new WebGL2FallbackRenderer(canvas, debugOptions, reason);
+    if (!(await renderer.init())) {
+        console.error(`[Renderer] ?webgl2=1 set but WebGL2 also failed to initialize (${reason}).`);
+        renderer.destroy();
+        return null;
+    }
+    console.warn(`[Renderer] ${WEBGL2_FALLBACK_ACTIVE_MESSAGE} (${reason})`);
+    exposeRendererDebugGlobals(
+        'webgl',
+        reason,
+        debugOptions,
+        (nextDebugOptions) => {
+            Object.assign(debugOptions, nextDebugOptions);
+            renderer.setDebugOptions(debugOptions);
+        },
+    );
+    return { renderer, backendType: 'webgl', fallbackReason: reason, debugOptions };
 }
 
 interface DegradeRecord {
