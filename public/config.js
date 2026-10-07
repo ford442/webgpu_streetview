@@ -25,6 +25,16 @@ window.MAPS_API_KEY = "";
 // Get a token at https://ion.cesium.com/tokens.
 window.CESIUM_ION_TOKEN = "";
 
+// Route source for the Trip planner (routed road trips): any OSRM-compatible
+// HTTP endpoint (`/route/v1/driving/...`). Not a Google API and not billed.
+// Left commented out, the app uses the public OSRM demo server
+// (https://router.project-osrm.org) — fine for development and low volume
+// only (its usage policy forbids heavy or commercial use). Production should
+// point at a self-hosted OSRM / Valhalla or a commercial OSRM-compatible host.
+// Set to "" to switch routing off; the planner then says so.
+// See src/services/routing/routingConfig.ts and BILLING_SAFETY_CHECKLIST.md.
+// window.ROUTING_ENDPOINT = "https://router.example.com";
+
 // Supabase project used ONLY as a signaling relay for Shared Exploration
 // Sessions (multiplayer road trips) — short room codes instead of pasting
 // SDP blobs. The anon/publishable key is safe to expose client-side (that's

@@ -13,6 +13,8 @@
  * resolve to `null` so callers can keep the previous environment.
  */
 
+import { getMapsCallBudget } from '../services/maps/callBudget';
+
 export interface PanoEquirect {
   /** 2:1 equirectangular canvas, image centre = `centerHeading`. */
   canvas: HTMLCanvasElement;
@@ -39,7 +41,7 @@ function getSvService(): google.maps.StreetViewService | null {
 
 function fetchTileData(panoId: string): Promise<google.maps.StreetViewTileData | null> {
   const sv = getSvService();
-  if (!sv) return Promise.resolve(null);
+  if (!sv || !getMapsCallBudget().tryConsume('panorama', 'pano-equirect')) return Promise.resolve(null);
   return new Promise((resolve) => {
     sv.getPanorama({ pano: panoId }, (data, status) => {
       if (status === google.maps.StreetViewStatus.OK && data?.tiles) {

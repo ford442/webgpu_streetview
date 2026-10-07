@@ -17,6 +17,7 @@
  * (see scripts/hold-pause-probe.mjs).
  */
 
+import { getMapsCallBudget, type MapsCallBudgetStats } from '../services/maps/callBudget';
 import type { ScraperHealth } from './scraperHealth';
 import { createInitialScraperHealth } from './scraperHealth';
 
@@ -187,6 +188,8 @@ declare global {
       getTimeline: () => HoldTimelineEntry[];
       getWarnings: () => ProbeWarning[];
       getScraperHealth: () => ScraperHealth;
+      /** Session call meter (services/maps/callBudget.ts). */
+      getCallBudget: () => MapsCallBudgetStats;
       enablePixelWatch: () => void;
       disablePixelWatch: () => void;
       clear: () => void;
@@ -200,6 +203,7 @@ export function installStreetViewProbe(): void {
     getTimeline: () => streetViewProbe.getTimeline(),
     getWarnings: () => streetViewProbe.getWarnings(),
     getScraperHealth: () => streetViewProbe.getScraperHealth(),
+    getCallBudget: () => getMapsCallBudget().getStats(),
     enablePixelWatch: () => streetViewProbe.enablePixelWatch(),
     disablePixelWatch: () => streetViewProbe.disablePixelWatch(),
     clear: () => streetViewProbe.clear(),

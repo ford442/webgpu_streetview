@@ -24,6 +24,7 @@
 
 import { getWasmModule, loadWasmModule } from '../wasm';
 import { JS_FALLBACK as jsFallback } from '../wasm/jsFallback';
+import { getMapsCallBudget } from '../services/maps/callBudget';
 
 // Warm the module at import time; `offsetLatLng` below stays synchronous (the
 // crawl builds its ring before the first await), so it reads the JS twin until
@@ -124,6 +125,7 @@ function queryPanorama(
   location: { lat: number; lng: number },
   searchRadiusMeters: number
 ): Promise<HistoricalPanoEntry | null> {
+  if (!getMapsCallBudget().tryConsume('panorama', 'historical-crawl')) return Promise.resolve(null);
   return new Promise((resolve) => {
     service.getPanorama(
       { location: new google.maps.LatLng(location.lat, location.lng), radius: searchRadiusMeters },

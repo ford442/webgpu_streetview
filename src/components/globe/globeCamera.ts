@@ -1,4 +1,5 @@
 import type { CesiumViewer } from '../../types/cesium';
+import { getMapsCallBudget } from '../../services/maps/callBudget';
 
 /** Street-level height used on enter start / exit descend (meters). */
 export const GLOBE_STREET_ALTITUDE_M = 120;
@@ -103,7 +104,7 @@ export function requestOrbitalDrop(opts: {
   };
 
   const svc = opts.svService;
-  if (!svc) {
+  if (!svc || !getMapsCallBudget().tryConsume('panorama', 'globe-snap')) {
     flyThenTeleport(opts.lat, opts.lng);
     return;
   }
