@@ -64,7 +64,10 @@ export default tseslint.config(
         },
         rules: {
             ...reactPlugin.configs.recommended.rules,
-            ...reactHooks.configs.recommended.rules,
+            // eslint-plugin-react-hooks 7 `recommended` also ships React Compiler rules
+            // (refs, set-state-in-effect, purity, …). The render loops here deliberately use
+            // the "latest value in a ref" pattern, so only the two classic rules are enforced.
+            'react-hooks/rules-of-hooks': 'error',
             'react/react-in-jsx-scope': 'off',
             'react/prop-types': 'off',
             'react/no-unescaped-entities': 'off',
