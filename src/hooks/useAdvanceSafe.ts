@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useStreetView } from './useStreetView';
+import { useStreetView, type TeleportToPanoOptions } from './useStreetView';
 import { usePanoramaCache } from './usePanoramaCache';
 
 export interface AdvanceSafeOptions {
@@ -73,9 +73,9 @@ export function useAdvanceSafe() {
   );
 
   const teleportToPanoSafe = useCallback(
-    async (panoId: string) => {
+    async (panoId: string, options?: TeleportToPanoOptions) => {
       await navigationIdlePromise();
-      teleportToPano(panoId);
+      teleportToPano(panoId, options);
     },
     [navigationIdlePromise, teleportToPano]
   );

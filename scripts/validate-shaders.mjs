@@ -19,6 +19,7 @@ const SHADERS = [
     'public/shaders/gpu-chores-hist.wgsl',
     'public/shaders/gpu-chores-downsample.wgsl',
     'public/shaders/cabin-composite.wgsl',
+    'public/shaders/historical-wipe.wgsl',
     // Subgroup / dual-source variants are assembled at pipeline-create time
     // (`enable subgroups` / `enable dual_source_blending`). naga-cli rejects
     // those enables without extra feature flags — scalar fallbacks above are

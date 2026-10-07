@@ -16,6 +16,8 @@ import type { TourPanelBindings } from '../useTourBindings';
 import type { AppPanels } from '../useAppPanels';
 export type { ChromeStageActions, ChromeStageState, MobileChromeContract } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
+import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
+import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
 import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
 import type { MemoryStats } from '../../utils/memoryProfiler';
@@ -56,7 +58,7 @@ export interface ConnectedChromeSession {
   panorama: google.maps.StreetViewPanorama | null;
   heading: number;
   isTransitioning: boolean;
-  teleportToPanoSafe: (panoId: string) => Promise<void>;
+  teleportToPanoSafe: (panoId: string, options?: TeleportToPanoOptions) => Promise<void>;
 }
 
 export interface ConnectedChromeBookmarks {
@@ -488,10 +490,18 @@ export function ConnectedChrome({
           hasTimeline={historical.hasHistoricalTimeline}
           currentIndex={historical.historicalCurrentIndex}
           isTransitioning={isTransitioning || historical.isCapturingComparison}
-          onSelectDate={(entry) => teleportToPanoSafe(entry.panoId)}
+          onSelectDate={(entry) => teleportToPanoSafe(entry.panoId, {
+            reveal: resolveYearChipReveal(
+              historical.historicalEntries,
+              historical.historicalCurrentIndex,
+              entry,
+              accessibilitySettings.reducedMotion,
+            ),
+          })}
           onCompare={historical.compareHistorical}
           isComparing={!!historical.historicalComparison}
           onExitCompare={historical.exitHistoricalCompare}
+          compareScopeLabel={compareStillScopeLabel(historical.historicalComparison)}
         />
       )}
 

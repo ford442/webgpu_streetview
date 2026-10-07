@@ -5,6 +5,7 @@ import type { WeatherPostProcessorLike, WeatherPassTimingContext } from './weath
 import type { WeatherPostProcessMode } from './RendererBackend';
 import { encodeStreetViewPass, type Pass1TimingContext } from './streetViewPass';
 import type { CabinCompositePass } from './cabinComposite';
+import type { HistoricalWipePass } from './HistoricalWipePass';
 
 export interface FramePassTimings {
     pass1?: Pass1TimingContext;
@@ -78,13 +79,18 @@ export interface EncodeFrameOptions {
     cabinComposite?: CabinCompositePass | null;
     /** The swap-chain view for this frame, so the composite loads what weather stored. */
     getSwapChainView?: () => GPUTextureView | null;
+    /**
+     * Year-chip wipe, drawn over pass 1 with the hold-pause snapshot as its
+     * "before". Callers pass it only while no hold is active.
+     */
+    historicalWipe?: { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
     gpuPassTimer: GpuPassTimer | null;
     timings: FramePassTimings;
 }
 
 /**
- * The per-frame encode order, in one place: **pass 1 → weather → timestamp
- * resolve → submit**.
+ * The per-frame encode order, in one place: **pass 1 → (year-chip wipe) →
+ * weather → timestamp resolve → submit**.
  *
  * Pass 1 is either the transition manager's own crossfade pass or the plain
  * panorama draw; weather always reads the HDR intermediate pass 1 just wrote,
@@ -108,6 +114,7 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): void {
         weatherPostProcessor,
         cabinComposite,
         getSwapChainView,
+        historicalWipe,
         gpuPassTimer,
         timings,
     } = options;
@@ -135,6 +142,8 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): void {
             timings.pass1,
         );
     }
+
+    historicalWipe?.pass.encode(commandEncoder, textures.intermediateTextureView, historicalWipe.before);
 
     weatherPostProcessor?.renderPass(commandEncoder, timings.weather);
 
