@@ -56,8 +56,9 @@
 
 The project currently uses:
 - **Google Maps JavaScript API** (required for Street View)
-- **Google Maps Directions API** (for route planning)
-- **API Key**: Hardcoded in `src/App.tsx` (security issue)
+- **Google Geocoding API** (address search / reverse geocode)
+- **Street View Static API** (opt-in rearview feed only — see `BILLING_SAFETY_CHECKLIST.md`)
+- **API Key**: runtime `public/config.js` / deploy-time `MAPS_API_KEY` (never hardcoded; referrer-restricted)
 
 ### Required Changes
 
@@ -65,13 +66,11 @@ The project currently uses:
    ```bash
    # .env (NOT COMMITTED)
    REACT_APP_MAPS_API_KEY=your_key_here
-   REACT_APP_MAPS_DIRECTIONS_KEY=your_key_here
    ```
 
 2. **Create Multiple API Keys** in GCP:
    - **Key 1 (Street View)**: Restrict to `localhost:3000/*` for development
-   - **Key 2 (Directions)**: Same restrictions
-   - **Key 3 (Production)**: Restrict to your production domain only
+   - **Key 2 (Production)**: Restrict to your production domain only
 
 3. **Website Restrictions Setup**
    ```

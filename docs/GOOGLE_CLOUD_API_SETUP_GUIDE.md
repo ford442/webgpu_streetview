@@ -46,15 +46,14 @@ This guide provides step-by-step instructions for safely setting up Google Cloud
 
 **Required APIs**:
 1. Maps JavaScript API
-2. Maps Directions API
-3. **Geocoding API** (reverse-geocode on hops + text address search — **not** covered by Maps JavaScript API alone)
+2. **Geocoding API** (reverse-geocode on hops + text address search — **not** covered by Maps JavaScript API alone)
 
 **Enable them**:
 1. Go to: **APIs & Services → Enabled APIs & Services**
 2. Click **"+ Enable APIs and Services"**
 3. Search for **"Maps JavaScript API"**
 4. Click **"Enable"**
-5. Repeat for **"Maps Directions API"** and **"Geocoding API"**
+5. Repeat for **"Geocoding API"**
 
 Enable these on the **same GCP project** as the HTTP-referrer **browser** key used by `test.1ink.us` / `go.1ink.us`. Enabling Geocoding only on a Compute Engine / IP-restricted credential does **not** authorize Maps JS `Geocoder` in the browser (`REQUEST_DENIED`).
 
@@ -79,7 +78,6 @@ Enable these on the **same GCP project** as the HTTP-referrer **browser** key us
 2. Under **"API Restrictions"**:
    - Select **"Restrict key"**
    - Check: **Maps JavaScript API**
-   - Check: **Maps Directions API**
    - Check: **Geocoding API** (required for `google.maps.Geocoder`; otherwise hops log `REQUEST_DENIED`)
    - (Uncheck any others)
 3. Click **"Save"**
@@ -277,13 +275,13 @@ Before deploying to production:
 
 ## Part 9a: Cesium Ion Token (Optional, for World Terrain)
 
-Separate from Google Maps, Globe View / MiniMap optionally use a [Cesium Ion](https://ion.cesium.com/tokens) token for real world terrain + satellite imagery instead of the free flat-ellipsoid + CartoCDN fallback.
+Separate from Google Maps, Globe View optionally uses a [Cesium Ion](https://ion.cesium.com/tokens) token for real world terrain + satellite imagery instead of the free flat-ellipsoid + CartoCDN fallback.
 
 1. Sign up at https://ion.cesium.com/tokens (free tier covers world terrain + imagery).
 2. Create a token; optionally restrict it to your production domain(s) under token settings.
-3. Provide it the same two ways as `MAPS_API_KEY`:
+3. Provide it at runtime:
    - **Runtime (preferred)**: `CESIUM_ION_TOKEN=... python deploy.py` bakes it into the deployed bundle, no rebuild needed.
-   - **Build-time**: `REACT_APP_CESIUM_ION_TOKEN=...` in `.env.local` for local dev.
+   - **Local dev**: set `window.CESIUM_ION_TOKEN` in `public/config.js` (not committed with a value). There is no build-time variable — an `.env` token is never inlined.
 4. This token is optional — omitting it just means Globe View renders a flat ellipsoid, it does not block Street View or any Google Maps feature.
 
 See the README's "Cesium Ion World Terrain (Optional)" section for the full setup + verification steps.

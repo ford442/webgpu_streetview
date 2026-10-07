@@ -9,7 +9,7 @@ Use this before every production deploy to `test.1ink.us` or `go.1ink.us`. Most 
   - `https://go.1ink.us/*`
   - `http://localhost:3000/*` (and 3001 for good measure)
 - [ ] **Maps JavaScript API** is enabled for the project (APIs & Services → Library).
-- [ ] **Maps Directions API** is enabled (needed for route planning / globe).
+- [ ] The Directions API is **not** required — nothing in `src/` calls it. Leave it disabled on the key.
 - [ ] **Geocoding API** is enabled **and** listed on this key’s API restrictions (same HTTP-referrer browser key as Maps JS — not a Compute Engine credential). Without it, reverse-geocode and address search return `REQUEST_DENIED`.
 - [ ] Billing account is linked to the project and has no payment failures / alerts firing.
 - [ ] (Recommended) Budget alerts + "prevent overspend" are configured.
@@ -73,7 +73,7 @@ After the script says "complete", immediately do the post-deploy checks below.
    - No "can't load Google Maps correctly"
    - The poller log "Late Maps API key detected" may appear once (harmless).
 5. Test basic navigation (WASD, click to advance). Try Cruise briefly.
-6. If using the Globe or Directions features, they should also work (they need the same key + Directions API).
+6. Open the Globe: it should load (it uses Cesium, not the Maps key; an Ion token is optional).
 
 ## 6. If it is still broken after deploy
 

@@ -1,6 +1,6 @@
 # Shared Exploration Sessions
 
-Multiplayer Street View road trips: a **host** drives (cruise, keyboard, MiniMap); **guests** follow the host POV over a WebRTC data channel. Signaling uses Supabase Realtime room codes — no imagery or POV state is persisted server-side.
+Multiplayer Street View road trips: a **host** drives (cruise, keyboard, place search); **guests** follow the host POV over a WebRTC data channel. Signaling uses Supabase Realtime room codes — no imagery or POV state is persisted server-side.
 
 ## Architecture
 

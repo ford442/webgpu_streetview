@@ -38,9 +38,9 @@ for file in "$ROOT"/deploy.py "$ROOT"/scripts/*.sh; do
   scan_file "$file" "password[[:space:]]*=[[:space:]]*['\"][^'\"]{6,}['\"]" 'hardcoded password= assignment'
 done
 
-# Env files must never be tracked (only .env.example is allowed), and a tracked
-# example file must not carry real-looking values.
-TRACKED_ENV="$(git -C "$ROOT" ls-files | grep -E '(^|/)\.env(\..*)?$' | grep -v -E '\.env\.example$' || true)"
+# Env files must never be tracked (only *.example templates are allowed), and a
+# template must not carry real-looking values.
+TRACKED_ENV="$(git -C "$ROOT" ls-files | grep -E '(^|/)\.env(\..*)?$' | grep -v -E '\.example$' || true)"
 if [ -n "$TRACKED_ENV" ]; then
   echo "❌ Tracked env file(s) — only .env.example may be committed:"
   echo "$TRACKED_ENV"
@@ -49,7 +49,7 @@ fi
 for file in "$ROOT"/.env*; do
   [ -f "$file" ] || continue
   case "$(basename "$file")" in
-    .env.example) ;;
+    *.example) ;;
     *) continue ;;
   esac
   scan_file "$file" 'AIza[0-9A-Za-z_-]{35}' 'Google API key'

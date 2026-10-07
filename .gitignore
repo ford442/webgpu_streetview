@@ -44,3 +44,4 @@ verification/
 .jules/
 .env*
 !.env.example
+!.env.*.example

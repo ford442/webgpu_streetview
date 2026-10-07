@@ -5,7 +5,7 @@
 ## When to read this file
 
 - Graphics pipeline internals (dual-pass HDR, hold-pause, shader uniform layout)
-- Cesium globe / MiniMap imagery resolution
+- Cesium globe imagery resolution
 - WASM bridge and billable API surfaces
 
 For day-to-day agent work, `AGENTS.md` + `CLAUDE.md` are sufficient.

@@ -14,7 +14,7 @@ Environment variables:
   MAPS_API_KEY       (recommended) Baked into static/js/*.js at deploy time
                      (Vite emits build/static/js/main.[hash].js — same layout as former CRA)
   CESIUM_ION_TOKEN   (optional) Baked into static/js/*.js the same way, so full-screen
-                     GlobeView + MiniMap use real Ion world terrain/imagery instead of
+                     GlobeView uses real Ion world terrain/imagery instead of
                      the flat ellipsoid + CartoCDN fallback
   DEPLOY_TARGET      test (default) | go
   CONTABO_BASE_URL   https://storage.noahcohn.com (default)
