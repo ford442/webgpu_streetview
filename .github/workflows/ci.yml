@@ -38,30 +38,34 @@ jobs:
       - name: Verify install is complete
         run: node scripts/check-install.mjs --verbose
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Validate WGSL shaders (naga)
-        run: |
-          cargo install naga-cli --locked
-          npm run validate:shaders
+      # `cargo install naga-cli` compiles for minutes; cache the installed binary
+      # and cargo's install metadata so a hit makes the install step a no-op.
+      # Bump the trailing -v1 to force a fresh naga.
+      - name: Cache naga-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/naga
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: naga-cli-${{ runner.os }}-v1
 
-      - name: Run tests
-        run: npm test
+      - name: Install naga-cli (WGSL validation)
+        run: command -v naga >/dev/null 2>&1 || cargo install naga-cli --locked
 
-      - name: Check for committed deploy secrets
-        run: bash scripts/check-deploy-secrets.sh
+      # The one gate: typecheck (tsc -b over app, tests, configs, e2e, scripts), lint,
+      # knip, committed-secret scan, unit tests and WGSL validation. The native C++
+      # goldens run in the wasm-cpp-host job, so skip them here.
+      - name: Verify
+        run: npm run verify -- --no-cpp
 
       - name: Deploy script config tests
         run: python3 deploy_secrets.test.py
 
       - name: Build
-        # Vite build + wasm + verify-build (bundle budget). Lint is a separate step above.
+        # Vite build + wasm + verify-build (bundle budget + env-leak scan). Checks ran in `Verify` above.
         run: npm run build
 
       - name: Bundle size report
