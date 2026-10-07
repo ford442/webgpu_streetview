@@ -136,3 +136,24 @@ describe('route-following cruise', () => {
     act(() => view.result.current.setIsCruiseMode(false));
   });
 });
+
+describe('trip controller', () => {
+  it('resuming a drive in progress keeps its re-snap count and start time', async () => {
+    const h = harness('m0');
+    await plan(h);
+    const { startedAt } = tripStore.get();
+    tripStore.update({ resnaps: 2 });
+    expect(startDrive(h.graph.get('m3')!.pos)).toBe(true);
+    expect(tripStore.get()).toMatchObject({ status: 'driving', resnaps: 2, startedAt });
+  });
+
+  it('a failed plan leaves no route behind', async () => {
+    const failing: RouteProvider = {
+      id: 'down', billable: false,
+      route: async () => { throw new TypeError('Failed to fetch'); },
+    };
+    await planTrip([{ ...ORIGIN, label: 'Start' }, { ...DESTINATION, label: 'End' }], failing);
+    expect(tripStore.get()).toMatchObject({ status: 'error', route: null });
+    expect(getActiveRouteGuide()).toBeNull();
+  });
+});

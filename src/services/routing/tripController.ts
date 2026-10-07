@@ -88,6 +88,8 @@ export async function planTrip(stops: readonly TripStop[], provider: RouteProvid
 export function startDrive(position: LatLng | null): boolean {
   const { route, status } = tripStore.get();
   if (!route || (status !== 'ready' && status !== 'arrived' && status !== 'driving')) return false;
+  // Resuming a drive in progress (cruise was toggled off) keeps its progress and stats.
+  if (status === 'driving' && follower?.route === route) return true;
   follower = new RouteFollower(route, deps?.followConfig, now);
   lastHopWasResnap = false;
   const progress = position ? follower.notePosition(position) : null;

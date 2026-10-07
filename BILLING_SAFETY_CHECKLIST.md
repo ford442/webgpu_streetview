@@ -105,6 +105,51 @@ traffic.
 - [ ] Unit tests pass: `npx vitest run src/search/parseSearchQuery.test.ts src/search/placeSearchBudget.test.ts src/search/geocodeAuth.test.ts src/search/placesClient.geocode.test.ts src/utils/panoLocation.test.ts`
 - [ ] Google imagery is still `network-only` in `src/offline/swPolicy.ts`
 
+### Session call meter (every Street View lookup, in one place)
+
+`src/services/maps/callBudget.ts` counts every `StreetViewService.getPanorama`
+the app makes (teleport prefetch, historical ring crawl, route-prefetch link
+collection, globe snap, pano image-date / IBL lookups, the route re-snap) and
+every place-search call, per kind and per call site, and caps each kind for the
+session.
+
+| Kind | Cap | Notes |
+|------|-----|-------|
+| `panorama` | 2000 / session | A runaway guard; a teleport is 1 call, a historical crawl 12, a route re-snap 1, on-route following **0** |
+| `placeSearch` | counted only | capped by its own `PlaceSearchBudget` (80, above) |
+| `directions` | **0** | Google `DirectionsService` — no provider uses it; raising the cap is a billing decision |
+| `routing` | 40 / session | OSRM-compatible route requests (not Google, not billed — see below) |
+
+```js
+window.__STREETVIEW_PROBE__.getCallBudget(); // { total, byKind: {used, cap, remaining, blocked}, bySource }
+```
+
+### Routed road trips (Trip planner) — **no Google Directions**
+
+Routes come from an **OSRM-compatible HTTP endpoint**, not Google:
+`window.ROUTING_ENDPOINT` in `public/config.js` (unset = the public OSRM demo
+server, for development / low volume only; `""` = routing off). One route
+request per planned trip (and one per guest in a shared session).
+
+| Guard | Default | Where |
+|-------|---------|-------|
+| Route provider | OSRM-compatible, `billable: false` | `src/services/routing/routingConfig.ts` |
+| Google Directions provider | **not implemented / off** | `directions` meter cap 0 — add one only with a row here first |
+| Route-following hop | **0** extra Maps calls (`getLinks` + `setPano` only, no prefetch hint) | `useCruiseMode.route.test.tsx` asserts it |
+| Off-route re-snap | 1 metered `getPanorama` after 2 off-route hops | `app/useTripBindings.ts` (`route-resnap`) |
+| "Save for offline" | ~1 `getPanorama` per 50 m of route, user-initiated, metered | `route-prefetch` source |
+| Cache | route in memory only; Google imagery still `network-only` | `swPolicy.ts` |
+
+**Not Google, not billed, but with usage policies**: Open-Meteo live conditions
+(opt-in, ≤ 1 request / 10 min while within 25 km, CC BY 4.0 attribution shown,
+free tier is non-commercial) and Radio Browser station lookups (> 50 km moved).
+
+**Checks before shipping a change to this feature**:
+
+- [ ] `npx vitest run src/hooks/__tests__/useCruiseMode.route.test.tsx` — on-route hops make zero `getPanorama` calls
+- [ ] No route source with `billable: true` is selectable without a row in this file
+- [ ] Route responses are never written to Cache Storage / IndexedDB
+
 ### Rear-view mirror imagery (Street View **Static** API)
 
 `src/car/rearViewFeed.ts` fetches a rear-facing still at `carHeading + 180` so

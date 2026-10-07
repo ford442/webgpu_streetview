@@ -271,7 +271,19 @@ webgpu_streetview/
 │   │   ├── loadingState.ts          # Loading state store singleton
 │   │   └── index.ts
 │   ├── services/
-│   │   ├── radioBrowserService.ts   # Radio station lookup
+│   │   ├── routing/                 # Routed road trip (see *Routed Road Trips*)
+│   │   │   ├── RouteProvider.ts     # Provider interface + honest RouteError kinds
+│   │   │   ├── osrmProvider.ts      # Default OSRM-compatible provider (GeoJSON, steps)
+│   │   │   ├── routingConfig.ts     # window.ROUTING_ENDPOINT → provider
+│   │   │   ├── routeGeometry.ts     # ActiveRoute: resample, projection, step along-track (WASM)
+│   │   │   ├── routeFollow.ts       # Pure per-hop decisions: follow / re-snap / arrived
+│   │   │   ├── tripController.ts    # plan → drive → arrive; the cruise route guide
+│   │   │   ├── routeLink.ts         # ?route= encode/decode
+│   │   │   ├── routeAnnouncements.ts / guidanceFormat.ts / routeExport.ts
+│   │   ├── maps/callBudget.ts       # Session call meter (every getPanorama / place search)
+│   │   ├── conditions/openMeteo.ts  # Live local conditions (opt-in)
+│   │   ├── radio/tripRadio.ts       # When the cabin radio follows the trip
+│   │   ├── radioBrowserService.ts   # Radio station lookup (geo search first)
 │   │   └── storageApi.ts            # Cloud storage API client
 │   ├── docs/
 │   │   └── GRAPHICS.md              # Graphics pipeline documentation
@@ -446,6 +458,19 @@ While `holdActive`/`isPanoramaUpdatePaused` is true:
 3. Returns the link within 45° of target, or `null` if none qualify.
 
 Small math errors here cause users to walk backwards or loop in circles. Test changes manually in cruise mode.
+
+### Routed Road Trips (`services/routing/`, `state/tripStore.ts`)
+
+Pick a destination in **🧭 Trip** (`components/TripPlannerPanel.tsx`), and cruise drives there along real roads.
+
+- **Route source**: `RouteProvider` (`route(req, signal)`, `billable`). Default is an OSRM-compatible endpoint from runtime `window.ROUTING_ENDPOINT` (unset → public OSRM demo, `''` → off). Every failure is a `RouteError` with a kind the planner explains — never a fake route. A Google Directions provider does not exist; the meter's `directions` cap is 0 (see `BILLING_SAFETY_CHECKLIST.md`).
+- **Geometry**: `buildActiveRoute` keeps cumulative vertex distances, a 10 m resample (`polyline_resample`) and each step's along-track position (`polyline_project`). `projectOnRoute` searches a window around the last progress so out-and-back roads stay monotone.
+- **Following**: `useCruiseMode` takes `routeGuide: getActiveRouteGuide`. With a trip in `driving`, each hop calls `RouteFollower.planHop(position, links)`: aim 12 m ahead along the route and take the link whose heading tracks it. **On-route hops pass no target hint, so they make zero extra Maps calls** — `useCruiseMode.route.test.tsx` asserts it; do not add a prefetch there. Cross-track > 40 m (or no link within 100° of the route) for 2 hops → one metered `getPanorama` re-snap 20 m ahead + `teleportToPanoSafe` (hold-pause path). Arrival (≤ 20 m) stops cruise and writes the summary. The car body eases toward the route after each hop (car mode only; snaps under reduced motion; head look follows only with rigid coupling).
+- **State**: `tripStore` is an external store like `povStore` (progress changes per hop) — never put it in a provider value. Readers: the planner (`useTripSelector`), the globe (`globe/globeTripRoute.ts`), the cabin (`views/car/useCabinRouteGuidance.ts` → `setCarRouteGuidance` → `CenterDisplay`), the announcer (200 m / 50 m / arrival), `window.__STREETVIEW_PROBE__.getTrip()`.
+- **Links & sessions**: `?route=lat,lng;…` (a `string` flag in `flags.ts`) plans on load; shared sessions carry the encoded stops (`SessionState.route`) and guests plan locally — the polyline never travels.
+- **Session call meter** (`services/maps/callBudget.ts`): any new `getPanorama` call site must `tryConsume('panorama', '<source>')` first.
+- **Live conditions** (`services/conditions/openMeteo.ts`, `app/LiveConditionsDriver.tsx`, `state/liveConditionsStore.ts`): opt-in Open-Meteo weather eased onto the weather controls over 1 s; one request / 10 min within 25 km; any slider move is a manual override until "Resume live".
+- **Trip-aware radio** (`services/radio/tripRadio.ts`, `views/car/useCabinRadioBinding.ts`): after > 50 km, retune (fade-through) only on a country/state change and never a pinned station.
 
 ### Car Mode Rendering Stack
 
@@ -919,7 +944,8 @@ MAPS_API_KEY='...' python deploy.py
 4. **Accessibility**: Keyboard navigation works globally; screen-reader support is present via `useAnnouncer` and ARIA live regions but can be enhanced.
 5. **Offline**: Limited offline mode — app shell + saved snapshots/metadata via service worker and IndexedDB. Google Street View tiles are **not** cached (Maps ToS). See README § Offline Mode.
 6. **API Key Exposure**: Fallback key may be visible in build-time env; prefer runtime `config.js` for production.
-7. **API Rate Limits**: Maps JavaScript API and the opt-in Street View Static rearview feed are quota/billing-bound (`BILLING_SAFETY_CHECKLIST.md`). Nothing in `src/` calls the Directions API.
+7. **API Rate Limits**: Maps JavaScript API and the opt-in Street View Static rearview feed are quota/billing-bound (`BILLING_SAFETY_CHECKLIST.md`). Nothing in `src/` calls the Directions API — trip routes come from an OSRM-compatible endpoint, whose public demo server is for low volume only.
+10. **Routed trips**: no traffic, lane guidance or voice; routing needs the network (offline stays link-graph walking); cruise pace is Street View hop pace, so ETAs are at that pace, not road speed.
 8. **Build tool**: Vite 7 (CRA removed). Relative `base: './'` preserves Contabo `/streetview` deploys; `build/static/js/main.[hash].js` layout keeps `deploy.py` key baking.
 9. **Hidden Google Maps error UI flicker**: When the Maps key is invalid or referrer-blocked, Google injects `.gm-err-*` elements into the hidden Street View scraper div. Because the scraper must stay `opacity:1` for Google to keep rendering, those error elements can flash and produce visible flicker. The fix is to suppress them via CSS scoped to `.streetview-scraper` and/or remove them on `gm_authFailure`.
 

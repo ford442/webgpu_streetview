@@ -12,7 +12,8 @@
 //
 // The key used on https://test.1ink.us and https://go.1ink.us MUST have
 // HTTP referrer restrictions that whitelist both origins (plus localhost for dev),
-// plus billing + Maps JavaScript + Directions APIs enabled.
+// plus billing + the Maps JavaScript API enabled (the Trip planner's routes do
+// not use Google Directions — see ROUTING_ENDPOINT below).
 //
 // See README "Production Deployment", docs/DEPLOY_CHECKLIST.md, and #89.
 window.MAPS_API_KEY = "";
