@@ -151,7 +151,8 @@ export const AE_TARGET_LUMA = 0.18;
 
 /**
  * Suggested exposure compensation in stops from mean luma in [0, 1].
- * Display-only — never mutates weather `exposure` (user sliders stay in charge).
+ * Shown in the perf overlay; the opt-in auto exposure (renderer/autoExposure.ts)
+ * eases it into the weather `exposure` uniform. Slider/preset writes win.
  */
 export function exposureHintFromMeanLuma(mean: number, target: number = AE_TARGET_LUMA): number {
   if (!(mean > 0) || !(target > 0)) return 0;

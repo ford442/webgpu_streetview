@@ -13,6 +13,13 @@ import { getActiveQualityLevel } from '../config/visualPresets';
 import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
 import { fetchLookLutVolume } from '../renderer/lut';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
+import { getGpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
+import {
+    AUTO_EXPOSURE_IDLE,
+    resolveAutoExposureFrame,
+    setAutoExposureStatus,
+    type AutoExposureFrameState,
+} from '../renderer/autoExposure';
 import {
     isParticlePrecipitationEnabled,
     particleGridForQuality,
@@ -46,7 +53,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         vibrance, saturation, contrast, exposure, temperature, tint,
         headlightsOn, highBeam, domeLightOn,
         sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled, timeOfDay, activeLookId
+        shaderEffectsEnabled, timeOfDay, activeLookId, autoExposureEnabled
     } = useEnvironmentSettings();
 
     // Get street view state
@@ -113,6 +120,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     isPanoramaUpdatePausedRef.current = isPanoramaUpdatePaused;
     isTransitioningRef.current = isStreetViewTransitioning;
     shouldSkipFrameRef.current = shouldSkipFrame;
+
+    // Auto exposure (opt-in): eases the GpuChores luma hint into the exposure
+    // uniform. Frozen through hold-pause; see renderer/autoExposure.ts.
+    const autoExposureEnabledRef = useRef(autoExposureEnabled);
+    autoExposureEnabledRef.current = autoExposureEnabled;
+    const autoExposureStateRef = useRef<AutoExposureFrameState>(AUTO_EXPOSURE_IDLE);
+    const lastFrameMsRef = useRef<number | null>(null);
 
     // Memory profiling
     useEffect(() => {
@@ -329,6 +343,28 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                         reducedMotion: reducedMotionRef.current,
                         speedNormalized: getCameraSpeedNormalized(),
                     }),
+                });
+
+                const nowMs = performance.now();
+                const dtMs = lastFrameMsRef.current == null ? 0 : nowMs - lastFrameMsRef.current;
+                lastFrameMsRef.current = nowMs;
+                const holdActive = panoramaUpdatePaused || currentRendererRef.current.isHoldActive();
+                const ae = resolveAutoExposureFrame({
+                    enabled: autoExposureEnabledRef.current,
+                    holdActive,
+                    meanLuma: getGpuChoresStats().meanLuma,
+                    manualExposure: e.exposure,
+                    dtMs,
+                    reducedMotion: reducedMotionRef.current
+                        || (typeof document !== 'undefined'
+                            && document.body.classList.contains('reduced-motion')),
+                }, autoExposureStateRef.current);
+                autoExposureStateRef.current = ae.state;
+                if (ae.exposure != null) params[WeatherParamIndex.exposure] = ae.exposure;
+                setAutoExposureStatus({
+                    enabled: autoExposureEnabledRef.current,
+                    appliedEv: ae.exposure,
+                    holdActive,
                 });
 
                 currentRendererRef.current.updateWeatherParams(params);

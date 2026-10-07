@@ -7,6 +7,7 @@ import {
   type LookId,
 } from '../config/lookPacks';
 import { readBootLook } from '../utils/lookLink';
+import { nextAutoExposureEnabled, type AutoExposureEvent } from '../renderer/autoExposure';
 
 // Types
 export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
@@ -79,6 +80,12 @@ export interface EnvironmentSettingsState {
   setTint: (value: number) => void;
   shaderEffectsEnabled: boolean;
   setShaderEffectsEnabled: (enabled: boolean) => void;
+  /**
+   * Auto exposure (GpuChores luma hint → exposure uniform). Session-only, off
+   * by default. Slider and preset exposure writes turn it off.
+   */
+  autoExposureEnabled: boolean;
+  setAutoExposureEnabled: (enabled: boolean) => void;
   
   // Presets
   applyTimeOfDayPreset: (preset: TimeOfDay) => void;
@@ -161,13 +168,28 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const [vibrance, setVibrance] = useState(bootPatch?.vibrance ?? 1.0);
   const [saturation, setSaturation] = useState(bootPatch?.saturation ?? 1.0);
   const [contrast, setContrast] = useState(bootPatch?.contrast ?? 1.0);
-  const [exposure, setExposure] = useState(bootPatch?.exposure ?? 0.0);
+  const [exposure, setExposureState] = useState(bootPatch?.exposure ?? 0.0);
+  const [autoExposureEnabled, setAutoExposureEnabledState] = useState(false);
   const [temperature, setTemperature] = useState(bootPatch?.temperature ?? 0.0);
   const [tint, setTint] = useState(bootPatch?.tint ?? 0.0);
   const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(
     bootPatch?.shaderEffectsEnabled ?? true,
   );
   const [activeLookId, setActiveLookId] = useState<LookId | null>(boot?.lookId ?? null);
+
+  const dispatchAutoExposure = useCallback((event: AutoExposureEvent) => {
+    setAutoExposureEnabledState((prev) => nextAutoExposureEnabled(prev, event));
+  }, []);
+
+  const setAutoExposureEnabled = useCallback((enabled: boolean) => {
+    dispatchAutoExposure(enabled ? 'toggle-on' : 'toggle-off');
+  }, [dispatchAutoExposure]);
+
+  // Manual exposure edits win over auto exposure.
+  const setExposure = useCallback((value: number) => {
+    dispatchAutoExposure('manual-exposure');
+    setExposureState(value);
+  }, [dispatchAutoExposure]);
   
   // Wipers
   const toggleWipersCallback = useCallback(() => {
@@ -221,6 +243,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   
   // Apply time of day preset
   const applyTimeOfDayPreset = useCallback((preset: TimeOfDay) => {
+    dispatchAutoExposure('time-of-day-preset');
     setAutoNightMode(false);
     setTimeOfDay(preset);
     const astro = TOD_ASTRONOMY[preset];
@@ -232,7 +255,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     if (preset === 'night') {
       setHeadlightsOnState(true);
     }
-  }, []);
+  }, [dispatchAutoExposure]);
 
   const applyLookPatch = useCallback((patch: LookEnvPatch) => {
     setAutoNightMode(false);
@@ -245,7 +268,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setVibrance(patch.vibrance);
     setSaturation(patch.saturation);
     setContrast(patch.contrast);
-    setExposure(patch.exposure);
+    setExposureState(patch.exposure);
     setTemperature(patch.temperature);
     setTint(patch.tint);
     setNightIntensity(patch.nightIntensity);
@@ -268,12 +291,14 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const applyLookPack = useCallback((id: string) => {
     const pack = getLookPack(id);
     if (!pack) return;
+    dispatchAutoExposure('look-pack');
     applyLookPatch(lookPackToEnvPatch(pack));
     setActiveLookId(pack.id);
-  }, [applyLookPatch]);
+  }, [applyLookPatch, dispatchAutoExposure]);
   
   // Apply color grading preset
   const applyColorGradingPreset = useCallback((preset: string) => {
+    dispatchAutoExposure('color-grading-preset');
     setActiveLookId(null);
     switch (preset) {
       case 'none':
@@ -284,7 +309,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.0);
         setSaturation(1.0);
         setContrast(1.0);
-        setExposure(0.0);
+        setExposureState(0.0);
         setTemperature(0.0);
         setTint(0.0);
         setNightIntensity(0.0);
@@ -294,7 +319,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.2);
         setSaturation(1.1);
         setContrast(1.1);
-        setExposure(0.1);
+        setExposureState(0.1);
         setTemperature(0.3);
         setTint(-0.1);
         break;
@@ -303,7 +328,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.3);
         setSaturation(1.2);
         setContrast(1.2);
-        setExposure(0.2);
+        setExposureState(0.2);
         setTemperature(0.5);
         setTint(-0.2);
         break;
@@ -312,7 +337,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.8);
         setSaturation(0.9);
         setContrast(1.1);
-        setExposure(-0.1);
+        setExposureState(-0.1);
         setTemperature(-0.2);
         setTint(0.1);
         break;
@@ -321,7 +346,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.7);
         setSaturation(0.8);
         setContrast(1.3);
-        setExposure(-0.2);
+        setExposureState(-0.2);
         setTemperature(-0.3);
         setTint(0.2);
         break;
@@ -330,7 +355,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.6);
         setSaturation(0.7);
         setContrast(1.4);
-        setExposure(-0.5);
+        setExposureState(-0.5);
         setTemperature(-0.4);
         setTint(0.3);
         setNightIntensity(1.0);
@@ -341,12 +366,12 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.1);
         setSaturation(0.9);
         setContrast(1.2);
-        setExposure(0.3);
+        setExposureState(0.3);
         setTemperature(-0.1);
         setTint(0.0);
         break;
     }
-  }, []);
+  }, [dispatchAutoExposure]);
   
   // Compute ambient light color for dashboard tinting based on time of day
   const ambientLightColor = useMemo(() => {
@@ -425,6 +450,8 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setTint,
     shaderEffectsEnabled,
     setShaderEffectsEnabled,
+    autoExposureEnabled,
+    setAutoExposureEnabled,
     
     // Presets
     applyTimeOfDayPreset,

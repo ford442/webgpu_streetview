@@ -21,6 +21,7 @@ import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor'
 import type { MemoryStats } from '../../utils/memoryProfiler';
 import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
+import type { AutoExposureStatus } from '../../renderer/autoExposure';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
 import {
@@ -107,6 +108,8 @@ export interface ConnectedChromeEnvironment {
   setTint: (v: number) => void;
   toggleHeadlights: () => void;
   setShaderEffectsEnabled: (v: boolean) => void;
+  autoExposureEnabled: boolean;
+  setAutoExposureEnabled: (v: boolean) => void;
   applyColorGradingPreset: (preset: string) => void;
   applyLookPack: (id: string) => void;
   activeLookId: LookId | null;
@@ -147,6 +150,7 @@ export interface ConnectedChromeOverlays {
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
+  autoExposureStatus?: AutoExposureStatus;
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
@@ -271,6 +275,7 @@ export function ConnectedChrome({
           memoryStats={overlays.memoryStats}
           gpuPassTimings={overlays.gpuPassTimings}
           gpuChoresStats={overlays.gpuChoresStats}
+          autoExposureStatus={overlays.autoExposureStatus}
           position="top-left"
           visible={true}
           showMemory={true}
@@ -423,6 +428,8 @@ export function ConnectedChrome({
           headlightsOn={env.headlightsOn}
           highBeam={false}
           shaderEffectsEnabled={env.shaderEffectsEnabled}
+          autoExposureEnabled={env.autoExposureEnabled}
+          onToggleAutoExposure={() => env.setAutoExposureEnabled(!env.autoExposureEnabled)}
           onVibranceChange={env.setVibrance}
           onSaturationChange={env.setSaturation}
           onContrastChange={env.setContrast}

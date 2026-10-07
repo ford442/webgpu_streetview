@@ -9,16 +9,25 @@ import { MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
 import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 import { exposureHintFromMeanLuma } from '../renderer/gpuChores/lumaMath';
+import type { AutoExposureStatus } from '../renderer/autoExposure';
 
 interface PerformanceStatsOverlayProps {
   fpsStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
+  autoExposureStatus?: AutoExposureStatus;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   visible?: boolean;
   showMemory?: boolean;
   onToggle?: () => void;
+}
+
+function formatAutoExposureState(status: AutoExposureStatus | undefined): string {
+  if (!status?.enabled) return '(auto off)';
+  if (status.appliedEv == null) return '(auto on)';
+  const ev = `${status.appliedEv >= 0 ? '+' : ''}${status.appliedEv.toFixed(2)}`;
+  return status.holdActive ? `(auto held ${ev})` : `(auto → ${ev})`;
 }
 
 /**
@@ -30,6 +39,7 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
   memoryStats,
   gpuPassTimings,
   gpuChoresStats,
+  autoExposureStatus,
   position = 'top-left',
   visible = true,
   showMemory = true,
@@ -136,6 +146,10 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
           </div>
           <div style={{ marginBottom: '4px', color: '#cccccc' }}>
             AE: {aeHint != null ? `${aeHint >= 0 ? '+' : ''}${aeHint.toFixed(2)} EV` : '—'}
+            {' '}
+            <span style={{ color: '#888888', fontSize: '10px' }}>
+              {formatAutoExposureState(autoExposureStatus)}
+            </span>
           </div>
           <div style={{ marginBottom: '4px', color: '#888888', fontSize: '10px' }}>
             chores: {gpuChoresStats.backend}
