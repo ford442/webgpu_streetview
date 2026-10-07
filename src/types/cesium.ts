@@ -131,7 +131,6 @@ export interface CesiumNamespace {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var Cesium: CesiumNamespace;
 }
 

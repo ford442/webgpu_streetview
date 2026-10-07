@@ -4,6 +4,9 @@ import { vi, type Mock } from 'vitest';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+// Test-only view of window for installing/removing globals without `any`.
+const win = window as unknown as Record<string, unknown>;
+
 const mockRendererInit = vi.fn();
 const mockRendererDestroy = vi.fn();
 const mockCallOrder: Array<'webgpu'> = [];
@@ -19,19 +22,19 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
   beforeEach(() => {
     resetSearch();
     localStorage.clear();
-    delete (window as any).rendererType;
-    delete (window as any).streetViewRendererDebug;
-    delete (window as any).webgpuProbe;
-    delete (window as any).usingWebGL;
-    delete (window as any).usingWebGPU;
-    delete (window as any).rendererFallbackReason;
+    delete win.rendererType;
+    delete win.streetViewRendererDebug;
+    delete win.webgpuProbe;
+    delete win.usingWebGL;
+    delete win.usingWebGPU;
+    delete win.rendererFallbackReason;
     mockCallOrder.length = 0;
     mockWebgpuFallbackReason = undefined;
 
     mockRendererInit.mockReset().mockResolvedValue(true);
     mockRendererDestroy.mockReset();
 
-    MockedRenderer.mockReset().mockImplementation(function (this: any, canvas: HTMLCanvasElement) {
+    MockedRenderer.mockReset().mockImplementation(function (this: Record<string, unknown>, canvas: HTMLCanvasElement) {
       mockCallOrder.push('webgpu');
       this.canvas = canvas;
       this.backendType = 'webgpu';

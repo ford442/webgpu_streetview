@@ -62,8 +62,8 @@ function isValidTour(value: unknown): value is Tour {
             return (
                 typeof wp.panoId === 'string' &&
                 typeof wp.position === 'object' && wp.position !== null &&
-                typeof (wp.position as any).lat === 'number' &&
-                typeof (wp.position as any).lng === 'number' &&
+                typeof (wp.position as { lat?: unknown }).lat === 'number' &&
+                typeof (wp.position as { lng?: unknown }).lng === 'number' &&
                 typeof wp.pov === 'object' && wp.pov !== null &&
                 typeof wp.dwellTimeMs === 'number'
             );

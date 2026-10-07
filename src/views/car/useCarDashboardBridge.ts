@@ -324,7 +324,7 @@ export function useCarDashboardBridge({
       active = false;
       cancelAnimationFrame(rafId);
     };
-  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen]);
+  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen, gearRef]);
 
   useEffect(() => {
     if (controlMode === 'freeLook') {

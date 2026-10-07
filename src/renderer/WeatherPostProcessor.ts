@@ -275,7 +275,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[WeatherParamIndex.time] = time % 10000.0;
             this.weatherParamsDirty = true;
-        } catch (e) {
+        } catch {
             // Ignore errors during weather-only updates
         }
     }
@@ -327,7 +327,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
-        } catch (e) {
+        } catch {
             // Suppress errors during weather-only rendering
         }
     }
@@ -364,7 +364,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             destroyTracked(this.noiseBuffer);
             if (this.lutTexture && this.lutTexture !== this.dummyLutTexture) this.lutTexture.destroy();
             if (this.dummyLutTexture) this.dummyLutTexture.destroy();
-        } catch (e) {
+        } catch {
             // ignore cleanup errors
         }
         this.weatherParamsBuffer = null;

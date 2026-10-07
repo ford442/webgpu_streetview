@@ -63,7 +63,7 @@ describe('EnvironmentSettings slices', () => {
   });
 
   it('setting an unchanged value renders nothing', () => {
-    const { renders, api, snapshot } = setup();
+    const { api, snapshot } = setup();
     const before = snapshot();
     act(() => api().setRainIntensity(0));
     expect(snapshot()).toEqual(before);

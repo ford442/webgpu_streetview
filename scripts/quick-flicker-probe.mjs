@@ -125,7 +125,7 @@ async function main() {
       await page.keyboard.press('Escape');
       await sleep(800);
     }
-  } catch (e) {
+  } catch {
     log('Welcome dismiss fallback: Escape');
     await page.keyboard.press('Escape');
     await sleep(800);

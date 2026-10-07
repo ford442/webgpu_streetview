@@ -13,6 +13,9 @@ import {
   RendererDebugOptions,
 } from './RendererBackend';
 
+// Test-only view of window for installing/removing globals without `any`.
+const win = window as unknown as Record<string, unknown>;
+
 const setSearch = (search: string) => {
   window.history.pushState({}, '', `/${search}`);
 };
@@ -20,11 +23,11 @@ const setSearch = (search: string) => {
 const resetGlobals = () => {
   setSearch('');
   localStorage.clear();
-  delete (window as any).rendererType;
-  delete (window as any).usingWebGPU;
-  delete (window as any).usingWebGL;
-  delete (window as any).rendererFallbackReason;
-  delete (window as any).streetViewRendererDebug;
+  delete win.rendererType;
+  delete win.usingWebGPU;
+  delete win.usingWebGL;
+  delete win.rendererFallbackReason;
+  delete win.streetViewRendererDebug;
 };
 
 describe('getRendererPreference', () => {
@@ -235,7 +238,7 @@ describe('exposeRendererDebugGlobals', () => {
 
   it('setBackend is a no-op for an invalid value', () => {
     exposeRendererDebugGlobals('webgpu', undefined, { effectIsolation: 'all', wireframe: false }, jest.fn());
-    window.streetViewRendererDebug?.setBackend('bogus' as any);
+    window.streetViewRendererDebug?.setBackend('bogus' as never);
     expect(localStorage.getItem('streetview.renderer')).toBeNull();
     expect(reloadSpy).not.toHaveBeenCalled();
   });
@@ -252,7 +255,7 @@ describe('exposeRendererDebugGlobals', () => {
   it('setEffectIsolation is a no-op for an invalid value', () => {
     const applyDebugOptions = jest.fn();
     exposeRendererDebugGlobals('webgl', undefined, { effectIsolation: 'all', wireframe: false }, applyDebugOptions);
-    window.streetViewRendererDebug?.setEffectIsolation('bogus' as any);
+    window.streetViewRendererDebug?.setEffectIsolation('bogus' as never);
     expect(applyDebugOptions).not.toHaveBeenCalled();
   });
 

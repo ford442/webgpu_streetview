@@ -2,6 +2,7 @@ import { povStore } from '../../state/povStore';
 import React, { act } from 'react';
 import { renderHook } from '@testing-library/react';
 import { StreetViewProvider, useStreetView } from '../useStreetView';
+import type { StreetViewRenderer } from '../../renderer/RendererBackend';
 
 const mockBeginHoldTransition = jest.fn();
 const mockSetPov = jest.fn();
@@ -31,7 +32,7 @@ const mockRenderer = {
 };
 
 beforeAll(() => {
-  (global as any).google = {
+  (globalThis as unknown as { google: unknown }).google = {
     maps: {
       event: {
         removeListener: jest.fn(),
@@ -59,7 +60,7 @@ describe('useStreetView hold look-around', () => {
 
     act(() => {
       result.current.setPanorama(mockPano);
-      result.current.setRenderer(mockRenderer as any);
+      result.current.setRenderer(mockRenderer as unknown as StreetViewRenderer);
       result.current.advance('forward');
     });
 
@@ -83,7 +84,7 @@ describe('useStreetView hold look-around', () => {
 
     act(() => {
       result.current.setPanorama(mockPano);
-      result.current.setRenderer(mockRenderer as any);
+      result.current.setRenderer(mockRenderer as unknown as StreetViewRenderer);
       result.current.setHeading(50);
       result.current.setPitch(12);
     });
@@ -116,7 +117,7 @@ describe('useStreetView hold look-around', () => {
 
     act(() => {
       result.current.setPanorama(mockPano);
-      result.current.setRenderer(mockRenderer as any);
+      result.current.setRenderer(mockRenderer as unknown as StreetViewRenderer);
       result.current.setHeading(50);
       result.current.setPitch(12);
     });
@@ -135,7 +136,7 @@ describe('useStreetView hold look-around', () => {
 
     act(() => {
       result.current.setPanorama(mockPano);
-      result.current.setRenderer(mockRenderer as any);
+      result.current.setRenderer(mockRenderer as unknown as StreetViewRenderer);
       result.current.advance('forward');
     });
 

@@ -67,6 +67,8 @@ class FakeChannel implements RealtimeChannelLike {
 
   constructor(private room: FakeRoom) {}
 
+  // Overload-compatible with RealtimeChannelLike.on, whose callbacks have different shapes per event.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on(type: 'broadcast' | 'presence', filter: { event: string }, callback: (...args: any[]) => void): this {
     if (type === 'broadcast') {
       const arr = this.broadcastHandlers.get(filter.event) ?? [];

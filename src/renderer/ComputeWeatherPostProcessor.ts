@@ -312,7 +312,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
-        } catch (e) {
+        } catch {
             // Suppress errors during weather-only rendering
         }
     }

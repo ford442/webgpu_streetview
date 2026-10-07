@@ -370,6 +370,8 @@ export function measurePerformance(name: string, startLabel: string, endLabel: s
 /**
  * Throttle a function to maintain target FPS
  */
+// `any[]` is the canonical constraint for "any function": `unknown[]` would reject typed callbacks.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function throttleToFPS<T extends (...args: any[]) => void>(
   fn: T,
   targetFPS: number
@@ -389,6 +391,7 @@ export function throttleToFPS<T extends (...args: any[]) => void>(
 /**
  * Debounce frame updates for non-critical operations
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounceFrame<T extends (...args: any[]) => void>(
   fn: T,
   frames: number = 1

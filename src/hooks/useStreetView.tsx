@@ -319,7 +319,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (targetPitch !== undefined) {
       setPitch(targetPitch);
     }
-  }, [isTransitioning, armHold, setHeading, setPitch]);
+  }, [armHold, setHeading, setPitch]);
 
   // Jump directly to a known panorama id (historical capture, saved bookmark
   // pano, etc). Heading/pitch are left untouched so a POV comparison stays
@@ -331,7 +331,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     armHold();
     pendingRevealRef.current = options?.reveal ?? null;
     pano.setPano(panoId);
-  }, [isTransitioning, armHold]);
+  }, [armHold]);
 
   // Listen for panorama changes
   useEffect(() => {

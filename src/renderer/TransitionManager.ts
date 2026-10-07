@@ -285,7 +285,7 @@ export class TransitionManager {
             destroyTracked(this.previousFrameTexture);
             destroyTracked(this.transitionUniformBuffer);
             this.transitionPipelines.clear();
-        } catch (e) {
+        } catch {
             // ignore cleanup errors
         }
         this.prevTexture = undefined;

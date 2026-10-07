@@ -3,6 +3,9 @@ import { createStreetViewRenderer } from './createStreetViewRenderer';
 import { Renderer } from './Renderer';
 import { publishWebGpuProbe } from './webgpuBootProbe';
 
+// Test-only view of window for installing/removing globals without `any`.
+const win = window as unknown as Record<string, unknown>;
+
 vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
 
 // Force the High preset so the compute default under test is deterministic —
@@ -25,7 +28,7 @@ let destroyCount = 0;
  * publishing the boot probe stage a real `bootDevice` would have published.
  */
 function installRenderer(succeedsOn: ReadonlyArray<string>): void {
-  MockedRenderer.mockReset().mockImplementation(function (this: any, canvas: HTMLCanvasElement) {
+  MockedRenderer.mockReset().mockImplementation(function (this: Record<string, unknown>, canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.destroy = () => { destroyCount += 1; };
     this.setDebugOptions = vi.fn();
@@ -49,9 +52,9 @@ describe('High-quality compute weather degrade policy', () => {
   beforeEach(() => {
     resetSearch();
     localStorage.clear();
-    delete (window as any).webgpuProbe;
-    delete (window as any).rendererType;
-    delete (window as any).streetViewRendererDebug;
+    delete win.webgpuProbe;
+    delete win.rendererType;
+    delete win.streetViewRendererDebug;
     bootedModes = [];
     destroyCount = 0;
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -130,7 +133,7 @@ describe('High-quality compute weather degrade policy', () => {
   });
 
   it('does not degrade a non-limit boot failure', async () => {
-    MockedRenderer.mockReset().mockImplementation(function (this: any) {
+    MockedRenderer.mockReset().mockImplementation(function (this: Record<string, unknown>) {
       this.fallbackReason = 'Could not acquire a WebGPU canvas context';
       this.destroy = () => { destroyCount += 1; };
       this.setDebugOptions = vi.fn();

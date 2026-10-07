@@ -341,7 +341,7 @@ const goldens = {
 };
 
 function vectorsOnly(obj) {
-  const { $comment, wasmSha256: _sha, ...rest } = obj;
+  const { $comment: _comment, wasmSha256: _sha, ...rest } = obj;
   return rest;
 }
 
