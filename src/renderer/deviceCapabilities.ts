@@ -1,5 +1,6 @@
 import type { AdapterFeatureLevel, WeatherPostProcessMode } from './RendererBackend';
 import type { TimestampWriteStrategy } from './gpuPassTimer';
+import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
 
 /**
  * Not yet in `GPUFeatureName` for `@webgpu/types` 0.1.64. Requested only when
@@ -46,8 +47,11 @@ export const OPTIONAL_FEATURES_ATTEMPTED: GPUFeatureName[] = [
 /** Minimum workgroup size for weather-post-compute (@workgroup_size(16,16,1)). */
 export const COMPUTE_WEATHER_WORKGROUP_SIZE = 16;
 
-/** #216 gpu-chores histogram / downsample (@workgroup_size(8,8,1)). */
-export const COMPUTE_CHORES_WORKGROUP_SIZE = 8;
+/**
+ * #216 gpu-chores histogram / downsample (@workgroup_size(8,8,1)). One constant:
+ * the boot-side limit gate and the chores dispatch math read the same number.
+ */
+export const COMPUTE_CHORES_WORKGROUP_SIZE = CHORES_WORKGROUP_SIZE;
 
 /** Which requested optional features actually drive a production shader this boot. */
 export interface ShaderFeatureUses {
@@ -104,6 +108,13 @@ export interface DeviceCapabilityMatrix {
     gpuChoresWorkgroupSize: number;
     /** `?no_gpu_compute` — chores fall back to WASM/JS; weather path unchanged. */
     gpuChoresKillSwitch: boolean;
+    /**
+     * Adapter limits can run the 8×8 chores pipelines. False skips GPU chores
+     * init (WASM/JS twin) without failing boot — fragment weather still runs.
+     */
+    gpuChoresGpuEligible: boolean;
+    /** Which adapter limit kept chores off the GPU, when `gpuChoresGpuEligible` is false. */
+    gpuChoresIneligibleReason?: string;
 }
 
 export interface AdapterCapabilitySummary {

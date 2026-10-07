@@ -124,6 +124,9 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         console.warn('[Renderer] WebGPU adapter limits are insufficient:', limitCheck.reason);
         return fail('limits', limitCheck.reason!);
     }
+    if (!limitCheck.gpuChores.eligible) {
+        console.info('[Renderer] gpu-chores stay on WASM/JS:', limitCheck.gpuChores.reason);
+    }
 
     const requiredFeatures = collectOptionalDeviceFeatures(adapter, {
         featureLevel: describeAdapterSelection(adapterOptions).featureLevel,
@@ -183,6 +186,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
             ...describeAdapterSelection(adapterOptions),
             canvas: appliedCanvas,
             intermediateFormat,
+            gpuChores: limitCheck.gpuChores,
         },
     );
     probe.capabilityMatrix = capabilityMatrix;

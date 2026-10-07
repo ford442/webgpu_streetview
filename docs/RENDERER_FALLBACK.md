@@ -247,7 +247,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `intermediateFormat` | `rgba16float` (default) or `rg11b10ufloat` | Packed format only when `rg11b10ufloat-renderable` is enabled |
 | `maxTextureDimension2D` | Required ≥ 4096 | Panorama + HDR intermediate |
 | `maxStorageBufferBindingSize` / `maxBufferSize` | Required ≥ 65536 when `?weather=compute` | WASM noise tile + particle buffer headroom |
-| `maxComputeWorkgroupSizeX/Y` | Required ≥ 16 when compute weather | Matches `@workgroup_size(16,16,1)` |
+| `maxComputeWorkgroupSizeX/Y` | Required ≥ 16 when compute weather; ≥ 8 (and 64 invocations) added on fragment boots only when the adapter has them | Weather `@workgroup_size(16,16,1)`; chores `@workgroup_size(8,8,1)` never fail boot |
 | Sampler `maxAnisotropy` | Low=1, Medium=2, High=4, Ultra=8 | Clamped to `device.limits.maxAnisotropy`; fragment path only |
 | `featureLevel` | `'core'` (default) / `'compatibility'` (`?gpu=compat`) / `'unknown'` | `'unknown'` when the browser has no `featureLevel` field |
 | `forceFallbackAdapter` | `true` only for `?gpu=fallback` | Software adapter for CI and probe runs |
@@ -259,6 +259,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `uncapturedErrorCount` / `lastUncapturedError` | Counted from `uncapturederror` | Shown on the backend chip |
 | `gpuChoresWorkgroupSize` | Always `8` | `#216` hist/downsample `@workgroup_size(8,8,1)` — independent of weather 16×16 |
 | `gpuChoresKillSwitch` | `true` when `?no_gpu_compute` | Chores fall back to WASM/JS; **weather fragment/compute is unchanged** |
+| `gpuChoresGpuEligible` / `gpuChoresIneligibleReason` | `false` + the limit when `maxComputeWorkgroupSizeX/Y < 8` or `maxComputeInvocationsPerWorkgroup < 64` | `GpuChores` skips GPU init (WASM/JS) without setting the kill switch; pipeline-create `catch` stays as a second guard |
 
 GPU timings (when `timestamp-query` is enabled) are published on `window.rendererGpuTimings` and shown in **Performance Stats** (press P): Pass1 (panorama → HDR), weather (fragment or compute), and blit (compute only).
 
