@@ -36,6 +36,7 @@ import {
   resolveCabinRendererPreference,
 } from '../../car/interior/createCabinRenderer';
 import { detectGPUProfile } from '../../utils/performance';
+import { currentSearch } from '../../config/flags';
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -139,14 +140,14 @@ export function useCarDashboardBridge({
       // `three/webgpu` + TSL chunk, await renderer.init(), and fall back to a
       // WebGL overlay if either step fails. Street View weather stays up.
       let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
-      if (resolveCabinRendererPreference(window.location.search) === 'webgpu') {
+      if (resolveCabinRendererPreference(currentSearch()) === 'webgpu') {
         await preloadWebGPUCabinRenderer().catch((err) => {
           console.error('[CarModeView] Failed to preload the WebGPU cabin renderer; falling back to WebGL.', err);
         });
         readyHandle = await createCabinRendererAsync({
           gpuProfile: detectGPUProfile(),
           sharedDevice: sharedGpuDevice,
-          search: window.location.search,
+          search: currentSearch(),
         });
       }
       if (cancelled || !containerRef.current) {

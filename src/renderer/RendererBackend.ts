@@ -1,4 +1,5 @@
 import { RenderMode } from './types';
+import { readFlag } from '../config/flags';
 
 export type RendererBackendType = 'webgpu' | 'webgl';
 export type RendererBackendPreference = RendererBackendType | 'auto';
@@ -132,11 +133,6 @@ const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);
 const VALID_EFFECTS = new Set(['all', 'raw', 'color', 'weather', 'fog', 'night', 'lighting']);
 const VALID_WEATHER_MODES = new Set(['fragment', 'compute']);
 
-function readSearchParams(): URLSearchParams {
-    if (typeof window === 'undefined') return new URLSearchParams();
-    return new URLSearchParams(window.location.search);
-}
-
 export interface AdapterPowerPreferencePolicy {
     powerPreference?: GPUPowerPreference;
     source: 'override' | 'url' | 'default';
@@ -144,9 +140,7 @@ export interface AdapterPowerPreferencePolicy {
 
 /** `?gpu=` accepts a comma-separated token list, e.g. `?gpu=high,compat`. */
 function readGpuTokens(): string[] {
-    const raw = readSearchParams().get('gpu');
-    if (!raw) return [];
-    return raw.toLowerCase().split(',').map(token => token.trim()).filter(Boolean);
+    return readFlag('gpu');
 }
 
 export function getAdapterPowerPreferencePolicy(options?: RendererInitOptions): AdapterPowerPreferencePolicy {
@@ -239,34 +233,19 @@ export interface CanvasOutputFlags {
     p3: CanvasOutputFlag;
 }
 
-function readCanvasOutputFlag(params: URLSearchParams, name: string): CanvasOutputFlag {
-    const value = params.get(name)?.toLowerCase();
-    if (value === '1' || value === 'true' || value === 'on') return 'on';
-    if (value === '0' || value === 'false' || value === 'off') return 'off';
-    if (value === 'auto') return 'auto';
-    return 'off';
-}
-
 /**
  * Output-referred canvas opt-ins. Both default to `off` so a default boot stays
  * pixel-identical to the SDR sRGB swap-chain; `auto` defers to the display.
  */
 export function getCanvasOutputFlags(): CanvasOutputFlags {
-    const params = readSearchParams();
-    return {
-        hdr: readCanvasOutputFlag(params, 'hdr'),
-        p3: readCanvasOutputFlag(params, 'p3'),
-    };
+    return { hdr: readFlag('hdr'), p3: readFlag('p3') };
 }
 
 export function getRendererPreference(): RendererBackendPreference {
-    const params = readSearchParams();
-    const explicit = params.get('renderer')?.toLowerCase();
-    if (explicit && VALID_BACKENDS.has(explicit)) {
-        return explicit as RendererBackendPreference;
-    }
-    if (params.has('webgl')) return 'webgl';
-    if (params.has('webgpu')) return 'webgpu';
+    const explicit = readFlag('renderer');
+    if (explicit) return explicit;
+    if (readFlag('webgl')) return 'webgl';
+    if (readFlag('webgpu')) return 'webgpu';
 
     try {
         const stored = window.localStorage.getItem('streetview.renderer');
@@ -281,11 +260,10 @@ export function getRendererPreference(): RendererBackendPreference {
 }
 
 export function getRendererDebugOptions(): RendererDebugOptions {
-    const params = readSearchParams();
-    const effectParam = params.get('effect')?.toLowerCase();
+    const effectParam = readFlag('effect');
     let effectIsolation: RendererEffectIsolation = 'all';
-    if (effectParam && VALID_EFFECTS.has(effectParam)) {
-        effectIsolation = effectParam as RendererEffectIsolation;
+    if (effectParam) {
+        effectIsolation = effectParam;
     }
 
     try {
@@ -297,7 +275,7 @@ export function getRendererDebugOptions(): RendererDebugOptions {
         // ignore
     }
 
-    const wireframe = params.has('wireframe') || params.get('debug') === 'wireframe';
+    const wireframe = readFlag('wireframe') || readFlag('debug') === 'wireframe';
 
     return { effectIsolation, wireframe };
 }
@@ -323,10 +301,9 @@ export interface WeatherPostProcessModePolicy {
 export function getWeatherPostProcessModePolicy(
     fallback: WeatherPostProcessMode = 'fragment',
 ): WeatherPostProcessModePolicy {
-    const params = readSearchParams();
-    const explicit = params.get('weather')?.toLowerCase();
-    if (explicit && VALID_WEATHER_MODES.has(explicit)) {
-        return { mode: explicit as WeatherPostProcessMode, source: 'url' };
+    const explicit = readFlag('weather');
+    if (explicit) {
+        return { mode: explicit, source: 'url' };
     }
 
     try {
@@ -346,11 +323,7 @@ export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fr
 }
 
 export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean {
-    const params = readSearchParams();
-    const explicit = params.get('legacyTransitions')?.toLowerCase();
-    if (explicit === '1' || explicit === 'true') return true;
-    if (explicit === '0' || explicit === 'false') return false;
-    return fallback;
+    return readFlag('legacyTransitions') ?? fallback;
 }
 
 /**

@@ -12,6 +12,7 @@
  *   if (tile) renderer.updateNoiseBuffer(tile);
  */
 
+import { readFlag } from '../config/flags';
 import { loadWasmModule, type StreetViewWasmAPI } from './index';
 
 /** Noise tile is square; matches the WGSL storage buffer array length in weather-post.wgsl. */
@@ -48,10 +49,8 @@ export const FBM_TILE_GAIN = 0.5;
 export function getWasmNoisePreference(): boolean {
   if (typeof window === 'undefined') return true;
   try {
-    const params = new URLSearchParams(window.location.search);
-    const explicit = params.get('wasmNoise');
-    if (explicit === 'off') return false;
-    if (explicit === 'on') return true;
+    const explicit = readFlag('wasmNoise');
+    if (explicit !== undefined) return explicit;
 
     const stored = window.localStorage.getItem('streetview.wasmNoise');
     if (stored === 'off') return false;

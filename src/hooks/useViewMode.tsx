@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { loadCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
+import { currentSearch } from '../config/flags';
 
 // Types
 export type ViewMode = 'freelook' | 'car';
@@ -119,13 +120,13 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
           } = await import('../car/interior/createCabinRenderer');
           const { detectGPUProfile } = await import('../utils/performance');
           let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
-          if (resolveCabinRendererPreference(window.location.search) === 'webgpu') {
+          if (resolveCabinRendererPreference(currentSearch()) === 'webgpu') {
             await preloadWebGPUCabinRenderer().catch((err) => {
               console.error('[ViewModeProvider] Failed to preload the WebGPU cabin renderer; falling back to WebGL.', err);
             });
             readyHandle = await createCabinRendererAsync({
               gpuProfile: detectGPUProfile(),
-              search: window.location.search,
+              search: currentSearch(),
             });
           }
           if (!carModeStateRef.current && containerRef.current === container) {

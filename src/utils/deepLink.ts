@@ -1,3 +1,5 @@
+import { currentSearch, readSearchParams } from '../config/flags';
+
 export interface DeepLinkParams {
   lat: number;
   lng: number;
@@ -33,8 +35,8 @@ export function buildDeepLinkUrl(params: DeepLinkParams, base: string = window.l
 }
 
 /** Parses `?lat=&lng=&heading=&pitch=&zoom=&pano=` from a query string. Returns null if lat/lng are missing/invalid. */
-export function parseDeepLinkParams(search: string = window.location.search): DeepLinkParams | null {
-  const params = new URLSearchParams(search);
+export function parseDeepLinkParams(search: string = currentSearch()): DeepLinkParams | null {
+  const params = readSearchParams(search);
   const lat = parseFloat(params.get(PARAM_KEYS.lat) ?? '');
   const lng = parseFloat(params.get(PARAM_KEYS.lng) ?? '');
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;

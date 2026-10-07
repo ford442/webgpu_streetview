@@ -1,4 +1,5 @@
 import type { CabinRendererBackend } from '../../utils/performance';
+import { currentSearch, readFlag } from '../../config/flags';
 
 /**
  * Whether the cabin can build the windshield **portal** — the layer that samples
@@ -47,14 +48,7 @@ export const PORTAL_FLAG = 'portal';
 
 /** `?portal=off` (also `0` / `false`) forces the hole + decal fallback. */
 export function isPortalDisabledByFlag(search: string): boolean {
-    try {
-        const raw = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
-            .get(PORTAL_FLAG)
-            ?.toLowerCase();
-        return raw === 'off' || raw === '0' || raw === 'false';
-    } catch {
-        return false;
-    }
+    return readFlag(PORTAL_FLAG, search) === false;
 }
 
 function deviceHasClipDistances(device: ResolvePortalSupportInput['device']): boolean {
@@ -68,8 +62,7 @@ function deviceHasClipDistances(device: ResolvePortalSupportInput['device']): bo
 export function resolveWindshieldPortalSupport(
     input: ResolvePortalSupportInput,
 ): WindshieldPortalSupport {
-    const search =
-        input.search ?? (typeof window !== 'undefined' ? window.location.search : '');
+    const search = input.search ?? currentSearch();
     const clipDistances = deviceHasClipDistances(input.device);
 
     if (input.backend !== 'webgpu') {

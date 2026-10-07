@@ -20,6 +20,7 @@ import {
   type LookId,
 } from '../config/lookPacks';
 import type { LookTimeOfDay } from '../config/lookPacks';
+import { currentSearch, parseBoolToken, readSearchParams } from '../config/flags';
 
 export const LOOK_PARAM_KEYS = {
   look: 'look',
@@ -75,11 +76,9 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+/** Link payload bools: an empty value is "unset", not "present". */
 function parseBool(raw: string | null): boolean | undefined {
-  if (raw == null || raw === '') return undefined;
-  if (raw === '1' || raw === 'true' || raw === 'on') return true;
-  if (raw === '0' || raw === 'false' || raw === 'off') return false;
-  return undefined;
+  return raw ? parseBoolToken(raw) : undefined;
 }
 
 function formatGrade(n: number): string {
@@ -91,7 +90,7 @@ function formatBool(v: boolean): string {
 }
 
 export function parseLookParams(search: string = ''): LookUrlParams {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const params = readSearchParams(search);
   const lookRaw = params.get(LOOK_PARAM_KEYS.look);
   const todRaw = params.get(LOOK_PARAM_KEYS.tod);
 
@@ -138,7 +137,7 @@ export function parseLookParams(search: string = ''): LookUrlParams {
 
 /** True when the query string carries at least one look / weather / grade key. */
 export function hasLookSearchParams(search: string = ''): boolean {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const params = readSearchParams(search);
   for (const key of params.keys()) {
     if (LOOK_SEARCH_KEYS.has(key)) return true;
   }
@@ -273,7 +272,7 @@ export function resolveLookUrlParams(params: LookUrlParams): LookEnvPatch {
 
 /** Safe window.location boot helper (SSR / vitest: no throw). */
 export function readBootLook(
-  search: string = typeof window !== 'undefined' ? window.location.search : '',
+  search: string = currentSearch(),
 ): ResolvedLookBoot | null {
   try {
     return resolveLookSearch(search);

@@ -6,6 +6,7 @@ import type {
     GPUPerformanceProfile,
 } from '../../utils/performance';
 import { isWebGpuProbeOk } from '../../renderer/webgpuBootProbe';
+import { currentSearch, readFlag } from '../../config/flags';
 import { setCabinMaterialBackend } from './cabinMaterialBackend';
 import { getCabinTslApi, setCabinTslApi } from './cabinTslRegistry';
 import { publishCabinRendererProbe, readCabinRendererProbe } from './cabinRendererProbe';
@@ -55,9 +56,6 @@ export interface CreateCabinRendererOptions {
     probeOk?: boolean;
 }
 
-const CABIN_WEBGL_FLAG_VALUE = 'webgl';
-const CABIN_WEBGPU_FLAG_VALUE = 'webgpu';
-
 /**
  * Pure — parses `?cabin=`.
  * - `?cabin=webgl` is the escape hatch back to a second WebGL context.
@@ -68,10 +66,8 @@ export function resolveCabinRendererPreference(
     search: string,
     probeOk: boolean = isWebGpuProbeOk(),
 ): CabinRendererBackend {
-    const params = new URLSearchParams(search);
-    const flag = params.get('cabin');
-    if (flag === CABIN_WEBGL_FLAG_VALUE) return 'webgl';
-    if (flag === CABIN_WEBGPU_FLAG_VALUE) return 'webgpu';
+    const flag = readFlag('cabin', search);
+    if (flag) return flag;
     return probeOk ? 'webgpu' : 'webgl';
 }
 
@@ -121,10 +117,9 @@ export function resetWebGPUCabinRendererForTests(): void {
 }
 
 function parseP3Flag(search: string): boolean {
-    const params = new URLSearchParams(search);
-    const raw = params.get('p3')?.toLowerCase();
-    if (raw === '1' || raw === 'true' || raw === 'on') return true;
-    if (raw === 'auto' && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const p3 = readFlag('p3', search);
+    if (p3 === 'on') return true;
+    if (p3 === 'auto' && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
         try {
             return window.matchMedia('(color-gamut: p3)').matches === true;
         } catch {
@@ -217,7 +212,7 @@ function noteHandle(
  * unaffected.
  */
 export function createCabinRenderer(options: CreateCabinRendererOptions): CabinRendererHandle {
-    const search = options.search ?? (typeof window !== 'undefined' ? window.location.search : '');
+    const search = options.search ?? currentSearch();
     const probeOk = options.probeOk ?? isWebGpuProbeOk();
     const preference = resolveCabinRendererPreference(search, probeOk);
 
@@ -256,7 +251,7 @@ export function createCabinRenderer(options: CreateCabinRendererOptions): CabinR
 export async function createCabinRendererAsync(
     options: CreateCabinRendererOptions,
 ): Promise<CabinRendererHandle> {
-    const search = options.search ?? (typeof window !== 'undefined' ? window.location.search : '');
+    const search = options.search ?? currentSearch();
     const probeOk = options.probeOk ?? isWebGpuProbeOk();
     const preference = resolveCabinRendererPreference(search, probeOk);
     const handle = createCabinRenderer(options);
