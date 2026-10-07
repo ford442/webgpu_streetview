@@ -16,6 +16,8 @@ export interface HistoricalTimelineProps {
   onCompare?: (entry: HistoricalPanoEntry) => void;
   isComparing?: boolean;
   onExitCompare?: () => void;
+  /** What the compare stills hold — road only, or road + cabin (`compareStillScopeLabel`). */
+  compareScopeLabel?: string;
 }
 
 const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
@@ -31,6 +33,7 @@ const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
   onCompare,
   isComparing = false,
   onExitCompare,
+  compareScopeLabel = 'Compare stills show the road view only (no cabin).',
 }) => {
   const labels = useMemo(() => yearStripLabels(entries), [entries]);
   const onScreen = currentIndex >= 0 ? currentIndex : entries.length - 1;
@@ -197,7 +200,7 @@ const HistoricalTimeline: React.FC<HistoricalTimelineProps> = ({
                   </div>
                 )}
                 <div style={{ marginTop: 6, color: '#777', fontSize: '10px' }}>
-                  Compare stills show the road view only (no cabin).
+                  {compareScopeLabel}
                 </div>
               </div>
             )}

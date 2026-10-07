@@ -56,6 +56,12 @@ describe('HistoricalTimeline year strip', () => {
     expect(screen.getByText(/road view only/)).toBeInTheDocument();
   });
 
+  it('shows the compare scope it is given (cabin included when composited)', () => {
+    renderPanel({ onCompare: vi.fn(), compareScopeLabel: 'Compare stills include the cabin, as drawn in the frame.' });
+    expect(screen.getByText(/include the cabin/)).toBeInTheDocument();
+    expect(screen.queryByText(/road view only/)).toBeNull();
+  });
+
   it('keeps pointer and key events off the scene', () => {
     const outer = vi.fn();
     const { container } = render(

@@ -105,6 +105,14 @@ export interface StreetViewRenderer {
      * only — absent (or undefined) on any backend without a real device.
      */
     getSharedGpuDevice?(): GPUDevice | undefined;
+    /**
+     * WebGPU only — the historical year-chip wipe from the hold-pause snapshot
+     * (`HistoricalWipePass.ts`). `begin` returns false when it cannot run (no
+     * pipeline, no snapshot); callers then keep the release crossfade.
+     */
+    beginHistoricalWipe?(direction: import('./historicalWipe').WipeDirection): boolean;
+    setHistoricalWipeProgress?(progress: number): void;
+    endHistoricalWipe?(): void;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);

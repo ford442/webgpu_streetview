@@ -8,8 +8,13 @@ import {
   STABILITY_POLL_INTERVAL_MS,
 } from '../utils/panoramaStability';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
+import { HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer/historicalWipe';
 
 // Types
+export interface TeleportToPanoOptions {
+  reveal?: HistoricalReveal;
+}
+
 export interface StreetViewState {
   // Core panorama reference
   panorama: google.maps.StreetViewPanorama | null;
@@ -39,8 +44,13 @@ export interface StreetViewState {
   // Navigation
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;
   teleport: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => void;
-  /** Jump straight to a known panorama id (e.g. a historical capture) with the same hold-pause treatment. */
-  teleportToPano: (panoId: string) => void;
+  /**
+   * Jump straight to a known panorama id (e.g. a historical capture) with the
+   * same hold-pause treatment. `reveal` picks how the held frame gives way once
+   * the new panorama is stable (year chips: GPU wipe, or a cut under reduced
+   * motion); omitted, it is the usual release crossfade.
+   */
+  teleportToPano: (panoId: string, options?: TeleportToPanoOptions) => void;
   
   // Transition state
   isTransitioning: boolean;
@@ -118,6 +128,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   
   // Transition animation RAF ref (release crossfade only)
   const transitionRafRef = useRef<number | null>(null);
+  /** How the next hold release reveals the new panorama; null = crossfade. */
+  const pendingRevealRef = useRef<HistoricalReveal | null>(null);
 
   // Expose window.__STREETVIEW_PROBE__ once for the lifetime of the app.
   useEffect(() => {
@@ -238,6 +250,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
     renderer?.beginHoldTransition(headingRef.current, pitchRef.current, currentCanvas ?? undefined);
     streetViewProbe.holdArmed();
+    pendingRevealRef.current = null;
 
     holdBaselineFingerprintRef.current = currentCanvas
       ? getCanvasFingerprint(currentCanvas)
@@ -328,11 +341,12 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // Jump directly to a known panorama id (historical capture, saved bookmark
   // pano, etc). Heading/pitch are left untouched so a POV comparison stays
   // apples-to-apples across dates. Same hold-pause treatment as advance/teleport.
-  const teleportToPano = useCallback((panoId: string) => {
+  const teleportToPano = useCallback((panoId: string, options?: TeleportToPanoOptions) => {
     const pano = panoramaRef.current;
     if (!pano || isTransitioningRef.current || !panoId) return;
 
     armHold();
+    pendingRevealRef.current = options?.reveal ?? null;
     pano.setPano(panoId);
   }, [isTransitioning, armHold]);
 
@@ -450,43 +464,71 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       return;
     }
 
-    // End hold so the shader crossfade path (transitionProgress 0→1) can blend
-    // the GPU snapshot with the now-stable live panorama.
+    // End hold so the release (crossfade or year-chip wipe) can show the
+    // now-stable live panorama against the GPU snapshot.
     renderer.endHoldTransition();
+
+    const reveal = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+
+    const finishRelease = () => {
+      transitionRafRef.current = null;
+      renderer.setTransitionProgress(0.0);
+      renderer.endHistoricalWipe?.();
+      isTransitioningRef.current = false;
+      isPanoramaReadyRef.current = true;
+      isPanoramaUpdatePausedRef.current = false;
+      holdBaselineFingerprintRef.current = '';
+      setIsTransitioning(false);
+      setTransitionSource(null);
+      console.log('[StreetView] Transition pause complete, ready for next advance');
+      streetViewProbe.released();
+    };
+
+    if (transitionRafRef.current !== null) {
+      cancelAnimationFrame(transitionRafRef.current);
+      transitionRafRef.current = null;
+    }
+
+    // Reduced motion: an instant cut — no crossfade, no wipe shader.
+    if (reveal?.kind === 'cut') {
+      finishRelease();
+      return;
+    }
+
+    // Year-chip wipe, when the renderer can run it from its hold snapshot;
+    // otherwise (WebGL, no pipeline, no snapshot) the usual crossfade.
+    const wiping = reveal?.kind === 'wipe'
+      && renderer.beginHistoricalWipe?.(reveal.direction) === true;
 
     const RELEASE_DURATION = 250;
     const startTime = performance.now();
 
     const animateRelease = () => {
       const elapsed = performance.now() - startTime;
-      const progress = Math.min(1.0, elapsed / RELEASE_DURATION);
-      renderer.setTransitionProgress(progress);
+      let progress: number;
+      if (wiping) {
+        progress = Math.min(1.0, elapsed / HISTORICAL_WIPE_DURATION_MS);
+        renderer.setHistoricalWipeProgress?.(wipeProgressAt(elapsed, HISTORICAL_WIPE_DURATION_MS));
+      } else {
+        progress = Math.min(1.0, elapsed / RELEASE_DURATION);
+        renderer.setTransitionProgress(progress);
+      }
 
       if (progress < 1.0) {
         transitionRafRef.current = requestAnimationFrame(animateRelease);
       } else {
-        transitionRafRef.current = null;
-        renderer.setTransitionProgress(0.0);
-        isTransitioningRef.current = false;
-        isPanoramaReadyRef.current = true;
-        isPanoramaUpdatePausedRef.current = false;
-        holdBaselineFingerprintRef.current = '';
-        setIsTransitioning(false);
-        setTransitionSource(null);
-        console.log('[StreetView] Transition pause complete, ready for next advance');
-        streetViewProbe.released();
+        finishRelease();
       }
     };
 
-    if (transitionRafRef.current !== null) {
-      cancelAnimationFrame(transitionRafRef.current);
-    }
     transitionRafRef.current = requestAnimationFrame(animateRelease);
 
     return () => {
       if (transitionRafRef.current !== null) {
         cancelAnimationFrame(transitionRafRef.current);
         transitionRafRef.current = null;
+        renderer.endHistoricalWipe?.();
       }
     };
   }, [isTransitioning, isPanoramaReady]);

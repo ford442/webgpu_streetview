@@ -27,6 +27,7 @@ import {
     createStreetViewPipeline,
 } from './streetViewPass';
 import {
+    type EncodeFrameOptions,
     buildFramePassTimings,
     encodeAndSubmitFrame,
     encodeCabinComposite,
@@ -45,6 +46,10 @@ import {
     type RoadFrameSource,
 } from './roadFrameRegistry';
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
+import { HistoricalWipePass } from './HistoricalWipePass';
+import type { WipeDirection } from './historicalWipe';
+
+type EncodeFrameOptionsWipe = NonNullable<EncodeFrameOptions['historicalWipe']> | null;
 
 /**
  * Street View's WebGPU renderer — a façade over four named modules:
@@ -57,6 +62,7 @@ import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
  * | `frameLoop.ts` | per-frame encode order and uniform packing |
  * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
  * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
+ * | `HistoricalWipePass.ts` | the year-chip wipe from the hold snapshot, over pass 1 |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
  * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
@@ -92,6 +98,7 @@ export class Renderer implements StreetViewRenderer {
     private gpuPassTimer: GpuPassTimer | null = null;
     private gpuChores: GpuChores | null = null;
     private cabinComposite: CabinCompositePass | null = null;
+    private historicalWipe: HistoricalWipePass | null = null;
     /** What the cabin's windshield portal reads — see `roadFrameRegistry.ts`. */
     private roadFrameSource: RoadFrameSource | null = null;
     private readonly roadLook = createNeutralRoadLook();
@@ -220,6 +227,16 @@ export class Renderer implements StreetViewRenderer {
                 await this.transitionManager.init(!!options?.legacyTransitions);
             } catch (e) {
                 console.warn('[Renderer] Transition pipelines failed to initialize — transitions disabled:', e);
+            }
+
+            // Non-fatal: without it year-chip hops keep the pass-1 crossfade.
+            this.historicalWipe = new HistoricalWipePass(this.device);
+            try {
+                await this.historicalWipe.init(this.textures.intermediateFormat);
+            } catch (e) {
+                console.warn('[Renderer] Historical wipe unavailable — year hops crossfade:', e);
+                this.historicalWipe.dispose();
+                this.historicalWipe = null;
             }
 
             // The portal reads the pass-1 intermediate only — never `videoTexture`,
@@ -358,6 +375,8 @@ export class Renderer implements StreetViewRenderer {
             this.gpuChores = null;
             this.cabinComposite?.dispose();
             this.cabinComposite = null;
+            this.historicalWipe?.dispose();
+            this.historicalWipe = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
             if (unconfigureContext) {
@@ -528,6 +547,34 @@ export class Renderer implements StreetViewRenderer {
         this.transitionManager?.setTransitionProgress(progress);
     }
 
+    /**
+     * Arm the year-chip wipe from the hold-pause snapshot to the live frame.
+     * False — and the caller keeps the crossfade — when the pipeline is
+     * missing or there is no snapshot to wipe from.
+     */
+    public beginHistoricalWipe(direction: WipeDirection): boolean {
+        if (this.isDestroyed || !this.historicalWipe || !this.transitionManager?.previousFrame) return false;
+        return this.historicalWipe.begin(direction);
+    }
+
+    public setHistoricalWipeProgress(progress: number): void {
+        this.historicalWipe?.setProgress(progress);
+    }
+
+    public endHistoricalWipe(): void {
+        this.historicalWipe?.end();
+    }
+
+    /**
+     * The wipe for this frame, or null. Never while a hold is active: the held
+     * frame is already the "before", and the wipe must not run ahead of the
+     * release that makes the live frame safe to show.
+     */
+    private resolveHistoricalWipe(): EncodeFrameOptionsWipe {
+        if (this.holdTransition.isHoldActive() || !this.historicalWipe?.isActive()) return null;
+        return { pass: this.historicalWipe, before: this.transitionManager?.previousFrame };
+    }
+
     public renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void {
         if (this.isDestroyed || !this.device || !this.pipeline) return;
 
@@ -566,6 +613,7 @@ export class Renderer implements StreetViewRenderer {
                 transitionManager: this.transitionManager,
                 weatherPostProcessor: this.weatherPostProcessor,
                 cabinComposite: this.resolveCabinComposite(),
+                historicalWipe: this.resolveHistoricalWipe(),
                 getSwapChainView: () => this.getSwapChainView(),
                 gpuPassTimer: this.gpuPassTimer,
                 timings: buildFramePassTimings(this.gpuPassTimer, this.weatherPostProcessMode),
