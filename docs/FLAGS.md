@@ -17,6 +17,7 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?renderer` | enum | `auto` \| `webgpu` \| `webgl` | — | Backend preference. WebGL weather is a reference only; boot still probes WebGPU. |
 | `?webgl` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Shorthand for `?renderer=webgl`. |
 | `?webgpu` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Shorthand for `?renderer=webgpu`. |
+| `?webgl2` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Opt-in WebGL2 fallback when WebGPU fails to boot. Never automatic; shows a "WebGL2 fallback active" banner. |
 | `?gpu` | tokens | comma list: `low`, `low-power`, `high`, `high-performance`, `fallback`, `software`, `compat`, `compatibility`, `features` | — | Adapter selection tokens, e.g. `?gpu=high,compat`. `features` dumps enabled optional features on the backend chip. |
 | `?hdr` | tri | `on\|off\|auto` (bool spellings accepted) | `off` | Output-referred HDR canvas (extended tone mapping + rgba16float). `auto` follows the display. |
 | `?p3` | tri | `on\|off\|auto` (bool spellings accepted) | `off` | Display-P3 canvas colour space (also colours the cabin overlay). `auto` follows the display. |

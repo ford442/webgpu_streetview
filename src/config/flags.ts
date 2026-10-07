@@ -66,6 +66,10 @@ export const FLAGS = {
   },
   webgl: { kind: 'bool', doc: 'Shorthand for `?renderer=webgl`.' },
   webgpu: { kind: 'bool', doc: 'Shorthand for `?renderer=webgpu`.' },
+  webgl2: {
+    kind: 'bool',
+    doc: 'Opt-in WebGL2 fallback when WebGPU fails to boot. Never automatic; shows a "WebGL2 fallback active" banner.',
+  },
   gpu: {
     kind: 'tokens',
     values: ['low', 'low-power', 'high', 'high-performance', 'fallback', 'software', 'compat', 'compatibility', 'features'],

@@ -3,9 +3,11 @@
 Street View post-processing has a **WebGPU-required** boot contract:
 
 - `webgpu`: the primary dual-pass renderer in `src/renderer/Renderer.ts` (only live weather path).
-- `webgl`: **not a live backend**. SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for tests/docs. `createStreetViewRenderer` does not import a GL weather class. `?renderer=webgl` still probes WebGPU only (`webgpuProbe.webglPreferenceDeferred`).
+- `webgl`: **opt-in only, via `?webgl2=1`**. `src/renderer/webgl/WebGL2FallbackRenderer.ts` runs the SDR GLSL from `weatherReference.glsl.ts`; `createStreetViewRenderer` lazy-imports it only after WebGPU failed *and* the flag is set. `?renderer=webgl` still probes WebGPU only (`webgpuProbe.webglPreferenceDeferred`).
 
-Failed WebGPU boot probe → **hard-fail** (blocking overlay on the pano). The app does **not** construct a WebGL weather context and does **not** elevate raw Street View as a weather session.
+Failed WebGPU boot probe without `?webgl2=1` → **hard-fail**: a red "WebGPU is required … add `?webgl2=1`" banner (`RendererBackendIndicator`). There is never an automatic fallback — WebGPU failures stay visible.
+
+With `?webgl2=1` and a failed WebGPU boot → the WebGL2 renderer runs, a persistent amber banner reads **"WebGL2 fallback active — WebGPU not in use"**, and the same text is `console.warn`ed. It lacks compute weather, LUTs, temporal history, GPU snapshots and the one-frame cabin compositor. If WebGL2 also fails (e.g. the canvas already holds a `webgpu` context), the boot hard-fails as above.
 
 On capable adapters (`webgpuProbe.ok` + the shared Street View `GPUDevice`) the default cabin is `THREE.WebGPURenderer({ device })` and it is **no longer a second canvas**: `src/car/interior/cabinFrameTarget.ts` points that renderer at a `THREE.RenderTarget` via `setOutputRenderTarget`, publishes the target's `GPUTexture` on `src/renderer/cabinOverlayRegistry.ts`, and `src/renderer/cabinComposite.ts` draws it over the swap chain in the road frame's own command encoder (pass 1 → weather → cabin → submit). One `requestDevice`, one `configureCanvasContext`, one presented frame. The cabin canvas stays in the DOM but `visibility: hidden` while the compositor owns the frame — three still owns it and `setSize` / pointer plumbing measure it. `?cabin=webgl` is the escape hatch back to a second WebGL context and its CSS overlay. `?cabin=webgpu` still forces the shared-device path. The cabin must **not** call `configure()` on the panorama canvas (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`). Failed `WebGPURenderer.init()` falls back to the WebGL overlay; Street View weather stays up.
 

@@ -110,7 +110,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     };
 
     if (!navigator.gpu) {
-        console.warn('WebGPU not supported. Hard-fail — no live GL weather.');
+        console.warn('WebGPU not supported. Hard-fail — add ?webgl2=1 for the WebGL2 fallback.');
         return fail('navigator', 'WebGPU is not supported in this browser');
     }
 

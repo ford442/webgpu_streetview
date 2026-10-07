@@ -15,6 +15,25 @@ let mockWebgpuFallbackReason: string | undefined;
 
 vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
 
+const mockGlInit = vi.fn();
+const mockGlCtor = vi.fn();
+vi.mock('./webgl/WebGL2FallbackRenderer', () => ({
+  WebGL2FallbackRenderer: vi.fn().mockImplementation(function (
+    this: Record<string, unknown>,
+    canvas: HTMLCanvasElement,
+    _debug: unknown,
+    reason?: string,
+  ) {
+    mockGlCtor(reason);
+    this.canvas = canvas;
+    this.backendType = 'webgl';
+    this.fallbackReason = reason;
+    this.init = mockGlInit;
+    this.destroy = vi.fn();
+    this.setDebugOptions = vi.fn();
+  }),
+}));
+
 const MockedRenderer = Renderer as unknown as Mock;
 
 describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
@@ -34,6 +53,8 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
 
     mockRendererInit.mockReset().mockResolvedValue(true);
     mockRendererDestroy.mockReset();
+    mockGlInit.mockReset().mockResolvedValue(true);
+    mockGlCtor.mockReset();
 
     MockedRenderer.mockReset().mockImplementation(function (this: Record<string, unknown>, canvas: HTMLCanvasElement) {
       mockCallOrder.push('webgpu');
@@ -120,7 +141,51 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
     );
   });
 
-  it('does not import a live GL weather class from production renderer sources', () => {
+  it('never constructs the WebGL2 fallback without ?webgl2=1', async () => {
+    mockRendererInit.mockResolvedValue(false);
+    const created = await createStreetViewRenderer(document.createElement('canvas'));
+
+    expect(created.renderer).toBeNull();
+    expect(mockGlCtor).not.toHaveBeenCalled();
+  });
+
+  it('uses the WebGL2 fallback when ?webgl2=1 is set and WebGPU fails, and warns', async () => {
+    window.history.pushState({}, '', '/?webgl2=1');
+    mockRendererInit.mockResolvedValue(false);
+    mockWebgpuFallbackReason = 'WebGPU is not supported in this browser';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const created = await createStreetViewRenderer(document.createElement('canvas'));
+
+    expect(created.backendType).toBe('webgl');
+    expect(created.renderer).not.toBeNull();
+    expect(created.fallbackReason).toBe('WebGPU failed: WebGPU is not supported in this browser');
+    expect(window.usingWebGL).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('WebGL2 fallback active — WebGPU not in use'));
+    warn.mockRestore();
+  });
+
+  it('prefers WebGPU even when ?webgl2=1 is set', async () => {
+    window.history.pushState({}, '', '/?webgl2=1');
+    const created = await createStreetViewRenderer(document.createElement('canvas'));
+
+    expect(created.backendType).toBe('webgpu');
+    expect(mockGlCtor).not.toHaveBeenCalled();
+  });
+
+  it('hard-fails when ?webgl2=1 is set but WebGL2 also fails', async () => {
+    window.history.pushState({}, '', '/?webgl2=1');
+    mockRendererInit.mockResolvedValue(false);
+    mockGlInit.mockResolvedValue(false);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const created = await createStreetViewRenderer(document.createElement('canvas'));
+
+    expect(created.renderer).toBeNull();
+    expect(created.backendType).toBeNull();
+    expect(window.usingWebGL).toBe(false);
+    error.mockRestore();
+  });
+
+  it('reaches GL code only through the gated lazy import in createStreetViewRenderer', () => {
     const root = join(__dirname);
     const hits: string[] = [];
     const collect = (dir: string) => {
@@ -131,7 +196,10 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
           collect(full);
         } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
           const text = readFileSync(full, 'utf8');
-          if (text.includes('WebGLFallbackRenderer') || /from ['"].*webgl\/weatherReference/.test(text)) {
+          const gated = entry.name === 'createStreetViewRenderer.ts'
+            && !/from ['"]\.\/webgl\//.test(text)
+            && text.includes("await import('./webgl/WebGL2FallbackRenderer')");
+          if (!gated && (/WebGL2?FallbackRenderer/.test(text) || /['"].*webgl\//.test(text))) {
             hits.push(full.replace(`${root}/`, ''));
           }
         }
