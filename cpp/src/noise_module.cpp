@@ -16,6 +16,7 @@
  */
 
 #include "streetview_wasm.h"
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -57,11 +58,16 @@ static inline float grad2d(int hash, float x, float y) {
     return g[0] * x + g[1] * y;
 }
 
-static inline int fast_floor(float x) {
-    int xi = (int)x;
-    // Explicit int -> float so -Wconversion stays clean; the comparison
-    // already happened in float, so the semantics are unchanged.
-    return x < static_cast<float>(xi) ? xi - 1 : xi;
+// Integer lattice coordinate of an already-floored value. Only the low 8 bits
+// ever reach the permutation table, so the range-safe answer outside int's
+// range is 0: every finite float with |x| >= 2^31 is a multiple of 256, and
+// NaN/inf fail both comparisons. A plain (int) cast there is UB. This is the
+// same answer the JS twin gets from `Math.floor(x) & 255` (ToInt32).
+static inline int lattice_index(float floored) {
+    if (floored >= -2147483648.0f && floored < 2147483648.0f) {
+        return static_cast<int>(floored);
+    }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,11 +92,14 @@ void sw_seed(unsigned int seed) {
 }
 
 float sw_noise2d(float x, float y) {
-    int ix = fast_floor(x);
-    int iy = fast_floor(y);
+    const float flx = floorf(x);
+    const float fly = floorf(y);
+    int ix = lattice_index(flx);
+    int iy = lattice_index(fly);
 
-    float fx = x - (float)ix;
-    float fy = y - (float)iy;
+    // floorf is exact, so this is bit-identical to x - (float)ix in range.
+    float fx = x - flx;
+    float fy = y - fly;
 
     float u = fade(fx);
     float v = fade(fy);
@@ -110,6 +119,7 @@ float sw_noise2d(float x, float y) {
 
 void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY) {
+    if (buf == nullptr || width <= 0 || height <= 0) return;
     const float inv_scale = 1.0f / scale;
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
@@ -140,6 +150,7 @@ float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain) {
 void sw_fill_fbm_buffer(float* buf, int width, int height,
                         float scale, float offsetX, float offsetY,
                         int octaves, float lacunarity, float gain) {
+    if (buf == nullptr || width <= 0 || height <= 0) return;
     const float inv_scale = 1.0f / scale;
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
@@ -155,6 +166,7 @@ void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
     // Same LCG as sw_seed's shuffle; the top 24 bits of the low word give a
     // uniform [0, 1) float. Mirrored bit-for-bit by the JS fallback in
     // src/wasm/jsFallback.ts.
+    if (buf == nullptr || count <= 0) return;
     uint32_t state = seed;
     auto next_unit = [&state]() -> float {
         state = state * 1664525u + 1013904223u;

@@ -58,7 +58,8 @@ interface Goldens {
   signedAngleDiff: { from: number; to: number; expected: number }[];
   engineNoise: {
     label: string; count: number; rpm: number; load: number;
-    speedKmh: number; timeSec: number; sampleRate: number; expected: number[];
+    speedKmh: number; phase: number; sampleIndex: number; sampleRate: number;
+    expected: number[]; expectedPhase: number;
   }[];
   cabinIr: {
     label: string; count: number; vehicleType: number;
@@ -87,7 +88,7 @@ const goldens: Goldens = JSON.parse(
  *
  * Measured worst-case |JS - golden| at the time of writing:
  *   noise2d 1.2e-8 · fbm2d 7.4e-9 · noise tile 2.2e-7 · fBm tile 9.3e-8
- *   engine PCM 3.0e-8 · particle seeds 0 · angle helpers 0 · cabin IR 0
+ *   particle seeds 0 · angle helpers 0 · cabin IR 0 · engine PCM 0
  */
 const TOLERANCES = {
   /**
@@ -98,9 +99,10 @@ const TOLERANCES = {
   /** Both sides use the host's Math.sin/cos/asin/atan2 in double precision. */
   haversineRelative: 1e-12,
   /**
-   * Integer-LCG and fmod paths, plus the cabin IR (whose JS twin rounds with
-   * Math.fround after every operation): no double-precision accumulation, so
-   * exact agreement.
+   * Integer-LCG and fmod paths, plus the cabin IR and engine PCM (whose JS
+   * twins round with Math.fround after every f32 operation and carry the
+   * engine phase in plain f64 on both sides): no double-precision
+   * accumulation, so exact agreement.
    */
   exact: 0,
 } as const;
@@ -257,9 +259,12 @@ describe('WASM golden parity (JS fallback)', () => {
   it('fillEngineNoise matches the goldens', () => {
     goldens.engineNoise.forEach((c) => {
       const out = new Float32Array(c.count);
-      api.fillEngineNoise(out, c.count, c.rpm, c.load, c.speedKmh, c.timeSec, c.sampleRate);
+      const next = api.fillEngineNoise(
+        out, c.count, c.rpm, c.load, c.speedKmh, c.phase, c.sampleIndex, c.sampleRate,
+      );
+      expectClose(next, c.expectedPhase, TOLERANCES.exact, `engineNoise[${c.label}].phase`);
       c.expected.forEach((expected, i) => {
-        expectClose(out[i]!, expected, TOLERANCES.f32RoundingOrder, `engineNoise[${c.label}][${i}]`);
+        expectClose(out[i]!, expected, TOLERANCES.exact, `engineNoise[${c.label}][${i}]`);
       });
     });
   });

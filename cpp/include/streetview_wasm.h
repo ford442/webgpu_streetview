@@ -57,6 +57,7 @@ float sw_noise2d(float x, float y);
  * @param scale   Spatial frequency (larger = more zoomed-out pattern).
  * @param offsetX World-space X offset.
  * @param offsetY World-space Y offset.
+ * No-op when buf is null or width/height <= 0.
  */
 void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY);
@@ -75,6 +76,7 @@ float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
 /**
  * Fill a Float32 buffer with fBm samples.  Same tile layout as
  * sw_fill_noise_buffer; every sample is an fBm stack instead of one octave.
+ * No-op when buf is null or width/height <= 0.
  */
 void sw_fill_fbm_buffer(float* buf, int width, int height,
                         float scale, float offsetX, float offsetY,
@@ -139,19 +141,32 @@ float sw_signed_angle_diff(float from, float to);
 /**
  * Fill a mono PCM buffer with engine + road noise.
  * Samples are f32 in [-1, 1]. Deterministic for a given (rpm, load, speed,
- * time, sampleRate) so the JS fallback can match the compiled path.
+ * phase, sample_index, sampleRate) so the JS fallback can match the compiled
+ * path bit-for-bit.
  *
- * @param buf          Caller-owned float array of length `count`.
- * @param count        Number of samples to write.
- * @param rpm          Engine RPM (>= 0).
- * @param load         Throttle/load in [0, 1].
- * @param speed_kmh    Road speed in km/h (>= 0).
- * @param time_sec     Stream time at sample 0 (seconds, >= 0).
- * @param sample_rate  Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ * Streaming: pass the returned phase back as `phase` for the next block and
+ * advance `sample_index` by `count`. The phase is wrapped to [0, 1) every
+ * sample in f64, so the tone does not degrade however long the drive is.
+ *
+ * @param buf           Caller-owned float array of length `count`.
+ * @param count         Number of samples to write.
+ * @param rpm           Engine RPM (>= 0).
+ * @param load          Throttle/load in [0, 1].
+ * @param speed_kmh     Road speed in km/h (>= 0).
+ * @param phase         Oscillator phase at sample 0, in fundamental cycles;
+ *                      wrapped into [0, 1) (non-finite -> 0).
+ * @param sample_index  Absolute stream position of sample 0 (an integer
+ *                      count, exact in f64 up to 2^53). Road noise is a hash
+ *                      of (sample_index + i) mod 2^32, so the output does not
+ *                      depend on block size. Negative / non-finite -> 0.
+ * @param sample_rate   Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ * @return              Phase after the last sample, in [0, 1). `phase`
+ *                      (wrapped) when count <= 0 or buf is null.
  */
-void sw_fill_engine_noise(float* buf, int count,
-                          float rpm, float load, float speed_kmh,
-                          float time_sec, float sample_rate);
+double sw_fill_engine_noise(float* buf, int count,
+                            float rpm, float load, float speed_kmh,
+                            double phase, double sample_index,
+                            float sample_rate);
 
 /**
  * Fill a short cabin impulse response (mono, f32, `count` taps).

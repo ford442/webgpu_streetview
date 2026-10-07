@@ -49,9 +49,22 @@ const EMSCRIPTEN_RUNTIME_EXPORTS = new Set([
   'malloc',
   'free',
   '_initialize',
+  'emscripten_stack_get_base',
   '_emscripten_stack_restore',
   'emscripten_stack_get_current',
 ]);
+
+/**
+ * Runtime exports the loader depends on: `malloc`/`free` back the scratch
+ * arena, `emscripten_stack_get_base` proves it sits above the stack, and
+ * `_initialize` must run before either (it is what sets the stack base).
+ */
+const LOADER_RUNTIME_EXPORTS = [
+  '_initialize',
+  'emscripten_stack_get_base',
+  'free',
+  'malloc',
+] as const;
 
 function sorted(names: Iterable<string>): string[] {
   return Array.from(names).sort();
@@ -98,11 +111,43 @@ describe('WASM ABI lock', () => {
   it('the TypeScript loader reads exactly the expected exports', () => {
     const loader = read('src', 'wasm', 'index.ts');
     const names = new Set<string>();
+    const runtime = new Set<string>();
     for (const match of loader.matchAll(/exp\['([A-Za-z0-9_]+)'\]/g)) {
       const name = match[1]!;
-      if (name !== 'memory') names.add(name);
+      if (name === 'memory') continue;
+      (EMSCRIPTEN_RUNTIME_EXPORTS.has(name) ? runtime : names).add(name);
     }
     expect(sorted(names)).toEqual(expectedSorted);
+    expect(sorted(runtime)).toEqual(sorted(LOADER_RUNTIME_EXPORTS));
+  });
+
+  it('CMake and the committed binary provide every runtime export the loader needs', async () => {
+    const cmake = read('cpp', 'CMakeLists.txt');
+    const list = cmake.match(/EXPORTED_FUNCTIONS=\[([^\]]*)\]/)![1]!;
+    const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
+    const exported = new Set(
+      WebAssembly.Module.exports(await WebAssembly.compile(bytes)).map((e) => e.name),
+    );
+    for (const name of LOADER_RUNTIME_EXPORTS) {
+      // _initialize is emitted by --no-entry itself, not via EXPORTED_FUNCTIONS.
+      if (name !== '_initialize') expect(list).toContain(`'_${name}'`);
+      expect(exported.has(name)).toBe(true);
+    }
+  });
+
+  it('fill_engine_noise keeps the f64 phase signature in bindings, header and loader', () => {
+    // Bug 2 was an f32 absolute-time argument; a refactor that narrows the
+    // phase or the sample index back to float must fail loudly here.
+    const squash = (text: string): string => text.replace(/\s+/g, ' ');
+    expect(squash(read('cpp', 'src', 'bindings.cpp'))).toContain(
+      'double fill_engine_noise(float* buf, int count, float rpm, float load, float speed_kmh, double phase, double sample_index, float sample_rate)',
+    );
+    expect(squash(read('cpp', 'include', 'streetview_wasm.h'))).toContain(
+      'double sw_fill_engine_noise(float* buf, int count, float rpm, float load, float speed_kmh, double phase, double sample_index, float sample_rate);',
+    );
+    expect(squash(read('src', 'wasm', 'index.ts'))).toContain(
+      'phase: number, sampleIndex: number, sampleRate: number, ) => number;',
+    );
   });
 
   it('the committed binary exports every expected function (runtime extras allowed)', async () => {

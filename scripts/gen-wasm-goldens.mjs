@@ -50,24 +50,34 @@ const headerOut = flagValue('--header-out') || join(repoRoot, 'cpp', 'tests', 'g
 const bytes = readFileSync(wasmPath);
 const wasmSha256 = createHash('sha256').update(bytes).digest('hex');
 
+// Same import object and start-up as src/wasm/index.ts
+// (instantiateStreetViewWasm).
 const importObject = {
   env: {
-    sin: Math.sin,
-    cos: Math.cos,
-    atan2: Math.atan2,
     emscripten_notify_memory_growth: () => {},
   },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
 const exp = instance.exports;
 const memory = exp.memory;
+if (typeof exp._initialize === 'function') exp._initialize();
 
-/** Must match src/wasm/scratchOffset.ts (`WASM_SCRATCH_OFFSET`). */
-const SCRATCH = 65536;
+// Scratch comes from the module's own malloc, exactly like the loader's arena
+// (src/wasm/marshal.ts) — never a fixed offset, which can land inside the
+// downward-growing C++ stack. Every fixture below is tiny; one block covers
+// them all, and reserve() refuses to silently overrun it.
+const SCRATCH_BYTES = 64 * 1024;
+const SCRATCH = exp.malloc(SCRATCH_BYTES);
+if (!SCRATCH || SCRATCH % 8 !== 0) throw new Error(`malloc(${SCRATCH_BYTES}) -> ${SCRATCH}`);
+if (typeof exp.emscripten_stack_get_base === 'function'
+  && SCRATCH < exp.emscripten_stack_get_base()) {
+  throw new Error(`scratch ${SCRATCH} is below the stack base ${exp.emscripten_stack_get_base()}`);
+}
 
 const reserve = (nbytes) => {
-  const available = memory.buffer.byteLength - SCRATCH;
-  if (available < nbytes) memory.grow(Math.ceil((nbytes - available) / 65536));
+  if (nbytes > SCRATCH_BYTES) {
+    throw new Error(`golden fixture needs ${nbytes} B of scratch; raise SCRATCH_BYTES`);
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -133,12 +143,18 @@ const ANGLE_PAIRS = [
   [-45, 45], [720, 45], [359, 1], [123.25, -456.5],
 ];
 
+// `phase` is in fundamental cycles and `sampleIndex` is the absolute stream
+// position (hashed per sample for the road noise). 'hour-in' is one hour into
+// a 48 kHz drive — the f32-time ABI this replaced had turned it into a
+// staircase — and 'wrap' crosses 2^32 samples, where the hashed index wraps.
 const ENGINE_CASES = [
-  { label: 'cruise', count: 64, rpm: 2500, load: 0.6, speedKmh: 90, timeSec: 3.25, sampleRate: 44100 },
-  { label: 'idle', count: 32, rpm: 800, load: 0, speedKmh: 0, timeSec: 0, sampleRate: 44100 },
-  { label: 'redline', count: 32, rpm: 6800, load: 1, speedKmh: 210, timeSec: 12.5, sampleRate: 48000 },
+  { label: 'cruise', count: 64, rpm: 2500, load: 0.6, speedKmh: 90, phase: 0.25, sampleIndex: 143325, sampleRate: 44100 },
+  { label: 'idle', count: 32, rpm: 800, load: 0, speedKmh: 0, phase: 0, sampleIndex: 0, sampleRate: 44100 },
+  { label: 'redline', count: 32, rpm: 6800, load: 1, speedKmh: 210, phase: 0.9375, sampleIndex: 600000, sampleRate: 48000 },
+  { label: 'hour-in', count: 32, rpm: 2500, load: 0.6, speedKmh: 90, phase: 0.123456789, sampleIndex: 172800000, sampleRate: 48000 },
+  { label: 'wrap', count: 16, rpm: 3100, load: 0.3, speedKmh: 60, phase: 0.5, sampleIndex: 4294967288, sampleRate: 44100 },
   // Degenerate inputs: the clamp/fallback branches must agree across backends.
-  { label: 'clamped', count: 16, rpm: -100, load: 2.5, speedKmh: -5, timeSec: -1, sampleRate: 0 },
+  { label: 'clamped', count: 16, rpm: -100, load: 2.5, speedKmh: -5, phase: -1.75, sampleIndex: -1, sampleRate: 0 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -209,10 +225,10 @@ const signedAngleDiff = ANGLE_PAIRS.map(([from, to]) => ({
 
 const engineNoise = ENGINE_CASES.map((c) => {
   reserve(c.count * 4);
-  exp.fill_engine_noise(
-    SCRATCH, c.count, c.rpm, c.load, c.speedKmh, c.timeSec, c.sampleRate,
+  const expectedPhase = exp.fill_engine_noise(
+    SCRATCH, c.count, c.rpm, c.load, c.speedKmh, c.phase, c.sampleIndex, c.sampleRate,
   );
-  return { ...c, expected: readF32(c.count) };
+  return { ...c, expected: readF32(c.count), expectedPhase };
 });
 
 // Cabin IRs: two production-length taps at 44.1 kHz (roof closed vs open, the
@@ -493,9 +509,11 @@ engineNoise.forEach((c, i) => {
   lines.push(`inline constexpr float kEngineRpm${i} = ${f32(c.rpm)};`);
   lines.push(`inline constexpr float kEngineLoad${i} = ${f32(c.load)};`);
   lines.push(`inline constexpr float kEngineSpeed${i} = ${f32(c.speedKmh)};`);
-  lines.push(`inline constexpr float kEngineTime${i} = ${f32(c.timeSec)};`);
+  lines.push(`inline constexpr double kEnginePhase${i} = ${f64(c.phase)};`);
+  lines.push(`inline constexpr double kEngineSampleIndex${i} = ${f64(c.sampleIndex)};`);
   lines.push(`inline constexpr float kEngineSampleRate${i} = ${f32(c.sampleRate)};`);
   lines.push(f32Array(`kEngineExpected${i}`, c.expected));
+  lines.push(`inline constexpr double kEngineExpectedPhase${i} = ${f64(c.expectedPhase)};`);
   lines.push('');
 });
 

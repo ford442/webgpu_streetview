@@ -44,7 +44,10 @@ export class CabinAudio {
   private oscB: OscillatorNode | null = null;
   private oscGain: GainNode | null = null;
   private wasm: StreetViewWasmAPI | null = null;
-  private timeSec = 0;
+  /** Engine oscillator phase in fundamental cycles, [0, 1); f64 so it never drifts. */
+  private enginePhase = 0;
+  /** Absolute sample position of the next PCM block (seeds the road-noise LCG). */
+  private sampleIndex = 0;
   private rpm = 850;
   private load = 0.15;
   private speedKmh = 0;
@@ -132,11 +135,12 @@ export class CabinAudio {
     for (let i = 0; i < count; i++) {
       const block = new Float32Array(CABIN_PCM_BLOCK);
       if (wasm) {
-        wasm.fillEngineNoise(
-          block, block.length, this.rpm, this.load, this.speedKmh, this.timeSec, sampleRate,
+        this.enginePhase = wasm.fillEngineNoise(
+          block, block.length, this.rpm, this.load, this.speedKmh,
+          this.enginePhase, this.sampleIndex, sampleRate,
         );
       }
-      this.timeSec += block.length / sampleRate;
+      this.sampleIndex += block.length;
       filled.push(block);
     }
     node.port.postMessage(

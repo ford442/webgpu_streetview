@@ -59,7 +59,9 @@ void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
     if (width <= 0 || height <= 0 || rgba == nullptr) return;
     const int count = width * height;
     const std::span<const unsigned char> px(rgba, static_cast<size_t>(count) * 4u);
-    float sum = 0.0f;
+    // f64 accumulator: an f32 running sum over a 1080p frame drifts by ~1%
+    // once the sum dwarfs each addend. The JS twin sums in f64 as well.
+    double sum = 0.0;
     float mn = 1.0f;
     float mx = 0.0f;
     for (int i = 0; i < count; ++i) {
@@ -67,11 +69,11 @@ void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
         float y = (0.2126f * static_cast<float>(px[base])
                  + 0.7152f * static_cast<float>(px[base + 1])
                  + 0.0722f * static_cast<float>(px[base + 2])) / 255.0f;
-        sum += y;
+        sum += static_cast<double>(y);
         if (y < mn) mn = y;
         if (y > mx) mx = y;
     }
-    out[0] = sum / static_cast<float>(count);
+    out[0] = static_cast<float>(sum / static_cast<double>(count));
     out[1] = mn;
     out[2] = mx;
 }
