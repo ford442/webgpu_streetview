@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { setCarLocationInfo, setCarCompassHeading } from '../car';
 import { getPanoLocationBase } from '../utils/panoLocation';
+import { usePovEffect } from '../state/povStore';
 
 /**
  * Car HUD location readout on each hop:
@@ -10,14 +11,11 @@ import { getPanoLocationBase } from '../utils/panoLocation';
 export function usePanoInfoPanel(
   panorama: google.maps.StreetViewPanorama | null,
   position: google.maps.LatLng | null,
-  heading: number
 ): void {
   useEffect(() => {
     if (!panorama) return;
     setCarLocationInfo(getPanoLocationBase(panorama));
   }, [panorama, position]);
 
-  useEffect(() => {
-    setCarCompassHeading(heading);
-  }, [heading]);
+  usePovEffect((p) => p.heading, setCarCompassHeading);
 }

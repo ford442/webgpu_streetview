@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
+import { povStore } from '../state/povStore';
 import { useViewMode, ControlMode } from '../hooks/useViewMode';
 import { freeLookDragShouldSteer } from '../car/carSpatialModel';
 
@@ -41,8 +42,6 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   interiorEditMode = false,
 }) => {
   const {
-    heading,
-    pitch,
     setHeading,
     setPitch,
     setZoom,
@@ -57,7 +56,6 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     startTempSteerMode,
     endTempSteerMode,
     isTempSteerMode,
-    carHeading,
     setCarHeading,
   } = useViewMode();
 
@@ -86,6 +84,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   const HEAD_LOOK_SENSITIVITY = 0.18;
   const KEYBOARD_LOOK_RATE = 90;
   const KEYBOARD_STEER_RATE = 60;
+  const MAX_LOOK_DT_S = 0.1; // clamp after a stalled frame / background tab
 
   const applySteering = useCallback((steerDelta: number) => {
     setCarHeading(prev => ((prev + steerDelta + 360) % 360));
@@ -221,6 +220,43 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       }
     };
 
+    // Keyboard look/steer is frame-rate driven: while A/D are held a rAF loop
+    // integrates KEYBOARD_*_RATE (deg/s) over the real frame delta, so turn speed
+    // no longer depends on the OS key-repeat delay/rate.
+    let lookRaf: number | null = null;
+    let lookLast = 0;
+    const lookDir = (): number =>
+      (keysPressedRef.current.has('d') ? 1 : 0) - (keysPressedRef.current.has('a') ? 1 : 0);
+    const stepLook = (now: number) => {
+      const dt = Math.min(MAX_LOOK_DT_S, Math.max(0, (now - lookLast) / 1000));
+      lookLast = now;
+      const dir = lookDir();
+      if (dir === 0 || dt === 0) return;
+      if (controlMode === 'freeLook') {
+        setHeading(prev => prev + dir * KEYBOARD_LOOK_RATE * dt);
+      } else if (controlMode === 'carSteer') {
+        applySteering(dir * KEYBOARD_STEER_RATE * dt);
+      }
+    };
+    const lookFrame = (now: number) => {
+      lookRaf = null;
+      stepLook(now);
+      if (lookDir() !== 0) lookRaf = requestAnimationFrame(lookFrame);
+    };
+    const ensureLookLoop = () => {
+      if (lookRaf !== null || lookDir() === 0) return;
+      lookLast = performance.now();
+      lookRaf = requestAnimationFrame(lookFrame);
+    };
+    const stopLookLoop = () => {
+      if (lookRaf !== null) cancelAnimationFrame(lookRaf);
+      lookRaf = null;
+    };
+    const handleBlur = () => {
+      keysPressedRef.current.clear();
+      stopLookLoop();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement instanceof HTMLInputElement ||
           document.activeElement instanceof HTMLTextAreaElement) {
@@ -235,39 +271,29 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
         case 'arrowup':
           if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
-          advance('forward', carHeading);
+          advance('forward', povStore.get().carHeading);
           onThrustRef.current?.('forward');
           break;
         case 's':
         case 'arrowdown':
           if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
-          advance('backward', carHeading);
+          advance('backward', povStore.get().carHeading);
           onThrustRef.current?.('backward');
           break;
         case 'arrowleft':
           if (controlMode === 'freeLook') break;
           e.preventDefault();
-          advance('left', carHeading);
+          advance('left', povStore.get().carHeading);
           break;
         case 'arrowright':
           if (controlMode === 'freeLook') break;
           e.preventDefault();
-          advance('right', carHeading);
+          advance('right', povStore.get().carHeading);
           break;
         case 'a':
-          if (controlMode === 'freeLook') {
-            setHeading(prev => (prev - KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
-          } else if (controlMode === 'carSteer') {
-            applySteering(-KEYBOARD_STEER_RATE * 0.016);
-          }
-          break;
         case 'd':
-          if (controlMode === 'freeLook') {
-            setHeading(prev => (prev + KEYBOARD_LOOK_RATE * 0.016 + 360) % 360);
-          } else if (controlMode === 'carSteer') {
-            applySteering(KEYBOARD_STEER_RATE * 0.016);
-          }
+          ensureLookLoop();
           break;
         case 'q':
           e.preventDefault();
@@ -278,9 +304,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           if (controlMode === 'carSteer') applySteering(45);
           break;
         case 'c': {
-          const headYawOffset = (heading - carHeading + 540) % 360 - 180;
-          if (Math.abs(headYawOffset) > 1 || Math.abs(pitch - 10) > 1) {
-            setHeading(carHeading);
+          const pov = povStore.get();
+          const headYawOffset = (pov.heading - pov.carHeading + 540) % 360 - 180;
+          if (Math.abs(headYawOffset) > 1 || Math.abs(pov.pitch - 10) > 1) {
+            setHeading(pov.carHeading);
             setPitch(10);
           } else {
             toggleViewMode();
@@ -298,9 +325,12 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === 'u') {
+      const upKey = e.key.toLowerCase();
+      if (upKey === 'u') {
         onHudKeyUpRef.current?.();
       }
+      // Credit the time held since the last frame so a sub-frame tap still turns.
+      if (upKey === 'a' || upKey === 'd') stepLook(performance.now());
       keysPressedRef.current.delete(e.key.toLowerCase());
       keysPressedRef.current.delete(e.key);
     };
@@ -312,8 +342,12 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    ensureLookLoop(); // a mode switch while A/D is held keeps turning
 
     return () => {
+      stopLookLoop();
+      window.removeEventListener('blur', handleBlur);
       target.removeEventListener('mousedown', handleMouseDown);
       target.removeEventListener('wheel', handleWheel);
       target.removeEventListener('contextmenu', handleContextMenu);
@@ -327,9 +361,6 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     isSteeringWheelAtPoint,
     controlMode,
     headCoupling,
-    heading,
-    pitch,
-    carHeading,
     setHeading,
     setPitch,
     setZoom,

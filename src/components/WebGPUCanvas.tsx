@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { povStore } from '../state/povStore';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
 import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
 import { packWeatherParams } from '../renderer/packWeatherParams';
@@ -72,9 +73,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // Get street view state
     const {
         canvas: source,
-        heading,
-        pitch,
-        zoom,
         isTransitioning: isStreetViewTransitioning,
         isPanoramaUpdatePaused,
         setRenderer,
@@ -128,17 +126,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     // Dynamic inputs for the RAF loop — synced every render so animate() always
     // reads the latest values without tearing down requestAnimationFrame.
-    const headingRef = useRef(heading);
-    const pitchRef = useRef(pitch);
-    const zoomRef = useRef(zoom);
     const sourceRef = useRef(source);
     const isPanoramaUpdatePausedRef = useRef(isPanoramaUpdatePaused);
     const isTransitioningRef = useRef(isStreetViewTransitioning);
     const shouldSkipFrameRef = useRef(shouldSkipFrame);
 
-    headingRef.current = heading;
-    pitchRef.current = pitch;
-    zoomRef.current = zoom;
     sourceRef.current = source;
     isPanoramaUpdatePausedRef.current = isPanoramaUpdatePaused;
     isTransitioningRef.current = isStreetViewTransitioning;
@@ -391,9 +383,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 ? false
                 : shouldSkipFrameRef.current();
 
-            const renderHeading = headingRef.current;
-            const renderPitch = pitchRef.current;
-            const renderZoom = zoomRef.current;
+            const pov = povStore.get();
+            const renderHeading = pov.heading;
+            const renderPitch = pov.pitch;
+            const renderZoom = pov.zoom;
             const liveSource = sourceRef.current;
 
             const shouldRender = shouldRenderHeldFrameThisTick({

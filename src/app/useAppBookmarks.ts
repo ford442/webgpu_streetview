@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useBookmarks } from '../hooks/useBookmarks';
+import { povStore } from '../state/povStore';
 import type { ConnectedChromeBookmarks } from './shell/ConnectedChrome';
 
 /**
@@ -12,8 +13,6 @@ import type { ConnectedChromeBookmarks } from './shell/ConnectedChrome';
  */
 export function useAppBookmarks(
   panorama: google.maps.StreetViewPanorama | null,
-  heading: number,
-  pitch: number,
 ): ConnectedChromeBookmarks {
   const {
     bookmarks,
@@ -32,6 +31,7 @@ export function useAppBookmarks(
       if (!panorama) return;
       const position = panorama.getPosition();
       if (!position) return;
+      const { heading, pitch } = povStore.get();
       addBookmark({
         name,
         lat: position.lat(),
@@ -40,7 +40,7 @@ export function useAppBookmarks(
         pitch,
       });
     },
-    [panorama, addBookmark, heading, pitch],
+    [panorama, addBookmark],
   );
 
   return {

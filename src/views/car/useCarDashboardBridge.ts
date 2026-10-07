@@ -37,6 +37,7 @@ import {
 } from '../../car/interior/createCabinRenderer';
 import { detectGPUProfile } from '../../utils/performance';
 import { currentSearch } from '../../config/flags';
+import { povStore, usePovEffect } from '../../state/povStore';
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -44,10 +45,6 @@ export interface UseCarDashboardBridgeOptions {
   /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts`. */
   sharedGpuDevice?: GPUDevice;
   controlMode: ControlMode;
-  heading: number;
-  pitch: number;
-  carHeading: number;
-  zoom: number;
   panorama: google.maps.StreetViewPanorama | null;
   position: google.maps.LatLng | null;
   canvas: HTMLCanvasElement | null;
@@ -81,10 +78,6 @@ export function useCarDashboardBridge({
   registerCarModeState,
   sharedGpuDevice,
   controlMode,
-  heading,
-  pitch,
-  carHeading,
-  zoom,
   panorama,
   position,
   canvas,
@@ -103,12 +96,6 @@ export function useCarDashboardBridge({
   gearRef,
 }: UseCarDashboardBridgeOptions): UseCarDashboardBridgeResult {
   const carModeStateRef = useRef<CarModeState | null>(null);
-  const carHeadingRef = useRef(carHeading);
-  carHeadingRef.current = carHeading;
-  const headingRef = useRef(heading);
-  headingRef.current = heading;
-  const pitchRef = useRef(pitch);
-  pitchRef.current = pitch;
 
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
@@ -237,9 +224,7 @@ export function useCarDashboardBridge({
     return () => setMirrorStreetViewCanvas(null);
   }, [canvas]);
 
-  useEffect(() => {
-    setCarZoomFOV(zoom);
-  }, [zoom]);
+  usePovEffect((p) => p.zoom, setCarZoomFOV);
 
   useEffect(() => {
     setWindowTint(windowTint);
@@ -261,25 +246,26 @@ export function useCarDashboardBridge({
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
 
-      const headYawOffset = (headingRef.current - carHeadingRef.current + 540) % 360 - 180;
-      const headPitch = pitchRef.current;
+      const pov = povStore.get();
+      const headYawOffset = (pov.heading - pov.carHeading + 540) % 360 - 180;
+      const headPitch = pov.pitch;
 
       if (panorama) {
         panorama.setPov({
-          heading: headingRef.current,
-          pitch: pitchRef.current,
+          heading: pov.heading,
+          pitch: pov.pitch,
         });
       }
 
       updateCarMode(
-        carHeadingRef.current,
+        pov.carHeading,
         headYawOffset,
         headPitch,
         carSpeedRef.current,
         nightIntensity,
         headlightsOn,
         domeLightOn,
-        headingRef.current,
+        pov.heading,
       );
 
       setCarSteering(steeringInputRef.current);
@@ -324,7 +310,7 @@ export function useCarDashboardBridge({
 
       if (carModeStateRef.current) {
         carModeStateRef.current.interior.setCarOrientation(
-          carHeadingRef.current,
+          povStore.get().carHeading,
           bodyPitchRef.current,
           bodyRollRef.current,
         );

@@ -1,3 +1,4 @@
+import { povStore } from '../../state/povStore';
 import React, { act } from 'react';
 import { renderHook } from '@testing-library/react';
 import { StreetViewProvider, useStreetView } from '../useStreetView';
@@ -72,8 +73,8 @@ describe('useStreetView hold look-around', () => {
     });
 
     expect(mockSetPov).not.toHaveBeenCalled();
-    expect(result.current.heading).toBe(64);
-    expect(result.current.pitch).toBe(20);
+    expect(povStore.get().heading).toBe(64);
+    expect(povStore.get().pitch).toBe(20);
   });
 
   it('snapshots hold baseline from view heading/pitch, not car navigation heading', () => {

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { useStreetView } from '../hooks/useStreetView';
+import { useThrottledPov } from '../state/povStore';
 import Compass from '../components/Compass';
 import FreeLookInputHandler from '../components/FreeLookInputHandler';
 
@@ -19,7 +19,8 @@ interface FreeLookViewProps {
  * - Compass and MiniMap overlays
  */
 const FreeLookView: React.FC<FreeLookViewProps> = ({ mapsApiKey: _mapsApiKey }) => {
-  const { heading } = useStreetView();
+  // Compass is a HUD readout — 10 Hz is plenty, and keeps head-look off the React render path.
+  const heading = useThrottledPov((p) => p.heading, 10);
   const containerRef = useRef<HTMLDivElement>(null);
   
   return (

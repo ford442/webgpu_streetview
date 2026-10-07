@@ -14,6 +14,7 @@ import {
 } from '../car';
 import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
+import { povStore, usePovEffect } from '../state/povStore';
 import { useCruiseFlag } from '../hooks/CruiseFlagContext';
 import { useGearHopAdvance } from './car/useGearHopAdvance';
 import { useCabinRadioBinding } from './car/useCabinRadioBinding';
@@ -30,13 +31,12 @@ interface CarModeViewProps {
  * Controllers live in `src/views/car/*` hooks; this file wires providers + UI only.
  */
 const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
-  const { heading, pitch, panorama, advance, canvas, zoom, position, renderer } = useStreetView();
+  const { panorama, advance, canvas, position, renderer } = useStreetView();
   const sharedGpuDevice = renderer?.getSharedGpuDevice?.();
   const {
     controlMode,
     setControlMode,
     isTempSteerMode,
-    carHeading,
     registerCarModeState,
   } = useViewMode();
 
@@ -74,7 +74,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     setSeatDistance,
   } = useVehicleSettings();
 
-  usePanoInfoPanel(panorama, position, heading);
+  usePanoInfoPanel(panorama, position);
   useCabinEnvironment(panorama, position);
 
   const rearFeed = useRearViewFeed({ apiKey: mapsApiKey, active: true });
@@ -100,7 +100,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     handleNavigate,
     handleCycleWipers,
     handleSelectGear,
-  } = useGearHopAdvance({ advance, carHeading, setWipers });
+  } = useGearHopAdvance({ advance, setWipers });
 
   const {
     isRadioPlaying,
@@ -124,10 +124,6 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     registerCarModeState,
     sharedGpuDevice,
     controlMode,
-    heading,
-    pitch,
-    carHeading,
-    zoom,
     panorama,
     position,
     canvas,
@@ -147,16 +143,19 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   });
 
   const { enabled: rearFeedEnabled, notifyPose: notifyRearPose } = rearFeed;
-  useEffect(() => {
+  const pushRearPose = useCallback(() => {
     if (!rearFeedEnabled || !position) return;
     const panoId = panorama?.getPano?.();
     notifyRearPose({
       lat: position.lat(),
       lng: position.lng(),
-      carHeading,
+      carHeading: povStore.get().carHeading,
       ...(panoId ? { panoId } : {}),
     });
-  }, [rearFeedEnabled, notifyRearPose, position, panorama, carHeading]);
+  }, [rearFeedEnabled, notifyRearPose, position, panorama]);
+  useEffect(pushRearPose, [pushRearPose]);
+  // Steering changes the pose without re-rendering this view; notifyPose gates by movement.
+  usePovEffect((p) => p.carHeading, pushRearPose, { immediate: false });
 
   const handleToggleGPS = useCallback(() => {
     setIsMapOpen((prev) => !prev);

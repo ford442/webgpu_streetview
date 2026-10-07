@@ -1,3 +1,4 @@
+import { povStore } from '../state/povStore';
 import { useRef, useEffect, useState } from 'react';
 import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
@@ -9,7 +10,6 @@ export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
   advanceSafe: (dir: 'forward', targetLatLng?: { lat: number; lng: number }, heading?: number) => Promise<void>;
   mapsAuthFailed: boolean;
-  heading: number;
   isTransitioning: boolean;
   setNavPending: (pending: boolean) => void;
   /**
@@ -59,7 +59,6 @@ export function useCruiseMode({
   panorama,
   advanceSafe,
   mapsAuthFailed,
-  heading,
   isTransitioning,
   setNavPending,
   loadOfflineRouteGraphNodes,
@@ -68,15 +67,13 @@ export function useCruiseMode({
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const offlineNodesRef = useRef<RouteGraphNode[]>([]);
 
-  // Live view heading — tracks head-look every render but is NOT the travel
-  // direction. Used only to seed the committed heading when cruise starts.
-  const liveHeadingRef = useRef(heading);
-  liveHeadingRef.current = heading;
+  // The live view heading (povStore — head-look moves it without a render) is
+  // NOT the travel direction. It only seeds the committed heading when cruise starts.
 
   // Committed travel heading. Frozen against passive head-look so that looking
   // around in free-look/car mode never redirects cruise. Self-corrects to the
   // road after each successful hop via the position-change bearing.
-  const cruiseHeadingRef = useRef(heading);
+  const cruiseHeadingRef = useRef(povStore.get().heading);
 
   const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const useTransitionRef = useRef(isTransitioning);
@@ -104,7 +101,7 @@ export function useCruiseMode({
     }
     // Commit the current view heading as the travel direction the moment cruise
     // engages. From here it evolves only from real movement, not head-look.
-    cruiseHeadingRef.current = liveHeadingRef.current;
+    cruiseHeadingRef.current = povStore.get().heading;
     // Load any previously-prefetched route graphs once per cruise session so a
     // flaky connection doesn't pay an IndexedDB round trip on every hop.
     offlineNodesRef.current = [];

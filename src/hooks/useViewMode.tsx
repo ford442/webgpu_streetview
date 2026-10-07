@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { loadCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
 import { currentSearch } from '../config/flags';
+import { povStore } from '../state/povStore';
 
 // Types
 export type ViewMode = 'freelook' | 'car';
@@ -28,7 +29,6 @@ export interface ViewModeState {
   endTempSteerMode: () => void;
   
   // Car body heading (separate from head-look heading in useStreetView)
-  carHeading: number;
   setCarHeading: (heading: number | ((prev: number) => number)) => void;
 
   // Car mode state reference (for Three.js integration)
@@ -73,13 +73,10 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   const [isTempSteerMode, setIsTempSteerMode] = useState(false);
 
   // Car body heading (independent of head-look heading)
-  const [carHeading, setCarHeadingState] = useState(34);
-  const setCarHeading = useCallback((value: number | ((prev: number) => number)) => {
-    setCarHeadingState(prev => {
-      const next = typeof value === 'function' ? value(prev) : value;
-      return ((next % 360) + 360) % 360;
-    });
-  }, []);
+  // (lives in the external povStore — it changes while steering and must not
+  // re-render every ViewMode consumer; read it with povStore.get().carHeading
+  // or usePovSelector). The setter is a stable store writer that wraps to 0–360.
+  const setCarHeading = povStore.setCarHeading;
 
   // Car mode state (Three.js)
   const carModeStateRef = useRef<CarModeState | null>(null);
@@ -218,7 +215,9 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     }
   }, [isTempSteerMode]);
   
-  const value: ViewModeState = {
+  // Memoized so consumers re-render only on real mode changes. `carModeState` is a
+  // snapshot of the ref taken when another field changes (nothing reads it reactively).
+  const value = useMemo<ViewModeState>(() => ({
     viewMode,
     setViewMode,
     toggleViewMode,
@@ -230,12 +229,15 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     isTempSteerMode,
     startTempSteerMode,
     endTempSteerMode,
-    carHeading,
     setCarHeading,
     carModeState: carModeStateRef.current,
     initCarModeForContainer,
     registerCarModeState,
-  };
+  }), [
+    viewMode, setViewMode, toggleViewMode, controlMode, setControlModeWithTracking,
+    toggleControlMode, headCoupling, isTempSteerMode, startTempSteerMode, endTempSteerMode,
+    setCarHeading, initCarModeForContainer, registerCarModeState,
+  ]);
   
   return (
     <ViewModeContext.Provider value={value}>
