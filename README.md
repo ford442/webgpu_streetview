@@ -38,7 +38,9 @@ Composite Browser Output
 
 ### Navigation
 - **360° free-look** — mouse drag for heading & pitch, scroll to zoom, WASD for directional movement
-- **Cruise mode** — automatically advances to the nearest panorama link on a timer (a Street View link graph walk; no routing API involved)
+- **Cruise mode** — automatically advances to the nearest panorama link on a timer (a Street View link graph walk)
+- **Routed road trips** — open **🧭 Trip**, pick a destination (place search or `lat, lng`) and up to three via-points, and **Drive**: cruise follows the real road route, choosing at each junction the Street View link that tracks it. Routes come from an OSRM-compatible endpoint (`ROUTING_ENDPOINT` in `config.js`; the public OSRM demo by default — development / low volume only), never Google Directions. On-route hops make no extra Maps calls; leaving the route costs one metered re-snap. The car's centre screen shows the next turn, distance, ETA and a breadcrumb, and the trip computer counts road distance. Routes draw on the globe, export as GPX, share as `?route=lat,lng;lat,lng` links, and reach shared-session guests. A recorded tour can be driven by road (**Drive by road** in Tours)
+- **Live conditions** (opt-in, weather panel) — the real current weather at the panorama from [Open-Meteo](https://open-meteo.com/) eases onto rain / snow / fog / wind over a second, with the sky on pano-local time; moving any weather slider takes over until **Resume live**
 - **Bookmarks** — named positions persisted to `localStorage`
 - **Location history** — breadcrumb trail of visited panoramas with one-click recall
 - **Compass** — real-time cardinal direction overlay
@@ -57,6 +59,7 @@ Composite Browser Output
 
 ### Audio
 - **Web Audio API** — `AudioAnalyzer.ts` analyzes radio stream for audio-reactive dashboard glow
+- **Trip-aware radio** — after 50 km on the road the cabin radio looks for the best local station (Radio Browser geo search) and fades to it when you have crossed into another country/state; pin (📌) a station to keep it
 - **Wind audio** — `WindAudio.ts` synthesizes wind noise that scales with cruise speed
 
 ### Accessibility & UX

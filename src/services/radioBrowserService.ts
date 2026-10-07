@@ -78,6 +78,37 @@ export async function fetchStationsByCountry(
 }
 
 /**
+ * Stations with geo info within `radiusKm` of a point, most-voted first — the
+ * Radio Browser geo search (`geo_lat` / `geo_long` / `geo_distance`), so no
+ * reverse geocoding is needed to find a local station.
+ */
+export async function fetchStationsNear(
+    lat: number,
+    lng: number,
+    radiusKm: number = 100,
+    limit: number = 10
+): Promise<RadioStation[]> {
+    try {
+        const query = new URLSearchParams({
+            geo_lat: lat.toFixed(4),
+            geo_long: lng.toFixed(4),
+            geo_distance: String(Math.round(radiusKm * 1000)),
+            has_geo_info: 'true',
+            hidebroken: 'true',
+            order: 'votes',
+            reverse: 'true',
+            limit: String(limit),
+        });
+        const response = await fetch(`${API_BASE}/stations/search?${query.toString()}`);
+        if (!response.ok) return [];
+        return mapStations(await response.json());
+    } catch (err) {
+        console.warn('[RadioBrowser] Geo search failed:', err);
+        return [];
+    }
+}
+
+/**
  * Approximate country code from lat/lng using simple geographic bounds.
  * This is a rough approximation — does not require a geocoding API.
  * 
@@ -115,13 +146,14 @@ export async function getTopStationForLocation(
     lat: number,
     lng: number
 ): Promise<RadioStation | null> {
-    const countryCode = approximateCountryCode(lat, lng);
-    
-    let stations: RadioStation[];
-    if (countryCode) {
-        stations = await fetchStationsByCountry(countryCode, 5);
-    } else {
-        stations = await fetchNearbyStations(lat, lng, 5);
+    // Stations broadcasting near the point first; the rough country boxes and
+    // then the global list only when nothing local has geo info.
+    let stations = await fetchStationsNear(lat, lng, 100, 5);
+    if (stations.length === 0) {
+        const countryCode = approximateCountryCode(lat, lng);
+        stations = countryCode
+            ? await fetchStationsByCountry(countryCode, 5)
+            : await fetchNearbyStations(lat, lng, 5);
     }
     
     if (stations.length === 0) return null;

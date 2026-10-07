@@ -38,6 +38,8 @@ import { useAppCapture } from './useAppCapture';
 import { useAppDirector } from './useAppDirector';
 import { useAppBootLinks } from './useAppBootLinks';
 import { useAppShortcuts } from './useAppShortcuts';
+import { useTripBindings } from './useTripBindings';
+import { getActiveRouteGuide } from '../services/routing/tripController';
 import { ConnectedChrome } from './shell/ConnectedChrome';
 import { CinemaLayer } from './shell/CinemaLayer';
 import { ShellNotices } from './shell/ShellNotices';
@@ -170,6 +172,7 @@ export function AppShell() {
     // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
     // has no gearbox, so it always cruises one hop at a time.
     hopsPerTick: () => (viewModeRef.current === 'car' ? (getCarRuntime()?.getGearHopCount() ?? 1) : 1),
+    routeGuide: getActiveRouteGuide,
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
 
@@ -177,6 +180,11 @@ export function AppShell() {
     publishCruiseFlag(isCruiseMode);
     return () => publishCruiseFlag(false);
   }, [isCruiseMode]);
+
+  const tripPanelProps = useTripBindings({
+    panorama, isConnected: connection.isConnected, isPanoramaReady, teleportSafe, teleportToPanoSafe,
+    isCruiseMode, setIsCruiseMode, announce, routePrefetch,
+  });
 
   useAppBootLinks({
     isConnected: connection.isConnected,
@@ -282,6 +290,7 @@ export function AppShell() {
           accessibilitySettings={accessibilitySettings}
           setAccessibilitySettings={setAccessibilitySettings}
           tourPanelProps={tourPanelProps}
+          tripPanelProps={tripPanelProps}
           globe={{
             globeMode,
             effectiveMapsKey: maps.effectiveMapsKey,

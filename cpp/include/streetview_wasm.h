@@ -7,8 +7,9 @@
  * build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
- *   normalize_angle, signed_angle_diff, fill_engine_noise, fill_cabin_ir,
- *   fill_hrtf, luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *   normalize_angle, signed_angle_diff, initial_bearing, polyline_resample,
+ *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
+ *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
  *
  * This comment is a convenience copy — the SSOT for the export set is
  * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
@@ -18,7 +19,8 @@
  * canonical names for Emscripten EXPORTED_FUNCTIONS. The implementations are
  * split one translation unit per domain:
  *   noise_module.cpp    seed / noise2d / fbm2d / fill_* tiles / particle seeds
- *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles
+ *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles /
+ *                       initial_bearing / polyline_resample / polyline_project
  *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
  *   hrtf_module.cpp     fill_hrtf
  *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d
@@ -126,6 +128,47 @@ double sw_batch_haversine(const double* points, int count, double* out);
  */
 void sw_offset_latlng(double lat, double lng, double distance_meters,
                       double bearing_deg, double* out2);
+
+/**
+ * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
+ * @return Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
+ */
+double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
+
+/**
+ * Resample a polyline to points evenly spaced along its great-circle length.
+ *
+ * The first and last input points are always kept; in between, a point is
+ * emitted every `step_m` metres of along-route distance (carried across
+ * vertices, so the spacing is even along the whole route, not per segment).
+ * Interior input vertices are not kept. Output longitudes are wrapped to
+ * [-180, 180), so an antimeridian crossing comes out canonical.
+ *
+ * @param in      `n` consecutive [lat, lng] pairs in degrees.
+ * @param step_m  Spacing in metres. <= 0 or non-finite copies the input through.
+ * @param out     Caller-owned array of `cap` [lat, lng] pairs (may be nullptr
+ *                when cap == 0, to size a buffer).
+ * @return        The number of points the full resample has — like snprintf,
+ *                it can exceed `cap`, in which case only `cap` were written.
+ */
+int sw_polyline_resample(const double* in, int n, double step_m,
+                         double* out, int cap);
+
+/**
+ * Project a point onto a polyline: "where am I on the route, how far off it".
+ *
+ * @param poly  `n` consecutive [lat, lng] pairs in degrees.
+ * @param out3  Caller-owned array of 3 doubles receiving
+ *              {segment index, along-track metres from the route start,
+ *               signed cross-track metres (+ = right of travel)}.
+ *              The closest segment wins (ties: the earlier one). A projection
+ *              past either end of its segment clamps to that vertex, and the
+ *              cross-track magnitude is then the distance to the vertex.
+ *              n <= 0 writes {-1, 0, 0}; n == 1 writes {0, 0, distance}.
+ *              nullptr is a no-op.
+ */
+void sw_polyline_project(const double* poly, int n, double lat, double lng,
+                         double* out3);
 
 /**
  * Normalise an angle to [0, 360).

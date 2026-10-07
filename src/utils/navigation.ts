@@ -130,22 +130,13 @@ export function haversineDistance(
  * @param lat2 - Latitude of destination point in degrees
  * @param lon2 - Longitude of destination point in degrees
  * @returns Initial bearing in degrees [0, 360), where 0 is North, 90 is East
+ *
+ * Delegates to the WASM `initial_bearing` export (or its JS fallback twin) —
+ * route following, cruise and the offline graph walk all share that one copy.
  */
 export function initialBearing(
     lat1: number, lon1: number,
     lat2: number, lon2: number
 ): number {
-    const toRad = (deg: number) => deg * Math.PI / 180;
-    const toDeg = (rad: number) => rad * 180 / Math.PI;
-    
-    const φ1 = toRad(lat1);
-    const φ2 = toRad(lat2);
-    const Δλ = toRad(lon2 - lon1);
-    
-    const y = Math.sin(Δλ) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) -
-              Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-    
-    const θ = Math.atan2(y, x);
-    return (toDeg(θ) + 360) % 360;
+    return (getWasmModule() ?? jsFallback).initialBearing(lat1, lon1, lat2, lon2);
 }

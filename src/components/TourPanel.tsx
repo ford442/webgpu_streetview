@@ -29,6 +29,8 @@ interface TourPanelProps {
     onUpdateTourSettings: (id: string, updates: Partial<Pick<Tour, 'transitionType' | 'autoPlaySpeed'>>) => void;
     onDownloadTourJson: (tour: Tour) => void;
     onDownloadTourKml: (tour: Tour) => void;
+    /** Plan the tour's waypoints as a routed road trip (Trip planner). */
+    onPlanTrip?: (tour: Tour) => void;
     onImportTourFromJson: (jsonText: string) => void;
 
     teleportToPano: (panoId: string) => Promise<void>;
@@ -82,6 +84,7 @@ const TourPanel: React.FC<TourPanelProps> = ({
     onUpdateTourSettings,
     onDownloadTourJson,
     onDownloadTourKml,
+    onPlanTrip,
     onImportTourFromJson,
     teleportToPano,
     setHeading,
@@ -298,6 +301,15 @@ const TourPanel: React.FC<TourPanelProps> = ({
                                             >
                                                 KML
                                             </button>
+                                            {onPlanTrip && tour.waypoints.length >= 2 && (
+                                                <button
+                                                    onClick={() => onPlanTrip(tour)}
+                                                    title="Plan these waypoints as a road route and drive it"
+                                                    style={{ padding: '5px 10px', backgroundColor: '#1565c0', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                                                >
+                                                    🧭 Drive by road
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => {
                                                     if (window.confirm(`Delete tour "${tour.name}"?`)) {

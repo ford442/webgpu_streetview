@@ -31,6 +31,8 @@ declare global {
   interface Window {
     MAPS_API_KEY?: string;
     CESIUM_ION_TOKEN?: string;
+    /** OSRM-compatible route endpoint (config.js); unset = public demo, '' = off. */
+    ROUTING_ENDPOINT?: string;
     rendererType?: 'webgpu' | 'webgl';
     usingWebGPU?: boolean;
     usingWebGL?: boolean;

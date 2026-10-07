@@ -13,6 +13,8 @@ import ScoutCard from './ScoutCard';
 import { type GlobeBookmark, type GlobePOI } from './globe/globeTypes';
 import { addLocationBeacon, syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
 import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
+import { syncGlobeTripRoute } from './globe/globeTripRoute';
+import { useTripSelector } from '../state/tripStore';
 import {
   flyGlobeEnterOrbit,
   flyGlobeExitDescend,
@@ -79,6 +81,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
   const bookmarkEntitiesRef = useRef<CesiumEntity[]>([]);
   const waypointEntitiesRef = useRef<CesiumEntity[]>([]);
   const waypointPolylineRef = useRef<CesiumEntity | null>(null);
+  const tripRouteEntitiesRef = useRef<CesiumEntity[]>([]);
+  const tripRoute = useTripSelector((s) => s.route);
   const svServiceRef = useRef<google.maps.StreetViewService | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -234,6 +238,12 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     waypointEntitiesRef.current = visuals.waypointEntities;
     waypointPolylineRef.current = visuals.polylineEntity;
   }, [waypoints, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+    tripRouteEntitiesRef.current = syncGlobeTripRoute(viewer, tripRoute, tripRouteEntitiesRef.current);
+  }, [tripRoute, viewerReady]);
 
   useEffect(() => {
     if (!locationEntityRef.current || typeof Cesium === 'undefined') return;

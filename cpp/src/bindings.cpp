@@ -112,6 +112,33 @@ float normalize_angle(float angle) { return sw_normalize_angle(angle); }
 EMSCRIPTEN_KEEPALIVE
 float signed_angle_diff(float from, float to) { return sw_signed_angle_diff(from, to); }
 
+/** Initial great-circle bearing [0, 360). Matches ABI export: 'initial_bearing'. */
+EMSCRIPTEN_KEEPALIVE
+double initial_bearing(double lat1, double lng1, double lat2, double lng2) {
+    return sw_initial_bearing(lat1, lng1, lat2, lng2);
+}
+
+/**
+ * Evenly resample a [lat, lng] polyline every `step_m` metres. Writes at most
+ * `cap` points to `out` and returns the full count.
+ * Matches ABI export: 'polyline_resample'.
+ */
+EMSCRIPTEN_KEEPALIVE
+int polyline_resample(const double* in, int n, double step_m,
+                      double* out, int cap) {
+    return sw_polyline_resample(in, n, step_m, out, cap);
+}
+
+/**
+ * Project a point onto a polyline; writes {segment, along m, cross m} to
+ * `out3`. Matches ABI export: 'polyline_project'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void polyline_project(const double* poly, int n, double lat, double lng,
+                      double* out3) {
+    sw_polyline_project(poly, n, lat, lng, out3);
+}
+
 /**
  * Mono engine+road PCM from an f64 oscillator phase; returns the phase after
  * the last sample. Matches ABI export: 'fill_engine_noise'.

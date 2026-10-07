@@ -157,6 +157,25 @@ describe('normalizeIncomingSessionFields', () => {
   });
 });
 
+describe('shared trip route', () => {
+  it('keeps a valid route payload and drops a malformed one', () => {
+    const route = '55.95000,-3.20000;55.94800,-3.19500';
+    expect(normalizeIncomingSessionFields({ route })).toEqual({ route });
+    expect(normalizeIncomingSessionFields({ route: '55.95,-3.2' })).toEqual({});
+    expect(normalizeIncomingSessionFields({ route: 42 })).toEqual({});
+  });
+
+  it('host broadcasts carry the trip stops, not the polyline', () => {
+    const pano = { getPano: () => 'p1', getPosition: () => ({ lat: () => 55.95, lng: () => -3.2 }) };
+    const payload = buildHostBroadcastPayload(pano, { heading: 0, pitch: 0, zoom: 1 }, 'car', {
+      route: '55.95000,-3.20000;55.94800,-3.19500',
+    });
+    expect(payload?.route).toBe('55.95000,-3.20000;55.94800,-3.19500');
+    expect(buildHostBroadcastPayload(pano, { heading: 0, pitch: 0, zoom: 1 }, 'car', { route: null })?.route)
+      .toBeUndefined();
+  });
+});
+
 describe('shouldApplyGuestHeadLook', () => {
   it('seeds heading once then leaves guest look local', () => {
     expect(shouldApplyGuestHeadLook(false)).toBe(true);

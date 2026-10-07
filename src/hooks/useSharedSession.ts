@@ -54,6 +54,11 @@ export interface SessionState {
   carHeading?: number;
   /** Informational host display cap; guests do not change their own HDR path. */
   hdr?: boolean;
+  /**
+   * Planned trip stops in `?route=` form (`lat,lng;lat,lng…`). Guests plan the
+   * same road route themselves; the polyline never travels over the channel.
+   */
+  route?: string;
   seq: number;
 }
 

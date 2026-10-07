@@ -14,6 +14,8 @@ import type { ImageExportFormat } from '../../utils/imageExport';
 import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
+import type { TripPanelBindings } from '../useTripBindings';
+import { tourWaypointsToStops } from '../../services/routing/routeExport';
 import type { AppPanels } from '../useAppPanels';
 export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
@@ -37,6 +39,7 @@ import {
   AccessibilityPanel,
   HistoricalTimeline,
   TourPanel,
+  TripPlannerPanel,
   SharedSessionPanel,
   PerformanceStatsOverlay,
   RendererBackendIndicator,
@@ -177,6 +180,7 @@ export interface ConnectedChromeProps {
   accessibilitySettings: AccessibilitySettings;
   setAccessibilitySettings: React.Dispatch<React.SetStateAction<AccessibilitySettings>>;
   tourPanelProps: TourPanelBindings;
+  tripPanelProps: TripPanelBindings;
   globe: ConnectedChromeGlobe;
   overlays: ConnectedChromeOverlays;
   offlineRoutes: ConnectedChromeOfflineRoutes;
@@ -195,6 +199,7 @@ export function ConnectedChrome({
   accessibilitySettings,
   setAccessibilitySettings,
   tourPanelProps,
+  tripPanelProps,
   globe,
   overlays,
   offlineRoutes,
@@ -270,6 +275,8 @@ export function ConnectedChrome({
     setIsHistoricalTimelineOpen,
     isTourPanelOpen,
     setIsTourPanelOpen,
+    isTripPanelOpen,
+    setIsTripPanelOpen,
     isSharedSessionPanelOpen,
     setIsSharedSessionPanelOpen,
     isStoragePanelOpen,
@@ -347,6 +354,8 @@ export function ConnectedChrome({
         setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
         isTourPanelOpen={isTourPanelOpen}
         setIsTourPanelOpen={setIsTourPanelOpen}
+        isTripPanelOpen={isTripPanelOpen}
+        setIsTripPanelOpen={setIsTripPanelOpen}
         isSharedSessionPanelOpen={isSharedSessionPanelOpen}
         setIsSharedSessionPanelOpen={setIsSharedSessionPanelOpen}
         isSharedSessionActive={sharedSession.isConnected}
@@ -540,6 +549,21 @@ export function ConnectedChrome({
           isOpen={isTourPanelOpen}
           onClose={() => setIsTourPanelOpen(false)}
           {...tourPanelProps}
+          onPlanTrip={(tour) => {
+            const stops = tourWaypointsToStops(tour.waypoints);
+            if (!stops) return;
+            tripPanelProps.onPlan(stops);
+            setIsTourPanelOpen(false);
+            setIsTripPanelOpen(true);
+          }}
+        />
+      )}
+
+      {isTripPanelOpen && (
+        <TripPlannerPanel
+          isOpen={isTripPanelOpen}
+          onClose={() => setIsTripPanelOpen(false)}
+          {...tripPanelProps}
         />
       )}
 

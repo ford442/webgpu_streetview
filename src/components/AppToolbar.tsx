@@ -25,6 +25,9 @@ export interface AppToolbarProps {
   setIsHistoricalTimelineOpen: (v: boolean) => void;
   isTourPanelOpen: boolean;
   setIsTourPanelOpen: (v: boolean) => void;
+  /** Routed road trip planner (omit to hide the button). */
+  isTripPanelOpen?: boolean;
+  setIsTripPanelOpen?: (v: boolean) => void;
   isSharedSessionPanelOpen: boolean;
   setIsSharedSessionPanelOpen: (v: boolean) => void;
   isSharedSessionActive: boolean;
@@ -60,6 +63,8 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   setIsHistoricalTimelineOpen,
   isTourPanelOpen,
   setIsTourPanelOpen,
+  isTripPanelOpen = false,
+  setIsTripPanelOpen,
   isSharedSessionPanelOpen,
   setIsSharedSessionPanelOpen,
   isSharedSessionActive,
@@ -166,6 +171,15 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
       >
         🗺 Tours
       </button>
+      {setIsTripPanelOpen && (
+        <button
+          className={`control-btn${isTripPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsTripPanelOpen(!isTripPanelOpen); }}
+        >
+          🧭 Trip
+        </button>
+      )}
       <button
         className={`control-btn${isSharedSessionPanelOpen || isSharedSessionActive ? ' disconnect' : ''}`}
         style={{ minWidth: 110, backgroundColor: isSharedSessionActive ? 'rgba(46,125,50,0.85)' : undefined }}
