@@ -685,7 +685,9 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
-  under both g++ and clang++. Needs only `cmake` and a C++20 compiler.
+  under g++, clang++ and clang++ `-march=x86-64-v3`. Needs only `cmake` and a
+  C++20 compiler. Everything (emcc too) builds with `-ffp-contract=off`: the
+  goldens are bit-exact, and an FMA-contracting compiler would break them.
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
@@ -698,6 +700,11 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   the JS fallback (runs with `npm test`).
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
+- **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
+  marshalling wrappers over the committed binary. Kernel buffers live in a
+  `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
+  kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
+  stack and corrupted `batch_haversine` at |lat| > 45°.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
   and `build-wasm-emscripten` (C++ → wasm via pinned emcc + ABI check + SIMD goldens). Both are
   required.

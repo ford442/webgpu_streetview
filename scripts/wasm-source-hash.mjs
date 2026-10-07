@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * SHA-256 of the C++ inputs that produce public/wasm/streetview-wasm.wasm.
+ * SHA-256 of the C++ sources and build inputs that produce
+ * public/wasm/streetview-wasm.wasm.
  * Used by scripts/build-wasm.sh and scripts/verify-build.sh so a C++ edit
  * without a wasm rebuild fails loudly. Not a hash of the WAT text.
  *
@@ -21,6 +22,10 @@ export const WASM_SOURCE_FILES = [
   'cpp/src/bindings.cpp',
   'cpp/include/streetview_wasm.h',
   'cpp/CMakeLists.txt',
+  // Build inputs, not just sources: the flags/scripts and the pinned emcc
+  // decide the bytes as much as the C++ does.
+  'cpp/emsdk.version',
+  'scripts/build-wasm.sh',
 ];
 
 export function wasmSourceHash(repoRoot) {

@@ -77,6 +77,22 @@ if ! command -v emcc &>/dev/null; then
   exit 1
 fi
 
+# The committed binary must be byte-identical to a rebuild (CI diffs it), and
+# different emcc releases emit different bytes — so a mismatched SDK fails here
+# instead of producing a binary CI will reject. STREETVIEW_ALLOW_EMCC_MISMATCH=1
+# is an escape hatch for local experiments; never commit its output.
+EMSDK_PIN="$(tr -d '[:space:]' < "$CPP_DIR/emsdk.version")"
+EMCC_VERSION="$(emcc --version | head -1 | sed -nE 's/.* ([0-9]+\.[0-9]+\.[0-9]+)( .*)?$/\1/p')"
+if [ "$EMCC_VERSION" != "$EMSDK_PIN" ]; then
+  if [ "${STREETVIEW_ALLOW_EMCC_MISMATCH:-}" = "1" ]; then
+    echo "WARNING: emcc $EMCC_VERSION != pinned $EMSDK_PIN (STREETVIEW_ALLOW_EMCC_MISMATCH=1); do not commit this binary." >&2
+  else
+    echo "ERROR: emcc ${EMCC_VERSION:-<unparsed>} does not match the pin in cpp/emsdk.version ($EMSDK_PIN)." >&2
+    echo "       ./emsdk install $EMSDK_PIN && ./emsdk activate $EMSDK_PIN && source ./emsdk_env.sh" >&2
+    exit 1
+  fi
+fi
+
 echo "==> Emscripten detected ($(emcc --version | head -1))"
 echo "==> Building C++ → WASM via Emscripten …"
 
@@ -84,20 +100,18 @@ BUILD_DIR="$CPP_DIR/build-emscripten"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-CXXFLAGS="-O3"
-if [[ "$BUILD_TYPE" == "Debug" ]]; then
-  CXXFLAGS="-O0 -g"
-fi
-
 SIMD_CMAKE=()
 if [[ "${STREETVIEW_WASM_SIMD:-}" == "ON" || "${STREETVIEW_WASM_SIMD:-}" == "1" ]]; then
   SIMD_CMAKE=(-DSTREETVIEW_WASM_SIMD=ON)
   echo "==> STREETVIEW_WASM_SIMD=ON (autovectorization only; do not ship this binary)"
 fi
 
+# Optimisation level comes from CMAKE_BUILD_TYPE only (see cpp/CMakeLists.txt).
+# CMAKE_CXX_FLAGS is passed empty so a stale cache entry from an older script
+# (which passed -O3 here) cannot leak into the build.
 emcmake cmake "$CPP_DIR" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+  -DCMAKE_CXX_FLAGS="" \
   "${SIMD_CMAKE[@]}"
 
 emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"

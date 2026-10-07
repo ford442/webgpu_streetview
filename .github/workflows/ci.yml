@@ -117,6 +117,18 @@ jobs:
           cmake --build cpp/build-clang -j"$(nproc)"
           ctest --test-dir cpp/build-clang --output-on-failure
 
+      # The goldens are memcmp'd, so a*b+c must round twice everywhere. clang
+      # fuses it into an FMA whenever the target has one (aarch64 / Apple
+      # Silicon, x86-64-v3, -march=native); cpp/CMakeLists.txt pins
+      # -ffp-contract=off. This job is what keeps that flag from silently
+      # going away — without it, 6 golden test cases fail here.
+      - name: Host build + golden tests (clang++, -march=x86-64-v3 / FMA)
+        run: |
+          cmake -S cpp -B cpp/build-clang-v3 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-march=x86-64-v3
+          cmake --build cpp/build-clang-v3 -j"$(nproc)"
+          ctest --test-dir cpp/build-clang-v3 --output-on-failure
+
       - name: Host build + golden tests (ASan + UBSan)
         run: |
           cmake -S cpp -B cpp/build-asan -DCMAKE_BUILD_TYPE=Debug \

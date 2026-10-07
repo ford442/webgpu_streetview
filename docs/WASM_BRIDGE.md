@@ -30,7 +30,7 @@ pixels in WGSL, cabin geometry in Three.js.
 | `cpp/third_party/doctest/` | vendored single-header test framework (MIT) |
 | `scripts/gen-wasm-goldens.mjs` | captures the goldens from the shipping binary |
 | `src/wasm/index.ts` | loader, camelCase API, **pure-JS fallback** |
-| `src/wasm/scratchOffset.ts` | loader scratch base (past emcc statics) |
+| `src/wasm/marshal.ts` | malloc-backed scratch arena every kernel wrapper copies through |
 | `src/wasm/useWasmModule.ts` | React hook (`useWasmModule`) for React-side consumers |
 | `src/wasm/wasmNoiseFeeder.ts` | render-loop tile feeder |
 | `src/wasm/wasmParticleFeeder.ts` | render-loop particle-seed feeder (compute weather) |
@@ -45,12 +45,17 @@ node scripts/check-wasm-abi.mjs  # the built binary exports the whole ABI
 
 `npm run build` runs `build:wasm` before Vite, and `scripts/verify-build.sh`
 fails the build when `public/wasm/streetview-wasm.wasm.sha256` no longer matches
-the C++ inputs (every `cpp/src/*.cpp`, `streetview_wasm.h`, `CMakeLists.txt` —
-the list lives in `scripts/wasm-source-hash.mjs`) — i.e. when someone edited the algorithms and forgot to rebuild.
+the C++ and build inputs (every `cpp/src/*.cpp`, `streetview_wasm.h`,
+`CMakeLists.txt`, `cpp/emsdk.version`, `scripts/build-wasm.sh` — the list lives
+in `scripts/wasm-source-hash.mjs`) — i.e. when someone edited the algorithms
+or the build and forgot to rebuild.
 Locally, if `emcc` is missing but that hash still matches, the committed binary
 is reused. CI (`CI=true`) fails without emcc.
 
-The Emscripten SDK version is pinned in `cpp/emsdk.version`.
+The Emscripten SDK version is pinned in `cpp/emsdk.version`, and
+`build-wasm.sh` refuses to build with any other `emcc` (different releases
+emit different bytes, and CI diffs the committed binary against a rebuild).
+`STREETVIEW_ALLOW_EMCC_MISMATCH=1` overrides that for local experiments only.
 
 ### Working on the C++
 
@@ -154,7 +159,7 @@ TypeScript loader:
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `offset_latlng(lat, lng, metres, bearing, out2) → void` | `offsetLatLng` | destination point; writes `{lat, lng}` degrees. The only copy of the formula — `historicalImagery.ts` builds its sample ring with it |
-| `fill_engine_noise(ptr, count, rpm, load, speed, time, sr)` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]` |
+| `fill_engine_noise(ptr, count, rpm, load, speed, phase: f64, sampleIndex: f64, sr) → f64` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]`; returns the next oscillator phase (feed it back, advance `sampleIndex` by `count`) |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |
 | `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
@@ -182,27 +187,55 @@ fBm, particle-seed, angle and engine-PCM exports — `cpp/tests` asserts that wi
 a `memcmp`, not a tolerance. `haversine`/`batch_haversine` agree to ~1e-12
 relative (host libm vs the libm emcc linked).
 
+That only holds if `a*b + c` rounds twice on every compiler. clang fuses it into
+one FMA wherever the target has one (aarch64 / Apple Silicon, `-march=x86-64-v3`,
+`-march=native`), so `cpp/CMakeLists.txt` passes `-ffp-contract=off` to the emcc
+target, the host library and (PUBLIC) the tests. CI's clang `-march=x86-64-v3`
+host job exists to keep that flag from silently going away.
+
+**Engine phase.** `fill_engine_noise` carries its oscillator phase in f64,
+wrapped to `[0, 1)` every sample, and returns it; the caller feeds it back.
+The road noise is a hash of the absolute sample index, so a stream renders the
+same bits whatever its block size. The ABI it replaced took the absolute stream
+time as an f32: by 10 minutes 84/127 consecutive samples were duplicates
+(a staircase waveform), 118/127 by an hour. `cpp/tests` and
+`wasmScratchArena.test.ts` render a full simulated hour and require zero.
+
 The JS fallback mirrors the same algorithms — where a value would otherwise
 round twice through a double intermediate, the fallback applies `Math.fround`
 explicitly (see `_TWO_PI_F32` in `src/wasm/jsFallback.ts`). It is exact on the
-integer-LCG paths (particle seeds) and the angle helpers, and within ~2.2e-7 on
-the noise/fBm/PCM buffers, because it accumulates in double and rounds once at
+integer-LCG paths (particle seeds), the angle helpers, the cabin IR and the
+engine PCM, and within ~2.2e-7 on the noise/fBm buffers, because it accumulates in double and rounds once at
 the `Float32Array` store while the module rounds after every operation. Measured
 worst cases are recorded in `TOLERANCES` in `wasmGoldenParity.test.ts`; treat a
 tolerance bump there as a bug report, not a fix.
 
 `haversine` has no WASM-native transcendentals; the Emscripten STANDALONE_WASM
-build links `sin`/`cos`/`atan2` statically. The loader still supplies optional
-`env` stubs (and `emscripten_notify_memory_growth` for `ALLOW_MEMORY_GROWTH`).
+build links `sin`/`cos`/`atan2` statically. The binary's only import is
+`env.emscripten_notify_memory_growth` (`ALLOW_MEMORY_GROWTH`), and the loader
+calls the reactor's `_initialize` before anything else — which is also what
+sets the stack base the scratch check below reads.
 
 ### Memory marshalling
 
-C++ keeps `perm` as a static (linker-placed, ~byte 4080 on the current emcc).
-The loader copies tiles at `WASM_SCRATCH_OFFSET = 65536` (`src/wasm/scratchOffset.ts`)
-so fills cannot overlap `.data`. The loader grows linear memory on demand
-(`reserveScratch`) and copies in/out — no allocator, no `malloc` on the hot
-path. 65536 is 8-byte aligned, so `batch_haversine`'s f64 views are naturally
-aligned; its output region sits at `65536 + count * 16`.
+emcc's layout is `.data` (statics such as `perm`), then the shadow stack —
+which grows **down** from `__stack_pointer`'s initial value (70848 today) —
+then the heap. Every kernel wrapper copies its inputs/outputs through one
+scratch arena (`createScratchArena`, `src/wasm/marshal.ts`) that the loader
+allocates once with the exported `malloc`, so it always sits in the heap above
+both. `reserve(bytes)` returns the 8-byte-aligned base, replacing the block
+(`free` + a larger `malloc`) when a call needs more; there is no `malloc` per
+call. A `reserve` can grow — and so detach — `memory.buffer`: create typed-array
+views only after it returns. At load the loader checks the arena against
+`emscripten_stack_get_base()` and falls back to the JS twin if it is ever
+below it. `scripts/gen-wasm-goldens.mjs` uses the same `malloc` path.
+
+Never pass a kernel a fixed offset. Scratch used to live at 64 KiB, inside the
+top ~5 KiB of the stack: libm's `sin`/`cos` spill a frame for arguments > π/4,
+so `batch_haversine` over more than ~230 points at |lat| > 45° corrupted its own
+input (a 12 km route at lat 60° measured 13,480 km).
+`wasmScratchArena.test.ts` drives the loader's wrappers over the committed
+binary to pin this.
 
 ---
 

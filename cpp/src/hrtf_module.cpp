@@ -1,10 +1,8 @@
 /**
  * hrtf_module.cpp
  * Heading-relative binaural shadow model for the wind/rain audio bed
- * (src/effects/WindAudio.ts). Separate translation unit from
- * noise_module.cpp, which already covers six unrelated concerns (noise,
- * particles, geodesy, angles, engine PCM, cabin IR, luma/downsample) — this
- * doesn't get folded in as a seventh.
+ * (src/effects/WindAudio.ts) — the hrtf domain of the one-translation-unit-
+ * per-domain numeric layer (noise, geodesy, audio, hrtf, luma).
  *
  * This is not a measured HRTF (no KEMAR table, nothing under cpp/data/) — it
  * is an analytic interaural time/level model: the near ear gets an undelayed
@@ -15,7 +13,7 @@
  * Trig-free by design: the ITD term below is a smooth S-curve stand-in for
  * the sine term in a physical (Woodworth) ITD model, not sinf itself. That
  * keeps this function on exact add/sub/mul/div arithmetic — the same
- * constraint sw_fill_cabin_ir and sw_fill_engine_noise are under — so the
+ * constraint sw_fill_cabin_ir is under — so the
  * emcc binary, the host build and the JS twin agree to the last f32 bit and
  * the golden tests can assert bit-exact equality instead of a tolerance (the
  * way sw_haversine's sin/cos/atan2 path has to).

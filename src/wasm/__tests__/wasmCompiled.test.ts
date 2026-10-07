@@ -4,18 +4,19 @@
  * Loads the actual compiled public/wasm/streetview-wasm.wasm binary directly
  * (bypassing fetch, which loadWasmModule() uses and which always fails in
  * jsdom/Node — see wasm.test.ts) so the real WASM path gets exercised too,
- * not just the pure-JS fallback. This is the only place the noise buffer's
- * memory layout and the haversine host-math-import wiring are verified end
- * to end.
+ * not just the pure-JS fallback. The raw exports are driven here; the
+ * loader's marshalling wrappers over the same binary are exercised in
+ * wasmScratchArena.test.ts.
  */
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { WASM_SCRATCH_OFFSET } from '../scratchOffset';
-
 interface CompiledExports {
   memory: WebAssembly.Memory;
+  _initialize: () => void;
+  malloc: (bytes: number) => number;
+  emscripten_stack_get_base: () => number;
   seed: (s: number) => void;
   noise2d: (x: number, y: number) => number;
   fill_noise_buffer: (ptr: number, w: number, h: number, scale: number, ox: number, oy: number) => void;
@@ -37,8 +38,8 @@ interface CompiledExports {
   fill_engine_noise: (
     ptr: number, count: number,
     rpm: number, load: number, speed: number,
-    time: number, sampleRate: number,
-  ) => void;
+    phase: number, sampleIndex: number, sampleRate: number,
+  ) => number;
   fill_cabin_ir: (
     ptr: number, count: number,
     vehicleType: number, openness: number, sampleRate: number,
@@ -61,22 +62,29 @@ function jsHaversine(lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 let exp: CompiledExports;
+/**
+ * One malloc'd block for every raw-export call below — the same allocation
+ * path the loader's scratch arena uses. Never a fixed offset: that can land in
+ * the downward-growing C++ stack (see wasmScratchArena.test.ts).
+ */
+let SCRATCH = 0;
 
 beforeAll(async () => {
   const wasmPath = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
   const bytes = readFileSync(wasmPath);
-  // Mirrors the import object loadWasmModule() supplies in src/wasm/index.ts.
-  // The emcc STANDALONE_WASM build links libm statically; extra env keys are ignored.
+  // Mirrors the import object instantiateStreetViewWasm() supplies in
+  // src/wasm/index.ts: STANDALONE_WASM links libm statically, so the only
+  // import is the memory-growth notification.
   const importObject = {
     env: {
-      sin: Math.sin,
-      cos: Math.cos,
-      atan2: Math.atan2,
       emscripten_notify_memory_growth: (): void => {},
     },
   };
   const { instance } = await WebAssembly.instantiate(bytes, importObject);
   exp = instance.exports as unknown as CompiledExports;
+  exp._initialize();
+  SCRATCH = exp.malloc(1 << 20);
+  expect(SCRATCH).toBeGreaterThanOrEqual(exp.emscripten_stack_get_base());
 });
 
 describe('compiled streetview-wasm.wasm binary', () => {
@@ -127,7 +135,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     const w = 8;
     const h = 8;
     const scale = 20;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_noise_buffer(ptr, w, h, scale, 0, 0);
     const view = new Float32Array(exp.memory.buffer, ptr, w * h);
     for (let row = 0; row < h; row++) {
@@ -142,7 +150,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     exp.seed(99);
     const w = 64;
     const h = 64;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_noise_buffer(ptr, w, h, 12, 3.5, -1.2);
     const view = new Float32Array(exp.memory.buffer, ptr, w * h);
     for (let i = 0; i < view.length; i++) {
@@ -154,7 +162,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
   test('scratch fills do not overlap C++ statics (perm / grad tables)', () => {
     exp.seed(1337);
     const before = exp.noise2d(1.25, -3.75);
-    exp.fill_noise_buffer(WASM_SCRATCH_OFFSET, 64, 64, 12.5, 0, 0);
+    exp.fill_noise_buffer(SCRATCH, 64, 64, 12.5, 0, 0);
     expect(exp.noise2d(1.25, -3.75)).toBe(before);
   });
 
@@ -193,7 +201,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     const w = 8;
     const h = 8;
     const scale = 12;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_fbm_buffer(ptr, w, h, scale, 0, 0, 4, 2.0, 0.5);
     const view = new Float32Array(exp.memory.buffer, ptr, w * h);
     for (let row = 0; row < h; row++) {
@@ -206,7 +214,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
 
   test('fill_fbm_buffer fills a full 64x64 tile inside [-1, 1]', () => {
     exp.seed(1);
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_fbm_buffer(ptr, 64, 64, 12, 3.5, -1.2, 4, 2.0, 0.5);
     const view = new Float32Array(exp.memory.buffer, ptr, 64 * 64);
     for (let i = 0; i < view.length; i++) {
@@ -217,7 +225,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
 
   test('fill_particle_seeds writes 4 floats per particle in range and is deterministic', () => {
     const count = 64;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_particle_seeds(ptr, count, 2024);
     const first = Float32Array.from(new Float32Array(exp.memory.buffer, ptr, count * 4));
     for (let i = 0; i < count; i++) {
@@ -244,7 +252,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(fallback.isWasm).toBe(false);
 
     const count = 32;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     exp.fill_particle_seeds(ptr, count, 777);
     const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count * 4));
 
@@ -254,24 +262,22 @@ describe('compiled streetview-wasm.wasm binary', () => {
     _resetWasmModule();
   });
 
-  test('fill_engine_noise matches the JS fallback', async () => {
+  test('fill_engine_noise matches the JS fallback bit-for-bit', async () => {
     const { loadWasmModule, _resetWasmModule } = await import('../index');
     _resetWasmModule();
     const fallback = await loadWasmModule();
     expect(fallback.isWasm).toBe(false);
 
     const count = 48;
-    const ptr = WASM_SCRATCH_OFFSET;
-    const args = [2200, 0.55, 48, 0.75, 44100] as const;
-    exp.fill_engine_noise(ptr, count, ...args);
+    const ptr = SCRATCH;
+    const args = [2200, 0.55, 48, 0.75, 33075, 44100] as const;
+    const wasmPhase = exp.fill_engine_noise(ptr, count, ...args);
     const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
 
     const jsBuf = new Float32Array(count);
-    fallback.fillEngineNoise(jsBuf, count, ...args);
-    expect(fromWasm.length).toBe(count);
-    for (let i = 0; i < count; i++) {
-      expect(jsBuf[i]).toBeCloseTo(fromWasm[i]!, 4);
-    }
+    const jsPhase = fallback.fillEngineNoise(jsBuf, count, ...args);
+    expect(Array.from(jsBuf)).toEqual(fromWasm);
+    expect(jsPhase).toBe(wasmPhase);
     _resetWasmModule();
   });
 
@@ -285,7 +291,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     // where an f64 literal in the twin would show up (the 0/1 endpoints
     // collapse to an exact operand and hide the difference).
     const count = 128;
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     const args = [1, 0.35, 48000] as const;
     exp.fill_cabin_ir(ptr, count, ...args);
     const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
@@ -303,7 +309,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(fallback.isWasm).toBe(false);
 
     const count = 32;
-    const leftPtr = WASM_SCRATCH_OFFSET;
+    const leftPtr = SCRATCH;
     const rightPtr = leftPtr + count * 4;
     const args = [45, 44100] as const;
     exp.fill_hrtf(leftPtr, rightPtr, count, ...args);
@@ -325,7 +331,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
       [48.8566, 2.3522],
       [41.9028, 12.4964],
     ];
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     const outPtr = ptr + points.length * 16;
     new Float64Array(exp.memory.buffer, ptr, points.length * 2).set(points.flat());
 
@@ -350,7 +356,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     const fallback = await loadWasmModule();
     expect(fallback.isWasm).toBe(false);
 
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     for (let bearing = 0; bearing < 360; bearing += 45) {
       exp.offset_latlng(40.7128, -74.006, 10, bearing, ptr);
       const out = new Float64Array(exp.memory.buffer, ptr, 2);
@@ -363,7 +369,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
   });
 
   test('batch_haversine returns 0 and writes nothing for fewer than two points', () => {
-    const ptr = WASM_SCRATCH_OFFSET;
+    const ptr = SCRATCH;
     const outPtr = ptr + 64;
     const guard = new Float64Array(exp.memory.buffer, outPtr, 2);
     guard.set([-1, -1]);

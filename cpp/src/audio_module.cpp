@@ -51,47 +51,71 @@ static const CabinProfile cabin_profiles[] = {
 static const int cabin_profile_count =
     (int)(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
 
+// Integer avalanche hash (Wellons' "lowbias32"): consecutive inputs give
+// uncorrelated outputs, which a bare LCG step of the index would not.
+static inline uint32_t hash_u32(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 extern "C" {
 
-void sw_fill_engine_noise(float* buf, int count,
-                          float rpm, float load, float speed_kmh,
-                          float time_sec, float sample_rate) {
-    if (count <= 0 || buf == nullptr) return;
+double sw_fill_engine_noise(float* buf, int count,
+                            float rpm, float load, float speed_kmh,
+                            double phase, double sample_index,
+                            float sample_rate) {
+    // The phase is a fraction of one fundamental cycle. Keeping it (and the
+    // per-sample increment) in f64 and wrapping it every sample is what keeps
+    // the waveform identical at minute 1 and minute 119: the old ABI took the
+    // absolute stream time as f32, and once t*fund outgrew f32's mantissa
+    // consecutive samples collapsed onto the same value (a staircase).
+    if (!(phase >= 0.0 && phase < 1.0)) {
+        phase = std::isfinite(phase) ? phase - std::floor(phase) : 0.0;
+    }
+    if (count <= 0 || buf == nullptr) return phase;
     if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
     if (rpm < 0.0f) rpm = 0.0f;
     if (load < 0.0f) load = 0.0f;
     if (load > 1.0f) load = 1.0f;
     if (speed_kmh < 0.0f) speed_kmh = 0.0f;
-    if (time_sec < 0.0f) time_sec = 0.0f;
+    // 2^53: past it a double no longer counts samples exactly.
+    if (!(sample_index >= 0.0 && sample_index < 9007199254740992.0)) sample_index = 0.0;
 
-    const float inv_sr = 1.0f / sample_rate;
     const float fund = rpm / 60.0f;
-    uint32_t state = (uint32_t)floorf(time_sec * sample_rate);
-    if (state == 0u) state = 1u;
+    const double inc = static_cast<double>(fund) / static_cast<double>(sample_rate);
+    // Road noise is a hash of the absolute sample index (mod 2^32), not a
+    // running LCG: each sample depends only on where it sits in the stream,
+    // so rendering 1x1024 or 4x256 gives the same bits.
+    const uint32_t index0 = static_cast<uint32_t>(
+        std::fmod(std::floor(sample_index), 4294967296.0));
     float spd = speed_kmh / 140.0f;
     if (spd > 1.0f) spd = 1.0f;
 
     const std::span<float> out(buf, static_cast<size_t>(count));
     for (int i = 0; i < count; ++i) {
-        float t = time_sec + (float)i * inv_sr;
-        float cycles = t * fund;
-        float frac = cycles - floorf(cycles);
-        float saw = frac * 2.0f - 1.0f;
-        float cycles2 = t * (fund * 2.0f);
-        float frac2 = cycles2 - floorf(cycles2);
-        float saw2 = frac2 * 2.0f - 1.0f;
+        const double cycles2 = phase * 2.0;
+        const double frac2 = cycles2 - std::floor(cycles2);
+        const float saw = static_cast<float>(phase) * 2.0f - 1.0f;
+        const float saw2 = static_cast<float>(frac2) * 2.0f - 1.0f;
         float eng = (saw * 0.28f + saw2 * 0.11f) * (0.22f + 0.78f * load);
-        state = state * 1664525u + 1013904223u;
-        float n = (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
+        const uint32_t h = hash_u32(index0 + static_cast<uint32_t>(i));
+        float n = (float)((h >> 8) & 0xFFFFFFu) / 16777216.0f;
         n = n * 2.0f - 1.0f;
         float s = eng + n * spd * 0.18f;
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[static_cast<size_t>(i)] = s;
+        phase += inc;
+        phase -= std::floor(phase);
     }
+    return phase;
 }
 
 void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,

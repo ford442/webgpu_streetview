@@ -147,17 +147,18 @@ with a **pinned** Emscripten SDK (`cpp/emsdk.version`).
 
 **Emscripten flags used (see `CMakeLists.txt`):**
 ```
--O3 -g0                # release; DWARF stripped
+-O3 -g0                # link (drives wasm-opt); compile -O3 comes from CMAKE_BUILD_TYPE=Release
 -s STANDALONE_WASM=1   # link math statically; no JS glue file required
 --no-entry             # suppress WASI _start; pure compute module
 -s INITIAL_MEMORY=16777216   # explicit, so the first tile never triggers a grow
 -s ALLOW_MEMORY_GROWTH=1
 -s ASSERTIONS=0
--s EXPORTED_FUNCTIONS=[ABI names, plus '_malloc','_free']
+-s EXPORTED_FUNCTIONS=[ABI names, plus '_malloc','_free','_emscripten_stack_get_base']
 -s EXPORTED_RUNTIME_METHODS=[]
 ```
 
-Compile flags: `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`
+Compile flags: `-ffp-contract=off` (goldens are bit-exact; see docs/WASM_BRIDGE.md)
+plus `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror`
 (shared with the host build) plus `-fno-exceptions -fno-rtti`. Passing
 `-DSTREETVIEW_WASM_SIMD=ON` adds `-msimd128`; CI checks goldens stay bit-identical.
 Do **not** ship a SIMD-built binary until that job is the production default.
@@ -283,19 +284,19 @@ and the noise tile is never uploaded.
 ### haversine (libm, linked statically)
 
 The emcc STANDALONE_WASM build links `sin`/`cos`/`atan2` into the module.
-`ALLOW_MEMORY_GROWTH` imports `env.emscripten_notify_memory_growth`; the loader
-stubs it. Extra keys (legacy `env.sin` / WASI) are ignored:
+`ALLOW_MEMORY_GROWTH` imports `env.emscripten_notify_memory_growth`, which is
+the binary's only import; the loader stubs it and then runs `_initialize`:
 
 ```typescript
 const importObject = {
-  env: {
-    sin: Math.sin, cos: Math.cos, atan2: Math.atan2,
-    emscripten_notify_memory_growth: () => {},
-  },
-  wasi_snapshot_preview1: { /* stubs */ },
+  env: { emscripten_notify_memory_growth: () => {} },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
+instance.exports._initialize?.();
 ```
+
+Kernel buffers live in a `malloc`'d scratch arena above the C++ stack — see
+"Memory marshalling" in docs/WASM_BRIDGE.md.
 
 ---
 
