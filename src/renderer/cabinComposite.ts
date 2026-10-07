@@ -71,17 +71,17 @@ export const CABIN_COMPOSITE_BLEND: GPUBlendState = {
     alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
 };
 
+import {
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from './gpuPipelineFactory';
+
 export const CABIN_COMPOSITE_SHADER_PATH = 'shaders/cabin-composite.wgsl';
 
 export async function loadCabinCompositeShader(): Promise<string> {
     const url = `${process.env.PUBLIC_URL || '/'}/${CABIN_COMPOSITE_SHADER_PATH}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load cabin-composite.wgsl: ${response.status} ${response.statusText}`,
-        );
-    }
-    return response.text();
+    return fetchShaderSource(url, 'cabin-composite.wgsl');
 }
 
 export class CabinCompositePass {
@@ -105,14 +105,12 @@ export class CabinCompositePass {
     public async init(presentationFormat: GPUTextureFormat): Promise<void> {
         const code = await loadCabinCompositeShader();
         if (this.disposed) return;
-        const module = this.device.createShaderModule({ code });
-        this.sampler = this.device.createSampler({
-            magFilter: 'linear',
-            minFilter: 'linear',
-            addressModeU: 'clamp-to-edge',
-            addressModeV: 'clamp-to-edge',
+        const module = await createShaderModuleChecked(this.device, {
+            label: 'cabin-composite.wgsl',
+            code,
         });
-        this.pipeline = this.device.createRenderPipeline({
+        const pipeline = await createRenderPipelineChecked(this.device, {
+            label: 'cabin-composite-pipeline',
             layout: 'auto',
             vertex: { module, entryPoint: 'vs_main' },
             fragment: {
@@ -122,6 +120,17 @@ export class CabinCompositePass {
             },
             primitive: { topology: 'triangle-list' },
         });
+        if (this.disposed) return;
+        this.sampler = this.device.createSampler({
+            label: 'cabin-composite-sampler',
+            magFilter: 'linear',
+            minFilter: 'linear',
+            addressModeU: 'clamp-to-edge',
+            addressModeV: 'clamp-to-edge',
+        });
+        // Assigned last: `isReady()` (and so `isCabinCompositedInFrame()`) can
+        // only turn true for a pipeline that passed validation.
+        this.pipeline = pipeline;
     }
 
     public isReady(): boolean {
@@ -172,6 +181,7 @@ export class CabinCompositePass {
 
         if (this.boundTexture !== texture || !this.bindGroup) {
             this.bindGroup = this.device.createBindGroup({
+                label: 'cabin-composite-bind-group',
                 layout: this.pipeline!.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: texture.createView() },
@@ -182,6 +192,7 @@ export class CabinCompositePass {
         }
 
         const pass = commandEncoder.beginRenderPass({
+            label: 'cabin-composite',
             colorAttachments: [{
                 view: targetView,
                 loadOp: 'load' as GPULoadOp,

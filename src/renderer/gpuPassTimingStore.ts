@@ -34,3 +34,18 @@ export function publishGpuPassTimingsToWindow(): void {
     if (typeof window === 'undefined') return;
     (window as Window & { rendererGpuTimings?: GpuPassTimings }).rendererGpuTimings = current;
 }
+
+/**
+ * Whether anyone is looking at pass timings. Timestamp queries cost a resolve,
+ * a buffer copy and a `mapAsync` per frame, so the frame loop only stamps
+ * passes while the performance overlay (P) is open.
+ */
+let timingsWanted = false;
+
+export function setGpuPassTimingsWanted(wanted: boolean): void {
+    timingsWanted = wanted;
+}
+
+export function areGpuPassTimingsWanted(): boolean {
+    return timingsWanted;
+}

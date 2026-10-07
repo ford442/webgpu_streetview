@@ -74,6 +74,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private temporalHistoryEnabled = false;
     private shaderEffectsEnabled = true;
     private lastIntermediateView: GPUTextureView | null = null;
+    /** Reused per dispatch — `writeBuffer` copies it, so one scratch array is enough. */
+    private readonly computeUniforms = new Float32Array(4);
 
     constructor(device: GPUDevice, context: GPUCanvasContext, _canvas: HTMLCanvasElement) {
         this.device = device;
@@ -101,7 +103,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
         await this.particles.initPipelines(`${base}/shaders/weather-particles.wgsl`);
 
-        this.blitPipeline = createBlitPipeline(this.device, presentationFormat);
+        this.blitPipeline = await createBlitPipeline(this.device, presentationFormat);
     }
 
     private rebuildComputeBindGroup(intermediateTextureView: GPUTextureView): void {
@@ -231,11 +233,13 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             return;
         }
 
-        this.device.queue.writeBuffer(
-            res.computeUniformsBuffer,
-            0,
-            new Float32Array([this.params.get(WeatherParamIndex.time), 0, res.writeWidth, res.writeHeight]),
-        );
+        this.params.flush();
+        const uniforms = this.computeUniforms;
+        uniforms[0] = this.params.get(WeatherParamIndex.time);
+        uniforms[1] = 0;
+        uniforms[2] = res.writeWidth;
+        uniforms[3] = res.writeHeight;
+        this.device.queue.writeBuffer(res.computeUniformsBuffer, 0, uniforms);
 
         const particlesRan = this.particles.dispatch(
             commandEncoder,

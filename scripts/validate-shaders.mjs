@@ -83,6 +83,43 @@ const ASSEMBLED_VARIANTS = [
     },
 ];
 
+/**
+ * WGSL that ships inline in TypeScript as a template literal (no `${}`
+ * interpolation). The present fallback is the pass that must still compile
+ * when a fetched shader does not, so it gets the same naga gate.
+ */
+export const INLINE_SHADERS = [
+    { source: 'src/renderer/PresentFallbackPostProcessor.ts', name: 'PRESENT_FALLBACK_WGSL' },
+    { source: 'src/renderer/computeWeather/constants.ts', name: 'BLIT_SHADER' },
+];
+
+export function extractInlineWgsl(tsSource, name) {
+    const match = new RegExp(`export const ${name} = (?:/\\* wgsl \\*/ )?\`([\\s\\S]*?)\`;`).exec(tsSource);
+    if (!match || match[1].includes('${')) return null;
+    return match[1];
+}
+
+function validateInlineShader(nagaBin, shader, outDir) {
+    const label = `${shader.source}#${shader.name}`;
+    const abs = path.join(ROOT, shader.source);
+    const code = existsSync(abs) ? extractInlineWgsl(readFileSync(abs, 'utf8'), shader.name) : null;
+    if (code === null) {
+        console.error(`[validate:shaders] FAIL ${label} — not found as a plain template literal`);
+        return false;
+    }
+    const out = path.join(outDir, `${shader.name}.wgsl`);
+    writeFileSync(out, code);
+    const result = spawnSync(nagaBin, [out], { encoding: 'utf8' });
+    if (result.status === 0) {
+        console.log(`[validate:shaders] OK ${label}`);
+        return true;
+    }
+    console.error(`[validate:shaders] FAIL ${label}`);
+    if (result.stderr) console.error(result.stderr.trim());
+    if (result.stdout) console.error(result.stdout.trim());
+    return false;
+}
+
 function validateAssembledVariant(nagaBin, variant, outDir) {
     const abs = path.join(ROOT, variant.source);
     if (!existsSync(abs)) {
@@ -167,6 +204,9 @@ function main() {
     const variantDir = mkdtempSync(path.join(tmpdir(), 'wgsl-variants-'));
     for (const variant of ASSEMBLED_VARIANTS) {
         if (!validateAssembledVariant(nagaBin, variant, variantDir)) ok = false;
+    }
+    for (const shader of INLINE_SHADERS) {
+        if (!validateInlineShader(nagaBin, shader, variantDir)) ok = false;
     }
 
     process.exit(ok ? 0 : 1);

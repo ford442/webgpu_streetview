@@ -1,4 +1,5 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { requireGpuAdapter } from './gpuLane';
 
 /**
  * Car mode's windshield portal, on a real WebGPU device.
@@ -11,24 +12,11 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
  * WebGPU adapter (SwiftShader), which exposes `clip-distances`.
  *
  * The pages under `e2e/fixtures/windshield-portal/` build the real cabin pieces
- * (see their headers); this spec only drives them and asserts. It skips, rather
- * than fails, where the browser has no WebGPU adapter.
+ * (see their headers); this spec only drives them and asserts. It runs in the
+ * `chromium-webgpu` project (SwiftShader launch flags in playwright.config.ts),
+ * where a missing adapter is a failure, not a skip — see `gpuLane.ts`.
  */
 
-test.use({
-  launchOptions: {
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--ignore-gpu-blocklist',
-      '--enable-unsafe-webgpu',
-      '--enable-features=Vulkan,WebGPU',
-      '--use-angle=swiftshader',
-      '--use-webgpu-adapter=swiftshader',
-      '--disable-vulkan-surface',
-    ],
-  },
-});
 test.setTimeout(120_000);
 
 const FIXTURES = '/e2e/fixtures/windshield-portal';
@@ -79,10 +67,7 @@ async function runFixture<T extends FixtureOut>(
     { timeout: 100_000 },
   );
   const out = await page.evaluate(() => (window as unknown as { __out: FixtureOut }).__out);
-  test.skip(
-    typeof out.fatal === 'string' && /no WebGPU adapter|navigator\.gpu/i.test(out.fatal),
-    'no WebGPU adapter in this browser',
-  );
+  requireGpuAdapter(testInfo, out.fatal);
   expect(out.fatal, out.fatal).toBeUndefined();
 
   for (const [name, dataUrl] of Object.entries(out.snapshots ?? {})) {

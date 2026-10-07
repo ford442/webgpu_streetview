@@ -16,6 +16,7 @@ import {
 } from './deviceInit';
 import { DEVICE_LABELS } from './deviceCapabilities';
 import { resolveHdrIntermediateFormat } from './shaderFeatureVariants';
+import { createComputePipelineChecked, createShaderModuleChecked } from './gpuPipelineFactory';
 import {
     adapterInfoFromGpuAdapter,
     publishWebGpuProbe,
@@ -34,7 +35,12 @@ export interface BootDeviceOptions {
     canvas: HTMLCanvasElement;
     weatherPostProcessMode: WeatherPostProcessMode;
     initOptions?: RendererInitOptions;
-    /** Registered on `device.lost` before anything else can touch the device. */
+    /**
+     * Registered on `device.lost` before anything else can touch the device.
+     * Never called for a device this function destroyed itself on a failure
+     * path — that loss is not news, and forwarding it is what used to turn one
+     * failed boot into a re-init loop.
+     */
     onDeviceLost: (info: GPUDeviceLostInfo) => void;
 }
 
@@ -55,13 +61,6 @@ export interface BootDeviceSuccess {
 export interface BootDeviceFailure {
     ok: false;
     reason: string;
-    /**
-     * Set when the failure happened *after* the device existed (the compute
-     * boot probe). The caller must run its own teardown over these so the
-     * renderer's disposed/destroyed flags stay truthful.
-     */
-    device?: GPUDevice;
-    context?: GPUCanvasContext;
 }
 
 export interface BootProbeContext {
@@ -85,6 +84,10 @@ export type BootDeviceResult = BootDeviceSuccess | BootDeviceFailure;
  * failed and returns `{ ok: false }`; the success probe is published by the
  * caller, because a boot that succeeds can still be followed by a pipeline or
  * weather-post failure.
+ *
+ * The canvas context is acquired *before* the device exists, and every failure
+ * after the device exists destroys it here (without reporting that loss), so a
+ * failed boot never leaks a `GPUDevice` and never re-enters through `onDeviceLost`.
  */
 export async function bootDevice(options: BootDeviceOptions): Promise<BootDeviceResult> {
     const { canvas, weatherPostProcessMode, initOptions, onDeviceLost } = options;
@@ -93,7 +96,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     const webglPreferenceDeferred = preference === 'webgl';
     const probe: BootProbeContext = { preference, webglPreferenceDeferred };
 
-    const fail = (stage: WebGpuProbeStage, reason: string, extra?: Partial<BootDeviceFailure>): BootDeviceFailure => {
+    const fail = (stage: WebGpuProbeStage, reason: string): BootDeviceFailure => {
         publishWebGpuProbe({
             ok: false,
             stage,
@@ -103,12 +106,20 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
             adapter: probe.adapter,
             capabilityMatrix: probe.capabilityMatrix,
         });
-        return { ok: false, reason, ...extra };
+        return { ok: false, reason };
     };
 
     if (!navigator.gpu) {
         console.warn('WebGPU not supported. Hard-fail — no live GL weather.');
         return fail('navigator', 'WebGPU is not supported in this browser');
+    }
+
+    // Before the device: a canvas that cannot give a WebGPU context must not
+    // cost an adapter + device round trip, let alone leak the device.
+    const context = canvas.getContext('webgpu');
+    if (!context) {
+        console.warn('Could not get WebGPU context. Hard-fail — no live GL weather.');
+        return fail('canvas', 'Could not acquire a WebGPU canvas context');
     }
 
     const adapterOptions = await resolveAdapterRequestOptions(initOptions);
@@ -148,28 +159,38 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     }
     labelDevice(device);
 
+    let destroyedHere = false;
     device.lost.then((info) => {
-        console.warn('[Renderer] WebGPU device lost:', info.reason, info.message);
+        if (destroyedHere) return;
         onDeviceLost(info);
     });
-
-    const context = canvas.getContext('webgpu');
-    if (!context) {
-        console.warn('Could not get WebGPU context. Hard-fail — no live GL weather.');
-        return fail('canvas', 'Could not acquire a WebGPU canvas context');
-    }
+    /** A failure after the device exists: tear it down here, silently. */
+    const failWithDevice = (stage: WebGpuProbeStage, reason: string): BootDeviceFailure => {
+        destroyedHere = true;
+        try {
+            context.unconfigure();
+        } catch {
+            // Never configured, or already gone.
+        }
+        device.destroy();
+        return fail(stage, reason);
+    };
 
     const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
     let canvasOutputPolicy = resolveCanvasOutputPolicy({
         preferredFormat,
-        enabledFeatures: requiredFeatures,
         flags: getCanvasOutputFlags(),
         ...readDisplayOutputCapabilities(),
     });
-    if (canvasOutputPolicy.hdrRejectedReason) {
-        console.info('[Renderer] HDR canvas not enabled:', canvasOutputPolicy.hdrRejectedReason);
+    let appliedCanvas: ReturnType<typeof configureCanvasContext>;
+    try {
+        appliedCanvas = configureCanvasContext(context, device, preferredFormat, canvasOutputPolicy);
+    } catch (configureError) {
+        // The SDR retry inside threw too — no swap chain at all.
+        const reason = configureError instanceof Error ? configureError.message : String(configureError);
+        console.warn('[Renderer] Canvas configure failed:', reason);
+        return failWithDevice('canvas', reason);
     }
-    const appliedCanvas = configureCanvasContext(context, device, preferredFormat, canvasOutputPolicy);
     // Resize re-configures; keep the policy in sync with what the browser accepted.
     canvasOutputPolicy = {
         hdr: appliedCanvas.toneMapping === 'extended',
@@ -205,7 +226,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     } catch (computeError) {
         const reason = computeError instanceof Error ? computeError.message : String(computeError);
         console.warn('[Renderer] Compute boot probe failed:', reason);
-        return fail('compute', reason, { device, context });
+        return failWithDevice('compute', reason);
     }
 
     return {
@@ -248,17 +269,20 @@ export function publishBootFailure(probe: BootProbeContext, stage: WebGpuProbeSt
     });
 }
 
-/** Tiny @compute pipeline create — surfaces backend compile failures during boot. */
+/**
+ * Tiny @compute pipeline, built through the validating factory — catches
+ * Edge/Chrome shader-backend gaps during boot. Before the factory this could
+ * not fail: a sync `createComputePipeline` returns an invalid object instead of
+ * throwing.
+ */
 async function runComputeBootProbe(device: GPUDevice): Promise<void> {
-    const shader = device.createShaderModule({
+    const module = await createShaderModuleChecked(device, {
         label: 'streetview-boot-compute-probe',
         code: `@compute @workgroup_size(1) fn main() {}`,
     });
-    device.createComputePipeline({
+    await createComputePipelineChecked(device, {
         label: 'streetview-boot-compute-probe-pipeline',
         layout: 'auto',
-        compute: { module: shader, entryPoint: 'main' },
+        compute: { module, entryPoint: 'main' },
     });
-    // Yield so async compilation / uncapturederror can surface before we continue.
-    await device.queue.onSubmittedWorkDone();
 }

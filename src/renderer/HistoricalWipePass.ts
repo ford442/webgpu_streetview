@@ -1,5 +1,10 @@
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import {
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from './gpuPipelineFactory';
+import {
     packWipeUniforms,
     WIPE_UNIFORM_FLOAT_COUNT,
     type WipeDirection,
@@ -9,13 +14,7 @@ export const HISTORICAL_WIPE_SHADER_PATH = 'shaders/historical-wipe.wgsl';
 
 export async function loadHistoricalWipeShader(): Promise<string> {
     const url = `${process.env.PUBLIC_URL || '/'}/${HISTORICAL_WIPE_SHADER_PATH}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load historical-wipe.wgsl: ${response.status} ${response.statusText}`,
-        );
-    }
-    return response.text();
+    return fetchShaderSource(url, 'historical-wipe.wgsl');
 }
 
 /**
@@ -51,7 +50,8 @@ export class HistoricalWipePass {
     public async init(intermediateFormat: GPUTextureFormat): Promise<void> {
         const code = await loadHistoricalWipeShader();
         if (this.disposed) return;
-        const module = this.device.createShaderModule({ label: 'Historical wipe', code });
+        const module = await createShaderModuleChecked(this.device, { label: 'historical-wipe.wgsl', code });
+        if (this.disposed) return;
         this.sampler = this.device.createSampler({
             magFilter: 'linear',
             minFilter: 'linear',
@@ -71,7 +71,7 @@ export class HistoricalWipePass {
             size: WIPE_UNIFORM_FLOAT_COUNT * 4,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }, 'historical-wipe-uniforms');
-        this.pipeline = this.device.createRenderPipeline({
+        this.pipeline = await createRenderPipelineChecked(this.device, {
             label: 'Historical wipe pipeline',
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
             vertex: { module, entryPoint: 'vs_main' },

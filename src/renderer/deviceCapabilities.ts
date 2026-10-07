@@ -2,24 +2,19 @@ import type { AdapterFeatureLevel, WeatherPostProcessMode } from './RendererBack
 import type { TimestampWriteStrategy } from './gpuPassTimer';
 import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
 
-/**
- * Not yet in `GPUFeatureName` for `@webgpu/types` 0.1.64. Requested only when
- * `adapter.features.has` reports it; overlay timing later, no shader change.
- */
-export const TIMESTAMP_QUERY_INSIDE_PASSES =
-    'timestamp-query-inside-passes' as GPUFeatureName;
-
 /** Documented optional features — see docs/RENDERER_FALLBACK.md § Capability matrix. */
 export const OPTIONAL_DEVICE_FEATURES = {
     /** Always requested when the adapter exposes it (HDR intermediate + compute weather). */
     float32Filterable: 'float32-filterable' as GPUFeatureName,
     /** Opt-in: GPU pass timings in the performance overlay (P). */
     timestampQuery: 'timestamp-query' as GPUFeatureName,
-    /** Per-draw timestamps without splitting passes — overlay-only when used. */
-    timestampQueryInsidePasses: TIMESTAMP_QUERY_INSIDE_PASSES,
     /** Compute weather 16×16 luma reduce + gpu-chores 8×8 hist coalescing. */
     subgroups: 'subgroups' as GPUFeatureName,
-    /** Bandwidth on weather intermediates — no production `f16` WGSL yet. */
+    /**
+     * **Not requested.** No production WGSL uses `f16`, and an enabled-but-unused
+     * feature only narrows the adapters a device can be recreated on. Named here
+     * so `shaderFeatureUses.shaderF16` and the naga spike have one spelling.
+     */
     shaderF16: 'shader-f16' as GPUFeatureName,
     /** Packed HDR intermediate (`rg11b10ufloat`) when alpha is unused. */
     rg11b10ufloatRenderable: 'rg11b10ufloat-renderable' as GPUFeatureName,
@@ -35,9 +30,7 @@ export const OPTIONAL_DEVICE_FEATURES = {
 export const OPTIONAL_FEATURES_ATTEMPTED: GPUFeatureName[] = [
     OPTIONAL_DEVICE_FEATURES.float32Filterable,
     OPTIONAL_DEVICE_FEATURES.timestampQuery,
-    OPTIONAL_DEVICE_FEATURES.timestampQueryInsidePasses,
     OPTIONAL_DEVICE_FEATURES.subgroups,
-    OPTIONAL_DEVICE_FEATURES.shaderF16,
     OPTIONAL_DEVICE_FEATURES.rg11b10ufloatRenderable,
     OPTIONAL_DEVICE_FEATURES.dualSourceBlending,
     OPTIONAL_DEVICE_FEATURES.clipDistances,

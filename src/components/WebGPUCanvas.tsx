@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
 import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
 import { packWeatherParams } from '../renderer/packWeatherParams';
@@ -25,6 +25,14 @@ import {
     resolveHorizonFrame,
     type HorizonFrameState,
 } from '../renderer/gpuChores/horizonEstimate';
+import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
+import {
+    DEFAULT_MAX_TEXTURE_DIMENSION,
+    dprCapForPixelRatio,
+    observeCanvasBox,
+    resolveBackingStoreSize,
+    type CanvasBoxSize,
+} from './canvasBackingStore';
 import {
     isParticlePrecipitationEnabled,
     particleGridForQuality,
@@ -72,8 +80,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         setRenderer,
     } = useStreetView();
 
-    // State to track window size for full-screen rendering
-    const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+    // Backing-store size in device pixels (CSS size stays 100%) — see
+    // canvasBackingStore.ts. Seeded from the window until the observer reports.
+    const [size, setSize] = useState(() => resolveBackingStoreSize({
+        cssWidth: window.innerWidth,
+        cssHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        dprCap: dprCapForPixelRatio(PRESETS[getActiveQualityLevel()].pixelRatio),
+        maxTextureDimension: DEFAULT_MAX_TEXTURE_DIMENSION,
+    }));
+    const canvasBoxRef = useRef<CanvasBoxSize | null>(null);
 
     // Performance: Frame skipping state
     const frameCountRef = useRef<number>(0);
@@ -81,8 +97,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     const sourceChangeFlagRef = useRef<boolean>(true);
     const FRAME_SKIP = 2; // Render every 2nd frame (30fps base) when source unchanged, 60fps when changed
 
-    // Performance: Debounced resize
-    const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // Performance: debounced resize — every backing-store change reallocates
+    // the intermediate (and the compute weather targets), so a drag-resize
+    // settles before it is applied. The first observation applies at once.
+    const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // WASM-driven ambient dust turbulence (see src/wasm/wasmNoiseFeeder.ts).
     // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
@@ -148,30 +166,60 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         return () => clearInterval(interval);
     }, []);
 
-    // Handle window resize - debounced for performance
-    useEffect(() => {
-        const handleResize = () => {
-            if (resizeTimeoutRef.current) {
-                clearTimeout(resizeTimeoutRef.current);
-            }
-            resizeTimeoutRef.current = setTimeout(() => {
-                setSize({ width: window.innerWidth, height: window.innerHeight });
-            }, 150); // 150ms debounce
-        };
-
-        window.addEventListener('resize', handleResize);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (resizeTimeoutRef.current) {
-                clearTimeout(resizeTimeoutRef.current);
-            }
-        };
-    }, []);
-
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
     const [rendererReadyTick, setRendererReadyTick] = useState(0);
-    
+    // Capped, backed-off re-init after a genuine device loss; terminal overlay when spent.
+    const lossRecoveryRef = useRef(new DeviceLossRecovery());
+    const reinitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [gpuUnavailable, setGpuUnavailable] = useState(false);
+
+    /** Resolve the backing store from the last observed box and the device's texture limit. */
+    const applyBackingStore = useCallback(() => {
+        const box = canvasBoxRef.current;
+        if (!box) return;
+        const next = resolveBackingStoreSize({
+            ...box,
+            devicePixelRatio: window.devicePixelRatio || 1,
+            dprCap: dprCapForPixelRatio(PRESETS[qualityRef.current].pixelRatio),
+            maxTextureDimension:
+                internalRendererRef.current?.getMaxTextureDimension2D?.() ?? DEFAULT_MAX_TEXTURE_DIMENSION,
+        });
+        setSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
+    }, []);
+
+    // Size and DPR changes (window resize, zoom, moving between monitors).
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const stop = observeCanvasBox(canvas, (box) => {
+            const first = canvasBoxRef.current === null;
+            canvasBoxRef.current = box;
+            if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+            if (first) {
+                applyBackingStore();
+                return;
+            }
+            resizeTimeoutRef.current = setTimeout(() => {
+                resizeTimeoutRef.current = null;
+                applyBackingStore();
+            }, 150);
+        });
+        return () => {
+            stop();
+            if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+        };
+    }, [applyBackingStore]);
+
+    // The device's real texture limit is only known once a renderer exists.
+    useEffect(() => {
+        applyBackingStore();
+    }, [rendererReadyTick, applyBackingStore]);
+
+    useEffect(() => () => {
+        if (reinitTimerRef.current) clearTimeout(reinitTimerRef.current);
+    }, []);
+
     // Keep latest environment settings in a ref for the render loop
     const envRef = useRef({
         nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
@@ -216,12 +264,31 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         let isActive = true;
         let activeRenderer: StreetViewRenderer | null = null;
 
+        const recovery = lossRecoveryRef.current;
+        /** Re-init after `delayMs`, or give up for good — never a tight loop. */
+        const scheduleRecovery = (decision: ReturnType<DeviceLossRecovery['onDeviceLost']>) => {
+            if (decision.action === 'give-up') {
+                console.error(`[WebGPU] GPU unavailable after ${decision.attempts} re-init attempt(s).`);
+                setGpuUnavailable(true);
+                onWebGPUStatusRef.current?.(false);
+                return;
+            }
+            console.warn(`[WebGPU] Re-init attempt ${decision.attempt} in ${decision.delayMs} ms`);
+            if (reinitTimerRef.current) clearTimeout(reinitTimerRef.current);
+            reinitTimerRef.current = setTimeout(() => {
+                reinitTimerRef.current = null;
+                setReinitCounter(c => c + 1);
+            }, decision.delayMs);
+        };
+
         (async () => {
             const result = await createStreetViewRenderer(canvas, {
+                // Only a loss we did not cause arrives here: the renderer
+                // suppresses the `lost` of a device it destroyed itself.
                 onLost: (info) => {
                     console.warn('[WebGPU] Device lost:', info);
                     if (isActive) {
-                        setReinitCounter(c => c + 1);
+                        scheduleRecovery(recovery.onDeviceLost());
                     }
                 }
             });
@@ -230,6 +297,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 return;
             }
             if (result.renderer) {
+                recovery.onBootSucceeded();
                 activeRenderer = result.renderer;
                 internalRendererRef.current = result.renderer;
                 setRendererReadyTick((tick) => tick + 1);
@@ -251,6 +319,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                     `[Renderer] ${result.backendType} renderer active` +
                     (result.fallbackReason ? ` (${result.fallbackReason})` : '')
                 );
+            } else if (recovery.isRecovering()) {
+                // A re-init after a loss failed to boot: back off and retry, or give up.
+                scheduleRecovery(recovery.onReinitFailed());
             } else {
                 console.warn(
                     'WebGPU renderer initialization failed. Hard-fail — no live GL weather.',
@@ -291,12 +362,14 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         }
     }, [source, isPanoramaUpdatePaused]);
 
-    // Resize renderer when canvas size changes
+    // Resize renderer when the backing store changes
     useEffect(() => {
         if (currentRendererRef.current) {
             currentRendererRef.current.resize(size.width, size.height);
         }
     }, [size.width, size.height, currentRendererRef]);
+
+    const stopEvent = (e: React.SyntheticEvent) => e.stopPropagation();
 
     useEffect(() => {
         let active = true;
@@ -458,6 +531,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     }, [currentRendererRef]);
 
     return (
+        <>
         <canvas
             ref={canvasRef}
             width={size.width}
@@ -477,6 +551,41 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 opacity: 1
             }}
         />
+        {gpuUnavailable && (
+            // Terminal state after capped re-init attempts. Swallows input so
+            // the window-level free-look / car handlers never see it.
+            <div
+                role="alert"
+                onMouseDown={stopEvent}
+                onPointerDown={stopEvent}
+                onWheel={stopEvent}
+                onKeyDown={stopEvent}
+                onTouchStart={stopEvent}
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(0, 0, 0, 0.85)',
+                    color: '#fff',
+                    font: '15px system-ui, sans-serif',
+                    textAlign: 'center',
+                    padding: 16,
+                }}
+            >
+                <div>
+                    <p style={{ margin: '0 0 12px' }}>
+                        GPU unavailable — the graphics device was lost and could not be restored.
+                    </p>
+                    <button type="button" onClick={() => window.location.reload()}>
+                        Reload
+                    </button>
+                </div>
+            </div>
+        )}
+        </>
     );
 };
 

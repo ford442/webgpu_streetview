@@ -43,6 +43,11 @@ export interface StreetViewRenderer {
 
     init(options?: RendererInitOptions): Promise<boolean>;
     resize(width: number, height: number): void;
+    /**
+     * The device's `maxTextureDimension2D`. The canvas backing store is the
+     * swap-chain texture, so it must be sized inside this.
+     */
+    getMaxTextureDimension2D?(): number | undefined;
     destroy(): void;
     setCarMode(active: boolean): void;
     updateEffects(effectsData: Float32Array): void;

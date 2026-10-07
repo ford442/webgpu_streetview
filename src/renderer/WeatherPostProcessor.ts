@@ -26,6 +26,11 @@ import {
 } from './shaderFeatureVariants';
 import { OPTIONAL_DEVICE_FEATURES } from './deviceCapabilities';
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
+import {
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from './gpuPipelineFactory';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -50,12 +55,19 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
     private dualSourcePrecip = false;
+    /**
+     * Setters only mark the block dirty; `flushWeatherParams` uploads it once,
+     * right before a pass reads it — one `writeBuffer` per frame, not one per
+     * setter (params, camera and time all change every frame).
+     */
+    private weatherParamsDirty = true;
 
     constructor(device: GPUDevice, context: GPUCanvasContext, _canvas: HTMLCanvasElement) {
         this.device = device;
         this.context = context;
 
         this.weatherSampler = this.device.createSampler({
+            label: 'weather-post-sampler',
             magFilter: 'linear',
             minFilter: 'linear',
             addressModeU: 'clamp-to-edge',
@@ -87,11 +99,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/weather-post.wgsl`;
         let shaderCode: string;
         try {
-            const response = await fetch(shaderUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to load weather-post.wgsl: ${response.status} ${response.statusText}`);
-            }
-            shaderCode = await response.text();
+            shaderCode = await fetchShaderSource(shaderUrl, 'weather-post.wgsl');
         } catch (error) {
             console.error(`[Renderer] Failed to load weather-post shader from ${shaderUrl}:`, error);
             throw error;
@@ -109,9 +117,13 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             shaderCode = assembleDualSourceWeatherShader(shaderCode);
         }
 
-        const shaderModule = this.device.createShaderModule({ code: shaderCode });
+        const shaderModule = await createShaderModuleChecked(this.device, {
+            label: 'weather-post.wgsl',
+            code: shaderCode,
+        });
 
         const bindGroupLayout = this.device.createBindGroupLayout({
+            label: 'weather-post-bind-group-layout',
             entries: [
                 {
                     binding: 0,
@@ -138,10 +150,12 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
         this.lutBindGroupLayout = createLutBindGroupLayout(this.device, GPUShaderStage.FRAGMENT);
         const pipelineLayout = this.device.createPipelineLayout({
+            label: 'weather-post-pipeline-layout',
             bindGroupLayouts: [bindGroupLayout, this.lutBindGroupLayout],
         });
 
-        this.weatherPipeline = this.device.createRenderPipeline({
+        this.weatherPipeline = await createRenderPipelineChecked(this.device, {
+            label: 'weather-post-pipeline',
             layout: pipelineLayout,
             vertex: {
                 module: shaderModule,
@@ -166,6 +180,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
 
         this.weatherBindGroup = this.device.createBindGroup({
+            label: 'weather-post-bind-group',
             layout: this.weatherPipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: this.weatherParamsBuffer } },
@@ -217,7 +232,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.shaderEffectsEnabled = enabled;
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams[WeatherParamIndex.shaderEffectsEnabled] = enabled ? 1.0 : 0.0;
-            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+            this.weatherParamsDirty = true;
         }
     }
 
@@ -235,7 +250,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     public updateWeatherParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params.subarray(0, Math.min(WEATHER_PARAMS_FLOAT_COUNT, params.length)));
-            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+            this.weatherParamsDirty = true;
         }
     }
 
@@ -243,14 +258,14 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams[WeatherParamIndex.cameraHeading] = heading;
             this.weatherParams[WeatherParamIndex.cameraPitch] = pitch;
-            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+            this.weatherParamsDirty = true;
         }
     }
 
     public updateColorParams(params: Float32Array): void {
         if (this.weatherParamsBuffer && this.device) {
             this.weatherParams.set(params.slice(0, 6), 0);
-            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+            this.weatherParamsDirty = true;
         }
     }
 
@@ -259,10 +274,16 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         try {
             const time = (Date.now() - this.startTime) / 1000;
             this.weatherParams[WeatherParamIndex.time] = time % 10000.0;
-            this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+            this.weatherParamsDirty = true;
         } catch (e) {
             // Ignore errors during weather-only updates
         }
+    }
+
+    private flushWeatherParams(): void {
+        if (!this.weatherParamsDirty || !this.weatherParamsBuffer) return;
+        this.device.queue.writeBuffer(this.weatherParamsBuffer, 0, this.weatherParams);
+        this.weatherParamsDirty = false;
     }
 
     public renderWeatherOnly(
@@ -273,8 +294,9 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
         try {
             this.updateWeatherAnimation();
+            this.flushWeatherParams();
 
-            const commandEncoder = this.device.createCommandEncoder();
+            const commandEncoder = this.device.createCommandEncoder({ label: 'weather-only-frame' });
 
             const clearPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
@@ -312,6 +334,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
         if (!this.weatherPipeline || !this.weatherBindGroup) return;
+        this.flushWeatherParams();
         const finalTextureView = this.context.getCurrentTexture().createView();
         const postPass = commandEncoder.beginRenderPass({
             colorAttachments: [{

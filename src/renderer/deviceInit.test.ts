@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
     attachUncapturedErrorHandler,
     buildCanvasConfiguration,
@@ -6,17 +8,21 @@ import {
     CANVAS_USAGE,
     checkGpuChoresLimits,
     checkRequiredLimits,
+    clampTextureSize,
     collectOptionalDeviceFeatures,
     configureCanvasContext,
     describeAdapterSelection,
     HDR_CANVAS_FORMAT,
     labelDevice,
+    MAX_REQUESTED_TEXTURE_DIMENSION_2D,
     readNoClipDistancesFlag,
     resolveCanvasOutputPolicy,
 } from './deviceInit';
 import { buildAdapterRequestOptions, type AdapterSelectionPolicy } from './RendererBackend';
 import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
-import { COMPUTE_CHORES_WORKGROUP_SIZE, COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED, TIMESTAMP_QUERY_INSIDE_PASSES } from './deviceCapabilities';
+import { COMPUTE_CHORES_WORKGROUP_SIZE, COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED } from './deviceCapabilities';
+
+const TIMESTAMP_QUERY_INSIDE_PASSES = 'timestamp-query-inside-passes' as GPUFeatureName;
 
 function makeAdapter(limits: Partial<GPUSupportedLimits>, features: GPUFeatureName[] = []): GPUAdapter {
     const featureSet = new Set(features);
@@ -40,6 +46,23 @@ describe('deviceInit limits and features', () => {
     it('checkRequiredLimits passes fragment mode with default texture limit', () => {
         const result = checkRequiredLimits(makeAdapter({}), 'fragment');
         expect(result.ok).toBe(true);
+    });
+
+    it('requests the adapter texture limit (capped at 8192), not the 4096 floor', () => {
+        // A compat-mode default device is 4096: 2560 CSS px at DPR 2 would overrun it.
+        expect(checkRequiredLimits(makeAdapter({ maxTextureDimension2D: 16384 }), 'fragment')
+            .requiredLimits!.maxTextureDimension2D).toBe(MAX_REQUESTED_TEXTURE_DIMENSION_2D);
+        expect(checkRequiredLimits(makeAdapter({ maxTextureDimension2D: 6144 }), 'fragment')
+            .requiredLimits!.maxTextureDimension2D).toBe(6144);
+        expect(checkRequiredLimits(makeAdapter({ maxTextureDimension2D: 4096 }), 'fragment')
+            .requiredLimits!.maxTextureDimension2D).toBe(4096);
+    });
+
+    it('clampTextureSize keeps aspect and never exceeds the device limit', () => {
+        expect(clampTextureSize(5120, 2880, 4096)).toEqual({ width: 4096, height: 2304, clamped: true });
+        expect(clampTextureSize(1280, 720, 4096)).toEqual({ width: 1280, height: 720, clamped: false });
+        expect(clampTextureSize(1, 9000, 8192)).toEqual({ width: 1, height: 8192, clamped: true });
+        expect(clampTextureSize(0, 0, 8192)).toEqual({ width: 1, height: 1, clamped: false });
     });
 
     it('checkRequiredLimits fails when maxTextureDimension2D is too small', () => {
@@ -75,7 +98,7 @@ describe('deviceInit limits and features', () => {
         const adapter = makeAdapter({ maxComputeWorkgroupSizeX: 4, maxComputeWorkgroupSizeY: 4 });
         const result = checkRequiredLimits(adapter, 'fragment');
         expect(result.ok).toBe(true);
-        expect(result.requiredLimits).toEqual({ maxTextureDimension2D: 4096 });
+        expect(result.requiredLimits).toEqual({ maxTextureDimension2D: 8192 });
     });
 
     it('fragment boot with workgroup max below 8 marks chores GPU-ineligible', () => {
@@ -121,7 +144,7 @@ describe('deviceInit limits and features', () => {
         expect(result.ok).toBe(true);
         expect(result.gpuChores).toEqual({ eligible: true });
         expect(result.requiredLimits).toEqual({
-            maxTextureDimension2D: 4096,
+            maxTextureDimension2D: 8192,
             maxComputeWorkgroupSizeX: 8,
             maxComputeWorkgroupSizeY: 8,
             maxComputeInvocationsPerWorkgroup: 64,
@@ -136,7 +159,7 @@ describe('deviceInit limits and features', () => {
     it('compute boot keeps the stricter 16×16 + 64KiB limits in the contract', () => {
         const result = checkRequiredLimits(makeAdapter({}), 'compute');
         expect(result.requiredLimits).toEqual({
-            maxTextureDimension2D: 4096,
+            maxTextureDimension2D: 8192,
             maxStorageBufferBindingSize: 65536,
             maxBufferSize: 65536,
             maxComputeWorkgroupSizeX: 16,
@@ -154,19 +177,28 @@ describe('deviceInit limits and features', () => {
     });
 
     it('collectOptionalDeviceFeatures requests the v3 optional set when the adapter exposes them', () => {
-        const all = [
+        const used = [
             'float32-filterable',
             'timestamp-query',
-            TIMESTAMP_QUERY_INSIDE_PASSES,
             'subgroups',
-            'shader-f16',
             'rg11b10ufloat-renderable',
             'dual-source-blending',
             'clip-distances',
             'core-features-and-limits',
         ] as GPUFeatureName[];
-        const features = collectOptionalDeviceFeatures(makeAdapter({}, all), { featureLevel: 'core' });
-        expect(features).toEqual(all);
+        const offered = [...used, TIMESTAMP_QUERY_INSIDE_PASSES, 'shader-f16' as GPUFeatureName];
+        const features = collectOptionalDeviceFeatures(makeAdapter({}, offered), { featureLevel: 'core' });
+        expect(features).toEqual(used);
+    });
+
+    it('never requests features no production pass consumes', () => {
+        const features = collectOptionalDeviceFeatures(
+            makeAdapter({}, [TIMESTAMP_QUERY_INSIDE_PASSES, 'shader-f16' as GPUFeatureName]),
+            { featureLevel: 'core' },
+        );
+        expect(features).toEqual([]);
+        expect(OPTIONAL_FEATURES_ATTEMPTED).not.toContain('shader-f16');
+        expect(OPTIONAL_FEATURES_ATTEMPTED).not.toContain(TIMESTAMP_QUERY_INSIDE_PASSES);
     });
 
     it('collectOptionalDeviceFeatures skips names the adapter does not expose', () => {
@@ -298,10 +330,9 @@ describe('canvas output policy', () => {
         expect(CANVAS_USAGE & RENDER_ATTACHMENT).toBeTruthy();
     });
 
-    it('?hdr=1 with float32-filterable flips format and tone mapping', () => {
+    it('?hdr=1 flips format and tone mapping', () => {
         const policy = resolveCanvasOutputPolicy({
             preferredFormat: 'bgra8unorm',
-            enabledFeatures: ['float32-filterable' as GPUFeatureName],
             flags: { hdr: 'on', p3: 'off' },
         });
         expect(policy.hdr).toBe(true);
@@ -312,14 +343,15 @@ describe('canvas output policy', () => {
         expect(descriptor.usage).toBe(CANVAS_USAGE);
     });
 
-    it('?hdr=1 soft-logs and stays SDR without float32-filterable', () => {
+    it('?hdr=1 needs no optional feature — an rgba16float canvas is core (mobile adapters lack float32-filterable)', () => {
         const policy = resolveCanvasOutputPolicy({
             preferredFormat: 'bgra8unorm',
-            enabledFeatures: [],
             flags: { hdr: 'on', p3: 'off' },
         });
-        expect(policy.hdr).toBe(false);
-        expect(policy.hdrRejectedReason).toMatch(/float32-filterable/);
+        expect(policy).toEqual({ hdr: true, p3: false });
+        const src = readFileSync(join(__dirname, 'deviceInit.ts'), 'utf8');
+        const body = src.slice(src.indexOf('export function resolveCanvasOutputPolicy'));
+        expect(body.slice(0, body.indexOf('\n}\n'))).not.toMatch(/float32/);
     });
 
     it('?p3=1 selects display-p3, ?p3=auto follows the display', () => {
