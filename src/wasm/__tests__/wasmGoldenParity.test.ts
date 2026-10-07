@@ -54,6 +54,12 @@ interface Goldens {
     lat: number; lng: number; distanceMeters: number; bearingDeg: number;
     expectedLat: number; expectedLng: number;
   }[];
+  initialBearing: { lat1: number; lng1: number; lat2: number; lng2: number; expected: number }[];
+  polylineResample: { label: string; points: number[]; stepMeters: number; expected: number[] }[];
+  polylineProject: {
+    label: string; points: number[]; lat: number; lng: number;
+    expectedSegment: number; expectedAlong: number; expectedCross: number;
+  }[];
   normalizeAngle: { angle: number; expected: number }[];
   signedAngleDiff: { from: number; to: number; expected: number }[];
   engineNoise: {
@@ -234,6 +240,32 @@ describe('WASM golden parity (JS fallback)', () => {
         expectRelClose(out.lng, expectedLng, TOLERANCES.haversineRelative, `offsetLatLng[${i}].lng`);
       },
     );
+  });
+
+  it('initialBearing matches the goldens', () => {
+    goldens.initialBearing.forEach(({ lat1, lng1, lat2, lng2, expected }, i) => {
+      expectRelClose(api.initialBearing(lat1, lng1, lat2, lng2), expected, TOLERANCES.haversineRelative, `initialBearing[${i}]`);
+    });
+  });
+
+  it('polylineResample matches the goldens', () => {
+    for (const { label, points, stepMeters, expected } of goldens.polylineResample) {
+      const out = api.polylineResample(Float64Array.from(points), stepMeters);
+      expect(out.length, label).toBe(expected.length);
+      expected.forEach((e, k) => {
+        expectRelClose(out[k]!, e, TOLERANCES.haversineRelative, `polylineResample ${label}[${k}]`);
+      });
+    }
+  });
+
+  it('polylineProject matches the goldens', () => {
+    for (const c of goldens.polylineProject) {
+      const out = api.polylineProject(Float64Array.from(c.points), c.lat, c.lng);
+      expect(out.segment, c.label).toBe(c.expectedSegment);
+      expectRelClose(out.alongMeters, c.expectedAlong, TOLERANCES.haversineRelative, `polylineProject ${c.label} along`);
+      // Cross-track is a small difference of bearings; a millimetre is plenty.
+      expectClose(out.crossMeters, c.expectedCross, 1e-3, `polylineProject ${c.label} cross`);
+    }
   });
 
   it('normalizeAngle matches the goldens', () => {

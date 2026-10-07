@@ -82,6 +82,33 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
       .toBeLessThanOrEqual(1e-6);
   });
 
+  test.each([
+    [1000, 60, 25],
+    [5000, -67.5, 10],
+    [300, 70, 1],
+  ])('polylineResample: %i points at lat %f, step %f m, matches the JS fallback', (n, lat, step) => {
+    // The sizing call reserves the input alone, the fill call input + output —
+    // the second reserve can relocate the arena (5000 pts at 10 m outgrows 64 KiB).
+    const pts = route(n, lat);
+    const a = wasm.polylineResample(pts, step);
+    const b = JS_FALLBACK.polylineResample(pts, step);
+    expect(a.length).toBe(b.length);
+    let worst = 0;
+    for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i]! - b[i]!));
+    expect(worst).toBeLessThanOrEqual(1e-9);
+  });
+
+  test('polylineProject on a 5000-point high-latitude route matches the JS fallback', () => {
+    const pts = route(5000, -67.5);
+    for (const [dLat, dLng] of [[0.1, 0.1002], [0.25, 0.2497], [0.4999, 0.4999]] as const) {
+      const a = wasm.polylineProject(pts, -67.5 + dLat, -1 + dLng);
+      const b = JS_FALLBACK.polylineProject(pts, -67.5 + dLat, -1 + dLng);
+      expect(a.segment).toBe(b.segment);
+      expect(Math.abs(a.alongMeters - b.alongMeters)).toBeLessThanOrEqual(1e-6);
+      expect(Math.abs(a.crossMeters - b.crossMeters)).toBeLessThanOrEqual(1e-6);
+    }
+  });
+
   test('fillEngineNoise: an hour of 1024-sample blocks has no repeated samples', () => {
     const block = new Float32Array(1024);
     const hour = 3600 * 48000;

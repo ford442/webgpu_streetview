@@ -333,6 +333,140 @@ TEST_CASE("offset_latlng: north raises the latitude, south lowers it") {
     CHECK(rel_diff(south[1], lng) <= kHaversineRelTolerance);
 }
 
+// ---------------------------------------------------------------------------
+// Route geometry: initial_bearing / polyline_resample / polyline_project
+// ---------------------------------------------------------------------------
+
+TEST_CASE("initial_bearing matches the shipping WASM goldens") {
+    for (int i = 0; i < goldens::kBearingCount; ++i) {
+        INFO(at(i));
+        const double b = sw_initial_bearing(goldens::kBearingLat1[i], goldens::kBearingLng1[i],
+                                            goldens::kBearingLat2[i], goldens::kBearingLng2[i]);
+        CHECK(rel_diff(b, goldens::kBearingExpected[i]) <= kHaversineRelTolerance);
+        CHECK(b >= 0.0);
+        CHECK(b < 360.0);
+    }
+}
+
+TEST_CASE("initial_bearing agrees with offset_latlng") {
+    // Walk 50 m along a bearing; the bearing back from the start must be it.
+    for (int i = 0; i < 12; ++i) {
+        const double bearing = 30.0 * static_cast<double>(i) + 7.5;
+        INFO(at(i));
+        double out[2] = { 0.0, 0.0 };
+        sw_offset_latlng(69.6492, 18.9553, 50.0, bearing, out);
+        CHECK(std::fabs(sw_initial_bearing(69.6492, 18.9553, out[0], out[1]) - bearing) <= 1e-6);
+    }
+}
+
+TEST_CASE("polyline_resample matches the shipping WASM goldens") {
+    int idx = 0;
+    for (const auto& c : goldens::kResampleCases) {
+        INFO(at(idx++));
+        const int needed = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+        REQUIRE(needed == c.out_count);
+        std::vector<double> out(static_cast<size_t>(needed) * 2, 0.0);
+        CHECK(sw_polyline_resample(c.in, c.in_count, c.step, out.data(), needed) == needed);
+        for (size_t k = 0; k < out.size(); ++k) {
+            INFO("coord " << k);
+            CHECK(rel_diff(out[k], c.expected[k]) <= kHaversineRelTolerance);
+        }
+    }
+}
+
+TEST_CASE("polyline_resample spaces points evenly and keeps both ends") {
+    // The 250-point high-latitude route: every interior gap is the step
+    // (chords cut corners, so allow a little under), and the ends survive.
+    const auto& c = goldens::kResampleCases[2];
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+    std::vector<double> out(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, out.data(), n);
+    CHECK(out[0] == c.in[0]);
+    CHECK(out[1] == c.in[1]);
+    CHECK(out[out.size() - 2] == c.in[(c.in_count - 1) * 2]);
+    for (int i = 0; i + 2 < n; ++i) {
+        const size_t a = static_cast<size_t>(i) * 2;
+        INFO(at(i));
+        const double gap = sw_haversine(out[a], out[a + 1], out[a + 2], out[a + 3]);
+        CHECK(gap <= c.step + 1e-6);
+        CHECK(gap >= c.step * 0.95);
+    }
+}
+
+TEST_CASE("polyline_resample: truncates to cap, wraps longitudes, survives bad input") {
+    const auto& c = goldens::kResampleCases[3]; // antimeridian
+    std::vector<double> out(6, -999.0);
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, out.data(), 3);
+    CHECK(n == c.out_count);
+    CHECK(out[4] == c.expected[4]); // only 3 points written, the 3rd matches
+    std::vector<double> full(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, full.data(), n);
+    for (int i = 0; i < n; ++i) {
+        const double lng = full[static_cast<size_t>(i) * 2 + 1];
+        INFO(at(i));
+        CHECK(lng >= -180.0);
+        CHECK(lng < 180.0);
+    }
+    CHECK(sw_polyline_resample(nullptr, 3, 10.0, nullptr, 0) == 0);
+    CHECK(sw_polyline_resample(c.in, 0, 10.0, nullptr, 0) == 0);
+    // NaN / inf / negative steps copy through instead of looping forever.
+    CHECK(sw_polyline_resample(c.in, c.in_count, std::numeric_limits<double>::quiet_NaN(),
+                               nullptr, 0) == c.in_count);
+    CHECK(sw_polyline_resample(c.in, c.in_count, std::numeric_limits<double>::infinity(),
+                               nullptr, 0) == c.in_count);
+    CHECK(sw_polyline_resample(c.in, c.in_count, -5.0, nullptr, 0) == c.in_count);
+}
+
+TEST_CASE("polyline_project matches the shipping WASM goldens") {
+    int idx = 0;
+    for (const auto& c : goldens::kProjectCases) {
+        INFO(at(idx++));
+        double out[3] = { 0.0, 0.0, 0.0 };
+        sw_polyline_project(c.in, c.in_count, c.lat, c.lng, out);
+        CHECK(out[0] == c.expected[0]);
+        CHECK(rel_diff(out[1], c.expected[1]) <= kHaversineRelTolerance);
+        // Cross-track is a small difference of bearings; allow a millimetre.
+        CHECK(std::fabs(out[2] - c.expected[2]) <= 1e-3);
+    }
+}
+
+TEST_CASE("polyline_project: on-route points sit at their resampled distance") {
+    // Every resampled point of the high-latitude route is on the route, so it
+    // projects with ~zero cross-track at k * step along it.
+    const auto& c = goldens::kResampleCases[2];
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+    std::vector<double> pts(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, pts.data(), n);
+    for (int i = 0; i + 1 < n; ++i) {
+        INFO(at(i));
+        double out[3] = { 0.0, 0.0, 0.0 };
+        sw_polyline_project(c.in, c.in_count, pts[static_cast<size_t>(i) * 2],
+                            pts[static_cast<size_t>(i) * 2 + 1], out);
+        CHECK(std::fabs(out[2]) <= 0.05);
+        CHECK(std::fabs(out[1] - c.step * static_cast<double>(i)) <= 0.5);
+    }
+}
+
+TEST_CASE("polyline_project: sign follows the side of travel; degenerate input is safe") {
+    const double line[4] = { 0.0, 0.0, 0.0, 0.01 }; // due east along the equator
+    double out[3] = { 0.0, 0.0, 0.0 };
+    sw_polyline_project(line, 2, -0.0001, 0.005, out); // south = right of eastbound
+    CHECK(out[0] == 0.0);
+    CHECK(out[2] > 11.0);
+    CHECK(out[2] < 11.2);
+    CHECK(std::fabs(out[1] - sw_haversine(0.0, 0.0, 0.0, 0.005)) <= 1e-3);
+    sw_polyline_project(line, 2, 0.0001, 0.005, out); // north = left
+    CHECK(out[2] < -11.0);
+
+    sw_polyline_project(line, 0, 1.0, 1.0, out);
+    CHECK(out[0] == -1.0);
+    CHECK(out[1] == 0.0);
+    CHECK(out[2] == 0.0);
+    sw_polyline_project(nullptr, 2, 1.0, 1.0, out);
+    CHECK(out[0] == -1.0);
+    sw_polyline_project(line, 2, 1.0, 1.0, nullptr); // must not crash
+}
+
 TEST_CASE("normalize_angle matches the shipping WASM goldens") {
     for (int i = 0; i < goldens::kNormalizeAngleCount; ++i) {
         INFO(at(i));

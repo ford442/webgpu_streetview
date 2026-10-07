@@ -222,6 +222,114 @@ function _jsOffsetLatLng(
   return { lat: newLatRad * toDeg, lng: newLngRad * toDeg };
 }
 
+function _jsInitialBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  // Operation-for-operation sw_initial_bearing (cpp/src/geodesy_module.cpp).
+  const toRad = Math.PI / 180;
+  const phi1 = lat1 * toRad;
+  const phi2 = lat2 * toRad;
+  const dLng = (lng2 - lng1) * toRad;
+  const y = Math.sin(dLng) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+  // JS `%` on doubles is C fmod.
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+function _wrapLongitude(lng: number): number {
+  return lng - 360 * Math.floor((lng + 180) / 360);
+}
+
+function _jsPolylineResample(points: Float64Array, stepMeters: number): Float64Array {
+  // Mirrors sw_polyline_resample; see the C++ for the contract.
+  const n = Math.floor(points.length / 2);
+  if (n <= 0) return new Float64Array(0);
+  const out: number[] = [];
+  const emit = (lat: number, lng: number): void => {
+    out.push(lat, _wrapLongitude(lng));
+  };
+  if (!(stepMeters > 0) || !Number.isFinite(stepMeters)) {
+    for (let i = 0; i < n; i++) emit(points[i * 2]!, points[i * 2 + 1]!);
+    return Float64Array.from(out);
+  }
+  emit(points[0]!, points[1]!);
+  let remaining = stepMeters;
+  const eps = stepMeters * 1e-9;
+  for (let i = 0; i + 1 < n; i++) {
+    const lat1 = points[i * 2]!;
+    const lng1 = points[i * 2 + 1]!;
+    const lat2 = points[i * 2 + 2]!;
+    const lng2 = points[i * 2 + 3]!;
+    const seg = _jsHaversine(lat1, lng1, lat2, lng2);
+    if (!(seg > 0)) continue;
+    const bearing = _jsInitialBearing(lat1, lng1, lat2, lng2);
+    let t = remaining;
+    while (t < seg - eps) {
+      const p = _jsOffsetLatLng(lat1, lng1, t, bearing);
+      emit(p.lat, p.lng);
+      t += stepMeters;
+    }
+    remaining = t - seg;
+  }
+  if (n > 1) emit(points[(n - 1) * 2]!, points[(n - 1) * 2 + 1]!);
+  return Float64Array.from(out);
+}
+
+function _jsPolylineProject(
+  points: Float64Array,
+  lat: number,
+  lng: number,
+): { segment: number; alongMeters: number; crossMeters: number } {
+  // Mirrors sw_polyline_project; see the C++ for the contract.
+  const n = Math.floor(points.length / 2);
+  if (n <= 0) return { segment: -1, alongMeters: 0, crossMeters: 0 };
+  if (n === 1) {
+    return { segment: 0, alongMeters: 0, crossMeters: _jsHaversine(points[0]!, points[1]!, lat, lng) };
+  }
+  const toRad = Math.PI / 180;
+  let bestDist = Infinity;
+  let bestAlong = 0;
+  let bestCross = 0;
+  let bestSeg = 0;
+  let cumulative = 0;
+  for (let i = 0; i + 1 < n; i++) {
+    const lat1 = points[i * 2]!;
+    const lng1 = points[i * 2 + 1]!;
+    const lat2 = points[i * 2 + 2]!;
+    const lng2 = points[i * 2 + 3]!;
+    const seg = _jsHaversine(lat1, lng1, lat2, lng2);
+    const d13 = _jsHaversine(lat1, lng1, lat, lng);
+    let along = 0;
+    let cross = 0;
+    let dist = d13;
+    if (seg > 0 && d13 > 0) {
+      const delta13 = d13 / _EARTH_RADIUS_METERS;
+      const dTheta =
+        (_jsInitialBearing(lat1, lng1, lat, lng) - _jsInitialBearing(lat1, lng1, lat2, lng2)) * toRad;
+      const xt = Math.asin(Math.sin(delta13) * Math.sin(dTheta));
+      const at = Math.atan2(Math.sin(delta13) * Math.cos(dTheta), Math.cos(delta13)) * _EARTH_RADIUS_METERS;
+      const sign = xt < 0 ? -1 : 1;
+      if (at <= 0) {
+        along = 0;
+        dist = d13;
+      } else if (at >= seg) {
+        along = seg;
+        dist = _jsHaversine(lat2, lng2, lat, lng);
+      } else {
+        along = at;
+        dist = Math.abs(xt) * _EARTH_RADIUS_METERS;
+      }
+      cross = sign * dist;
+    }
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestSeg = i;
+      bestAlong = cumulative + along;
+      bestCross = cross;
+    }
+    cumulative += seg;
+  }
+  return { segment: bestSeg, alongMeters: bestAlong, crossMeters: bestCross };
+}
+
 function _jsNormalizeAngle(a: number): number {
   return ((a % 360) + 360) % 360;
 }
@@ -480,6 +588,9 @@ export const JS_FALLBACK: StreetViewWasmAPI = {
   haversine: _jsHaversine,
   batchHaversine: _jsBatchHaversine,
   offsetLatLng: _jsOffsetLatLng,
+  initialBearing: _jsInitialBearing,
+  polylineResample: _jsPolylineResample,
+  polylineProject: _jsPolylineProject,
   normalizeAngle: _jsNormalizeAngle,
   signedAngleDiff: _jsSignedAngleDiff,
   fillEngineNoise: _jsFillEngineNoise,

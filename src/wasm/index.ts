@@ -115,6 +115,20 @@ export async function instantiateStreetViewWasm(
     lat: number, lng: number, distanceMeters: number,
     bearingDeg: number, out2: number,
   ) => void;
+  const initial_bearing = exp['initial_bearing'] as (
+    lat1: number, lng1: number, lat2: number, lng2: number,
+  ) => number;
+  const polyline_resample = exp['polyline_resample'] as (
+    inPtr: number, n: number, stepMeters: number, outPtr: number, cap: number,
+  ) => number;
+  const polyline_project = exp['polyline_project'] as (
+    ptr: number, n: number, lat: number, lng: number, out3: number,
+  ) => void;
+  if (typeof initial_bearing !== 'function'
+    || typeof polyline_resample !== 'function'
+    || typeof polyline_project !== 'function') {
+    throw new Error('WASM ABI missing route-geometry exports');
+  }
   const fill_engine_noise = exp['fill_engine_noise'] as (
     ptr: number, count: number,
     rpm: number, load: number, speed: number,
@@ -230,6 +244,37 @@ export async function instantiateStreetViewWasm(
     offset_latlng(lat, lng, distanceMeters, bearingDeg, ptr);
     const view = new Float64Array(wasmMemory.buffer, ptr, 2);
     return { lat: view[0]!, lng: view[1]! };
+  };
+
+  const polylineResample = (points: Float64Array, stepMeters: number): Float64Array => {
+    const n = Math.floor(points.length / 2);
+    if (n <= 0) return new Float64Array(0);
+    const inBytes = n * 16;
+    // First call sizes the output (snprintf-style), second call fills it.
+    let ptr = scratch.reserve(inBytes);
+    new Float64Array(wasmMemory.buffer, ptr, n * 2).set(points.subarray(0, n * 2));
+    const count = polyline_resample(ptr, n, stepMeters, 0, 0);
+    ptr = scratch.reserve(inBytes + count * 16);
+    // reserve() may have moved the arena; copy the input in again.
+    new Float64Array(wasmMemory.buffer, ptr, n * 2).set(points.subarray(0, n * 2));
+    const outOffset = ptr + inBytes;
+    polyline_resample(ptr, n, stepMeters, outOffset, count);
+    return new Float64Array(wasmMemory.buffer.slice(outOffset, outOffset + count * 16));
+  };
+
+  const polylineProject = (
+    points: Float64Array,
+    lat: number,
+    lng: number,
+  ): { segment: number; alongMeters: number; crossMeters: number } => {
+    const n = Math.floor(points.length / 2);
+    const inBytes = n * 16;
+    const ptr = scratch.reserve(inBytes + 24);
+    if (n > 0) new Float64Array(wasmMemory.buffer, ptr, n * 2).set(points.subarray(0, n * 2));
+    const outOffset = ptr + inBytes;
+    polyline_project(ptr, n, lat, lng, outOffset);
+    const view = new Float64Array(wasmMemory.buffer, outOffset, 3);
+    return { segment: view[0]!, alongMeters: view[1]!, crossMeters: view[2]! };
   };
 
   const fillEngineNoise = (
@@ -351,6 +396,9 @@ export async function instantiateStreetViewWasm(
     offsetLatLng,
     normalizeAngle: normalize_angle,
     signedAngleDiff: signed_angle_diff,
+    initialBearing: initial_bearing,
+    polylineResample,
+    polylineProject,
     fillEngineNoise,
     fillCabinIr,
     fillHrtf,

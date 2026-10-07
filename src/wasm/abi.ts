@@ -114,6 +114,38 @@ export interface StreetViewWasmAPI {
     bearingDeg: number,
   ): { lat: number; lng: number };
 
+  /**
+   * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
+   * @returns Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
+   */
+  initialBearing(lat1: number, lng1: number, lat2: number, lng2: number): number;
+
+  /**
+   * Resample a polyline to points evenly spaced along its great-circle length
+   * (first and last points kept; spacing carried across vertices; longitudes
+   * wrapped to [-180, 180)).
+   *
+   * @param points  `n * 2` doubles: lat, lng, lat, lng, …
+   * @param stepMeters  Spacing; <= 0 or non-finite copies the input through.
+   * @returns A new `count * 2` array of resampled [lat, lng] pairs.
+   */
+  polylineResample(points: Float64Array, stepMeters: number): Float64Array;
+
+  /**
+   * Project a point onto a polyline — "where am I on the route, how far off it".
+   * The closest segment wins (ties: the earlier one); a projection past an end
+   * of its segment clamps to that vertex.
+   *
+   * @param points  `n * 2` doubles: lat, lng, lat, lng, …
+   * @returns `segment` index (-1 for an empty polyline), `alongMeters` from the
+   *          route start, signed `crossMeters` (+ = right of travel).
+   */
+  polylineProject(
+    points: Float64Array,
+    lat: number,
+    lng: number,
+  ): { segment: number; alongMeters: number; crossMeters: number };
+
   /** Normalise an angle to [0, 360). */
   normalizeAngle(angle: number): number;
 

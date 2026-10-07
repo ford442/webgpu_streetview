@@ -138,6 +138,54 @@ const OFFSET_CASES = [
   { lat: 89.5, lng: 0, distanceMeters: 100000, bearingDeg: 180 },
 ];
 
+// Route geometry (initial_bearing / polyline_resample / polyline_project).
+// High-latitude routes guard the scratch/stack fix (batch geodesy used to be
+// corrupted above 45° for routes of > ~230 points), and the antimeridian
+// cases pin the longitude wrap.
+const BEARING_PAIRS = [
+  [40.7128, -74.006, 51.5074, -0.1278],     // NYC → London
+  [37.7749, -122.4194, 37.7749, -122.4194], // identical points → 0
+  [0, 0, 0, 1],                             // due east at the equator
+  [0, 0, -1, 0],                            // due south
+  [69.6492, 18.9553, 69.6592, 18.9853],     // Tromsø, lat ≥ 60°
+  [10, 179.99, 10.001, -179.995],           // across the antimeridian
+  [-33.8688, 151.2093, 35.6762, 139.6503],  // Sydney → Tokyo
+];
+
+/** 250 points ~11 m apart, curving north-east from Tromsø (lat ≈ 69.6°). */
+const HIGH_LAT_ROUTE = Array.from({ length: 250 }, (_, i) => [
+  69.6492 + i * 1e-4,
+  18.9553 + i * 1e-4 + 2e-4 * Math.sin(i / 20),
+]);
+/** Three vertices straddling 180°: east, across, and on to the west side. */
+const ANTIMERIDIAN_ROUTE = [[10, 179.99], [10.001, -179.995], [10.0015, -179.98]];
+/** Edinburgh-ish urban zig-zag (lat ≈ 56°), short enough to read. */
+const URBAN_ROUTE = [
+  [55.9533, -3.1883], [55.9541, -3.1869], [55.9549, -3.1885], [55.9561, -3.1872],
+];
+
+const RESAMPLE_CASES = [
+  { label: 'urban-50m', points: URBAN_ROUTE, stepMeters: 50 },
+  { label: 'nyc-37m', points: POLYLINE, stepMeters: 37.5 },
+  { label: 'high-lat-250pt', points: HIGH_LAT_ROUTE, stepMeters: 250 },
+  { label: 'antimeridian-100m', points: ANTIMERIDIAN_ROUTE, stepMeters: 100 },
+  // A copy-through still wraps longitudes: 190 → -170.
+  { label: 'copy-through', points: [[1, 2], [3, 190]], stepMeters: 0 },
+  { label: 'single-point', points: [[51.5074, -0.1278]], stepMeters: 10 },
+];
+
+const PROJECT_CASES = [
+  // Left and right of the second urban segment, before the start, past the end.
+  { label: 'urban-left', points: URBAN_ROUTE, lat: 55.9546, lng: -3.1880 },
+  { label: 'urban-right', points: URBAN_ROUTE, lat: 55.9544, lng: -3.1872 },
+  { label: 'urban-before-start', points: URBAN_ROUTE, lat: 55.9528, lng: -3.1893 },
+  { label: 'urban-past-end', points: URBAN_ROUTE, lat: 55.9566, lng: -3.1862 },
+  { label: 'urban-on-vertex', points: URBAN_ROUTE, lat: 55.9549, lng: -3.1885 },
+  { label: 'high-lat', points: HIGH_LAT_ROUTE, lat: 69.6612, lng: 18.9671 },
+  { label: 'antimeridian', points: ANTIMERIDIAN_ROUTE, lat: 10.0007, lng: 179.9999 },
+  { label: 'single-point', points: [[51.5074, -0.1278]], lat: 51.5075, lng: -0.1279 },
+];
+
 const ANGLES = [0, 0.5, 45, 180, 359.5, 360, 361, -1, -180, -359.5, -720.25, 1080.75];
 const ANGLE_PAIRS = [
   [0, 90], [90, 0], [10, 350], [350, 10], [0, 180], [180, 0],
@@ -214,6 +262,48 @@ const offsetLatLng = OFFSET_CASES.map((c) => {
   exp.offset_latlng(c.lat, c.lng, c.distanceMeters, c.bearingDeg, SCRATCH);
   const v = new Float64Array(memory.buffer, SCRATCH, 2);
   return { ...c, expectedLat: v[0], expectedLng: v[1] };
+});
+
+const initialBearing = BEARING_PAIRS.map(([lat1, lng1, lat2, lng2]) => ({
+  lat1, lng1, lat2, lng2,
+  expected: exp.initial_bearing(lat1, lng1, lat2, lng2),
+}));
+
+const polylineResample = RESAMPLE_CASES.map((c) => {
+  const n = c.points.length;
+  const inBytes = n * 16;
+  reserve(inBytes);
+  new Float64Array(memory.buffer, SCRATCH, n * 2).set(c.points.flat());
+  // Sizing call (snprintf-style: out = null, cap = 0) and then the fill.
+  const count = exp.polyline_resample(SCRATCH, n, c.stepMeters, 0, 0);
+  reserve(inBytes + count * 16);
+  const outOff = SCRATCH + inBytes;
+  const written = exp.polyline_resample(SCRATCH, n, c.stepMeters, outOff, count);
+  if (written !== count) throw new Error(`polyline_resample ${c.label}: ${written} != ${count}`);
+  return {
+    label: c.label,
+    points: c.points.flat(),
+    stepMeters: c.stepMeters,
+    expected: Array.from(new Float64Array(memory.buffer, outOff, count * 2)),
+  };
+});
+
+const polylineProject = PROJECT_CASES.map((c) => {
+  const n = c.points.length;
+  reserve(n * 16 + 24);
+  new Float64Array(memory.buffer, SCRATCH, n * 2).set(c.points.flat());
+  const outOff = SCRATCH + n * 16;
+  exp.polyline_project(SCRATCH, n, c.lat, c.lng, outOff);
+  const v = new Float64Array(memory.buffer, outOff, 3);
+  return {
+    label: c.label,
+    points: c.points.flat(),
+    lat: c.lat,
+    lng: c.lng,
+    expectedSegment: v[0],
+    expectedAlong: v[1],
+    expectedCross: v[2],
+  };
 });
 
 const normalizeAngle = ANGLES.map((angle) => ({
@@ -331,6 +421,9 @@ const goldens = {
   haversine,
   batchHaversine,
   offsetLatLng,
+  initialBearing,
+  polylineResample,
+  polylineProject,
   normalizeAngle,
   signedAngleDiff,
   engineNoise,
@@ -487,6 +580,55 @@ lines.push(f64Array('kOffsetBearing', offsetLatLng.map((o) => o.bearingDeg)));
 lines.push(f64Array('kOffsetExpectedLat', offsetLatLng.map((o) => o.expectedLat)));
 lines.push(f64Array('kOffsetExpectedLng', offsetLatLng.map((o) => o.expectedLng)));
 lines.push(`inline constexpr int kOffsetCount = ${offsetLatLng.length};`);
+lines.push('');
+
+lines.push('// --- initial_bearing -----------------------------------------------------');
+lines.push(f64Array('kBearingLat1', initialBearing.map((b) => b.lat1)));
+lines.push(f64Array('kBearingLng1', initialBearing.map((b) => b.lng1)));
+lines.push(f64Array('kBearingLat2', initialBearing.map((b) => b.lat2)));
+lines.push(f64Array('kBearingLng2', initialBearing.map((b) => b.lng2)));
+lines.push(f64Array('kBearingExpected', initialBearing.map((b) => b.expected)));
+lines.push(`inline constexpr int kBearingCount = ${initialBearing.length};`);
+lines.push('');
+
+lines.push('// --- polyline_resample ---------------------------------------------------');
+lines.push(`inline constexpr int kResampleCaseCount = ${polylineResample.length};`);
+polylineResample.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kResampleInCount${i} = ${c.points.length / 2};`);
+  lines.push(f64Array(`kResampleIn${i}`, c.points));
+  lines.push(`inline constexpr double kResampleStep${i} = ${f64(c.stepMeters)};`);
+  lines.push(`inline constexpr int kResampleOutCount${i} = ${c.expected.length / 2};`);
+  lines.push(f64Array(`kResampleExpected${i}`, c.expected));
+  lines.push('');
+});
+
+lines.push('struct ResampleGolden { int in_count; const double* in; double step; int out_count; const double* expected; };');
+lines.push('inline constexpr ResampleGolden kResampleCases[] = {');
+polylineResample.forEach((_c, i) => {
+  lines.push(`    { kResampleInCount${i}, kResampleIn${i}, kResampleStep${i}, kResampleOutCount${i}, kResampleExpected${i} },`);
+});
+lines.push('};');
+lines.push('');
+
+lines.push('// --- polyline_project ----------------------------------------------------');
+lines.push(`inline constexpr int kProjectCaseCount = ${polylineProject.length};`);
+polylineProject.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kProjectInCount${i} = ${c.points.length / 2};`);
+  lines.push(f64Array(`kProjectIn${i}`, c.points));
+  lines.push(`inline constexpr double kProjectLat${i} = ${f64(c.lat)};`);
+  lines.push(`inline constexpr double kProjectLng${i} = ${f64(c.lng)};`);
+  lines.push(`inline constexpr double kProjectExpected${i}[] = { ${f64(c.expectedSegment)}, ${f64(c.expectedAlong)}, ${f64(c.expectedCross)} };`);
+  lines.push('');
+});
+
+lines.push('struct ProjectGolden { int in_count; const double* in; double lat; double lng; const double* expected; };');
+lines.push('inline constexpr ProjectGolden kProjectCases[] = {');
+polylineProject.forEach((_c, i) => {
+  lines.push(`    { kProjectInCount${i}, kProjectIn${i}, kProjectLat${i}, kProjectLng${i}, kProjectExpected${i} },`);
+});
+lines.push('};');
 lines.push('');
 
 lines.push('// --- normalize_angle -----------------------------------------------------');

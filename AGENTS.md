@@ -725,8 +725,10 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code — the JS fallback is a degrade/test twin, not a third place to
 invent behaviour. Geodesy in particular has exactly one copy per formula:
-`haversineDistance` (`navigation.ts`) and `offsetLatLng`
-(`historicalImagery.ts`) are thin dispatches onto the WASM exports. Full detail: `docs/WASM_BRIDGE.md`.
+`haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
+(`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
+geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
+`polyline_project`. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

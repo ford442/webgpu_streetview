@@ -72,7 +72,8 @@ if(EMSCRIPTEN)
     #   - Exported function names match bindings.cpp:
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
     #       fill_particle_seeds, haversine, batch_haversine, offset_latlng,
-    #       normalize_angle, signed_angle_diff, fill_engine_noise,
+    #       normalize_angle, signed_angle_diff, initial_bearing,
+    #       polyline_resample, polyline_project, fill_engine_noise,
     #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
     #       reduce_luma_bt709, downsample_2d
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
@@ -128,7 +129,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free','_emscripten_stack_get_base']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free','_emscripten_stack_get_base']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 

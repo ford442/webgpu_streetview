@@ -18,7 +18,7 @@ pixels in WGSL, cabin geometry in Three.js.
 | File | Role |
 |---|---|
 | `cpp/src/noise_module.cpp` | **algorithm source of truth** (`sw_*`) — Perlin/fBm tiles + particle seeds |
-| `cpp/src/geodesy_module.cpp` | haversine, batch haversine, `offset_latlng`, angle helpers |
+| `cpp/src/geodesy_module.cpp` | haversine, batch haversine, `offset_latlng`, angle helpers, route geometry (`initial_bearing`, `polyline_resample`, `polyline_project`) |
 | `cpp/src/audio_module.cpp` | engine PCM, cabin IR |
 | `cpp/src/hrtf_module.cpp` | analytic binaural shadow IR pair |
 | `cpp/src/luma_module.cpp` | Rec.709 histogram / reduce / box downsample |
@@ -159,6 +159,9 @@ TypeScript loader:
 | `haversine(f64 ×4) → f64` | `haversine` | metres |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `offset_latlng(lat, lng, metres, bearing, out2) → void` | `offsetLatLng` | destination point; writes `{lat, lng}` degrees. The only copy of the formula — `historicalImagery.ts` builds its sample ring with it |
+| `initial_bearing(f64 ×4) → f64` | `initialBearing` | forward azimuth `[0, 360)`; identical points give 0. `navigation.ts#initialBearing`, cruise and route following dispatch onto it |
+| `polyline_resample(in, n, step, out, cap) → i32` | `polylineResample` | evenly spaced points every `step` m along the route (ends kept, longitudes wrapped to `[-180, 180)`); returns the full count like `snprintf` — the loader calls it once to size and once to fill |
+| `polyline_project(poly, n, lat, lng, out3) → void` | `polylineProject` | `{segment, along m, signed cross m (+ right)}` of the closest point on the route — "where am I on it, how far off it" |
 | `fill_engine_noise(ptr, count, rpm, load, speed, phase: f64, sampleIndex: f64, sr) → f64` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]`; returns the next oscillator phase (feed it back, advance `sampleIndex` by `count`) |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |
