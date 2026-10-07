@@ -125,6 +125,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'build',
+      // The app cannot run without WebGPU, so there is no point down-levelling for
+      // older engines: Chrome/Edge 113 (first WebGPU), Firefox 141, Safari 26.
+      target: ['chrome113', 'edge113', 'firefox141', 'safari26'],
       emptyOutDir: true,
       sourcemap: true,
       // Match former CRA layout so deploy.py / verify-build / budgets keep working.
