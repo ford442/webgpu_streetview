@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode } from '../hooks/useViewMode';
-import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
+import {
+  useCarEnvSettings,
+  useLightingSettings,
+  useWeatherSettings,
+} from '../hooks/useEnvironmentSettings';
 import { useVehicleSettings, MAX_SEAT_DISTANCE } from '../hooks/useVehicleSettings';
 import { usePanoInfoPanel } from '../hooks/usePanoInfoPanel';
 import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
@@ -40,17 +44,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     registerCarModeState,
   } = useViewMode();
 
+  const { wipersEnabled, setWipers, isRoofOpen, toggleRoof } = useCarEnvSettings();
   const {
-    wipersEnabled,
-    setWipers,
-    headlightsOn,
-    toggleHeadlights,
-    highBeam,
-    toggleHighBeam,
-    domeLightOn,
-    toggleDomeLight,
-    isRoofOpen,
-    toggleRoof,
     rainIntensity,
     setRainIntensity,
     snowIntensity,
@@ -58,12 +53,20 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     wind,
     setWind,
     fogDensity,
+  } = useWeatherSettings();
+  const {
+    headlightsOn,
+    toggleHeadlights,
+    highBeam,
+    toggleHighBeam,
+    domeLightOn,
+    toggleDomeLight,
     timeOfDay,
     nightIntensity,
     applyTimeOfDayPreset,
     ambientLightColor,
     sunAltitude,
-  } = useEnvironmentSettings();
+  } = useLightingSettings();
 
   const {
     currentVehicle,

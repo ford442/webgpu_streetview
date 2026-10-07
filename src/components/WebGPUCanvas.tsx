@@ -4,7 +4,13 @@ import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
 import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
 import { packWeatherParams } from '../renderer/packWeatherParams';
 import { WeatherParamIndex } from '../renderer/weatherUniformLayout';
-import { usePerformanceMonitor, useEnvironmentSettings, useStreetView } from '../hooks';
+import {
+    usePerformanceMonitor,
+    useWeatherSettings,
+    useLightingSettings,
+    useGradeSettings,
+    useStreetView,
+} from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
@@ -43,7 +49,7 @@ import {
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
- * 1. WEATHER SYNC: This canvas MUST actively read `useEnvironmentSettings()` 
+ * 1. WEATHER SYNC: This canvas MUST actively read the environment slices (`useWeatherSettings()` etc.) 
  *    and pass values into `renderer.updateWeatherParams()` inside the render loop. 
  *    If disconnected, the UI sliders will move but shaders will not react.
  * 2. CRUISE PAUSE: While `isPanoramaUpdatePaused`, WebGPUCanvas calls
@@ -61,14 +67,18 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     const internalRendererRef = useRef<StreetViewRenderer | null>(null);
     const animationFrameId = useRef<number>(0);
     
-    // Get environment settings from React context
+    // Environment slices (weather / lighting / grade) — the canvas has no use for
+    // the car-only slice (wipers, roof), so toggling those does not re-render it.
+    const { rainIntensity, snowIntensity, wind, fogDensity } = useWeatherSettings();
     const {
-        nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
-        vibrance, saturation, contrast, exposure, temperature, tint,
-        headlightsOn, highBeam, domeLightOn,
+        nightIntensity, headlightsOn, highBeam, domeLightOn,
         sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled, timeOfDay, activeLookId, autoExposureEnabled
-    } = useEnvironmentSettings();
+        timeOfDay,
+    } = useLightingSettings();
+    const {
+        vibrance, saturation, contrast, exposure, temperature, tint,
+        shaderEffectsEnabled, activeLookId, autoExposureEnabled,
+    } = useGradeSettings();
 
     // Get street view state
     const {

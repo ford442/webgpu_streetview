@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
-import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
+import { useLightingSettings } from '../hooks/useEnvironmentSettings';
 import { useAutoNight } from '../hooks/useAutoNight';
 
 /**
@@ -20,7 +20,7 @@ export function AutoNightDriver(): null {
     setMoonAzimuth,
     setMoonAltitude,
     setMoonIntensity,
-  } = useEnvironmentSettings();
+  } = useLightingSettings();
 
   const lat = position?.lat();
   const lng = position?.lng();

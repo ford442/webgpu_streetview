@@ -14,7 +14,7 @@ const env = {
 const sv = { position: { lat: () => 0, lng: () => 0 } as google.maps.LatLng | null };
 
 vi.mock('../hooks/useStreetView', () => ({ useStreetView: () => sv }));
-vi.mock('../hooks/useEnvironmentSettings', () => ({ useEnvironmentSettings: () => env }));
+vi.mock('../hooks/useEnvironmentSettings', () => ({ useLightingSettings: () => env }));
 
 import { AutoNightDriver } from './AutoNightDriver';
 
