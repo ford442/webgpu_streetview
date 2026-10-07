@@ -20,7 +20,6 @@ export { default as StreetView } from './StreetView';
 export { default as FreeLookInputHandler } from './FreeLookInputHandler';
 export { default as CarInputHandler } from './CarInputHandler';
 export { default as Compass } from './Compass';
-export { default as Controls } from './Controls';
 export { default as WelcomeModal } from './WelcomeModal';
 export { default as BookmarkPanel } from './BookmarkPanel';
 export { default as HistoryPanel } from './HistoryPanel';

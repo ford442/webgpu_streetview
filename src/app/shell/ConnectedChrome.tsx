@@ -14,7 +14,7 @@ import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
 import type { AppPanels } from '../useAppPanels';
-export type { ChromeStageActions, ChromeStageState, MobileChromeContract } from './chromePanelContracts';
+export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
 import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
