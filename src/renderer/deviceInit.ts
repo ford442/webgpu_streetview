@@ -83,6 +83,35 @@ async function resolveDefaultPowerPreference(): Promise<GPUPowerPreference> {
     return 'high-performance';
 }
 
+export interface GpuChoresLimitCheck {
+    /** Adapter can run the `@workgroup_size(8,8,1)` chores pipelines. */
+    eligible: boolean;
+    reason?: string;
+}
+
+const GPU_CHORES_LIMITS: ReadonlyArray<readonly [keyof GPUSupportedLimits, number]> = [
+    ['maxComputeWorkgroupSizeX', COMPUTE_CHORES_WORKGROUP_SIZE],
+    ['maxComputeWorkgroupSizeY', COMPUTE_CHORES_WORKGROUP_SIZE],
+    ['maxComputeInvocationsPerWorkgroup', COMPUTE_CHORES_WORKGROUP_SIZE * COMPUTE_CHORES_WORKGROUP_SIZE],
+];
+
+/**
+ * Can this adapter run #216 gpu-chores on the shared device? Never a boot
+ * failure — an ineligible adapter keeps chores on the WASM/JS twin.
+ */
+export function checkGpuChoresLimits(limits: GPUSupportedLimits): GpuChoresLimitCheck {
+    for (const [name, minimum] of GPU_CHORES_LIMITS) {
+        const supported = Number(limits[name]);
+        if (!Number.isFinite(supported) || supported < minimum) {
+            return {
+                eligible: false,
+                reason: `Adapter limit ${String(name)}=${supported} below gpu-chores ${minimum}`,
+            };
+        }
+    }
+    return { eligible: true };
+}
+
 export function checkRequiredLimits(
     adapter: GPUAdapter,
     weatherPostProcessMode: WeatherPostProcessMode,
@@ -90,8 +119,11 @@ export function checkRequiredLimits(
     ok: boolean;
     reason?: string;
     requiredLimits?: Record<string, number>;
+    /** Reported on every boot (pass or fail); chores never gate the weather boot. */
+    gpuChores: GpuChoresLimitCheck;
 } {
     const limits = adapter.limits;
+    const gpuChores = checkGpuChoresLimits(limits);
     const required: Partial<Record<keyof GPUSupportedLimits, number>> = {
         maxTextureDimension2D: 4096,
     };
@@ -110,13 +142,24 @@ export function checkRequiredLimits(
             return {
                 ok: false,
                 reason: `Adapter limit ${String(name)}=${supported} below required ${minimum}`,
+                gpuChores,
             };
+        }
+    }
+
+    // Chores share this device: when the adapter can run them, put their 8×8
+    // limits in the contract (compute weather's 16×16 already covers them).
+    // Only added when supported, so they can never fail requestDevice.
+    if (gpuChores.eligible) {
+        for (const [name, minimum] of GPU_CHORES_LIMITS) {
+            required[name] = Math.max(required[name] ?? 0, minimum);
         }
     }
 
     return {
         ok: true,
         requiredLimits: required as Record<string, number>,
+        gpuChores,
     };
 }
 
@@ -174,6 +217,8 @@ export interface CapabilityMatrixContext {
     canvas?: AppliedCanvasConfiguration;
     /** Pass-1 HDR intermediate; defaults to rgba16float when omitted. */
     intermediateFormat?: GPUTextureFormat;
+    /** `checkRequiredLimits(...).gpuChores`; omitted => eligible (pipeline-create catch still guards). */
+    gpuChores?: GpuChoresLimitCheck;
 }
 
 export function buildCapabilityMatrix(
@@ -214,6 +259,8 @@ export function buildCapabilityMatrix(
         uncapturedErrorCount: 0,
         gpuChoresWorkgroupSize: COMPUTE_CHORES_WORKGROUP_SIZE,
         gpuChoresKillSwitch: readNoGpuComputeFlag(),
+        gpuChoresGpuEligible: context.gpuChores?.eligible ?? true,
+        gpuChoresIneligibleReason: context.gpuChores?.reason,
     };
 }
 

@@ -59,6 +59,9 @@ export class GpuChores {
     this.killSwitch = eligibility.killSwitch;
     this.probeOk = eligibility.probeOk && isWebGpuProbeOk();
     this.device = eligibility.gpuEligible && device ? device : null;
+    if (device && !eligibility.limitsOk) {
+      console.info('[gpu-chores] adapter limits too low for GPU chores — WASM/JS:', eligibility.limitsReason);
+    }
     setGpuChoresStats({
       killSwitch: this.killSwitch,
       backend: this.device ? 'webgpu' : resolveCpuChoresBackend(false),

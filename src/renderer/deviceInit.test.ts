@@ -4,6 +4,7 @@ import {
     buildCanvasConfiguration,
     buildCapabilityMatrix,
     CANVAS_USAGE,
+    checkGpuChoresLimits,
     checkRequiredLimits,
     collectOptionalDeviceFeatures,
     configureCanvasContext,
@@ -14,7 +15,8 @@ import {
     resolveCanvasOutputPolicy,
 } from './deviceInit';
 import { buildAdapterRequestOptions, type AdapterSelectionPolicy } from './RendererBackend';
-import { COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED, TIMESTAMP_QUERY_INSIDE_PASSES } from './deviceCapabilities';
+import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
+import { COMPUTE_CHORES_WORKGROUP_SIZE, COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED, TIMESTAMP_QUERY_INSIDE_PASSES } from './deviceCapabilities';
 
 function makeAdapter(limits: Partial<GPUSupportedLimits>, features: GPUFeatureName[] = []): GPUAdapter {
     const featureSet = new Set(features);
@@ -56,6 +58,91 @@ describe('deviceInit limits and features', () => {
         );
         expect(fail.ok).toBe(false);
         expect(fail.reason).toMatch(/maxComputeWorkgroupSizeX/);
+    });
+
+    it('chores workgroup constant is one number across the limit gate, dispatch math and WGSL', async () => {
+        expect(COMPUTE_CHORES_WORKGROUP_SIZE).toBe(CHORES_WORKGROUP_SIZE);
+        const { readFileSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const n = COMPUTE_CHORES_WORKGROUP_SIZE;
+        for (const file of ['gpu-chores-hist.wgsl', 'gpu-chores-hist-subgroups.wgsl', 'gpu-chores-downsample.wgsl']) {
+            const src = readFileSync(join(process.cwd(), 'public/shaders', file), 'utf8');
+            expect(src, file).toMatch(new RegExp(`@workgroup_size\\(\\s*${n}\\s*,\\s*${n}\\s*,\\s*1\\s*\\)`));
+        }
+    });
+
+    it('fragment boot with workgroup max below 8 passes the weather gate', () => {
+        const adapter = makeAdapter({ maxComputeWorkgroupSizeX: 4, maxComputeWorkgroupSizeY: 4 });
+        const result = checkRequiredLimits(adapter, 'fragment');
+        expect(result.ok).toBe(true);
+        expect(result.requiredLimits).toEqual({ maxTextureDimension2D: 4096 });
+    });
+
+    it('fragment boot with workgroup max below 8 marks chores GPU-ineligible', () => {
+        const adapter = makeAdapter({ maxComputeWorkgroupSizeX: 4, maxComputeWorkgroupSizeY: 4 });
+        const result = checkRequiredLimits(adapter, 'fragment');
+        expect(result.gpuChores.eligible).toBe(false);
+        expect(result.gpuChores.reason).toMatch(/maxComputeWorkgroupSizeX=4/);
+
+        const matrix = buildCapabilityMatrix('fragment', result.requiredLimits!, [], {
+            gpuChores: result.gpuChores,
+        });
+        expect(matrix.gpuChoresGpuEligible).toBe(false);
+        expect(matrix.gpuChoresIneligibleReason).toMatch(/gpu-chores 8/);
+        // Same end state as ?no_gpu_compute, without flipping the kill switch.
+        expect(matrix.gpuChoresKillSwitch).toBe(false);
+
+        const invocations = checkGpuChoresLimits(
+            makeAdapter({ maxComputeInvocationsPerWorkgroup: 63 }).limits,
+        );
+        expect(invocations.eligible).toBe(false);
+        expect(invocations.reason).toMatch(/maxComputeInvocationsPerWorkgroup/);
+    });
+
+    it('compute boot still fails the 16×16 gate on an adapter chores can run', () => {
+        const adapter = makeAdapter({
+            maxComputeWorkgroupSizeX: 8,
+            maxComputeWorkgroupSizeY: 8,
+            maxComputeInvocationsPerWorkgroup: 64,
+        });
+        const result = checkRequiredLimits(adapter, 'compute');
+        expect(result.ok).toBe(false);
+        expect(result.reason).toMatch(/maxComputeWorkgroupSizeX=8 below required 16/);
+        expect(result.gpuChores.eligible).toBe(true);
+    });
+
+    it('an adapter at 8 but not 16 boots fragment weather with chores eligible', () => {
+        const adapter = makeAdapter({
+            maxComputeWorkgroupSizeX: 8,
+            maxComputeWorkgroupSizeY: 8,
+            maxComputeInvocationsPerWorkgroup: 64,
+        });
+        const result = checkRequiredLimits(adapter, 'fragment');
+        expect(result.ok).toBe(true);
+        expect(result.gpuChores).toEqual({ eligible: true });
+        expect(result.requiredLimits).toEqual({
+            maxTextureDimension2D: 4096,
+            maxComputeWorkgroupSizeX: 8,
+            maxComputeWorkgroupSizeY: 8,
+            maxComputeInvocationsPerWorkgroup: 64,
+        });
+        const matrix = buildCapabilityMatrix('fragment', result.requiredLimits!, [], {
+            gpuChores: result.gpuChores,
+        });
+        expect(matrix.gpuChoresGpuEligible).toBe(true);
+        expect(matrix.gpuChoresIneligibleReason).toBeUndefined();
+    });
+
+    it('compute boot keeps the stricter 16×16 + 64KiB limits in the contract', () => {
+        const result = checkRequiredLimits(makeAdapter({}), 'compute');
+        expect(result.requiredLimits).toEqual({
+            maxTextureDimension2D: 4096,
+            maxStorageBufferBindingSize: 65536,
+            maxBufferSize: 65536,
+            maxComputeWorkgroupSizeX: 16,
+            maxComputeWorkgroupSizeY: 16,
+            maxComputeInvocationsPerWorkgroup: 256,
+        });
     });
 
     it('collectOptionalDeviceFeatures requests float32-filterable and timestamp-query when present', () => {
