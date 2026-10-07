@@ -8,7 +8,7 @@ Grading is the existing 6-knob chain (vibrance → saturation → contrast →
 temperature/tint → exposure) plus, on WebGPU, a 32³ HALD LUT from
 `public/luts/<id>.png`. ACES filmic tonemap stays last. Identity / `clear`
 skips LUT sampling so default pixels stay bit-equal to the ACES-only path.
-The 40-float weather layout is unchanged (LUTs are textures, not uniforms).
+The 44-float weather layout is unchanged (LUTs are textures, not uniforms).
 No extra billable APIs.
 
 Source of truth: `src/config/lookPacks.ts` and `src/renderer/lut.ts`. Palette

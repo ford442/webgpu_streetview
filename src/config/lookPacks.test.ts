@@ -61,7 +61,7 @@ describe('look packs', () => {
     expect(getLookPack('sepia')).toBeNull();
   });
 
-  it('packs every look into the 40-float weather layout', () => {
+  it('packs every look into the 44-float weather layout', () => {
     for (const id of LOOK_IDS) {
       const patch = lookPackToEnvPatch(LOOK_PACKS[id]);
       const params = packWeatherParams({

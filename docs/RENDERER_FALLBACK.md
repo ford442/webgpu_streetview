@@ -133,7 +133,7 @@ Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chroma
   - `alphaMode: 'opaque'`
   - `colorSpace: 'srgb'`
   - `usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC` — **`COPY_SRC` must never be dropped**; cinema clip capture and snapshots depend on it.
-  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+), gated on `float32-filterable` being enabled. Without that feature the request is soft-logged and the canvas stays SDR. Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 40 floats.
+  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+), gated on `float32-filterable` being enabled. Without that feature the request is soft-logged and the canvas stays SDR. Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 44 floats.
 
     When the **applied** tone mapping is `extended` (never the requested flag — a rejected configure falls back to SDR and `bootDevice` rewrites the policy from `appliedCanvas`), both weather shaders are assembled with an output-referred `aces_tonemap` instead of the SDR one (`assembleExtendedToneMappingShader` in `shaderFeatureVariants.ts`). The ACES shoulder is evaluated against `EXTENDED_TONEMAP_HEADROOM` (4.0, SDR-relative) rather than assuming SDR white is the peak, so sun flare and headlights land in display headroom instead of clamping flat at 1.0. At headroom 1.0 the body is algebraically the SDR one. **No new uniform slot, no layout change** — the swap is a pipeline-create-time source substitution, the same mechanism as the subgroup and dual-source variants, and `npm run validate:shaders` naga-checks both assembled variants. Default SDR boot compiles the byte-identical historical shader; `shaderFeatureUses.extendedToneMapping` on the capability matrix says which ran.
   - `?p3=1` => `colorSpace: 'display-p3'`. `?p3=auto` follows `matchMedia('(color-gamut: p3)')`; `?hdr=auto` follows `matchMedia('(dynamic-range: high)')`. Both flags default to `off`, so nothing changes without an explicit opt-in.
@@ -184,12 +184,12 @@ Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-
 
 ## Weather Post-Process: Fragment vs Compute
 
-The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:
+The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 44-float parameter layout:
 
 - **Fragment** (default): `src/renderer/WeatherPostProcessor.ts` + `public/shaders/weather-post.wgsl`. A single fullscreen-triangle render pass sampling the HDR intermediate texture.
 - **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4, view-depth ping-pong), `plasmaBuffer` (binding 12, WASM fBm tile), and — when GPU particles are on — `dataTextureA/B` (bindings 7/8, density splat + particle state). `dataTextureC` stays a 1x1 dummy. Integrate/splat live in `public/shaders/weather-particles.wgsl`.
 
-Both read the same `40-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
+Both read the same `44-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
 
 The one intentional difference is the *contents* of the CPU noise tile: the fragment path is fed a single Perlin octave (`fill_noise_buffer`) so its default look is unchanged, while the compute path gets a 4-octave fBm tile (`fill_fbm_buffer`). `WebGPUCanvas` selects this from `renderer.getWeatherPostProcessMode()`. The bilinear sampler itself is identical in both shaders and guarded by `weatherShaderParity.test.ts`; see `docs/WASM_BRIDGE.md`.
 
@@ -331,13 +331,13 @@ Known differences (GLSL reference vs live WGSL):
 
 The retired WebGL2 weather class is gone from the runtime module graph. When must-match atmosphere literals change:
 
-1. Keep parameter indices aligned with the 40-float weather layout in `src/renderer/weatherUniformLayout.ts`, `packWeatherParams.ts`, both weather processors, both WGSL files, and `WebGPUCanvas.tsx`.
+1. Keep parameter indices aligned with the 44-float weather layout in `src/renderer/weatherUniformLayout.ts`, `packWeatherParams.ts`, both weather processors, both WGSL files, and `WebGPUCanvas.tsx`.
 2. Update `uWeather[...]` reads in `src/renderer/webgl/weatherReference.glsl.ts` so `webglLookParity.test.ts` still passes.
 3. Route debug isolation through `RendererDebugOptions` on WebGPU.
 
 ## Changing weather uniforms
 
-The live WebGPU paths (fragment + compute) must stay lockstep on the same 40-float layout. When adding, renaming, or reordering a weather parameter:
+The live WebGPU paths (fragment + compute) must stay lockstep on the same 44-float layout. When adding, renaming, or reordering a weather parameter:
 
 1. Update `WeatherParamIndex` and `WEATHER_PARAMS_FLOAT_COUNT` in `src/renderer/weatherUniformLayout.ts`.
 2. Update `packWeatherParams` / `createDefaultWeatherParams` in `src/renderer/packWeatherParams.ts`.

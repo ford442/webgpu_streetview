@@ -38,7 +38,7 @@ import {
  * | Samplers, buffers, dummies, write/depth/history textures | `computeWeather/resources.ts` |
  * | GPU precipitation (state ping-pong, density, 3 pipelines) | `computeWeather/particles.ts` |
  * | Look-LUT texture swap (bind group 1) | `computeWeather/lut.ts` |
- * | The shared 40-float parameter block | `computeWeather/weatherParams.ts` |
+ * | The shared 44-float parameter block | `computeWeather/weatherParams.ts` |
  * | Bind-group layouts + builders (binding indices) | `computeWeather/pipeline.ts` |
  * | Pass recording and ordering | `computeWeather/dispatch.ts` |
  *

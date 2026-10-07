@@ -35,7 +35,7 @@ function baseEnv(overrides: Partial<WeatherParamsEnvInput> = {}): WeatherParamsE
 }
 
 describe('packWeatherParams', () => {
-    it('always returns a 40-float array', () => {
+    it('always returns a 44-float array', () => {
         const params = packWeatherParams({
             env: baseEnv(),
             timeSeconds: 1.5,
@@ -170,6 +170,33 @@ describe('packWeatherParams', () => {
         });
         expect(params[WeatherParamIndex.dofStrength]).toBeCloseTo(0.55);
         expect(params[WeatherParamIndex.motionBlurStrength]).toBeCloseTo(0.42);
+    });
+
+    it('defaults the image-derived horizon off (blend 0) and zeroes the pads', () => {
+        const params = packWeatherParams({
+            env: baseEnv(),
+            timeSeconds: 0,
+            cameraHeading: 0,
+            cameraPitch: 0.5,
+            wasmNoiseActive: false,
+        });
+        expect(params[WeatherParamIndex.horizonBlend]).toBe(0);
+        expect(params[WeatherParamIndex.horizonEstimateY]).toBe(0.5);
+        expect(params[WeatherParamIndex.horizonPad0]).toBe(0);
+        expect(params[WeatherParamIndex.horizonPad1]).toBe(0);
+    });
+
+    it('passes a resolved horizon through to slots 40/41', () => {
+        const params = packWeatherParams({
+            env: baseEnv(),
+            timeSeconds: 0,
+            cameraHeading: 0,
+            cameraPitch: 0.5,
+            wasmNoiseActive: false,
+            horizon: { estimateY: 0.37, blend: 0.7 },
+        });
+        expect(params[WeatherParamIndex.horizonEstimateY]).toBeCloseTo(0.37);
+        expect(params[WeatherParamIndex.horizonBlend]).toBeCloseTo(0.7);
     });
 
     it('createDefaultWeatherParams matches historical processor defaults', () => {

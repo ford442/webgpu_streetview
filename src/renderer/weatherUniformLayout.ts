@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the 40-float (160-byte) weather post-process
+ * Single source of truth for the 44-float (176-byte) weather post-process
  * uniform layout shared by:
  *  - src/renderer/WeatherPostProcessor.ts   (fragment pass, uniform buffer)
  *  - src/renderer/ComputeWeatherPostProcessor.ts (compute pass, storage buffer)
@@ -11,7 +11,7 @@
  * docs/RENDERER_FALLBACK.md and AGENTS.md ("Shader Uniform Layouts").
  */
 
-export const WEATHER_PARAMS_FLOAT_COUNT = 40;
+export const WEATHER_PARAMS_FLOAT_COUNT = 44;
 export const WEATHER_PARAMS_BYTE_SIZE = WEATHER_PARAMS_FLOAT_COUNT * 4;
 
 export const WeatherParamIndex = {
@@ -63,9 +63,17 @@ export const WeatherParamIndex = {
     sunrise: 36,
     anamorphicStreak: 37,
     // 38-39: cinematic camera FX (gated by quality >= high + reduced motion,
-    // see src/renderer/cinematicCameraFx.ts). Total stays 40 floats / 160 bytes.
+    // see src/renderer/cinematicCameraFx.ts).
     dofStrength: 38,
     motionBlurStrength: 39,
+    // 40-43: image-derived horizon (src/renderer/gpuChores/horizonEstimate.ts).
+    // `viewHorizonY` blends the pitch prediction toward horizonEstimateY by
+    // horizonBlend; blend 0 is bit-exact with the pitch-only horizon. 42-43 pad
+    // the block to a multiple of 4 floats (44 floats / 176 bytes).
+    horizonEstimateY: 40,
+    horizonBlend: 41,
+    horizonPad0: 42,
+    horizonPad1: 43,
 } as const;
 
 export type WeatherParamName = keyof typeof WeatherParamIndex;

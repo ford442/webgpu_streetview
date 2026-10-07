@@ -9,7 +9,7 @@ import { streetViewProbe } from '../utils/streetViewProbe';
 import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
 import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
-import { getActiveQualityLevel } from '../config/visualPresets';
+import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
 import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
 import { fetchLookLutVolume } from '../renderer/lut';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
@@ -20,6 +20,11 @@ import {
     setAutoExposureStatus,
     type AutoExposureFrameState,
 } from '../renderer/autoExposure';
+import {
+    HORIZON_IDLE,
+    resolveHorizonFrame,
+    type HorizonFrameState,
+} from '../renderer/gpuChores/horizonEstimate';
 import {
     isParticlePrecipitationEnabled,
     particleGridForQuality,
@@ -127,6 +132,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     autoExposureEnabledRef.current = autoExposureEnabled;
     const autoExposureStateRef = useRef<AutoExposureFrameState>(AUTO_EXPOSURE_IDLE);
     const lastFrameMsRef = useRef<number | null>(null);
+
+    // Image-derived horizon: blends the pitch-only depth-proxy horizon toward
+    // a row-luma estimate (preset weight; 0 = today's horizon). Frozen through
+    // hold-pause; see renderer/gpuChores/horizonEstimate.ts.
+    const horizonStateRef = useRef<HorizonFrameState>(HORIZON_IDLE);
 
     // Memory profiling
     useEffect(() => {
@@ -332,6 +342,17 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 // Build and upload weather params every frame BEFORE rendering
                 const e = envRef.current;
                 const wasmNoiseActive = wasmNoiseEnabledRef.current && noiseFeederRef.current.isReady;
+                const holdActive = panoramaUpdatePaused || currentRendererRef.current.isHoldActive();
+                const choresStats = getGpuChoresStats();
+                const horizon = resolveHorizonFrame({
+                    weight: PRESETS[qualityRef.current].horizonEstimateBlend,
+                    holdActive,
+                    rows: choresStats.rowLuma,
+                    rowsPitch: choresStats.rowLumaPitch,
+                    rowsSeq: choresStats.rowLumaSeq,
+                    livePitch: weatherPitch,
+                }, horizonStateRef.current);
+                horizonStateRef.current = horizon.state;
                 const params = packWeatherParams({
                     env: e,
                     timeSeconds: (Date.now() - timeRef.current) / 1000.0,
@@ -343,16 +364,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                         reducedMotion: reducedMotionRef.current,
                         speedNormalized: getCameraSpeedNormalized(),
                     }),
+                    horizon: horizon.uniforms,
                 });
 
                 const nowMs = performance.now();
                 const dtMs = lastFrameMsRef.current == null ? 0 : nowMs - lastFrameMsRef.current;
                 lastFrameMsRef.current = nowMs;
-                const holdActive = panoramaUpdatePaused || currentRendererRef.current.isHoldActive();
                 const ae = resolveAutoExposureFrame({
                     enabled: autoExposureEnabledRef.current,
                     holdActive,
-                    meanLuma: getGpuChoresStats().meanLuma,
+                    meanLuma: choresStats.meanLuma,
                     manualExposure: e.exposure,
                     dtMs,
                     reducedMotion: reducedMotionRef.current
@@ -413,7 +434,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 }
                 sourceChangeFlagRef.current = false;
                 if (!holding && frameCountRef.current % 8 === 0) {
-                    renderer.samplePanoramaStats?.();
+                    renderer.samplePanoramaStats?.({
+                        horizonRows: PRESETS[qualityRef.current].horizonEstimateBlend > 0,
+                        pitch: (renderPitch + 90) / 180,
+                    });
                 }
             } else if (currentRendererRef.current) {
                 currentRendererRef.current.updateWeatherAnimation();

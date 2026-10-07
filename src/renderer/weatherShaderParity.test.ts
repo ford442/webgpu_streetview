@@ -110,7 +110,7 @@ describe('weather shader parity guard', () => {
 
     for (const fnName of ['rain', 'snow']) {
       const body = extractFunctionBody(fragment, fnName);
-      expect(body).toContain('viewHorizonY(p.cameraPitch)');
+      expect(body).toContain('sceneHorizonY()');
       expect(body).toContain('viewDepthProxy(uv, horizonY)');
       expect(body).toContain('skyFade');
       expect(body).toContain('nearBoost');
@@ -127,6 +127,40 @@ describe('weather shader parity guard', () => {
         .toBe(normalizeWgsl(extractFunctionBody(fragment, fnName)));
     }
   );
+
+  it('keeps sceneHorizonY wiring aligned (pitch + image estimate + blend)', () => {
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+
+    expect(normalizeAccessors(extractFunctionBody(compute, 'sceneHorizonY')))
+      .toBe(normalizeAccessors(extractFunctionBody(fragment, 'sceneHorizonY')));
+    expect(normalizeWgsl(extractFunctionBody(fragment, 'sceneHorizonY')))
+      .toBe('return viewHorizonY(p.cameraPitch,p.horizonEstimateY,p.horizonBlend);');
+  });
+
+  it('defines one viewHorizonY / viewDepthProxy and routes every caller through sceneHorizonY', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const source = readShader(name);
+      expect(source.match(/fn viewHorizonY\(/g)).toHaveLength(1);
+      expect(source.match(/fn viewDepthProxy\(/g)).toHaveLength(1);
+      expect(source.match(/fn sceneHorizonY\(/g)).toHaveLength(1);
+      // The only direct viewHorizonY call is the one inside sceneHorizonY.
+      const calls = (source.match(/viewHorizonY\(/g) ?? []).length - 1;
+      expect(calls).toBe(1);
+      expect(source).not.toMatch(/viewHorizonY\((p\.cameraPitch|cameraPitch|p_cameraPitch\(\))\)/);
+    }
+  });
+
+  it('guards the weight-0 horizon so it stays bit-exact with the pitch-only formula', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const body = normalizeWgsl(extractFunctionBody(readShader(name), 'viewHorizonY'));
+      expect(body).toBe(
+        'let predicted=0.5+(cameraPitchNorm-0.5)*2.0;'
+        + 'let w=clamp(blend,0.0,1.0);'
+        + 'return clamp(select(predicted,mix(predicted,estimateY,w),w>0.0),-0.75,1.75);'
+      );
+    }
+  });
 
   it.each([
     'applyFog',

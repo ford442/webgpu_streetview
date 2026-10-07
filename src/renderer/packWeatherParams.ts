@@ -4,8 +4,9 @@ import {
 } from './weatherUniformLayout';
 import { resolveWeatherCohesion } from './weatherCohesion';
 import { CINEMATIC_FX_OFF, CinematicCameraFx } from './cinematicCameraFx';
+import { HORIZON_OFF, HorizonUniforms } from './gpuChores/horizonEstimate';
 
-/** Env + frame fields needed to pack the 40-float weather uniform array. */
+/** Env + frame fields needed to pack the 44-float weather uniform array. */
 export interface WeatherParamsEnvInput {
     vibrance: number;
     saturation: number;
@@ -45,6 +46,11 @@ export interface PackWeatherParamsOptions {
      * the quality + reduced-motion gate that produces this.
      */
     cinematic?: CinematicCameraFx;
+    /**
+     * Image-derived horizon (uniforms 40-41) from resolveHorizonFrame in
+     * gpuChores/horizonEstimate.ts. Omit for the pitch-only horizon (blend 0).
+     */
+    horizon?: HorizonUniforms;
 }
 
 /**
@@ -62,7 +68,7 @@ export function createDefaultWeatherParams(): Float32Array {
 }
 
 /**
- * Pack environment settings into the shared 40-float weather layout.
+ * Pack environment settings into the shared 44-float weather layout.
  * Preserves UI→shader scaling used by WebGPUCanvas (rain/snow /100*2, wind
  * /100*2-1). Atmospheric channels (fog, haze, dust, sun FX) are derived
  * together by resolveWeatherCohesion so presets tell one physical story —
@@ -82,6 +88,7 @@ export function packWeatherParams(options: PackWeatherParamsOptions): Float32Arr
         wasmNoiseActive,
     });
     const cinematic = options.cinematic ?? CINEMATIC_FX_OFF;
+    const horizon = options.horizon ?? HORIZON_OFF;
 
     // [0-5]: Color grading (UI 1.0 = neutral for vibrance/saturation/contrast)
     params[I.vibrance] = e.vibrance - 1.0;
@@ -143,6 +150,12 @@ export function packWeatherParams(options: PackWeatherParamsOptions): Float32Arr
     // [38-39]: cinematic camera FX — zero unless quality + a11y gates pass
     params[I.dofStrength] = cinematic.dofStrength;
     params[I.motionBlurStrength] = cinematic.motionBlurStrength;
+
+    // [40-43]: image-derived horizon — blend 0 keeps the pitch-only horizon
+    params[I.horizonEstimateY] = horizon.estimateY;
+    params[I.horizonBlend] = horizon.blend;
+    params[I.horizonPad0] = 0.0;
+    params[I.horizonPad1] = 0.0;
 
     return params;
 }

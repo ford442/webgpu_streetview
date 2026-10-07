@@ -18,6 +18,14 @@ export interface RendererDebugOptions {
 
 export type WeatherPostProcessMode = 'fragment' | 'compute';
 
+/** Options for `samplePanoramaStats` (#216 gpu-chores). */
+export interface PanoramaStatsOptions {
+    /** Also publish per-row luma for the image-derived horizon. */
+    horizonRows: boolean;
+    /** Normalized camera pitch (0–1) the frame being sampled was rendered with. */
+    pitch: number;
+}
+
 export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
     /** WebGPU only — see docs/RENDERER_FALLBACK.md. */
@@ -90,7 +98,7 @@ export interface StreetViewRenderer {
     setSamplerAnisotropy?(level: import('../config/visualPresets').QualityLevel): void;
     /** #216 gpu-chores — shared-device hist/downsample, or WASM/JS. */
     getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
-    samplePanoramaStats?(): void;
+    samplePanoramaStats?(opts?: PanoramaStatsOptions): void;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into

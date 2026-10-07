@@ -7,6 +7,15 @@ export interface GpuChoresStats {
   minLuma: number | null;
   maxLuma: number | null;
   sampleMs: number | null;
+  /**
+   * Per-row mean luma (top-origin) for the horizon estimate
+   * (horizonEstimate.ts). Only sampled while a preset blend weight is > 0.
+   */
+  rowLuma: Float32Array | null;
+  /** Normalized camera pitch the rows were sampled at. */
+  rowLumaPitch: number | null;
+  /** Bumped on every published row set. */
+  rowLumaSeq: number;
   lastUpdated: number;
 }
 
@@ -17,6 +26,9 @@ const INITIAL: GpuChoresStats = {
   minLuma: null,
   maxLuma: null,
   sampleMs: null,
+  rowLuma: null,
+  rowLumaPitch: null,
+  rowLumaSeq: 0,
   lastUpdated: 0,
 };
 
@@ -29,6 +41,16 @@ export function getGpuChoresStats(): GpuChoresStats {
 export function setGpuChoresStats(next: Partial<GpuChoresStats>): void {
   current = { ...current, ...next, lastUpdated: Date.now() };
   publishGpuChoresBreadcrumbs();
+}
+
+export function publishHorizonRows(rows: Float32Array, pitch: number): void {
+  current = {
+    ...current,
+    rowLuma: rows,
+    rowLumaPitch: pitch,
+    rowLumaSeq: current.rowLumaSeq + 1,
+    lastUpdated: Date.now(),
+  };
 }
 
 export function resetGpuChoresStats(): void {

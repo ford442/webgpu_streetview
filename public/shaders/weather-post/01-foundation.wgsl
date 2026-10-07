@@ -66,6 +66,11 @@ struct WeatherParams {
     // prefers-reduced-motion (src/renderer/cinematicCameraFx.ts). 0 = off.
     dofStrength        : f32,  // 0.0-1.0 far-field lens defocus
     motionBlurStrength : f32,  // 0.0-1.0 radial speed blur (car/cruise coupled)
+    // 40-43: image-derived horizon (src/renderer/gpuChores/horizonEstimate.ts)
+    horizonEstimateY   : f32,  // screen-space horizon estimate (top-origin)
+    horizonBlend       : f32,  // 0.0 = pitch-only horizon, 1.0 = estimate
+    horizonPad0        : f32,  // pads the block to 44 floats / 176 bytes
+    horizonPad1        : f32,
 }
 
 @group(0) @binding(0) var<uniform> p: WeatherParams;
@@ -131,8 +136,18 @@ fn normalizedDistance(a: f32, b: f32) -> f32 {
 
 // Screen-space Y (top-origin, 0-1) of the horizon for a normalized camera
 // pitch (0.5 = level). ~90 degree vertical FOV => 1 pitch unit ~ 2 screens.
-fn viewHorizonY(cameraPitchNorm: f32) -> f32 {
-    return clamp(0.5 + (cameraPitchNorm - 0.5) * 2.0, -0.75, 1.75);
+// `blend` pulls that pitch prediction toward `estimateY`, the image-derived
+// horizon (src/renderer/gpuChores/horizonEstimate.ts). blend 0 takes the
+// `select` branch and returns the pitch-only horizon bit-exactly.
+fn viewHorizonY(cameraPitchNorm: f32, estimateY: f32, blend: f32) -> f32 {
+    let predicted = 0.5 + (cameraPitchNorm - 0.5) * 2.0;
+    let w = clamp(blend, 0.0, 1.0);
+    return clamp(select(predicted, mix(predicted, estimateY, w), w > 0.0), -0.75, 1.75);
+}
+
+// The horizon every weather effect reads: pitch prediction + image estimate.
+fn sceneHorizonY() -> f32 {
+    return viewHorizonY(p.cameraPitch, p.horizonEstimateY, p.horizonBlend);
 }
 
 // Normalized view distance: 0 = right in front of the camera, 1 = horizon or

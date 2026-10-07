@@ -11,7 +11,8 @@
 // 22:fogIntensity 23:fogDensity 24:fogHeight 25:fogColorIndex 26:lightShaftsIntensity
 // 27:heatShimmerIntensity 28:lensFlareIntensity 29:chromaticAberration 30:dustIntensity
 // 31:humidityHaze 32:shaderEffectsEnabled 33:cameraHeading 34:cameraPitch 35:wasmNoiseEnabled
-// 36:sunrise 37:anamorphicStreak 38:dofStrength 39:motionBlurStrength (padding slots reclaimed)
+// 36:sunrise 37:anamorphicStreak 38:dofStrength 39:motionBlurStrength
+// 40:horizonEstimateY 41:horizonBlend 42:horizonPad0 43:horizonPad1 (padding to 44 floats)
 //
 // STORAGE SURFACES IN USE (formerly 1x1 dummies):
 //  - binding 4 readDepthTexture : previous frame view-depth (ping-pong read).
@@ -96,6 +97,8 @@ fn p_sunrise() -> f32         { return ep(36); }
 fn p_anamorphicStreak() -> f32 { return ep(37); }
 fn p_dofStrength() -> f32     { return ep(38); }
 fn p_motionBlurStrength() -> f32 { return ep(39); }
+fn p_horizonEstimateY() -> f32 { return ep(40); }
+fn p_horizonBlend() -> f32     { return ep(41); }
 
 // ============================================================================
 // WASM noise tile (binding 12) — 64x64 f32 tile packed as 1024 vec4s.
@@ -204,8 +207,18 @@ fn normalizedDistance(a: f32, b: f32) -> f32 {
 
 // Screen-space Y (top-origin, 0-1) of the horizon for a normalized camera
 // pitch (0.5 = level). ~90 degree vertical FOV => 1 pitch unit ~ 2 screens.
-fn viewHorizonY(cameraPitchNorm: f32) -> f32 {
-    return clamp(0.5 + (cameraPitchNorm - 0.5) * 2.0, -0.75, 1.75);
+// `blend` pulls that pitch prediction toward `estimateY`, the image-derived
+// horizon (src/renderer/gpuChores/horizonEstimate.ts). blend 0 takes the
+// `select` branch and returns the pitch-only horizon bit-exactly.
+fn viewHorizonY(cameraPitchNorm: f32, estimateY: f32, blend: f32) -> f32 {
+    let predicted = 0.5 + (cameraPitchNorm - 0.5) * 2.0;
+    let w = clamp(blend, 0.0, 1.0);
+    return clamp(select(predicted, mix(predicted, estimateY, w), w > 0.0), -0.75, 1.75);
+}
+
+// The horizon every weather effect reads: pitch prediction + image estimate.
+fn sceneHorizonY() -> f32 {
+    return viewHorizonY(p_cameraPitch(), p_horizonEstimateY(), p_horizonBlend());
 }
 
 // Normalized view distance: 0 = right in front of the camera, 1 = horizon or
@@ -304,7 +317,6 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     let rainInt = p_rainIntensity();
     let wind = p_wind();
-    let cameraPitch = p_cameraPitch();
     for (var i: i32 = 0; i < 4; i = i + 1) {
         let layer = f32(i);
         var st = uv * vec2<f32>(1.0, 3.0 + layer * 1.5);
@@ -328,7 +340,7 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     // gain presence approaching the camera below it, so rain reads as falling
     // through the same depth the fog/DOF horizon uses instead of a flat,
     // pitch-invariant overlay (the "floats on a flat screen-Y plane" gap).
-    let horizonY = viewHorizonY(cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
@@ -339,7 +351,6 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     let wind = p_wind();
     let snowInt = p_snowIntensity();
-    let cameraPitch = p_cameraPitch();
     for (var i: i32 = 0; i < 5; i = i + 1) {
         let layer = f32(i);
         var st = uv * (4.0 + layer * 3.2);
@@ -361,7 +372,7 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     }
 
     // Same horizon/depth perspective cue as rain() — see comment there.
-    let horizonY = viewHorizonY(cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
@@ -391,7 +402,7 @@ fn getFogColor(fogIndex: f32) -> vec3<f32> {
 fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32, coord: vec2<i32>) -> f32 {
     if (intensity < 0.001 && density < 0.001) { return 0.0; }
 
-    let horizonY = viewHorizonY(p_cameraPitch());
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
     let prevDepth = textureLoad(readDepthTexture, coord, 0).r;
     let temporalDepth = select(depth, mix(depth, prevDepth, 0.35), prevDepth > 0.001);
@@ -738,7 +749,7 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
 // screen azimuth so dawn light pans with the view (matches weather-post.wgsl).
 fn applySunrise(col: vec3<f32>, uv: vec2<f32>, sunrise: f32) -> vec3<f32> {
     if (sunrise < 0.001) { return col; }
-    let horizonY = viewHorizonY(p_cameraPitch());
+    let horizonY = sceneHorizonY();
     let sunScreenX = worldAzimuthToScreenX(p_sunAzimuth(), p_cameraHeading());
     let dSunX = normalizedDistance(uv.x, sunScreenX);
     let towardSun = smoothstep(0.45, 0.0, abs(dSunX));
@@ -813,7 +824,7 @@ const DOF_FOCUS_DEPTH: f32 = 0.45;
 fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f32> {
     if (dof < 0.001 && mblur < 0.001) { return col; }
 
-    let horizonY = viewHorizonY(p_cameraPitch());
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
 
     let coc = smoothstep(DOF_FOCUS_DEPTH, 1.0, depth) * dof;
@@ -887,7 +898,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // View-depth proxy for this pixel, published to the r32float storage
     // texture at binding 6 (replaces the old 1x1 dummy) and reused below for
     // height fog and depth of field.
-    let horizonY = viewHorizonY(p_cameraPitch());
+    let horizonY = sceneHorizonY();
     let viewDepth = viewDepthProxy(uv, horizonY);
     textureStore(writeDepthTexture, vec2<i32>(global_id.xy), vec4<f32>(viewDepth, 0.0, 0.0, 1.0));
 

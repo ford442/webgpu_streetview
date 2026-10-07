@@ -7,7 +7,7 @@
  * instant cut with no shader at all.
  *
  * The wipe has its own 4-float uniform — progress, direction, two pads — and
- * never touches the 40-float weather block (`weatherUniformLayout.ts`).
+ * never touches the 44-float weather block (`weatherUniformLayout.ts`).
  */
 
 /** Floats in the wipe uniform; must match `WipeUniforms` in `historical-wipe.wgsl`. */

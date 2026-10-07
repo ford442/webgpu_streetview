@@ -2,10 +2,10 @@ import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from '../weatherUniform
 import { createDefaultWeatherParams } from '../packWeatherParams';
 
 /**
- * The shared 40-float weather parameter block (binding 10).
+ * The shared 44-float weather parameter block (binding 10).
  *
  * Every mutation flushes the whole array to the GPU, which is what the
- * original code did at each setter — cheap enough at 160 bytes, and it keeps
+ * original code did at each setter — cheap enough at 176 bytes, and it keeps
  * "the buffer always matches the array" true without tracking dirty ranges.
  * The layout itself is owned by `weatherUniformLayout.ts` and shared with the
  * fragment path; this class only owns the CPU-side copy and the upload.

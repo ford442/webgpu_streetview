@@ -54,7 +54,7 @@ Tracking: #221 (stills hop, shipped) → year-strip / GPU wipe product issue.
 - `HistoricalWipePass` (`src/renderer/HistoricalWipePass.ts`,
   `public/shaders/historical-wipe.wgsl`) is its own pipeline, loaded like the
   cabin composite, independent of `?legacyTransitions`. Uniform: 4 floats —
-  progress, direction, two pads (`historicalWipe.ts`); the 40-float weather
+  progress, direction, two pads (`historicalWipe.ts`); the 44-float weather
   block is untouched.
 - It draws **over pass 1** into the HDR intermediate (`loadOp: 'load'`), so
   weather, droplets/the windshield portal and the cabin composite see one

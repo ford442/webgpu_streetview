@@ -5,7 +5,7 @@ Reference for the WebGPU weather post-process stack: what each preset is
 are kept in agreement.
 
 Related: `docs/RENDERER_FALLBACK.md` (backend selection), `AGENTS.md`
-("Shader Uniform Layouts"), `src/renderer/weatherUniformLayout.ts` (the 40-float
+("Shader Uniform Layouts"), `src/renderer/weatherUniformLayout.ts` (the 44-float
 contract).
 
 ---
@@ -18,7 +18,7 @@ contract).
 | Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba32float` storage texture + blit; adds the depth-proxy storage target |
 | GLSL reference (not live) | `src/renderer/webgl/weatherReference.glsl.ts` | SDR approximation for must-match tests; **not constructed** at runtime |
 
-All three read the same 40-float uniform block. Shared WGSL helpers are held
+All three read the same 44-float uniform block. Shared WGSL helpers are held
 byte-identical between the two WGSL paths and guarded by
 `src/renderer/weatherShaderParity.test.ts` — if you edit one, edit both.
 
@@ -48,8 +48,22 @@ from four rules:
 Street View gives us no depth buffer, so `viewDepthProxy()` reconstructs a
 usable one from screen Y and camera pitch:
 
-- `viewHorizonY(cameraPitch)` — where the horizon sits on screen (0.5 = level,
-  ~90° vertical FOV ⇒ one pitch unit ≈ two screens).
+- `viewHorizonY(cameraPitch, estimateY, blend)` — where the horizon sits on
+  screen. The pitch prediction (0.5 = level, ~90° vertical FOV ⇒ one pitch unit
+  ≈ two screens) is blended toward an image-derived estimate by `blend`.
+  Every effect reads it through `sceneHorizonY()`, which passes uniforms
+  34 / 40 / 41.
+- The estimate (`src/renderer/gpuChores/horizonEstimate.ts`) is the best
+  bright-over-dark split of per-row luma from the chores downsample (GPU
+  `downsampleTexture`, or WASM/JS `downsampleRgba` on the CPU sample). It is
+  stored as a bias from the pitch prediction, so live pans re-project it. It
+  is rejected on flat or dark frames (night, tunnel, fog wall) and is never
+  sampled during hold-pause; the last accepted bias is frozen across a hop.
+  The weight comes from the quality preset (`horizonEstimateBlend`: Low/Medium
+  0, High 0.5, Ultra 0.7). Blend 0, or no accepted estimate yet, takes the
+  `select` branch and is bit-exact with the pitch-only horizon. The windshield
+  portal's `createRoadDisplay` has no fog or parallax, so it does not read the
+  horizon.
 - Above that line ⇒ depth `1.0` (sky / skyline, effectively at infinity).
 - Below it ⇒ `0.06 / (uv.y − horizonY)`, a hyperbolic falloff standing in for
   `eyeHeight / tan(angleBelowHorizon)`.
@@ -328,7 +342,7 @@ Guarded by `src/renderer/webglLookParity.test.ts` and
   `scripts/validate-shaders.mjs`, because the `?hdr` output-referred grade is a
   source substitution at pipeline-create time, not a uniform. Both are pinned
   byte-for-byte by tests — change all three together.
-- New uniform? It must fit the existing 40 floats or every consumer in
+- New uniform? It must fit the existing 44 floats or every consumer in
   `weatherUniformLayout.ts`'s header comment changes in lockstep.
 - Preset retune? Put the intended look in §3 above and the measured delta in §4.
   Named artistic looks go in `src/config/lookPacks.ts` + `docs/looks/README.md`.
