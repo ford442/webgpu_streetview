@@ -11,6 +11,9 @@ interface ColorGradingPanelProps {
     headlightsOn: boolean;
     highBeam: boolean;
     shaderEffectsEnabled: boolean;
+    /** Opt-in auto exposure (session-only). Omit to hide the toggle. */
+    autoExposureEnabled?: boolean;
+    onToggleAutoExposure?: () => void;
     onVibranceChange: (value: number) => void;
     onSaturationChange: (value: number) => void;
     onContrastChange: (value: number) => void;
@@ -37,6 +40,8 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
     headlightsOn,
     highBeam,
     shaderEffectsEnabled,
+    autoExposureEnabled = false,
+    onToggleAutoExposure,
     onVibranceChange,
     onSaturationChange,
     onContrastChange,
@@ -259,6 +264,34 @@ const ColorGradingPanel: React.FC<ColorGradingPanelProps> = ({
                         style={sliderStyle}
                     />
                 </div>
+
+                {onToggleAutoExposure && (
+                    <div
+                        style={{ marginBottom: '15px' }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
+                    >
+                        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={autoExposureEnabled}
+                                onChange={(e) => {
+                                    e.stopPropagation();
+                                    onToggleAutoExposure();
+                                }}
+                                style={{ accentColor: '#4CAF50' }}
+                                data-testid="auto-exposure-toggle"
+                            />
+                            Auto exposure
+                        </label>
+                        <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>
+                            Follows scene brightness (±2 EV). Moving the slider or a preset turns it off.
+                            Session only — not saved.
+                        </div>
+                    </div>
+                )}
 
                 <div style={{ marginBottom: '15px' }}>
                     <label style={labelStyle}>
