@@ -109,7 +109,8 @@ traffic.
 
 `src/services/maps/callBudget.ts` counts every `StreetViewService.getPanorama`
 the app makes (teleport prefetch, historical ring crawl, route-prefetch link
-collection, globe snap, pano image-date / IBL lookups, the route re-snap) and
+collection, globe snap, pano image-date / IBL lookups, the route re-snap, the
+coverage map's `coverage-graph` / `coverage-poi` / `coverage-map-click`) and
 every place-search call, per kind and per call site, and caps each kind for the
 session.
 
@@ -149,6 +150,34 @@ free tier is non-commercial) and Radio Browser station lookups (> 50 km moved).
 - [ ] `npx vitest run src/hooks/__tests__/useCruiseMode.route.test.tsx` — on-route hops make zero `getPanorama` calls
 - [ ] No route source with `billable: true` is selectable without a row in this file
 - [ ] Route responses are never written to Cache Storage / IndexedDB
+
+### Coverage map (🛰 Coverage / `g`) — Maps JS map + metered lookups
+
+`src/components/CoverageMap.tsx` (lazy chunk) shows where Street View exists,
+on a **Google** top-down map or a **Cesium** view. Nothing billable runs
+until the user opens the panel, and each extra source is its own toggle.
+
+| Source | Default | Cost | Where |
+|--------|---------|------|-------|
+| Google top-down map | built on first open in Google mode, kept while the panel is open | 1 Dynamic Maps load per open | `coverageMap/googleCoverageMap.ts` |
+| `StreetViewCoverageLayer` | **off**; attached only while "Street View coverage" is checked | coverage tile traffic on every pan / zoom | same |
+| Linked-pano graph (Cesium) | **off**; "Linked panos" | ≤ 30 `getPanorama` per walk, ≤ 240 / session, metered `coverage-graph`; cached per pano id, re-walks only when the current pano leaves the drawn graph | `services/maps/panoCoverageGraph.ts` |
+| POI coverage colouring | **off**; "POI coverage" (needs Nearby POIs, itself off) | ≤ 20 `getPanorama` (50 m) per batch, metered `coverage-poi`; free when a graph node is within 50 m; cached per place id | `search/poiCoverage.ts` |
+| Map click → jump | per click | 1 `getPanorama` (60 m), metered `coverage-map-click` | `CoverageMap.tsx` |
+| Cesium base imagery | Ion token → CartoCDN | not Google | `utils/cesiumImagery.ts` |
+
+**Not used, on purpose:** Google coverage tiles inside Cesium
+(`UrlTemplateImageryProvider` against Google's tile hosts). The Maps Platform
+terms don't allow fetching Maps tiles outside a Maps SDK / API. The sanctioned
+route is the **Map Tiles API** (2D tiles with the `layerStreetview` overlay,
+session token, Google attribution), which is a separate SKU and needs its own
+row here before anyone wires it. The same goes for Photorealistic 3D Tiles.
+
+**Checks before shipping a change to this feature**:
+
+- [ ] `npx vitest run src/components/CoverageMap.test.tsx src/services/maps/panoCoverageGraph.test.ts src/search/poiCoverage.test.ts`
+- [ ] With the panel open and every box unchecked, Network shows no `getPanorama` (`GetMetadata`) and no coverage-tile requests
+- [ ] `window.__STREETVIEW_PROBE__.getCallBudget().bySource` lists only `coverage-*` sources you toggled
 
 ### Rear-view mirror imagery (Street View **Static** API)
 
