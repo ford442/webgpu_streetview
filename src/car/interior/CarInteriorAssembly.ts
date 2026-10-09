@@ -14,7 +14,7 @@ import { WindowWeatherOverlay } from './WindowWeatherOverlay';
 import { SunShafts } from './SunShafts';
 import { CenterDisplay } from './CenterDisplay';
 import { VanityMirror } from './VanityMirror';
-import { createMaterials, resetGlowRegistry } from './MaterialFactory';
+import { beginCabinGlowRegistry, createMaterials } from './MaterialFactory';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { RainSystem } from './RainSystem';
@@ -33,6 +33,7 @@ import {
     loadGltfInteriorKit,
 } from '../gltfInteriorKit';
 import type { CabinRenderer } from './createCabinRenderer';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from '../carSpatialModel';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -147,7 +148,7 @@ export function setupWindowWeatherOverlay(host: CarInteriorAssemblyHost): void {
 }
 
 export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
-    if (resetGlowRegistry) resetGlowRegistry();
+    beginCabinGlowRegistry(host.vehicleConfig, { accent: host.accentMaterial });
 
     if (!host.proceduralCabinGroup) {
         host.proceduralCabinGroup = new THREE.Group();
@@ -375,9 +376,9 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     if (host.vehicleConfig.hasRoof) {
         host.isRoofOpen = false;
-        host.roofTargetY = 1.6;
+        host.roofTargetY = ROOF_CLOSED_Y;
     } else {
         host.isRoofOpen = true;
-        host.roofTargetY = -1.0;
+        host.roofTargetY = ROOF_OPEN_Y;
     }
 }

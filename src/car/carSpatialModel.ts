@@ -119,3 +119,15 @@ export function nightBaseLuminance(night: number): number {
   const curve = n * n * (3 - 2 * n);
   return 1 * (1 - curve) + NIGHT_BASE_FLOOR * curve;
 }
+
+/**
+ * Roof group travel. The shell builder authors the headliner, dome fixture and
+ * its halo at their *cabin* heights inside `roofGroup` (local y ≈ 1.6, level
+ * with the A-pillar tops and the ceiling-mounted dome switch), so the closed
+ * group sits at the origin. Convertibles slide it below the floor when open
+ * (ConvertibleMode also hides it). Offsetting the closed group by the roof
+ * height again floated the whole ceiling ~1.6 m above the pillars, with the
+ * dome fixture out of every normal view.
+ */
+export const ROOF_CLOSED_Y = 0;
+export const ROOF_OPEN_Y = -2.6;

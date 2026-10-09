@@ -39,6 +39,7 @@ for (const [name, query] of Object.entries(shots)) {
   if (out.fatal) { console.error(name, out.fatal); await page.close(); continue; }
   writeFileSync(join(outDir, `${name}.png`), Buffer.from(out.png.split(',')[1], 'base64'));
   console.log(name, out.backend, out.errors?.length ? out.errors : 'ok', out.probe ? JSON.stringify(out.probe) : '');
+  if (out.sprites?.length) console.log(name, 'sprites', JSON.stringify(out.sprites));
   await page.close();
 }
 await browser.close();

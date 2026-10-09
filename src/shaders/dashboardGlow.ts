@@ -78,6 +78,13 @@ export function createDashboardGlowUniforms(): DashboardGlowUniforms {
   };
 }
 
+/**
+ * The fragment already multiplies `glowColor` by `glow` and writes `glow` as
+ * alpha, i.e. premultiplied output. Flagging the material premultiplied makes
+ * additive blending (One, One) add that colour as-is; without the flag both
+ * backends blend (SrcAlpha, One) and the halo lands as glow², which at the
+ * faint levels the ramps use is invisible.
+ */
 export function createDashboardGlowGlslMaterial(
   uniforms: DashboardGlowUniforms,
 ): THREE.ShaderMaterial {
@@ -89,6 +96,7 @@ export function createDashboardGlowGlslMaterial(
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
+    premultipliedAlpha: true,
     side: THREE.DoubleSide,
     toneMapped: false,
   });
