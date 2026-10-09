@@ -38,36 +38,23 @@ export interface CoverageResult {
 }
 
 let placesLibraryPromise: Promise<unknown> | null = null;
-let placesService: google.maps.places.PlacesService | null = null;
-let autocompleteService: google.maps.places.AutocompleteService | null = null;
-let dummyPlacesDiv: HTMLDivElement | null = null;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Places API (New) via Maps JS: AutocompleteSuggestion / Place.
+// Legacy AutocompleteService/PlacesService are unavailable to new projects.
+type PlacesLib = any;
+let sessionToken: any = null;
 
-async function loadPlacesLibrary(): Promise<unknown | null> {
+async function loadPlacesLibrary(): Promise<PlacesLib | null> {
   if (typeof google === 'undefined' || !google.maps?.importLibrary) return null;
   if (!placesLibraryPromise) {
     placesLibraryPromise = google.maps.importLibrary('places');
   }
   try {
-    return await placesLibraryPromise;
+    return (await placesLibraryPromise) as PlacesLib;
   } catch {
     placesLibraryPromise = null;
     return null;
   }
-}
-
-function getPlacesService(): google.maps.places.PlacesService | null {
-  if (placesService) return placesService;
-  if (typeof google === 'undefined' || !google.maps?.places?.PlacesService) return null;
-  dummyPlacesDiv = dummyPlacesDiv ?? document.createElement('div');
-  placesService = new google.maps.places.PlacesService(dummyPlacesDiv);
-  return placesService;
-}
-
-function getAutocompleteService(): google.maps.places.AutocompleteService | null {
-  if (autocompleteService) return autocompleteService;
-  if (typeof google === 'undefined' || !google.maps?.places?.AutocompleteService) return null;
-  autocompleteService = new google.maps.places.AutocompleteService();
-  return autocompleteService;
 }
 
 function gate(
@@ -81,63 +68,73 @@ export async function fetchPlaceSuggestions(input: string): Promise<PlaceSuggest
   const allowed = gate('autocomplete');
   if (!allowed.ok) return [];
   const lib = await loadPlacesLibrary();
-  if (!lib) return [];
-  const svc = getAutocompleteService();
-  if (!svc) return [];
-
-  return new Promise((resolve) => {
-    svc.getPlacePredictions({ input }, (predictions, status) => {
-      if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
-        getPlaceSearchBudget().recordSuccess('autocomplete');
-        resolve(
-          predictions.slice(0, 8).map((p) => ({
-            placeId: p.place_id,
-            description: p.description,
-          })),
-        );
-      } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-        getPlaceSearchBudget().recordSuccess('autocomplete');
-        resolve([]);
-      } else {
-        getPlaceSearchBudget().recordError('autocomplete');
-        resolve([]);
-      }
+  if (!lib?.AutocompleteSuggestion) return [];
+  try {
+    sessionToken = sessionToken ?? new lib.AutocompleteSessionToken();
+    const { suggestions } = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      input,
+      sessionToken,
     });
-  });
+    getPlaceSearchBudget().recordSuccess('autocomplete');
+    return (suggestions ?? [])
+      .map((s: any) => s.placePrediction)
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((p: any) => ({ placeId: p.placeId, description: p.text?.toString?.() ?? String(p.text ?? '') }));
+  } catch (err) {
+    console.warn('[places] AutocompleteSuggestion failed (enable Places API (New) on the key)', err);
+    getPlaceSearchBudget().recordError('autocomplete');
+    return [];
+  }
 }
 
 export async function resolvePlaceId(placeId: string): Promise<ResolvedDestination | null> {
   const allowed = gate('placeDetails');
   if (!allowed.ok) return null;
-  await loadPlacesLibrary();
-  const svc = getPlacesService();
-  if (!svc) return null;
+  const lib = await loadPlacesLibrary();
+  if (!lib?.Place) return null;
+  try {
+    const place = new lib.Place({ id: placeId });
+    await place.fetchFields({ fields: ['location', 'displayName', 'formattedAddress'] });
+    sessionToken = null; // session ends on details fetch
+    if (!place.location) throw new Error('no location');
+    getPlaceSearchBudget().recordSuccess('placeDetails');
+    return {
+      lat: place.location.lat(),
+      lng: place.location.lng(),
+      label: place.displayName || place.formattedAddress || 'Place',
+    };
+  } catch {
+    getPlaceSearchBudget().recordError('placeDetails');
+    return null;
+  }
+}
 
-  return new Promise((resolve) => {
-    svc.getDetails(
-      { placeId, fields: ['geometry', 'name', 'formatted_address'] },
-      (place, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
-          getPlaceSearchBudget().recordSuccess('placeDetails');
-          resolve({
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
-            label: place.name || place.formatted_address || 'Place',
-          });
-        } else {
-          getPlaceSearchBudget().recordError('placeDetails');
-          resolve(null);
-        }
-      },
-    );
-  });
+/** Text search via Places API (New); used as a fallback when Geocoding is denied. */
+export async function searchPlaceByText(query: string): Promise<ResolvedDestination | null> {
+  const lib = await loadPlacesLibrary();
+  if (!lib?.Place?.searchByText) return null;
+  try {
+    const { places } = await lib.Place.searchByText({
+      textQuery: query,
+      fields: ['location', 'displayName', 'formattedAddress'],
+      maxResultCount: 1,
+    });
+    const p = places?.[0];
+    if (!p?.location) return null;
+    return { lat: p.location.lat(), lng: p.location.lng(), label: p.displayName || p.formattedAddress || query };
+  } catch (err) {
+    console.warn('[places] Place.searchByText failed', err);
+    return null;
+  }
 }
 
 export async function geocodeTextQuery(query: string): Promise<ResolvedDestination | null> {
   const allowed = gate('geocode');
   if (!allowed.ok) return null;
-  if (isGeocodeDenied()) return null;
-  if (typeof google === 'undefined' || !google.maps?.Geocoder) return null;
+  // Geocoding denied (API not enabled / key restricted): fall back to Places text search.
+  if (isGeocodeDenied()) return searchPlaceByText(query);
+  if (typeof google === 'undefined' || !google.maps?.Geocoder) return searchPlaceByText(query);
   const geocoder = new google.maps.Geocoder();
   return new Promise((resolve) => {
     geocoder.geocode({ address: query }, (results, status) => {
@@ -156,7 +153,12 @@ export async function geocodeTextQuery(query: string): Promise<ResolvedDestinati
         resolve(null);
       } else {
         getPlaceSearchBudget().recordError('geocode');
-        resolve(null);
+        if (statusText === 'REQUEST_DENIED') {
+          console.warn('[geocode] REQUEST_DENIED — falling back to Place.searchByText');
+          resolve(searchPlaceByText(query));
+        } else {
+          resolve(null);
+        }
       }
     });
   });
@@ -199,51 +201,33 @@ export async function fetchNearbyPois(
   lng: number,
   categories: NearbyPoiCategory[],
 ): Promise<NearbyPoi[]> {
-  await loadPlacesLibrary();
-  const svc = getPlacesService();
-  if (!svc || categories.length === 0) return [];
-
+  const lib = await loadPlacesLibrary();
+  if (!lib?.Place?.searchNearby || categories.length === 0) return [];
   const results: NearbyPoi[] = [];
   const seen = new Set<string>();
-
   let firstNearby = true;
   for (const category of categories) {
     const allowed = gate('nearby', firstNearby ? undefined : { skipThrottle: true });
     firstNearby = false;
     if (!allowed.ok) break;
     if (results.length >= PLACE_SEARCH_DEFAULTS.maxNearbyMarkers) break;
-    const type = NEARBY_CATEGORY_PLACE_TYPES[category];
-    const batch = await new Promise<NearbyPoi[]>((resolve) => {
-      svc.nearbySearch(
-        {
-          location: { lat, lng },
-          radius: PLACE_SEARCH_DEFAULTS.nearbyRadiusM,
-          type,
-        },
-        (places, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && places) {
-            getPlaceSearchBudget().recordSuccess('nearby');
-            resolve(
-              places
-                .filter((p) => p.geometry?.location && p.place_id)
-                .map((p) => ({
-                  id: p.place_id!,
-                  lat: p.geometry!.location!.lat(),
-                  lng: p.geometry!.location!.lng(),
-                  label: p.name || 'Place',
-                  category,
-                })),
-            );
-          } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-            getPlaceSearchBudget().recordSuccess('nearby');
-            resolve([]);
-          } else {
-            getPlaceSearchBudget().recordError('nearby');
-            resolve([]);
-          }
-        },
-      );
-    });
+    let batch: NearbyPoi[] = [];
+    try {
+      const { places } = await lib.Place.searchNearby({
+        fields: ['id', 'location', 'displayName'],
+        locationRestriction: { center: { lat, lng }, radius: PLACE_SEARCH_DEFAULTS.nearbyRadiusM },
+        includedPrimaryTypes: [NEARBY_CATEGORY_PLACE_TYPES[category]],
+        maxResultCount: 20,
+      });
+      getPlaceSearchBudget().recordSuccess('nearby');
+      batch = (places ?? [])
+        .filter((p: any) => p.location && p.id)
+        .map((p: any) => ({
+          id: p.id, lat: p.location.lat(), lng: p.location.lng(), label: p.displayName || 'Place', category,
+        }));
+    } catch {
+      getPlaceSearchBudget().recordError('nearby');
+    }
     for (const poi of batch) {
       if (seen.has(poi.id)) continue;
       seen.add(poi.id);
@@ -251,7 +235,6 @@ export async function fetchNearbyPois(
       if (results.length >= PLACE_SEARCH_DEFAULTS.maxNearbyMarkers) break;
     }
   }
-
   return results.slice(0, PLACE_SEARCH_DEFAULTS.maxNearbyMarkers);
 }
 
