@@ -8,6 +8,17 @@ import {
   type CabinView,
   type HostBroadcastExtras,
 } from './sharedSessionSync';
+import { povStore } from '../state/povStore';
+import { tripStore } from '../state/tripStore';
+import { decodeRouteStops, encodeRouteStops } from '../services/routing/routeLink';
+import { clearTrip, planTrip } from '../services/routing/tripController';
+import { createConfiguredRouteProvider } from '../services/routing/routingConfig';
+
+/** The host's planned trip as a route payload, read at send time. */
+function currentTripRoute(): string | undefined {
+  const { route, stops } = tripStore.get();
+  return route && stops.length >= 2 ? encodeRouteStops(stops) : undefined;
+}
 import { parseWeatherPreset } from '../utils/weatherPresetSync';
 import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
 import type { VehicleType } from '../car/VehicleManager';
@@ -15,9 +26,6 @@ import type { VehicleType } from '../car/VehicleManager';
 export interface UseSharedSessionSyncParams {
   sharedSession: UseSharedSessionResult;
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
   viewMode: 'freelook' | 'car';
   teleportToPanoSafe: (panoId: string) => Promise<void>;
   setHeading: (heading: number) => void;
@@ -33,7 +41,6 @@ export interface UseSharedSessionSyncParams {
   imageDate?: string | null;
   vehicleType?: string | null;
   cabinView?: CabinView | null;
-  carHeading?: number;
   hdr?: boolean;
   applyLookPack?: (id: string) => void;
   setVehicleType?: (type: VehicleType) => void;
@@ -49,9 +56,6 @@ export interface UseSharedSessionSyncParams {
 export function useSharedSessionSync({
   sharedSession,
   panorama,
-  heading,
-  pitch,
-  zoom,
   viewMode,
   teleportToPanoSafe,
   setHeading,
@@ -66,7 +70,6 @@ export function useSharedSessionSync({
   imageDate,
   vehicleType,
   cabinView,
-  carHeading,
   hdr,
   applyLookPack,
   setVehicleType,
@@ -81,6 +84,7 @@ export function useSharedSessionSync({
   const lastViewModeRef = useRef<string | null>(null);
   const lastCabinViewRef = useRef<string | null>(null);
   const appliedInitialLookRef = useRef(false);
+  const lastRouteRef = useRef<string | null>(null);
 
   const {
     role: sessionRole,
@@ -93,6 +97,8 @@ export function useSharedSessionSync({
   useEffect(() => {
     if (sessionRole !== 'host' || !sessionConnected) return;
     const interval = setInterval(() => {
+      // POV is read from the store at send time (it is not React state).
+      const { heading, pitch, zoom, carHeading } = povStore.get();
       const extras: HostBroadcastExtras = {
         ...(weatherPreset ? { weatherPreset } : {}),
         lookId: lookId ?? undefined,
@@ -101,6 +107,7 @@ export function useSharedSessionSync({
         cabinView: cabinView ?? undefined,
         carHeading,
         hdr,
+        route: currentTripRoute(),
       };
       const payload = buildHostBroadcastPayload(
         panorama,
@@ -117,16 +124,12 @@ export function useSharedSessionSync({
     sessionConnected,
     broadcastState,
     panorama,
-    heading,
-    pitch,
-    zoom,
     viewMode,
     weatherPreset,
     lookId,
     imageDate,
     vehicleType,
     cabinView,
-    carHeading,
     hdr,
   ]);
 
@@ -172,6 +175,17 @@ export function useSharedSessionSync({
     if (film.cabinView && film.cabinView !== lastCabinViewRef.current) {
       lastCabinViewRef.current = film.cabinView;
       setCabinView?.(film.cabinView);
+    }
+
+    // The host's trip: plan the same route locally (one route request per
+    // change), and drop it when the host clears theirs.
+    if (film.route && film.route !== lastRouteRef.current) {
+      lastRouteRef.current = film.route;
+      const stops = decodeRouteStops(film.route);
+      if (stops) void planTrip(stops, createConfiguredRouteProvider());
+    } else if (!film.route && lastRouteRef.current) {
+      lastRouteRef.current = null;
+      clearTrip();
     }
 
     if (

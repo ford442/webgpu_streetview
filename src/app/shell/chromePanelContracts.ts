@@ -1,5 +1,5 @@
 /**
- * Shared panel/action contracts between ConnectedChrome (desktop) and MobileUI.
+ * Shared panel/action contracts between ConnectedChrome (desktop) and any other chrome surface.
  * Keeps toolbar toggles and stage actions aligned without duplicating prop shapes.
  */
 
@@ -31,14 +31,4 @@ export interface ChromeStageState {
   currentVehicle?: VehicleType;
   heading?: number;
   zoom?: number;
-}
-
-import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
-
-/** Combined contract MobileUI consumes — mirrors ConnectedChrome session toggles. */
-export interface MobileChromeContract extends ChromeStageActions, ChromeEnvironmentActions, ChromeStageState {
-  isVisible: boolean;
-  onPan: (deltaX: number, deltaY: number) => void;
-  onZoom: (zoomDelta: number) => void;
-  search?: UsePlaceSearchResult;
 }

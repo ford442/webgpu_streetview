@@ -26,6 +26,7 @@ import {
 import { setGpuChoresStats } from './gpuChoresStatsStore';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
 import { deviceHasFeature } from '../shaderFeatureVariants';
+import { createComputePipelineChecked, createShaderModuleChecked } from '../gpuPipelineFactory';
 
 export interface ChoresSample {
   backend: GpuChoresBackend;
@@ -59,6 +60,9 @@ export class GpuChores {
     this.killSwitch = eligibility.killSwitch;
     this.probeOk = eligibility.probeOk && isWebGpuProbeOk();
     this.device = eligibility.gpuEligible && device ? device : null;
+    if (device && !eligibility.limitsOk) {
+      console.info('[gpu-chores] adapter limits too low for GPU chores — WASM/JS:', eligibility.limitsReason);
+    }
     setGpuChoresStats({
       killSwitch: this.killSwitch,
       backend: this.device ? 'webgpu' : resolveCpuChoresBackend(false),
@@ -101,8 +105,10 @@ export class GpuChores {
         fetchShader(`${base}/${histFile}`),
         fetchShader(`${base}/gpu-chores-downsample.wgsl`),
       ]);
-      const histModule = this.device.createShaderModule({ label: 'gpu-chores-hist', code: histCode });
-      const downModule = this.device.createShaderModule({ label: 'gpu-chores-down', code: downCode });
+      const [histModule, downModule] = await Promise.all([
+        createShaderModuleChecked(this.device, { label: histFile, code: histCode }),
+        createShaderModuleChecked(this.device, { label: 'gpu-chores-downsample.wgsl', code: downCode }),
+      ]);
 
       this.histBindLayout = this.device.createBindGroupLayout({
         label: 'gpu-chores-hist',
@@ -120,16 +126,18 @@ export class GpuChores {
         ],
       });
 
-      this.histPipeline = this.device.createComputePipeline({
-        label: 'luma_histogram_bt709',
-        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.histBindLayout] }),
-        compute: { module: histModule, entryPoint: 'luma_histogram_bt709' },
-      });
-      this.downPipeline = this.device.createComputePipeline({
-        label: 'downsample_2d',
-        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.downBindLayout] }),
-        compute: { module: downModule, entryPoint: 'downsample_2d' },
-      });
+      [this.histPipeline, this.downPipeline] = await Promise.all([
+        createComputePipelineChecked(this.device, {
+          label: 'luma_histogram_bt709',
+          layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.histBindLayout] }),
+          compute: { module: histModule, entryPoint: 'luma_histogram_bt709' },
+        }),
+        createComputePipelineChecked(this.device, {
+          label: 'downsample_2d',
+          layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.downBindLayout] }),
+          compute: { module: downModule, entryPoint: 'downsample_2d' },
+        }),
+      ]);
 
       this.binsBuffer = this.device.createBuffer({
         label: 'gpu-chores-bins',

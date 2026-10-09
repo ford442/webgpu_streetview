@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useStreetView } from './useStreetView';
+import { useStreetView, type TeleportToPanoOptions } from './useStreetView';
 import { usePanoramaCache } from './usePanoramaCache';
 
 export interface AdvanceSafeOptions {
@@ -27,6 +27,7 @@ export interface TeleportSafeOptions {
 export function useAdvanceSafe() {
   const { navigationIdlePromise, advance, teleport, teleportToPano } = useStreetView();
   const panoCache = usePanoramaCache();
+  const fetchPano = panoCache.fetch;
 
   const advanceSafe = useCallback(
     async (
@@ -42,7 +43,7 @@ export function useAdvanceSafe() {
       // If we have a target location, pre-fetch it now
       if (targetLatLng) {
         try {
-          await panoCache.fetch(targetLatLng.lat, targetLatLng.lng);
+          await fetchPano(targetLatLng.lat, targetLatLng.lng);
         } catch (e) {
           console.warn('[advanceSafe] Could not pre-fetch target pano', e);
           // We still attempt the normal advance – Google will show a loading spinner.
@@ -52,7 +53,7 @@ export function useAdvanceSafe() {
       // Finally call the original advance
       advance(dir, heading);
     },
-    [navigationIdlePromise, advance, panoCache.fetch]
+    [navigationIdlePromise, advance, fetchPano]
   );
 
   const teleportSafe = useCallback(
@@ -61,7 +62,7 @@ export function useAdvanceSafe() {
 
       // Pre-fetch the target location
       try {
-        await panoCache.fetch(lat, lng);
+        await fetchPano(lat, lng);
       } catch (e) {
         console.warn('[teleportSafe] Could not pre-fetch target pano', e);
       }
@@ -69,13 +70,13 @@ export function useAdvanceSafe() {
       // Finally call the original teleport
       teleport(lat, lng, targetHeading, targetPitch);
     },
-    [navigationIdlePromise, teleport, panoCache.fetch]
+    [navigationIdlePromise, teleport, fetchPano]
   );
 
   const teleportToPanoSafe = useCallback(
-    async (panoId: string) => {
+    async (panoId: string, options?: TeleportToPanoOptions) => {
       await navigationIdlePromise();
-      teleportToPano(panoId);
+      teleportToPano(panoId, options);
     },
     [navigationIdlePromise, teleportToPano]
   );

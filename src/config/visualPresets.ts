@@ -5,6 +5,8 @@
  * shadow quality, post-processing effects, animation quality, and lighting complexity.
  */
 
+import { readFlag } from './flags';
+
 // ============================================================
 // Types
 // ============================================================
@@ -37,6 +39,12 @@ export interface VisualPreset {
   chromaticAberrationStrength: number;
   depthOfFieldEnabled: boolean;
   motionBlurEnabled: boolean;
+  /**
+   * Weight (0–1) of the image-derived horizon in the weather depth proxy
+   * (gpuChores/horizonEstimate.ts → uniform horizonBlend). 0 keeps the
+   * pitch-only horizon and skips the per-row luma readback.
+   */
+  horizonEstimateBlend: number;
 
   /**
    * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
@@ -91,6 +99,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     chromaticAberrationStrength: 0,
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
+    horizonEstimateBlend: 0,
 
     maxLights: 2,
     ambientOcclusion: false,
@@ -128,6 +137,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     chromaticAberrationStrength: 0,
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
+    horizonEstimateBlend: 0,
 
     maxLights: 4,
     ambientOcclusion: false,
@@ -168,6 +178,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     chromaticAberrationStrength: 0.002,
     depthOfFieldEnabled: true,
     motionBlurEnabled: false,
+    horizonEstimateBlend: 0.5,
 
     maxLights: 8,
     ambientOcclusion: true,
@@ -205,6 +216,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     chromaticAberrationStrength: 0.003,
     depthOfFieldEnabled: true,
     motionBlurEnabled: true,
+    horizonEstimateBlend: 0.7,
 
     maxLights: 16,
     ambientOcclusion: true,
@@ -259,12 +271,8 @@ const VALID_QUALITY_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'hig
 export function getActiveQualityLevel(): QualityLevel {
   if (typeof window === 'undefined') return DEFAULT_QUALITY;
 
-  try {
-    const param = new URLSearchParams(window.location.search).get('quality')?.toLowerCase();
-    if (param && VALID_QUALITY_LEVELS.has(param)) return param as QualityLevel;
-  } catch {
-    // Malformed URL — fall through to storage / detection.
-  }
+  const param = readFlag('quality');
+  if (param) return param;
 
   try {
     const stored = window.localStorage.getItem('streetview.quality');

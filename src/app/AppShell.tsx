@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import { getWindAudio } from '../effects/WindAudio';
+import { usePovEffect } from '../state/povStore';
 import {
   useStreetView,
   useViewMode,
@@ -37,6 +38,8 @@ import { useAppCapture } from './useAppCapture';
 import { useAppDirector } from './useAppDirector';
 import { useAppBootLinks } from './useAppBootLinks';
 import { useAppShortcuts } from './useAppShortcuts';
+import { useTripBindings } from './useTripBindings';
+import { getActiveRouteGuide } from '../services/routing/tripController';
 import { ConnectedChrome } from './shell/ConnectedChrome';
 import { CinemaLayer } from './shell/CinemaLayer';
 import { ShellNotices } from './shell/ShellNotices';
@@ -48,9 +51,6 @@ export function AppShell() {
     setCanvas,
     setPanorama,
     panorama,
-    heading,
-    pitch,
-    zoom,
     canvas,
     isTransitioning,
     isPanoramaReady,
@@ -63,7 +63,7 @@ export function AppShell() {
   } = useStreetView();
   const { advanceSafe, teleportSafe, teleportToPanoSafe, panoCache } = useAdvanceSafe();
   const routePrefetch = useRoutePrefetch();
-  const { viewMode, toggleViewMode, setViewMode, carHeading, setCarHeading } = useViewMode();
+  const { viewMode, toggleViewMode, setViewMode, setCarHeading } = useViewMode();
   // Read by the cruise tick, which must see the live mode without re-arming.
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -71,7 +71,7 @@ export function AppShell() {
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
-  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats } = useAppTelemetry();
+  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats, autoExposureStatus } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
   const { audioRef, isRadioPlaying, setIsRadioPlaying, toggleRadio } = useRadioAudio();
@@ -91,11 +91,11 @@ export function AppShell() {
 
   const { weatherPresetBroadcast, getDirectorSnapshot, applyDirectorKeyframe } = useAppDirector(env);
 
-  useEffect(() => {
-    getWindAudio().setHeadingPan(heading, carHeading);
-  }, [heading, carHeading]);
+  // Wind pan follows head/car heading imperatively — POV is not React state, so
+  // head-look does not re-render the shell.
+  usePovEffect((p) => p, (p) => getWindAudio().setHeadingPan(p.heading, p.carHeading));
 
-  const bookmarks = useAppBookmarks(panorama, heading, pitch);
+  const bookmarks = useAppBookmarks(panorama);
   const { history, removeFromHistory, clearHistory } = useLocationHistory();
   const globeMode = useGlobeMode();
 
@@ -115,9 +115,6 @@ export function AppShell() {
     panorama,
     renderer,
     viewMode,
-    heading,
-    pitch,
-    zoom,
     locationName,
     currentImageDate,
     lookId: env.activeLookId,
@@ -136,11 +133,7 @@ export function AppShell() {
   const sharedSession = useAppSharedSession({
     env,
     panorama,
-    heading,
-    pitch,
-    zoom,
     viewMode,
-    carHeading,
     vehicleType: currentVehicle,
     imageDate: currentImageDate,
     weatherPreset: weatherPresetBroadcast,
@@ -156,9 +149,6 @@ export function AppShell() {
 
   const { tourPanelProps } = useTourBindings({
     panorama,
-    heading,
-    pitch,
-    zoom,
     locationName,
     teleportToPanoSafe,
     setHeading,
@@ -175,7 +165,6 @@ export function AppShell() {
     panorama,
     advanceSafe,
     mapsAuthFailed: maps.mapsAuthFailed,
-    heading,
     isTransitioning,
     setNavPending: connection.setNavPending,
     loadOfflineRouteGraphNodes: routePrefetch.loadAllCachedNodes,
@@ -183,6 +172,7 @@ export function AppShell() {
     // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
     // has no gearbox, so it always cruises one hop at a time.
     hopsPerTick: () => (viewModeRef.current === 'car' ? (getCarRuntime()?.getGearHopCount() ?? 1) : 1),
+    routeGuide: getActiveRouteGuide,
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
 
@@ -190,6 +180,11 @@ export function AppShell() {
     publishCruiseFlag(isCruiseMode);
     return () => publishCruiseFlag(false);
   }, [isCruiseMode]);
+
+  const tripPanelProps = useTripBindings({
+    panorama, isConnected: connection.isConnected, isPanoramaReady, teleportSafe, teleportToPanoSafe,
+    isCruiseMode, setIsCruiseMode, announce, routePrefetch,
+  });
 
   useAppBootLinks({
     isConnected: connection.isConnected,
@@ -215,9 +210,6 @@ export function AppShell() {
     teleportSafe,
     teleportToPanoSafe,
     getCurrentPosition,
-    heading,
-    pitch,
-    zoom,
   });
 
   const handleGlobeTeleport = useGlobeTeleport({
@@ -287,7 +279,6 @@ export function AppShell() {
             toggleRadio,
             sharedSession,
             panorama,
-            heading,
             isTransitioning,
             teleportToPanoSafe,
           }}
@@ -299,6 +290,7 @@ export function AppShell() {
           accessibilitySettings={accessibilitySettings}
           setAccessibilitySettings={setAccessibilitySettings}
           tourPanelProps={tourPanelProps}
+          tripPanelProps={tripPanelProps}
           globe={{
             globeMode,
             effectiveMapsKey: maps.effectiveMapsKey,
@@ -312,6 +304,7 @@ export function AppShell() {
             memoryStats: memoryStats || undefined,
             gpuPassTimings,
             gpuChoresStats,
+            autoExposureStatus,
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,
@@ -330,9 +323,6 @@ export function AppShell() {
           cinema={cinema}
           renderer={renderer}
           panorama={panorama}
-          heading={heading}
-          pitch={pitch}
-          zoom={zoom}
           lookId={env.activeLookId}
           vehicleType={currentVehicle}
           imageDate={currentImageDate}

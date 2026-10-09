@@ -112,7 +112,7 @@ export function useSnapshots() {
 
             // Use requestIdleCallback to avoid blocking the main thread during heavy serialization
             if ('requestIdleCallback' in window) {
-                idleHandle = (window as any).requestIdleCallback(saveOperation, { timeout: 2000 });
+                idleHandle = window.requestIdleCallback(saveOperation, { timeout: 2000 });
             } else {
                 saveOperation();
             }
@@ -121,7 +121,7 @@ export function useSnapshots() {
         return () => {
             clearTimeout(debounceTimer);
             if (idleHandle !== null && 'cancelIdleCallback' in window) {
-                (window as any).cancelIdleCallback(idleHandle);
+                window.cancelIdleCallback(idleHandle);
             }
         };
     }, [snapshots, isLoaded]);

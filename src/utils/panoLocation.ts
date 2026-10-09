@@ -12,6 +12,7 @@
  */
 
 import { isGeocodeDenied, noteGeocodeStatus } from '../search/geocodeAuth';
+import { getMapsCallBudget } from '../services/maps/callBudget';
 
 export interface PanoLocationInfo {
   panoId: string;
@@ -78,7 +79,7 @@ function reverseGeocode(latLng: google.maps.LatLng): Promise<string | null> {
 
 function fetchImageDate(panoId: string): Promise<string | null> {
   const sv = getSvService();
-  if (!sv) return Promise.resolve(null);
+  if (!sv || !getMapsCallBudget().tryConsume('panorama', 'pano-image-date')) return Promise.resolve(null);
   return new Promise((resolve) => {
     sv.getPanorama({ pano: panoId }, (data, status) => {
       if (status === google.maps.StreetViewStatus.OK && data) {

@@ -2,6 +2,7 @@ import { PARTICLE_DENSITY_SCALE, PARTICLE_MAX_DT } from '../weatherParticles';
 import { WeatherParamIndex } from '../weatherUniformLayout';
 import { PARTICLE_UNIFORMS_BYTE_SIZE, WORKGROUP_SIZE } from './constants';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
+import { createComputePipelineChecked, createShaderModuleChecked } from '../gpuPipelineFactory';
 
 /**
  * GPU precipitation for the compute weather path (`weather-particles.wgsl`).
@@ -60,30 +61,41 @@ export class ComputeWeatherParticles {
             return;
         }
 
-        const module = this.device.createShaderModule({ code: shaderCode });
-        this.bindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-                { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
-                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-            ],
-        });
-        const layout = this.device.createPipelineLayout({
-            bindGroupLayouts: [this.bindGroupLayout],
-        });
-        this.integratePipeline = this.device.createComputePipeline({
-            layout,
-            compute: { module, entryPoint: 'integrate' },
-        });
-        this.clearDensityPipeline = this.device.createComputePipeline({
-            layout,
-            compute: { module, entryPoint: 'clear_density' },
-        });
-        this.splatPipeline = this.device.createComputePipeline({
-            layout,
-            compute: { module, entryPoint: 'splat' },
-        });
+        try {
+            const module = await createShaderModuleChecked(this.device, {
+                label: 'weather-particles.wgsl',
+                code: shaderCode,
+            });
+            const bindGroupLayout = this.device.createBindGroupLayout({
+                label: 'weather-particles-bind-group-layout',
+                entries: [
+                    { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+                    { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
+                    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                ],
+            });
+            const layout = this.device.createPipelineLayout({
+                label: 'weather-particles-pipeline-layout',
+                bindGroupLayouts: [bindGroupLayout],
+            });
+            const [integrate, clearDensity, splat] = await Promise.all(
+                (['integrate', 'clear_density', 'splat'] as const).map((entryPoint) =>
+                    createComputePipelineChecked(this.device, {
+                        label: `weather-particles-${entryPoint}`,
+                        layout,
+                        compute: { module, entryPoint },
+                    })),
+            );
+            this.bindGroupLayout = bindGroupLayout;
+            this.integratePipeline = integrate!;
+            this.clearDensityPipeline = clearDensity!;
+            this.splatPipeline = splat!;
+        } catch (error) {
+            // Same soft failure as a missing file — never an invalid pipeline
+            // in the weather command buffer.
+            console.warn('[Renderer] weather-particles.wgsl failed validation; GPU precipitation disabled', error);
+        }
     }
 
     /** Half-res splat target, sized from the full-res write texture. */
@@ -134,7 +146,7 @@ export class ComputeWeatherParticles {
      *
      * @returns true when the seeds were accepted.
      */
-    public uploadSeeds(seeds: Float32Array, width: number, height: number, time: number): boolean {
+    public uploadSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number, time: number): boolean {
         if (width < 1 || height < 1) return false;
         if (seeds.length < width * height * 4) return false;
         this.ensureStateTextures(width, height);

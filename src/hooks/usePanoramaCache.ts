@@ -1,4 +1,5 @@
 import { useRef, useCallback, useMemo } from 'react';
+import { CallBudgetExceededError, getMapsCallBudget } from '../services/maps/callBudget';
 
 export interface CachedPano {
   panoId: string;
@@ -45,6 +46,9 @@ export function usePanoramaCache() {
     (lat: number, lng: number): Promise<CachedPano> => {
       const cached = get(lat, lng);
       if (cached) return Promise.resolve(cached);
+      if (!getMapsCallBudget().tryConsume('panorama', 'teleport-prefetch')) {
+        return Promise.reject(new CallBudgetExceededError('panorama', 'teleport-prefetch'));
+      }
 
       const service = new google.maps.StreetViewService();
       const location = new google.maps.LatLng(lat, lng);

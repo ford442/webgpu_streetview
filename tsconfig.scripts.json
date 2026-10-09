@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "strict": false,
+    "noUncheckedIndexedAccess": false,
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "scripts/**/*.mjs",
+    "scripts/**/*.d.ts"
+  ],
+  "exclude": [
+    "scripts/quick-flicker-probe.mjs"
+  ]
+}

@@ -5,6 +5,7 @@
  */
 
 import { offlineSaveRouteGraph, type RouteGraphNode } from './offlineStore';
+import { getMapsCallBudget } from '../services/maps/callBudget';
 
 export interface RoutePrefetchWaypoint {
   lat: number;
@@ -137,6 +138,10 @@ export function createStreetViewLinkCollector(
 
   return (waypoint) =>
     new Promise((resolve) => {
+      if (!getMapsCallBudget().tryConsume('panorama', 'route-prefetch')) {
+        resolve(null);
+        return;
+      }
       service.getPanorama(
         { location: { lat: waypoint.lat, lng: waypoint.lng }, radius, source: 'outdoor' },
         (data, status) => {

@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(streetview_wasm CXX)
 
-# emsdk in CI (build-wasm-emscripten) tracks 'latest', which has supported
-# -std=c++20 for a long time; std::span/std::bit_cast make the conversion-heavy
-# fill_* code under -Wconversion easier to get right. Bump the host compilers
-# together with it so both sides of the ABI boundary build under the same mode.
+# emsdk is pinned in cpp/emsdk.version (CI and scripts/build-wasm.sh both
+# enforce it) and supports -std=c++20; std::span/std::bit_cast make the
+# conversion-heavy fill_* code under -Wconversion easier to get right. Bump the
+# host compilers together with it so both sides of the ABI boundary build under
+# the same mode.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -45,6 +46,19 @@ if(NOT MSVC)
     list(APPEND STREETVIEW_HOST_WARNINGS -Wdouble-promotion)
 endif()
 
+# ---------------------------------------------------------------------------
+# Floating-point codegen (every target: emcc, host library and host tests)
+# ---------------------------------------------------------------------------
+# The goldens are compared bit-for-bit (memcmp), so a*b+c must round twice on
+# every compiler. clang contracts it into one FMA by default wherever the
+# target has one (aarch64, -march=x86-64-v3 / native), which silently breaks
+# `npm run test:cpp` on Apple Silicon. CI's x86-64-v3 clang job keeps this
+# honest. MSVC's default /fp:precise does not contract across statements.
+set(STREETVIEW_FP_FLAGS "")
+if(NOT MSVC)
+    set(STREETVIEW_FP_FLAGS -ffp-contract=off)
+endif()
+
 if(EMSCRIPTEN)
     # -----------------------------------------------------------------------
     # WASM target (Emscripten)
@@ -58,15 +72,18 @@ if(EMSCRIPTEN)
     #   - Exported function names match bindings.cpp:
     #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
     #       fill_particle_seeds, haversine, batch_haversine, offset_latlng,
-    #       normalize_angle, signed_angle_diff, fill_engine_noise,
+    #       normalize_angle, signed_angle_diff, initial_bearing,
+    #       polyline_resample, polyline_project, fill_engine_noise,
     #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
     #       reduce_luma_bt709, downsample_2d
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
-    #     binary has no host math imports. The TS loader still supplies env
-    #     stubs (including emscripten_notify_memory_growth); extra keys are
-    #     ignored.
+    #     binary's only import is env.emscripten_notify_memory_growth
+    #     (ALLOW_MEMORY_GROWTH). The loader calls `_initialize` when present.
+    #   - `malloc`/`free` back the loader's scratch arena; the arena must sit
+    #     above the shadow stack, which the loader checks against
+    #     `emscripten_stack_get_base`.
     add_executable(streetview-wasm
         src/noise_module.cpp
         src/geodesy_module.cpp
@@ -76,8 +93,16 @@ if(EMSCRIPTEN)
         src/bindings.cpp
     )
     target_include_directories(streetview-wasm PRIVATE include)
+    # Optimisation comes from CMAKE_BUILD_TYPE alone (Release: -O3 -DNDEBUG,
+    # Debug: -g) — build-wasm.sh passes no CMAKE_CXX_FLAGS. The link step
+    # needs its own level because it also drives wasm-opt.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(STREETVIEW_WASM_LINK_OPT "-O0" "-g")
+    else()
+        set(STREETVIEW_WASM_LINK_OPT "-O3" "-g0")
+    endif()
     target_compile_options(streetview-wasm PRIVATE
-        -O3
+        ${STREETVIEW_FP_FLAGS}
         ${STREETVIEW_WARNINGS}
         # STANDALONE_WASM already builds without them; being explicit keeps a
         # stray throw or dynamic_cast from silently pulling in the runtime.
@@ -95,8 +120,7 @@ if(EMSCRIPTEN)
     endif()
 
     set(EMSCRIPTEN_FLAGS
-        "-O3"
-        "-g0"
+        ${STREETVIEW_WASM_LINK_OPT}
         "-s WASM=1"
         "-s STANDALONE_WASM=1"
         "--no-entry"
@@ -105,7 +129,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_malloc','_free','_emscripten_stack_get_base']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -137,6 +161,8 @@ else()
     )
     target_include_directories(streetview_cpu PUBLIC include)
     target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
+    # PUBLIC so the test executable (which links this) inherits it too.
+    target_compile_options(streetview_cpu PUBLIC ${STREETVIEW_FP_FLAGS})
 
     # Only the non-sanitizer `build-host` tree may write cpp/compile_commands.json.
     # ASan (`build-asan`) and the clang extra tree (`build-clang`) keep their own

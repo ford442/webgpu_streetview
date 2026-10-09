@@ -16,6 +16,31 @@ const hasMapsKey = Boolean(
     !/placeholder|your_|replace|example/i.test(process.env.REACT_APP_MAPS_API_KEY),
 );
 
+/**
+ * What yields a real WebGPU adapter in headless Chromium on a GPU-less runner,
+ * one that can also present to a canvas: SwiftShader's Vulkan backend under
+ * Dawn (it exposes `clip-distances`, which the windshield portal needs). Without these the GPU specs would have
+ * no adapter and — before the `chromium-webgpu` lane — quietly skip.
+ */
+const SWIFTSHADER_WEBGPU_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--ignore-gpu-blocklist',
+  '--enable-unsafe-webgpu',
+  '--enable-features=Vulkan,WebGPU',
+  // Without this the first present to a WebGPU *canvas* loses the device ("A
+  // valid external Instance reference no longer exists"); the offscreen-only
+  // windshield fixtures never presented, so they never noticed.
+  '--use-vulkan=swiftshader',
+  '--use-angle=swiftshader',
+  '--use-webgpu-adapter=swiftshader',
+  // No `--disable-vulkan-surface`: with it the canvas never reaches the
+  // compositor, and a screenshot of a presented frame is blank.
+];
+
+/** Specs that need a real GPU device; they run (and must not skip) in `chromium-webgpu`. */
+const GPU_SPECS = /(gpu-foundation|windshield-portal)\.spec\.ts$/;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
@@ -36,6 +61,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: GPU_SPECS,
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -48,6 +74,19 @@ export default defineConfig({
             '--disable-setuid-sandbox',
           ],
         },
+      },
+    },
+    {
+      // The real-GPU lane. `e2e/gpuLane.ts#requireGpuAdapter` turns "no
+      // adapter" into a failure here, so this project can never go green by
+      // skipping. `channel: 'chromium'` runs the full browser in new headless
+      // mode rather than the headless shell.
+      name: 'chromium-webgpu',
+      testMatch: GPU_SPECS,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chromium',
+        launchOptions: { args: SWIFTSHADER_WEBGPU_ARGS },
       },
     },
   ],

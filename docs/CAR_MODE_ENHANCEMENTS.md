@@ -168,7 +168,7 @@ carRPMRef.current = Math.abs(steeringInput) * 100 + carSpeed * 50;
 
 ## Control Restrictions ✅
 
-As documented in [agent-plan.md](agent-plan.md#L23):
+As documented in [agent-plan.md](archive/agent-plan.md#L23):
 
 > Car direction only changes when the wheel is turned or WASD keys are used (no other inputs affect heading)
 

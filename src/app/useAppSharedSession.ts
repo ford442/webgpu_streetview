@@ -7,11 +7,7 @@ import { useSharedSessionSync } from './useSharedSessionSync';
 export interface UseAppSharedSessionOptions {
   env: EnvironmentSettingsState;
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
   viewMode: 'freelook' | 'car';
-  carHeading: number;
   vehicleType: VehicleType;
   /** Historical image date of the pano on screen — guests follow it via pano id. */
   imageDate: string | null;
@@ -42,9 +38,6 @@ export function useAppSharedSession(options: UseAppSharedSessionOptions): UseSha
   useSharedSessionSync({
     sharedSession,
     panorama: options.panorama,
-    heading: options.heading,
-    pitch: options.pitch,
-    zoom: options.zoom,
     viewMode: options.viewMode,
     teleportToPanoSafe: options.teleportToPanoSafe,
     setHeading: options.setHeading,
@@ -59,7 +52,6 @@ export function useAppSharedSession(options: UseAppSharedSessionOptions): UseSha
     imageDate: options.imageDate,
     vehicleType: options.vehicleType,
     cabinView: getCabinView(),
-    carHeading: options.carHeading,
     hdr: options.hdr,
     applyLookPack: env.applyLookPack,
     setVehicleType: options.setSessionVehicle,

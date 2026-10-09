@@ -6,11 +6,11 @@
  * (vibrance → saturation → contrast → temperature/tint → exposure) with ACES
  * still last in the shader. Named looks additionally bind a 32³ HALD LUT
  * (`public/luts/<id>.png`) on WebGPU; identity / clear skips the sample so
- * default pixels stay ACES-only. The 40-float weather layout is unchanged.
+ * default pixels stay ACES-only. The 44-float weather layout is unchanged.
  *
  * Look targets and before/after notes: docs/looks/README.md, docs/GRAPHICS.md §8.
  * WebGPU named looks also bind a 32³ HALD LUT from `public/luts/<id>.png`
- * (identity / clear skips sampling so ACES pixels stay unchanged). The 40-float
+ * (identity / clear skips sampling so ACES pixels stay unchanged). The 44-float
  * weather layout is still unchanged — LUTs are textures, not uniforms.
  */
 

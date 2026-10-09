@@ -105,6 +105,80 @@ traffic.
 - [ ] Unit tests pass: `npx vitest run src/search/parseSearchQuery.test.ts src/search/placeSearchBudget.test.ts src/search/geocodeAuth.test.ts src/search/placesClient.geocode.test.ts src/utils/panoLocation.test.ts`
 - [ ] Google imagery is still `network-only` in `src/offline/swPolicy.ts`
 
+### Session call meter (every Street View lookup, in one place)
+
+`src/services/maps/callBudget.ts` counts every `StreetViewService.getPanorama`
+the app makes (teleport prefetch, historical ring crawl, route-prefetch link
+collection, globe snap, pano image-date / IBL lookups, the route re-snap, the
+coverage map's `coverage-graph` / `coverage-poi` / `coverage-map-click`) and
+every place-search call, per kind and per call site, and caps each kind for the
+session.
+
+| Kind | Cap | Notes |
+|------|-----|-------|
+| `panorama` | 2000 / session | A runaway guard; a teleport is 1 call, a historical crawl 12, a route re-snap 1, on-route following **0** |
+| `placeSearch` | counted only | capped by its own `PlaceSearchBudget` (80, above) |
+| `directions` | **0** | Google `DirectionsService` — no provider uses it; raising the cap is a billing decision |
+| `routing` | 40 / session | OSRM-compatible route requests (not Google, not billed — see below) |
+
+```js
+window.__STREETVIEW_PROBE__.getCallBudget(); // { total, byKind: {used, cap, remaining, blocked}, bySource }
+```
+
+### Routed road trips (Trip planner) — **no Google Directions**
+
+Routes come from an **OSRM-compatible HTTP endpoint**, not Google:
+`window.ROUTING_ENDPOINT` in `public/config.js` (unset = the public OSRM demo
+server, for development / low volume only; `""` = routing off). One route
+request per planned trip (and one per guest in a shared session).
+
+| Guard | Default | Where |
+|-------|---------|-------|
+| Route provider | OSRM-compatible, `billable: false` | `src/services/routing/routingConfig.ts` |
+| Google Directions provider | **not implemented / off** | `directions` meter cap 0 — add one only with a row here first |
+| Route-following hop | **0** extra Maps calls (`getLinks` + `setPano` only, no prefetch hint) | `useCruiseMode.route.test.tsx` asserts it |
+| Off-route re-snap | 1 metered `getPanorama` after 2 off-route hops | `app/useTripBindings.ts` (`route-resnap`) |
+| "Save for offline" | ~1 `getPanorama` per 50 m of route, user-initiated, metered | `route-prefetch` source |
+| Cache | route in memory only; Google imagery still `network-only` | `swPolicy.ts` |
+
+**Not Google, not billed, but with usage policies**: Open-Meteo live conditions
+(opt-in, ≤ 1 request / 10 min while within 25 km, CC BY 4.0 attribution shown,
+free tier is non-commercial) and Radio Browser station lookups (> 50 km moved).
+
+**Checks before shipping a change to this feature**:
+
+- [ ] `npx vitest run src/hooks/__tests__/useCruiseMode.route.test.tsx` — on-route hops make zero `getPanorama` calls
+- [ ] No route source with `billable: true` is selectable without a row in this file
+- [ ] Route responses are never written to Cache Storage / IndexedDB
+
+### Coverage map (🛰 Coverage / `g`) — Maps JS map + metered lookups
+
+`src/components/CoverageMap.tsx` (lazy chunk) shows where Street View exists,
+on a **Google** top-down map or a **Cesium** view. Nothing billable runs
+until the user opens the panel, and each extra source is its own toggle.
+
+| Source | Default | Cost | Where |
+|--------|---------|------|-------|
+| Google top-down map | built on first open in Google mode, kept while the panel is open | 1 Dynamic Maps load per open | `coverageMap/googleCoverageMap.ts` |
+| `StreetViewCoverageLayer` | **off**; attached only while "Street View coverage" is checked | coverage tile traffic on every pan / zoom | same |
+| Linked-pano graph (Cesium) | **off**; "Linked panos" | ≤ 30 `getPanorama` per walk, ≤ 240 / session, metered `coverage-graph`; cached per pano id, re-walks only when the current pano leaves the drawn graph | `services/maps/panoCoverageGraph.ts` |
+| POI coverage colouring | **off**; "POI coverage" (needs Nearby POIs, itself off) | ≤ 20 `getPanorama` (50 m) per batch, metered `coverage-poi`; free when a graph node is within 50 m; cached per place id | `search/poiCoverage.ts` |
+| Map click → jump | per click | 1 `getPanorama` (60 m), metered `coverage-map-click` | `CoverageMap.tsx` |
+| Cesium base imagery | Ion token → CartoCDN | not Google | `utils/cesiumImagery.ts` |
+
+**Not used, on purpose:** Google coverage tiles inside Cesium
+(`UrlTemplateImageryProvider` against Google's tile hosts). The Maps Platform
+terms don't allow fetching Maps tiles outside a Maps SDK / API. The sanctioned
+route is the **Map Tiles API** (2D tiles with the `layerStreetview` overlay,
+session token, Google attribution), which is a separate SKU and needs its own
+row here before anyone wires it. The same goes for Photorealistic 3D Tiles.
+
+**Checks before shipping a change to this feature**:
+
+- [ ] `npx vitest run src/components/CoverageMap.test.tsx src/services/maps/panoCoverageGraph.test.ts src/search/poiCoverage.test.ts`
+- [ ] With the panel open and every box unchecked, Network shows no `getPanorama` (`GetMetadata`) and no coverage-tile requests
+- [ ] `window.__STREETVIEW_PROBE__.getCallBudget().bySource` lists only `coverage-*` sources you toggled
+
 ### Rear-view mirror imagery (Street View **Static** API)
 
 `src/car/rearViewFeed.ts` fetches a rear-facing still at `carHeading + 180` so

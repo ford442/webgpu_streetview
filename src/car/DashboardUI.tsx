@@ -96,6 +96,9 @@ export interface DashboardUIProps {
   stationName?: string;
   /** Comma-separated genre tags for the current station */
   stationTags?: string;
+  /** Pinned stations are never retuned as the trip crosses regions. */
+  stationPinned?: boolean;
+  onTogglePinStation?: () => void;
   /** Live vehicle speed in km/h; when provided, replaces the demo simulation. */
   speedKmh?: number;
   /** Live engine RPM; when provided, replaces the demo simulation. */
@@ -245,6 +248,8 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   ambientLightColor = 'rgba(255, 255, 255, 0.0)',
   stationName = '',
   stationTags = '',
+  stationPinned = false,
+  onTogglePinStation,
   speedKmh,
   rpm,
   gear,
@@ -385,6 +390,22 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
                   <span className={styles.stationTags}>
                     {stationTags.split(',').slice(0, 3).join(' · ')}
                   </span>
+                )}
+                {onTogglePinStation && (
+                  <button
+                    type="button"
+                    aria-pressed={stationPinned}
+                    aria-label={stationPinned ? 'Unpin station (follow the trip)' : 'Pin station (do not retune on the trip)'}
+                    title={stationPinned ? 'Pinned: the trip will not retune this station' : 'Pin this station'}
+                    onClick={(e) => { e.stopPropagation(); onTogglePinStation(); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
+                      opacity: stationPinned ? 1 : 0.45, fontSize: 13,
+                    }}
+                  >
+                    📌
+                  </button>
                 )}
               </div>
             )}

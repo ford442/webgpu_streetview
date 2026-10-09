@@ -1,4 +1,5 @@
 import { RenderMode } from './types';
+import { readFlag } from '../config/flags';
 
 export type RendererBackendType = 'webgpu' | 'webgl';
 export type RendererBackendPreference = RendererBackendType | 'auto';
@@ -18,6 +19,14 @@ export interface RendererDebugOptions {
 
 export type WeatherPostProcessMode = 'fragment' | 'compute';
 
+/** Options for `samplePanoramaStats` (#216 gpu-chores). */
+export interface PanoramaStatsOptions {
+    /** Also publish per-row luma for the image-derived horizon. */
+    horizonRows: boolean;
+    /** Normalized camera pitch (0–1) the frame being sampled was rendered with. */
+    pitch: number;
+}
+
 export interface RendererInitOptions {
     onLost?: (info: GPUDeviceLostInfo) => void;
     /** WebGPU only — see docs/RENDERER_FALLBACK.md. */
@@ -35,28 +44,33 @@ export interface StreetViewRenderer {
 
     init(options?: RendererInitOptions): Promise<boolean>;
     resize(width: number, height: number): void;
+    /**
+     * The device's `maxTextureDimension2D`. The canvas backing store is the
+     * swap-chain texture, so it must be sized inside this.
+     */
+    getMaxTextureDimension2D?(): number | undefined;
     destroy(): void;
     setCarMode(active: boolean): void;
-    updateEffects(effectsData: Float32Array): void;
+    updateEffects(effectsData: Float32Array<ArrayBuffer>): void;
     getCanvasDataURL(): string;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;
-    updateWeatherParams(params: Float32Array): void;
+    updateWeatherParams(params: Float32Array<ArrayBuffer>): void;
     updateCameraParams(heading: number, pitch: number): void;
-    updateColorParams(params: Float32Array): void;
+    updateColorParams(params: Float32Array<ArrayBuffer>): void;
     /**
      * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts) for
      * shaders to sample as CPU-driven turbulence. `tile` must have
      * `NOISE_TILE_SIZE * NOISE_TILE_SIZE` elements, row-major. No-op on
      * backends that don't support it (fragment path without a noise sampler).
      */
-    updateNoiseBuffer(tile: Float32Array): void;
+    updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void;
     /**
      * Upload WASM particle seeds for the compute weather path. No-op on
      * backends that stay procedural (fragment WebGPU).
      */
-    updateParticleSeeds(seeds: Float32Array, width: number, height: number): void;
+    updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void;
     /** 3D look LUT. Null = identity (today's ACES path). No-op on WebGL. */
     setLookLut?(volume: import('./lut').LutVolume | null): void;
     /** Compute-only temporal history. No-op on fragment WebGPU and WebGL. */
@@ -90,7 +104,7 @@ export interface StreetViewRenderer {
     setSamplerAnisotropy?(level: import('../config/visualPresets').QualityLevel): void;
     /** #216 gpu-chores — shared-device hist/downsample, or WASM/JS. */
     getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
-    samplePanoramaStats?(): void;
+    samplePanoramaStats?(opts?: PanoramaStatsOptions): void;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into
@@ -105,16 +119,19 @@ export interface StreetViewRenderer {
      * only — absent (or undefined) on any backend without a real device.
      */
     getSharedGpuDevice?(): GPUDevice | undefined;
+    /**
+     * WebGPU only — the historical year-chip wipe from the hold-pause snapshot
+     * (`HistoricalWipePass.ts`). `begin` returns false when it cannot run (no
+     * pipeline, no snapshot); callers then keep the release crossfade.
+     */
+    beginHistoricalWipe?(direction: import('./historicalWipe').WipeDirection): boolean;
+    setHistoricalWipeProgress?(progress: number): void;
+    endHistoricalWipe?(): void;
 }
 
 const VALID_BACKENDS = new Set(['auto', 'webgpu', 'webgl']);
 const VALID_EFFECTS = new Set(['all', 'raw', 'color', 'weather', 'fog', 'night', 'lighting']);
 const VALID_WEATHER_MODES = new Set(['fragment', 'compute']);
-
-function readSearchParams(): URLSearchParams {
-    if (typeof window === 'undefined') return new URLSearchParams();
-    return new URLSearchParams(window.location.search);
-}
 
 export interface AdapterPowerPreferencePolicy {
     powerPreference?: GPUPowerPreference;
@@ -123,9 +140,7 @@ export interface AdapterPowerPreferencePolicy {
 
 /** `?gpu=` accepts a comma-separated token list, e.g. `?gpu=high,compat`. */
 function readGpuTokens(): string[] {
-    const raw = readSearchParams().get('gpu');
-    if (!raw) return [];
-    return raw.toLowerCase().split(',').map(token => token.trim()).filter(Boolean);
+    return readFlag('gpu');
 }
 
 export function getAdapterPowerPreferencePolicy(options?: RendererInitOptions): AdapterPowerPreferencePolicy {
@@ -218,34 +233,19 @@ export interface CanvasOutputFlags {
     p3: CanvasOutputFlag;
 }
 
-function readCanvasOutputFlag(params: URLSearchParams, name: string): CanvasOutputFlag {
-    const value = params.get(name)?.toLowerCase();
-    if (value === '1' || value === 'true' || value === 'on') return 'on';
-    if (value === '0' || value === 'false' || value === 'off') return 'off';
-    if (value === 'auto') return 'auto';
-    return 'off';
-}
-
 /**
  * Output-referred canvas opt-ins. Both default to `off` so a default boot stays
  * pixel-identical to the SDR sRGB swap-chain; `auto` defers to the display.
  */
 export function getCanvasOutputFlags(): CanvasOutputFlags {
-    const params = readSearchParams();
-    return {
-        hdr: readCanvasOutputFlag(params, 'hdr'),
-        p3: readCanvasOutputFlag(params, 'p3'),
-    };
+    return { hdr: readFlag('hdr'), p3: readFlag('p3') };
 }
 
 export function getRendererPreference(): RendererBackendPreference {
-    const params = readSearchParams();
-    const explicit = params.get('renderer')?.toLowerCase();
-    if (explicit && VALID_BACKENDS.has(explicit)) {
-        return explicit as RendererBackendPreference;
-    }
-    if (params.has('webgl')) return 'webgl';
-    if (params.has('webgpu')) return 'webgpu';
+    const explicit = readFlag('renderer');
+    if (explicit) return explicit;
+    if (readFlag('webgl')) return 'webgl';
+    if (readFlag('webgpu')) return 'webgpu';
 
     try {
         const stored = window.localStorage.getItem('streetview.renderer');
@@ -260,11 +260,10 @@ export function getRendererPreference(): RendererBackendPreference {
 }
 
 export function getRendererDebugOptions(): RendererDebugOptions {
-    const params = readSearchParams();
-    const effectParam = params.get('effect')?.toLowerCase();
+    const effectParam = readFlag('effect');
     let effectIsolation: RendererEffectIsolation = 'all';
-    if (effectParam && VALID_EFFECTS.has(effectParam)) {
-        effectIsolation = effectParam as RendererEffectIsolation;
+    if (effectParam) {
+        effectIsolation = effectParam;
     }
 
     try {
@@ -276,7 +275,7 @@ export function getRendererDebugOptions(): RendererDebugOptions {
         // ignore
     }
 
-    const wireframe = params.has('wireframe') || params.get('debug') === 'wireframe';
+    const wireframe = readFlag('wireframe') || readFlag('debug') === 'wireframe';
 
     return { effectIsolation, wireframe };
 }
@@ -302,10 +301,9 @@ export interface WeatherPostProcessModePolicy {
 export function getWeatherPostProcessModePolicy(
     fallback: WeatherPostProcessMode = 'fragment',
 ): WeatherPostProcessModePolicy {
-    const params = readSearchParams();
-    const explicit = params.get('weather')?.toLowerCase();
-    if (explicit && VALID_WEATHER_MODES.has(explicit)) {
-        return { mode: explicit as WeatherPostProcessMode, source: 'url' };
+    const explicit = readFlag('weather');
+    if (explicit) {
+        return { mode: explicit, source: 'url' };
     }
 
     try {
@@ -325,11 +323,7 @@ export function getWeatherPostProcessMode(fallback: WeatherPostProcessMode = 'fr
 }
 
 export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean {
-    const params = readSearchParams();
-    const explicit = params.get('legacyTransitions')?.toLowerCase();
-    if (explicit === '1' || explicit === 'true') return true;
-    if (explicit === '0' || explicit === 'false') return false;
-    return fallback;
+    return readFlag('legacyTransitions') ?? fallback;
 }
 
 /**

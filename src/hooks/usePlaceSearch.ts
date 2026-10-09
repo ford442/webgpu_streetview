@@ -20,6 +20,7 @@ import {
   type NearbyPoiCategory,
 } from '../search/poiModel';
 import { buildDeepLinkUrl } from '../utils/deepLink';
+import { povStore } from '../state/povStore';
 
 export interface PlaceSearchApplyTarget {
   lat: number;
@@ -32,9 +33,6 @@ export interface UsePlaceSearchOptions {
   teleportSafe: (lat: number, lng: number) => Promise<void>;
   teleportToPanoSafe: (panoId: string) => Promise<void>;
   getCurrentPosition: () => { lat: number; lng: number } | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
 }
 
 export interface UsePlaceSearchResult {
@@ -64,9 +62,6 @@ export function usePlaceSearch({
   teleportSafe,
   teleportToPanoSafe,
   getCurrentPosition,
-  heading,
-  pitch,
-  zoom,
 }: UsePlaceSearchOptions): UsePlaceSearchResult {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -87,16 +82,21 @@ export function usePlaceSearch({
     installPlaceSearchKillSwitch(budget);
   }, [budget]);
 
-  const resultLink = lastResult
-    ? buildDeepLinkUrl({
-        lat: lastResult.lat,
-        lng: lastResult.lng,
-        heading,
-        pitch,
-        zoom,
-        panoId: lastResult.panoId,
-      })
-    : null;
+  // Deep link to the result at the view the user has *now* (read at call time —
+  // POV is not React state). `resultLink` is the snapshot taken when the result landed.
+  const buildResultLink = useCallback((): string | null => {
+    if (!lastResult) return null;
+    const { heading, pitch, zoom } = povStore.get();
+    return buildDeepLinkUrl({
+      lat: lastResult.lat,
+      lng: lastResult.lng,
+      heading,
+      pitch,
+      zoom,
+      panoId: lastResult.panoId,
+    });
+  }, [lastResult]);
+  const resultLink = useMemo(() => buildResultLink(), [buildResultLink]);
 
   const remember = useCallback((entry: Omit<RecentSearch, 'at'>) => {
     setRecents(saveRecentSearch(entry));
@@ -269,14 +269,15 @@ export function usePlaceSearch({
   }, [nearbyEnabled, nearbyCategories, getCurrentPosition, lastResult]);
 
   const copyResultLink = useCallback(async () => {
-    if (!resultLink) return false;
+    const link = buildResultLink();
+    if (!link) return false;
     try {
-      await navigator.clipboard.writeText(resultLink);
+      await navigator.clipboard.writeText(link);
       return true;
     } catch {
       return false;
     }
-  }, [resultLink]);
+  }, [buildResultLink]);
 
   return {
     query,

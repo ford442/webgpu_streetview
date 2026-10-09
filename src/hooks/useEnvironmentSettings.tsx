@@ -7,6 +7,7 @@ import {
   type LookId,
 } from '../config/lookPacks';
 import { readBootLook } from '../utils/lookLink';
+import { nextAutoExposureEnabled, type AutoExposureEvent } from '../renderer/autoExposure';
 
 // Types
 export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
@@ -79,6 +80,12 @@ export interface EnvironmentSettingsState {
   setTint: (value: number) => void;
   shaderEffectsEnabled: boolean;
   setShaderEffectsEnabled: (enabled: boolean) => void;
+  /**
+   * Auto exposure (GpuChores luma hint → exposure uniform). Session-only, off
+   * by default. Slider and preset exposure writes turn it off.
+   */
+  autoExposureEnabled: boolean;
+  setAutoExposureEnabled: (enabled: boolean) => void;
   
   // Presets
   applyTimeOfDayPreset: (preset: TimeOfDay) => void;
@@ -92,14 +99,75 @@ export interface EnvironmentSettingsState {
   ambientLightColor: string;
 }
 
-const EnvironmentSettingsContext = createContext<EnvironmentSettingsState | null>(null);
+/**
+ * The environment is exposed as four slices so a consumer re-renders only when
+ * the fields it reads change (a rain slider drag must not re-render the grade
+ * panel; the 30 s auto-night recompute must not re-render the weather canvas
+ * inputs). `useEnvironmentSettings()` is the aggregate of all four — convenient,
+ * but it re-renders on any change, so hot paths should use a slice hook.
+ */
+export type WeatherSettings = Pick<
+  EnvironmentSettingsState,
+  | 'rainIntensity' | 'setRainIntensity'
+  | 'snowIntensity' | 'setSnowIntensity'
+  | 'wind' | 'setWind'
+  | 'fogDensity' | 'setFogDensity'
+>;
 
-export const useEnvironmentSettings = () => {
-  const context = useContext(EnvironmentSettingsContext);
-  if (!context) {
-    throw new Error('useEnvironmentSettings must be used within EnvironmentSettingsProvider');
-  }
-  return context;
+export type LightingSettings = Pick<
+  EnvironmentSettingsState,
+  | 'timeOfDay' | 'setTimeOfDay' | 'autoNightMode' | 'setAutoNightMode'
+  | 'nightIntensity' | 'setNightIntensity'
+  | 'sunAzimuth' | 'setSunAzimuth' | 'sunAltitude' | 'setSunAltitude'
+  | 'moonAzimuth' | 'setMoonAzimuth' | 'moonAltitude' | 'setMoonAltitude'
+  | 'moonIntensity' | 'setMoonIntensity'
+  | 'headlightsOn' | 'toggleHeadlights' | 'setHeadlights'
+  | 'highBeam' | 'toggleHighBeam' | 'setHighBeam'
+  | 'domeLightOn' | 'toggleDomeLight' | 'setDomeLight'
+  | 'applyTimeOfDayPreset' | 'ambientLightColor'
+>;
+
+export type GradeSettings = Pick<
+  EnvironmentSettingsState,
+  | 'vibrance' | 'setVibrance' | 'saturation' | 'setSaturation'
+  | 'contrast' | 'setContrast' | 'exposure' | 'setExposure'
+  | 'temperature' | 'setTemperature' | 'tint' | 'setTint'
+  | 'shaderEffectsEnabled' | 'setShaderEffectsEnabled'
+  | 'autoExposureEnabled' | 'setAutoExposureEnabled'
+  | 'applyColorGradingPreset' | 'activeLookId' | 'applyLookPack'
+>;
+
+export type CarEnvSettings = Pick<
+  EnvironmentSettingsState,
+  'wipersEnabled' | 'toggleWipers' | 'setWipers' | 'isRoofOpen' | 'toggleRoof' | 'setRoofOpen'
+>;
+
+const WeatherContext = createContext<WeatherSettings | null>(null);
+const LightingContext = createContext<LightingSettings | null>(null);
+const GradeContext = createContext<GradeSettings | null>(null);
+const CarEnvContext = createContext<CarEnvSettings | null>(null);
+
+function useSlice<T>(ctx: React.Context<T | null>, name: string): T {
+  const value = useContext(ctx);
+  if (!value) throw new Error(`${name} must be used within EnvironmentSettingsProvider`);
+  return value;
+}
+
+export const useWeatherSettings = (): WeatherSettings => useSlice(WeatherContext, 'useWeatherSettings');
+export const useLightingSettings = (): LightingSettings => useSlice(LightingContext, 'useLightingSettings');
+export const useGradeSettings = (): GradeSettings => useSlice(GradeContext, 'useGradeSettings');
+export const useCarEnvSettings = (): CarEnvSettings => useSlice(CarEnvContext, 'useCarEnvSettings');
+
+/** Aggregate of every slice — re-renders on any environment change. */
+export const useEnvironmentSettings = (): EnvironmentSettingsState => {
+  const weather = useSlice(WeatherContext, 'useEnvironmentSettings');
+  const lighting = useSlice(LightingContext, 'useEnvironmentSettings');
+  const grade = useSlice(GradeContext, 'useEnvironmentSettings');
+  const car = useSlice(CarEnvContext, 'useEnvironmentSettings');
+  return useMemo(
+    () => ({ ...weather, ...lighting, ...grade, ...car }),
+    [weather, lighting, grade, car],
+  );
 };
 
 interface EnvironmentSettingsProviderProps {
@@ -161,13 +229,28 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const [vibrance, setVibrance] = useState(bootPatch?.vibrance ?? 1.0);
   const [saturation, setSaturation] = useState(bootPatch?.saturation ?? 1.0);
   const [contrast, setContrast] = useState(bootPatch?.contrast ?? 1.0);
-  const [exposure, setExposure] = useState(bootPatch?.exposure ?? 0.0);
+  const [exposure, setExposureState] = useState(bootPatch?.exposure ?? 0.0);
+  const [autoExposureEnabled, setAutoExposureEnabledState] = useState(false);
   const [temperature, setTemperature] = useState(bootPatch?.temperature ?? 0.0);
   const [tint, setTint] = useState(bootPatch?.tint ?? 0.0);
   const [shaderEffectsEnabled, setShaderEffectsEnabled] = useState(
     bootPatch?.shaderEffectsEnabled ?? true,
   );
   const [activeLookId, setActiveLookId] = useState<LookId | null>(boot?.lookId ?? null);
+
+  const dispatchAutoExposure = useCallback((event: AutoExposureEvent) => {
+    setAutoExposureEnabledState((prev) => nextAutoExposureEnabled(prev, event));
+  }, []);
+
+  const setAutoExposureEnabled = useCallback((enabled: boolean) => {
+    dispatchAutoExposure(enabled ? 'toggle-on' : 'toggle-off');
+  }, [dispatchAutoExposure]);
+
+  // Manual exposure edits win over auto exposure.
+  const setExposure = useCallback((value: number) => {
+    dispatchAutoExposure('manual-exposure');
+    setExposureState(value);
+  }, [dispatchAutoExposure]);
   
   // Wipers
   const toggleWipersCallback = useCallback(() => {
@@ -221,6 +304,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   
   // Apply time of day preset
   const applyTimeOfDayPreset = useCallback((preset: TimeOfDay) => {
+    dispatchAutoExposure('time-of-day-preset');
     setAutoNightMode(false);
     setTimeOfDay(preset);
     const astro = TOD_ASTRONOMY[preset];
@@ -232,7 +316,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     if (preset === 'night') {
       setHeadlightsOnState(true);
     }
-  }, []);
+  }, [dispatchAutoExposure]);
 
   const applyLookPatch = useCallback((patch: LookEnvPatch) => {
     setAutoNightMode(false);
@@ -245,7 +329,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setVibrance(patch.vibrance);
     setSaturation(patch.saturation);
     setContrast(patch.contrast);
-    setExposure(patch.exposure);
+    setExposureState(patch.exposure);
     setTemperature(patch.temperature);
     setTint(patch.tint);
     setNightIntensity(patch.nightIntensity);
@@ -268,12 +352,14 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const applyLookPack = useCallback((id: string) => {
     const pack = getLookPack(id);
     if (!pack) return;
+    dispatchAutoExposure('look-pack');
     applyLookPatch(lookPackToEnvPatch(pack));
     setActiveLookId(pack.id);
-  }, [applyLookPatch]);
+  }, [applyLookPatch, dispatchAutoExposure]);
   
   // Apply color grading preset
   const applyColorGradingPreset = useCallback((preset: string) => {
+    dispatchAutoExposure('color-grading-preset');
     setActiveLookId(null);
     switch (preset) {
       case 'none':
@@ -284,7 +370,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.0);
         setSaturation(1.0);
         setContrast(1.0);
-        setExposure(0.0);
+        setExposureState(0.0);
         setTemperature(0.0);
         setTint(0.0);
         setNightIntensity(0.0);
@@ -294,7 +380,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.2);
         setSaturation(1.1);
         setContrast(1.1);
-        setExposure(0.1);
+        setExposureState(0.1);
         setTemperature(0.3);
         setTint(-0.1);
         break;
@@ -303,7 +389,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.3);
         setSaturation(1.2);
         setContrast(1.2);
-        setExposure(0.2);
+        setExposureState(0.2);
         setTemperature(0.5);
         setTint(-0.2);
         break;
@@ -312,7 +398,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.8);
         setSaturation(0.9);
         setContrast(1.1);
-        setExposure(-0.1);
+        setExposureState(-0.1);
         setTemperature(-0.2);
         setTint(0.1);
         break;
@@ -321,7 +407,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.7);
         setSaturation(0.8);
         setContrast(1.3);
-        setExposure(-0.2);
+        setExposureState(-0.2);
         setTemperature(-0.3);
         setTint(0.2);
         break;
@@ -330,7 +416,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(0.6);
         setSaturation(0.7);
         setContrast(1.4);
-        setExposure(-0.5);
+        setExposureState(-0.5);
         setTemperature(-0.4);
         setTint(0.3);
         setNightIntensity(1.0);
@@ -341,12 +427,12 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
         setVibrance(1.1);
         setSaturation(0.9);
         setContrast(1.2);
-        setExposure(0.3);
+        setExposureState(0.3);
         setTemperature(-0.1);
         setTint(0.0);
         break;
     }
-  }, []);
+  }, [dispatchAutoExposure]);
   
   // Compute ambient light color for dashboard tinting based on time of day
   const ambientLightColor = useMemo(() => {
@@ -362,85 +448,67 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     }
   }, [timeOfDay, nightIntensity]);
 
-  const value: EnvironmentSettingsState = {
-    // Weather
-    rainIntensity,
-    setRainIntensity,
-    snowIntensity,
-    setSnowIntensity,
-    wind,
-    setWind,
-    fogDensity,
-    setFogDensity,
-    
-    // Time
-    timeOfDay,
-    setTimeOfDay,
-    autoNightMode,
-    setAutoNightMode,
-    
-    // Night
-    nightIntensity,
-    setNightIntensity,
-    sunAzimuth,
-    setSunAzimuth,
-    sunAltitude,
-    setSunAltitude,
-    moonAzimuth,
-    setMoonAzimuth,
-    moonAltitude,
-    setMoonAltitude,
-    moonIntensity,
-    setMoonIntensity,
-    
-    // Car
-    wipersEnabled,
-    toggleWipers: toggleWipersCallback,
-    setWipers,
-    headlightsOn,
-    toggleHeadlights,
-    setHeadlights,
-    highBeam,
-    toggleHighBeam: toggleHighBeamCallback,
-    setHighBeam: setHighBeamState,
-    domeLightOn,
-    toggleDomeLight: toggleDomeLightCallback,
-    setDomeLight,
-    isRoofOpen,
-    toggleRoof: toggleRoofCallback,
-    setRoofOpen: setIsRoofOpen,
-    
-    // Color grading
-    vibrance,
-    setVibrance,
-    saturation,
-    setSaturation,
-    contrast,
-    setContrast,
-    exposure,
-    setExposure,
-    temperature,
-    setTemperature,
-    tint,
-    setTint,
-    shaderEffectsEnabled,
-    setShaderEffectsEnabled,
-    
-    // Presets
+  const weather = useMemo<WeatherSettings>(() => ({
+    rainIntensity, setRainIntensity,
+    snowIntensity, setSnowIntensity,
+    wind, setWind,
+    fogDensity, setFogDensity,
+  }), [rainIntensity, snowIntensity, wind, fogDensity]);
+
+  const lighting = useMemo<LightingSettings>(() => ({
+    timeOfDay, setTimeOfDay,
+    autoNightMode, setAutoNightMode,
+    nightIntensity, setNightIntensity,
+    sunAzimuth, setSunAzimuth,
+    sunAltitude, setSunAltitude,
+    moonAzimuth, setMoonAzimuth,
+    moonAltitude, setMoonAltitude,
+    moonIntensity, setMoonIntensity,
+    headlightsOn, toggleHeadlights, setHeadlights,
+    highBeam, toggleHighBeam: toggleHighBeamCallback, setHighBeam: setHighBeamState,
+    domeLightOn, toggleDomeLight: toggleDomeLightCallback, setDomeLight,
     applyTimeOfDayPreset,
+    ambientLightColor,
+  }), [
+    timeOfDay, autoNightMode, nightIntensity,
+    sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
+    headlightsOn, toggleHeadlights, setHeadlights,
+    highBeam, toggleHighBeamCallback,
+    domeLightOn, toggleDomeLightCallback, setDomeLight,
+    applyTimeOfDayPreset, ambientLightColor,
+  ]);
+
+  const grade = useMemo<GradeSettings>(() => ({
+    vibrance, setVibrance,
+    saturation, setSaturation,
+    contrast, setContrast,
+    exposure, setExposure,
+    temperature, setTemperature,
+    tint, setTint,
+    shaderEffectsEnabled, setShaderEffectsEnabled,
+    autoExposureEnabled, setAutoExposureEnabled,
     applyColorGradingPreset,
     activeLookId,
     applyLookPack,
+  }), [
+    vibrance, saturation, contrast, exposure, setExposure, temperature, tint,
+    shaderEffectsEnabled, autoExposureEnabled, setAutoExposureEnabled,
+    applyColorGradingPreset, activeLookId, applyLookPack,
+  ]);
 
-    // Derived
-    ambientLightColor,
-  };
-  
+  const carEnv = useMemo<CarEnvSettings>(() => ({
+    wipersEnabled, toggleWipers: toggleWipersCallback, setWipers,
+    isRoofOpen, toggleRoof: toggleRoofCallback, setRoofOpen: setIsRoofOpen,
+  }), [wipersEnabled, toggleWipersCallback, setWipers, isRoofOpen, toggleRoofCallback]);
+
   return (
-    <EnvironmentSettingsContext.Provider value={value}>
-      {children}
-    </EnvironmentSettingsContext.Provider>
+    <WeatherContext.Provider value={weather}>
+      <LightingContext.Provider value={lighting}>
+        <GradeContext.Provider value={grade}>
+          <CarEnvContext.Provider value={carEnv}>{children}</CarEnvContext.Provider>
+        </GradeContext.Provider>
+      </LightingContext.Provider>
+    </WeatherContext.Provider>
   );
 };
 
-export default EnvironmentSettingsContext;

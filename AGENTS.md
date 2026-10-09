@@ -18,16 +18,16 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 | Layer | Technology | Version |
 |-------|------------|---------|
 | Frontend Framework | React | 19.1.1 |
-| Language | TypeScript | ~5.4.5 |
-| Build Tool | Vite 5 + Vitest | — |
+| Language | TypeScript | ~5.9.3 |
+| Build Tool | Vite 7 + Vitest 3 | `build.target` = the WebGPU floor (Chrome/Edge 113, Firefox 141, Safari 26) |
 | Rendering API | WebGPU | Native browser API |
 | 3D Overlay | Three.js | 0.180.0 (pinned) |
 | Shader Language | WGSL | WebGPU Shading Language |
 | Maps Integration | Google Maps JavaScript API | Weekly |
-| State Management | React Context + Hooks | Provider pattern |
+| State Management | React Context + Hooks; hot POV in `src/state/povStore.ts` | Provider pattern; POV is an external store (see *State Management*) |
 | Testing | Vitest + React Testing Library | jest-dom |
 | Globe Integration | Cesium (CDN-loaded, no npm dep) | 1.140.0 |
-| Additional | suncalc, ajv, web-vitals | Various |
+| Additional | suncalc (auto-night), @supabase/supabase-js (signaling) | Various |
 
 ### Browser Support
 - **Production**: `>0.2%, not dead, not op_mini all`
@@ -69,7 +69,11 @@ npm test
 # Watch mode
 npm run test:watch
 
-# Typecheck
+# THE ONE GATE — typecheck + lint + knip + secret scan + unit tests + WGSL (naga) + C++ goldens (if cmake).
+# Run this before pushing; CI runs the same thing. `-- --fast` skips tests and C++.
+npm run verify
+
+# Typecheck (tsc -b: app, tests, vite/playwright configs, e2e, scripts)
 npm run typecheck
 
 # Playwright E2E (keyless smoke vs full/keyed — see Testing Strategy)
@@ -92,7 +96,9 @@ MAPS_API_KEY='AIzaSy...' python deploy.py
 # Uploads build/ via Contabo storage manager → test.1ink.us or go.1ink.us
 ```
 
-Env notes: Vite accepts `REACT_APP_*` (compat) and `VITE_*`. Prefer `REACT_APP_MAPS_API_KEY` in `.env.local` for continuity, or `VITE_MAPS_API_KEY`. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production.
+Env notes: only the keys in `scripts/public-env-keys.json` are inlined into the bundle (via `process.env.*` defines in `vite.config.ts`); `envPrefix` is the unused `VITE_PUBLIC_` so `import.meta.env` cannot leak anything either. `scripts/check-build-env-leak.mjs` (run by `verify-build.sh`) fails the build if any other `.env` value shows up in `build/`. Put a dev key in `.env.local` (`REACT_APP_MAPS_API_KEY` or `VITE_MAPS_API_KEY`); `.env.example` / `.env.deploy.example` are the only tracked env files. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production. The Cesium Ion token is runtime-only (`window.CESIUM_ION_TOKEN`).
+
+URL flags (`?hdr`, `?cabin`, `?portal`, `?no_gpu_compute`, …) are declared once in `src/config/flags.ts` and parsed only there — one grammar (`1|true|on|yes` / `0|false|off|no`, bare presence = true, case-insensitive). The table is generated into [`docs/FLAGS.md`](docs/FLAGS.md) (`npm run gen:flags-doc`); `flags.test.ts` fails on drift or on any other `location.search` / `new URLSearchParams(<string>)` under `src/`.
 ---
 
 ## Project Structure
@@ -153,9 +159,7 @@ webgpu_streetview/
 │   │   ├── WebGPUCanvas.tsx         # Mounts renderer, drives render loop, syncs weather params
 │   │   ├── FreeLookInputHandler.tsx # Window-level mouse/keyboard for free look
 │   │   ├── CarInputHandler.tsx      # Window-level input for car mode (3 control modes)
-│   │   ├── MiniMap.tsx              # Secondary map with heading, route, teleport
 │   │   ├── Compass.tsx              # Cardinal direction overlay
-│   │   ├── Controls.tsx             # Legacy overlay controls
 │   │   ├── WelcomeModal.tsx         # Startup welcome modal
 │   │   ├── LoadingOverlay.tsx       # Granular loading states UI
 │   │   ├── BookmarkPanel.tsx        # Saved locations panel with cloud sync
@@ -167,10 +171,11 @@ webgpu_streetview/
 │   │   ├── AccessibilityPanel.tsx   # A11y settings panel
 │   │   ├── PerformanceStatsOverlay.tsx # Live FPS / GPU stats
 │   │   ├── GlobeView.tsx            # Cesium globe mount + viewer lifecycle
+│   │   ├── CoverageMap.tsx          # Street View coverage map (Google / Cesium toggle), lazy; billing in BILLING_SAFETY_CHECKLIST.md
+│   │   ├── coverageMap/             # Google top-down map + Cesium pano-graph scene
 │   │   ├── globe/                   # Camera flights, input, journey, POI/autopilot
 │   │   ├── ScoutCard.tsx            # Location scout UI
-│   │   ├── MobileUI.tsx             # Touch chrome compositor
-│   │   └── mobile/                  # Touch layer, settings/vehicle sheet, help sheet
+│   │   └── …                        # panels (Weather, Looks, Bookmarks, Snapshots, …)
 │   ├── renderer/
 │   │   ├── Renderer.ts              # WebGPU orchestrator: device, dual-pass pipeline, transitions
 │   │   └── types.ts                 # RenderMode type
@@ -188,7 +193,6 @@ webgpu_streetview/
 │   │   ├── CarInterior.ts           # Procedural interior geometry
 │   │   ├── DashboardUI.tsx          # React dashboard overlay
 │   │   ├── DashboardLayout.tsx      # Dashboard zone layout primitives
-│   │   ├── Gauges.tsx               # Speedometer / tachometer
 │   │   ├── Controls.tsx             # Dashboard buttons / sliders
 │   │   ├── RearviewMirror.ts        # Rear-view glass (true Static feed, else honest unavailable)
 │   │   ├── rearViewFeed.ts          # Throttled/budgeted Street View Static rear imagery (billable)
@@ -239,7 +243,7 @@ webgpu_streetview/
 │   │   ├── useTouchControls.ts      # Touch gesture handling
 │   │   ├── useDeviceDetection.ts    # Mobile / capability detection
 │   │   ├── useGlobeMode.ts          # Cesium globe state
-│   │   ├── useAutoNight.ts          # Automatic night mode
+│   │   ├── useAutoNight.ts          # Real-clock sun/moon → nightIntensity (mounted by app/AutoNightDriver.tsx)
 │   │   ├── useAdvanceSafe.ts        # Safe navigation with panorama-ready guards
 │   │   ├── usePanoramaCache.ts      # Panorama pre-fetch cache
 │   │   └── __tests__/               # Hook tests (mobile.test.tsx)
@@ -263,14 +267,25 @@ webgpu_streetview/
 │   │   └── index.ts
 │   ├── config/
 │   │   ├── visualPresets.ts         # Low/Medium/High/Ultra quality + auto-detect
-│   │   ├── cryptoCompanies.ts
-│   │   ├── astronomicalConstants.ts
-│   │   └── index.ts
+│   │   ├── flags.ts                 # Typed URL-flag registry + the only query-string parser
+│   │   └── lookPacks.ts             # Named looks
 │   ├── store/
 │   │   ├── loadingState.ts          # Loading state store singleton
 │   │   └── index.ts
 │   ├── services/
-│   │   ├── radioBrowserService.ts   # Radio station lookup
+│   │   ├── routing/                 # Routed road trip (see *Routed Road Trips*)
+│   │   │   ├── RouteProvider.ts     # Provider interface + honest RouteError kinds
+│   │   │   ├── osrmProvider.ts      # Default OSRM-compatible provider (GeoJSON, steps)
+│   │   │   ├── routingConfig.ts     # window.ROUTING_ENDPOINT → provider
+│   │   │   ├── routeGeometry.ts     # ActiveRoute: resample, projection, step along-track (WASM)
+│   │   │   ├── routeFollow.ts       # Pure per-hop decisions: follow / re-snap / arrived
+│   │   │   ├── tripController.ts    # plan → drive → arrive; the cruise route guide
+│   │   │   ├── routeLink.ts         # ?route= encode/decode
+│   │   │   ├── routeAnnouncements.ts / guidanceFormat.ts / routeExport.ts
+│   │   ├── maps/callBudget.ts       # Session call meter (every getPanorama / place search)
+│   │   ├── conditions/openMeteo.ts  # Live local conditions (opt-in)
+│   │   ├── radio/tripRadio.ts       # When the cabin radio follows the trip
+│   │   ├── radioBrowserService.ts   # Radio station lookup (geo search first)
 │   │   └── storageApi.ts            # Cloud storage API client
 │   ├── docs/
 │   │   └── GRAPHICS.md              # Graphics pipeline documentation
@@ -289,11 +304,15 @@ webgpu_streetview/
 ├── deploy.py                        # Contabo bundle deploy (reads DEPLOY_TOKEN from env)
 ├── package.json
 ├── tsconfig.json
-├── .env                             # REACT_APP_* environment variables
+├── .env.example                     # Build-time env template (real values: untracked .env.local)
+├── .env.deploy.example              # deploy.py environment template
+├── knip.json                        # Unused file / dependency policy (CI)
+├── tsconfig.{base,app,test,node,scripts}.json  # + e2e/tsconfig.json; root tsconfig.json is the tsc -b solution
 ├── CLAUDE.md                        # AI quick-reference (danger zones)
-├── DEVELOPER_CONTEXT.md             # Architecture deep-dive
-├── README.md                        # Human-facing README
-└── feature_expansion_plan.md        # Roadmap
+├── docs/DEVELOPER_CONTEXT.md        # Architecture deep-dive
+├── docs/FLAGS.md                    # Generated URL flag table
+├── docs/archive/                    # Historical plans / task specs / PR bodies (not current)
+└── README.md                        # Human-facing README
 ```
 
 ---
@@ -302,10 +321,12 @@ webgpu_streetview/
 
 ### State Management: Provider Pattern
 
-State is no longer owned solely by `App.tsx`. Three React Context providers wrap the app via `src/app/AppProviders.tsx`:
+State is no longer owned solely by `App.tsx`. Three React Context providers (plus `AutoNightDriver`, which renders nothing) wrap the app via `src/app/AppProviders.tsx`:
+
+> **Hot POV state is NOT in React.** `heading`, `pitch`, `zoom` and `carHeading` change on every mouse move / key repeat / cruise tick, so they live in the external store `src/state/povStore.ts` (`povStore.get()/setHeading()/…`). Writers (input handlers, tours, shared sessions) call the stable setters; per-frame readers (`WebGPUCanvas`, the car runtime bridge) read `povStore.get()` imperatively; components subscribe with `usePovSelector` / `useThrottledPov` (HUD readouts, ≤10 Hz) or push into imperative sinks with `usePovEffect`. Never add POV back to a context value — `src/app/AppShell.renders.test.tsx` fails if `AppShell` re-renders on POV writes. Provider values are memoized; keep them so.
 
 1. **`StreetViewProvider`** (`src/hooks/useStreetView.tsx`)
-   - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, heading, pitch, zoom, position, and `isTransitioning`.
+   - Owns the `google.maps.StreetViewPanorama` ref, scraped canvas ref, position, and `isTransitioning` (heading/pitch/zoom are `povStore` writers re-exported as `setHeading`/`setPitch`/`setZoom`; the Maps `setPov` sync subscribes to the store and stays paused during hold).
    - `advance(direction, currentHeading?)` calls `findBestLink` and triggers `pano.setPano()`.
    - `teleport(lat, lng, targetHeading?, targetPitch?)` moves the panorama — shares the same `armHold()` hold-pause as `advance()` (see *Hold-Pause Transition* below).
    - `isTransitioning`/`isPanoramaReady` (hold-pause state) are set on advance/teleport and cleared once the new canvas passes the stability check in `src/utils/panoramaStability.ts` (not a fixed delay).
@@ -313,17 +334,19 @@ State is no longer owned solely by `App.tsx`. Three React Context providers wrap
 
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
    - Owns `viewMode: 'freelook' | 'car'`.
-   - Manages car body `carHeading` (independent of head-look heading).
+   - Exposes `setCarHeading` (the value lives in `povStore.carHeading`, independent of head-look heading).
    - Tracks `controlMode`: `freeLook` | `uiMouse` | `carSteer`.
    - Tracks `headCoupling`: `rigid` (head turns with car) | `free` (head independent).
    - Supports temporary steering mode (`startTempSteerMode` / `endTempSteerMode`) triggered by clicking the steering wheel.
    - Initializes / toggles the Three.js car mode via `initCarMode()` from `src/car/index.ts`.
 
 3. **`EnvironmentSettingsProvider`** (`src/hooks/useEnvironmentSettings.tsx`)
+   - Exposed as memoized slices — `useWeatherSettings()`, `useLightingSettings()`, `useGradeSettings()`, `useCarEnvSettings()` — so a consumer re-renders only when its slice changes; `useEnvironmentSettings()` is the aggregate (re-renders on any change, use it only in the shell).
    - Owns all weather and color-grading uniforms: `rainIntensity`, `snowIntensity`, `wind`, `vibrance`, `saturation`, `contrast`, `exposure`, `temperature`, `tint`, `timeOfDay`, `fogDensity`, `nightIntensity`, `headlightsOn`, `domeLightOn`, `highBeam`, `isRoofOpen`, `shaderEffectsEnabled`, etc.
    - Exposes `applyTimeOfDayPreset('day' | 'sunrise' | 'sunset' | 'night')` and `applyColorGradingPreset(string)`.
    - Computes `ambientLightColor` CSS string for dashboard glass tinting.
-   - Consumed by `WebGPUCanvas.tsx` and forwarded to `Renderer.updateWeatherParams()` every frame.
+   - Consumed by `WebGPUCanvas.tsx` (slice hooks) and forwarded to `Renderer.updateWeatherParams()` every frame.
+   - **Auto-night** (`autoNightMode`, on by default unless a `?look=` boot patch is present): `app/AutoNightDriver.tsx` mounts `hooks/useAutoNight.ts`, which drives `nightIntensity` and the sun/moon uniforms from the real clock at the panorama's position (`utils/autoNightModel.ts`, SunCalc). Picking a time-of-day preset or look turns it off; the weather panel's **Auto** button turns it back on.
 
 ### View Routing
 
@@ -362,7 +385,10 @@ the module that owns it, not to the façade:
 | `deviceInit.ts` | adapter request options, limit checks, canvas output (HDR/P3) policy, capability matrix |
 | `bootDevice.ts` | the boot sequence and **the only `requestDevice` call site** (`deviceInit.test.ts` pins the path) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
-| `frameLoop.ts` | uniform packing, timestamp slot assignment, and the per-frame encode order (pass 1 → weather → resolve → submit) |
+| `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
+| `framePasses/` | the ordered pass registry (`streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded |
+| `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
+| `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
 | `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
 | `holdTransition.ts` | hold-pause state; the guard that keeps the live Maps canvas off the GPU while a pano reloads |
 
@@ -380,14 +406,14 @@ lost, the hold-pause guards, and the public renderer surface.
 - Source: HDR intermediate texture.
 - Fragment shader: color grading chain (vibrance → saturation → contrast → temperature/tint → exposure), then procedural rain + snow composited additively, plus atmospheric effects (fog, light shafts, heat shimmer, lens flare, chromatic aberration, dust, humidity haze), nighttime mode, headlights, dome light, astronomical lighting (sun/moon), ACES tonemapping.
 - Output target: swap-chain surface (screen).
-- **Tonemap variant**: when `configureCanvasContext` actually applied `toneMapping: { mode: 'extended' }` (`?hdr=1` on a capable display), `assembleExtendedToneMappingShader` swaps the `aces_tonemap` body for an output-referred one that evaluates the ACES shoulder against `EXTENDED_TONEMAP_HEADROOM` instead of assuming SDR white is the peak, so highlights survive into display headroom rather than clamping at 1.0. Source substitution at pipeline-create time — **no new uniform slot, the 40-float layout is untouched** — and both assembled variants are naga-checked by `npm run validate:shaders`. Default SDR boot compiles the byte-identical historical shader.
+- **Tonemap variant**: when `configureCanvasContext` actually applied `toneMapping: { mode: 'extended' }` (`?hdr=1` on a capable display), `assembleExtendedToneMappingShader` swaps the `aces_tonemap` body for an output-referred one that evaluates the ACES shoulder against `EXTENDED_TONEMAP_HEADROOM` instead of assuming SDR white is the peak, so highlights survive into display headroom rather than clamping at 1.0. Source substitution at pipeline-create time — **no new uniform slot, the 44-float layout is untouched** — and both assembled variants are naga-checked by `npm run validate:shaders`. Default SDR boot compiles the byte-identical historical shader.
 - WGSL has no `#include`, so this file is **generated**: `scripts/gen-weather-post-shader.mjs` concatenates the three source fragments in `public/shaders/weather-post/` (`01-foundation.wgsl`, `02-weather-fx.wgsl`, `03-night-and-composite.wgsl`) into `public/shaders/weather-post.wgsl`, which is what `WeatherPostProcessor.ts` fetches at runtime and what every WGSL test reads. Edit a fragment, then run `npm run gen:weather-shader` (also runs automatically via `prebuild`); `src/renderer/weatherPostShaderSplit.test.ts` fails if the generated file drifts from the fragments.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
 **Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
-`ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 40-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
+`ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
 
@@ -412,7 +438,7 @@ SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for `webglLookPa
 
 Supported legacy modes: `fade`, `zoom`, `zoom-blur`, `zoom-chromatic`.
 
-### Hold-Pause Transition (cruise hops, MiniMap/autopilot/globe teleports)
+### Hold-Pause Transition (cruise hops, autopilot/globe/search teleports)
 
 `useStreetView.tsx`'s `armHold()` (shared by `advance()` and `teleport()`) does three things before changing the panorama:
 1. `renderer.beginHoldTransition(heading, pitch)` — GPU-snapshots `videoTexture` into `previousFrameTexture`, records `capturePanX/Y`, sets `holdActive = true`.
@@ -434,6 +460,19 @@ While `holdActive`/`isPanoramaUpdatePaused` is true:
 3. Returns the link within 45° of target, or `null` if none qualify.
 
 Small math errors here cause users to walk backwards or loop in circles. Test changes manually in cruise mode.
+
+### Routed Road Trips (`services/routing/`, `state/tripStore.ts`)
+
+Pick a destination in **🧭 Trip** (`components/TripPlannerPanel.tsx`), and cruise drives there along real roads.
+
+- **Route source**: `RouteProvider` (`route(req, signal)`, `billable`). Default is an OSRM-compatible endpoint from runtime `window.ROUTING_ENDPOINT` (unset → public OSRM demo, `''` → off). Every failure is a `RouteError` with a kind the planner explains — never a fake route. A Google Directions provider does not exist; the meter's `directions` cap is 0 (see `BILLING_SAFETY_CHECKLIST.md`).
+- **Geometry**: `buildActiveRoute` keeps cumulative vertex distances, a 10 m resample (`polyline_resample`) and each step's along-track position (`polyline_project`). `projectOnRoute` searches a window around the last progress so out-and-back roads stay monotone.
+- **Following**: `useCruiseMode` takes `routeGuide: getActiveRouteGuide`. With a trip in `driving`, each hop calls `RouteFollower.planHop(position, links)`: aim 12 m ahead along the route and take the link whose heading tracks it. **On-route hops pass no target hint, so they make zero extra Maps calls** — `useCruiseMode.route.test.tsx` asserts it; do not add a prefetch there. Cross-track > 40 m (or no link within 100° of the route) for 2 hops → one metered `getPanorama` re-snap 20 m ahead + `teleportToPanoSafe` (hold-pause path). Arrival (≤ 20 m) stops cruise and writes the summary. The car body eases toward the route after each hop (car mode only; snaps under reduced motion; head look follows only with rigid coupling).
+- **State**: `tripStore` is an external store like `povStore` (progress changes per hop) — never put it in a provider value. Readers: the planner (`useTripSelector`), the globe (`globe/globeTripRoute.ts`), the cabin (`views/car/useCabinRouteGuidance.ts` → `setCarRouteGuidance` → `CenterDisplay`), the announcer (200 m / 50 m / arrival), `window.__STREETVIEW_PROBE__.getTrip()`.
+- **Links & sessions**: `?route=lat,lng;…` (a `string` flag in `flags.ts`) plans on load; shared sessions carry the encoded stops (`SessionState.route`) and guests plan locally — the polyline never travels.
+- **Session call meter** (`services/maps/callBudget.ts`): any new `getPanorama` call site must `tryConsume('panorama', '<source>')` first.
+- **Live conditions** (`services/conditions/openMeteo.ts`, `app/LiveConditionsDriver.tsx`, `state/liveConditionsStore.ts`): opt-in Open-Meteo weather eased onto the weather controls over 1 s; one request / 10 min within 25 km; any slider move is a manual override until "Resume live".
+- **Trip-aware radio** (`services/radio/tripRadio.ts`, `views/car/useCabinRadioBinding.ts`): after > 50 km, retune (fade-through) only on a country/state change and never a pinned station.
 
 ### Car Mode Rendering Stack
 
@@ -605,7 +644,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 - **Primary (prod deploys)**: Runtime `window.MAPS_API_KEY` via `public/config.js` (injected by `deploy.py` when you pass `MAPS_API_KEY=...`).
 - **Fallback**: `REACT_APP_MAPS_API_KEY` baked at build time.
 - The committed `public/config.js` must **never** contain a real key (now empty + example file provided).
-- `.env` (plain) is gitignored; real dev keys only in `.env.local`.
+- Every `.env*` file except the `*.example` templates is gitignored (and `check-deploy-secrets.sh` / gitleaks fail if one is tracked); real dev keys only in `.env.local`.
 - Every production key **must** list **all** demo hosts under HTTP referrers:
   ```
   https://test.1ink.us/*
@@ -616,7 +655,7 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 **Never** rely on a single baked key for multiple hosts with different restrictions. Always prefer the runtime override for the official demo. Do not commit new keys.
 
 ### 6. Shader Uniform Layouts
-`weather-post.wgsl` (fragment pass, active by default) and `weather-post-compute.wgsl` (compute pass, opt-in via `?weather=compute` — see `docs/RENDERER_FALLBACK.md`) both expect the same 40-float (160-byte) parameter layout. The single source of truth is `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) — both `WeatherPostProcessor.ts` and `ComputeWeatherPostProcessor.ts` import it instead of hardcoding indices:
+`weather-post.wgsl` (fragment pass, active by default) and `weather-post-compute.wgsl` (compute pass, opt-in via `?weather=compute` — see `docs/RENDERER_FALLBACK.md`) both expect the same 44-float (176-byte) parameter layout. The single source of truth is `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) — both `WeatherPostProcessor.ts` and `ComputeWeatherPostProcessor.ts` import it instead of hardcoding indices:
 ```
 [0-5]   vibrance, saturation, contrast, exposure, temperature, tint
 [6-10]  time, rainIntensity, snowIntensity, wind, speed
@@ -629,7 +668,9 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 [35]    wasmNoiseEnabled
 [36]    sunrise
 [37]    anamorphicStreak
-[38-39] padding
+[38-39] dofStrength, motionBlurStrength
+[40-41] horizonEstimateY, horizonBlend (image-derived horizon, gpuChores/horizonEstimate.ts)
+[42-43] padding
 ```
 
 The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
@@ -667,7 +708,7 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 - **Artifacts**: traces / screenshots / video under `test-results/` and `playwright-report/` (gitignored); CI uploads them on failure
 
 ### Unit tests (Vitest/jsdom) vs. browser E2E (Playwright)
-- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `panoramaLookAround.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
+- **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
 
@@ -683,7 +724,9 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
-  under both g++ and clang++. Needs only `cmake` and a C++20 compiler.
+  under g++, clang++ and clang++ `-march=x86-64-v3`. Needs only `cmake` and a
+  C++20 compiler. Everything (emcc too) builds with `-ffp-contract=off`: the
+  goldens are bit-exact, and an FMA-contracting compiler would break them.
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
@@ -696,6 +739,11 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   the JS fallback (runs with `npm test`).
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
+- **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
+  marshalling wrappers over the committed binary. Kernel buffers live in a
+  `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
+  kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
+  stack and corrupted `batch_haversine` at |lat| > 45°.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
   and `build-wasm-emscripten` (C++ → wasm via pinned emcc + ABI check + SIMD goldens). Both are
   required.
@@ -704,8 +752,10 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code — the JS fallback is a degrade/test twin, not a third place to
 invent behaviour. Geodesy in particular has exactly one copy per formula:
-`haversineDistance` (`navigation.ts`) and `offsetLatLng`
-(`historicalImagery.ts`) are thin dispatches onto the WASM exports. Full detail: `docs/WASM_BRIDGE.md`.
+`haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
+(`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
+geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
+`polyline_project`. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests
@@ -714,7 +764,6 @@ invent behaviour. Geodesy in particular has exactly one copy per formula:
 - `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
-- `src/utils/panoramaLookAround.test.ts` — Pure math for the hold-pause look-around UV shift (`wrapPanDelta`, `heldLookAroundUvDelta`, zoom scaling).
 - `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
 - `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
@@ -729,7 +778,9 @@ invent behaviour. Geodesy in particular has exactly one copy per formula:
 - `src/car/interior/windshieldPortal.parity.test.ts` — drift tripwire: reads the shipped `weather-post.wgsl` and fails, by name, when a constant or the stage order the portal's display mirror assumes changes.
 - `src/car/interior/WindowWeatherOverlay.test.ts` — portal vs decal selection, the per-frame swap back to the decal when the road frame goes away, wiper phase as the single driver, texture ownership on dispose, and the probe.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
-- `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin. Skips where there is no adapter. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
+- `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
+- Both GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
@@ -747,7 +798,7 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
    - **Fail signal**: any `[StreetViewProbe] INVARIANT VIOLATION: ...` warning in the console. This means the `holdActive` guard was bypassed and live Google Maps content reached the screen.
    - You should see one `[StreetViewProbe] hold armed at T=...` / `first stable at T+...ms` / `released at T+...ms (hold total)` triple per hop, with the released delta consistent (roughly 400–1900ms: `STABILITY_MIN_DELAY_MS`..`STABILITY_MAX_WAIT_MS` plus the 250ms release crossfade) and no repeated "Stability fallback" log spam.
 2. During a hop (while held), click-drag the mouse to look around. The frozen pano should pan with the drag; rain/snow/fog should keep animating. Releasing the mouse should not change which way you're facing once the new pano loads.
-3. Click a MiniMap point (or trigger an autopilot waypoint / globe Orbital Drop) far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
+3. Trigger a search result, an autopilot waypoint, or a globe Orbital Drop far from the current location. Same expectation as cruise hops: hold, then clean crossfade — no blurry pop-in.
 4. Optional deeper check: `window.__STREETVIEW_PROBE__.enablePixelWatch()` in DevTools, then repeat step 1. Inspect `window.__STREETVIEW_PROBE__.getWarnings()` afterward — should be empty.
 5. Automated: `npm run test:e2e:keyed` (with `REACT_APP_MAPS_API_KEY`) covers hold-pause probe warnings over N hops; `npm run probe:hold-pause -- --hops=10` adds intra-hold pixel consistency. Non-zero exit / `FAIL` means a probe warning or sudden brightness jump.
 
@@ -891,12 +942,13 @@ MAPS_API_KEY='...' python deploy.py
 
 1. **WebGPU Support**: Requires modern Chrome/Edge. Falls back to hidden canvas view if unavailable.
 2. **Canvas Scraping Fragility**: Any Google Maps DOM restructure will silently break the canvas feed.
-3. **Mobile**: WebGPU on mobile is limited; a touch-friendly `MobileUI.tsx` fallback is active but car mode is desktop-focused.
+3. **Mobile**: WebGPU on mobile is limited; touch gestures (`useTouchControls`) and device-tuned quality presets exist but car mode is desktop-focused.
 4. **Accessibility**: Keyboard navigation works globally; screen-reader support is present via `useAnnouncer` and ARIA live regions but can be enhanced.
 5. **Offline**: Limited offline mode — app shell + saved snapshots/metadata via service worker and IndexedDB. Google Street View tiles are **not** cached (Maps ToS). See README § Offline Mode.
 6. **API Key Exposure**: Fallback key may be visible in build-time env; prefer runtime `config.js` for production.
-7. **API Rate Limits**: Google Directions API quotas may throttle heavy route planning.
-8. **Build tool**: Vite 5 (CRA removed). Relative `base: './'` preserves Contabo `/streetview` deploys; `build/static/js/main.[hash].js` layout keeps `deploy.py` key baking.
+7. **API Rate Limits**: Maps JavaScript API and the opt-in Street View Static rearview feed are quota/billing-bound (`BILLING_SAFETY_CHECKLIST.md`). Nothing in `src/` calls the Directions API — trip routes come from an OSRM-compatible endpoint, whose public demo server is for low volume only.
+10. **Routed trips**: no traffic, lane guidance or voice; routing needs the network (offline stays link-graph walking); cruise pace is Street View hop pace, so ETAs are at that pace, not road speed.
+8. **Build tool**: Vite 7 (CRA removed). Relative `base: './'` preserves Contabo `/streetview` deploys; `build/static/js/main.[hash].js` layout keeps `deploy.py` key baking.
 9. **Hidden Google Maps error UI flicker**: When the Maps key is invalid or referrer-blocked, Google injects `.gm-err-*` elements into the hidden Street View scraper div. Because the scraper must stay `opacity:1` for Google to keep rendering, those error elements can flash and produce visible flicker. The fix is to suppress them via CSS scoped to `.streetview-scraper` and/or remove them on `gm_authFailure`.
 
 ---
@@ -915,13 +967,13 @@ MAPS_API_KEY='...' python deploy.py
 Single-product Vite + React project; `npm install` / `npm ci` is the only dependency step (runs automatically on VM startup). Standard commands live in **Build, Test, and Deploy Commands** above — reuse those rather than inventing new ones.
 
 - **Run the app**: `npm start` (Vite on `http://localhost:3000`). Use `npm run lint` before pushing; CI runs lint then `npm run build`. Bundle gzip / Cesium-in-main budgets are enforced by `scripts/check-bundle-budget.sh` via `verify-build.sh`.
-- **Type check**: `npm run typecheck` (`tsc --noEmit`).
-- **Tests**: `npm test` (Vitest). `src/setupTests.ts` polyfills `TextDecoder`/`TextEncoder`, which jsdom does not implement (some transitive deps expect them at module-load time).
-- **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. The committed `.env` value is an intentional placeholder — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
+- **Type check**: `npm run typecheck` (`tsc -b`). **Everything**: `npm run verify`.
+- **Tests**: `npm test` (Vitest, **node environment by default** — a suite that needs the DOM starts with `// @vitest-environment jsdom`). `src/setupTests.ts` registers jest-dom, `fake-indexeddb`, and polyfills `TextDecoder`/`TextEncoder`.
+- **Google Maps API key is required for the CORE feature (Street View)**. With no key the app still boots and renders its full React UI, but the main canvas stays black and shows a "No Google Maps API key is configured" banner. For local dev, put a key (with `http://localhost:3000/*` in its HTTP-referrer allowlist) in `.env.local` as `REACT_APP_MAPS_API_KEY=...` or `VITE_MAPS_API_KEY=...` (gitignored) **or** set `window.MAPS_API_KEY` in `public/config.js`. `.env` is no longer tracked — never commit a real key. Vite loads env at server start, so **restart `npm start` after editing `.env.local`**.
 - **Symptom → cause: stuck at "Connecting to Google Maps... 15%" with a black canvas and NO error banner.** This means the key string is valid enough to load the Maps JS library (`window.__mapsApiLoadState.status === 'ready'`) but Google fires `gm_authFailure` when the Street View panorama actually renders, so no `<canvas>` is ever produced and the loading gate never advances. The usual cause is the key's **HTTP-referrer restriction not allowing the current origin** (e.g. a key scoped to `test.1ink.us`/`go.1ink.us` will fail on `http://localhost:3000`), or disabled billing / Maps JavaScript API. Fix it in Google Cloud Console (add `http://localhost:3000/*` to the key's allowlist); it is not a code or VM bug. Note the dev server is plain **http**, so the allowlist entry must be `http://localhost:3000/*` — an `https://localhost:3000/*` entry will NOT match and still fails. To see the exact reason, capture full browser console output while loading a minimal panorama page: Google logs the precise error (`RefererNotAllowedMapError`, `ApiNotActivatedMapError`, `BillingNotEnabledMapError`, or `InvalidKeyMapError`) plus the exact "site URL to be authorized". Referrer changes can take several minutes to propagate.
 - **Headless/cloud browser GPU limits** (not code bugs): the headless Chrome here reports WebGPU unavailable (`console.warn: WebGPU not supported`), so the boot probe **hard-fails** (blocking overlay; no WebGL weather session). Cesium Globe mode is interactive (camera responds to drag/zoom) but Earth textures may not load, and Car mode's Three.js interior may fail to initialize due to WebGL context contention. Full GPU rendering (WebGPU dual-pass Street View, Cesium terrain, car interior) needs a real GPU browser — verify those visually on a WebGPU-capable Chrome/Edge, not in the headless VM.
 - `package-lock.json` is tracked. Prefer `npm ci` in automation (CI already does); always commit lockfile updates with dependency changes.
 
 ---
 
-*Last Updated: September 28, 2026*
+*Last Updated: October 7, 2026*

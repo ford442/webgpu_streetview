@@ -1,13 +1,17 @@
+// @vitest-environment jsdom
 import { clearAuthFailure, loadMapsApi, onMapsAuthFailure } from './loader';
+
+// Test-only view of window for installing/removing globals without `any`.
+const win = window as unknown as Record<string, unknown>;
 
 const resetMapsGlobals = () => {
   clearAuthFailure();
   document.head.innerHTML = '';
   document.body.innerHTML = '';
-  delete (window as any).google;
-  delete (window as any).gm_authFailure;
-  delete (window as any).__mapsApiLoadState;
-  delete (window as any).__initWebGpuStreetviewMaps;
+  delete win.google;
+  delete win.gm_authFailure;
+  delete win.__mapsApiLoadState;
+  delete win.__initWebGpuStreetviewMaps;
 };
 
 describe('loadMapsApi', () => {
@@ -36,7 +40,7 @@ describe('loadMapsApi', () => {
     appendSpy.mockImplementation((node: Node) => {
       const script = node as HTMLScriptElement;
       setTimeout(() => {
-        (window as any).google = {
+        win.google = {
           maps: {
             importLibrary: jest.fn((libraryName: string) => {
               importedLibraries.push(libraryName);
@@ -44,7 +48,7 @@ describe('loadMapsApi', () => {
             }),
           },
         };
-        (window as any).__initWebGpuStreetviewMaps?.();
+        (win.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
       }, 0);
       return script;
     });
@@ -123,14 +127,14 @@ describe('loadMapsApi', () => {
     appendSpy.mockImplementation((node: Node) => {
       const script = node as HTMLScriptElement;
       setTimeout(() => {
-        (window as any).google = {
+        win.google = {
           maps: {
             Map: function MockMap() {},
             StreetViewPanorama: function MockStreetViewPanorama() {},
             importLibrary: jest.fn(() => Promise.resolve({})),
           },
         };
-        (window as any).__initWebGpuStreetviewMaps?.();
+        (win.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
       }, 0);
       return script;
     });

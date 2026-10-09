@@ -82,12 +82,16 @@ function leatherHeightField(size: number): Float32Array {
   for (const row of stitchRows) {
     for (let x = 0; x < size; x++) {
       for (let dyOff = -2; dyOff <= 2; dyOff++) {
-        field[(row + dyOff) * size + x] -= 0.5; // seam groove
+        const groove = (row + dyOff) * size + x;
+        field[groove] = (field[groove] ?? 0) - 0.5; // seam groove
       }
       if (x % dash < dash * 0.55) {
-        field[row * size + x] += 1.6; // raised thread
-        field[(row - 1) * size + x] += 0.9;
-        field[(row + 1) * size + x] += 0.9;
+        const raise = (idx: number, by: number) => {
+          field[idx] = (field[idx] ?? 0) + by;
+        };
+        raise(row * size + x, 1.6); // raised thread
+        raise((row - 1) * size + x, 0.9);
+        raise((row + 1) * size + x, 0.9);
       }
     }
   }

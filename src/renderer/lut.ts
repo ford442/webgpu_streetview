@@ -1,7 +1,7 @@
 /**
  * 3D LUT helpers — HALD strip PNGs → texture_3d volumes.
  *
- * Layout is textures, not weather uniforms (the 40-float buffer stays full).
+ * Layout is textures, not weather uniforms (the 44-float weather block is untouched).
  * Identity / missing LUT = skip sampling so default ACES pixels do not change.
  *
  * Strip convention: width = size*size, height = size. Voxel (x,y,z) lives at

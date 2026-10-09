@@ -29,8 +29,19 @@ cpp/build-emscripten/
 cpp/build-host/
 cpp/build-asan/
 cpp/build-clang/
+cpp/build-clang-v3/
 cpp/compile_commands.json
 node_modules/
 public/wasm/*.js
 __pycache__/
 *.pyc
+
+# Agent / editor / ad-hoc capture clutter (never commit)
+.playwright-mcp/
+repro-screenshots/
+verification/
+.idea/
+.jules/
+.env*
+!.env.example
+!.env.*.example

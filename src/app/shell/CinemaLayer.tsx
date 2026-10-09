@@ -1,3 +1,4 @@
+import { useThrottledPov } from '../../state/povStore';
 import CinemaOverlay from '../../components/CinemaOverlay';
 import type { ClipOverlaySource } from '../../utils/canvasRecorder';
 import { buildStudioShareUrl } from '../../utils/studioLink';
@@ -10,9 +11,6 @@ interface CinemaLayerProps {
   cinema: ReturnType<typeof useCinemaMode>;
   renderer: StreetViewRenderer | null;
   panorama: google.maps.StreetViewPanorama | null;
-  heading: number;
-  pitch: number;
-  zoom: number;
   lookId: LookId | null;
   vehicleType: VehicleType;
   imageDate: string | null;
@@ -31,9 +29,6 @@ export function CinemaLayer({
   cinema,
   renderer,
   panorama,
-  heading,
-  pitch,
-  zoom,
   lookId,
   vehicleType,
   imageDate,
@@ -42,6 +37,9 @@ export function CinemaLayer({
 }: CinemaLayerProps) {
   const { isCinemaMode, letterbox, gradingLocked, exitCinemaMode, setLetterbox, setGradingLocked } =
     cinema;
+  // The studio link tracks the frame on screen. POV lives outside React state, so
+  // subscribe here (5 Hz is plenty for a share URL) instead of re-rendering the shell.
+  const { heading, pitch, zoom } = useThrottledPov((p) => p, 5);
   if (!isCinemaMode) return null;
 
   const position = panorama?.getPosition();

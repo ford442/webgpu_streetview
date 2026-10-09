@@ -29,7 +29,7 @@ export const WEBGL_WEATHER_FRAGMENT_GLSL = `#version 300 es
 precision highp float;
 
 uniform sampler2D uScene;
-uniform float uWeather[40]; // WEATHER_PARAMS_FLOAT_COUNT — keep in sync with weatherUniformLayout.ts
+uniform float uWeather[44]; // WEATHER_PARAMS_FLOAT_COUNT — keep in sync with weatherUniformLayout.ts
 uniform vec4 uView;
 uniform int uEffectIsolation;
 uniform bool uWireframe;
@@ -112,7 +112,10 @@ vec3 applyNight(vec3 col, vec2 uv) {
 // SDR approximations of viewHorizonY / viewDepthProxy / fogHeightFalloff from
 // weather-post.wgsl. Same shape, no fbm rolling layer (cost) — see docs/GRAPHICS.md.
 float viewHorizonY() {
-    return clamp(0.5 + (uWeather[34] - 0.5) * 2.0, -0.75, 1.75);
+    float predicted = 0.5 + (uWeather[34] - 0.5) * 2.0;
+    float w = clamp(uWeather[41], 0.0, 1.0);
+    float y = w > 0.0 ? mix(predicted, uWeather[40], w) : predicted;
+    return clamp(y, -0.75, 1.75);
 }
 
 float viewDepthProxy(vec2 uv, float horizonY) {

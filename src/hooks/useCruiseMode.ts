@@ -1,15 +1,30 @@
+import { povStore } from '../state/povStore';
 import { useRef, useEffect, useState } from 'react';
 import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
 import { gearChainedHopIntervalMs } from '../car/VehicleDynamics';
 import { isGeocodeDenied } from '../search/geocodeAuth';
-import { DEFAULT_LINK_CONE_DEG, findBestLink } from '../utils/navigation';
+import { DEFAULT_LINK_CONE_DEG, findBestLink, initialBearing } from '../utils/navigation';
+import type { RouteHopDecision } from '../services/routing/routeFollow';
+import type { LatLng } from '../services/routing/RouteProvider';
+
+/**
+ * Route guidance for a routed road trip (`app/useTripBindings.ts`). Cruise asks
+ * it which way to go before each hop; it never makes a Maps call on-route.
+ */
+export interface CruiseRouteGuide {
+  planHop(position: LatLng, links: readonly google.maps.StreetViewLink[]): RouteHopDecision;
+  /** After every hop attempt, with the pano position it ended on. */
+  afterHop(position: LatLng | null, moved: boolean): void;
+  /** One metered re-snap to a route point; resolves true when the pano moved there. */
+  resnap(target: LatLng): Promise<boolean>;
+  arrived(): void;
+}
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;
   advanceSafe: (dir: 'forward', targetLatLng?: { lat: number; lng: number }, heading?: number) => Promise<void>;
   mapsAuthFailed: boolean;
-  heading: number;
   isTransitioning: boolean;
   setNavPending: (pending: boolean) => void;
   /**
@@ -27,7 +42,18 @@ export interface UseCruiseModeOptions {
    * cruise stays engaged but no hop is issued. Defaults to a single hop.
    */
   hopsPerTick?: () => number;
+  /**
+   * The active route guide, read fresh each hop (null = greedy cruise). With a
+   * guide, each hop aims at the link that tracks the route instead of the
+   * committed heading — same `getLinks` + `setPano`, no extra API calls.
+   */
+  routeGuide?: () => CruiseRouteGuide | null;
 }
+
+type HopOutcome = 'moved' | 'stuck' | 'arrived';
+
+const toLatLng = (p: google.maps.LatLng | null): LatLng | null =>
+  p ? { lat: p.lat(), lng: p.lng() } : null;
 
 /**
  * Cone cruise is allowed to re-aim into when no link sits inside the tight
@@ -45,38 +71,29 @@ function bearingBetween(
   from: google.maps.LatLng,
   to: google.maps.LatLng
 ): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
-  const lat1 = toRad(from.lat());
-  const lat2 = toRad(to.lat());
-  const dLng = toRad(to.lng() - from.lng());
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  return initialBearing(from.lat(), from.lng(), to.lat(), to.lng());
 }
 
 export function useCruiseMode({
   panorama,
   advanceSafe,
   mapsAuthFailed,
-  heading,
   isTransitioning,
   setNavPending,
   loadOfflineRouteGraphNodes,
   hopsPerTick,
+  routeGuide,
 }: UseCruiseModeOptions) {
   const [isCruiseMode, setIsCruiseMode] = useState(false);
   const offlineNodesRef = useRef<RouteGraphNode[]>([]);
 
-  // Live view heading — tracks head-look every render but is NOT the travel
-  // direction. Used only to seed the committed heading when cruise starts.
-  const liveHeadingRef = useRef(heading);
-  liveHeadingRef.current = heading;
+  // The live view heading (povStore — head-look moves it without a render) is
+  // NOT the travel direction. It only seeds the committed heading when cruise starts.
 
   // Committed travel heading. Frozen against passive head-look so that looking
   // around in free-look/car mode never redirects cruise. Self-corrects to the
   // road after each successful hop via the position-change bearing.
-  const cruiseHeadingRef = useRef(heading);
+  const cruiseHeadingRef = useRef(povStore.get().heading);
 
   const cruiseIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const useTransitionRef = useRef(isTransitioning);
@@ -86,6 +103,8 @@ export function useCruiseMode({
   const hopInFlightRef = useRef(false);
   const hopsPerTickRef = useRef(hopsPerTick);
   hopsPerTickRef.current = hopsPerTick;
+  const routeGuideRef = useRef(routeGuide);
+  routeGuideRef.current = routeGuide;
   // AppShell re-renders on scraper self-check (~2s) and look-around, which
   // recreates `advanceSafe`. The hop interval must not restart on that
   // identity churn — 2s < 3s meant cruise never issued a hop.
@@ -104,7 +123,7 @@ export function useCruiseMode({
     }
     // Commit the current view heading as the travel direction the moment cruise
     // engages. From here it evolves only from real movement, not head-look.
-    cruiseHeadingRef.current = liveHeadingRef.current;
+    cruiseHeadingRef.current = povStore.get().heading;
     // Load any previously-prefetched route graphs once per cruise session so a
     // flaky connection doesn't pay an IndexedDB round trip on every hop.
     offlineNodesRef.current = [];
@@ -119,9 +138,12 @@ export function useCruiseMode({
      * Graph walk: getLinks → heading nearest cruiseHeadingRef → setPano.
      * Must not call Geocoder. `advanceSafe` is Street View links only.
      */
-    const singleHop = async (): Promise<boolean> => {
+    const singleHop = async (): Promise<HopOutcome> => {
       const panoIdBefore = panorama.getPano();
       const posBefore = panorama.getPosition() ?? null;
+      const guide = routeGuideRef.current?.() ?? null;
+      const here = toLatLng(posBefore);
+      if (guide && here) return routeHop(guide, here, panoIdBefore);
       // Prefer a known next pano from a prefetched route graph, if we have
       // one for the current location — pre-warms the pano cache so the hop
       // stays smooth even when the live `getLinks()` round trip is slow.
@@ -168,9 +190,45 @@ export function useCruiseMode({
         if (posBefore && posAfter) {
           cruiseHeadingRef.current = bearingBetween(posBefore, posAfter);
         }
-        return true;
+        return 'moved';
       }
-      return false;
+      return 'stuck';
+    };
+
+    /**
+     * Routed hop: the guide picks the link that tracks the route (no target
+     * hint, so no pano prefetch — on-route hops make zero extra Maps calls),
+     * asks for one metered re-snap when off the route, or ends the trip.
+     */
+    const routeHop = async (
+      guide: CruiseRouteGuide,
+      here: LatLng,
+      panoIdBefore: string,
+    ): Promise<HopOutcome> => {
+      const links = (panorama.getLinks?.() ?? [])
+        .filter((link): link is google.maps.StreetViewLink => link != null);
+      const decision = guide.planHop(here, links);
+      if (decision.kind === 'arrived') {
+        guide.arrived();
+        setIsCruiseMode(false);
+        return 'arrived';
+      }
+      setNavPending(true);
+      try {
+        if (decision.kind === 'resnap') {
+          console.log(`[CruiseMode] Off route (${decision.reason}) — re-snapping ahead`);
+          await guide.resnap(decision.target);
+        } else {
+          cruiseHeadingRef.current = decision.heading;
+          await advanceSafeRef.current('forward', undefined, decision.heading);
+        }
+      } finally {
+        setNavPending(false);
+      }
+      await new Promise(r => setTimeout(r, 1500));
+      const moved = Boolean(panorama.getPano()) && panorama.getPano() !== panoIdBefore;
+      guide.afterHop(toLatLng(panorama.getPosition() ?? null), moved);
+      return moved ? 'moved' : 'stuck';
     };
 
     const hop = async () => {
@@ -195,6 +253,7 @@ export function useCruiseMode({
 
       hopInFlightRef.current = true;
       let movedAny = false;
+      let arrived = false;
       try {
         for (let i = 0; i < hops; i++) {
           // Re-read the gear between chained hops so shifting into P/N (or
@@ -203,16 +262,22 @@ export function useCruiseMode({
             await new Promise(r => setTimeout(r, gearChainedHopIntervalMs(hops)));
             if (hopsPerTickRef.current && hopsPerTickRef.current() <= 0) break;
           }
-          const moved = await singleHop();
-          movedAny = movedAny || moved;
+          const outcome = await singleHop();
+          if (outcome === 'arrived') {
+            arrived = true;
+            break;
+          }
+          movedAny = movedAny || outcome === 'moved';
           // Dead end: no point spending the remaining hops of this tick.
-          if (!moved) break;
+          if (outcome !== 'moved') break;
         }
       } finally {
         hopInFlightRef.current = false;
       }
 
-      if (movedAny) {
+      if (arrived) {
+        cruiseFailCountRef.current = 0;
+      } else if (movedAny) {
         cruiseFailCountRef.current = 0;
       } else if (isGeocodeDenied()) {
         // Address lookup is not the hop. Denial is logged once in geocodeAuth.

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Optional local guard. Install with: npm run hooks:install
+# Runs gitleaks on staged changes when it is available (brew/apt/go install gitleaks).
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --config .gitleaks.toml --redact || exit 1
+else
+  echo "pre-commit: gitleaks not installed — skipping local secret scan (CI still runs it)." >&2
+fi
+bash scripts/check-deploy-secrets.sh >/dev/null || { bash scripts/check-deploy-secrets.sh; exit 1; }

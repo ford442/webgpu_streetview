@@ -34,7 +34,7 @@ import { resolveIceServers } from '../utils/iceServers';
  * TURN is optional — configure via REACT_APP_TURN_* or runtime window.TURN_*
  * in public/config.js. See docs/SHARED_SESSIONS.md.
  *
- * See docs/feature_expansion_plan.md §14.3.
+ * See docs/archive/feature_expansion_plan.md §14.3.
  */
 
 export interface SessionState {
@@ -54,6 +54,11 @@ export interface SessionState {
   carHeading?: number;
   /** Informational host display cap; guests do not change their own HDR path. */
   hdr?: boolean;
+  /**
+   * Planned trip stops in `?route=` form (`lat,lng;lat,lng…`). Guests plan the
+   * same road route themselves; the polyline never travels over the channel.
+   */
+  route?: string;
   seq: number;
 }
 

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import HistoricalTimeline, { type HistoricalTimelineProps } from './HistoricalTimeline';
@@ -54,6 +55,12 @@ describe('HistoricalTimeline year strip', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Compare with Jul 2011' }));
     expect(onCompare).toHaveBeenCalledWith(props.entries[0]);
     expect(screen.getByText(/road view only/)).toBeInTheDocument();
+  });
+
+  it('shows the compare scope it is given (cabin included when composited)', () => {
+    renderPanel({ onCompare: vi.fn(), compareScopeLabel: 'Compare stills include the cabin, as drawn in the frame.' });
+    expect(screen.getByText(/include the cabin/)).toBeInTheDocument();
+    expect(screen.queryByText(/road view only/)).toBeNull();
   });
 
   it('keeps pointer and key events off the scene', () => {

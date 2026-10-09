@@ -59,17 +59,22 @@ const DOCUMENTED_LAYOUT: ReadonlyArray<[WeatherParamName, number]> = [
     ['anamorphicStreak', 37],
     ['dofStrength', 38],
     ['motionBlurStrength', 39],
+    ['horizonEstimateY', 40],
+    ['horizonBlend', 41],
+    ['horizonPad0', 42],
+    ['horizonPad1', 43],
 ];
 
 describe('weatherUniformLayout', () => {
-    it('declares exactly 40 floats / 160 bytes', () => {
-        expect(WEATHER_PARAMS_FLOAT_COUNT).toBe(40);
-        expect(WEATHER_PARAMS_BYTE_SIZE).toBe(160);
+    it('declares exactly 44 floats / 176 bytes (a multiple of 4 floats)', () => {
+        expect(WEATHER_PARAMS_FLOAT_COUNT).toBe(44);
+        expect(WEATHER_PARAMS_BYTE_SIZE).toBe(176);
+        expect(WEATHER_PARAMS_FLOAT_COUNT % 4).toBe(0);
         expect(Object.keys(WeatherParamIndex)).toHaveLength(WEATHER_PARAMS_FLOAT_COUNT);
         expect(DOCUMENTED_LAYOUT).toHaveLength(WEATHER_PARAMS_FLOAT_COUNT);
     });
 
-    it('has unique indices covering 0..39 exactly', () => {
+    it('has unique indices covering 0..43 exactly', () => {
         const values = Object.values(WeatherParamIndex);
         expect(new Set(values).size).toBe(WEATHER_PARAMS_FLOAT_COUNT);
         expect([...values].sort((a, b) => a - b)).toEqual(

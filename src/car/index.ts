@@ -143,6 +143,7 @@ export {
     setCarSeatOffset,
     setCarLocationInfo,
     setCarCompassHeading,
+    setCarRouteGuidance,
     setCarPanoEnvironment,
     setCarSunPosition,
     updateCarGauges,

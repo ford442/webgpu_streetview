@@ -3,9 +3,11 @@
 Street View post-processing has a **WebGPU-required** boot contract:
 
 - `webgpu`: the primary dual-pass renderer in `src/renderer/Renderer.ts` (only live weather path).
-- `webgl`: **not a live backend**. SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for tests/docs. `createStreetViewRenderer` does not import a GL weather class. `?renderer=webgl` still probes WebGPU only (`webgpuProbe.webglPreferenceDeferred`).
+- `webgl`: **opt-in only, via `?webgl2=1`**. `src/renderer/webgl/WebGL2FallbackRenderer.ts` runs the SDR GLSL from `weatherReference.glsl.ts`; `createStreetViewRenderer` lazy-imports it only after WebGPU failed *and* the flag is set. `?renderer=webgl` still probes WebGPU only (`webgpuProbe.webglPreferenceDeferred`).
 
-Failed WebGPU boot probe → **hard-fail** (blocking overlay on the pano). The app does **not** construct a WebGL weather context and does **not** elevate raw Street View as a weather session.
+Failed WebGPU boot probe without `?webgl2=1` → **hard-fail**: a red "WebGPU is required … add `?webgl2=1`" banner (`RendererBackendIndicator`). There is never an automatic fallback — WebGPU failures stay visible.
+
+With `?webgl2=1` and a failed WebGPU boot → the WebGL2 renderer runs, a persistent amber banner reads **"WebGL2 fallback active — WebGPU not in use"**, and the same text is `console.warn`ed. It lacks compute weather, LUTs, temporal history, GPU snapshots and the one-frame cabin compositor. If WebGL2 also fails (e.g. the canvas already holds a `webgpu` context), the boot hard-fails as above.
 
 On capable adapters (`webgpuProbe.ok` + the shared Street View `GPUDevice`) the default cabin is `THREE.WebGPURenderer({ device })` and it is **no longer a second canvas**: `src/car/interior/cabinFrameTarget.ts` points that renderer at a `THREE.RenderTarget` via `setOutputRenderTarget`, publishes the target's `GPUTexture` on `src/renderer/cabinOverlayRegistry.ts`, and `src/renderer/cabinComposite.ts` draws it over the swap chain in the road frame's own command encoder (pass 1 → weather → cabin → submit). One `requestDevice`, one `configureCanvasContext`, one presented frame. The cabin canvas stays in the DOM but `visibility: hidden` while the compositor owns the frame — three still owns it and `setSize` / pointer plumbing measure it. `?cabin=webgl` is the escape hatch back to a second WebGL context and its CSS overlay. `?cabin=webgpu` still forces the shared-device path. The cabin must **not** call `configure()` on the panorama canvas (`configureCanvasContext` lives in `deviceInit.ts`, invoked only from `Renderer.ts`). Failed `WebGPURenderer.init()` falls back to the WebGL overlay; Street View weather stays up.
 
@@ -68,7 +70,7 @@ Because of (1), a wrapper three has finished with *can* be disposed — and is, 
 
 The gate is decided once, where the cabin renderer is constructed (`createCabinRenderer`), so it cannot disagree with the backend. Probe: `window.__CABIN_RENDERER_PROBE__.portal` → `{ active, reason?, clipDistances, frameFormat?, held? }`.
 
-**Testing it.** Unit: `windshieldWetMask` / `windshieldAperture` / `roadFrameBinding` / `windshieldPortalSupport` / `windshieldPortal.parity` / `WindowWeatherOverlay` / `Renderer.roadFrame` tests. GPU: `npx playwright test e2e/windshield-portal.spec.ts` drives `e2e/fixtures/windshield-portal/*` on Chromium's software WebGPU adapter (`--use-webgpu-adapter=swiftshader`, which exposes `clip-distances`); it skips where there is no adapter. Manual: car mode, rain on, WebGPU host — wiper arcs should leave a clean strip that re-wets; `?portal=off` or `?no_clip_distances` should fall back to the hole + decal with no console errors.
+**Testing it.** Unit: `windshieldWetMask` / `windshieldAperture` / `roadFrameBinding` / `windshieldPortalSupport` / `windshieldPortal.parity` / `WindowWeatherOverlay` / `Renderer.roadFrame` tests. GPU: `npx playwright test --project=chromium-webgpu e2e/windshield-portal.spec.ts` drives `e2e/fixtures/windshield-portal/*` on Chromium's software WebGPU adapter (SwiftShader, which exposes `clip-distances`); in that project a missing adapter is a failure, not a skip. Manual: car mode, rain on, WebGPU host — wiper arcs should leave a clean strip that re-wets; `?portal=off` or `?no_clip_distances` should fall back to the hole + decal with no console errors.
 
 ## Backend Selection
 
@@ -133,14 +135,18 @@ Legacy zoom/fade transition shaders (`transition-fade|zoom|zoom-blur|zoom-chroma
   - `alphaMode: 'opaque'`
   - `colorSpace: 'srgb'`
   - `usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC` — **`COPY_SRC` must never be dropped**; cinema clip capture and snapshots depend on it.
-  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+), gated on `float32-filterable` being enabled. Without that feature the request is soft-logged and the canvas stays SDR. Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 40 floats.
+  - `?hdr=1` => `format: 'rgba16float'` + `toneMapping: { mode: 'extended' }` (Chrome 123+). No optional feature is needed — an `rgba16float` canvas is core WebGPU (it used to be gated on `float32-filterable`, which no HDR path reads and which most mobile adapters lack). Whether the browser honours it is decided by the configure itself: a rejected descriptor falls back to SDR (below). Extended tone mapping is what stops the HDR intermediate being crushed to 8-bit at the display. Output-referred only — the weather uniform layout stays 44 floats.
 
     When the **applied** tone mapping is `extended` (never the requested flag — a rejected configure falls back to SDR and `bootDevice` rewrites the policy from `appliedCanvas`), both weather shaders are assembled with an output-referred `aces_tonemap` instead of the SDR one (`assembleExtendedToneMappingShader` in `shaderFeatureVariants.ts`). The ACES shoulder is evaluated against `EXTENDED_TONEMAP_HEADROOM` (4.0, SDR-relative) rather than assuming SDR white is the peak, so sun flare and headlights land in display headroom instead of clamping flat at 1.0. At headroom 1.0 the body is algebraically the SDR one. **No new uniform slot, no layout change** — the swap is a pipeline-create-time source substitution, the same mechanism as the subgroup and dual-source variants, and `npm run validate:shaders` naga-checks both assembled variants. Default SDR boot compiles the byte-identical historical shader; `shaderFeatureUses.extendedToneMapping` on the capability matrix says which ran.
   - `?p3=1` => `colorSpace: 'display-p3'`. `?p3=auto` follows `matchMedia('(color-gamut: p3)')`; `?hdr=auto` follows `matchMedia('(dynamic-range: high)')`. Both flags default to `off`, so nothing changes without an explicit opt-in.
   - `viewFormats` stays `[]` on HDR configure — there is no GPU UI overlay sampling an sRGB view of the swap-chain.
   - If the browser rejects the requested descriptor, the renderer re-configures as SDR sRGB, records `canvasDowngradeReason` on the capability matrix, and uses the applied format as its presentation format.
 - **Uncaptured errors**: `device.addEventListener('uncapturederror')` counts errors onto `capabilityMatrix.uncapturedErrorCount` / `lastUncapturedError`, logs them, and surfaces them on the backend chip. This is separate from the `device.lost` promise so the two paths never double-dispose.
-- **Device loss path**: on `device.lost`, renderer stops rendering, tears down GPU resources, calls `context.unconfigure()`, and relies on `WebGPUCanvas.tsx` reinit (`reinitCounter`) to construct a fresh renderer instance.
+- **Device loss path**: on `device.lost`, renderer stops rendering, tears down GPU resources, calls `context.unconfigure()`, and reports the loss to `WebGPUCanvas.tsx`, which re-inits through `DeviceLossRecovery` (`renderer/deviceLossRecovery.ts`): at most 3 attempts per incident with exponential backoff (0.5 s, 1 s, 2 s), then a terminal "GPU unavailable" overlay. A loss the renderer **caused** is never reported: `Renderer.destroy()` (and `bootDevice` on its own post-device failure paths) marks the teardown as intended first, so a failed boot can no longer loop destroy → lost → re-init → fail. A `destroy()` from anywhere else is treated as a genuine loss. The canvas context is acquired before `requestDevice`, and every failure after the device exists destroys it.
+- **Validation-safe pipelines**: every shader module and pipeline is built through `renderer/gpuPipelineFactory.ts` — `getCompilationInfo()` errors (logged as `file:line:col`), `create*PipelineAsync` rejections, and validation error scopes all become promise rejections instead of invalid objects that poison the frame's command buffer. `gpuObjectLabels.test.ts` forbids direct `createShaderModule` / `create*Pipeline` calls and unlabeled ones. Error scopes are one stack per device and pass inits run concurrently, so a scope is never held open across an `await`.
+- **Pass isolation** (`renderer/framePasses/`): the frame is an ordered registry — `streetview` (100, required) → `historical-wipe` (200) → `weather` (300) | `present-fallback` (310) → `cabin-composite` (400). All passes initialise concurrently; each ends `ready` or `failed(reason, compilation)` on `window.webgpuProbe.passes`, and only ready + enabled passes are encoded. A failed optional pass is skipped (the cabin falls back to the CSS overlay + 2D latch, the wipe to the crossfade); a failed `weather` pass is replaced by `PresentFallbackPostProcessor` (pass 1 → ACES → swap chain, inline WGSL) so the road frame still presents; a failed `streetview` pass fails boot at probe stage `pipeline`. A new pass is a file plus a `registry.register(...)`, with its **own** uniform buffer — the weather layout does not grow.
+- **Canvas backing store**: `components/canvasBackingStore.ts` sizes the canvas to CSS × DPR from a `ResizeObserver` (`devicePixelContentBoxSize` where it agrees with CSS × DPR, else `contentBoxSize × devicePixelRatio`; a `(resolution)` media query catches DPR-only changes), capped by the quality tier's `pixelRatio` (never below 1) and clamped to `device.limits.maxTextureDimension2D`. The device requests `min(adapter.maxTextureDimension2D, 8192)` rather than the 4096 floor, and `TextureLifecycle` clamps the intermediate and downscales an oversize Maps canvas into the largest texture that fits.
+- **Live upload readback**: the canvas stability fingerprint (`drawImage` + `getImageData` of the Maps canvas) runs only while a source is unproven, after a source or size change, and at 1 Hz — never per frame.
 - **Adapter probe surface**: a summarized adapter record is logged once and exposed at `window.rendererAdapterInfo` for diagnostics.
 - **One device only**: `adapter.requestDevice()` is called in exactly one place (`renderer/bootDevice.ts`, reached only from `Renderer.init()`); chores and weather share that device. Enforced by `deviceInit.test.ts`. After a failed boot probe, `#216` chores must use `isWebGpuProbeOk()` / WASM-JS and must **not** call `requestDevice` again.
 
@@ -184,12 +190,12 @@ Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-
 
 ## Weather Post-Process: Fragment vs Compute
 
-The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 40-float parameter layout:
+The WebGPU backend's second pass (weather rain/snow/fog/color grading) has two implementations that render the same effects from the same 44-float parameter layout:
 
 - **Fragment** (default): `src/renderer/WeatherPostProcessor.ts` + `public/shaders/weather-post.wgsl`. A single fullscreen-triangle render pass sampling the HDR intermediate texture.
 - **Compute**: `src/renderer/ComputeWeatherPostProcessor.ts` + `public/shaders/weather-post-compute.wgsl`. A compute pass (`@workgroup_size(16, 16, 1)`) writes into an `rgba32float` storage texture, followed by a cheap `textureLoad` blit render pass to the canvas. It exposes `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4, view-depth ping-pong), `plasmaBuffer` (binding 12, WASM fBm tile), and — when GPU particles are on — `dataTextureA/B` (bindings 7/8, density splat + particle state). `dataTextureC` stays a 1x1 dummy. Integrate/splat live in `public/shaders/weather-particles.wgsl`.
 
-Both read the same `40-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
+Both read the same `44-float` weather parameter layout, defined once in `src/renderer/weatherUniformLayout.ts` (`WeatherParamIndex`) and mirrored in both WGSL files' comments — see "Shader Uniform Layouts" in `AGENTS.md`.
 
 The one intentional difference is the *contents* of the CPU noise tile: the fragment path is fed a single Perlin octave (`fill_noise_buffer`) so its default look is unchanged, while the compute path gets a 4-octave fBm tile (`fill_fbm_buffer`). `WebGPUCanvas` selects this from `renderer.getWeatherPostProcessMode()`. The bilinear sampler itself is identical in both shaders and guarded by `weatherShaderParity.test.ts`; see `docs/WASM_BRIDGE.md`.
 
@@ -233,12 +239,13 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 
 | Surface | Policy | Notes |
 | --- | --- | --- |
-| `float32-filterable` | Requested when adapter exposes it | HDR intermediate + compute weather storage reads |
+| `float32-filterable` | Requested when adapter exposes it | Compute weather storage reads. No longer gates `?hdr` |
+| `maxTextureDimension2D` | `min(adapter, 8192)`; boot fails below 4096 | The canvas backing store (CSS × DPR) and the Maps canvas upload are clamped to it |
 | `timestamp-query` | Requested when adapter exposes it | **Used:** GPU pass timings in the performance overlay (P), via `timestampWrites` on the render/compute pass descriptor |
-| `timestamp-query-inside-passes` | Requested when adapter exposes it | Legacy fallback only — see `timestampWriteStrategy` below. Not used in shaders |
+| `timestamp-query-inside-passes` | **Not requested** | No shipping browser exposes this name (Chromium's is `chromium-experimental-timestamp-query-inside-passes`), so requesting it never enabled anything. `GpuPassTimer` keeps its `'inside-passes'` branch for a device that does expose it. |
 | `timestampWriteStrategy` | `'pass-descriptor'` / `'inside-passes'` / `'none'` | Which stamping path `GpuPassTimer` actually took this boot |
 | `subgroups` | Requested when adapter exposes it | **Used:** gpu-chores hist coalesced atomics (`gpu-chores-hist-subgroups.wgsl`) and compute-weather luma firefly reduce (`withSubgroupLumaReduce`). Scalar fallbacks stay naga-clean. `?gpu=compat` does not require the feature. |
-| `shader-f16` | Requested when adapter exposes it | **Unused in production WGSL.** `scripts/f16-naga-spike.wgsl` is the probe; naga-cli is installed unpinned in CI and newer builds now accept `enable f16`, so the guard in `validateShaders.test.ts` asserts the shipped state (no `enable f16;` in production WGSL, `shaderFeatureUses.shaderF16` false) rather than a validator version. Flipping it needs a production shader that actually uses `f16`. |
+| `shader-f16` | **Not requested** | **Unused in production WGSL**, so it is no longer requested (an enabled-but-unused feature only narrows the adapters a re-init can land on). `scripts/f16-naga-spike.wgsl` is the probe; naga-cli is installed unpinned in CI and newer builds now accept `enable f16`, so the guard in `validateShaders.test.ts` asserts the shipped state (no `enable f16;` in production WGSL, `shaderFeatureUses.shaderF16` false) rather than a validator version. Flipping it needs a production shader that actually uses `f16`. |
 | `rg11b10ufloat-renderable` | Requested when adapter exposes it | **Used:** Pass-1 HDR intermediate is `rg11b10ufloat` when enabled and alpha is unused; otherwise `rgba16float`. Recorded as `capabilityMatrix.intermediateFormat`. |
 | `dual-source-blending` | Requested when adapter exposes it | **Used:** fragment weather `fs_main` outputs precip as `@second_blend_source` (`assembleDualSourceWeatherShader`). In-shader `col + precipAdd` remains the naga-clean fallback. |
 | `clip-distances` | Requested when adapter exposes it; `?no_clip_distances` leaves it out | **Used:** gates the cabin's windshield portal — three emits the portal's aperture planes as hardware clip distances (no fragment `discard`). Without it the glass keeps today's hole + decal overlay. See § Windshield portal |
@@ -247,7 +254,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `intermediateFormat` | `rgba16float` (default) or `rg11b10ufloat` | Packed format only when `rg11b10ufloat-renderable` is enabled |
 | `maxTextureDimension2D` | Required ≥ 4096 | Panorama + HDR intermediate |
 | `maxStorageBufferBindingSize` / `maxBufferSize` | Required ≥ 65536 when `?weather=compute` | WASM noise tile + particle buffer headroom |
-| `maxComputeWorkgroupSizeX/Y` | Required ≥ 16 when compute weather | Matches `@workgroup_size(16,16,1)` |
+| `maxComputeWorkgroupSizeX/Y` | Required ≥ 16 when compute weather; ≥ 8 (and 64 invocations) added on fragment boots only when the adapter has them | Weather `@workgroup_size(16,16,1)`; chores `@workgroup_size(8,8,1)` never fail boot |
 | Sampler `maxAnisotropy` | Low=1, Medium=2, High=4, Ultra=8 | Clamped to `device.limits.maxAnisotropy`; fragment path only |
 | `featureLevel` | `'core'` (default) / `'compatibility'` (`?gpu=compat`) / `'unknown'` | `'unknown'` when the browser has no `featureLevel` field |
 | `forceFallbackAdapter` | `true` only for `?gpu=fallback` | Software adapter for CI and probe runs |
@@ -259,6 +266,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `uncapturedErrorCount` / `lastUncapturedError` | Counted from `uncapturederror` | Shown on the backend chip |
 | `gpuChoresWorkgroupSize` | Always `8` | `#216` hist/downsample `@workgroup_size(8,8,1)` — independent of weather 16×16 |
 | `gpuChoresKillSwitch` | `true` when `?no_gpu_compute` | Chores fall back to WASM/JS; **weather fragment/compute is unchanged** |
+| `gpuChoresGpuEligible` / `gpuChoresIneligibleReason` | `false` + the limit when `maxComputeWorkgroupSizeX/Y < 8` or `maxComputeInvocationsPerWorkgroup < 64` | `GpuChores` skips GPU init (WASM/JS) without setting the kill switch; pipeline-create `catch` stays as a second guard |
 
 GPU timings (when `timestamp-query` is enabled) are published on `window.rendererGpuTimings` and shown in **Performance Stats** (press P): Pass1 (panorama → HDR), weather (fragment or compute), and blit (compute only).
 
@@ -274,7 +282,9 @@ GPU timings (when `timestamp-query` is enabled) are published on `window.rendere
 | `'inside-passes'` | The descriptor probe throws **and** `timestamp-query-inside-passes` is enabled | Legacy-only implementations that still expose pass-encoder `writeTimestamp` |
 | `'none'` | No `timestamp-query`, or neither path is usable | SwiftShader, CI smoke, `?gpu=fallback` |
 
-On `'none'` every entry point is a no-op, the query set is never resolved, and the overlay reads `available: false`. `markPassStart` / `markPassEnd` are no-ops except on `'inside-passes'`; nothing calls encoder-level `writeTimestamp` any more. `timestamp-query-inside-passes` therefore stays in `OPTIONAL_FEATURES_ATTEMPTED` only to keep that fallback reachable — drop it there if the fallback is ever removed.
+On `'none'` every entry point is a no-op, the query set is never resolved, and the overlay reads `available: false`. `markPassStart` / `markPassEnd` are no-ops except on `'inside-passes'`; nothing calls encoder-level `writeTimestamp` any more. `timestamp-query-inside-passes` is no longer requested (see the capability matrix), so `'inside-passes'` is only reachable on a device that enables it some other way.
+
+Timestamps are only written while the performance overlay (P) is open (`setGpuPassTimingsWanted` in `gpuPassTimingStore.ts`, driven by `useAppTelemetry`): with it closed the frame loop passes no timer, so there is no per-frame resolve, copy or `mapAsync`. Slots are assigned per pass id (`TIMESTAMP_SLOTS` in `frameLoop.ts`); `present-fallback` shares the weather span.
 
 ## gpu-chores (panorama analysis, #216)
 
@@ -330,13 +340,13 @@ Known differences (GLSL reference vs live WGSL):
 
 The retired WebGL2 weather class is gone from the runtime module graph. When must-match atmosphere literals change:
 
-1. Keep parameter indices aligned with the 40-float weather layout in `src/renderer/weatherUniformLayout.ts`, `packWeatherParams.ts`, both weather processors, both WGSL files, and `WebGPUCanvas.tsx`.
+1. Keep parameter indices aligned with the 44-float weather layout in `src/renderer/weatherUniformLayout.ts`, `packWeatherParams.ts`, both weather processors, both WGSL files, and `WebGPUCanvas.tsx`.
 2. Update `uWeather[...]` reads in `src/renderer/webgl/weatherReference.glsl.ts` so `webglLookParity.test.ts` still passes.
 3. Route debug isolation through `RendererDebugOptions` on WebGPU.
 
 ## Changing weather uniforms
 
-The live WebGPU paths (fragment + compute) must stay lockstep on the same 40-float layout. When adding, renaming, or reordering a weather parameter:
+The live WebGPU paths (fragment + compute) must stay lockstep on the same 44-float layout. When adding, renaming, or reordering a weather parameter:
 
 1. Update `WeatherParamIndex` and `WEATHER_PARAMS_FLOAT_COUNT` in `src/renderer/weatherUniformLayout.ts`.
 2. Update `packWeatherParams` / `createDefaultWeatherParams` in `src/renderer/packWeatherParams.ts`.

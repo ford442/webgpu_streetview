@@ -114,6 +114,38 @@ export interface StreetViewWasmAPI {
     bearingDeg: number,
   ): { lat: number; lng: number };
 
+  /**
+   * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
+   * @returns Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
+   */
+  initialBearing(lat1: number, lng1: number, lat2: number, lng2: number): number;
+
+  /**
+   * Resample a polyline to points evenly spaced along its great-circle length
+   * (first and last points kept; spacing carried across vertices; longitudes
+   * wrapped to [-180, 180)).
+   *
+   * @param points  `n * 2` doubles: lat, lng, lat, lng, …
+   * @param stepMeters  Spacing; <= 0 or non-finite copies the input through.
+   * @returns A new `count * 2` array of resampled [lat, lng] pairs.
+   */
+  polylineResample(points: Float64Array, stepMeters: number): Float64Array;
+
+  /**
+   * Project a point onto a polyline — "where am I on the route, how far off it".
+   * The closest segment wins (ties: the earlier one); a projection past an end
+   * of its segment clamps to that vertex.
+   *
+   * @param points  `n * 2` doubles: lat, lng, lat, lng, …
+   * @returns `segment` index (-1 for an empty polyline), `alongMeters` from the
+   *          route start, signed `crossMeters` (+ = right of travel).
+   */
+  polylineProject(
+    points: Float64Array,
+    lat: number,
+    lng: number,
+  ): { segment: number; alongMeters: number; crossMeters: number };
+
   /** Normalise an angle to [0, 360). */
   normalizeAngle(angle: number): number;
 
@@ -123,6 +155,18 @@ export interface StreetViewWasmAPI {
   /**
    * Fill a Float32Array with mono engine+road PCM in [-1, 1].
    * `out` must have at least `count` elements.
+   *
+   * Streaming: feed the returned phase back in as `phase` for the next block
+   * and advance `sampleIndex` by `count`. The oscillator phase is carried in
+   * f64 and wrapped every sample, so the tone at hour two is the tone at
+   * second one (the old f32 `timeSec` ABI turned into a staircase).
+   *
+   * @param phase        Oscillator phase at sample 0, in fundamental cycles;
+   *                     wrapped into [0, 1) (non-finite -> 0).
+   * @param sampleIndex  Absolute stream position of sample 0 (integer sample
+   *                     count). Road noise hashes it per sample, so output is
+   *                     independent of block size.
+   * @returns Phase after the last sample, in [0, 1).
    */
   fillEngineNoise(
     out: Float32Array,
@@ -130,9 +174,10 @@ export interface StreetViewWasmAPI {
     rpm: number,
     load: number,
     speedKmh: number,
-    timeSec: number,
+    phase: number,
+    sampleIndex: number,
     sampleRate: number,
-  ): void;
+  ): number;
 
   /**
    * Fill a Float32Array with a short cabin impulse response — tap 0 is the

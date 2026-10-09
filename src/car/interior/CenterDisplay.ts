@@ -3,6 +3,13 @@ import { PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
 import { createAccentMaterial } from './MaterialFactory';
 import { centerDisplayGlowFromNight } from './cabinLightingRamps';
 import { VehicleConfig } from '../VehicleManager';
+import {
+    formatEta,
+    formatGuidanceDistance,
+    maneuverGlyphPath,
+    maneuverInstruction,
+    type RouteGuidance,
+} from '../../services/routing/guidanceFormat';
 
 export type DisplayPage = 'nav' | 'media' | 'trip';
 const PAGES: DisplayPage[] = ['nav', 'media', 'trip'];
@@ -40,6 +47,8 @@ export class CenterDisplay {
     private rpm = 0;
     private odometerKm = 0;
     private driveTimeS = 0;
+    /** Active routed trip, or null (nav page falls back to the location readout). */
+    private guidance: RouteGuidance | null = null;
 
     private clock = 0;
     private sinceDraw = Infinity;
@@ -160,6 +169,14 @@ export class CenterDisplay {
         this.rpm = rpm;
     }
 
+    /**
+     * Turn-by-turn for a routed trip. While set, the nav page shows the next
+     * maneuver and the trip page counts along-route road distance.
+     */
+    setRouteGuidance(guidance: RouteGuidance | null): void {
+        this.guidance = guidance;
+    }
+
     /** Boost the screen glow after dark (0 = day baseline, 1 = full night). */
     setNightGlow(night: number): void {
         this.screenMat.emissiveIntensity = centerDisplayGlowFromNight(night);
@@ -212,6 +229,11 @@ export class CenterDisplay {
     private contentKey(): string {
         switch (this.page) {
             case 'nav':
+                if (this.guidance) {
+                    const g = this.guidance;
+                    return ['nav-route', g.maneuver, g.street, formatGuidanceDistance(g.distanceToNextM),
+                        formatEta(g.etaS), Math.round(g.travelledM / 10), g.arrived].join('|');
+                }
                 return [
                     'nav',
                     this.info?.address ?? this.info?.description ?? '',
@@ -222,6 +244,11 @@ export class CenterDisplay {
                 return ['media', this.mediaName, this.mediaTags,
                     this.mediaPlaying ? this.clock.toFixed(2) : 'off'].join('|');
             case 'trip':
+                if (this.guidance) {
+                    const g = this.guidance;
+                    return ['trip-route', Math.round(g.travelledM), Math.round(g.remainingM),
+                        g.avgSpeedKmh === null ? '-' : Math.round(g.avgSpeedKmh), Math.round(this.driveTimeS)].join('|');
+                }
                 return ['trip', Math.round(this.speedKmh), Math.round(this.rpm / 50),
                     this.odometerKm.toFixed(2), Math.round(this.driveTimeS)].join('|');
         }
@@ -333,7 +360,93 @@ export class CenterDisplay {
         return t + '…';
     }
 
+    /** Arrow (or pin for arrival, ring for a roundabout) for the next maneuver. */
+    private drawManeuverGlyph(g: RouteGuidance, x: number, y: number, size: number): void {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = this.accent;
+        ctx.fillStyle = this.accent;
+        ctx.shadowColor = this.accent;
+        ctx.shadowBlur = 14;
+        ctx.lineWidth = size * 0.11;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (g.maneuver === 'arrive') {
+            ctx.beginPath();
+            ctx.arc(x + size / 2, y + size * 0.38, size * 0.24, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + size / 2, y + size);
+            ctx.lineTo(x + size / 2, y + size * 0.62);
+            ctx.stroke();
+        } else {
+            if (g.maneuver === 'roundabout') {
+                ctx.beginPath();
+                ctx.arc(x + size / 2, y + size * 0.5, size * 0.22, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            const pts = maneuverGlyphPath(g.maneuver).map(([px, py]) => [x + px * size, y + py * size] as const);
+            ctx.beginPath();
+            pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+            ctx.stroke();
+            const [tx, ty] = pts[pts.length - 1]!;
+            const [fx, fy] = pts[pts.length - 2]!;
+            const a = Math.atan2(ty - fy, tx - fx);
+            const head = size * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(tx + Math.cos(a) * head * 0.4, ty + Math.sin(a) * head * 0.4);
+            ctx.lineTo(tx + Math.cos(a + 2.4) * head, ty + Math.sin(a + 2.4) * head);
+            ctx.lineTo(tx + Math.cos(a - 2.4) * head, ty + Math.sin(a - 2.4) * head);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    private renderRouteNav(g: RouteGuidance): void {
+        const ctx = this.ctx;
+        const W = CenterDisplay.W;
+        this.header(g.arrived ? 'ARRIVED' : 'ROUTE');
+
+        this.drawManeuverGlyph(g, 28, 72, 104);
+        const textX = 152;
+        const maxW = W - textX - 28;
+        if (g.arrived) {
+            this.glowText('YOU HAVE', textX, 112, 30);
+            this.glowText('ARRIVED', textX, 150, 30);
+        } else {
+            this.glowText(formatGuidanceDistance(g.distanceToNextM), textX, 112, 42);
+            ctx.fillStyle = 'rgba(255,255,255,0.75)';
+            ctx.font = '600 20px "SF Mono", "Consolas", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(this.fit(maneuverInstruction(g.maneuver, g.street, g.exit), ctx.font, maxW), textX, 146);
+        }
+
+        // Breadcrumb: how much of the route is behind us.
+        const barY = 214;
+        const frac = g.totalM > 0 ? Math.max(0, Math.min(1, g.travelledM / g.totalM)) : 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(28, barY, W - 56, 6);
+        ctx.fillStyle = this.accent;
+        ctx.shadowColor = this.accent;
+        ctx.shadowBlur = 8;
+        ctx.fillRect(28, barY, (W - 56) * frac, 6);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.font = '600 16px "SF Mono", "Consolas", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('ETA', 28, 252);
+        ctx.fillText('REMAINING', W / 2 + 28, 252);
+        this.glowText(g.arrived ? '—' : formatEta(g.etaS), 28, 282, 24);
+        this.glowText(formatGuidanceDistance(g.remainingM), W / 2 + 28, 282, 24);
+    }
+
     private renderNav(): void {
+        if (this.guidance) {
+            this.renderRouteNav(this.guidance);
+            return;
+        }
         const ctx = this.ctx;
         const W = CenterDisplay.W;
         this.header('NAVIGATION');
@@ -441,8 +554,15 @@ export class CenterDisplay {
             ctx.textAlign = 'left';
             ctx.fillText(text, x, y);
         };
-        label('ODOMETER', 28, 212);
-        this.glowText(`${this.odometerKm.toFixed(2)} km`, 28, 244, 26);
+        // On a routed trip the odometer is along-route road distance, not the
+        // integrated speedometer.
+        const g = this.guidance;
+        label(g ? 'ROAD DISTANCE' : 'ODOMETER', 28, 212);
+        this.glowText(g ? `${(g.travelledM / 1000).toFixed(2)} km` : `${this.odometerKm.toFixed(2)} km`, 28, 244, 26);
+        if (g) {
+            label(`TO GO ${formatGuidanceDistance(g.remainingM)}`, 28, 272);
+            label(`AVG ${g.avgSpeedKmh === null ? '—' : `${Math.round(g.avgSpeedKmh)} km/h`}`, W / 2 + 28, 272);
+        }
 
         const mins = Math.floor(this.driveTimeS / 60);
         const secs = Math.floor(this.driveTimeS % 60);

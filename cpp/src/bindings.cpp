@@ -14,8 +14,12 @@
  *     binary has no env.* math imports. ALLOW_MEMORY_GROWTH imports
  *     env.emscripten_notify_memory_growth; the TS loader stubs it.
  *
- * The loader copies tiles at WASM_SCRATCH_OFFSET (64 KiB), past C++ statics.
- * Do not write caller buffers at byte 512 — that overlaps `perm`.
+ * Every pointer argument is an offset into linear memory that the loader got
+ * from the exported `malloc` (the scratch arena in src/wasm/marshal.ts), so
+ * it sits in the heap — above C++ statics *and* above the shadow stack, which
+ * grows down from __stack_pointer's initial value. Never hand a kernel a
+ * fixed offset: 64 KiB used to overlap the top of the stack, and libm's
+ * sin/cos spill frames there (the batch_haversine corruption at |lat| > 45°).
  *
  * NOTE: embind (--bind) is intentionally NOT used here.  The TS loader
  * instantiates the binary directly via WebAssembly.instantiate(), not through
@@ -39,8 +43,8 @@ float noise2d(float x, float y) { return sw_noise2d(x, y); }
 /**
  * Fill a Float32 buffer with noise values (row-major).
  * Matches ABI export: 'fill_noise_buffer'.
- * ptr is a byte offset into WASM linear memory; the TS loader passes
- * WASM_SCRATCH_OFFSET (65536), past Emscripten statics.
+ * ptr is a byte offset into WASM linear memory inside the loader's
+ * malloc-backed scratch arena.
  */
 EMSCRIPTEN_KEEPALIVE
 void fill_noise_buffer(float* buf, int w, int h,
@@ -108,14 +112,43 @@ float normalize_angle(float angle) { return sw_normalize_angle(angle); }
 EMSCRIPTEN_KEEPALIVE
 float signed_angle_diff(float from, float to) { return sw_signed_angle_diff(from, to); }
 
+/** Initial great-circle bearing [0, 360). Matches ABI export: 'initial_bearing'. */
+EMSCRIPTEN_KEEPALIVE
+double initial_bearing(double lat1, double lng1, double lat2, double lng2) {
+    return sw_initial_bearing(lat1, lng1, lat2, lng2);
+}
+
 /**
- * Mono engine+road PCM. Matches ABI export: 'fill_engine_noise'.
+ * Evenly resample a [lat, lng] polyline every `step_m` metres. Writes at most
+ * `cap` points to `out` and returns the full count.
+ * Matches ABI export: 'polyline_resample'.
  */
 EMSCRIPTEN_KEEPALIVE
-void fill_engine_noise(float* buf, int count,
-                       float rpm, float load, float speed_kmh,
-                       float time_sec, float sample_rate) {
-    sw_fill_engine_noise(buf, count, rpm, load, speed_kmh, time_sec, sample_rate);
+int polyline_resample(const double* in, int n, double step_m,
+                      double* out, int cap) {
+    return sw_polyline_resample(in, n, step_m, out, cap);
+}
+
+/**
+ * Project a point onto a polyline; writes {segment, along m, cross m} to
+ * `out3`. Matches ABI export: 'polyline_project'.
+ */
+EMSCRIPTEN_KEEPALIVE
+void polyline_project(const double* poly, int n, double lat, double lng,
+                      double* out3) {
+    sw_polyline_project(poly, n, lat, lng, out3);
+}
+
+/**
+ * Mono engine+road PCM from an f64 oscillator phase; returns the phase after
+ * the last sample. Matches ABI export: 'fill_engine_noise'.
+ */
+EMSCRIPTEN_KEEPALIVE
+double fill_engine_noise(float* buf, int count,
+                         float rpm, float load, float speed_kmh,
+                         double phase, double sample_index, float sample_rate) {
+    return sw_fill_engine_noise(buf, count, rpm, load, speed_kmh,
+                                phase, sample_index, sample_rate);
 }
 
 /**

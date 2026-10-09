@@ -2,6 +2,11 @@ import type { GpuPassTimer } from './gpuPassTimer';
 import { pass1TimestampWrites } from './streetViewPass';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
+import {
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from './gpuPipelineFactory';
 
 export interface Pass1TimingContext {
     timer: GpuPassTimer;
@@ -79,16 +84,14 @@ export class TransitionManager {
         const names = ['fade', 'zoom', 'zoom-blur', 'zoom-chromatic'] as const;
         const pipelinePromises = names.map(async (name) => {
             const url = `${baseUrl}/shaders/transition-${name}.wgsl`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
-            const code = await response.text();
+            const code = await fetchShaderSource(url, `transition-${name}.wgsl`);
 
-            const shaderModule = this.device.createShaderModule({
-                label: `Transition ${name}`,
+            const shaderModule = await createShaderModuleChecked(this.device, {
+                label: `transition-${name}.wgsl`,
                 code,
             });
 
-            const pipeline = this.device.createRenderPipeline({
+            const pipeline = await createRenderPipelineChecked(this.device, {
                 label: `Transition Pipeline ${name}`,
                 layout: pipelineLayout,
                 vertex:   { module: shaderModule, entryPoint: 'vs_main' },
@@ -282,7 +285,7 @@ export class TransitionManager {
             destroyTracked(this.previousFrameTexture);
             destroyTracked(this.transitionUniformBuffer);
             this.transitionPipelines.clear();
-        } catch (e) {
+        } catch {
             // ignore cleanup errors
         }
         this.prevTexture = undefined;

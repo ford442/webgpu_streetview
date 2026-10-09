@@ -21,6 +21,14 @@ describe('globe SDK tokens on the main-chunk path', () => {
     expect(chrome).not.toMatch(/Cesium/);
   });
 
+  it('only lazy-imports the coverage map (it loads the globe SDK on demand)', () => {
+    const chrome = readFileSync(join(srcRoot, 'app/shell/ConnectedChrome.tsx'), 'utf8');
+    expect(chrome).toMatch(/lazy\(\(\) => import\('\.\.\/\.\.\/components\/CoverageMap'\)\)/);
+    expect(chrome).not.toMatch(/^import .*components\/CoverageMap/m);
+    const barrel = readFileSync(join(srcRoot, 'components/index.ts'), 'utf8');
+    expect(barrel).not.toMatch(/CoverageMap/);
+  });
+
   it('does not re-export MiniMap from the components barrel', () => {
     const barrel = readFileSync(join(srcRoot, 'components/index.ts'), 'utf8');
     expect(barrel).not.toMatch(/from ['"]\.\/MiniMap['"]/);

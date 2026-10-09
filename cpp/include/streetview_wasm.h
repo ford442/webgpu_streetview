@@ -7,8 +7,9 @@
  * build) uses plain names without the sw_ prefix:
  *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
  *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
- *   normalize_angle, signed_angle_diff, fill_engine_noise, fill_cabin_ir,
- *   fill_hrtf, luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *   normalize_angle, signed_angle_diff, initial_bearing, polyline_resample,
+ *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
+ *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
  *
  * This comment is a convenience copy — the SSOT for the export set is
  * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
@@ -18,7 +19,8 @@
  * canonical names for Emscripten EXPORTED_FUNCTIONS. The implementations are
  * split one translation unit per domain:
  *   noise_module.cpp    seed / noise2d / fbm2d / fill_* tiles / particle seeds
- *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles
+ *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles /
+ *                       initial_bearing / polyline_resample / polyline_project
  *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
  *   hrtf_module.cpp     fill_hrtf
  *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d
@@ -57,6 +59,7 @@ float sw_noise2d(float x, float y);
  * @param scale   Spatial frequency (larger = more zoomed-out pattern).
  * @param offsetX World-space X offset.
  * @param offsetY World-space Y offset.
+ * No-op when buf is null or width/height <= 0.
  */
 void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY);
@@ -75,6 +78,7 @@ float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
 /**
  * Fill a Float32 buffer with fBm samples.  Same tile layout as
  * sw_fill_noise_buffer; every sample is an fBm stack instead of one octave.
+ * No-op when buf is null or width/height <= 0.
  */
 void sw_fill_fbm_buffer(float* buf, int width, int height,
                         float scale, float offsetX, float offsetY,
@@ -126,6 +130,47 @@ void sw_offset_latlng(double lat, double lng, double distance_meters,
                       double bearing_deg, double* out2);
 
 /**
+ * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
+ * @return Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
+ */
+double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
+
+/**
+ * Resample a polyline to points evenly spaced along its great-circle length.
+ *
+ * The first and last input points are always kept; in between, a point is
+ * emitted every `step_m` metres of along-route distance (carried across
+ * vertices, so the spacing is even along the whole route, not per segment).
+ * Interior input vertices are not kept. Output longitudes are wrapped to
+ * [-180, 180), so an antimeridian crossing comes out canonical.
+ *
+ * @param in      `n` consecutive [lat, lng] pairs in degrees.
+ * @param step_m  Spacing in metres. <= 0 or non-finite copies the input through.
+ * @param out     Caller-owned array of `cap` [lat, lng] pairs (may be nullptr
+ *                when cap == 0, to size a buffer).
+ * @return        The number of points the full resample has — like snprintf,
+ *                it can exceed `cap`, in which case only `cap` were written.
+ */
+int sw_polyline_resample(const double* in, int n, double step_m,
+                         double* out, int cap);
+
+/**
+ * Project a point onto a polyline: "where am I on the route, how far off it".
+ *
+ * @param poly  `n` consecutive [lat, lng] pairs in degrees.
+ * @param out3  Caller-owned array of 3 doubles receiving
+ *              {segment index, along-track metres from the route start,
+ *               signed cross-track metres (+ = right of travel)}.
+ *              The closest segment wins (ties: the earlier one). A projection
+ *              past either end of its segment clamps to that vertex, and the
+ *              cross-track magnitude is then the distance to the vertex.
+ *              n <= 0 writes {-1, 0, 0}; n == 1 writes {0, 0, distance}.
+ *              nullptr is a no-op.
+ */
+void sw_polyline_project(const double* poly, int n, double lat, double lng,
+                         double* out3);
+
+/**
  * Normalise an angle to [0, 360).
  */
 float sw_normalize_angle(float angle);
@@ -139,19 +184,32 @@ float sw_signed_angle_diff(float from, float to);
 /**
  * Fill a mono PCM buffer with engine + road noise.
  * Samples are f32 in [-1, 1]. Deterministic for a given (rpm, load, speed,
- * time, sampleRate) so the JS fallback can match the compiled path.
+ * phase, sample_index, sampleRate) so the JS fallback can match the compiled
+ * path bit-for-bit.
  *
- * @param buf          Caller-owned float array of length `count`.
- * @param count        Number of samples to write.
- * @param rpm          Engine RPM (>= 0).
- * @param load         Throttle/load in [0, 1].
- * @param speed_kmh    Road speed in km/h (>= 0).
- * @param time_sec     Stream time at sample 0 (seconds, >= 0).
- * @param sample_rate  Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ * Streaming: pass the returned phase back as `phase` for the next block and
+ * advance `sample_index` by `count`. The phase is wrapped to [0, 1) every
+ * sample in f64, so the tone does not degrade however long the drive is.
+ *
+ * @param buf           Caller-owned float array of length `count`.
+ * @param count         Number of samples to write.
+ * @param rpm           Engine RPM (>= 0).
+ * @param load          Throttle/load in [0, 1].
+ * @param speed_kmh     Road speed in km/h (>= 0).
+ * @param phase         Oscillator phase at sample 0, in fundamental cycles;
+ *                      wrapped into [0, 1) (non-finite -> 0).
+ * @param sample_index  Absolute stream position of sample 0 (an integer
+ *                      count, exact in f64 up to 2^53). Road noise is a hash
+ *                      of (sample_index + i) mod 2^32, so the output does not
+ *                      depend on block size. Negative / non-finite -> 0.
+ * @param sample_rate   Audio sample rate (Hz). Values <= 1 fall back to 44100.
+ * @return              Phase after the last sample, in [0, 1). `phase`
+ *                      (wrapped) when count <= 0 or buf is null.
  */
-void sw_fill_engine_noise(float* buf, int count,
-                          float rpm, float load, float speed_kmh,
-                          float time_sec, float sample_rate);
+double sw_fill_engine_noise(float* buf, int count,
+                            float rpm, float load, float speed_kmh,
+                            double phase, double sample_index,
+                            float sample_rate);
 
 /**
  * Fill a short cabin impulse response (mono, f32, `count` taps).

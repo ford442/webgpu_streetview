@@ -33,7 +33,7 @@ function deps(overrides: Partial<RoadFrameSourceDeps> = {}): RoadFrameSourceDeps
 }
 
 describe('readRoadLookInto', () => {
-    it('reads every mirrored field from the packed 40-float block, by WeatherParamIndex', () => {
+    it('reads every mirrored field from the packed 44-float block, by WeatherParamIndex', () => {
         const params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
         const I = WeatherParamIndex;
         params[I.vibrance] = 0.25;

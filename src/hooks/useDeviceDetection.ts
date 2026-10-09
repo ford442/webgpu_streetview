@@ -67,7 +67,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
         canvas.getContext('webgl') || 
         canvas.getContext('experimental-webgl')
       );
-    } catch (e) {
+    } catch {
       supportsWebGL = false;
     }
     
@@ -219,7 +219,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
             battery.removeEventListener('levelchange', handleBatteryChange);
             battery.removeEventListener('chargingchange', handleBatteryChange);
           };
-        } catch (e) {
+        } catch {
           console.warn('Battery API not available');
         }
       }

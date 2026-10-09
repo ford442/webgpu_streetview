@@ -19,6 +19,7 @@ import {
     type AdapterCapabilitySummary,
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
+import { currentSearch, readFlag } from '../config/flags';
 import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 import {
     resolveHdrIntermediateFormat,
@@ -83,6 +84,61 @@ async function resolveDefaultPowerPreference(): Promise<GPUPowerPreference> {
     return 'high-performance';
 }
 
+export interface GpuChoresLimitCheck {
+    /** Adapter can run the `@workgroup_size(8,8,1)` chores pipelines. */
+    eligible: boolean;
+    reason?: string;
+}
+
+const GPU_CHORES_LIMITS: ReadonlyArray<readonly [keyof GPUSupportedLimits, number]> = [
+    ['maxComputeWorkgroupSizeX', COMPUTE_CHORES_WORKGROUP_SIZE],
+    ['maxComputeWorkgroupSizeY', COMPUTE_CHORES_WORKGROUP_SIZE],
+    ['maxComputeInvocationsPerWorkgroup', COMPUTE_CHORES_WORKGROUP_SIZE * COMPUTE_CHORES_WORKGROUP_SIZE],
+];
+
+/**
+ * Can this adapter run #216 gpu-chores on the shared device? Never a boot
+ * failure — an ineligible adapter keeps chores on the WASM/JS twin.
+ */
+export function checkGpuChoresLimits(limits: GPUSupportedLimits): GpuChoresLimitCheck {
+    for (const [name, minimum] of GPU_CHORES_LIMITS) {
+        const supported = Number(limits[name]);
+        if (!Number.isFinite(supported) || supported < minimum) {
+            return {
+                eligible: false,
+                reason: `Adapter limit ${String(name)}=${supported} below gpu-chores ${minimum}`,
+            };
+        }
+    }
+    return { eligible: true };
+}
+
+/** Below this the panorama + HDR intermediate cannot fit a desktop window: boot fails. */
+export const MIN_TEXTURE_DIMENSION_2D = 4096;
+/** The largest 2D texture any pass allocates (DPR-scaled canvas, Maps canvas upload). */
+export const MAX_REQUESTED_TEXTURE_DIMENSION_2D = 8192;
+
+/**
+ * Fit `width × height` inside `maxDimension` on both axes, keeping the aspect
+ * ratio. Unchanged when it already fits. Never returns a zero dimension.
+ */
+export function clampTextureSize(
+    width: number,
+    height: number,
+    maxDimension: number,
+): { width: number; height: number; clamped: boolean } {
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(1, Math.floor(height));
+    const max = Math.max(1, Math.floor(maxDimension));
+    if (w <= max && h <= max) return { width: w, height: h, clamped: false };
+    const scale = max / Math.max(w, h);
+    return {
+        width: Math.max(1, Math.min(max, Math.floor(w * scale))),
+        height: Math.max(1, Math.min(max, Math.floor(h * scale))),
+        clamped: true,
+    };
+}
+
 export function checkRequiredLimits(
     adapter: GPUAdapter,
     weatherPostProcessMode: WeatherPostProcessMode,
@@ -90,10 +146,13 @@ export function checkRequiredLimits(
     ok: boolean;
     reason?: string;
     requiredLimits?: Record<string, number>;
+    /** Reported on every boot (pass or fail); chores never gate the weather boot. */
+    gpuChores: GpuChoresLimitCheck;
 } {
     const limits = adapter.limits;
+    const gpuChores = checkGpuChoresLimits(limits);
     const required: Partial<Record<keyof GPUSupportedLimits, number>> = {
-        maxTextureDimension2D: 4096,
+        maxTextureDimension2D: MIN_TEXTURE_DIMENSION_2D,
     };
     if (weatherPostProcessMode === 'compute') {
         required.maxStorageBufferBindingSize = 65536;
@@ -110,32 +169,43 @@ export function checkRequiredLimits(
             return {
                 ok: false,
                 reason: `Adapter limit ${String(name)}=${supported} below required ${minimum}`,
+                gpuChores,
             };
+        }
+    }
+
+    // The gate above is the floor; the request is what the adapter can give,
+    // up to what the passes use. The default device limit is the *core*
+    // default (8192), not the adapter's — and under `?gpu=compat` it is 4096,
+    // which a 2560-CSS-px window at DPR 2 overruns. Textures are still clamped
+    // to `device.limits` at allocation (see `clampTextureSize`).
+    required.maxTextureDimension2D = Math.max(
+        MIN_TEXTURE_DIMENSION_2D,
+        Math.min(Number(limits.maxTextureDimension2D), MAX_REQUESTED_TEXTURE_DIMENSION_2D),
+    );
+
+    // Chores share this device: when the adapter can run them, put their 8×8
+    // limits in the contract (compute weather's 16×16 already covers them).
+    // Only added when supported, so they can never fail requestDevice.
+    if (gpuChores.eligible) {
+        for (const [name, minimum] of GPU_CHORES_LIMITS) {
+            required[name] = Math.max(required[name] ?? 0, minimum);
         }
     }
 
     return {
         ok: true,
         requiredLimits: required as Record<string, number>,
+        gpuChores,
     };
 }
 
 /**
  * `?no_clip_distances` — do not request `clip-distances` on the shared device.
- * Same grammar as `?no_gpu_compute`: present (or truthy) is on, `0|false|off` is off.
+ * Uniform bool grammar (see config/flags.ts).
  */
-export function readNoClipDistancesFlag(
-    search: string = typeof window !== 'undefined' ? window.location.search : '',
-): boolean {
-    try {
-        const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-        const raw = params.get('no_clip_distances');
-        if (raw === null) return false;
-        const v = raw.toLowerCase();
-        return !(v === '0' || v === 'false' || v === 'off');
-    } catch {
-        return false;
-    }
+export function readNoClipDistancesFlag(search: string = currentSearch()): boolean {
+    return readFlag('no_clip_distances', search);
 }
 
 export function collectOptionalDeviceFeatures(
@@ -152,10 +222,11 @@ export function collectOptionalDeviceFeatures(
 
     const timestamps = options.enableTimestampQueries !== false;
     tryAdd(OPTIONAL_DEVICE_FEATURES.timestampQuery, timestamps);
-    tryAdd(OPTIONAL_DEVICE_FEATURES.timestampQueryInsidePasses, timestamps);
+    // Not requested: `timestamp-query-inside-passes` is not a feature name any
+    // browser ships (Chromium's is `chromium-experimental-…`), and `shader-f16`
+    // has no production WGSL consumer — see OPTIONAL_DEVICE_FEATURES.shaderF16.
 
     tryAdd(OPTIONAL_DEVICE_FEATURES.subgroups);
-    tryAdd(OPTIONAL_DEVICE_FEATURES.shaderF16);
     tryAdd(OPTIONAL_DEVICE_FEATURES.rg11b10ufloatRenderable);
     tryAdd(OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
     tryAdd(OPTIONAL_DEVICE_FEATURES.clipDistances, options.enableClipDistances !== false);
@@ -174,6 +245,8 @@ export interface CapabilityMatrixContext {
     canvas?: AppliedCanvasConfiguration;
     /** Pass-1 HDR intermediate; defaults to rgba16float when omitted. */
     intermediateFormat?: GPUTextureFormat;
+    /** `checkRequiredLimits(...).gpuChores`; omitted => eligible (pipeline-create catch still guards). */
+    gpuChores?: GpuChoresLimitCheck;
 }
 
 export function buildCapabilityMatrix(
@@ -214,6 +287,8 @@ export function buildCapabilityMatrix(
         uncapturedErrorCount: 0,
         gpuChoresWorkgroupSize: COMPUTE_CHORES_WORKGROUP_SIZE,
         gpuChoresKillSwitch: readNoGpuComputeFlag(),
+        gpuChoresGpuEligible: context.gpuChores?.eligible ?? true,
+        gpuChoresIneligibleReason: context.gpuChores?.reason,
     };
 }
 
@@ -278,8 +353,6 @@ export const CANVAS_USAGE = typeof GPUTextureUsage !== 'undefined'
 export interface CanvasOutputPolicyInput {
     /** `navigator.gpu.getPreferredCanvasFormat()`. */
     preferredFormat: GPUTextureFormat;
-    /** Features actually enabled on the device (HDR needs `float32-filterable`). */
-    enabledFeatures?: GPUFeatureName[];
     flags?: CanvasOutputFlags;
     /** `matchMedia('(dynamic-range: high)')` — only consulted for `?hdr=auto`. */
     displaySupportsHdr?: boolean;
@@ -290,31 +363,24 @@ export interface CanvasOutputPolicyInput {
 export interface CanvasOutputPolicy {
     hdr: boolean;
     p3: boolean;
-    /** Why an explicitly requested opt-in was not honored (soft-log, stay SDR). */
-    hdrRejectedReason?: string;
 }
 
 /**
  * Resolve the output-referred canvas policy. Both opt-ins default off, so a
  * default boot is byte-identical to the historical SDR sRGB opaque swap-chain.
+ *
+ * HDR needs nothing but an `rgba16float` swap chain, which every WebGPU
+ * implementation accepts as a canvas format — no optional feature. (It used to
+ * be gated on `float32-filterable`, which no HDR path reads, and that refused
+ * HDR on most mobile adapters.) Whether the browser actually honours extended
+ * tone mapping is decided by `configureCanvasContext`, which falls back to SDR
+ * and records the reason when the configure is rejected.
  */
 export function resolveCanvasOutputPolicy(input: CanvasOutputPolicyInput): CanvasOutputPolicy {
     const flags = input.flags ?? { hdr: 'off', p3: 'off' };
-    const enabledFeatures = input.enabledFeatures ?? [];
-
-    const hdrWanted = flags.hdr === 'on' || (flags.hdr === 'auto' && input.displaySupportsHdr === true);
-    const hdrCapable = enabledFeatures.includes(OPTIONAL_DEVICE_FEATURES.float32Filterable);
+    const hdr = flags.hdr === 'on' || (flags.hdr === 'auto' && input.displaySupportsHdr === true);
     const p3 = flags.p3 === 'on' || (flags.p3 === 'auto' && input.displaySupportsP3 === true);
-
-    if (hdrWanted && !hdrCapable) {
-        return {
-            hdr: false,
-            p3,
-            hdrRejectedReason: `HDR requested but ${OPTIONAL_DEVICE_FEATURES.float32Filterable} is not enabled`,
-        };
-    }
-
-    return { hdr: hdrWanted && hdrCapable, p3 };
+    return { hdr, p3 };
 }
 
 /** Read the display-side `auto` gates; safe in jsdom / SSR where matchMedia is absent. */
@@ -394,7 +460,6 @@ export function configureCanvasContext(
             colorSpace: descriptor.colorSpace,
             toneMapping: descriptor.toneMapping?.mode ?? 'standard',
             viewFormats: [...(descriptor.viewFormats ?? [])],
-            downgradeReason: policy.hdrRejectedReason,
         };
     } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);

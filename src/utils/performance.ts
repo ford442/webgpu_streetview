@@ -708,7 +708,7 @@ export function createFrameRateController(
   targetFPS: number = 60,
   onQualityChange?: (quality: 'high' | 'medium' | 'low') => void
 ): FrameRateController {
-  let frameInterval = 1000 / targetFPS;
+  const frameInterval = 1000 / targetFPS;
   let lastFrameTime = 0;
   let frameSkip = 0;
   let currentQuality: 'high' | 'medium' | 'low' = 'high';

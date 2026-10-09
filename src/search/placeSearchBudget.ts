@@ -4,8 +4,11 @@
  *
  * Follows the rear-view feed pattern: off-by-default extras, hard session
  * ceiling, consecutive-error backoff, and a page-lifetime kill switch.
- * See BILLING_SAFETY_CHECKLIST.md.
+ * See BILLING_SAFETY_CHECKLIST.md. Every billed call is also counted on the
+ * session call meter (`services/maps/callBudget.ts`); this budget stays the cap.
  */
+
+import { getMapsCallBudget } from '../services/maps/callBudget';
 
 export type PlaceSearchMeter =
   | 'autocomplete'
@@ -161,6 +164,7 @@ export class PlaceSearchBudget {
   }
 
   recordSuccess(meter: PlaceSearchMeter): void {
+    getMapsCallBudget().record('placeSearch', meter);
     this.networkRequests += 1;
     this.byMeter[meter] += 1;
     this.consecutiveErrors = 0;
@@ -168,6 +172,7 @@ export class PlaceSearchBudget {
   }
 
   recordError(meter: PlaceSearchMeter): void {
+    getMapsCallBudget().record('placeSearch', meter);
     this.networkRequests += 1;
     this.byMeter[meter] += 1;
     this.errors += 1;

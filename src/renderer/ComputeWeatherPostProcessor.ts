@@ -38,7 +38,7 @@ import {
  * | Samplers, buffers, dummies, write/depth/history textures | `computeWeather/resources.ts` |
  * | GPU precipitation (state ping-pong, density, 3 pipelines) | `computeWeather/particles.ts` |
  * | Look-LUT texture swap (bind group 1) | `computeWeather/lut.ts` |
- * | The shared 40-float parameter block | `computeWeather/weatherParams.ts` |
+ * | The shared 44-float parameter block | `computeWeather/weatherParams.ts` |
  * | Bind-group layouts + builders (binding indices) | `computeWeather/pipeline.ts` |
  * | Pass recording and ordering | `computeWeather/dispatch.ts` |
  *
@@ -74,6 +74,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private temporalHistoryEnabled = false;
     private shaderEffectsEnabled = true;
     private lastIntermediateView: GPUTextureView | null = null;
+    /** Reused per dispatch — `writeBuffer` copies it, so one scratch array is enough. */
+    private readonly computeUniforms = new Float32Array(4);
 
     constructor(device: GPUDevice, context: GPUCanvasContext, _canvas: HTMLCanvasElement) {
         this.device = device;
@@ -101,7 +103,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
         await this.particles.initPipelines(`${base}/shaders/weather-particles.wgsl`);
 
-        this.blitPipeline = createBlitPipeline(this.device, presentationFormat);
+        this.blitPipeline = await createBlitPipeline(this.device, presentationFormat);
     }
 
     private rebuildComputeBindGroup(intermediateTextureView: GPUTextureView): void {
@@ -166,7 +168,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.rebuildComputeBindGroup(intermediateTextureView);
     }
 
-    public updateNoiseBuffer(tile: Float32Array): void {
+    public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
         if (!this.resources.noiseBuffer || !this.device) return;
         this.device.queue.writeBuffer(this.resources.noiseBuffer, 0, tile);
     }
@@ -176,7 +178,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
      * textures. Enables bindings 7/8 for subsequent dispatches. `seeds.length`
      * must be `width * height * 4`.
      */
-    public updateParticleSeeds(seeds: Float32Array, width: number, height: number): void {
+    public updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void {
         if (!this.device) return;
         if (!this.particles.uploadSeeds(seeds, width, height, this.params.getTime())) return;
         if (this.lastIntermediateView) {
@@ -202,7 +204,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         return this.params.getCamera();
     }
 
-    public updateWeatherParams(params: Float32Array): void {
+    public updateWeatherParams(params: Float32Array<ArrayBuffer>): void {
         this.params.setAll(params);
     }
 
@@ -210,7 +212,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.params.setCamera(heading, pitch);
     }
 
-    public updateColorParams(params: Float32Array): void {
+    public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         this.params.setColor(params);
     }
 
@@ -231,11 +233,13 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             return;
         }
 
-        this.device.queue.writeBuffer(
-            res.computeUniformsBuffer,
-            0,
-            new Float32Array([this.params.get(WeatherParamIndex.time), 0, res.writeWidth, res.writeHeight]),
-        );
+        this.params.flush();
+        const uniforms = this.computeUniforms;
+        uniforms[0] = this.params.get(WeatherParamIndex.time);
+        uniforms[1] = 0;
+        uniforms[2] = res.writeWidth;
+        uniforms[3] = res.writeHeight;
+        this.device.queue.writeBuffer(res.computeUniformsBuffer, 0, uniforms);
 
         const particlesRan = this.particles.dispatch(
             commandEncoder,
@@ -308,7 +312,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             afterWeather?.(commandEncoder);
 
             this.device.queue.submit([commandEncoder.finish()]);
-        } catch (e) {
+        } catch {
             // Suppress errors during weather-only rendering
         }
     }

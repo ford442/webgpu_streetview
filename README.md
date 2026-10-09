@@ -5,7 +5,7 @@ A high-performance Google Maps Street View viewer with an immersive 3D car inter
 [![CI](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml/badge.svg)](https://github.com/ford442/webgpu_streetview/actions/workflows/ci.yml)
 [![React](https://img.shields.io/badge/React-19.1.1-61DAFB?logo=react)](https://react.dev/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-Latest-FF6B00)](https://gpuweb.github.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.160-000000?logo=three.js)](https://threejs.org/)
 
 **Live demo**: https://test.1ink.us/streetview
@@ -38,16 +38,16 @@ Composite Browser Output
 
 ### Navigation
 - **360° free-look** — mouse drag for heading & pitch, scroll to zoom, WASD for directional movement
-- **Cruise mode** — automatically advances to the nearest panorama link on a timer; works standalone or follows a planned route
-- **Route planning** — Google Directions API walking paths; cruise mode follows waypoints sequentially
+- **Cruise mode** — automatically advances to the nearest panorama link on a timer (a Street View link graph walk)
+- **Routed road trips** — open **🧭 Trip**, pick a destination (place search or `lat, lng`) and up to three via-points, and **Drive**: cruise follows the real road route, choosing at each junction the Street View link that tracks it. Routes come from an OSRM-compatible endpoint (`ROUTING_ENDPOINT` in `config.js`; the public OSRM demo by default — development / low volume only), never Google Directions. On-route hops make no extra Maps calls; leaving the route costs one metered re-snap. The car's centre screen shows the next turn, distance, ETA and a breadcrumb, and the trip computer counts road distance. Routes draw on the globe, export as GPX, share as `?route=lat,lng;lat,lng` links, and reach shared-session guests. A recorded tour can be driven by road (**Drive by road** in Tours)
+- **Live conditions** (opt-in, weather panel) — the real current weather at the panorama from [Open-Meteo](https://open-meteo.com/) eases onto rain / snow / fog / wind over a second, with the sky on pano-local time; moving any weather slider takes over until **Resume live**
 - **Bookmarks** — named positions persisted to `localStorage`
 - **Location history** — breadcrumb trail of visited panoramas with one-click recall
-- **MiniMap** — secondary Google Map with heading indicator, route polyline, click-to-teleport
 - **Compass** — real-time cardinal direction overlay
 
 ### Car Mode
 - **Four vehicle types** — Executive Sedan, Sport Convertible, Mobile Science Lab, Stretch Limousine; each with unique dashboard layout, feature set, and accent color theme
-- **Three.js interior** — all geometry built procedurally; no external 3D asset files required
+- **Three.js interior** — procedural geometry, plus an authored glTF sedan cabin (`public/models/sedan-cabin.glb`, opt-in via `?gltfInterior=1`)
 - **Interactive steering wheel** — A/D keys for steering; Mouse look for viewer direction
 - **Animated windshield wipers** — dual wiper sweep on sine curve; toggle via dashboard button
 - **Live dashboard gauges** — speedometer, tachometer, fuel level updated from cruise speed
@@ -59,6 +59,7 @@ Composite Browser Output
 
 ### Audio
 - **Web Audio API** — `AudioAnalyzer.ts` analyzes radio stream for audio-reactive dashboard glow
+- **Trip-aware radio** — after 50 km on the road the cabin radio looks for the best local station (Radio Browser geo search) and fades to it when you have crossed into another country/state; pin (📌) a station to keep it
 - **Wind audio** — `WindAudio.ts` synthesizes wind noise that scales with cruise speed
 
 ### Accessibility & UX
@@ -72,13 +73,13 @@ Composite Browser Output
 - **Offline shell (PWA)** — service worker caches app shell, WGSL shaders, and WASM loader; IndexedDB stores bookmarks, history, tours, and snapshots metadata
 - **Storage management** — quota meter and cache controls via the **Offline** toolbar panel
 - **Performance stats overlay** — live FPS, GPU frame time, texture upload time (press **P**)
-- **Mobile UI** — touch-friendly fallback layout via `useDeviceDetection`
+- **Touch input** — gesture look/advance via `useTouchControls`; device-tuned quality presets via `useDeviceDetection`
 
 ---
 
 ## Offline Mode
 
-Limited offline exploration is supported in three phases (see `docs/feature_expansion_plan.md` §8):
+Limited offline exploration is supported in three phases (see `docs/archive/feature_expansion_plan.md` §8):
 
 | Phase | Status | What works offline |
 |---|---|---|
@@ -100,7 +101,7 @@ This app intentionally:
 - **Stores only** user-generated snapshots (canvas captures you take) and app metadata (`panoId`, lat/lng, `imageDate`, tour waypoints, bookmarks)
 - **Never caches** responses from `maps.googleapis.com`, `maps.gstatic.com`, or other Google imagery hosts (enforced in `src/offline/swPolicy.ts`)
 
-Live Street View navigation, cruise mode, and route planning still require an internet connection and a valid Maps API key.
+Live Street View navigation and cruise mode still require an internet connection and a valid Maps API key.
 
 ---
 
@@ -148,7 +149,7 @@ If neither is configured, "Road Trip" surfaces a clear "signaling connection is 
 
 - Node.js 18+
 - Chrome 113+, Edge 113+, or Firefox Nightly with `dom.webgpu.enabled`
-- Google Maps API key with **Maps JavaScript API**, **Street View Static API**, and **Directions API** enabled
+- Google Maps API key with **Maps JavaScript API** and **Street View Static API** enabled (the Static API is used only by the billing-gated rearview feed — see `BILLING_SAFETY_CHECKLIST.md`)
 
 ### Setup
 
@@ -167,11 +168,11 @@ The Google Maps API key is resolved at runtime from `window.MAPS_API_KEY` (via `
 
 ```bash
 REACT_APP_MAPS_API_KEY=your_dev_key_here
-# Optional — Cesium Ion world imagery for Globe / MiniMap globe (otherwise CartoCDN Voyager)
-REACT_APP_CESIUM_ION_TOKEN=your_cesium_ion_token_here
 ```
 
-Globe View loads Cesium from a CDN on first open. With `REACT_APP_CESIUM_ION_TOKEN` set at build time you get Ion satellite imagery; without it the app falls back to free CartoCDN tiles (never `tile.openstreetmap.org`, which blocks apps).
+`.env.example` lists every build-time variable; **only the keys in `scripts/public-env-keys.json` are inlined into the bundle**, and `npm run build` fails (`scripts/check-build-env-leak.mjs`) if any other `.env` value ends up in `build/`. Never commit `.env*` files other than `.env.example` (the pre-commit hook and CI's gitleaks job enforce it).
+
+Globe View loads Cesium from a CDN on first open. Put your Cesium Ion token in `window.CESIUM_ION_TOKEN` (`public/config.js`) for Ion satellite imagery; without it the app falls back to free CartoCDN tiles (never `tile.openstreetmap.org`, which blocks apps). The token is **not** a build-time variable.
 
 **For production deploys to test.1ink.us / go.1ink.us**, see the full "Production Deployment & Google Maps API Key Setup" section below. The recommended path uses the `MAPS_API_KEY` environment variable with `python deploy.py` so you never need to bake the production key into a commit.
 
@@ -180,6 +181,8 @@ Globe View loads Cesium from a CDN on first open. With `REACT_APP_CESIUM_ION_TOK
 ```bash
 npm run build          # production bundle → build/
 npm test               # run test suite
+npm run verify         # the one gate: typecheck, lint, knip, secret scan, tests, WGSL, C++ goldens
+npm run hooks:install  # optional pre-commit secret scan (gitleaks)
 
 # Deploy via Contabo bundle API (credentials from environment — never commit them)
 export DEPLOY_TOKEN='...'   # from VPS / storage manager config
@@ -214,15 +217,15 @@ The app supports **two ways** to provide the key (priority order):
      ```
    - **API restrictions** → **Restrict key**
      - ✅ Maps JavaScript API
-     - ✅ Maps Directions API
-     - (Disable everything else)
+     - ✅ Street View Static API (rearview feed only — leave it off if you never enable the rearview)
+     - (Disable everything else — nothing in `src/` calls the Directions API)
 4. **Enable billing & alerts for the project** (required for production keys):
    - Link a billing account
    - Create a budget alert at $10 / $25 / $50
    - Enable "Prevent overspend" if available
 5. **Verify the required APIs are enabled** for the project:
    - Maps JavaScript API
-   - Maps Directions API
+   - Street View Static API (optional, rearview)
 6. **(Optional but recommended)** Create separate keys for dev vs. prod with different restrictions.
 
 ### Deploying the Key to test.1ink.us / go.1ink.us
@@ -280,12 +283,12 @@ See also:
 
 ## Cesium Ion World Terrain (Optional)
 
-Full-screen **Globe View** and the **MiniMap** globe both use [Cesium](https://cesium.com/) (loaded from a CDN, never npm-bundled). Without a Cesium Ion token, they render a flat ellipsoid globe with free CartoCDN imagery — this always works, no key required. With a token, both switch to real Ion **world terrain** (actual elevation data) and Ion world imagery (satellite photography).
+Full-screen **Globe View** uses [Cesium](https://cesium.com/) (loaded from a CDN, never npm-bundled). Without a Cesium Ion token it renders a flat ellipsoid globe with free CartoCDN imagery — this always works, no key required. With a token it switches to real Ion **world terrain** (actual elevation data) and Ion world imagery (satellite photography).
 
-The app supports the **same two ways** to provide the token as the Maps API key (priority order):
+The token is **runtime-only** (Ion tokens are client-visible by design, so scope yours to your deploy origins in the Ion dashboard):
 
-1. **Runtime (preferred for deploys)**: `window.CESIUM_ION_TOKEN` set by `public/config.js` — no rebuild required. Edit the file on the server, or let `deploy.py` bake it in via the `CESIUM_ION_TOKEN` environment variable.
-2. **Build-time fallback**: `REACT_APP_CESIUM_ION_TOKEN` baked into the JS bundle by Vite during `npm run build`.
+1. `window.CESIUM_ION_TOKEN` set by `public/config.js` — no rebuild required. Edit the file on the server, or let `deploy.py` bake it in via the `CESIUM_ION_TOKEN` environment variable.
+2. There is deliberately **no** build-time `REACT_APP_CESIUM_ION_TOKEN`: it is not on the public-env allowlist, so a token left in a local `.env` is never inlined into the bundle.
 
 ### Getting a token
 
@@ -375,8 +378,8 @@ webgpu_streetview/
 │   ├── components/
 │   │   ├── StreetView.tsx         # Google Maps loader + MutationObserver canvas scraper
 │   │   ├── WebGPUCanvas.tsx       # Mounts renderer, drives render loop
-│   │   ├── InputHandler.tsx       # Window-level mouse/keyboard capture
-│   │   ├── MiniMap.tsx            # Secondary map: heading, route, teleport
+│   │   ├── FreeLookInputHandler.tsx # Window-level mouse/keyboard capture (free look)
+│   │   ├── CarInputHandler.tsx    # Window-level input for car mode
 │   │   ├── Compass.tsx
 │   │   ├── BookmarkPanel.tsx
 │   │   ├── HistoryPanel.tsx
@@ -386,8 +389,7 @@ webgpu_streetview/
 │   │   ├── AccessibilityPanel.tsx
 │   │   ├── PerformanceStatsOverlay.tsx
 │   │   ├── LoadingOverlay.tsx
-│   │   ├── WelcomeModal.tsx
-│   │   └── MobileUI.tsx
+│   │   └── WelcomeModal.tsx
 │   ├── renderer/
 │   │   ├── Renderer.ts            # WebGPU device, textures, dual-pass pipeline
 │   │   └── types.ts               # RenderMode type
@@ -465,7 +467,7 @@ The Google Maps API renders Street View into internal `<canvas>` elements inside
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change.
 
-### WebGL2 Debug Fallback
+### No WebGL2 fallback
 
 WebGPU is **required** for the weather/graphics path. A failed boot probe hard-fails with a blocking overlay (`window.webgpuProbe` records browser brand, adapter, and reason). There is no live WebGL2 weather backend (`?renderer=webgl` still probes WebGPU). SDR GLSL for tests lives in `src/renderer/webgl/weatherReference.glsl.ts`.
 
@@ -543,11 +545,11 @@ Index  Field            Range / Notes
 |---|---|
 | WebGPU required | Chrome 113+ / Edge 113+. Boot probe hard-fails (blocking overlay) if unavailable — no live GL weather. |
 | Canvas scraping fragility | Google Maps DOM changes will silently break the canvas feed. |
-| Input hijacking | `InputHandler` is window-scoped. All UI overlays must call `e.stopPropagation()`. |
+| Input hijacking | `FreeLookInputHandler` / `CarInputHandler` are window-scoped. All UI overlays must call `e.stopPropagation()`. |
 | Mobile | WebGPU on mobile is limited; full car mode requires desktop or high-end tablet. |
 | No live Street View offline | Panorama tiles are not cached (Maps ToS). Offline mode covers the app shell, saved snapshots, and metadata only. |
 | API key exposure | Prefer runtime `public/config.js` + deploy-time injection. Never commit real keys. |
-| API rate limits | Google Directions API has quotas; heavy route planning may trigger throttling. |
+| API rate limits | The Maps JavaScript API and the (opt-in) Street View Static rearview feed have quotas and billing — see `BILLING_SAFETY_CHECKLIST.md`. |
 
 ---
 
@@ -607,7 +609,9 @@ Index  Field            Range / Notes
 | `CLAUDE.md` | Short pointer to AGENTS.md |
 | `docs/DEVELOPER_CONTEXT.md` | Architecture deep-dive, complexity hotspots, data flows |
 | `docs/SHARED_SESSIONS.md` | WebRTC rooms, STUN/TURN via `iceServers.ts` |
-| `docs/GRAPHICS.md` | Graphics pipeline — weather/atmosphere looks, cohesion model, camera FX (`src/docs/GRAPHICS.md` is a stub pointing here) |
+| `docs/GRAPHICS.md` | Graphics pipeline — weather/atmosphere looks, cohesion model, camera FX |
+| `docs/FLAGS.md` | Every `?flag` URL parameter (generated from `src/config/flags.ts`) |
+| `docs/archive/` | Historical plans, task specs and PR bodies — not current |
 | `weekly_plan.md` | Active residuals (not archived checklists) |
 
 ---
@@ -618,14 +622,14 @@ Index  Field            Range / Notes
 |---|---|---|
 | react | 19.1.1 | UI framework |
 | react-dom | 19.1.1 | DOM renderer |
-| three | 0.160.0 | 3D car interior (WebGL) |
-| @webgpu/types | 0.1.64 | WebGPU TypeScript types |
-| @xenova/transformers | latest | ML utilities (experimental) |
-| typescript | ~5.4.5 | Type checking |
-| Vite | 5.x | Build tooling (replaces Create React App) |
-| Vitest | 2.x | Unit tests |
+| three | 0.180.0 | 3D car interior (WebGL + `three/webgpu`) |
+| suncalc | ^1.9.0 | Sun/moon position for auto-night |
+| @supabase/supabase-js | ^2.111.0 | Signaling relay for shared sessions |
+| typescript | ~5.9.3 | Type checking (`tsc -b`) |
+| Vite | ^7.3.7 | Build tooling |
+| Vitest | ^3.2.7 | Unit tests (node env by default, jsdom per file) |
 
-Dev: `@types/google.maps`, `@types/three`
+`package.json` is the source of truth. Test libraries, `@types/*` and `@webgpu/types` are devDependencies. `npm run knip` fails on unused files and dependencies.
 
 ---
 

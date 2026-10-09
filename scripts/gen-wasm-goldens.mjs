@@ -50,24 +50,35 @@ const headerOut = flagValue('--header-out') || join(repoRoot, 'cpp', 'tests', 'g
 const bytes = readFileSync(wasmPath);
 const wasmSha256 = createHash('sha256').update(bytes).digest('hex');
 
+// Same import object and start-up as src/wasm/index.ts
+// (instantiateStreetViewWasm).
 const importObject = {
   env: {
-    sin: Math.sin,
-    cos: Math.cos,
-    atan2: Math.atan2,
     emscripten_notify_memory_growth: () => {},
   },
 };
 const { instance } = await WebAssembly.instantiate(bytes, importObject);
+/** @type {Record<string, any>} Raw wasm exports: functions, memory, globals. */
 const exp = instance.exports;
 const memory = exp.memory;
+if (typeof exp._initialize === 'function') exp._initialize();
 
-/** Must match src/wasm/scratchOffset.ts (`WASM_SCRATCH_OFFSET`). */
-const SCRATCH = 65536;
+// Scratch comes from the module's own malloc, exactly like the loader's arena
+// (src/wasm/marshal.ts) — never a fixed offset, which can land inside the
+// downward-growing C++ stack. Every fixture below is tiny; one block covers
+// them all, and reserve() refuses to silently overrun it.
+const SCRATCH_BYTES = 64 * 1024;
+const SCRATCH = exp.malloc(SCRATCH_BYTES);
+if (!SCRATCH || SCRATCH % 8 !== 0) throw new Error(`malloc(${SCRATCH_BYTES}) -> ${SCRATCH}`);
+if (typeof exp.emscripten_stack_get_base === 'function'
+  && SCRATCH < exp.emscripten_stack_get_base()) {
+  throw new Error(`scratch ${SCRATCH} is below the stack base ${exp.emscripten_stack_get_base()}`);
+}
 
 const reserve = (nbytes) => {
-  const available = memory.buffer.byteLength - SCRATCH;
-  if (available < nbytes) memory.grow(Math.ceil((nbytes - available) / 65536));
+  if (nbytes > SCRATCH_BYTES) {
+    throw new Error(`golden fixture needs ${nbytes} B of scratch; raise SCRATCH_BYTES`);
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -127,18 +138,72 @@ const OFFSET_CASES = [
   { lat: 89.5, lng: 0, distanceMeters: 100000, bearingDeg: 180 },
 ];
 
+// Route geometry (initial_bearing / polyline_resample / polyline_project).
+// High-latitude routes guard the scratch/stack fix (batch geodesy used to be
+// corrupted above 45° for routes of > ~230 points), and the antimeridian
+// cases pin the longitude wrap.
+const BEARING_PAIRS = [
+  [40.7128, -74.006, 51.5074, -0.1278],     // NYC → London
+  [37.7749, -122.4194, 37.7749, -122.4194], // identical points → 0
+  [0, 0, 0, 1],                             // due east at the equator
+  [0, 0, -1, 0],                            // due south
+  [69.6492, 18.9553, 69.6592, 18.9853],     // Tromsø, lat ≥ 60°
+  [10, 179.99, 10.001, -179.995],           // across the antimeridian
+  [-33.8688, 151.2093, 35.6762, 139.6503],  // Sydney → Tokyo
+];
+
+/** 250 points ~11 m apart, curving north-east from Tromsø (lat ≈ 69.6°). */
+const HIGH_LAT_ROUTE = Array.from({ length: 250 }, (_, i) => [
+  69.6492 + i * 1e-4,
+  18.9553 + i * 1e-4 + 2e-4 * Math.sin(i / 20),
+]);
+/** Three vertices straddling 180°: east, across, and on to the west side. */
+const ANTIMERIDIAN_ROUTE = [[10, 179.99], [10.001, -179.995], [10.0015, -179.98]];
+/** Edinburgh-ish urban zig-zag (lat ≈ 56°), short enough to read. */
+const URBAN_ROUTE = [
+  [55.9533, -3.1883], [55.9541, -3.1869], [55.9549, -3.1885], [55.9561, -3.1872],
+];
+
+const RESAMPLE_CASES = [
+  { label: 'urban-50m', points: URBAN_ROUTE, stepMeters: 50 },
+  { label: 'nyc-37m', points: POLYLINE, stepMeters: 37.5 },
+  { label: 'high-lat-250pt', points: HIGH_LAT_ROUTE, stepMeters: 250 },
+  { label: 'antimeridian-100m', points: ANTIMERIDIAN_ROUTE, stepMeters: 100 },
+  // A copy-through still wraps longitudes: 190 → -170.
+  { label: 'copy-through', points: [[1, 2], [3, 190]], stepMeters: 0 },
+  { label: 'single-point', points: [[51.5074, -0.1278]], stepMeters: 10 },
+];
+
+const PROJECT_CASES = [
+  // Left and right of the second urban segment, before the start, past the end.
+  { label: 'urban-left', points: URBAN_ROUTE, lat: 55.9546, lng: -3.1880 },
+  { label: 'urban-right', points: URBAN_ROUTE, lat: 55.9544, lng: -3.1872 },
+  { label: 'urban-before-start', points: URBAN_ROUTE, lat: 55.9528, lng: -3.1893 },
+  { label: 'urban-past-end', points: URBAN_ROUTE, lat: 55.9566, lng: -3.1862 },
+  { label: 'urban-on-vertex', points: URBAN_ROUTE, lat: 55.9549, lng: -3.1885 },
+  { label: 'high-lat', points: HIGH_LAT_ROUTE, lat: 69.6612, lng: 18.9671 },
+  { label: 'antimeridian', points: ANTIMERIDIAN_ROUTE, lat: 10.0007, lng: 179.9999 },
+  { label: 'single-point', points: [[51.5074, -0.1278]], lat: 51.5075, lng: -0.1279 },
+];
+
 const ANGLES = [0, 0.5, 45, 180, 359.5, 360, 361, -1, -180, -359.5, -720.25, 1080.75];
 const ANGLE_PAIRS = [
   [0, 90], [90, 0], [10, 350], [350, 10], [0, 180], [180, 0],
   [-45, 45], [720, 45], [359, 1], [123.25, -456.5],
 ];
 
+// `phase` is in fundamental cycles and `sampleIndex` is the absolute stream
+// position (hashed per sample for the road noise). 'hour-in' is one hour into
+// a 48 kHz drive — the f32-time ABI this replaced had turned it into a
+// staircase — and 'wrap' crosses 2^32 samples, where the hashed index wraps.
 const ENGINE_CASES = [
-  { label: 'cruise', count: 64, rpm: 2500, load: 0.6, speedKmh: 90, timeSec: 3.25, sampleRate: 44100 },
-  { label: 'idle', count: 32, rpm: 800, load: 0, speedKmh: 0, timeSec: 0, sampleRate: 44100 },
-  { label: 'redline', count: 32, rpm: 6800, load: 1, speedKmh: 210, timeSec: 12.5, sampleRate: 48000 },
+  { label: 'cruise', count: 64, rpm: 2500, load: 0.6, speedKmh: 90, phase: 0.25, sampleIndex: 143325, sampleRate: 44100 },
+  { label: 'idle', count: 32, rpm: 800, load: 0, speedKmh: 0, phase: 0, sampleIndex: 0, sampleRate: 44100 },
+  { label: 'redline', count: 32, rpm: 6800, load: 1, speedKmh: 210, phase: 0.9375, sampleIndex: 600000, sampleRate: 48000 },
+  { label: 'hour-in', count: 32, rpm: 2500, load: 0.6, speedKmh: 90, phase: 0.123456789, sampleIndex: 172800000, sampleRate: 48000 },
+  { label: 'wrap', count: 16, rpm: 3100, load: 0.3, speedKmh: 60, phase: 0.5, sampleIndex: 4294967288, sampleRate: 44100 },
   // Degenerate inputs: the clamp/fallback branches must agree across backends.
-  { label: 'clamped', count: 16, rpm: -100, load: 2.5, speedKmh: -5, timeSec: -1, sampleRate: 0 },
+  { label: 'clamped', count: 16, rpm: -100, load: 2.5, speedKmh: -5, phase: -1.75, sampleIndex: -1, sampleRate: 0 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -199,6 +264,48 @@ const offsetLatLng = OFFSET_CASES.map((c) => {
   return { ...c, expectedLat: v[0], expectedLng: v[1] };
 });
 
+const initialBearing = BEARING_PAIRS.map(([lat1, lng1, lat2, lng2]) => ({
+  lat1, lng1, lat2, lng2,
+  expected: exp.initial_bearing(lat1, lng1, lat2, lng2),
+}));
+
+const polylineResample = RESAMPLE_CASES.map((c) => {
+  const n = c.points.length;
+  const inBytes = n * 16;
+  reserve(inBytes);
+  new Float64Array(memory.buffer, SCRATCH, n * 2).set(c.points.flat());
+  // Sizing call (snprintf-style: out = null, cap = 0) and then the fill.
+  const count = exp.polyline_resample(SCRATCH, n, c.stepMeters, 0, 0);
+  reserve(inBytes + count * 16);
+  const outOff = SCRATCH + inBytes;
+  const written = exp.polyline_resample(SCRATCH, n, c.stepMeters, outOff, count);
+  if (written !== count) throw new Error(`polyline_resample ${c.label}: ${written} != ${count}`);
+  return {
+    label: c.label,
+    points: c.points.flat(),
+    stepMeters: c.stepMeters,
+    expected: Array.from(new Float64Array(memory.buffer, outOff, count * 2)),
+  };
+});
+
+const polylineProject = PROJECT_CASES.map((c) => {
+  const n = c.points.length;
+  reserve(n * 16 + 24);
+  new Float64Array(memory.buffer, SCRATCH, n * 2).set(c.points.flat());
+  const outOff = SCRATCH + n * 16;
+  exp.polyline_project(SCRATCH, n, c.lat, c.lng, outOff);
+  const v = new Float64Array(memory.buffer, outOff, 3);
+  return {
+    label: c.label,
+    points: c.points.flat(),
+    lat: c.lat,
+    lng: c.lng,
+    expectedSegment: v[0],
+    expectedAlong: v[1],
+    expectedCross: v[2],
+  };
+});
+
 const normalizeAngle = ANGLES.map((angle) => ({
   angle, expected: exp.normalize_angle(angle),
 }));
@@ -209,10 +316,10 @@ const signedAngleDiff = ANGLE_PAIRS.map(([from, to]) => ({
 
 const engineNoise = ENGINE_CASES.map((c) => {
   reserve(c.count * 4);
-  exp.fill_engine_noise(
-    SCRATCH, c.count, c.rpm, c.load, c.speedKmh, c.timeSec, c.sampleRate,
+  const expectedPhase = exp.fill_engine_noise(
+    SCRATCH, c.count, c.rpm, c.load, c.speedKmh, c.phase, c.sampleIndex, c.sampleRate,
   );
-  return { ...c, expected: readF32(c.count) };
+  return { ...c, expected: readF32(c.count), expectedPhase };
 });
 
 // Cabin IRs: two production-length taps at 44.1 kHz (roof closed vs open, the
@@ -314,6 +421,9 @@ const goldens = {
   haversine,
   batchHaversine,
   offsetLatLng,
+  initialBearing,
+  polylineResample,
+  polylineProject,
   normalizeAngle,
   signedAngleDiff,
   engineNoise,
@@ -325,7 +435,7 @@ const goldens = {
 };
 
 function vectorsOnly(obj) {
-  const { $comment, wasmSha256: _sha, ...rest } = obj;
+  const { $comment: _comment, wasmSha256: _sha, ...rest } = obj;
   return rest;
 }
 
@@ -472,6 +582,55 @@ lines.push(f64Array('kOffsetExpectedLng', offsetLatLng.map((o) => o.expectedLng)
 lines.push(`inline constexpr int kOffsetCount = ${offsetLatLng.length};`);
 lines.push('');
 
+lines.push('// --- initial_bearing -----------------------------------------------------');
+lines.push(f64Array('kBearingLat1', initialBearing.map((b) => b.lat1)));
+lines.push(f64Array('kBearingLng1', initialBearing.map((b) => b.lng1)));
+lines.push(f64Array('kBearingLat2', initialBearing.map((b) => b.lat2)));
+lines.push(f64Array('kBearingLng2', initialBearing.map((b) => b.lng2)));
+lines.push(f64Array('kBearingExpected', initialBearing.map((b) => b.expected)));
+lines.push(`inline constexpr int kBearingCount = ${initialBearing.length};`);
+lines.push('');
+
+lines.push('// --- polyline_resample ---------------------------------------------------');
+lines.push(`inline constexpr int kResampleCaseCount = ${polylineResample.length};`);
+polylineResample.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kResampleInCount${i} = ${c.points.length / 2};`);
+  lines.push(f64Array(`kResampleIn${i}`, c.points));
+  lines.push(`inline constexpr double kResampleStep${i} = ${f64(c.stepMeters)};`);
+  lines.push(`inline constexpr int kResampleOutCount${i} = ${c.expected.length / 2};`);
+  lines.push(f64Array(`kResampleExpected${i}`, c.expected));
+  lines.push('');
+});
+
+lines.push('struct ResampleGolden { int in_count; const double* in; double step; int out_count; const double* expected; };');
+lines.push('inline constexpr ResampleGolden kResampleCases[] = {');
+polylineResample.forEach((_c, i) => {
+  lines.push(`    { kResampleInCount${i}, kResampleIn${i}, kResampleStep${i}, kResampleOutCount${i}, kResampleExpected${i} },`);
+});
+lines.push('};');
+lines.push('');
+
+lines.push('// --- polyline_project ----------------------------------------------------');
+lines.push(`inline constexpr int kProjectCaseCount = ${polylineProject.length};`);
+polylineProject.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kProjectInCount${i} = ${c.points.length / 2};`);
+  lines.push(f64Array(`kProjectIn${i}`, c.points));
+  lines.push(`inline constexpr double kProjectLat${i} = ${f64(c.lat)};`);
+  lines.push(`inline constexpr double kProjectLng${i} = ${f64(c.lng)};`);
+  lines.push(`inline constexpr double kProjectExpected${i}[] = { ${f64(c.expectedSegment)}, ${f64(c.expectedAlong)}, ${f64(c.expectedCross)} };`);
+  lines.push('');
+});
+
+lines.push('struct ProjectGolden { int in_count; const double* in; double lat; double lng; const double* expected; };');
+lines.push('inline constexpr ProjectGolden kProjectCases[] = {');
+polylineProject.forEach((_c, i) => {
+  lines.push(`    { kProjectInCount${i}, kProjectIn${i}, kProjectLat${i}, kProjectLng${i}, kProjectExpected${i} },`);
+});
+lines.push('};');
+lines.push('');
+
 lines.push('// --- normalize_angle -----------------------------------------------------');
 lines.push(f32Array('kNormalizeAngleIn', normalizeAngle.map((a) => a.angle)));
 lines.push(f32Array('kNormalizeAngleExpected', normalizeAngle.map((a) => a.expected)));
@@ -493,9 +652,11 @@ engineNoise.forEach((c, i) => {
   lines.push(`inline constexpr float kEngineRpm${i} = ${f32(c.rpm)};`);
   lines.push(`inline constexpr float kEngineLoad${i} = ${f32(c.load)};`);
   lines.push(`inline constexpr float kEngineSpeed${i} = ${f32(c.speedKmh)};`);
-  lines.push(`inline constexpr float kEngineTime${i} = ${f32(c.timeSec)};`);
+  lines.push(`inline constexpr double kEnginePhase${i} = ${f64(c.phase)};`);
+  lines.push(`inline constexpr double kEngineSampleIndex${i} = ${f64(c.sampleIndex)};`);
   lines.push(`inline constexpr float kEngineSampleRate${i} = ${f32(c.sampleRate)};`);
   lines.push(f32Array(`kEngineExpected${i}`, c.expected));
+  lines.push(`inline constexpr double kEngineExpectedPhase${i} = ${f64(c.expectedPhase)};`);
   lines.push('');
 });
 

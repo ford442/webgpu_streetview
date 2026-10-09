@@ -1,4 +1,9 @@
 import type { GpuPassTimer } from './gpuPassTimer';
+import {
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from './gpuPipelineFactory';
 
 /** Timestamp-query slots for pass 1, when the adapter supports them. */
 export interface Pass1TimingContext {
@@ -31,6 +36,7 @@ export function pass1TimestampWrites(
  */
 export function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
+        label: 'streetview-bind-group-layout',
         entries: [
             {
                 binding: 0,
@@ -60,7 +66,8 @@ export function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroup
  * Fetch `streetview.wgsl` and build the pass-1 render pipeline.
  *
  * The shader is fetched rather than bundled so a WGSL edit is a static-asset
- * swap; a failed fetch is fatal and rejects, because there is no fallback draw.
+ * swap; a failed fetch or a validation error is fatal and rejects, because
+ * there is no fallback draw.
  */
 export async function createStreetViewPipeline(
     device: GPUDevice,
@@ -69,22 +76,23 @@ export async function createStreetViewPipeline(
     const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/streetview.wgsl`;
     let shaderCode: string;
     try {
-        const response = await fetch(shaderUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to load streetview.wgsl: ${response.status} ${response.statusText}`);
-        }
-        shaderCode = await response.text();
+        shaderCode = await fetchShaderSource(shaderUrl, 'streetview.wgsl');
     } catch (error) {
         console.error(`[Renderer] Failed to load streetview shader from ${shaderUrl}:`, error);
         throw error;
     }
 
-    const shaderModule = device.createShaderModule({ code: shaderCode });
+    const shaderModule = await createShaderModuleChecked(device, {
+        label: 'streetview.wgsl',
+        code: shaderCode,
+    });
     const pipelineLayout = device.createPipelineLayout({
+        label: 'streetview-pipeline-layout',
         bindGroupLayouts: [createStreetViewBindGroupLayout(device)],
     });
 
-    return device.createRenderPipeline({
+    return createRenderPipelineChecked(device, {
+        label: 'streetview-pipeline',
         layout: pipelineLayout,
         vertex: {
             module: shaderModule,
@@ -102,6 +110,7 @@ export async function createStreetViewPipeline(
 /** Sampler used for every panorama read. Anisotropy follows the quality tier. */
 export function buildSamplerDescriptor(maxAnisotropy: number): GPUSamplerDescriptor {
     return {
+        label: 'streetview-sampler',
         magFilter: 'linear',
         minFilter: 'linear',
         mipmapFilter: 'linear',

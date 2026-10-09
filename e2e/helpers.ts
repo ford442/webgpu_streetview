@@ -36,29 +36,3 @@ export async function openBookmarkPanel(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Bookmarks/i }).click();
   await expect(panelTitle).toBeVisible();
 }
-
-declare global {
-  interface Window {
-    __STREETVIEW_PROBE__?: {
-      getTimeline: () => Array<{
-        armedAt: number;
-        firstStableAt: number | null;
-        releasedAt: number | null;
-        holdDurationMs: number | null;
-      }>;
-      getWarnings: () => Array<{ at: number; message: string }>;
-      clear: () => void;
-      enablePixelWatch: () => void;
-    };
-    rendererType?: 'webgpu' | 'webgl';
-    usingWebGPU?: boolean;
-    usingWebGL?: boolean;
-    webgpuProbe?: {
-      ok: boolean;
-      stage: string;
-      reason: string;
-      browserBrand: string;
-      webglPreferenceDeferred?: boolean;
-    };
-  }
-}

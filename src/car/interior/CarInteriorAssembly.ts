@@ -85,6 +85,7 @@ export interface CarInteriorAssemblyHost {
     locationPanel: LocationPanel | null;
     lastLocationInfo: import('../../utils/panoLocation').PanoLocationInfo | null;
     lastCompassHeading: number;
+    lastRouteGuidance: import('../../services/routing/guidanceFormat').RouteGuidance | null;
     lastMediaInfo: { name: string; tags: string; playing: boolean };
     sunShafts: SunShafts | null;
     centerDisplay: CenterDisplay | null;
@@ -256,6 +257,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         cabin.add(host.centerDisplay.group);
         host.centerDisplay.setLocation(host.lastLocationInfo);
         host.centerDisplay.setHeading(host.lastCompassHeading);
+        host.centerDisplay.setRouteGuidance(host.lastRouteGuidance);
         host.centerDisplay.setMedia(host.lastMediaInfo.name, host.lastMediaInfo.tags, host.lastMediaInfo.playing);
         host.centerDisplay.setNightGlow(host.lightingManager?.getSunNightFactor() ?? 0);
     }

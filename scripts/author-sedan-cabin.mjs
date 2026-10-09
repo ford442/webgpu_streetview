@@ -616,7 +616,9 @@ function needleGeo() {
   const g = new THREE.ExtrudeGeometry(s, { depth: 0.0015, bevelEnabled: false });
   return g;
 }
-for (const [name, c] of [['SpeedoNeedle', SPEEDO], ['TachoNeedle', TACHO]]) {
+/** @type {Array<[string, THREE.Vector3]>} */
+const NEEDLES = [['SpeedoNeedle', SPEEDO], ['TachoNeedle', TACHO]];
+for (const [name, c] of NEEDLES) {
   nodes.push({
     name,
     parts: new Map([['needle', [needleGeo()]]]),
@@ -714,6 +716,7 @@ function pushAccessor(typed, type, componentType, target, withBounds) {
 }
 
 const meshes = [];
+/** @type {Array<{ name: string, children?: number[], mesh?: number, translation?: number[], rotation?: number[] }>} */
 const gltfNodes = [{ name: 'CabinRoot', children: [] }];
 let totalVerts = 0;
 let totalTris = 0;
@@ -746,7 +749,7 @@ for (const n of nodes) {
   if (n.translation) gn.translation = n.translation.map((v) => round(v));
   if (n.rotation) gn.rotation = n.rotation.map((v) => round(v, 7));
   gltfNodes.push(gn);
-  gltfNodes[0].children.push(gltfNodes.length - 1);
+  gltfNodes[0].children?.push(gltfNodes.length - 1);
 }
 
 // ── Validate the socket contract before writing ─────────────────────────────

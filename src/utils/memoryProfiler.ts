@@ -438,9 +438,10 @@ export class TextureCache {
     if (this.cache.size >= this.maxSize) {
       // Remove oldest entry
       const firstKey = this.cache.keys().next().value;
-      const old = this.cache.get(firstKey);
-      if (old) old.dispose();
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.get(firstKey)?.dispose();
+        this.cache.delete(firstKey);
+      }
     }
     this.cache.set(key, texture);
   }
@@ -473,9 +474,10 @@ export class GeometryPool {
   set(key: string, geometry: THREE.BufferGeometry): void {
     if (this.pool.size >= this.maxSize) {
       const firstKey = this.pool.keys().next().value;
-      const old = this.pool.get(firstKey);
-      if (old) old.dispose();
-      this.pool.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.pool.get(firstKey)?.dispose();
+        this.pool.delete(firstKey);
+      }
     }
     this.pool.set(key, geometry);
   }

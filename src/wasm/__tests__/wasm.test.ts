@@ -407,7 +407,7 @@ describe('fillEngineNoise', () => {
   test('writes samples in [-1, 1]', async () => {
     const wasm = await getFallback();
     const buf = new Float32Array(256);
-    wasm.fillEngineNoise(buf, 256, 2200, 0.6, 40, 0.5, 44100);
+    wasm.fillEngineNoise(buf, 256, 2200, 0.6, 40, 0.5, 22050, 44100);
     for (let i = 0; i < buf.length; i++) {
       expect(buf[i]).toBeGreaterThanOrEqual(-1);
       expect(buf[i]).toBeLessThanOrEqual(1);
@@ -418,15 +418,26 @@ describe('fillEngineNoise', () => {
     const wasm = await getFallback();
     const a = new Float32Array(64);
     const b = new Float32Array(64);
-    wasm.fillEngineNoise(a, 64, 1800, 0.4, 30, 1.25, 48000);
-    wasm.fillEngineNoise(b, 64, 1800, 0.4, 30, 1.25, 48000);
+    const pa = wasm.fillEngineNoise(a, 64, 1800, 0.4, 30, 0.25, 60000, 48000);
+    const pb = wasm.fillEngineNoise(b, 64, 1800, 0.4, 30, 0.25, 60000, 48000);
     expect(Array.from(a)).toEqual(Array.from(b));
+    expect(pa).toBe(pb);
+  });
+
+  test('returns the next phase, wrapped into [0, 1)', async () => {
+    const wasm = await getFallback();
+    const buf = new Float32Array(480);
+    // 6000 rpm = 100 Hz; 480 samples at 48 kHz is exactly one cycle.
+    const next = wasm.fillEngineNoise(buf, 480, 6000, 0.5, 0, 0.25, 0, 48000);
+    expect(next).toBeGreaterThanOrEqual(0);
+    expect(next).toBeLessThan(1);
+    expect(next).toBeCloseTo(0.25, 9);
   });
 
   test('is a no-op for a zero count', async () => {
     const wasm = await getFallback();
     const buf = new Float32Array(4);
-    wasm.fillEngineNoise(buf, 0, 900, 0.2, 10, 0, 44100);
+    expect(wasm.fillEngineNoise(buf, 0, 900, 0.2, 10, 1.75, 0, 44100)).toBe(0.75);
     expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
   });
 });

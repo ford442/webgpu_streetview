@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * How the real `Renderer` feeds the cabin's windshield portal: what it publishes,
  * when, and — the property the hold-pause guarantee rests on — that the only

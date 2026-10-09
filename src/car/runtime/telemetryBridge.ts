@@ -1,4 +1,5 @@
 import type { PanoLocationInfo } from '../../utils/panoLocation';
+import type { RouteGuidance } from '../../services/routing/guidanceFormat';
 import { getState } from './state';
 
 /**
@@ -26,6 +27,15 @@ export function setCarCompassHeading(heading: number): void {
     const state = getState();
     if (!state) return;
     state.interior.setCompassHeading(heading);
+}
+
+/**
+ * Turn-by-turn for a routed trip on the centre display (null = no route).
+ */
+export function setCarRouteGuidance(guidance: RouteGuidance | null): void {
+    const state = getState();
+    if (!state) return;
+    state.interior.setRouteGuidance(guidance);
 }
 
 /**

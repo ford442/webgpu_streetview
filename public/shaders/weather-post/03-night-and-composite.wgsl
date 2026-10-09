@@ -168,7 +168,7 @@ fn sunsetHorizonGlow(uv: vec2<f32>, sunAz: f32, sunAlt: f32, night: f32) -> vec3
 fn applySunrise(col: vec3<f32>, uv: vec2<f32>, sunrise: f32) -> vec3<f32> {
     if (sunrise < 0.001) { return col; }
 
-    let horizonY = viewHorizonY(p.cameraPitch);
+    let horizonY = sceneHorizonY();
     let sunScreenX = worldAzimuthToScreenX(p.sunAzimuth, p.cameraHeading);
     let dSunX = normalizedDistance(uv.x, sunScreenX);
 
@@ -283,7 +283,7 @@ const DOF_FOCUS_DEPTH: f32 = 0.45;
 fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f32> {
     if (dof < 0.001 && mblur < 0.001) { return col; }
 
-    let horizonY = viewHorizonY(p.cameraPitch);
+    let horizonY = sceneHorizonY();
     let depth = viewDepthProxy(uv, horizonY);
 
     // Circle of confusion: sharp at the focus plane, widening toward infinity.

@@ -6,6 +6,12 @@ import {
     withSubgroupLumaReduce,
     type CanvasToneMapping,
 } from '../shaderFeatureVariants';
+import {
+    createComputePipelineChecked,
+    createRenderPipelineChecked,
+    createShaderModuleChecked,
+    fetchShaderSource,
+} from '../gpuPipelineFactory';
 
 /**
  * Pipeline and bind-group construction for the compute weather pass.
@@ -38,6 +44,7 @@ export const WeatherBinding = {
 
 export function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
+        label: 'weather-compute-bind-group-layout',
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'filtering' } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
@@ -79,11 +86,7 @@ export async function createWeatherComputePipeline(
 ): Promise<GPUComputePipeline> {
     let shaderCode: string;
     try {
-        const response = await fetch(shaderUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to load weather-post-compute.wgsl: ${response.status} ${response.statusText}`);
-        }
-        shaderCode = await response.text();
+        shaderCode = await fetchShaderSource(shaderUrl, 'weather-post-compute.wgsl');
     } catch (error) {
         console.error(`[Renderer] Failed to load weather-post-compute shader from ${shaderUrl}:`, error);
         throw error;
@@ -95,26 +98,36 @@ export async function createWeatherComputePipeline(
         shaderCode = withSubgroupLumaReduce(shaderCode);
     }
 
-    const computeModule = device.createShaderModule({ code: shaderCode });
-    return device.createComputePipeline({
+    const computeModule = await createShaderModuleChecked(device, {
+        label: 'weather-post-compute.wgsl',
+        code: shaderCode,
+    });
+    return createComputePipelineChecked(device, {
+        label: 'weather-compute-pipeline',
         layout: device.createPipelineLayout({
+            label: 'weather-compute-pipeline-layout',
             bindGroupLayouts: [createComputeBindGroupLayout(device), lutBindGroupLayout],
         }),
         compute: { module: computeModule, entryPoint: 'main' },
     });
 }
 
-export function createBlitPipeline(
+export async function createBlitPipeline(
     device: GPUDevice,
     presentationFormat: GPUTextureFormat,
-): GPURenderPipeline {
-    const blitModule = device.createShaderModule({ code: BLIT_SHADER });
+): Promise<GPURenderPipeline> {
+    const blitModule = await createShaderModuleChecked(device, {
+        label: 'weather-compute-blit',
+        code: BLIT_SHADER,
+    });
     const blitBindGroupLayout = device.createBindGroupLayout({
+        label: 'weather-compute-blit-bind-group-layout',
         entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
         ],
     });
-    return device.createRenderPipeline({
+    return createRenderPipelineChecked(device, {
+        label: 'weather-compute-blit-pipeline',
         layout: device.createPipelineLayout({ bindGroupLayouts: [blitBindGroupLayout] }),
         vertex: { module: blitModule, entryPoint: 'vs_main' },
         fragment: { module: blitModule, entryPoint: 'fs_main', targets: [{ format: presentationFormat }] },
@@ -145,6 +158,7 @@ export function createWeatherBindGroup(
     r: WeatherBindGroupResources,
 ): GPUBindGroup {
     return device.createBindGroup({
+        label: 'weather-compute-bind-group',
         layout: pipeline.getBindGroupLayout(0),
         entries: [
             { binding: WeatherBinding.filteringSampler, resource: r.filteringSampler },
@@ -170,6 +184,7 @@ export function createBlitBindGroup(
     writeTexture: GPUTexture,
 ): GPUBindGroup {
     return device.createBindGroup({
+        label: 'weather-compute-blit-bind-group',
         layout: pipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: writeTexture.createView() },

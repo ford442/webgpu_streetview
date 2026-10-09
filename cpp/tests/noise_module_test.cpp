@@ -28,8 +28,10 @@
 #include "streetview_wasm.h"
 #include "goldens_generated.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -79,6 +81,33 @@ TEST_CASE("noise2d stays inside [-1, 1] over a wide sweep") {
         CHECK(n >= -1.0f);
         CHECK(n <= 1.0f);
     }
+}
+
+TEST_CASE("noise2d is defined for inputs outside int range") {
+    // Every float with |x| >= 2^31 is a multiple of 256, so the lattice cell
+    // wraps to 0 — what the JS twin's `Math.floor(x) & 255` gives — instead
+    // of the UB an (int) cast would be. Run under UBSan in test:cpp:asan.
+    sw_seed(goldens::kNoiseSeed);
+    const float huge[] = {3.0e9f, -3.0e9f, 1.0e30f, -1.0e30f, 2147483648.0f};
+    for (const float x : huge) {
+        INFO("x = " << x);
+        const float n = sw_noise2d(x, 0.5f);
+        CHECK(n >= -1.0f);
+        CHECK(n <= 1.0f);
+        CHECK(n == sw_noise2d(0.0f, 0.5f));
+    }
+}
+
+TEST_CASE("noise fills are no-ops for null or empty tiles") {
+    std::vector<float> buf(4, 7.0f);
+    sw_fill_noise_buffer(nullptr, 4, 4, 10.0f, 0.0f, 0.0f);
+    sw_fill_fbm_buffer(nullptr, 4, 4, 10.0f, 0.0f, 0.0f, 3, 2.0f, 0.5f);
+    sw_fill_noise_buffer(buf.data(), 0, 4, 10.0f, 0.0f, 0.0f);
+    sw_fill_noise_buffer(buf.data(), 4, -1, 10.0f, 0.0f, 0.0f);
+    sw_fill_fbm_buffer(buf.data(), -2, 2, 10.0f, 0.0f, 0.0f, 3, 2.0f, 0.5f);
+    sw_fill_particle_seeds(nullptr, 4, 1u);
+    sw_fill_particle_seeds(buf.data(), -1, 1u);
+    for (const float v : buf) CHECK(v == 7.0f);
 }
 
 TEST_CASE("seeding is deterministic and seed-sensitive") {
@@ -227,6 +256,34 @@ TEST_CASE("batch_haversine leaves the output untouched for fewer than two points
     CHECK(out[0] == -1.0);
 }
 
+TEST_CASE("batch_haversine: a 1000-point route at lat 60 matches per-segment haversine") {
+    // Regression for the scratch/stack overlap: the loader used to put this
+    // polyline at a fixed 64 KiB offset, inside the top of the emcc stack, and
+    // cos() spills for |lat| > 45° corrupted it (13,480 km for a 12 km
+    // route). The host build has no such overlap; this pins the arithmetic
+    // so the vitest twin (src/wasm/__tests__/wasmScratchArena.test.ts) can
+    // blame the marshalling layer alone if it ever regresses.
+    constexpr int kPoints = 1000;
+    std::vector<double> pts(static_cast<size_t>(kPoints) * 2);
+    for (int i = 0; i < kPoints; ++i) {
+        pts[static_cast<size_t>(i) * 2] = 60.0 + static_cast<double>(i) * 1e-4;
+        pts[static_cast<size_t>(i) * 2 + 1] = -1.0 + static_cast<double>(i) * 1e-4;
+    }
+    std::vector<double> segs(static_cast<size_t>(kPoints) - 1, -1.0);
+    const double total = sw_batch_haversine(pts.data(), kPoints, segs.data());
+    double reference = 0.0;
+    for (int i = 0; i + 1 < kPoints; ++i) {
+        const size_t a = static_cast<size_t>(i) * 2;
+        const double seg = sw_haversine(pts[a], pts[a + 1], pts[a + 2], pts[a + 3]);
+        INFO(at(i));
+        CHECK(std::fabs(segs[static_cast<size_t>(i)] - seg) <= 1e-6);
+        reference += seg;
+    }
+    CHECK(std::fabs(total - reference) <= 1e-6);
+    CHECK(total > 12000.0);
+    CHECK(total < 13000.0);
+}
+
 TEST_CASE("offset_latlng matches the shipping WASM goldens") {
     for (int i = 0; i < goldens::kOffsetCount; ++i) {
         INFO(at(i));
@@ -276,6 +333,140 @@ TEST_CASE("offset_latlng: north raises the latitude, south lowers it") {
     CHECK(rel_diff(south[1], lng) <= kHaversineRelTolerance);
 }
 
+// ---------------------------------------------------------------------------
+// Route geometry: initial_bearing / polyline_resample / polyline_project
+// ---------------------------------------------------------------------------
+
+TEST_CASE("initial_bearing matches the shipping WASM goldens") {
+    for (int i = 0; i < goldens::kBearingCount; ++i) {
+        INFO(at(i));
+        const double b = sw_initial_bearing(goldens::kBearingLat1[i], goldens::kBearingLng1[i],
+                                            goldens::kBearingLat2[i], goldens::kBearingLng2[i]);
+        CHECK(rel_diff(b, goldens::kBearingExpected[i]) <= kHaversineRelTolerance);
+        CHECK(b >= 0.0);
+        CHECK(b < 360.0);
+    }
+}
+
+TEST_CASE("initial_bearing agrees with offset_latlng") {
+    // Walk 50 m along a bearing; the bearing back from the start must be it.
+    for (int i = 0; i < 12; ++i) {
+        const double bearing = 30.0 * static_cast<double>(i) + 7.5;
+        INFO(at(i));
+        double out[2] = { 0.0, 0.0 };
+        sw_offset_latlng(69.6492, 18.9553, 50.0, bearing, out);
+        CHECK(std::fabs(sw_initial_bearing(69.6492, 18.9553, out[0], out[1]) - bearing) <= 1e-6);
+    }
+}
+
+TEST_CASE("polyline_resample matches the shipping WASM goldens") {
+    int idx = 0;
+    for (const auto& c : goldens::kResampleCases) {
+        INFO(at(idx++));
+        const int needed = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+        REQUIRE(needed == c.out_count);
+        std::vector<double> out(static_cast<size_t>(needed) * 2, 0.0);
+        CHECK(sw_polyline_resample(c.in, c.in_count, c.step, out.data(), needed) == needed);
+        for (size_t k = 0; k < out.size(); ++k) {
+            INFO("coord " << k);
+            CHECK(rel_diff(out[k], c.expected[k]) <= kHaversineRelTolerance);
+        }
+    }
+}
+
+TEST_CASE("polyline_resample spaces points evenly and keeps both ends") {
+    // The 250-point high-latitude route: every interior gap is the step
+    // (chords cut corners, so allow a little under), and the ends survive.
+    const auto& c = goldens::kResampleCases[2];
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+    std::vector<double> out(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, out.data(), n);
+    CHECK(out[0] == c.in[0]);
+    CHECK(out[1] == c.in[1]);
+    CHECK(out[out.size() - 2] == c.in[(c.in_count - 1) * 2]);
+    for (int i = 0; i + 2 < n; ++i) {
+        const size_t a = static_cast<size_t>(i) * 2;
+        INFO(at(i));
+        const double gap = sw_haversine(out[a], out[a + 1], out[a + 2], out[a + 3]);
+        CHECK(gap <= c.step + 1e-6);
+        CHECK(gap >= c.step * 0.95);
+    }
+}
+
+TEST_CASE("polyline_resample: truncates to cap, wraps longitudes, survives bad input") {
+    const auto& c = goldens::kResampleCases[3]; // antimeridian
+    std::vector<double> out(6, -999.0);
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, out.data(), 3);
+    CHECK(n == c.out_count);
+    CHECK(out[4] == c.expected[4]); // only 3 points written, the 3rd matches
+    std::vector<double> full(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, full.data(), n);
+    for (int i = 0; i < n; ++i) {
+        const double lng = full[static_cast<size_t>(i) * 2 + 1];
+        INFO(at(i));
+        CHECK(lng >= -180.0);
+        CHECK(lng < 180.0);
+    }
+    CHECK(sw_polyline_resample(nullptr, 3, 10.0, nullptr, 0) == 0);
+    CHECK(sw_polyline_resample(c.in, 0, 10.0, nullptr, 0) == 0);
+    // NaN / inf / negative steps copy through instead of looping forever.
+    CHECK(sw_polyline_resample(c.in, c.in_count, std::numeric_limits<double>::quiet_NaN(),
+                               nullptr, 0) == c.in_count);
+    CHECK(sw_polyline_resample(c.in, c.in_count, std::numeric_limits<double>::infinity(),
+                               nullptr, 0) == c.in_count);
+    CHECK(sw_polyline_resample(c.in, c.in_count, -5.0, nullptr, 0) == c.in_count);
+}
+
+TEST_CASE("polyline_project matches the shipping WASM goldens") {
+    int idx = 0;
+    for (const auto& c : goldens::kProjectCases) {
+        INFO(at(idx++));
+        double out[3] = { 0.0, 0.0, 0.0 };
+        sw_polyline_project(c.in, c.in_count, c.lat, c.lng, out);
+        CHECK(out[0] == c.expected[0]);
+        CHECK(rel_diff(out[1], c.expected[1]) <= kHaversineRelTolerance);
+        // Cross-track is a small difference of bearings; allow a millimetre.
+        CHECK(std::fabs(out[2] - c.expected[2]) <= 1e-3);
+    }
+}
+
+TEST_CASE("polyline_project: on-route points sit at their resampled distance") {
+    // Every resampled point of the high-latitude route is on the route, so it
+    // projects with ~zero cross-track at k * step along it.
+    const auto& c = goldens::kResampleCases[2];
+    const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
+    std::vector<double> pts(static_cast<size_t>(n) * 2);
+    sw_polyline_resample(c.in, c.in_count, c.step, pts.data(), n);
+    for (int i = 0; i + 1 < n; ++i) {
+        INFO(at(i));
+        double out[3] = { 0.0, 0.0, 0.0 };
+        sw_polyline_project(c.in, c.in_count, pts[static_cast<size_t>(i) * 2],
+                            pts[static_cast<size_t>(i) * 2 + 1], out);
+        CHECK(std::fabs(out[2]) <= 0.05);
+        CHECK(std::fabs(out[1] - c.step * static_cast<double>(i)) <= 0.5);
+    }
+}
+
+TEST_CASE("polyline_project: sign follows the side of travel; degenerate input is safe") {
+    const double line[4] = { 0.0, 0.0, 0.0, 0.01 }; // due east along the equator
+    double out[3] = { 0.0, 0.0, 0.0 };
+    sw_polyline_project(line, 2, -0.0001, 0.005, out); // south = right of eastbound
+    CHECK(out[0] == 0.0);
+    CHECK(out[2] > 11.0);
+    CHECK(out[2] < 11.2);
+    CHECK(std::fabs(out[1] - sw_haversine(0.0, 0.0, 0.0, 0.005)) <= 1e-3);
+    sw_polyline_project(line, 2, 0.0001, 0.005, out); // north = left
+    CHECK(out[2] < -11.0);
+
+    sw_polyline_project(line, 0, 1.0, 1.0, out);
+    CHECK(out[0] == -1.0);
+    CHECK(out[1] == 0.0);
+    CHECK(out[2] == 0.0);
+    sw_polyline_project(nullptr, 2, 1.0, 1.0, out);
+    CHECK(out[0] == -1.0);
+    sw_polyline_project(line, 2, 1.0, 1.0, nullptr); // must not crash
+}
+
 TEST_CASE("normalize_angle matches the shipping WASM goldens") {
     for (int i = 0; i < goldens::kNormalizeAngleCount; ++i) {
         INFO(at(i));
@@ -315,22 +506,37 @@ TEST_CASE("signed_angle_diff stays within [-180, 180]") {
 TEST_CASE("fill_engine_noise matches the shipping WASM goldens") {
     struct Case {
         int count;
-        float rpm, load, speed, time, sample_rate;
+        float rpm, load, speed;
+        double phase, sample_index;
+        float sample_rate;
         const float* expected;
+        double expected_phase;
     };
     const Case cases[] = {
         { goldens::kEngineCount0, goldens::kEngineRpm0, goldens::kEngineLoad0,
-          goldens::kEngineSpeed0, goldens::kEngineTime0, goldens::kEngineSampleRate0,
-          goldens::kEngineExpected0 },
+          goldens::kEngineSpeed0, goldens::kEnginePhase0, goldens::kEngineSampleIndex0,
+          goldens::kEngineSampleRate0, goldens::kEngineExpected0,
+          goldens::kEngineExpectedPhase0 },
         { goldens::kEngineCount1, goldens::kEngineRpm1, goldens::kEngineLoad1,
-          goldens::kEngineSpeed1, goldens::kEngineTime1, goldens::kEngineSampleRate1,
-          goldens::kEngineExpected1 },
+          goldens::kEngineSpeed1, goldens::kEnginePhase1, goldens::kEngineSampleIndex1,
+          goldens::kEngineSampleRate1, goldens::kEngineExpected1,
+          goldens::kEngineExpectedPhase1 },
         { goldens::kEngineCount2, goldens::kEngineRpm2, goldens::kEngineLoad2,
-          goldens::kEngineSpeed2, goldens::kEngineTime2, goldens::kEngineSampleRate2,
-          goldens::kEngineExpected2 },
+          goldens::kEngineSpeed2, goldens::kEnginePhase2, goldens::kEngineSampleIndex2,
+          goldens::kEngineSampleRate2, goldens::kEngineExpected2,
+          goldens::kEngineExpectedPhase2 },
         { goldens::kEngineCount3, goldens::kEngineRpm3, goldens::kEngineLoad3,
-          goldens::kEngineSpeed3, goldens::kEngineTime3, goldens::kEngineSampleRate3,
-          goldens::kEngineExpected3 },
+          goldens::kEngineSpeed3, goldens::kEnginePhase3, goldens::kEngineSampleIndex3,
+          goldens::kEngineSampleRate3, goldens::kEngineExpected3,
+          goldens::kEngineExpectedPhase3 },
+        { goldens::kEngineCount4, goldens::kEngineRpm4, goldens::kEngineLoad4,
+          goldens::kEngineSpeed4, goldens::kEnginePhase4, goldens::kEngineSampleIndex4,
+          goldens::kEngineSampleRate4, goldens::kEngineExpected4,
+          goldens::kEngineExpectedPhase4 },
+        { goldens::kEngineCount5, goldens::kEngineRpm5, goldens::kEngineLoad5,
+          goldens::kEngineSpeed5, goldens::kEnginePhase5, goldens::kEngineSampleIndex5,
+          goldens::kEngineSampleRate5, goldens::kEngineExpected5,
+          goldens::kEngineExpectedPhase5 },
     };
     static_assert(sizeof(cases) / sizeof(cases[0]) == goldens::kEngineCaseCount,
                   "engine golden case count drifted from the generated header");
@@ -339,13 +545,62 @@ TEST_CASE("fill_engine_noise matches the shipping WASM goldens") {
         const Case& k = cases[c];
         INFO("case " << c);
         std::vector<float> buf(static_cast<size_t>(k.count), 0.0f);
-        sw_fill_engine_noise(buf.data(), k.count, k.rpm, k.load, k.speed,
-                             k.time, k.sample_rate);
+        const double next = sw_fill_engine_noise(buf.data(), k.count, k.rpm, k.load,
+                                                 k.speed, k.phase, k.sample_index,
+                                                 k.sample_rate);
+        // The phase is plain f64 add + floor on both sides: exact, not close.
+        CHECK(next == k.expected_phase);
         for (int i = 0; i < k.count; ++i) {
             INFO(at(i));
             CHECK(bit_equal(buf[static_cast<size_t>(i)], k.expected[i]));
         }
     }
+}
+
+TEST_CASE("fill_engine_noise: block size does not change the stream") {
+    // 1 x 1024 vs 4 x 256 (and an odd split), carrying the returned phase.
+    constexpr int kTotal = 1024;
+    std::vector<float> whole(kTotal, 0.0f);
+    const double end_whole = sw_fill_engine_noise(whole.data(), kTotal, 3200.0f, 0.7f,
+                                                  110.0f, 0.3, 987654.0, 48000.0f);
+    for (const int block : {256, 100}) {
+        INFO("block " << block);
+        std::vector<float> chunked(kTotal, 0.0f);
+        double phase = 0.3;
+        for (int at_sample = 0; at_sample < kTotal; at_sample += block) {
+            const int n = std::min(block, kTotal - at_sample);
+            phase = sw_fill_engine_noise(chunked.data() + at_sample, n, 3200.0f, 0.7f,
+                                         110.0f, phase, 987654.0 + at_sample, 48000.0f);
+        }
+        CHECK(phase == end_whole);
+        CHECK(std::memcmp(chunked.data(), whole.data(), sizeof(float) * kTotal) == 0);
+    }
+}
+
+TEST_CASE("fill_engine_noise: an hour-long drive never turns into a staircase") {
+    // The f32-time ABI this replaced produced 84/127 duplicated consecutive
+    // samples at 10 min and 118/127 at 1 h. Render a full hour at 48 kHz in
+    // the cabin worklet's 1024-sample blocks with the road noise off (speed 0)
+    // so only the oscillator is under test, and require that no two
+    // consecutive samples — including across block edges — are equal.
+    constexpr int kBlock = 1024;
+    constexpr float kRate = 48000.0f;
+    constexpr long long kHourSamples = 3600LL * 48000LL;
+    std::vector<float> buf(kBlock, 0.0f);
+    double phase = 0.0;
+    float prev = 2.0f;  // outside [-1, 1]: never equal to a real sample
+    long long duplicates = 0;
+    for (long long at_sample = 0; at_sample < kHourSamples; at_sample += kBlock) {
+        phase = sw_fill_engine_noise(buf.data(), kBlock, 2500.0f, 0.6f, 0.0f, phase,
+                                     static_cast<double>(at_sample), kRate);
+        for (const float s : buf) {
+            if (s == prev) ++duplicates;
+            prev = s;
+        }
+    }
+    CHECK(duplicates == 0);
+    CHECK(phase >= 0.0);
+    CHECK(phase < 1.0);
 }
 
 TEST_CASE("fill_cabin_ir matches the shipping WASM goldens") {
@@ -465,7 +720,7 @@ TEST_CASE("fill_cabin_ir: distinct cabins, clamped arguments, safe edges") {
 TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") {
     std::vector<float> buf(256, 7.0f);
     sw_fill_engine_noise(buf.data(), static_cast<int>(buf.size()),
-                         9000.0f, 1.0f, 400.0f, 99.5f, 44100.0f);
+                         9000.0f, 1.0f, 400.0f, 0.5, 4389450.0, 44100.0f);
     for (size_t i = 0; i < buf.size(); ++i) {
         INFO(at(static_cast<int>(i)));
         CHECK(buf[i] >= -1.0f);
@@ -474,9 +729,19 @@ TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") 
 
     // Non-positive counts and a null buffer must be no-ops, not crashes.
     buf.assign(buf.size(), 7.0f);
-    sw_fill_engine_noise(buf.data(), 0, 2000.0f, 0.5f, 50.0f, 1.0f, 44100.0f);
+    CHECK(sw_fill_engine_noise(buf.data(), 0, 2000.0f, 0.5f, 50.0f, 0.25, 0.0, 44100.0f)
+          == 0.25);
     CHECK(buf[0] == 7.0f);
-    sw_fill_engine_noise(nullptr, 16, 2000.0f, 0.5f, 50.0f, 1.0f, 44100.0f);
+    CHECK(sw_fill_engine_noise(nullptr, 16, 2000.0f, 0.5f, 50.0f, 0.25, 0.0, 44100.0f)
+          == 0.25);
+
+    // An out-of-range phase is wrapped, and a non-finite one resets to 0.
+    CHECK(sw_fill_engine_noise(nullptr, 0, 0.0f, 0.0f, 0.0f, 2.75, 0.0, 44100.0f) == 0.75);
+    CHECK(sw_fill_engine_noise(nullptr, 0, 0.0f, 0.0f, 0.0f, -0.25, 0.0, 44100.0f) == 0.75);
+    CHECK(sw_fill_engine_noise(nullptr, 0, 0.0f, 0.0f, 0.0f,
+                               std::numeric_limits<double>::quiet_NaN(), 0.0, 44100.0f) == 0.0);
+    CHECK(sw_fill_engine_noise(nullptr, 0, 0.0f, 0.0f, 0.0f,
+                               std::numeric_limits<double>::infinity(), 0.0, 44100.0f) == 0.0);
 }
 
 TEST_CASE("fill_hrtf matches the shipping WASM goldens") {
@@ -598,6 +863,21 @@ TEST_CASE("reduce_luma_bt709 matches the shipping WASM goldens") {
     CHECK(bit_equal(out[0], goldens::kChoresReduceExpected[0]));
     CHECK(bit_equal(out[1], goldens::kChoresReduceExpected[1]));
     CHECK(bit_equal(out[2], goldens::kChoresReduceExpected[2]));
+}
+
+TEST_CASE("reduce_luma_bt709: a flat 1080p frame reduces to its own luma") {
+    // An f32 running sum drifted by -0.59% / +0.98% here once the sum dwarfed
+    // each addend; the f64 accumulator keeps the mean on the per-pixel value.
+    constexpr int kW = 1920;
+    constexpr int kH = 1080;
+    for (const unsigned char v : {static_cast<unsigned char>(37), static_cast<unsigned char>(200)}) {
+        INFO("value " << static_cast<int>(v));
+        std::vector<unsigned char> rgba(static_cast<size_t>(kW) * kH * 4u, v);
+        float out[3] = {0.0f, 0.0f, 0.0f};
+        sw_reduce_luma_bt709(rgba.data(), kW, kH, out);
+        CHECK(out[0] == out[1]);  // mean == min == the one luma in the frame
+        CHECK(out[1] == out[2]);
+    }
 }
 
 TEST_CASE("downsample_2d matches the shipping WASM goldens") {

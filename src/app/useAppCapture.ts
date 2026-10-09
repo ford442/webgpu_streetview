@@ -9,14 +9,12 @@ import type { LookId } from '../config/lookPacks';
 import type { VehicleType } from '../car/VehicleManager';
 import type { ConnectedChromeSnapshots } from './shell/ConnectedChrome';
 import { getCarRuntime } from './carRuntimeCache';
+import { povStore } from '../state/povStore';
 
 export interface UseAppCaptureOptions {
   panorama: google.maps.StreetViewPanorama | null;
   renderer: StreetViewRenderer | null;
   viewMode: 'freelook' | 'car';
-  heading: number;
-  pitch: number;
-  zoom: number;
   locationName: string;
   /** Historical image date of the pano on screen, if the timeline resolved one. */
   currentImageDate: string | null;
@@ -70,9 +68,6 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
     panorama,
     renderer,
     viewMode,
-    heading,
-    pitch,
-    zoom,
     locationName,
     currentImageDate,
     lookId,
@@ -104,6 +99,7 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
       ? (rgba: Uint8ClampedArray, w: number, h: number, dw: number, dh: number) =>
           chores.downsampleRgba(rgba, w, h, dw, dh)
       : undefined;
+    const { heading, pitch, zoom } = povStore.get();
     const meta = {
       name: locationName || `Snapshot ${new Date().toLocaleString()}`,
       lat: position.lat(),
@@ -143,9 +139,6 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
     panorama,
     renderer,
     addSnapshot,
-    heading,
-    pitch,
-    zoom,
     locationName,
     currentImageDate,
     lookId,

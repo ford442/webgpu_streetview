@@ -15,6 +15,7 @@ export type { LumaReduce } from './lumaMath';
 export { GpuChores } from './GpuChores';
 export type { ChoresSample } from './GpuChores';
 export {
+  readGpuChoresLimitsVerdict,
   readNoGpuComputeFlag,
   resolveCpuChoresBackend,
   resolveGpuChoresEligibility,

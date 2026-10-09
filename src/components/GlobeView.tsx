@@ -13,6 +13,8 @@ import ScoutCard from './ScoutCard';
 import { type GlobeBookmark, type GlobePOI } from './globe/globeTypes';
 import { addLocationBeacon, syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
 import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
+import { syncGlobeTripRoute } from './globe/globeTripRoute';
+import { useTripSelector } from '../state/tripStore';
 import {
   flyGlobeEnterOrbit,
   flyGlobeExitDescend,
@@ -79,6 +81,8 @@ const GlobeView: React.FC<GlobeViewProps> = ({
   const bookmarkEntitiesRef = useRef<CesiumEntity[]>([]);
   const waypointEntitiesRef = useRef<CesiumEntity[]>([]);
   const waypointPolylineRef = useRef<CesiumEntity | null>(null);
+  const tripRouteEntitiesRef = useRef<CesiumEntity[]>([]);
+  const tripRoute = useTripSelector((s) => s.route);
   const svServiceRef = useRef<google.maps.StreetViewService | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -198,6 +202,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
     return () => {
       cancelled = true;
     };
+    // Entry runs once per `transition` change; the entry pose is captured via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition]);
 
@@ -235,6 +240,12 @@ const GlobeView: React.FC<GlobeViewProps> = ({
   }, [waypoints, viewerReady]);
 
   useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || typeof Cesium === 'undefined') return;
+    tripRouteEntitiesRef.current = syncGlobeTripRoute(viewer, tripRoute, tripRouteEntitiesRef.current);
+  }, [tripRoute, viewerReady]);
+
+  useEffect(() => {
     if (!locationEntityRef.current || typeof Cesium === 'undefined') return;
     locationEntityRef.current.position =
       Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 80);
@@ -251,7 +262,6 @@ const GlobeView: React.FC<GlobeViewProps> = ({
       cleanupViewer();
       onExitRef.current();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition]);
 
   function cleanupViewer() {
