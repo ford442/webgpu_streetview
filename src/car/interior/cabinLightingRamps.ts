@@ -99,7 +99,7 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
     night * 0.22 +
     (input.headlightsOn ? night * 0.1 : 0) +
     (input.domeLightOn ? 0.04 : 0);
-  const dome = input.domeLightOn ? 0.92 : 0;
+  const dome = input.domeLightOn ? 1.3 : 0;
   const headlights = input.headlightsOn ? 0.2 : 0;
 
   return {
