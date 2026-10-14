@@ -104,8 +104,15 @@ export function buildInteriorLighting(
   scene.add(ambientLight);
 
   const dashColor = parseInt(config.accentColor.replace('#', '0x'));
-  const dashLight = new THREE.PointLight(dashColor, 0, 1.7, 2);
-  dashLight.position.set(0, 0.86, -0.78);
+  // Cluster/display spill, parked at lap level behind the wheel (wheel centre
+  // -0.35, 0.86, -0.52). Two traps bound the position: inside the dash block
+  // (z -1.25…-0.75, y 0.6–1.0 — where it used to sit, 3 cm behind the face) it
+  // lights nothing it is meant to, and up near the dash top / header it paints
+  // the headliner green and mirrors as a hard dot in the glass. Down here it
+  // washes the dash face, wheel underside and knees from ~0.4 m (decay 2 turns
+  // anything closer into a hot ring).
+  const dashLight = new THREE.PointLight(dashColor, 0, 1.9, 2);
+  dashLight.position.set(-0.25, 0.68, -0.34);
   interiorGroup.add(dashLight);
 
   const overheadLight = new THREE.DirectionalLight(0xfff8f0, 0.2);
@@ -134,7 +141,7 @@ export function buildInteriorLighting(
   interiorBounceLight.position.set(0, 0.52, -0.7);
   interiorGroup.add(interiorBounceLight);
 
-  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.2, 2);
+  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.8, 2);
   domeLightSource.position.set(0, 1.72, 0.3);
   interiorGroup.add(domeLightSource);
 

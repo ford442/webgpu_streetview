@@ -14,6 +14,9 @@ export interface MaterialSet {
   chrome: THREE.MeshPhysicalMaterial;
 }
 
+/** Darkest texel of the dash grain (0–255); the grain is a ~±10% albedo modulation. */
+const DASH_GRAIN_MIN = 208;
+
 /** Generate a procedural canvas texture */
 function canvasTexture(
   size: number,
@@ -261,12 +264,15 @@ export function createMaterials(
     : null;
   leatherNormalTex?.repeat.set(3, 3);
 
-  // Dashboard soft-touch texture
+  // Dashboard soft-touch grain. `map` multiplies the material colour, so this
+  // has to sit near white and only modulate it: the old 0–8/255 noise scaled
+  // the albedo by ~0.016, leaving the dash with no diffuse term at all (it only
+  // ever showed Fresnel reflections, and was pure black at night).
   const dashTex = canvasTexture(128, (ctx) => {
     const img = ctx.createImageData(128, 128);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
-      d[i] = d[i + 1] = d[i + 2] = (Math.random() * 8) | 0;
+      d[i] = d[i + 1] = d[i + 2] = DASH_GRAIN_MIN + ((Math.random() * (255 - DASH_GRAIN_MIN)) | 0);
       d[i + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
@@ -281,17 +287,20 @@ export function createMaterials(
     dashNormalTex.repeat.set(4, 4);
   }
 
+  // Albedos are real black-plastic values (linear ~0.02–0.04), not the old
+  // 0x1a1a1a (~0.010): at that level neither the sun nor the pano IBL could
+  // model the dash, and at night nothing short of an emitter showed on it.
   const dashboardColors: Record<string, number> = {
-    dark: 0x1a1a1a,
-    light: 0x2a2a2a,
+    dark: 0x2c2c30,
+    light: 0x3a3a3c,
     neon: 0x0a0a1a,
     // Cool instrument-bay grey — lighter than sedan, not hospital-white
     // so night IBL (0.18) does not read as a fluorescent room.
     clinical: 0xb4bcc0,
   };
   const dashColor = config.type === 'cortianics'
-    ? 0x101214
-    : dashboardColors[config.theme] ?? 0x1a1a1a;
+    ? 0x24262a
+    : dashboardColors[config.theme] ?? dashboardColors.dark!;
   const clinical = config.theme === 'clinical';
   const cortianics = config.type === 'cortianics';
 
@@ -340,7 +349,7 @@ export function createMaterials(
   });
 
   const frame = new THREE.MeshStandardMaterial({
-    color: clinical ? 0x8a9298 : 0x131313,
+    color: clinical ? 0x8a9298 : 0x222226,
     roughness: clinical ? 0.55 : 0.88,
     metalness: 0,
     envMapIntensity: 0.28,

@@ -36,7 +36,7 @@ export class CarInteriorSteeringBuilder {
         this.interiorGroup.add(steeringWheelGroup);
 
         const wheelRimMat = new THREE.MeshStandardMaterial({
-            color: 0x0e0a06,
+            color: 0x2a2622,
             roughness: 0.62,
             metalness: 0.04,
             envMapIntensity: 0.3,

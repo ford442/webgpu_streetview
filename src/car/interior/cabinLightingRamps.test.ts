@@ -92,7 +92,12 @@ describe('cabinLightingRamps', () => {
       headlightsOn: false,
       domeLightOn: true,
     });
-    expect(fill.dome).toBeGreaterThan(0.7);
+    // The toggle has to be a visible change on seats/wheel/floor (real-GPU shots,
+    // dome on, luma 0–255, this pass vs before: wheel 11 → 22, dash top 6 → 19),
+    // and the dome stays the dominant source — the cluster spill is a small
+    // fraction of it.
+    expect(fill.dome).toBeGreaterThan(1.0);
+    expect(fill.dash).toBeLessThan(fill.dome * 0.3);
     expect(fill.hemi).toBeLessThan(0.02);
     expect(emit.domeFixture).toBeGreaterThan(1.0);
     expect(emit.domeFixture).toBeLessThanOrEqual(1.1);
