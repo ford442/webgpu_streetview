@@ -128,7 +128,7 @@ describe('weather shader parity guard', () => {
     }
   );
 
-  it.each(['sampleSceneDepthMap', 'sceneDepth'])(
+  it.each(['sampleSceneDepthMap', 'sceneDepth', 'precipOcclusion'])(
     'keeps the %s scene-depth helper byte-identical between fragment and compute paths',
     (fnName) => {
       const fragment = readShader('weather-post.wgsl');
@@ -148,6 +148,22 @@ describe('weather shader parity guard', () => {
         'let proxy=viewDepthProxy(uv,horizonY);'
         + 'if(depthParams.blend<=0.0){return proxy;}'
       )).toBe(true);
+    }
+  });
+
+  it('occludes precipitation layers only when a depth map is blended in; blend 0 keeps the old accumulate verbatim', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const source = readShader(name);
+      const rain = normalizeWgsl(extractFunctionBody(source, 'rain'));
+      expect(rain).toContain(
+        'if(depthParams.blend>0.0){c=c+streak*(0.7+seed*0.8)*precipOcclusion(layer,4.0,depth);}'
+        + 'else{c=c+streak*(0.7+seed*0.8);}'
+      );
+      const snow = normalizeWgsl(extractFunctionBody(source, 'snow'));
+      expect(snow).toContain(
+        'if(depthParams.blend>0.0){c=c+flake*(0.85+rnd*0.6)*precipOcclusion(layer,5.0,depth);}'
+        + 'else{c=c+flake*(0.85+rnd*0.6);}'
+      );
     }
   });
 

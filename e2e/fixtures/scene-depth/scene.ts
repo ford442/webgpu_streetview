@@ -87,6 +87,9 @@ function weatherParams(): Float32Array<ArrayBuffer> {
     const p = createDefaultWeatherParams();
     p[I.cameraHeading] = 0;
     p[I.cameraPitch] = 0.5;
+    // Midday sun high behind the camera: no sunset glow or flare in the frame.
+    p[I.sunAzimuth] = 0;
+    p[I.sunAltitude] = 1.2;
     if (look === 'fog') {
         // Extinction only (no flat aerial wash), so what you see is depth.
         p[I.fogIntensity] = 0.0;

@@ -135,7 +135,7 @@ export class DepthController {
         };
     }
 
-    /** True until the lazy pass has been initialised (or is initialising). */
+    /** True once the lazy pass has started initialising (its GPU resources exist). */
     public isInitialised(): boolean {
         return this.paramsBuffer !== null;
     }

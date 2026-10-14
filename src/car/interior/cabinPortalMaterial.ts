@@ -29,7 +29,9 @@
  * `fs_main` that dominate the look (grade, night, vignette, rain darkening, ACES)
  * from the same packed weather values the road used (`RoadLook`). Fog, haze,
  * dust, headlights and named-look LUTs are not mirrored: a known, small delta
- * inside lenses (see `docs/RENDERER_FALLBACK.md`).
+ * inside lenses (see `docs/RENDERER_FALLBACK.md`). Scene depth (#320) reaches
+ * the road only through fog, precipitation and DOF, so it adds nothing to the
+ * mirror — `windshieldPortal.parity.test.ts` fails if that ever changes.
  *
  * ### Screen mapping
  *

@@ -39,6 +39,28 @@ curve as the HALD volume). The SVG palette cards remain the design reference.
 
 ---
 
+## Scene depth (#320)
+
+With **🧊 Scene depth** on (High/Ultra), fog, rain, depth of field and the hop
+release read a monocular depth map of the frame instead of the screen-Y proxy —
+see [`docs/SCENE_DEPTH.md`](../SCENE_DEPTH.md). Each pair is the same frame of
+the production renderer: left, the proxy (what ships with scene depth off, and
+bit-exact with it at weight 0); right, scene depth at Ultra's weight. Rendered
+from a CC0 street photo (`e2e/fixtures/scene-depth/`) with the real model, so
+they are reproducible without a Maps key: `npm run capture:depth-looks`. On a
+keyed WebGPU host, `npm run capture:look-goldens` also writes
+`<id>-depth-webgpu.png` for each live look.
+
+| | |
+|---|---|
+| The map | ![photo and depth map](./scene-depth/depth-map-webgpu.jpg) |
+| Fog pools down the street; near walls stay clear | ![fog](./scene-depth/fog-webgpu.jpg) |
+| DOF: the near wall is sharp, the far end soft | ![depth of field](./scene-depth/dof-webgpu.jpg) |
+| Rain: far streak layers occluded behind near walls (subtle in a still) | ![rain](./scene-depth/rain-webgpu.jpg) |
+| Hop release: the held frame dollies — near pixels move most | ![dolly](./scene-depth/dolly-webgpu.jpg) |
+
+---
+
 ## Looks
 
 ### ☀️ Clear (`clear`) — reset / before

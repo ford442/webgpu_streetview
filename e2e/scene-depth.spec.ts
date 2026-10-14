@@ -150,7 +150,7 @@ test.describe('scene depth on a real WebGPU device', () => {
         }
     });
 
-    test('fog pools down the street and DOF keeps the near wall sharp', async () => {
+    test('fog pools down the street, rain hides behind the near wall, DOF keeps it sharp', async () => {
         const fogProxy = await captureLook(page, 'fog', { enabled: true, blend: 0 });
         const fogDepth = await captureLook(page, 'fog', { enabled: true, blend: 0.8 });
         // The near wall sits above the pitch horizon, so the proxy calls it
@@ -160,6 +160,13 @@ test.describe('scene depth on a real WebGPU device', () => {
         expect(Math.abs(luma(fogDepth.regions.farDoor) - luma(fogProxy.regions.farDoor))).toBeLessThan(4);
         // The road under the camera, where the map is calibrated against the proxy, agrees.
         expect(Math.abs(luma(fogDepth.regions.nearGround) - luma(fogProxy.regions.nearGround))).toBeLessThan(6);
+
+        // Rain: far streak layers are occluded behind the near wall; the far end keeps the whole curtain.
+        const rainProxy = await captureLook(page, 'rain', { enabled: true, blend: 0 });
+        const rainDepth = await captureLook(page, 'rain', { enabled: true, blend: 0.8 });
+        expect(rainDepth.hash).not.toBe(rainProxy.hash);
+        const streaks = (c: Capture, r: 'nearWall' | 'farDoor') => luma(c.regions[r]) - luma(noDepth.clear!.regions[r]);
+        expect(streaks(rainDepth, 'nearWall')).toBeLessThan(streaks(rainProxy, 'nearWall'));
 
         const clear = noDepth.clear!;
         const dofProxy = await captureLook(page, 'dof', { enabled: true, blend: 0 });
