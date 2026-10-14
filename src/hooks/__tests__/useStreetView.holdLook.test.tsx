@@ -94,7 +94,8 @@ describe('useStreetView hold look-around', () => {
       result.current.advance('forward', 200);
     });
 
-    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined);
+    // The link heading rides along as the travel direction for the release dolly (#320).
+    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined, 200);
   });
 
   it('syncs setPov when look changes outside of hold', () => {
@@ -127,7 +128,8 @@ describe('useStreetView hold look-around', () => {
       result.current.teleport(1.23, 4.56);
     });
 
-    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined);
+    // No travel heading: a teleport is not a step, so the release keeps the plain crossfade.
+    expect(mockBeginHoldTransition).toHaveBeenCalledWith(50, 12, undefined, undefined);
     expect(mockSetPosition).toHaveBeenCalledWith({ lat: 1.23, lng: 4.56 });
     expect(result.current.isPanoramaUpdatePaused).toBe(true);
   });

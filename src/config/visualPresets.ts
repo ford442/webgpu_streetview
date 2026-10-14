@@ -45,6 +45,13 @@ export interface VisualPreset {
    * pitch-only horizon and skips the per-row luma readback.
    */
   horizonEstimateBlend: number;
+  /**
+   * Weight (0–1) of the monocular scene-depth map against the depth proxy
+   * (renderer/depth/ → `SceneDepthParams.blend`). 0 keeps today's proxy
+   * bit-exactly and never downloads the model; above 0 it applies only once
+   * the user opts in (weather panel, `?depth`).
+   */
+  depthBlend: number;
 
   /**
    * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
@@ -100,6 +107,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
+    depthBlend: 0,
 
     maxLights: 2,
     ambientOcclusion: false,
@@ -138,6 +146,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
+    depthBlend: 0,
 
     maxLights: 4,
     ambientOcclusion: false,
@@ -179,6 +188,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: true,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0.5,
+    depthBlend: 0.6,
 
     maxLights: 8,
     ambientOcclusion: true,
@@ -217,6 +227,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: true,
     motionBlurEnabled: true,
     horizonEstimateBlend: 0.7,
+    depthBlend: 0.8,
 
     maxLights: 16,
     ambientOcclusion: true,

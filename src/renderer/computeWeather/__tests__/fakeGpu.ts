@@ -270,6 +270,9 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             copyBufferToBuffer: (src: FakeBuffer, _so: number, dst: FakeBuffer, _do: number, size: number) => {
                 rec.bufferCopies.push({ src, dst, size, dstMapState: dst.mapState });
             },
+            copyTextureToBuffer: (src: unknown, dst: unknown, size: unknown) => {
+                rec.copies.push({ src, dst, size });
+            },
             resolveQuerySet: (querySet: unknown, firstQuery: number, queryCount: number) => {
                 rec.querySetResolves.push({ querySet, firstQuery, queryCount });
             },

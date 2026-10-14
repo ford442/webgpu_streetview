@@ -144,6 +144,36 @@ else
   echo "✅ single-instance module check passed"
 fi
 
+# Scene depth (#320): onnxruntime-web is imported from a pinned CDN URL inside
+# the depth Worker, and the model is fetched at run time from models/depth/.
+# Neither may ever be bundled: no ORT runtime code (its wasm loader names the
+# `ort-wasm-simd-threaded` files; its C API exports `OrtCreateSession`) and no
+# .onnx under build/static. The Worker itself stays a few KB.
+DEPTH_WORKER_GZIP_BUDGET_BYTES="${DEPTH_WORKER_GZIP_BUDGET_BYTES:-16384}"
+ORT_IN_BUNDLE=$(grep -l -E "ort-wasm-simd-threaded|OrtCreateSession" "$BUILD_DIR"/static/js/*.js 2>/dev/null || true)
+if [ -n "$ORT_IN_BUNDLE" ]; then
+  echo "❌ ERROR: onnxruntime-web code is bundled into: ${ORT_IN_BUNDLE}"
+  echo "   Load it from DEPTH_RUNTIME_URL inside the depth Worker (src/renderer/depth/)."
+  ERRORS=$((ERRORS + 1))
+fi
+ONNX_IN_STATIC=$(find "$BUILD_DIR/static" -name '*.onnx' 2>/dev/null || true)
+if [ -n "$ONNX_IN_STATIC" ]; then
+  echo "❌ ERROR: a model file is bundled: ${ONNX_IN_STATIC} (models live in models/depth/, fetched at run time)"
+  ERRORS=$((ERRORS + 1))
+fi
+for worker in "$BUILD_DIR"/static/js/depthWorker.*.worker.js; do
+  [ -e "$worker" ] || continue
+  WORKER_GZIP=$(gzip -c "$worker" | wc -c)
+  echo "   depth worker: $(basename "$worker") gzip ${WORKER_GZIP} bytes (budget ${DEPTH_WORKER_GZIP_BUDGET_BYTES})"
+  if [ "$WORKER_GZIP" -gt "$DEPTH_WORKER_GZIP_BUDGET_BYTES" ]; then
+    echo "❌ ERROR: the depth Worker grew past its budget — is the runtime being bundled?"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+if [ -z "$ORT_IN_BUNDLE" ] && [ -z "$ONNX_IN_STATIC" ]; then
+  echo "✅ scene-depth runtime and model not bundled"
+fi
+
 if [ "$ERRORS" -gt 0 ]; then
   echo "❌ Bundle budget check failed with ${ERRORS} error(s)."
   exit 1

@@ -34,5 +34,6 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?gltfInterior` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Use the authored glTF interior kit. Turning it on persists to localStorage. |
 | `?route` | string | `lat,lng;lat,lng[;…]` | — | Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it. |
 | `?liveWeather` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). |
+| `?depth` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality. |
 | `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM-driven noise effect. `off` disables it; unset defers to localStorage, then on. |
 | `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM GPU particle field. `off` disables it; unset defers to localStorage, then on. |

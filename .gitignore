@@ -33,6 +33,8 @@ cpp/build-clang-v3/
 cpp/compile_commands.json
 node_modules/
 public/wasm/*.js
+# Scene-depth model files: fetched at deploy time (npm run fetch:depth-model), never in git
+public/models/depth/
 __pycache__/
 *.pyc
 

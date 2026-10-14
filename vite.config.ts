@@ -123,6 +123,18 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       strictPort: true,
     },
+    // The scene-depth Worker (renderer/depth/depthWorker.ts) is an ES module:
+    // it imports onnxruntime-web from a pinned CDN URL at run time, which an
+    // IIFE worker cannot. It is a few KB — the runtime never enters the bundle.
+    worker: {
+      format: 'es',
+      rollupOptions: {
+        output: {
+          entryFileNames: 'static/js/[name].[hash].worker.js',
+          chunkFileNames: 'static/js/[name].[hash].worker-chunk.js',
+        },
+      },
+    },
     build: {
       outDir: 'build',
       // The app cannot run without WebGPU, so there is no point down-levelling for
