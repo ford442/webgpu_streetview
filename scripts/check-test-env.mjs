@@ -67,7 +67,8 @@ export function domReads(source, fileName = 'spec.tsx') {
     if (ts.isVariableStatement(n)) for (const d of n.declarationList.declarations) if (ts.isIdentifier(d.name)) shadowed.add(d.name.text);
     if (ts.isFunctionDeclaration(n) && n.name) shadowed.add(n.name.text);
   });
-  (function walk(n) {
+  // Typed as any Node: inferred from the `sf` argument, `isIdentifier` would narrow it to never.
+  (/** @param {import('typescript').Node} n */ function walk(n) {
     if (ts.isIdentifier(n) && DOM_GLOBALS.has(n.text) && !shadowed.has(n.text) && !isIncidental(n)) {
       hits.push({ line: sf.getLineAndCharacterOfPosition(n.getStart()).line + 1, name: n.text });
     }

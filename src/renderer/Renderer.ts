@@ -62,6 +62,7 @@ import {
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import { HistoricalWipePass } from './HistoricalWipePass';
 import type { WipeDirection } from './historicalWipe';
+import { releaseSceneDepthFallback, type FrameAux } from './depth/sceneDepthBinding';
 
 type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
 
@@ -122,6 +123,8 @@ export class Renderer implements StreetViewRenderer {
 
     private passes: FramePassRegistry | null = null;
     private readonly frameUniforms = new Float32Array(FRAME_UNIFORM_FLOAT_COUNT);
+    /** `FrameContext.aux`, refilled every frame (one object, no per-frame allocation). */
+    private readonly frameAux: FrameAux = {};
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     /**
@@ -254,9 +257,6 @@ export class Renderer implements StreetViewRenderer {
                 await this.adoptPresentFallback(passes);
             }
 
-            this.gpuChores = new GpuChores(this.device);
-            void this.gpuChores.ensureReady();
-
             // The portal reads the pass-1 intermediate only — never `videoTexture`,
             // so during a hold it can only ever see the frozen frame.
             this.roadFrameSource = createRoadFrameSource({
@@ -274,6 +274,12 @@ export class Renderer implements StreetViewRenderer {
             publishRoadFrameSource(this.roadFrameSource);
 
             publishBootSuccess(probe);
+
+            // After the success probe: `GpuChores` reads `isWebGpuProbeOk()` and
+            // the published limits verdict in its constructor, so building it
+            // any earlier put every normal boot on the WASM/JS fallback.
+            this.gpuChores = new GpuChores(this.device);
+            void this.gpuChores.ensureReady();
             return true;
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
@@ -508,6 +514,7 @@ export class Renderer implements StreetViewRenderer {
             this.gpuChores = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
+            releaseSceneDepthFallback(this.device);
             if (unconfigureContext) {
                 this.context?.unconfigure();
             }
@@ -743,7 +750,7 @@ export class Renderer implements StreetViewRenderer {
                     capturePan: this.holdTransition.getCapturePan(),
                 }, this.frameUniforms),
                 passes,
-                frame: { getSwapChainView: () => this.getSwapChainView() },
+                frame: { getSwapChainView: () => this.getSwapChainView(), aux: this.frameAux },
                 gpuPassTimer: timer,
                 timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });

@@ -10,8 +10,8 @@
 // `npm run gen:weather-shader` — do not hand-edit the generated file.
 //
 // This fragment: uniform layout, bind group declarations, the full-screen vertex
-// shader, camera-aware coordinate helpers, the depth proxy, noise/utility
-// functions, and color grading.
+// shader, camera-aware coordinate helpers, the depth proxy and the scene-depth
+// map it blends with, noise/utility functions, and color grading.
 
 struct WeatherParams {
     // 0-5: color grading params
@@ -86,6 +86,31 @@ struct WeatherParams {
 @group(1) @binding(0) var lut3d: texture_3d<f32>;
 @group(1) @binding(1) var lutSampler: sampler;
 
+// Scene depth (group 2, src/renderer/depth/sceneDepthBinding.ts): a monocular
+// depth map on the viewDepthProxy scale (0 = at the camera, 1 = horizon or
+// beyond) and the weight that blends it in. Without depth the renderer binds a
+// 1x1 texture and an all-zero block, so blend is 0 and sceneDepth() returns
+// the proxy bit-exactly. Struct and helpers are byte-identical with
+// weather-post-compute.wgsl (weatherShaderParity.test.ts).
+struct SceneDepthParams {
+    blend        : f32,  // 0 = viewDepthProxy only (bit-exact), 1 = depth map only
+    dolly        : f32,  // pass-1 release dolly along the view axis
+    dollyLateral : f32,  // pass-1 release dolly across the view
+    foeY         : f32,  // pass-1 dolly focus of expansion (screen Y)
+    shiftX       : f32,  // screen UV -> depth-map UV shift, current POV
+    shiftY       : f32,
+    heldShiftX   : f32,  // the same shift for the hold snapshot's POV
+    heldShiftY   : f32,
+    zoom         : f32,  // digital zoom the depth map was inferred at
+    pad0         : f32,  // pads the block to 48 bytes
+    pad1         : f32,
+    pad2         : f32,
+}
+
+@group(2) @binding(0) var sceneDepthTex: texture_2d<f32>;
+@group(2) @binding(1) var sceneDepthSampler: sampler;
+@group(2) @binding(2) var<uniform> depthParams: SceneDepthParams;
+
 // Vertex shader - full screen triangle
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
@@ -156,6 +181,30 @@ fn viewDepthProxy(uv: vec2<f32>, horizonY: f32) -> f32 {
     let below = uv.y - horizonY;
     if (below <= 0.0) { return 1.0; }
     return clamp(0.06 / max(below, 0.0025), 0.0, 1.0);
+}
+
+// Depth-map sample at a screen UV: (depth, coverage). The map was inferred at
+// an earlier POV; `shift` is the look-around since then (the hold-pause
+// look-around mapping, in screen units), and coverage fades to 0 where the
+// shifted UV leaves the map, so off-map pixels fall back to the proxy instead
+// of smearing an edge texel.
+fn sampleSceneDepthMap(screenUV: vec2<f32>, shift: vec2<f32>) -> vec2<f32> {
+    let duv = screenUV - shift;
+    let edge = min(min(duv.x, 1.0 - duv.x), min(duv.y, 1.0 - duv.y));
+    let coverage = smoothstep(0.0, 0.04, edge);
+    let d = textureSampleLevel(sceneDepthTex, sceneDepthSampler, clamp(duv, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).r;
+    return vec2<f32>(clamp(d, 0.0, 1.0), coverage);
+}
+
+// The depth every weather effect reads: viewDepthProxy, pulled toward the
+// monocular scene-depth map by depthParams.blend. blend 0 (no depth, Low and
+// Medium quality, scene depth off) takes the early return and is the proxy
+// bit-exactly.
+fn sceneDepth(uv: vec2<f32>, horizonY: f32) -> f32 {
+    let proxy = viewDepthProxy(uv, horizonY);
+    if (depthParams.blend <= 0.0) { return proxy; }
+    let m = sampleSceneDepthMap(uv, vec2<f32>(depthParams.shiftX, depthParams.shiftY));
+    return mix(proxy, m.x, clamp(depthParams.blend, 0.0, 1.0) * m.y);
 }
 
 // Vertical density profile of a fog layer. `height` 0 keeps the bank hugging
@@ -350,7 +399,7 @@ fn rain(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
     // through the same depth the fog/DOF horizon uses instead of a flat,
     // pitch-invariant overlay (the "floats on a flat screen-Y plane" gap).
     let horizonY = sceneHorizonY();
-    let depth = viewDepthProxy(uv, horizonY);
+    let depth = sceneDepth(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
     return c * 0.75 * mix(0.35, 1.0, skyFade) * nearBoost;
@@ -388,7 +437,7 @@ fn snow(uv: vec2<f32>, t: f32, panX: f32, panY: f32) -> vec3<f32> {
 
     // Same horizon/depth perspective cue as rain() — see comment there.
     let horizonY = sceneHorizonY();
-    let depth = viewDepthProxy(uv, horizonY);
+    let depth = sceneDepth(uv, horizonY);
     let skyFade = smoothstep(horizonY - 0.35, horizonY + 0.05, uv.y);
     let nearBoost = mix(1.0, 1.3, 1.0 - depth);
     return c * 1.35 * mix(0.35, 1.0, skyFade) * nearBoost;
@@ -424,7 +473,7 @@ fn fogAmountAt(uv: vec2<f32>, intensity: f32, density: f32, height: f32, t: f32)
     if (intensity < 0.001 && density < 0.001) { return 0.0; }
 
     let horizonY = sceneHorizonY();
-    let depth = viewDepthProxy(uv, horizonY);
+    let depth = sceneDepth(uv, horizonY);
     let profile = fogHeightFalloff(uv, horizonY, height);
 
     // Animated fractal fog: two fbm layers scrolling at different speeds/directions
@@ -994,7 +1043,7 @@ fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f3
     if (dof < 0.001 && mblur < 0.001) { return col; }
 
     let horizonY = sceneHorizonY();
-    let depth = viewDepthProxy(uv, horizonY);
+    let depth = sceneDepth(uv, horizonY);
 
     // Circle of confusion: sharp at the focus plane, widening toward infinity.
     let coc = smoothstep(DOF_FOCUS_DEPTH, 1.0, depth) * dof;

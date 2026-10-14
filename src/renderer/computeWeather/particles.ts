@@ -4,6 +4,12 @@ import { PARTICLE_UNIFORMS_BYTE_SIZE, WORKGROUP_SIZE } from './constants';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
 import { createComputePipelineChecked, createShaderModuleChecked } from '../gpuPipelineFactory';
 
+interface ParticlePassGroups {
+    clearGroup: GPUBindGroup;
+    integrateGroup: GPUBindGroup;
+    splatGroup: GPUBindGroup;
+}
+
 /**
  * GPU precipitation for the compute weather path (`weather-particles.wgsl`).
  *
@@ -31,6 +37,14 @@ export class ComputeWeatherParticles {
     private lastParticleTime = 0;
 
     private uniformsBuffer: GPUBuffer | null = null;
+    /** Reused per dispatch — `writeBuffer` copies it. */
+    private readonly uniforms = new Float32Array(PARTICLE_UNIFORMS_BYTE_SIZE / 4);
+    /**
+     * The three pass bind groups per ping-pong read index, built once and kept
+     * until a state/density texture or the weather-params buffer is replaced.
+     */
+    private passGroups: [ParticlePassGroups | null, ParticlePassGroups | null] = [null, null];
+    private passGroupsExtraBuffer: GPUBuffer | null = null;
     private bindGroupLayout: GPUBindGroupLayout | null = null;
     private integratePipeline: GPUComputePipeline | null = null;
     private clearDensityPipeline: GPUComputePipeline | null = null;
@@ -106,6 +120,7 @@ export class ComputeWeatherParticles {
             return;
         }
         destroyTracked(this.density);
+        this.passGroups = [null, null];
         this.densityWidth = width;
         this.densityHeight = height;
         this.density = createTrackedTexture(this.device, {
@@ -128,6 +143,7 @@ export class ComputeWeatherParticles {
             destroyTracked(this.states[i]);
             this.states[i] = null;
         }
+        this.passGroups = [null, null];
         this.gridWidth = gridW;
         this.gridHeight = gridH;
         const usage = GPUTextureUsage.STORAGE_BINDING
@@ -193,6 +209,11 @@ export class ComputeWeatherParticles {
         return dummy.createView();
     }
 
+    /** Which state texture binding 8 writes this dispatch — part of the weather bind-group cache key. */
+    public getStateParity(): 0 | 1 {
+        return this.enabled ? this.writeIndex : 0;
+    }
+
     public swapIfActive(): void {
         if (!this.enabled) return;
         const nextRead = this.writeIndex;
@@ -243,32 +264,18 @@ export class ComputeWeatherParticles {
         this.ensureDensityTexture(writeWidth, writeHeight);
         if (!this.density) return false;
 
-        const uniforms = new Float32Array([
-            dt,
-            this.gridWidth,
-            this.gridHeight,
-            0,
-            this.densityWidth,
-            this.densityHeight,
-            0,
-            0,
-        ]);
+        const uniforms = this.uniforms;
+        uniforms[0] = dt;
+        uniforms[1] = this.gridWidth;
+        uniforms[2] = this.gridHeight;
+        uniforms[3] = 0;
+        uniforms[4] = this.densityWidth;
+        uniforms[5] = this.densityHeight;
+        uniforms[6] = 0;
+        uniforms[7] = 0;
         this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniforms);
 
-        const makeGroup = (src: GPUTexture, dst: GPUTexture): GPUBindGroup =>
-            this.device.createBindGroup({
-                layout: this.bindGroupLayout!,
-                entries: [
-                    { binding: 0, resource: src.createView() },
-                    { binding: 1, resource: dst.createView() },
-                    { binding: 2, resource: { buffer: extraBuffer } },
-                    { binding: 3, resource: { buffer: this.uniformsBuffer! } },
-                ],
-            });
-
-        const clearGroup = makeGroup(read, this.density);
-        const integrateGroup = makeGroup(read, write);
-        const splatGroup = makeGroup(write, this.density);
+        const { clearGroup, integrateGroup, splatGroup } = this.groupsFor(read, write, extraBuffer);
 
         const gridX = Math.ceil(this.gridWidth / WORKGROUP_SIZE);
         const gridY = Math.ceil(this.gridHeight / WORKGROUP_SIZE);
@@ -295,6 +302,33 @@ export class ComputeWeatherParticles {
         return true;
     }
 
+    /** clear (read → density), integrate (read → write), splat (write → density) for this read index. */
+    private groupsFor(read: GPUTexture, write: GPUTexture, extraBuffer: GPUBuffer): ParticlePassGroups {
+        if (this.passGroupsExtraBuffer !== extraBuffer) {
+            this.passGroups = [null, null];
+            this.passGroupsExtraBuffer = extraBuffer;
+        }
+        const cached = this.passGroups[this.readIndex];
+        if (cached) return cached;
+        const makeGroup = (src: GPUTexture, dst: GPUTexture): GPUBindGroup =>
+            this.device.createBindGroup({
+                layout: this.bindGroupLayout!,
+                entries: [
+                    { binding: 0, resource: src.createView() },
+                    { binding: 1, resource: dst.createView() },
+                    { binding: 2, resource: { buffer: extraBuffer } },
+                    { binding: 3, resource: { buffer: this.uniformsBuffer! } },
+                ],
+            });
+        const groups: ParticlePassGroups = {
+            clearGroup: makeGroup(read, this.density!),
+            integrateGroup: makeGroup(read, write),
+            splatGroup: makeGroup(write, this.density!),
+        };
+        this.passGroups[this.readIndex] = groups;
+        return groups;
+    }
+
     public dispose(): void {
         try {
             for (let i = 0; i < 2; i++) {
@@ -306,6 +340,8 @@ export class ComputeWeatherParticles {
             // ignore cleanup errors
         }
         this.states = [null, null];
+        this.passGroups = [null, null];
+        this.passGroupsExtraBuffer = null;
         this.density = null;
         this.uniformsBuffer = null;
         this.bindGroupLayout = null;

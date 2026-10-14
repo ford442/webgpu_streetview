@@ -102,6 +102,7 @@ describe('pass encoders declare timestampWrites instead of stamping inside the p
       { kind: 'view' } as unknown as GPUTextureView,
       { kind: 'pipeline' } as unknown as GPURenderPipeline,
       { kind: 'bindGroup' } as unknown as GPUBindGroup,
+      { kind: 'sceneDepthBindGroup' } as unknown as GPUBindGroup,
       timings.pass1,
     );
 
@@ -125,6 +126,7 @@ describe('pass encoders declare timestampWrites instead of stamping inside the p
       pipeline: { kind: 'computePipeline' } as unknown as GPUComputePipeline,
       bindGroup: { kind: 'bindGroup' } as unknown as GPUBindGroup,
       lutBindGroup: null,
+      sceneDepthBindGroup: { kind: 'sceneDepthBindGroup' } as unknown as GPUBindGroup,
       width: 64,
       height: 64,
       timing: timings.weather,
@@ -182,6 +184,7 @@ describe('pass encoders declare timestampWrites instead of stamping inside the p
       { kind: 'view' } as unknown as GPUTextureView,
       { kind: 'pipeline' } as unknown as GPURenderPipeline,
       { kind: 'bindGroup' } as unknown as GPUBindGroup,
+      { kind: 'sceneDepthBindGroup' } as unknown as GPUBindGroup,
       timings.pass1,
     );
 

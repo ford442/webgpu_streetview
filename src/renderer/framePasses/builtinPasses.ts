@@ -13,6 +13,7 @@
  * | 400 | `cabin-composite` | `CabinCompositePass` |
  */
 import { createStreetViewPipeline, encodeStreetViewPass } from '../streetViewPass';
+import { resolveSceneDepthBindGroup } from '../depth/sceneDepthBinding';
 import { encodeCabinComposite } from '../frameLoop';
 import type { TransitionManager } from '../TransitionManager';
 import type { HistoricalWipePass } from '../HistoricalWipePass';
@@ -46,7 +47,7 @@ export function createStreetViewFramePass(deps: StreetViewPassDeps): FramePass {
             deps.onPipeline(await createStreetViewPipeline(deps.device, deps.intermediateFormat));
         },
         enabled: () => !!deps.getPipeline(),
-        encode(encoder, { textures, timings }) {
+        encode(encoder, { textures, timings, aux }) {
             const pipeline = deps.getPipeline()!;
             const didTransition = deps.getTransitionManager()?.renderTransitionPass(
                 encoder,
@@ -62,6 +63,7 @@ export function createStreetViewFramePass(deps: StreetViewPassDeps): FramePass {
                     textures.intermediateTextureView,
                     pipeline,
                     textures.bindGroup,
+                    resolveSceneDepthBindGroup(deps.device, aux),
                     timings.pass1,
                 );
             }
@@ -112,7 +114,12 @@ export function createWeatherFramePass(deps: WeatherPassDeps): FramePass {
         lazy: deps.lazy,
         init: () => deps.processor.init(deps.presentationFormat, deps.initOptions),
         enabled: () => true,
-        encode: (encoder, { timings }) => deps.processor.renderPass(encoder, timings.weather),
+        encode(encoder, { timings, aux }) {
+            // Kept on the processor too: `renderWeatherOnly` frames encode
+            // outside the registry and bind whatever depth was last current.
+            deps.processor.setSceneDepth(aux.depth ?? null);
+            deps.processor.renderPass(encoder, timings.weather);
+        },
         destroy: () => deps.processor.dispose(),
     };
 }
