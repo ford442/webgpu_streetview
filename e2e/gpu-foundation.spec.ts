@@ -89,6 +89,9 @@ test.describe('GPU foundation on a real WebGPU device', () => {
     for (const id of ['streetview', 'historical-wipe', 'weather', 'cabin-composite']) {
       expect(out.passes?.[id]?.state, id).toBe('ready');
     }
+    // Scene depth (#320) is a lazy pass: registered, but nothing is built or
+    // downloaded until it is switched on — e2e/scene-depth.spec.ts drives it.
+    expect(out.passes?.depth).toBeUndefined();
     expect(out.uncaptured).toEqual([]);
     expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
     expect(out.maxTextureDimension2D).toBeGreaterThanOrEqual(4096);

@@ -39,7 +39,7 @@ const SWIFTSHADER_WEBGPU_ARGS = [
 ];
 
 /** Specs that need a real GPU device; they run (and must not skip) in `chromium-webgpu`. */
-const GPU_SPECS = /(gpu-foundation|windshield-portal)\.spec\.ts$/;
+const GPU_SPECS = /(gpu-foundation|windshield-portal|scene-depth)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './e2e',

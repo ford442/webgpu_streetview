@@ -316,7 +316,14 @@ export class DepthController {
             const sameScene = this.normalizeEpoch === pose.epoch;
             const aligned = sameScene && !!this.mapPose && this.mapPose.epoch === pose.epoch && sameView(this.mapPose, pose);
             this.normalizeEpoch = pose.epoch;
-            const depth = normalizeDisparity(result.disparity, this.normalizeState, { aligned, sameScene });
+            const depth = normalizeDisparity(result.disparity, this.normalizeState, {
+                aligned,
+                sameScene,
+                width: result.width,
+                height: result.height,
+                // The pitch horizon at inference — the ground below it calibrates the scale.
+                horizonY: 0.5 + (pose.panY - 0.5) * 2,
+            });
             this.pending = {
                 halves: packHalfFloats(depth),
                 width: result.width,
@@ -366,7 +373,8 @@ export class DepthController {
                 label: 'scene-depth',
                 size: [map.width, map.height],
                 format: SCENE_DEPTH_FORMAT,
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+                // COPY_SRC: lets tools and the e2e fixture read the map back.
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
             }, 'scene-depth');
         }
         const texture = this.texture;

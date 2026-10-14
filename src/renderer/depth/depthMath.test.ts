@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
     createDepthNormalizeState,
+    DEFAULT_NEAR_DEPTH,
     disparityPercentiles,
     floatToHalfBits,
     IMAGENET_MEAN,
     IMAGENET_STD,
     linearToSrgbBytesInPlace,
+    NEAR_DEPTH_RANGE,
     normalizeDisparity,
     packHalfFloats,
+    PROXY_GROUND_K,
     rgbaToImageNetNchw,
 } from './depthMath';
 
@@ -61,40 +64,76 @@ describe('disparity percentiles', () => {
 });
 
 describe('normalizeDisparity — affine-invariant disparity → the proxy scale', () => {
-    const ramp = (n: number, scale = 1, shift = 0) => {
-        const d = new Float32Array(n);
-        for (let i = 0; i < n; i++) d[i] = (i / (n - 1)) * scale + shift;
+    const W = 40;
+    const H = 50;
+    const LEVEL = { width: W, height: H, horizonY: 0.5 };
+    /** A level street view: sky above the horizon, ground disparity ∝ 1 / proxy distance below it. */
+    function street(scale = 1, shift = 0): Float32Array {
+        const d = new Float32Array(W * H);
+        for (let y = 0; y < H; y++) {
+            const below = (y + 0.5) / H - 0.5;
+            const proxy = below > 0 ? Math.min(1, PROXY_GROUND_K / below) : 1;
+            for (let x = 0; x < W; x++) d[y * W + x] = (1 / Math.max(proxy, 0.05)) * scale + shift;
+        }
         return d;
+    }
+    const proxyAt = (y: number) => {
+        const below = (y + 0.5) / H - 0.5;
+        return below > 0 ? Math.min(1, PROXY_GROUND_K / below) : 1;
     };
+    const fresh = { aligned: false, sameScene: false, ...LEVEL };
 
-    it('near (high disparity) → 0, far (low disparity) → 1', () => {
-        const out = normalizeDisparity(ramp(200), createDepthNormalizeState(), { aligned: false, sameScene: false });
-        expect(out[199]).toBe(0);
-        expect(out[0]).toBe(1);
-        for (let i = 1; i < 200; i++) expect(out[i]!).toBeLessThanOrEqual(out[i - 1]!);
+    it('near (high disparity) → small, far (low disparity) → 1, monotone', () => {
+        const out = normalizeDisparity(street(), createDepthNormalizeState(), fresh);
+        expect(out[0]).toBe(1); // sky
+        expect(out[(H - 1) * W]!).toBeLessThan(0.2); // the road under the camera
+        for (let y = 1; y < H; y++) expect(out[y * W]!).toBeLessThanOrEqual(out[(y - 1) * W]! + 1e-6);
     });
 
-    it('is invariant to the network\'s unknown scale and shift', () => {
-        const a = normalizeDisparity(ramp(200), createDepthNormalizeState(), { aligned: false, sameScene: false });
-        const b = normalizeDisparity(ramp(200, 7.5, 3), createDepthNormalizeState(), { aligned: false, sameScene: false });
-        for (let i = 0; i < 200; i++) expect(b[i]!).toBeCloseTo(a[i]!, 5);
+    it('lands on the proxy\'s own scale on the ground it calibrates against', () => {
+        const out = normalizeDisparity(street(), createDepthNormalizeState(), fresh);
+        for (const y of [Math.floor(H * 0.88), Math.floor(H * 0.95)]) {
+            expect(out[y * W + W / 2]!).toBeCloseTo(proxyAt(y), 1);
+        }
+    });
+
+    it('is invariant to the network\'s unknown scale (and near-invariant to its shift)', () => {
+        const a = normalizeDisparity(street(), createDepthNormalizeState(), fresh);
+        const b = normalizeDisparity(street(7.5), createDepthNormalizeState(), fresh);
+        for (let i = 0; i < a.length; i++) expect(b[i]!).toBeCloseTo(a[i]!, 5);
+    });
+
+    it('falls back to the default near depth when the view looks up (no ground to calibrate on)', () => {
+        const state = createDepthNormalizeState();
+        normalizeDisparity(street(), state, { ...fresh, horizonY: 0.95 });
+        expect(state.nearDepth).toBe(DEFAULT_NEAR_DEPTH);
+    });
+
+    it('clamps the calibration when something near fills the bottom of the frame', () => {
+        const d = street();
+        // A wall right at the lens across the whole bottom band: absurdly near.
+        for (let y = Math.floor(H * 0.8); y < H; y++) for (let x = 0; x < W; x++) d[y * W + x] = 1e4;
+        const state = createDepthNormalizeState();
+        normalizeDisparity(d, state, fresh);
+        expect(state.nearDepth).toBeGreaterThanOrEqual(NEAR_DEPTH_RANGE[0]);
+        expect(state.nearDepth).toBeLessThanOrEqual(NEAR_DEPTH_RANGE[1]);
     });
 
     it('eases texels across aligned inferences and snaps when the view moved', () => {
         const state = createDepthNormalizeState();
-        const first = Float32Array.from(normalizeDisparity(ramp(100), state, { aligned: false, sameScene: false }));
-        const inverted = ramp(100).reverse();
-        const eased = normalizeDisparity(inverted, state, { aligned: true, sameScene: true });
-        // Halfway between the old map and the new one.
-        expect(eased[0]).toBeCloseTo((first[0]! + 0) / 2, 5);
-        const snapped = normalizeDisparity(ramp(100), state, { aligned: false, sameScene: false });
-        expect(snapped[0]).toBe(1);
+        const first = Float32Array.from(normalizeDisparity(street(), state, fresh));
+        const flipped = street().reverse();
+        const eased = normalizeDisparity(flipped, state, { ...fresh, aligned: true, sameScene: true });
+        const i = (H - 1) * W;
+        expect(eased[i]).toBeGreaterThan(first[i]!);
+        expect(eased[i]).toBeLessThan(1);
+        const snapped = normalizeDisparity(street(), state, fresh);
+        expect(snapped[i]).toBeCloseTo(first[i]!, 5);
     });
 
     it('a flat or empty map reads as "everything far" — the safe answer (no fog pulled to the lens)', () => {
         const out = normalizeDisparity(new Float32Array([2, 2, 2, 2]), createDepthNormalizeState(), {
-            aligned: false,
-            sameScene: false,
+            ...fresh, width: 2, height: 2,
         });
         expect(Array.from(out)).toEqual([1, 1, 1, 1]);
     });
@@ -130,5 +169,17 @@ describe('half floats for r16float', () => {
         const ours = packHalfFloats(values);
         const reference = new Uint16Array(new F16!(values).buffer);
         expect(Array.from(ours)).toEqual(Array.from(reference));
+    });
+});
+
+describe('the calibration hyperbola is the shaders\' own', () => {
+    it('PROXY_GROUND_K is the constant in viewDepthProxy (both weather paths)', async () => {
+        const { readFileSync } = await import('fs');
+        const { join } = await import('path');
+        for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+            const wgsl = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', name), 'utf8');
+            const body = wgsl.slice(wgsl.indexOf('fn viewDepthProxy('), wgsl.indexOf('fn viewDepthProxy(') + 300);
+            expect(body).toContain(`return clamp(${PROXY_GROUND_K.toFixed(2)} / max(below, 0.0025), 0.0, 1.0);`);
+        }
     });
 });

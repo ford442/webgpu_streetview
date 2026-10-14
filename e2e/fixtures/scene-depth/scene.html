@@ -1,0 +1,18 @@
+<!doctype html>
+<!--
+  Scene depth (#320) on the real Street View Renderer and a real WebGPU device.
+  Driven by e2e/scene-depth.spec.ts and scripts/capture-depth-looks.mjs — not
+  part of the product. <base href="/"> puts the app's relative shader and model
+  URLs where the dev server serves them (public/).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <title>scene depth</title>
+  </head>
+  <body style="margin:0;background:#000">
+    <canvas id="gpu" width="640" height="528" style="width:640px;height:528px;display:block"></canvas>
+    <script type="module" src="/e2e/fixtures/scene-depth/scene.ts"></script>
+  </body>
+</html>
