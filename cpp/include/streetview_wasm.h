@@ -9,7 +9,9 @@
  *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
  *   normalize_angle, signed_angle_diff, initial_bearing, polyline_resample,
  *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
- *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d, luma_analyze,
+ *   dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
+ *   dsp_max_ir_taps
  *
  * This comment is a convenience copy — the SSOT for the export set is
  * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
@@ -23,7 +25,12 @@
  *                       initial_bearing / polyline_resample / polyline_project
  *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
  *   hrtf_module.cpp     fill_hrtf
- *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d
+ *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d /
+ *                       luma_analyze
+ *   cabin_dsp_module.cpp  dsp_* — the stateful cabin engine the AudioWorklet runs
+ *
+ * audio_kernels.h holds the internal (unexported) pieces the audio domains
+ * share: the sample hash, the engine tone and the head-shadow coefficients.
  *
  * Build with Emscripten (standalone raw-WASM mode, no JS glue):
  *   emcmake cmake ... && emmake make
@@ -33,6 +40,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Opaque cabin DSP instance (cabin_dsp_module.cpp). */
+typedef struct sw_dsp sw_dsp;
 
 /**
  * Seed the internal permutation table used by noise functions.
@@ -279,6 +289,69 @@ void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
  */
 void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
                       unsigned char* dst, int dst_w, int dst_h);
+
+/**
+ * Fused luma chore: box-downsample `rgba` (width x height) onto a
+ * dst_w x dst_h grid, bin every downsampled pixel into the 256-bin Rec.709
+ * histogram and reduce it, in one pass with one input buffer.
+ *
+ * `bins` is identical to sw_downsample_2d followed by sw_luma_histogram_bt709.
+ * `stats3` receives {mean, min, max} in [0, 1] from integer luma
+ * (2126 r + 7152 g + 722 b, a uint64 sum), so the mean of a flat frame is the
+ * exact luma of its colour and a full frame's sum cannot drift. Passing
+ * dst = source size analyses the buffer as-is. Bad arguments write zeros.
+ */
+void sw_luma_analyze(const unsigned char* rgba, int width, int height,
+                     int dst_w, int dst_h, unsigned int* bins, float* stats3);
+
+/**
+ * Create a cabin DSP instance: the whole car bed (engine, road, wind, rain,
+ * wiper, radio) rendered through the cabin FIR, at `sample_rate` (<= 1 falls
+ * back to 44100, > 192000 clamps). The state is malloc'd from the module heap;
+ * nothing is global. Returns nullptr when the allocation fails.
+ */
+sw_dsp* sw_dsp_create(float sample_rate);
+
+/** Free an instance from sw_dsp_create (nullptr is a no-op). */
+void sw_dsp_destroy(sw_dsp* state);
+
+/**
+ * Set the targets the engine glides to (one one-pole per parameter, ~40 ms,
+ * smoothed per sample — post at any cadence). Out-of-range / NaN values clamp.
+ *
+ * @param rpm         Engine RPM [0, 12000].
+ * @param load        Throttle/load [0, 1].
+ * @param speed_mps   Road speed, m/s [0, 120]; 40 m/s is full road/wind noise.
+ * @param openness    0 = sealed, 1 = roof/windows open.
+ * @param vehicle     Voicing index, CABIN_IR_VEHICLE_INDEX order, clamped [0, 4].
+ * @param wet_road    0 = dry, 1 = soaked (tyre hiss).
+ * @param rain        Rain on the roof [0, 1].
+ * @param wind_mps    Ambient wind, m/s [0, 60].
+ * @param radio_gain  Radio level into the cabin [0, 2].
+ * @param wipers      Non-zero: wipers run (and thump) while rain > 0.02.
+ */
+void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
+                       float openness, int vehicle, float wet_road, float rain,
+                       float wind_mps, float radio_gain, int wipers);
+
+/**
+ * Replace the cabin IR (`count` taps; > sw_dsp_max_ir_taps() truncates,
+ * nullptr / <= 0 is the identity). Padded to whole 128-tap partitions; the
+ * swap crossfades over 256 samples. Non-finite taps become 0.
+ */
+void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
+
+/**
+ * Render `frames` stereo samples. `radio_in_*` may be nullptr (silence);
+ * `out_*` may be nullptr (discarded). Output is clamped to [-1, 1].
+ * Deterministic: the same parameter/IR/input script gives the same bits on
+ * the scalar and SIMD binaries, the host build and the JS twin.
+ */
+void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
+                   float* out_l, float* out_r, int frames);
+
+/** Longest IR sw_dsp_set_ir keeps (4096). */
+int sw_dsp_max_ir_taps(void);
 
 #ifdef __cplusplus
 } // extern "C"

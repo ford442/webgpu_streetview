@@ -15,6 +15,7 @@
  */
 
 #include "streetview_wasm.h"
+#include "audio_kernels.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -33,34 +34,25 @@ struct CabinProfile {
     float tail_ms;          // 1/e decay time of that tail
     float damp_closed;      // one-pole brightness with the cabin sealed
     float damp_open;        // ... and with the roof/windows fully open
+    float late_level;       // slow late reverberation level at the first tap
+    float late_ms;          // its 1/e decay time (RT60 is ~6.9x this)
 };
 
 static const CabinProfile cabin_profiles[] = {
     // sedan — mid-size saloon, soft trim
-    {{1.15f, 1.90f, 2.70f}, {0.42f, 0.26f, 0.17f}, 0.30f, 2.20f, 0.30f, 0.88f},
+    {{1.15f, 1.90f, 2.70f}, {0.42f, 0.26f, 0.17f}, 0.30f, 2.20f, 0.30f, 0.88f, 0.060f, 9.0f},
     // convertible — small hard-walled cabin that all but vanishes roof-down
-    {{0.85f, 1.45f, 2.05f}, {0.34f, 0.20f, 0.11f}, 0.22f, 1.50f, 0.38f, 0.95f},
+    {{0.85f, 1.45f, 2.05f}, {0.34f, 0.20f, 0.11f}, 0.22f, 1.50f, 0.38f, 0.95f, 0.045f, 6.0f},
     // science-lab — boxy instrument bay, longest tail
-    {{1.40f, 2.35f, 3.10f}, {0.46f, 0.31f, 0.22f}, 0.38f, 3.10f, 0.26f, 0.82f},
+    {{1.40f, 2.35f, 3.10f}, {0.46f, 0.31f, 0.22f}, 0.38f, 3.10f, 0.26f, 0.82f, 0.080f, 14.0f},
     // limousine — long cabin, late reflections, heavy absorption
-    {{1.75f, 2.80f, 3.60f}, {0.40f, 0.28f, 0.20f}, 0.34f, 3.60f, 0.22f, 0.80f},
+    {{1.75f, 2.80f, 3.60f}, {0.40f, 0.28f, 0.20f}, 0.34f, 3.60f, 0.22f, 0.80f, 0.070f, 18.0f},
     // cortianics — sport GT: tight, bright, close reflections
-    {{0.95f, 1.60f, 2.30f}, {0.38f, 0.24f, 0.15f}, 0.26f, 1.80f, 0.34f, 0.92f},
+    {{0.95f, 1.60f, 2.30f}, {0.38f, 0.24f, 0.15f}, 0.26f, 1.80f, 0.34f, 0.92f, 0.050f, 7.0f},
 };
 
 static const int cabin_profile_count =
     (int)(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
-
-// Integer avalanche hash (Wellons' "lowbias32"): consecutive inputs give
-// uncorrelated outputs, which a bare LCG step of the index would not.
-static inline uint32_t hash_u32(uint32_t x) {
-    x ^= x >> 16;
-    x *= 0x7feb352du;
-    x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
-    return x;
-}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -100,13 +92,9 @@ double sw_fill_engine_noise(float* buf, int count,
 
     const std::span<float> out(buf, static_cast<size_t>(count));
     for (int i = 0; i < count; ++i) {
-        const double cycles2 = phase * 2.0;
-        const double frac2 = cycles2 - std::floor(cycles2);
-        const float saw = static_cast<float>(phase) * 2.0f - 1.0f;
-        const float saw2 = static_cast<float>(frac2) * 2.0f - 1.0f;
-        float eng = (saw * 0.28f + saw2 * 0.11f) * (0.22f + 0.78f * load);
-        const uint32_t h = hash_u32(index0 + static_cast<uint32_t>(i));
-        float n = (float)((h >> 8) & 0xFFFFFFu) / 16777216.0f;
+        const float eng = sv_audio::engine_tone(phase, 0.22f + 0.78f * load);
+        const uint32_t h = sv_audio::hash_u32(index0 + static_cast<uint32_t>(i));
+        float n = sv_audio::hash_unit(h);
         n = n * 2.0f - 1.0f;
         float s = eng + n * spd * 0.18f;
         if (s > 1.0f) s = 1.0f;
@@ -154,6 +142,15 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
     const float tail_taps = p.tail_ms * ms_to_taps;
     const float decay = tail_taps > 1.0f ? 1.0f / tail_taps : 1.0f;
     float env = p.tail_level * enclosure;
+    // The late tail is what a 1-3 k tap IR is for (the early tail is gone
+    // within ~128 taps). An open roof lets almost all of it escape.
+    const float late_taps = p.late_ms * ms_to_taps;
+    const float late_decay = late_taps > 1.0f ? 1.0f / late_taps : 1.0f;
+    float late_env = p.late_level * (1.0f - 0.95f * openness);
+    // Late reverberation is dark (air and trim absorb the top first), so its
+    // noise is smoothed before it is differenced: band-limited, zero-DC.
+    float late_n = 0.0f;
+    float prev_late_n = 0.0f;
     float prev_n = 0.0f;
     for (int i = 1; i < count; ++i) {
         state = state * 1664525u + 1013904223u;
@@ -162,9 +159,12 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
         // Differencing successive noise samples removes the tail's DC: over
         // only ~128 taps a raw noise tail has a large random mean, which would
         // make the cabin's low-frequency gain a coin flip per vehicle.
-        out[static_cast<size_t>(i)] += (n - prev_n) * 0.5f * env;
+        late_n += 0.35f * (n - late_n);
+        out[static_cast<size_t>(i)] += ((n - prev_n) * 0.5f * env) + ((late_n - prev_late_n) * late_env);
         prev_n = n;
+        prev_late_n = late_n;
         env -= env * decay;
+        late_env -= late_env * late_decay;
     }
 
     // One-pole lowpass across the taps: cabin absorption. A larger coefficient

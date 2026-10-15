@@ -37,6 +37,7 @@ describe('C++ compile_commands contract', () => {
         expect(TRANSLATION_UNITS).toContain('geodesy_module.cpp');
         expect(TRANSLATION_UNITS).toContain('audio_module.cpp');
         expect(TRANSLATION_UNITS).toContain('luma_module.cpp');
+        expect(TRANSLATION_UNITS).toContain('cabin_dsp_module.cpp');
         expect(TRANSLATION_UNITS).toContain('bindings.cpp');
     });
 
@@ -46,16 +47,26 @@ describe('C++ compile_commands contract', () => {
         expect(listedSources(hostLib![1]!)).toEqual(TRANSLATION_UNITS);
     });
 
-    it('links every translation unit into the Emscripten target', () => {
-        const wasmTarget = cmake.match(/add_executable\(streetview-wasm([\s\S]*?)\)/);
-        expect(wasmTarget).not.toBeNull();
-        expect(listedSources(wasmTarget![1]!)).toEqual(TRANSLATION_UNITS);
+    it('links every translation unit into both Emscripten targets (scalar + SIMD)', () => {
+        const sources = cmake.match(/set\(STREETVIEW_WASM_SOURCES([\s\S]*?)\)/);
+        expect(sources).not.toBeNull();
+        expect(listedSources(sources![1]!)).toEqual(TRANSLATION_UNITS);
+        // Same sources, same flags but -msimd128: never a second source list.
+        expect(cmake).toMatch(/add_executable\(streetview-wasm \$\{STREETVIEW_WASM_SOURCES\}\)/);
+        expect(cmake).toMatch(/add_executable\(streetview-wasm-simd \$\{STREETVIEW_WASM_SOURCES\}\)/);
     });
 
     it('lints every translation unit in scripts/lint-cpp.sh', () => {
         const sources = read('scripts', 'lint-cpp.sh').match(/SOURCES=\(([\s\S]*?)\)/);
         expect(sources).not.toBeNull();
         expect(listedSources(sources![1]!)).toEqual(TRANSLATION_UNITS);
+    });
+
+    it('hashes every public and internal header into the wasm staleness check', () => {
+        const hashed = read('scripts', 'wasm-source-hash.mjs');
+        for (const header of readdirSync(join(ROOT, 'cpp', 'include')).filter((f) => f.endsWith('.h'))) {
+            expect(hashed).toContain(`cpp/include/${header}`);
+        }
     });
 
     it('hashes every translation unit into the wasm staleness check', () => {

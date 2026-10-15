@@ -9,10 +9,13 @@
  */
 import {
   downsample2d as jsDownsample2d,
+  lumaAnalyze as jsLumaAnalyze,
   lumaHistogramBt709 as jsLumaHistogramBt709,
   reduceLumaBt709 as jsReduceLumaBt709,
 } from '../renderer/gpuChores/lumaMath';
 import type { StreetViewWasmAPI } from './abi';
+import { engineTone, hashU32, hashUnit, hrtfShadow } from './audioKernels';
+import { CabinDspTwin } from './cabinDspTwin';
 
 function _fade(t: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
@@ -339,22 +342,10 @@ function _jsSignedAngleDiff(from: number, to: number): number {
   return d - 360 * Math.floor((d + 180) / 360);
 }
 
-const _F32_0_28 = Math.fround(0.28);
-const _F32_0_11 = Math.fround(0.11);
 const _F32_0_22 = Math.fround(0.22);
 const _F32_0_78 = Math.fround(0.78);
 const _F32_0_18 = Math.fround(0.18);
 const _TWO_POW_53 = 9007199254740992;
-
-/** Twin of `hash_u32` in cpp/src/audio_module.cpp (lowbias32). */
-function _hashU32(x: number): number {
-  x ^= x >>> 16;
-  x = Math.imul(x, 0x7feb352d);
-  x ^= x >>> 15;
-  x = Math.imul(x, 0x846ca68b);
-  x ^= x >>> 16;
-  return x >>> 0;
-}
 
 /**
  * Twin of `sw_fill_engine_noise` (cpp/src/audio_module.cpp), bit-exact: the
@@ -395,15 +386,9 @@ function _jsFillEngineNoise(
   const loadGain = Math.fround(_F32_0_22 + Math.fround(_F32_0_78 * load));
   const nOut = Math.min(count, out.length);
   for (let i = 0; i < count; i++) {
-    const cycles2 = phase * 2;
-    const frac2 = cycles2 - Math.floor(cycles2);
-    const saw = Math.fround(Math.fround(phase) * 2 - 1);
-    const saw2 = Math.fround(Math.fround(frac2) * 2 - 1);
-    const eng = Math.fround(
-      Math.fround(Math.fround(saw * _F32_0_28) + Math.fround(saw2 * _F32_0_11)) * loadGain,
-    );
-    const h = _hashU32((index0 + i) >>> 0);
-    let n = Math.fround(((h >>> 8) & 0xffffff) / 16777216);
+    const eng = engineTone(phase, loadGain);
+    const h = hashU32((index0 + i) >>> 0);
+    let n = hashUnit(h);
     n = Math.fround(n * 2 - 1);
     let s = Math.fround(eng + Math.fround(Math.fround(n * spd) * _F32_0_18));
     if (s > 1) s = 1;
@@ -417,21 +402,21 @@ function _jsFillEngineNoise(
 
 /**
  * Cabin IR profiles — the JS twin of `cabin_profiles` in
- * cpp/src/noise_module.cpp. Times are milliseconds; gains are relative to the
+ * cpp/src/audio_module.cpp. Times are milliseconds; gains are relative to the
  * direct path. Order matches `CABIN_IR_VEHICLE_INDEX` in
  * `src/car/audio/cabinIr.ts`.
  */
 const _CABIN_PROFILES_RAW = [
   // sedan
-  { reflectMs: [1.15, 1.9, 2.7], reflectGain: [0.42, 0.26, 0.17], tailLevel: 0.3, tailMs: 2.2, dampClosed: 0.3, dampOpen: 0.88 },
+  { reflectMs: [1.15, 1.9, 2.7], reflectGain: [0.42, 0.26, 0.17], tailLevel: 0.3, tailMs: 2.2, dampClosed: 0.3, dampOpen: 0.88, lateLevel: 0.06, lateMs: 9 },
   // convertible
-  { reflectMs: [0.85, 1.45, 2.05], reflectGain: [0.34, 0.2, 0.11], tailLevel: 0.22, tailMs: 1.5, dampClosed: 0.38, dampOpen: 0.95 },
+  { reflectMs: [0.85, 1.45, 2.05], reflectGain: [0.34, 0.2, 0.11], tailLevel: 0.22, tailMs: 1.5, dampClosed: 0.38, dampOpen: 0.95, lateLevel: 0.045, lateMs: 6 },
   // science-lab
-  { reflectMs: [1.4, 2.35, 3.1], reflectGain: [0.46, 0.31, 0.22], tailLevel: 0.38, tailMs: 3.1, dampClosed: 0.26, dampOpen: 0.82 },
+  { reflectMs: [1.4, 2.35, 3.1], reflectGain: [0.46, 0.31, 0.22], tailLevel: 0.38, tailMs: 3.1, dampClosed: 0.26, dampOpen: 0.82, lateLevel: 0.08, lateMs: 14 },
   // limousine
-  { reflectMs: [1.75, 2.8, 3.6], reflectGain: [0.4, 0.28, 0.2], tailLevel: 0.34, tailMs: 3.6, dampClosed: 0.22, dampOpen: 0.8 },
+  { reflectMs: [1.75, 2.8, 3.6], reflectGain: [0.4, 0.28, 0.2], tailLevel: 0.34, tailMs: 3.6, dampClosed: 0.22, dampOpen: 0.8, lateLevel: 0.07, lateMs: 18 },
   // cortianics
-  { reflectMs: [0.95, 1.6, 2.3], reflectGain: [0.38, 0.24, 0.15], tailLevel: 0.26, tailMs: 1.8, dampClosed: 0.34, dampOpen: 0.92 },
+  { reflectMs: [0.95, 1.6, 2.3], reflectGain: [0.38, 0.24, 0.15], tailLevel: 0.26, tailMs: 1.8, dampClosed: 0.34, dampOpen: 0.92, lateLevel: 0.05, lateMs: 7 },
 ] as const;
 
 /**
@@ -447,7 +432,12 @@ const _CABIN_PROFILES = _CABIN_PROFILES_RAW.map((p) => ({
   tailMs: Math.fround(p.tailMs),
   dampClosed: Math.fround(p.dampClosed),
   dampOpen: Math.fround(p.dampOpen),
+  lateLevel: Math.fround(p.lateLevel),
+  lateMs: Math.fround(p.lateMs),
 }));
+
+const _F32_0_95 = Math.fround(0.95);
+const _F32_0_35 = Math.fround(0.35);
 
 /** Number of cabin profiles the module knows about (C++ `cabin_profile_count`). */
 export const CABIN_IR_PROFILE_COUNT = _CABIN_PROFILES.length;
@@ -488,16 +478,24 @@ function _jsFillCabinIr(
   const tailTaps = Math.fround(p.tailMs * msToTaps);
   const decay = tailTaps > 1 ? Math.fround(1 / tailTaps) : 1;
   let env = Math.fround(p.tailLevel * enclosure);
+  const lateTaps = Math.fround(p.lateMs * msToTaps);
+  const lateDecay = lateTaps > 1 ? Math.fround(1 / lateTaps) : 1;
+  let lateEnv = Math.fround(p.lateLevel * Math.fround(1 - Math.fround(_F32_0_95 * open)));
+  let lateN = 0;
+  let prevLateN = 0;
   let prevN = 0;
   for (let i = 1; i < n; i++) {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     let noise = Math.fround(((state >>> 8) & 0xffffff) / 16777216);
     noise = Math.fround(Math.fround(noise * 2) - 1);
-    out[i] = Math.fround(
-      out[i]! + Math.fround(Math.fround(Math.fround(noise - prevN) * 0.5) * env),
-    );
+    lateN = Math.fround(lateN + Math.fround(_F32_0_35 * Math.fround(noise - lateN)));
+    const early = Math.fround(Math.fround(Math.fround(noise - prevN) * 0.5) * env);
+    const late = Math.fround(Math.fround(lateN - prevLateN) * lateEnv);
+    out[i] = Math.fround(out[i]! + Math.fround(early + late));
     prevN = noise;
+    prevLateN = lateN;
     env = Math.fround(env - Math.fround(env * decay));
+    lateEnv = Math.fround(lateEnv - Math.fround(lateEnv * lateDecay));
   }
 
   const damp = Math.fround(
@@ -517,16 +515,10 @@ function _jsFillCabinIr(
   }
 }
 
-/** Max interaural time difference (seconds) — mirrors kMaxItdSeconds in hrtf_module.cpp. */
-const _HRTF_MAX_ITD_SECONDS = Math.fround(6.6e-4);
-/** Max amplitude cut for the far ear at |azimuth| = 90 — mirrors kMaxFarGainCut. */
-const _HRTF_MAX_FAR_GAIN_CUT = Math.fround(0.35);
-/** 1 - the far-ear damp floor at |azimuth| = 90 — mirrors (1.0f - kFarEarDampFloor). */
-const _HRTF_DAMP_RANGE = Math.fround(1 - Math.fround(0.28));
-
 /**
  * JS twin of sw_fill_hrtf (cpp/src/hrtf_module.cpp) — see that file for the
- * algorithm rationale. Every step below is rounded with Math.fround so this
+ * algorithm rationale. The coefficients come from `hrtfShadow` (the twin of
+ * `sv_audio::hrtf_shadow`); every step is rounded with Math.fround so this
  * twin reproduces the C++/WASM f32 arithmetic op-for-op.
  */
 function _jsFillHrtf(
@@ -539,31 +531,16 @@ function _jsFillHrtf(
   if (count <= 0) return;
   let sr = Math.fround(sampleRate);
   if (!(sr > 1)) sr = 44100;
-  let az = Math.fround(azimuthDeg);
-  if (az > 90) az = 90;
-  else if (az < -90) az = -90;
-
   const n = Math.min(count, left.length, right.length);
   if (n <= 0) return;
   left.fill(0, 0, n);
   right.fill(0, 0, n);
 
-  const ratio = Math.fround(az / 90);
-  const absRatio = Math.abs(ratio);
-  const shaped = Math.fround(ratio * Math.fround(2 - absRatio));
-  const absShaped = Math.abs(shaped);
-
-  const itdA = Math.fround(_HRTF_MAX_ITD_SECONDS * sr);
-  const itdB = Math.fround(itdA * absShaped);
-  const itdC = Math.fround(itdB + 0.5);
-  let delay = Math.trunc(itdC);
+  const { delay: rawDelay, farGain, damp, rightIsNear } = hrtfShadow(azimuthDeg, sr);
+  let delay = rawDelay;
   if (delay > n - 1) delay = n - 1;
   if (delay < 0) delay = 0;
 
-  const farGain = Math.fround(1 - Math.fround(_HRTF_MAX_FAR_GAIN_CUT * absShaped));
-  const damp = Math.fround(1 - Math.fround(_HRTF_DAMP_RANGE * absShaped));
-
-  const rightIsNear = shaped >= 0;
   const nearEar = rightIsNear ? right : left;
   const farEar = rightIsNear ? left : right;
 
@@ -599,6 +576,8 @@ export const JS_FALLBACK: StreetViewWasmAPI = {
   lumaHistogramBt709: jsLumaHistogramBt709,
   reduceLumaBt709: jsReduceLumaBt709,
   downsample2d: jsDownsample2d,
+  lumaAnalyze: jsLumaAnalyze,
+  createCabinDsp: (sampleRate: number) => new CabinDspTwin(sampleRate),
   isWasm: false,
 };
 

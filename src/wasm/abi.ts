@@ -11,6 +11,69 @@ import type { LumaReduce } from '../renderer/gpuChores/lumaMath';
 
 export type { LumaReduce };
 
+/** {@link StreetViewWasmAPI.lumaAnalyze} output: the histogram plus an exact reduce. */
+export interface LumaAnalysis extends LumaReduce {
+  bins: Uint32Array;
+}
+
+/**
+ * Targets for the cabin engine (`dsp_set_params`). The engine glides to them
+ * with a ~40 ms one-pole per parameter, smoothed per sample, so they can be
+ * posted at any cadence. Out-of-range values clamp.
+ */
+export interface CabinDspParams {
+  /** Engine RPM [0, 12000]. */
+  rpm: number;
+  /** Throttle/load [0, 1]. */
+  load: number;
+  /** Road speed in m/s [0, 120]; 40 m/s is full road and wind noise. */
+  speedMps: number;
+  /** 0 = sealed, 1 = roof/windows open. */
+  openness: number;
+  /** Voicing index in `CABIN_IR_VEHICLE_INDEX` order, clamped [0, 4]. */
+  vehicle: number;
+  /** 0 = dry, 1 = soaked: tyre hiss and arch spray. */
+  wetRoad: number;
+  /** Rain on the roof [0, 1]. */
+  rain: number;
+  /** Ambient wind in m/s [0, 60]. */
+  windMps: number;
+  /** Radio level into the cabin [0, 2]. */
+  radioGain: number;
+  /** Wipers running (they thump while rain > 0.02). Non-zero numbers count as on. */
+  wipers: boolean | number;
+}
+
+/**
+ * One cabin engine instance (`dsp_*`): engine, road, wind, rain, wiper and
+ * radio, placed by the head-shadow model and run through the cabin FIR.
+ * Production runs the WASM build of this inside the AudioWorklet
+ * (src/car/audio/cabinWorkletSource.ts); this interface is the same engine on
+ * the main thread, for tests and tooling.
+ */
+export interface CabinDsp {
+  setParams(params: CabinDspParams): void;
+  /**
+   * Replace the cabin IR (`count` taps, default `taps.length`; more than
+   * `dsp_max_ir_taps()` truncates; null is the identity). Crossfades over
+   * 256 samples.
+   */
+  setIr(taps: Float32Array | null, count?: number): void;
+  /**
+   * Render `frames` stereo samples. Null radio inputs are silence; null
+   * outputs are discarded. Output is clamped to [-1, 1].
+   */
+  render(
+    radioL: Float32Array | null,
+    radioR: Float32Array | null,
+    outL: Float32Array | null,
+    outR: Float32Array | null,
+    frames: number,
+  ): void;
+  /** Free the instance (WASM heap); the object must not be used afterwards. */
+  destroy(): void;
+}
+
 /** All functions exposed by the streetview-wasm module. */
 export interface StreetViewWasmAPI {
   /**
@@ -236,6 +299,27 @@ export interface StreetViewWasmAPI {
     width: number,
     height: number,
   ): LumaReduce;
+
+  /**
+   * Fused luma chore: box-downsample onto `dstW x dstH` (pass the source size
+   * to analyse as-is), histogram and reduce in one pass with one copy-in.
+   * `bins` equals {@link downsample2d} then {@link lumaHistogramBt709}; the
+   * mean/min/max come from integer luma (2126 r + 7152 g + 722 b) summed
+   * exactly, so a flat frame's mean is its colour's luma.
+   */
+  lumaAnalyze(
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+    dstW: number,
+    dstH: number,
+  ): LumaAnalysis;
+
+  /**
+   * A new cabin engine at `sampleRate` (<= 1 falls back to 44100). Null when
+   * the WASM heap cannot allocate one.
+   */
+  createCabinDsp(sampleRate: number): CabinDsp | null;
 
   /** Integer box-filter downsample of packed RGBA8. */
   downsample2d(
