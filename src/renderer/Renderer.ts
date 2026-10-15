@@ -62,8 +62,17 @@ import {
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import { HistoricalWipePass } from './HistoricalWipePass';
 import type { WipeDirection } from './historicalWipe';
+import { releaseSceneDepthFallback, type FrameAux } from './depth/sceneDepthBinding';
+import { DepthController } from './depth/DepthController';
+import type { SceneDepthOptions } from './depth/sceneDepthOptions';
+import { isPassFailed } from './passStatus';
 
 type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
+
+/** Pan into [0, 1) — `panX` is `(heading % 360) / 360`, negative for negative headings. */
+function wrapUnit(v: number): number {
+    return v - Math.floor(v);
+}
 
 /**
  * Street View's WebGPU renderer — a façade over four named modules:
@@ -115,6 +124,10 @@ export class Renderer implements StreetViewRenderer {
     private gpuChores: GpuChores | null = null;
     private cabinComposite: CabinCompositePass | null = null;
     private historicalWipe: HistoricalWipePass | null = null;
+    /** Scene depth (#320): the lazy `depth` pass and everything feeding it. */
+    private depth: DepthController | null = null;
+    /** Set while the lazy `depth` pass is initialising (download + session create). */
+    private depthInit: Promise<boolean> | null = null;
     /** What the cabin's windshield portal reads — see `roadFrameRegistry.ts`. */
     private roadFrameSource: RoadFrameSource | null = null;
     private readonly roadLook = createNeutralRoadLook();
@@ -122,6 +135,8 @@ export class Renderer implements StreetViewRenderer {
 
     private passes: FramePassRegistry | null = null;
     private readonly frameUniforms = new Float32Array(FRAME_UNIFORM_FLOAT_COUNT);
+    /** `FrameContext.aux`, refilled every frame (one object, no per-frame allocation). */
+    private readonly frameAux: FrameAux = {};
 
     private onLostCallback?: (info: GPUDeviceLostInfo) => void;
     /**
@@ -254,9 +269,6 @@ export class Renderer implements StreetViewRenderer {
                 await this.adoptPresentFallback(passes);
             }
 
-            this.gpuChores = new GpuChores(this.device);
-            void this.gpuChores.ensureReady();
-
             // The portal reads the pass-1 intermediate only — never `videoTexture`,
             // so during a hold it can only ever see the frozen frame.
             this.roadFrameSource = createRoadFrameSource({
@@ -274,6 +286,12 @@ export class Renderer implements StreetViewRenderer {
             publishRoadFrameSource(this.roadFrameSource);
 
             publishBootSuccess(probe);
+
+            // After the success probe: `GpuChores` reads `isWebGpuProbeOk()` and
+            // the published limits verdict in its constructor, so building it
+            // any earlier put every normal boot on the WASM/JS fallback.
+            this.gpuChores = new GpuChores(this.device);
+            void this.gpuChores.ensureReady();
             return true;
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
@@ -320,7 +338,45 @@ export class Renderer implements StreetViewRenderer {
             presentationFormat: this.presentationFormat,
             resolve: () => this.resolveCabinComposite(),
         }));
+        // Lazy: initialised by `setSceneDepth` when scene depth is switched on.
+        this.depth = new DepthController({
+            device: this.device,
+            getChores: () => this.gpuChores,
+            getIntermediate: () => (this.textures.intermediateTexture
+                ? {
+                    texture: this.textures.intermediateTexture,
+                    width: this.textures.intermediateWidth,
+                    height: this.textures.intermediateHeight,
+                }
+                : null),
+            isHoldActive: () => this.holdTransition.isHoldActive(),
+            isAlive: () => !this.isDestroyed && !this.isDisposed,
+            onFailed: (error) => this.passes?.markFailed('depth', error),
+            baseUrl: typeof document !== 'undefined' ? document.baseURI : 'http://localhost/',
+        });
+        passes.register(this.depth.pass);
         return passes;
+    }
+
+    /**
+     * Scene depth for this frame (`WebGPUCanvas`, every frame). Switching it on
+     * the first time initialises the lazy `depth` pass — a one-time download —
+     * and a failure stays reported on `webgpuProbe.passes.depth` until it is
+     * switched off and on again.
+     */
+    public setSceneDepth(options: SceneDepthOptions): void {
+        const depth = this.depth;
+        const passes = this.passes;
+        if (!depth || !passes || this.isDestroyed) return;
+        const wasEnabled = depth.getOptions().enabled;
+        depth.setOptions(options);
+        if (!options.enabled || this.depthInit) return;
+        const retry = !wasEnabled && isPassFailed('depth');
+        if (depth.isInitialised() && !retry) return;
+        if (isPassFailed('depth') && !retry) return;
+        this.depthInit = passes.initPass('depth').finally(() => {
+            this.depthInit = null;
+        });
     }
 
     /**
@@ -504,10 +560,14 @@ export class Renderer implements StreetViewRenderer {
             }
             this.cabinComposite = null;
             this.historicalWipe = null;
+            // Destroyed with the passes (it is one); drop the handle.
+            this.depth = null;
+            this.depthInit = null;
             this.gpuChores?.destroy();
             this.gpuChores = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
+            releaseSceneDepthFallback(this.device);
             if (unconfigureContext) {
                 this.context?.unconfigure();
             }
@@ -660,12 +720,19 @@ export class Renderer implements StreetViewRenderer {
         this.textures.updateBindGroup();
     }
 
-    public beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement): void {
+    public beginHoldTransition(
+        heading?: number,
+        pitch?: number,
+        cpuSnapshot?: HTMLCanvasElement,
+        travelHeading?: number,
+    ): void {
         this.holdTransition.beginHoldTransition(heading, pitch, cpuSnapshot);
+        this.depth?.beginHold(heading ?? 0, this.holdTransition.getCapturePan(), travelHeading);
     }
 
     public endHoldTransition(): void {
         this.holdTransition.endHoldTransition();
+        this.depth?.endHold();
     }
 
     public isHoldActive(): boolean {
@@ -726,6 +793,19 @@ export class Renderer implements StreetViewRenderer {
 
             const passes = this.passes;
             if (!passes) return;
+            const holdActive = this.holdTransition.isHoldActive();
+            const inline = this.transitionManager?.inlineProgress ?? 0;
+            this.depth?.onFrame({
+                nowMs: performance.now(),
+                view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 },
+                holdActive,
+                transitioning: (inline > 0 && inline < 1)
+                    || !!this.transitionManager?.isInTransition()
+                    || !!this.historicalWipe?.isActive(),
+            });
+            this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
+                ? this.depth?.currentAux()
+                : undefined;
             // Timestamp queries only while the overlay is open to read them.
             const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;
             encodeAndSubmitFrame({
@@ -739,11 +819,11 @@ export class Renderer implements StreetViewRenderer {
                     panX,
                     panY,
                     inlineTransitionProgress: this.transitionManager?.inlineProgress ?? 0.0,
-                    holdActive: this.holdTransition.isHoldActive(),
+                    holdActive,
                     capturePan: this.holdTransition.getCapturePan(),
                 }, this.frameUniforms),
                 passes,
-                frame: { getSwapChainView: () => this.getSwapChainView() },
+                frame: { getSwapChainView: () => this.getSwapChainView(), aux: this.frameAux },
                 gpuPassTimer: timer,
                 timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });

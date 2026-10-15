@@ -16,7 +16,9 @@ export type FramePassId =
     | 'historical-wipe'
     | 'weather'
     | 'present-fallback'
-    | 'cabin-composite';
+    | 'cabin-composite'
+    /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
+    | 'depth';
 
 export type PassState = 'ready' | 'failed';
 

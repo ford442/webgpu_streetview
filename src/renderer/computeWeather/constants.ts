@@ -16,6 +16,20 @@ export const COMPUTE_UNIFORMS_BYTE_SIZE = (4 + 4 + 4 + 50 * 4) * 4;
 
 export const WORKGROUP_SIZE = 16;
 
+/**
+ * Format of the weather output (binding 2) and the colour history copied from
+ * it (binding 9). Half float: the pass writes post-ACES display values plus
+ * dither, which 16-bit float carries without visible loss, at half the
+ * bandwidth of `rgba32float` (8 vs 16 B/px, read back by the blit every frame).
+ * `rgba16float` is a core storage-texture format, so no feature is needed.
+ * Must match `writeTexture`'s declaration in `weather-post-compute.wgsl`.
+ *
+ * The particle textures (bindings 7/8 and their dummies) stay `rgba32float`:
+ * they carry simulation state integrated every frame, and one storage
+ * declaration in `weather-particles.wgsl` serves both state and density.
+ */
+export const COMPUTE_WEATHER_OUTPUT_FORMAT: GPUTextureFormat = 'rgba16float';
+
 /** Particle uniforms: dt + grid dims + density dims, padded to 8 floats. */
 export const PARTICLE_UNIFORMS_BYTE_SIZE = 32;
 

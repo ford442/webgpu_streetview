@@ -15,7 +15,7 @@ contract).
 | Path | Entry point | Notes |
 |------|-------------|-------|
 | Fragment (default) | `public/shaders/weather-post.wgsl` | HDR `rgba16float`, full effect set |
-| Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba32float` storage texture + blit; adds the depth-proxy storage target |
+| Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba16float` storage texture + blit; adds the depth-proxy storage target |
 | GLSL reference (not live) | `src/renderer/webgl/weatherReference.glsl.ts` | SDR approximation for must-match tests; **not constructed** at runtime |
 
 All three read the same 44-float uniform block. Shared WGSL helpers are held
@@ -67,6 +67,12 @@ usable one from screen Y and camera pitch:
 - Above that line ⇒ depth `1.0` (sky / skyline, effectively at infinity).
 - Below it ⇒ `0.06 / (uv.y − horizonY)`, a hyperbolic falloff standing in for
   `eyeHeight / tan(angleBelowHorizon)`.
+- **Scene depth** (#320, opt-in, High/Ultra): every effect actually reads
+  `sceneDepth(uv, horizonY)`, which returns this proxy unchanged at weight 0
+  and otherwise blends in a monocular depth map of the frame (Depth Anything
+  V2 Small, calibrated to the same hyperbola). It also occludes far rain/snow
+  layers behind near surfaces and drives the hop-release dolly in pass 1. See
+  [`docs/SCENE_DEPTH.md`](SCENE_DEPTH.md).
 
 This one function now feeds height fog, the DOF circle of confusion, and
 `rain()`/`snow()` directly, so all three agree about where the ground is —

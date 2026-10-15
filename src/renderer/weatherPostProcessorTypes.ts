@@ -4,6 +4,7 @@
  */
 import type { GpuPassTimer } from './gpuPassTimer';
 import type { CanvasToneMapping } from './shaderFeatureVariants';
+import type { AuxDepth } from './depth/sceneDepthBinding';
 
 export interface WeatherPassTimingContext {
     timer: GpuPassTimer;
@@ -58,6 +59,13 @@ export interface WeatherPostProcessorLike {
     setLookLut(volume: import('./lut').LutVolume | null): void;
     /** Compute-only 1-frame color history. No-op on fragment. */
     setTemporalHistoryEnabled(enabled: boolean): void;
+    /**
+     * This frame's scene depth (`FrameContext.aux.depth`), or null for the
+     * zero fallback — `sceneDepth()` then returns `viewDepthProxy` exactly.
+     * Remembered for `renderWeatherOnly` frames, which encode outside the
+     * pass registry. No-op on the present fallback.
+     */
+    setSceneDepth(depth: AuxDepth | null): void;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;

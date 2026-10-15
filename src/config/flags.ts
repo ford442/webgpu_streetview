@@ -131,6 +131,11 @@ export const FLAGS = {
     kind: 'bool',
     doc: 'Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default).',
   },
+  // ── Scene depth ──────────────────────────────────────────────────────────
+  depth: {
+    kind: 'bool',
+    doc: 'Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality.',
+  },
   // ── WASM feeders ─────────────────────────────────────────────────────────
   wasmNoise: {
     kind: 'bool',

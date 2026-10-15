@@ -225,13 +225,14 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   // Both call sites end up firing the same panorama's `pano_changed` event
   // (via setPano or setPosition), so the single stability watcher below
   // handles the release for either path identically.
-  const armHold = useCallback(() => {
+  /** `travelHeading`: the link heading of a hop, so the release can dolly along it (#320). */
+  const armHold = useCallback((travelHeading?: number) => {
     const renderer = rendererRef.current;
     const currentCanvas = canvasRef.current;
 
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
     const pov = povStore.get();
-    renderer?.beginHoldTransition(pov.heading, pov.pitch, currentCanvas ?? undefined);
+    renderer?.beginHoldTransition(pov.heading, pov.pitch, currentCanvas ?? undefined, travelHeading);
     streetViewProbe.holdArmed();
     pendingRevealRef.current = null;
 
@@ -289,7 +290,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     );
 
     if (bestLink && bestLink.pano) {
-      armHold();
+      armHold(typeof bestLink.heading === 'number' ? bestLink.heading : undefined);
       pano.setPano(bestLink.pano);
     }
   }, [armHold]);

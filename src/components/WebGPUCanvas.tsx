@@ -21,6 +21,8 @@ import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } fr
 import { fetchLookLutVolume } from '../renderer/lut';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
 import { getGpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
+import { resolveSceneDepthOptions, type SceneDepthOptions } from '../renderer/depth/sceneDepthOptions';
+import { sceneDepthStore } from '../state/sceneDepthStore';
 import {
     AUTO_EXPOSURE_IDLE,
     resolveAutoExposureFrame,
@@ -157,6 +159,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // a row-luma estimate (preset weight; 0 = today's horizon). Frozen through
     // hold-pause; see renderer/gpuChores/horizonEstimate.ts.
     const horizonStateRef = useRef<HorizonFrameState>(HORIZON_IDLE);
+
+    // Scene depth (#320): opt-in × preset weight, handed to the renderer every
+    // frame (one reused object). See renderer/depth/DepthController.ts.
+    const sceneDepthOptionsRef = useRef<SceneDepthOptions>({ enabled: false, blend: 0, reducedMotion: false });
 
     // Memory profiling
     useEffect(() => {
@@ -466,6 +472,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
                 currentRendererRef.current.updateWeatherParams(params);
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
+                currentRendererRef.current.setSceneDepth?.(resolveSceneDepthOptions({
+                    quality: qualityRef.current,
+                    optedIn: sceneDepthStore.get().enabled,
+                    reducedMotion: reducedMotionRef.current
+                        || (typeof document !== 'undefined'
+                            && document.body.classList.contains('reduced-motion')),
+                }, sceneDepthOptionsRef.current));
 
                 if (wasmNoiseEnabledRef.current) {
                     const tile = noiseFeederRef.current.sampleTile(

@@ -1,3 +1,9 @@
+# Models
+
+`depth/` — the scene-depth model (Depth Anything V2 Small, Apache-2.0) is **not
+in git**: `npm run fetch:depth-model` downloads the pinned, SHA-256-checked files
+here at deploy time (the directory is gitignored). See `docs/SCENE_DEPTH.md`.
+
 # Cabin models
 
 Assets here load **only** on the opt-in hero-cabin path (`?gltfInterior=1` or

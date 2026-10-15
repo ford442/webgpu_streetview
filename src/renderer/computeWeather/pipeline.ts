@@ -1,5 +1,6 @@
-import { BLIT_SHADER } from './constants';
+import { BLIT_SHADER, COMPUTE_WEATHER_OUTPUT_FORMAT } from './constants';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
+import { getSceneDepthBindGroupLayout } from '../depth/sceneDepthBinding';
 import {
     assembleExtendedToneMappingShader,
     deviceHasFeature,
@@ -48,7 +49,7 @@ export function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLay
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'filtering' } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
-            { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: COMPUTE_WEATHER_OUTPUT_FORMAT } },
             { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
             // 4 (r32float depth) is 32-bit float — see the note above binding 9.
             { binding: 4, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
@@ -56,14 +57,15 @@ export function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLay
             { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
             { binding: 7, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
             { binding: 8, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
-            // 4/7/9 carry r32float / rgba32float, whose sample type is
+            // 4/7 carry r32float / rgba32float, whose sample type is
             // `unfilterable-float` unless the optional `float32-filterable`
             // feature is enabled — and `deviceInit.ts` only requests that when
             // the adapter happens to offer it. Declaring them `'float'` would
             // therefore fail bind-group validation on any adapter without it.
-            // The shader only ever reads all three with `textureLoad`, which
-            // does not filter, so `unfilterable-float` is both correct and
-            // sufficient. Do not "simplify" these back to `'float'`.
+            // 9 (colour history, rgba16float) would be filterable, but like 4
+            // and 7 it is only ever read with `textureLoad`, which does not
+            // filter, so `unfilterable-float` is correct and accepts every
+            // format these slots carry. Do not "simplify" these to `'float'`.
             { binding: 9, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
             { binding: 10, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
             { binding: 11, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'comparison' } },
@@ -106,7 +108,7 @@ export async function createWeatherComputePipeline(
         label: 'weather-compute-pipeline',
         layout: device.createPipelineLayout({
             label: 'weather-compute-pipeline-layout',
-            bindGroupLayouts: [createComputeBindGroupLayout(device), lutBindGroupLayout],
+            bindGroupLayouts: [createComputeBindGroupLayout(device), lutBindGroupLayout, getSceneDepthBindGroupLayout(device)],
         }),
         compute: { module: computeModule, entryPoint: 'main' },
     });

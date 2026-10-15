@@ -383,10 +383,11 @@ the module that owns it, not to the façade:
 | Module | Owns |
 |---|---|
 | `deviceInit.ts` | adapter request options, limit checks, canvas output (HDR/P3) policy, capability matrix |
-| `bootDevice.ts` | the boot sequence and **the only `requestDevice` call site** (`deviceInit.test.ts` pins the path) |
+| `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth) |
+| `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
 | `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
@@ -411,11 +412,43 @@ lost, the hold-pause guards, and the public renderer surface.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 `ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
+
+### Scene depth (`src/renderer/depth/`, #320)
+
+A monocular depth map of the road frame (Depth Anything V2 Small through
+onnxruntime-web's WebGPU EP) that fog, rain/snow, DOF and the hop-release dolly
+read through `sceneDepth()` instead of the screen-Y proxy. Opt-in (weather
+panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
+0.6 / 0.8). Full design: [`docs/SCENE_DEPTH.md`](docs/SCENE_DEPTH.md).
+
+- **Input**: the pass-1 intermediate only, via `gpuChores.downsampleTexture` —
+  never the Maps canvas or `videoTexture`, never while `holdActive` or a
+  transition runs (`depthScheduler.ts`: settle 150 ms, ≤ 5 Hz, one in flight).
+- **Runtime**: a module Worker (`depthWorker.ts`) imports ORT from a pinned
+  jsDelivr URL — no npm dependency, nothing in the bundle (bundle guard test +
+  `check-bundle-budget.sh`). It owns **its own `GPUDevice`** (a device cannot
+  enter a Worker, and a model fault must not take the road down); that is the
+  one `requestDevice` outside `bootDevice.ts`. `shader-f16` there selects the
+  `q4f16` model, else `q4`.
+- **Model**: Apache-2.0 Small only (Base/Large are CC-BY-NC). Not in git —
+  `npm run fetch:depth-model` puts the pinned, SHA-256-checked files into
+  `public/models/depth/` (deploy runs it); the Worker caches the verified file
+  in its own Cache API bucket. The SW never touches `/models/`.
+- **Output**: normalised + calibrated to the proxy's scale (`depth = q / n`,
+  `depthMath.ts`) → `r16float` → `FrameContext.aux.depth` → weather group 2,
+  pass-1 group 1 (`sceneDepthBinding.ts`). Params (`SceneDepthParams`, 48 B) live
+  in the pass's own uniform buffer — never weather slots.
+- **Weight 0 is bit-exact**: no map / off / Low–Medium bind an all-zero block and
+  every consumer takes its pre-depth branch. Keep those branches when editing
+  `sceneDepth`, `rain`, `snow` or `samplePrevForRelease`.
+- **Optional pass**: lazy, so absent from `webgpuProbe.passes` until switched on;
+  a failure (model missing, integrity, device lost, no chores readback) is
+  reported there and in `window.__SCENE_DEPTH__`, never on the road frame.
 
 ### WebGL2 Fallback / Debug Renderer
 
@@ -673,6 +706,12 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 [42-43] padding
 ```
 
+Scene depth is **not** in this block: it is its own bind group
+(`depth/sceneDepthBinding.ts` — depth texture, sampler, 48-byte
+`SceneDepthParams`) at group 2 in both weather pipelines and group 1 in pass 1.
+`sceneDepthBinding.test.ts` checks the struct in all three shaders against
+`SceneDepthParamIndex`.
+
 The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
 ```
 [0-3]   time, zoom, panX, panY
@@ -779,8 +818,9 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `src/car/interior/WindowWeatherOverlay.test.ts` — portal vs decal selection, the per-frame swap back to the decal when the road frame goes away, wiper phase as the single driver, texture ownership on dispose, and the probe.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
+- `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~1 min per inference on SwiftShader.
 - `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
-- Both GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
+- The GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
@@ -976,4 +1016,4 @@ Single-product Vite + React project; `npm install` / `npm ci` is the only depend
 
 ---
 
-*Last Updated: October 7, 2026*
+*Last Updated: October 14, 2026*

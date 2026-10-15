@@ -111,7 +111,7 @@ describe('weather shader parity guard', () => {
     for (const fnName of ['rain', 'snow']) {
       const body = extractFunctionBody(fragment, fnName);
       expect(body).toContain('sceneHorizonY()');
-      expect(body).toContain('viewDepthProxy(uv, horizonY)');
+      expect(body).toContain('sceneDepth(uv, horizonY)');
       expect(body).toContain('skyFade');
       expect(body).toContain('nearBoost');
     }
@@ -127,6 +127,72 @@ describe('weather shader parity guard', () => {
         .toBe(normalizeWgsl(extractFunctionBody(fragment, fnName)));
     }
   );
+
+  it.each(['sampleSceneDepthMap', 'sceneDepth', 'precipOcclusion'])(
+    'keeps the %s scene-depth helper byte-identical between fragment and compute paths',
+    (fnName) => {
+      const fragment = readShader('weather-post.wgsl');
+      const compute = readShader('weather-post-compute.wgsl');
+
+      expect(normalizeWgsl(extractFunctionBody(compute, fnName)))
+        .toBe(normalizeWgsl(extractFunctionBody(fragment, fnName)));
+    }
+  );
+
+  it('guards depth blend 0 so sceneDepth stays bit-exact with the proxy (#320)', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const body = normalizeWgsl(extractFunctionBody(readShader(name), 'sceneDepth'));
+      // The proxy is computed first and returned untouched — no mix() — when
+      // blend is 0, which is every frame without a depth map.
+      expect(body.startsWith(
+        'let proxy=viewDepthProxy(uv,horizonY);'
+        + 'if(depthParams.blend<=0.0){return proxy;}'
+      )).toBe(true);
+    }
+  });
+
+  it('occludes precipitation layers only when a depth map is blended in; blend 0 keeps the old accumulate verbatim', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const source = readShader(name);
+      const rain = normalizeWgsl(extractFunctionBody(source, 'rain'));
+      expect(rain).toContain(
+        'if(depthParams.blend>0.0){c=c+streak*(0.7+seed*0.8)*precipOcclusion(layer,4.0,depth);}'
+        + 'else{c=c+streak*(0.7+seed*0.8);}'
+      );
+      const snow = normalizeWgsl(extractFunctionBody(source, 'snow'));
+      expect(snow).toContain(
+        'if(depthParams.blend>0.0){c=c+flake*(0.85+rnd*0.6)*precipOcclusion(layer,5.0,depth);}'
+        + 'else{c=c+flake*(0.85+rnd*0.6);}'
+      );
+    }
+  });
+
+  it('routes every depth consumer through sceneDepth — viewDepthProxy is read only inside it', () => {
+    for (const name of ['weather-post.wgsl', 'weather-post-compute.wgsl']) {
+      const source = readShader(name);
+      expect(source.match(/fn sceneDepth\(/g)).toHaveLength(1);
+      // One definition + the one call inside sceneDepth.
+      expect(source.match(/viewDepthProxy\(/g)).toHaveLength(2);
+      expect(extractFunctionBody(source, 'sceneDepth')).toContain('viewDepthProxy(uv, horizonY)');
+    }
+    // rain, snow, fog, DOF in both paths; plus the compute path's per-pixel depth.
+    expect(readShader('weather-post.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(4);
+    expect(readShader('weather-post-compute.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(5);
+  });
+
+  it('declares the scene-depth group at the same group index and struct in both paths', () => {
+    const decl = (source: string) => normalizeWgsl(
+      source.slice(source.indexOf('struct SceneDepthParams'), source.indexOf('var<uniform> depthParams')),
+    );
+    const fragment = readShader('weather-post.wgsl');
+    const compute = readShader('weather-post-compute.wgsl');
+    expect(decl(compute)).toBe(decl(fragment));
+    for (const source of [fragment, compute]) {
+      expect(source).toContain('@group(2) @binding(0) var sceneDepthTex: texture_2d<f32>;');
+      expect(source).toContain('@group(2) @binding(1) var sceneDepthSampler: sampler;');
+      expect(source).toContain('@group(2) @binding(2) var<uniform> depthParams: SceneDepthParams;');
+    }
+  });
 
   it('keeps sceneHorizonY wiring aligned (pitch + image estimate + blend)', () => {
     const fragment = readShader('weather-post.wgsl');

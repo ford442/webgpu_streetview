@@ -84,7 +84,12 @@ export interface StreetViewRenderer {
     isInTransition(): boolean;
     getTransitionDuration(mode?: string): number;
     captureCurrentFrame(): void;
-    beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement): void;
+    /**
+     * `travelHeading` (degrees) is the link heading of the hop being made, when
+     * there is one — the release dolly moves the held frame along it. Teleports
+     * pass nothing and keep the plain crossfade.
+     */
+    beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement, travelHeading?: number): void;
     endHoldTransition(): void;
     isHoldActive(): boolean;
     setTransitionProgress(progress: number): void;
@@ -105,6 +110,8 @@ export interface StreetViewRenderer {
     /** #216 gpu-chores — shared-device hist/downsample, or WASM/JS. */
     getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
     samplePanoramaStats?(opts?: PanoramaStatsOptions): void;
+    /** Scene depth (#320), every frame — see `depth/DepthController.ts`. WebGPU only. */
+    setSceneDepth?(options: import('./depth/sceneDepthOptions').SceneDepthOptions): void;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into

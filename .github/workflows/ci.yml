@@ -223,6 +223,17 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
+      # not in git: fetch the pinned, SHA-256-checked ones, cached on the pins.
+      - name: Cache the scene-depth model
+        uses: actions/cache@v4
+        with:
+          path: public/models/depth
+          key: depth-model-${{ hashFiles('src/renderer/depth/depthModel.manifest.json') }}
+
+      - name: Fetch the scene-depth model
+        run: npm run fetch:depth-model
+
       - name: E2E smoke (keyless)
         run: npm run test:e2e:smoke
         env:

@@ -6,6 +6,7 @@ import {
 } from '../passStatus';
 import type { TextureLifecycle } from '../textureLifecycle';
 import type { FramePassTimings } from '../frameLoop';
+import type { FrameAux } from '../depth/sceneDepthBinding';
 
 /** What every pass may read while it encodes one frame. Built once per frame by `Renderer`. */
 export interface FrameContext {
@@ -13,6 +14,12 @@ export interface FrameContext {
     timings: FramePassTimings;
     /** This frame's swap-chain view, for passes that load what weather stored. */
     getSwapChainView: () => GPUTextureView | null;
+    /**
+     * Auxiliary textures produced outside the road frame (today: scene depth,
+     * `depth/`). Every entry is optional — a consumer binds its fallback when
+     * one is missing, so a pass that failed or is off never stalls the frame.
+     */
+    aux: FrameAux;
 }
 
 /**

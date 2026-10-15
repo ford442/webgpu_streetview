@@ -1,5 +1,6 @@
 import React from 'react';
 import LiveConditionsControl from './LiveConditionsControl';
+import SceneDepthControl from './SceneDepthControl';
 
 interface WeatherPanelProps {
     rainIntensity: number;
@@ -153,6 +154,7 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                 </div>
 
                 <LiveConditionsControl />
+                <SceneDepthControl />
 
                 {/* Rain */}
                 <div style={{ marginBottom: '16px' }}>

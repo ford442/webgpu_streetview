@@ -29,6 +29,7 @@ const steps = [
   { name: 'typecheck (tsc -b)', cmd: 'npx', args: ['--no-install', 'tsc', '-b'] },
   { name: 'lint', cmd: 'npx', args: ['--no-install', 'eslint', '.', '--max-warnings', '0'] },
   { name: 'knip (unused files / deps)', cmd: 'npx', args: ['--no-install', 'knip', '--no-progress'] },
+  { name: 'spec environments (DOM specs carry a jsdom pragma)', cmd: 'node', args: ['scripts/check-test-env.mjs'] },
   { name: 'committed secrets', cmd: 'bash', args: ['scripts/check-deploy-secrets.sh'] },
   {
     name: 'unit tests',

@@ -1,4 +1,5 @@
 import type { GpuPassTimer } from './gpuPassTimer';
+import { getSceneDepthBindGroupLayout, STREETVIEW_SCENE_DEPTH_GROUP } from './depth/sceneDepthBinding';
 import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
@@ -31,8 +32,9 @@ export function pass1TimestampWrites(
  *
  * The bind group layout here is the contract `public/shaders/streetview.wgsl`
  * is written against: 0 sampler, 1 current frame, 2 uniforms, 3 previous frame
- * (transitions / hold-pause). Changing either side without the other produces
- * a pipeline-create failure at boot, not a visual glitch.
+ * (transitions / hold-pause); group 1 is the shared scene-depth group. Changing
+ * either side without the other produces a pipeline-create failure at boot,
+ * not a visual glitch.
  */
 export function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
@@ -86,9 +88,11 @@ export async function createStreetViewPipeline(
         label: 'streetview.wgsl',
         code: shaderCode,
     });
+    // Group 1 is the scene-depth group (`depth/sceneDepthBinding.ts`), read
+    // only by the release dolly; without depth it is the zero fallback.
     const pipelineLayout = device.createPipelineLayout({
         label: 'streetview-pipeline-layout',
-        bindGroupLayouts: [createStreetViewBindGroupLayout(device)],
+        bindGroupLayouts: [createStreetViewBindGroupLayout(device), getSceneDepthBindGroupLayout(device)],
     });
 
     return createRenderPipelineChecked(device, {
@@ -132,6 +136,7 @@ export function encodeStreetViewPass(
     targetView: GPUTextureView,
     pipeline: GPURenderPipeline,
     bindGroup: GPUBindGroup,
+    sceneDepthBindGroup: GPUBindGroup,
     timing?: Pass1TimingContext,
 ): void {
     const mainPass = commandEncoder.beginRenderPass({
@@ -148,6 +153,7 @@ export function encodeStreetViewPass(
     }
     mainPass.setPipeline(pipeline);
     mainPass.setBindGroup(0, bindGroup);
+    mainPass.setBindGroup(STREETVIEW_SCENE_DEPTH_GROUP, sceneDepthBindGroup);
     mainPass.draw(4, 1, 0, 0);
     if (timing) {
         timing.timer.markPassEnd(mainPass, timing.endIndex);

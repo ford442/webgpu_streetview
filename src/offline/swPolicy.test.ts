@@ -1,4 +1,5 @@
 import { resolveSwFetchStrategy, isOfflineCacheName, PRECACHE_URLS } from './swPolicy';
+import { DEPTH_MODEL_CACHE_NAME } from '../renderer/depth/depthModel';
 
 describe('swPolicy', () => {
   const origin = 'https://test.1ink.us';
@@ -37,6 +38,17 @@ describe('swPolicy', () => {
   it('flags offline cache names', () => {
     expect(isOfflineCacheName('streetview-v1-static')).toBe(true);
     expect(isOfflineCacheName('other-cache')).toBe(false);
+  });
+
+  it('leaves the scene-depth model to its own Cache API bucket (#320)', () => {
+    // Not intercepted: the depth Worker caches it once, verified, in a
+    // versioned bucket — the SW must neither duplicate ~20–30 MB nor serve a
+    // stale copy, and its activate() cleanup must never touch that bucket.
+    expect(
+      resolveSwFetchStrategy(`${origin}/streetview/models/depth/depth-anything-v2-small.q4f16.onnx`, 'GET', origin),
+    ).toBeNull();
+    expect(PRECACHE_URLS.some((url) => url.includes('/models/'))).toBe(false);
+    expect(isOfflineCacheName(DEPTH_MODEL_CACHE_NAME)).toBe(false);
   });
 
   it('precaches shader and wasm paths', () => {
