@@ -4,8 +4,9 @@ import { test, expect, type Page } from '@playwright/test';
  * The cabin audio engine (#321) in a real AudioContext.
  *
  * Unit tests run the worklet source and both binaries in Node; what only a
- * browser shows is that the compiled `WebAssembly.Module` really crosses into
- * the AudioWorklet, the engine renders on the audio thread at the context's
+ * browser shows is that the binary really instantiates inside the AudioWorklet
+ * (Chromium drops a posted `WebAssembly.Module`, so the main thread posts the
+ * bytes), the engine renders on the audio thread at the context's
  * own pace, the radio bus really runs through it, and — the point of the
  * design — that a main-thread stall cannot starve it. The old engine was
  * filled from the main thread with ~93 ms queued, so a 300 ms stall was
