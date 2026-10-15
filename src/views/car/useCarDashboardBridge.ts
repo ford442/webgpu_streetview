@@ -28,7 +28,7 @@ import {
 import { publishCameraSpeed, resetCameraSpeed } from '../../renderer/cameraMotionSignal';
 import { VehicleDynamics, VehicleTelemetry } from '../../car/VehicleDynamics';
 import { applyVehicleTelemetry } from '../../car/telemetryFeed';
-import { CabinAudio } from '../../car/audio/CabinAudio';
+import { CabinAudio, type CabinEnvironment } from '../../car/audio/CabinAudio';
 import { SpringPhysics } from '../../animation/PhysicsAnimations';
 import {
   createCabinRendererAsync,
@@ -38,6 +38,29 @@ import {
 import { detectGPUProfile } from '../../utils/performance';
 import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect } from '../../state/povStore';
+import { tripStore } from '../../state/tripStore';
+import { liveConditionsStore } from '../../state/liveConditionsStore';
+
+/**
+ * The world the cabin engine hears, read imperatively once per frame: the
+ * weather panel (which live conditions drive while live), the live
+ * precipitation/wind themselves, and the routed trip's cruise pace.
+ */
+function readCabinEnvironment(
+  { rainIntensity, wind, wipersEnabled }: Pick<CabinEnvironment, 'rainIntensity' | 'wind' | 'wipersEnabled'>,
+): CabinEnvironment {
+  const live = liveConditionsStore.get();
+  const conditions = live.status === 'live' ? live.conditions : null;
+  const trip = tripStore.get();
+  return {
+    rainIntensity,
+    wind,
+    wipersEnabled,
+    livePrecipitationMm: conditions?.precipitationMm ?? null,
+    liveWindKmh: conditions?.windSpeedKmh ?? null,
+    tripSpeedMps: trip.status === 'driving' ? trip.progress?.avgSpeedMps ?? null : null,
+  };
+}
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -106,6 +129,8 @@ export function useCarDashboardBridge({
   });
   const lastTelemetryPushRef = useRef(0);
   const cabinAudioRef = useRef<CabinAudio | null>(null);
+  // Read by the frame loop; a ref so a weather slider drag does not restart it.
+  const cabinWeatherRef = useRef({ rainIntensity, wind, wipersEnabled });
   const rollSpringRef = useRef(new SpringPhysics({ stiffness: 48, damping: 9, mass: 1 }));
   const pitchSpringRef = useRef(new SpringPhysics({ stiffness: 36, damping: 8, mass: 1 }));
   const prevPositionRef = useRef<google.maps.LatLng | null>(null);
@@ -220,6 +245,10 @@ export function useCarDashboardBridge({
   }, [rainIntensity]);
 
   useEffect(() => {
+    cabinWeatherRef.current = { rainIntensity, wind, wipersEnabled };
+  }, [rainIntensity, wind, wipersEnabled]);
+
+  useEffect(() => {
     setMirrorStreetViewCanvas(canvas);
     return () => setMirrorStreetViewCanvas(null);
   }, [canvas]);
@@ -275,12 +304,16 @@ export function useCarDashboardBridge({
       carSpeedRef.current = telem.speedKmh;
       applyVehicleTelemetry(telem, { updateCluster: updateCarGauges });
       publishCameraSpeed(telem.speedKmh);
-      cabinAudioRef.current?.update(telem, {
-        openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
-        // The cabin IR is per-vehicle, so the audio follows the vehicle
-        // picker the same way the interior does.
-        vehicle: getCurrentVehicleType(),
-      });
+      cabinAudioRef.current?.update(
+        telem,
+        {
+          openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
+          // The cabin IR is per-vehicle, so the audio follows the vehicle
+          // picker the same way the interior does.
+          vehicle: getCurrentVehicleType(),
+        },
+        readCabinEnvironment(cabinWeatherRef.current),
+      );
 
       if (now - lastTelemetryPushRef.current > 150) {
         lastTelemetryPushRef.current = now;

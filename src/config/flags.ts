@@ -118,6 +118,10 @@ export const FLAGS = {
     kind: 'bool', default: true,
     doc: 'Windshield portal. `?portal=off` forces the hole + decal overlay.',
   },
+  cabinDsp: {
+    kind: 'enum', values: ['auto', 'scalar', 'off'], default: 'auto',
+    doc: 'Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback.',
+  },
   gltfInterior: {
     kind: 'bool',
     doc: 'Use the authored glTF interior kit. Turning it on persists to localStorage.',

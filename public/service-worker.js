@@ -24,6 +24,8 @@ const PRECACHE_URLS = [
   './shaders/transition-zoom-blur.wgsl',
   './shaders/transition-zoom-chromatic.wgsl',
   './wasm/streetview-wasm.wasm',
+  // The cabin AudioWorklet's engine (SIMD128 build of the same sources).
+  './wasm/streetview-wasm.simd.wasm',
   './icons/icon.svg',
 ];
 

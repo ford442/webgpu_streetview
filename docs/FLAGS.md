@@ -31,6 +31,7 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?no_clip_distances` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Do not request the `clip-distances` device feature (also disables the windshield portal). |
 | `?cabin` | enum | `webgl` \| `webgpu` | — | Cabin overlay backend. Default follows the WebGPU probe; `webgl` is the escape hatch. |
 | `?portal` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `true` | Windshield portal. `?portal=off` forces the hole + decal overlay. |
+| `?cabinDsp` | enum | `auto` \| `scalar` \| `off` | `auto` | Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback. |
 | `?gltfInterior` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Use the authored glTF interior kit. Turning it on persists to localStorage. |
 | `?route` | string | `lat,lng;lat,lng[;…]` | — | Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it. |
 | `?liveWeather` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). |

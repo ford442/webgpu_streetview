@@ -12,6 +12,7 @@ import {
 } from './CarInteriorGauges';
 import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
 import { getWindAudio } from '../../effects/WindAudio';
+import { isCabinEngineAttached } from '../../audio/carAudioGraph';
 import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
 
 export interface CarInteriorAmbientState {
@@ -226,6 +227,13 @@ export class CarInteriorAnimator {
 
   private syncWindAudio(): void {
     const wind = getWindAudio();
+    // The WASM cabin engine renders the wind itself (speed, roof, ambient
+    // wind); the separate bed would double it. It still covers the
+    // oscillator fallback.
+    if (isCabinEngineAttached()) {
+      if (wind.isPlaying()) wind.stop();
+      return;
+    }
     const speedFromWind = this.ambient.windNorm * 80;
     const speed = Math.max(this.ambient.carSpeedKmh, speedFromWind);
     const shouldPlay = this.ambient.convertibleOpen || this.ambient.windNorm > 0.25;

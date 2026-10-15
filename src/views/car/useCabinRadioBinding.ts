@@ -81,7 +81,8 @@ export function useCabinRadioBinding({
 
     if (newState) {
       if (!audioAnalyzerRef.current) {
-        audioAnalyzerRef.current = new AudioAnalyzer();
+        // Through the car's shared graph: the station plays through the cabin.
+        audioAnalyzerRef.current = new AudioAnalyzer({ carCabin: true });
       }
 
       const pos = panorama?.getPosition();

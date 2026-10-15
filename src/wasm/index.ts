@@ -36,11 +36,72 @@ export { CABIN_IR_PROFILE_COUNT } from './jsFallback';
 
 let _cachedModule: StreetViewWasmAPI | null = null;
 
+/** The two shipped builds of the same sources (see cpp/CMakeLists.txt). */
+export type WasmBinaryVariant = 'scalar' | 'simd';
+
+/**
+ * A one-instruction SIMD128 module (`i32.const 0; i8x16.splat` in a
+ * `() -> v128` function). `WebAssembly.validate` accepts it exactly when the
+ * engine implements SIMD128.
+ */
+const SIMD_PROBE_MODULE = new Uint8Array([
+  0, 97, 115, 109, 1, 0, 0, 0, // magic, version
+  1, 5, 1, 96, 0, 1, 123, // type: () -> v128
+  3, 2, 1, 0, // func 0 : type 0
+  10, 8, 1, 6, 0, 65, 0, 253, 15, 11, // code: i32.const 0; i8x16.splat; end
+]);
+
+/** True when this engine can run streetview-wasm.simd.wasm. */
+export function wasmSimdSupported(): boolean {
+  try {
+    return typeof WebAssembly !== 'undefined' && WebAssembly.validate(SIMD_PROBE_MODULE);
+  } catch {
+    return false;
+  }
+}
+
+/** Vite serves public/ at the root, so the binaries are at ./wasm/. */
+function wasmBinaryUrl(variant: WasmBinaryVariant): string {
+  const file = variant === 'simd' ? 'streetview-wasm.simd.wasm' : 'streetview-wasm.wasm';
+  return `${process.env.PUBLIC_URL || ''}/wasm/${file}`;
+}
+
+async function fetchWasmBytes(variant: WasmBinaryVariant): Promise<ArrayBuffer> {
+  const response = await fetch(wasmBinaryUrl(variant));
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.arrayBuffer();
+}
+
+const _binaries = new Map<WasmBinaryVariant, Promise<ArrayBuffer>>();
+
+/**
+ * Fetch one of the binaries once per variant and check it is really WASM (a
+ * dev-server SPA fallback answers a wrong path with HTML). Resolves to the
+ * cached bytes — callers that transfer them must post a copy. This is how the
+ * cabin engine gets into its AudioWorklet: Chromium refuses a structured-cloned
+ * `WebAssembly.Module` there (the port gets `messageerror`), so `CabinAudio`
+ * posts the bytes and the worklet instantiates them itself. Rejects (and
+ * forgets the attempt) on a fetch error or invalid bytes.
+ */
+export function loadStreetViewWasmBytes(variant: WasmBinaryVariant): Promise<ArrayBuffer> {
+  let pending = _binaries.get(variant);
+  if (!pending) {
+    pending = fetchWasmBytes(variant).then((bytes) => {
+      if (!WebAssembly.validate(bytes)) throw new Error(`${wasmBinaryUrl(variant)} is not a valid module`);
+      return bytes;
+    });
+    pending.catch(() => _binaries.delete(variant));
+    _binaries.set(variant, pending);
+  }
+  return pending;
+}
+
 /**
  * Lazy-load the WASM module.
  * Returns the cached instance on subsequent calls.
  * Falls back to a pure-JS implementation if the WASM file cannot be fetched
- * or if `WebAssembly` is unavailable.
+ * or if `WebAssembly` is unavailable. The main thread always runs the scalar
+ * binary: its kernels are cold, and #300 measured ~0 % from SIMD there.
  */
 export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   if (_cachedModule) return _cachedModule;
@@ -51,12 +112,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   }
 
   try {
-    // Resolve the WASM URL relative to the public base (Vite serves
-    // public/ at the root, so the file is at ./wasm/streetview-wasm.wasm).
-    const wasmUrl = `${process.env.PUBLIC_URL || ''}/wasm/streetview-wasm.wasm`;
-    const response = await fetch(wasmUrl);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    _cachedModule = await instantiateStreetViewWasm(await response.arrayBuffer());
+    _cachedModule = await instantiateStreetViewWasm(await fetchWasmBytes('scalar'));
   } catch {
     _cachedModule = JS_FALLBACK;
   }
@@ -539,5 +595,6 @@ export function getWasmModule(): StreetViewWasmAPI | null {
  */
 export function _resetWasmModule(): void {
   _cachedModule = null;
+  _binaries.clear();
   resetJsFallbackState();
 }
