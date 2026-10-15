@@ -169,8 +169,8 @@ jobs:
           node scripts/gen-wasm-goldens.mjs
           git diff --exit-code cpp/tests/goldens.json cpp/tests/goldens_generated.h
 
-  # Rebuild the WASM module through the C++/Emscripten ship path and prove the
-  # committed public/wasm/streetview-wasm.wasm matches this pinned emcc.
+  # Rebuild the WASM modules through the C++/Emscripten ship path and prove the
+  # committed public/wasm/streetview-wasm{,.simd}.wasm match this pinned emcc.
   build-wasm-emscripten:
     runs-on: ubuntu-latest
     steps:
@@ -196,17 +196,19 @@ jobs:
       - name: Verify Emscripten build exports the full ABI
         run: node scripts/check-wasm-abi.mjs
 
-      - name: Committed wasm matches this emcc
-        run: git diff --exit-code public/wasm/streetview-wasm.wasm public/wasm/streetview-wasm.wasm.sha256
-
-      - name: SIMD128 goldens stay bit-identical (not shipped)
+      - name: Committed wasm (scalar + SIMD) matches this emcc
         run: |
-          cp public/wasm/streetview-wasm.wasm /tmp/scalar-streetview-wasm.wasm
-          cp public/wasm/streetview-wasm.wasm.sha256 /tmp/scalar-streetview-wasm.wasm.sha256
-          STREETVIEW_WASM_SIMD=ON npm run build:wasm
-          node scripts/gen-wasm-goldens.mjs --compare
-          cp /tmp/scalar-streetview-wasm.wasm public/wasm/streetview-wasm.wasm
-          cp /tmp/scalar-streetview-wasm.wasm.sha256 public/wasm/streetview-wasm.wasm.sha256
+          git diff --exit-code public/wasm/streetview-wasm.wasm \
+            public/wasm/streetview-wasm.simd.wasm public/wasm/streetview-wasm.wasm.sha256
+
+      # The SIMD128 binary ships (the AudioWorklet's cabin DSP runs its
+      # hand-vectorised FIR), so it must reproduce every golden the scalar
+      # binary captured — the cabin DSP scripts included — bit for bit.
+      - name: SIMD128 binary reproduces the scalar goldens bit for bit
+        run: node scripts/gen-wasm-goldens.mjs --compare --wasm public/wasm/streetview-wasm.simd.wasm
+
+      - name: Cabin DSP render budget (advisory)
+        run: node scripts/bench-cabin-dsp.mjs --quanta 1500
 
   e2e-smoke:
     runs-on: ubuntu-latest

@@ -406,6 +406,163 @@ const downsample2d = {
   expected: Array.from(new Uint8Array(memory.buffer, downOff, downDst)),
 };
 
+
+// Fused luma chore: the same 4x2 image analysed onto a 2x1 grid (downsample +
+// bin + reduce in one pass) and as-is (dst = source size).
+const LUMA_ANALYZE_CASES = [
+  { label: 'down-2x1', dstW: 2, dstH: 1 },
+  { label: 'as-is-4x2', dstW: 4, dstH: 2 },
+];
+const lumaAnalyze = LUMA_ANALYZE_CASES.map((c) => {
+  const binsOff = SCRATCH + ((choresPix + 3) & ~3);
+  const statsOff = binsOff + 256 * 4;
+  reserve(statsOff - SCRATCH + 12);
+  new Uint8Array(memory.buffer, SCRATCH, choresPix).set(CHORES_IMAGE.rgba);
+  exp.luma_analyze(
+    SCRATCH, CHORES_IMAGE.width, CHORES_IMAGE.height, c.dstW, c.dstH, binsOff, statsOff,
+  );
+  return {
+    ...c,
+    expectedBins: Array.from(new Uint32Array(memory.buffer, binsOff, 256)),
+    expectedStats: Array.from(new Float32Array(memory.buffer, statsOff, 3)),
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Cabin DSP (dsp_*): parameter scripts rendered 128 frames at a time.
+// ---------------------------------------------------------------------------
+// Every consumer (this capture, cpp/tests and the JS-twin parity test) runs
+// the same harness:
+//   create(sampleRate); for each block b: apply the keyframe at b (set_params
+//   with every field; `ir` {vehicle, openness} -> fill_cabin_ir(irTaps) then
+//   set_ir, `ir: null` -> set_ir(nullptr, 0)); render 128 frames with radio
+//   input radioSample(b * 128 + i, ch); fold L then R into the FNV-1a sum.
+// radioSample(k, ch) = f32((((k % 2001) * 7919 + ch * 104729) % 2001 - 1000) / 2000)
+// The checksum is FNV-1a 32 over the f32 bit patterns (one u32 per sample).
+// Keyframes carry every parameter, so a script reads top to bottom.
+const DSP_BLOCK = 128;
+const kf = (block, p, ir) => ({
+  block,
+  rpm: 850, load: 0.12, speedMps: 0, openness: 0, vehicle: 0, wetRoad: 0, rain: 0,
+  windMps: 0, radioGain: 0, wipers: 0,
+  ...p,
+  ...(ir !== undefined ? { ir } : {}),
+});
+const DRIVE = { rpm: 2600, load: 0.35, speedMps: 22, radioGain: 0.3 };
+const DSP_SCRIPTS = [
+  {
+    // Ten seconds of a trip: pull away, cruise with the radio, rain and the
+    // wipers, roof down, a gusty headwind, a swap to the limousine, roof up,
+    // past full speed at the redline, and a stop on a damp road.
+    label: 'ten-second-drive',
+    sampleRate: 22050,
+    irTaps: 512,
+    blocks: Math.ceil((10 * 22050) / DSP_BLOCK),
+    keyframes: [
+      kf(0, {}, { vehicle: 0, openness: 0 }),
+      kf(86, { rpm: 4200, load: 0.85, speedMps: 8 }),
+      kf(258, DRIVE),
+      kf(430, { ...DRIVE, rain: 0.7, wetRoad: 1, wipers: 1 }),
+      kf(603, { ...DRIVE, rain: 0.7, wetRoad: 1, wipers: 1, openness: 1 }, { vehicle: 0, openness: 1 }),
+      kf(775, { ...DRIVE, rain: 0.7, wetRoad: 1, wipers: 1, openness: 1, windMps: 12 }),
+      kf(947, { ...DRIVE, rain: 0.7, wetRoad: 1, wipers: 1, openness: 1, windMps: 12, vehicle: 3 }, { vehicle: 3, openness: 1 }),
+      kf(1120, { ...DRIVE, rain: 0.2, wetRoad: 1, wipers: 1, windMps: 12, vehicle: 3 }, { vehicle: 3, openness: 0 }),
+      kf(1292, { rpm: 6800, load: 1, speedMps: 45, wetRoad: 0.6, vehicle: 3 }),
+      kf(1464, { rpm: 900, load: 0, speedMps: 0, wetRoad: 0.4, vehicle: 3 }),
+      kf(1550, { rpm: 900, load: 0, speedMps: 0, wetRoad: 0.4, vehicle: 3 }, null),
+    ],
+    excerptBlocks: [0, 260, 610, 950, 1722],
+  },
+  {
+    // Production rate and the limousine's 2048 taps; a second swap lands one
+    // block into the first crossfade (the restart path).
+    label: 'ir-swap-48k-2048',
+    sampleRate: 48000,
+    irTaps: 2048,
+    blocks: 94,
+    keyframes: [
+      kf(0, { ...DRIVE, radioGain: 0.8 }, { vehicle: 0, openness: 0 }),
+      kf(20, { ...DRIVE, radioGain: 0.8, vehicle: 3, openness: 1 }, { vehicle: 3, openness: 1 }),
+      kf(21, { ...DRIVE, radioGain: 0.8, vehicle: 3 }, { vehicle: 3, openness: 0 }),
+      kf(60, { ...DRIVE, radioGain: 0.8, vehicle: 3, rain: 1, wipers: 1 }),
+    ],
+    excerptBlocks: [0, 20, 21, 22, 93],
+  },
+  {
+    // Out-of-range everything: sample rate 0 (-> 44100), an IR longer than
+    // dsp_max_ir_taps, negative / oversized parameters and vehicle 99.
+    label: 'clamped',
+    sampleRate: 0,
+    irTaps: 5000,
+    blocks: 8,
+    keyframes: [
+      kf(0, {
+        rpm: -100, load: 3, speedMps: 500, openness: 2, vehicle: 99, wetRoad: -1,
+        rain: 4, windMps: 1000, radioGain: 9, wipers: 7,
+      }, { vehicle: 99, openness: 2 }),
+      kf(4, { rpm: 20000, load: -1, speedMps: -3, openness: -1, vehicle: -4, radioGain: -2 }),
+    ],
+    excerptBlocks: [0, 7],
+  },
+];
+
+const radioSample = (k, ch) => Math.fround((((k % 2001) * 7919 + ch * 104729) % 2001 - 1000) / 2000);
+const fnv1a = (h, words) => {
+  for (let i = 0; i < words.length; i++) {
+    h ^= words[i];
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+};
+
+const cabinDsp = DSP_SCRIPTS.map((script) => {
+  const state = exp.dsp_create(script.sampleRate);
+  if (!state) throw new Error(`dsp_create(${script.sampleRate}) failed`);
+  const ioBytes = 4 * DSP_BLOCK * 4;
+  reserve(ioBytes + script.irTaps * 4);
+  const inL = SCRATCH;
+  const inR = inL + DSP_BLOCK * 4;
+  const outL = inR + DSP_BLOCK * 4;
+  const outR = outL + DSP_BLOCK * 4;
+  const irOff = SCRATCH + ioBytes;
+  const byBlock = new Map(script.keyframes.map((k) => [k.block, k]));
+  const excerpts = [];
+  let checksum = 2166136261;
+  for (let b = 0; b < script.blocks; b++) {
+    const k = byBlock.get(b);
+    if (k) {
+      exp.dsp_set_params(
+        state, k.rpm, k.load, k.speedMps, k.openness, k.vehicle, k.wetRoad, k.rain,
+        k.windMps, k.radioGain, k.wipers,
+      );
+      if (k.ir === null) exp.dsp_set_ir(state, 0, 0);
+      else if (k.ir) {
+        exp.fill_cabin_ir(irOff, script.irTaps, k.ir.vehicle, k.ir.openness, script.sampleRate);
+        exp.dsp_set_ir(state, irOff, script.irTaps);
+      }
+    }
+    const l = new Float32Array(memory.buffer, inL, DSP_BLOCK);
+    const r = new Float32Array(memory.buffer, inR, DSP_BLOCK);
+    for (let i = 0; i < DSP_BLOCK; i++) {
+      l[i] = radioSample(b * DSP_BLOCK + i, 0);
+      r[i] = radioSample(b * DSP_BLOCK + i, 1);
+    }
+    exp.dsp_render(state, inL, inR, outL, outR, DSP_BLOCK);
+    checksum = fnv1a(checksum, new Uint32Array(memory.buffer, outL, DSP_BLOCK));
+    checksum = fnv1a(checksum, new Uint32Array(memory.buffer, outR, DSP_BLOCK));
+    if (script.excerptBlocks.includes(b)) {
+      excerpts.push({
+        block: b,
+        left: Array.from(new Float32Array(memory.buffer, outL, DSP_BLOCK)),
+        right: Array.from(new Float32Array(memory.buffer, outR, DSP_BLOCK)),
+      });
+    }
+  }
+  exp.dsp_destroy(state);
+  return { ...script, expectedChecksum: checksum, expectedExcerpts: excerpts };
+});
+const dspMaxIrTaps = exp.dsp_max_ir_taps();
+
 const goldens = {
   $comment:
     'GENERATED by scripts/gen-wasm-goldens.mjs from public/wasm/streetview-wasm.wasm. '
@@ -432,6 +589,9 @@ const goldens = {
   lumaHistogram,
   lumaReduce,
   downsample2d,
+  lumaAnalyze,
+  dspMaxIrTaps,
+  cabinDsp,
 };
 
 function vectorsOnly(obj) {
@@ -693,6 +853,67 @@ lines.push(f32Array('kChoresReduceExpected', lumaReduce.expected));
 lines.push(`inline constexpr int kChoresDownWidth = ${downsample2d.dstW};`);
 lines.push(`inline constexpr int kChoresDownHeight = ${downsample2d.dstH};`);
 lines.push(u8Array('kChoresDownExpected', downsample2d.expected));
+lines.push('');
+
+lines.push('// --- luma_analyze ----------------------------------------------------');
+lines.push(`inline constexpr int kLumaAnalyzeCaseCount = ${lumaAnalyze.length};`);
+lumaAnalyze.forEach((c, i) => {
+  lines.push(`// case ${i}: ${c.label}`);
+  lines.push(`inline constexpr int kLumaAnalyzeDstW${i} = ${c.dstW};`);
+  lines.push(`inline constexpr int kLumaAnalyzeDstH${i} = ${c.dstH};`);
+  lines.push(u32Array(`kLumaAnalyzeBins${i}`, c.expectedBins));
+  lines.push(f32Array(`kLumaAnalyzeStats${i}`, c.expectedStats));
+  lines.push('');
+});
+lines.push('struct LumaAnalyzeGolden { int dst_w; int dst_h; const unsigned* bins; const float* stats; };');
+lines.push('inline constexpr LumaAnalyzeGolden kLumaAnalyzeCases[] = {');
+lumaAnalyze.forEach((_c, i) => {
+  lines.push(`    { kLumaAnalyzeDstW${i}, kLumaAnalyzeDstH${i}, kLumaAnalyzeBins${i}, kLumaAnalyzeStats${i} },`);
+});
+lines.push('};');
+lines.push('');
+
+lines.push('// --- dsp_* (cabin engine) ---------------------------------------------');
+lines.push(`inline constexpr int kDspBlock = ${DSP_BLOCK};`);
+lines.push(`inline constexpr int kDspMaxIrTaps = ${dspMaxIrTaps};`);
+lines.push('// ir: 0 = keep, 1 = fill_cabin_ir(ir_vehicle, ir_openness) then set_ir, 2 = set_ir(nullptr, 0)');
+lines.push('struct DspKeyframe { int block; float rpm; float load; float speed_mps; float openness; int vehicle;');
+lines.push('                     float wet_road; float rain; float wind_mps; float radio_gain; int wipers;');
+lines.push('                     int ir; int ir_vehicle; float ir_openness; };');
+lines.push('struct DspExcerpt { int block; const float* left; const float* right; };');
+lines.push('struct DspScript { const char* label; float sample_rate; int ir_taps; int blocks;');
+lines.push('                   const DspKeyframe* keyframes; int keyframe_count;');
+lines.push('                   const DspExcerpt* excerpts; int excerpt_count; unsigned checksum; };');
+cabinDsp.forEach((c, i) => {
+  lines.push(`// script ${i}: ${c.label}`);
+  lines.push(`inline constexpr DspKeyframe kDspKeyframes${i}[] = {`);
+  c.keyframes.forEach((k) => {
+    const irMode = k.ir === undefined ? 0 : k.ir === null ? 2 : 1;
+    const irVeh = k.ir ? k.ir.vehicle : 0;
+    const irOpen = k.ir ? k.ir.openness : 0;
+    lines.push(`    { ${k.block}, ${f32(k.rpm)}, ${f32(k.load)}, ${f32(k.speedMps)}, ${f32(k.openness)}, ${k.vehicle}, `
+      + `${f32(k.wetRoad)}, ${f32(k.rain)}, ${f32(k.windMps)}, ${f32(k.radioGain)}, ${k.wipers}, `
+      + `${irMode}, ${irVeh}, ${f32(irOpen)} },`);
+  });
+  lines.push('};');
+  c.expectedExcerpts.forEach((e, j) => {
+    lines.push(f32Array(`kDspExcerptL${i}_${j}`, e.left));
+    lines.push(f32Array(`kDspExcerptR${i}_${j}`, e.right));
+  });
+  lines.push(`inline constexpr DspExcerpt kDspExcerpts${i}[] = {`);
+  c.expectedExcerpts.forEach((e, j) => {
+    lines.push(`    { ${e.block}, kDspExcerptL${i}_${j}, kDspExcerptR${i}_${j} },`);
+  });
+  lines.push('};');
+  lines.push('');
+});
+lines.push('inline constexpr DspScript kDspScripts[] = {');
+cabinDsp.forEach((c, i) => {
+  lines.push(`    { "${c.label}", ${f32(c.sampleRate)}, ${c.irTaps}, ${c.blocks}, kDspKeyframes${i}, ${c.keyframes.length}, `
+    + `kDspExcerpts${i}, ${c.expectedExcerpts.length}, ${c.expectedChecksum}u },`);
+});
+lines.push('};');
+lines.push(`inline constexpr int kDspScriptCount = ${cabinDsp.length};`);
 lines.push('');
 
 lines.push('} // namespace goldens');

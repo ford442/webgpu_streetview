@@ -22,6 +22,7 @@ export const PRECACHE_URLS: string[] = [
   './shaders/transition-zoom-blur.wgsl',
   './shaders/transition-zoom-chromatic.wgsl',
   './wasm/streetview-wasm.wasm',
+  './wasm/streetview-wasm.simd.wasm',
   './icons/icon.svg',
 ];
 

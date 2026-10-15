@@ -55,6 +55,16 @@ else
     echo "✅ build/wasm/streetview-wasm.wasm present (${WASM_BYTES} bytes)"
   fi
 
+  # The AudioWorklet's cabin DSP loads the SIMD128 twin (same sources).
+  SIMD_FILE="$BUILD_DIR/wasm/streetview-wasm.simd.wasm"
+  if [ ! -s "$SIMD_FILE" ]; then
+    echo "❌ ERROR: $SIMD_FILE is missing or empty."
+    echo "   Run 'npm run build:wasm' (it builds both binaries)."
+    ERRORS=$((ERRORS+1))
+  else
+    echo "✅ build/wasm/streetview-wasm.simd.wasm present ($(wc -c < "$SIMD_FILE") bytes)"
+  fi
+
   # Staleness check: the C++ input hash recorded at the last emcc build vs the
   # current one over every cpp/src/*.cpp, the header and CMakeLists.txt — the
   # list lives in scripts/wasm-source-hash.mjs.

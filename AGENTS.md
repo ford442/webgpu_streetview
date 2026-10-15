@@ -753,12 +753,14 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 
 ### WASM numeric layer (`cpp/` + `src/wasm/`)
 
-The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM,
-panorama luma hist/reduce/downsample)
-exists as three implementations — the shipping `public/wasm/streetview-wasm.wasm`,
-the C++ in `cpp/src/*_module.cpp` (one translation unit per domain: noise,
-geodesy, audio, hrtf, luma), and the pure-JS fallback in
-`src/wasm/jsFallback.ts`. They are pinned to **one set of golden vectors** captured
+The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
+audio engine, panorama luma analysis)
+exists as three implementations — the shipping binaries
+(`public/wasm/streetview-wasm.wasm` and its SIMD128 twin
+`streetview-wasm.simd.wasm`, same sources), the C++ in `cpp/src/*_module.cpp`
+(one translation unit per domain: noise, geodesy, audio, hrtf, luma, cabin
+dsp), and the pure-JS fallback in `src/wasm/jsFallback.ts` (the cabin engine's
+twin is `src/wasm/cabinDspTwin.ts`). They are pinned to **one set of golden vectors** captured
 from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
@@ -775,7 +777,9 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   host build. A new translation unit also goes in both CMake source lists and
   `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
-  the JS fallback (runs with `npm test`).
+  the JS fallback (runs with `npm test`). **`cabinDspParity.test.ts`** runs the
+  `dsp_render` parameter scripts (FNV-1a checksums + excerpts) and
+  `luma_analyze` on the JS twin and **both** committed binaries.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
@@ -784,8 +788,14 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
   stack and corrupted `batch_haversine` at |lat| > 45°.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
-  and `build-wasm-emscripten` (C++ → wasm via pinned emcc + ABI check + SIMD goldens). Both are
-  required.
+  and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
+  check + the SIMD binary against the goldens). Both are required.
+- **Cabin audio engine** (`cabin_dsp_module.cpp`, #321): runs inside the
+  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`). Never reintroduce a
+  main-thread PCM queue; post the binary's **bytes**, not a
+  `WebAssembly.Module` (Chromium drops it with `messageerror`). The car radio
+  shares `src/audio/carAudioGraph.ts`'s context so it can run through the
+  cabin. Probe: `window.__CABIN_AUDIO_PROBE__`; e2e: `e2e/cabin-audio.spec.ts`.
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`

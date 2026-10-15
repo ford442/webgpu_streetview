@@ -16,12 +16,18 @@
  * just the loader — instantiate the binary, marshal buffers across the linear
  * memory boundary, cache the result.
  */
-import type { LumaReduce, StreetViewWasmAPI } from './abi';
+import type {
+  CabinDsp,
+  CabinDspParams,
+  LumaAnalysis,
+  LumaReduce,
+  StreetViewWasmAPI,
+} from './abi';
 import { JS_FALLBACK, resetJsFallbackState } from './jsFallback';
 import { createScratchArena } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
-export type { LumaReduce } from './abi';
+export type { CabinDsp, CabinDspParams, LumaAnalysis, LumaReduce } from './abi';
 export { CABIN_IR_PROFILE_COUNT } from './jsFallback';
 
 // ---------------------------------------------------------------------------
@@ -30,11 +36,72 @@ export { CABIN_IR_PROFILE_COUNT } from './jsFallback';
 
 let _cachedModule: StreetViewWasmAPI | null = null;
 
+/** The two shipped builds of the same sources (see cpp/CMakeLists.txt). */
+export type WasmBinaryVariant = 'scalar' | 'simd';
+
+/**
+ * A one-instruction SIMD128 module (`i32.const 0; i8x16.splat` in a
+ * `() -> v128` function). `WebAssembly.validate` accepts it exactly when the
+ * engine implements SIMD128.
+ */
+const SIMD_PROBE_MODULE = new Uint8Array([
+  0, 97, 115, 109, 1, 0, 0, 0, // magic, version
+  1, 5, 1, 96, 0, 1, 123, // type: () -> v128
+  3, 2, 1, 0, // func 0 : type 0
+  10, 8, 1, 6, 0, 65, 0, 253, 15, 11, // code: i32.const 0; i8x16.splat; end
+]);
+
+/** True when this engine can run streetview-wasm.simd.wasm. */
+export function wasmSimdSupported(): boolean {
+  try {
+    return typeof WebAssembly !== 'undefined' && WebAssembly.validate(SIMD_PROBE_MODULE);
+  } catch {
+    return false;
+  }
+}
+
+/** Vite serves public/ at the root, so the binaries are at ./wasm/. */
+function wasmBinaryUrl(variant: WasmBinaryVariant): string {
+  const file = variant === 'simd' ? 'streetview-wasm.simd.wasm' : 'streetview-wasm.wasm';
+  return `${process.env.PUBLIC_URL || ''}/wasm/${file}`;
+}
+
+async function fetchWasmBytes(variant: WasmBinaryVariant): Promise<ArrayBuffer> {
+  const response = await fetch(wasmBinaryUrl(variant));
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.arrayBuffer();
+}
+
+const _binaries = new Map<WasmBinaryVariant, Promise<ArrayBuffer>>();
+
+/**
+ * Fetch one of the binaries once per variant and check it is really WASM (a
+ * dev-server SPA fallback answers a wrong path with HTML). Resolves to the
+ * cached bytes — callers that transfer them must post a copy. This is how the
+ * cabin engine gets into its AudioWorklet: Chromium refuses a structured-cloned
+ * `WebAssembly.Module` there (the port gets `messageerror`), so `CabinAudio`
+ * posts the bytes and the worklet instantiates them itself. Rejects (and
+ * forgets the attempt) on a fetch error or invalid bytes.
+ */
+export function loadStreetViewWasmBytes(variant: WasmBinaryVariant): Promise<ArrayBuffer> {
+  let pending = _binaries.get(variant);
+  if (!pending) {
+    pending = fetchWasmBytes(variant).then((bytes) => {
+      if (!WebAssembly.validate(bytes)) throw new Error(`${wasmBinaryUrl(variant)} is not a valid module`);
+      return bytes;
+    });
+    pending.catch(() => _binaries.delete(variant));
+    _binaries.set(variant, pending);
+  }
+  return pending;
+}
+
 /**
  * Lazy-load the WASM module.
  * Returns the cached instance on subsequent calls.
  * Falls back to a pure-JS implementation if the WASM file cannot be fetched
- * or if `WebAssembly` is unavailable.
+ * or if `WebAssembly` is unavailable. The main thread always runs the scalar
+ * binary: its kernels are cold, and #300 measured ~0 % from SIMD there.
  */
 export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   if (_cachedModule) return _cachedModule;
@@ -45,12 +112,7 @@ export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
   }
 
   try {
-    // Resolve the WASM URL relative to the public base (Vite serves
-    // public/ at the root, so the file is at ./wasm/streetview-wasm.wasm).
-    const wasmUrl = `${process.env.PUBLIC_URL || ''}/wasm/streetview-wasm.wasm`;
-    const response = await fetch(wasmUrl);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    _cachedModule = await instantiateStreetViewWasm(await response.arrayBuffer());
+    _cachedModule = await instantiateStreetViewWasm(await fetchWasmBytes('scalar'));
   } catch {
     _cachedModule = JS_FALLBACK;
   }
@@ -151,10 +213,31 @@ export async function instantiateStreetViewWasm(
   const downsample_2d = exp['downsample_2d'] as (
     src: number, sw: number, sh: number, dst: number, dw: number, dh: number,
   ) => void;
+  const luma_analyze = exp['luma_analyze'] as (
+    rgba: number, w: number, h: number, dw: number, dh: number, bins: number, stats: number,
+  ) => void;
   if (typeof luma_histogram_bt709 !== 'function'
     || typeof reduce_luma_bt709 !== 'function'
-    || typeof downsample_2d !== 'function') {
+    || typeof downsample_2d !== 'function'
+    || typeof luma_analyze !== 'function') {
     throw new Error('WASM ABI missing gpu-chores exports');
+  }
+  const dsp_create = exp['dsp_create'] as (sampleRate: number) => number;
+  const dsp_destroy = exp['dsp_destroy'] as (state: number) => void;
+  const dsp_set_params = exp['dsp_set_params'] as (
+    state: number, rpm: number, load: number, speedMps: number, openness: number,
+    vehicle: number, wetRoad: number, rain: number, windMps: number,
+    radioGain: number, wipers: number,
+  ) => void;
+  const dsp_set_ir = exp['dsp_set_ir'] as (state: number, taps: number, count: number) => void;
+  const dsp_render = exp['dsp_render'] as (
+    state: number, inL: number, inR: number, outL: number, outR: number, frames: number,
+  ) => void;
+  const dsp_max_ir_taps = exp['dsp_max_ir_taps'] as () => number;
+  if (typeof dsp_create !== 'function' || typeof dsp_destroy !== 'function'
+    || typeof dsp_set_params !== 'function' || typeof dsp_set_ir !== 'function'
+    || typeof dsp_render !== 'function' || typeof dsp_max_ir_taps !== 'function') {
+    throw new Error('WASM ABI missing cabin dsp exports');
   }
 
   const malloc = exp['malloc'];
@@ -384,6 +467,92 @@ export async function instantiateStreetViewWasm(
     return new Uint8Array(wasmMemory.buffer.slice(dstOff, dstOff + dstBytes));
   };
 
+  const lumaAnalyze = (
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+    dstW: number,
+    dstH: number,
+  ): LumaAnalysis => {
+    if (width <= 0 || height <= 0 || dstW <= 0 || dstH <= 0) {
+      return { bins: new Uint32Array(256), mean: 0, min: 0, max: 0, count: 0 };
+    }
+    const pix = width * height * 4;
+    const binsRel = (pix + 3) & ~3;
+    const ptr = scratch.reserve(binsRel + 256 * 4 + 12);
+    const binsOff = ptr + binsRel;
+    const statsOff = binsOff + 256 * 4;
+    new Uint8Array(wasmMemory.buffer, ptr, pix).set(rgba.subarray(0, pix));
+    luma_analyze(ptr, width, height, dstW, dstH, binsOff, statsOff);
+    const stats = new Float32Array(wasmMemory.buffer, statsOff, 3);
+    return {
+      bins: new Uint32Array(wasmMemory.buffer.slice(binsOff, binsOff + 256 * 4)),
+      mean: stats[0]!,
+      min: stats[1]!,
+      max: stats[2]!,
+      count: dstW * dstH,
+    };
+  };
+
+  const maxIrTaps = dsp_max_ir_taps();
+  /**
+   * The engine keeps its own malloc'd state; the wrapper owns one more block
+   * for its I/O (4 x 128 floats + the longest IR) so render/setIr never touch
+   * the shared scratch arena.
+   */
+  const createCabinDsp = (sampleRate: number): CabinDsp | null => {
+    const QUANTUM = 128;
+    const state = dsp_create(sampleRate);
+    if (!state) return null;
+    const io = (malloc as (bytes: number) => number)((QUANTUM * 4 + maxIrTaps) * 4);
+    if (!io) {
+      dsp_destroy(state);
+      return null;
+    }
+    const inL = io;
+    const inR = inL + QUANTUM * 4;
+    const outL = inR + QUANTUM * 4;
+    const outR = outL + QUANTUM * 4;
+    const irOff = outR + QUANTUM * 4;
+    let alive = true;
+    return {
+      setParams(p: CabinDspParams): void {
+        if (!alive) return;
+        dsp_set_params(
+          state, p.rpm, p.load, p.speedMps, p.openness, p.vehicle, p.wetRoad, p.rain,
+          p.windMps, p.radioGain, Number(p.wipers) | 0,
+        );
+      },
+      setIr(taps: Float32Array | null, count: number = taps ? taps.length : 0): void {
+        if (!alive) return;
+        if (!taps || count <= 0) {
+          dsp_set_ir(state, 0, 0);
+          return;
+        }
+        const n = Math.min(count, taps.length, maxIrTaps);
+        new Float32Array(wasmMemory.buffer, irOff, n).set(taps.subarray(0, n));
+        dsp_set_ir(state, irOff, n);
+      },
+      render(radioL, radioR, oL, oR, frames): void {
+        if (!alive) return;
+        for (let done = 0; done < frames; done += QUANTUM) {
+          const n = Math.min(QUANTUM, frames - done);
+          if (radioL) new Float32Array(wasmMemory.buffer, inL, n).set(radioL.subarray(done, done + n));
+          if (radioR) new Float32Array(wasmMemory.buffer, inR, n).set(radioR.subarray(done, done + n));
+          dsp_render(state, radioL ? inL : 0, radioR ? inR : 0, outL, outR, n);
+          if (oL) oL.set(new Float32Array(wasmMemory.buffer, outL, n), done);
+          if (oR) oR.set(new Float32Array(wasmMemory.buffer, outR, n), done);
+        }
+      },
+      destroy(): void {
+        if (!alive) return;
+        alive = false;
+        dsp_destroy(state);
+        (free as (ptr: number) => void)(io);
+      },
+    };
+  };
+
   return {
     seed,
     noise2d,
@@ -405,6 +574,8 @@ export async function instantiateStreetViewWasm(
     lumaHistogramBt709,
     reduceLumaBt709,
     downsample2d,
+    lumaAnalyze,
+    createCabinDsp,
     isWasm: true,
   };
 }
@@ -424,5 +595,6 @@ export function getWasmModule(): StreetViewWasmAPI | null {
  */
 export function _resetWasmModule(): void {
   _cachedModule = null;
+  _binaries.clear();
   resetJsFallbackState();
 }

@@ -11,12 +11,10 @@ import {
   downsample2d,
   HIST_BINS,
   histDownsampleSize,
-  lumaHistogramBt709,
+  lumaAnalyze,
   meanLumaFromHistogram,
   PICKER_THUMB_HEIGHT,
   PICKER_THUMB_WIDTH,
-  reduceLumaBt709,
-  type LumaReduce,
 } from './lumaMath';
 import {
   resolveCpuChoresBackend,
@@ -174,12 +172,13 @@ export class GpuChores {
 
   /**
    * Histogram + reduce on packed RGBA (WASM if compiled, else JS).
-   * Full-res input is quarter-downsampled first (break-even vs CPU hist).
+   * Full-res input is quarter-downsampled first (break-even vs CPU hist) —
+   * inside the same fused pass (`luma_analyze`), so the frame is copied into
+   * WASM memory once instead of downsample + histogram + reduce copy-ins.
    */
   public analyzeRgba(rgba: Uint8Array | Uint8ClampedArray, width: number, height: number): ChoresSample {
     const quarter = histDownsampleSize(width, height);
-    const small = this.downsampleRgba(rgba, width, height, quarter.width, quarter.height);
-    return this.analyzePreparedRgba(small, quarter.width, quarter.height);
+    return this.analyzeCpu(rgba, width, height, quarter.width, quarter.height);
   }
 
   /** Hist/reduce on an already-downsampled packed buffer (CPU gauge fallback). */
@@ -188,25 +187,32 @@ export class GpuChores {
     width: number,
     height: number,
   ): ChoresSample {
-    const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    let bins: Uint32Array;
-    let reduced: LumaReduce;
+    return this.analyzeCpu(rgba, width, height, width, height);
+  }
 
-    if (this.wasm?.isWasm) {
-      bins = this.wasm.lumaHistogramBt709(rgba, width, height);
-      reduced = this.wasm.reduceLumaBt709(rgba, width, height);
-    } else {
-      bins = lumaHistogramBt709(rgba, width, height);
-      reduced = reduceLumaBt709(rgba, width, height);
-    }
+  /**
+   * One fused pass: box-downsample onto dstW x dstH (identity when equal),
+   * histogram, and an exact integer-luma mean/min/max.
+   */
+  private analyzeCpu(
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+    dstW: number,
+    dstH: number,
+  ): ChoresSample {
+    const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const analysis = this.wasm?.isWasm
+      ? this.wasm.lumaAnalyze(rgba, width, height, dstW, dstH)
+      : lumaAnalyze(rgba, width, height, dstW, dstH);
 
     const sampleMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
     const sample: ChoresSample = {
       backend: resolveCpuChoresBackend(this.wasm?.isWasm === true),
-      meanLuma: reduced.mean,
-      minLuma: reduced.min,
-      maxLuma: reduced.max,
-      bins,
+      meanLuma: analysis.mean,
+      minLuma: analysis.min,
+      maxLuma: analysis.max,
+      bins: analysis.bins,
       sampleMs,
     };
     this.publish(sample);
@@ -399,5 +405,6 @@ function extremaFromBins(bins: Uint32Array): { min: number; max: number } {
   return { min: minBin / 255, max: maxBin / 255 };
 }
 
-export { meanLumaFromHistogram, downsample2d, lumaHistogramBt709, reduceLumaBt709 };
+export { meanLumaFromHistogram, downsample2d };
+export { lumaHistogramBt709, reduceLumaBt709 } from './lumaMath';
 export type { GpuChoresBackend };

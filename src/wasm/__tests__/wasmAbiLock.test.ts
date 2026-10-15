@@ -45,6 +45,13 @@ const EXPECTED_EXPORTS = [
   'luma_histogram_bt709',
   'reduce_luma_bt709',
   'downsample_2d',
+  'luma_analyze',
+  'dsp_create',
+  'dsp_destroy',
+  'dsp_set_params',
+  'dsp_set_ir',
+  'dsp_render',
+  'dsp_max_ir_taps',
 ] as const;
 
 /** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
@@ -183,27 +190,32 @@ describe('WASM ABI lock', () => {
     const { loadWasmModule, _resetWasmModule } = await import('../index');
     _resetWasmModule();
     const api = await loadWasmModule();
-    const methodToExport: Record<string, string> = {
-      seed: 'seed',
-      noise2d: 'noise2d',
-      fillNoiseBuffer: 'fill_noise_buffer',
-      fbm2d: 'fbm2d',
-      fillFbmBuffer: 'fill_fbm_buffer',
-      fillParticleSeeds: 'fill_particle_seeds',
-      normalizeAngle: 'normalize_angle',
-      signedAngleDiff: 'signed_angle_diff',
-      haversine: 'haversine',
-      batchHaversine: 'batch_haversine',
-      offsetLatLng: 'offset_latlng',
-      initialBearing: 'initial_bearing',
-      polylineResample: 'polyline_resample',
-      polylineProject: 'polyline_project',
-      fillEngineNoise: 'fill_engine_noise',
-      fillCabinIr: 'fill_cabin_ir',
-      fillHrtf: 'fill_hrtf',
-      lumaHistogramBt709: 'luma_histogram_bt709',
-      reduceLumaBt709: 'reduce_luma_bt709',
-      downsample2d: 'downsample_2d',
+    // createCabinDsp wraps the whole dsp_* family behind one instance object.
+    const methodToExport: Record<string, readonly string[]> = {
+      seed: ['seed'],
+      noise2d: ['noise2d'],
+      fillNoiseBuffer: ['fill_noise_buffer'],
+      fbm2d: ['fbm2d'],
+      fillFbmBuffer: ['fill_fbm_buffer'],
+      fillParticleSeeds: ['fill_particle_seeds'],
+      normalizeAngle: ['normalize_angle'],
+      signedAngleDiff: ['signed_angle_diff'],
+      haversine: ['haversine'],
+      batchHaversine: ['batch_haversine'],
+      offsetLatLng: ['offset_latlng'],
+      initialBearing: ['initial_bearing'],
+      polylineResample: ['polyline_resample'],
+      polylineProject: ['polyline_project'],
+      fillEngineNoise: ['fill_engine_noise'],
+      fillCabinIr: ['fill_cabin_ir'],
+      fillHrtf: ['fill_hrtf'],
+      lumaHistogramBt709: ['luma_histogram_bt709'],
+      reduceLumaBt709: ['reduce_luma_bt709'],
+      downsample2d: ['downsample_2d'],
+      lumaAnalyze: ['luma_analyze'],
+      createCabinDsp: [
+        'dsp_create', 'dsp_destroy', 'dsp_set_params', 'dsp_set_ir', 'dsp_render', 'dsp_max_ir_taps',
+      ],
     };
 
     for (const method of Object.keys(methodToExport)) {
@@ -213,7 +225,7 @@ describe('WASM ABI lock', () => {
       Object.keys(api).filter((key) => key !== 'isWasm'),
     );
     expect(apiMethods).toEqual(sorted(Object.keys(methodToExport)));
-    expect(sorted(Object.values(methodToExport))).toEqual(expectedSorted);
+    expect(sorted(Object.values(methodToExport).flat())).toEqual(expectedSorted);
     _resetWasmModule();
   });
 });

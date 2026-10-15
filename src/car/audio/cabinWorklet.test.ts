@@ -1,27 +1,35 @@
 /**
- * The cabin AudioWorklet processor, exercised outside an AudioContext.
+ * The cabin AudioWorklet processor, exercised outside an AudioContext — with
+ * the real committed binaries.
  *
  * `CABIN_WORKLET_SOURCE` is plain source text, so it can be evaluated here with
- * a stub `AudioWorkletProcessor`/`registerProcessor` and driven a render
- * quantum at a time. That covers the parts that would otherwise only run on a
- * real audio thread: the PCM queue and its back-pressure, the FIR convolution,
- * and what happens when the main thread falls behind.
+ * a stub `AudioWorkletProcessor`/`registerProcessor`/`sampleRate` and driven a
+ * render quantum at a time, after posting it the binary's bytes as the main
+ * thread does (a compiled `WebAssembly.Module` is accepted too). That covers what would otherwise
+ * only run on a real audio thread: instantiating the engine, the pending
+ * params/IR hand-off, rendering into the output channels (bit-identical to the
+ * JS twin), the radio input, stats, failure and stop.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { describe, it, expect, beforeAll } from 'vitest';
 
+import { JS_FALLBACK } from '../../wasm/jsFallback';
+import type { CabinDspParams } from '../../wasm';
 import {
-  CABIN_PCM_BLOCK,
   CABIN_PROCESSOR_NAME,
-  CABIN_QUEUE_TARGET_BLOCKS,
+  CABIN_QUANTUM,
+  CABIN_STATS_SECONDS,
   CABIN_WORKLET_SOURCE,
 } from './cabinWorkletSource';
 
-const QUANTUM = 128;
+const SAMPLE_RATE = 48000;
+const REPO_ROOT = join(__dirname, '..', '..', '..');
 
 interface PortMessage {
   type: string;
-  blocks?: number;
+  [key: string]: unknown;
 }
 
 /** Minimal stand-in for the worklet's MessagePort. */
@@ -41,7 +49,7 @@ class StubPort {
 
 interface Processor {
   port: StubPort;
-  process(inputs: unknown[], outputs: Float32Array[][]): boolean;
+  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 }
 
 /** Evaluate the worklet source and return a fresh processor instance. */
@@ -54,119 +62,247 @@ function instantiate(): Processor {
     expect(name).toBe(CABIN_PROCESSOR_NAME);
     ctor = processorCtor;
   };
-  new Function('AudioWorkletProcessor', 'registerProcessor', CABIN_WORKLET_SOURCE)(
+  new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', CABIN_WORKLET_SOURCE)(
     StubAudioWorkletProcessor,
     registerProcessor,
+    SAMPLE_RATE,
   );
   if (!ctor) throw new Error('worklet source did not register a processor');
   return new (ctor as new () => Processor)();
 }
 
-function render(processor: Processor, quanta = 1): Float32Array {
-  const out = new Float32Array(QUANTUM * quanta);
-  for (let q = 0; q < quanta; q++) {
-    const channel = new Float32Array(QUANTUM);
-    processor.process([], [[channel]]);
-    out.set(channel, q * QUANTUM);
+let scalarModule: WebAssembly.Module;
+let simdModule: WebAssembly.Module;
+let scalarBytes: Uint8Array<ArrayBuffer>;
+
+beforeAll(async () => {
+  const read = (file: string): Uint8Array<ArrayBuffer> =>
+    new Uint8Array(readFileSync(join(REPO_ROOT, 'public', 'wasm', file)));
+  scalarBytes = read('streetview-wasm.wasm');
+  scalarModule = await WebAssembly.compile(scalarBytes);
+  simdModule = await WebAssembly.compile(read('streetview-wasm.simd.wasm'));
+});
+
+/** Let the worklet's async instantiate settle. */
+async function untilMessage(port: StubPort, type: string): Promise<PortMessage> {
+  for (let i = 0; i < 200; i++) {
+    const found = port.sent.find((m) => m.type === type);
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 0));
   }
-  return out;
+  throw new Error(`worklet never posted '${type}'`);
 }
 
-/** A PCM block of a constant value, so convolution results are easy to reason about. */
-function block(value: number): Float32Array {
-  return new Float32Array(CABIN_PCM_BLOCK).fill(value);
+async function ready(module: WebAssembly.Module = scalarModule, simd = false): Promise<Processor> {
+  const p = instantiate();
+  p.port.deliver({ type: 'module', module, simd });
+  await untilMessage(p.port, 'ready');
+  return p;
 }
 
-let processor: Processor;
+/** Render `quanta` blocks; `radio` (if any) feeds input 0 with the same block each time. */
+function render(
+  p: Processor,
+  quanta: number,
+  radio: [Float32Array, Float32Array] | null = null,
+): { left: Float32Array; right: Float32Array; alive: boolean } {
+  const left = new Float32Array(CABIN_QUANTUM * quanta);
+  const right = new Float32Array(CABIN_QUANTUM * quanta);
+  let alive = true;
+  for (let q = 0; q < quanta; q++) {
+    const l = new Float32Array(CABIN_QUANTUM);
+    const r = new Float32Array(CABIN_QUANTUM);
+    alive = p.process([radio ? [radio[0], radio[1]] : []], [[l, r]]);
+    left.set(l, q * CABIN_QUANTUM);
+    right.set(r, q * CABIN_QUANTUM);
+  }
+  return { left, right, alive };
+}
 
-beforeEach(() => {
-  processor = instantiate();
+const DRIVE: CabinDspParams = {
+  rpm: 2600, load: 0.35, speedMps: 22, openness: 0, vehicle: 0,
+  wetRoad: 1, rain: 0.6, windMps: 8, radioGain: 1, wipers: true,
+};
+
+function irFor(vehicle: number, openness: number, taps = 1024): Float32Array {
+  const ir = new Float32Array(taps);
+  JS_FALLBACK.fillCabinIr(ir, taps, vehicle, openness, SAMPLE_RATE);
+  return ir;
+}
+
+function radioBlock(): [Float32Array, Float32Array] {
+  const l = new Float32Array(CABIN_QUANTUM);
+  const r = new Float32Array(CABIN_QUANTUM);
+  for (let i = 0; i < CABIN_QUANTUM; i++) {
+    l[i] = Math.fround(Math.sin(i * 0.37) * 0.4);
+    r[i] = Math.fround(Math.cos(i * 0.21) * 0.4);
+  }
+  return [l, r];
+}
+
+describe('cabin worklet: start-up', () => {
+  it('is silent (not an underrun) until the engine is up', () => {
+    const p = instantiate();
+    const { left, right, alive } = render(p, 4);
+    expect(alive).toBe(true);
+    expect(left.every((s) => s === 0)).toBe(true);
+    expect(right.every((s) => s === 0)).toBe(true);
+  });
+
+  it('instantiates posted bytes — what CabinAudio sends — and reports ready', async () => {
+    const p = instantiate();
+    p.port.deliver({ type: 'module', bytes: scalarBytes.slice().buffer, simd: false });
+    const msg = await untilMessage(p.port, 'ready');
+    expect(msg.simd).toBe(false);
+    p.port.deliver({ type: 'params', ...DRIVE });
+    expect(render(p, 4).left.some((s) => s !== 0)).toBe(true);
+  });
+
+  it('a message the worklet cannot deserialize is reported, not swallowed', () => {
+    const p = instantiate() as Processor & { port: StubPort & { onmessageerror?: () => void } };
+    p.port.onmessageerror?.();
+    expect(p.port.sent.some((m) => m.type === 'error')).toBe(true);
+  });
+
+  it('instantiates a posted compiled module too, and reports ready', async () => {
+    const p = await ready(simdModule, true);
+    const msg = p.port.sent.find((m) => m.type === 'ready')!;
+    expect(msg.simd).toBe(true);
+    expect(msg.maxIrTaps).toBe(4096);
+  });
+
+  it('applies params and an IR that arrived before the engine was up', async () => {
+    const early = instantiate();
+    early.port.deliver({ type: 'params', ...DRIVE });
+    early.port.deliver({ type: 'ir', taps: irFor(0, 0) });
+    early.port.deliver({ type: 'module', module: scalarModule, simd: false });
+    await untilMessage(early.port, 'ready');
+
+    const late = await ready();
+    late.port.deliver({ type: 'params', ...DRIVE });
+    late.port.deliver({ type: 'ir', taps: irFor(0, 0) });
+
+    expect(Array.from(render(early, 20).left)).toEqual(Array.from(render(late, 20).left));
+  });
+
+  it('reports a module it cannot run, and stays silent', async () => {
+    // A valid module with none of the dsp_* exports.
+    const empty = await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+    const p = instantiate();
+    p.port.deliver({ type: 'module', module: empty, simd: false });
+    const err = await untilMessage(p.port, 'error');
+    expect(String(err.message)).toMatch(/dsp_create|not a function/);
+    expect(render(p, 2).left.every((s) => s === 0)).toBe(true);
+  });
 });
 
-describe('cabin worklet: PCM queue', () => {
-  it('asks for a full queue as soon as it is constructed', () => {
-    expect(processor.port.sent).toEqual([
-      { type: 'need', blocks: CABIN_QUEUE_TARGET_BLOCKS },
-    ]);
-  });
+describe('cabin worklet: rendering', () => {
+  it('renders exactly what the engine renders (the JS twin, bit for bit)', async () => {
+    const p = await ready();
+    const twin = JS_FALLBACK.createCabinDsp(SAMPLE_RATE)!;
+    const ir = irFor(3, 0, 2048);
+    const radio = radioBlock();
+    p.port.deliver({ type: 'params', ...DRIVE, vehicle: 3 });
+    p.port.deliver({ type: 'ir', taps: ir.slice() });
+    twin.setParams({ ...DRIVE, vehicle: 3 });
+    twin.setIr(ir);
 
-  it('plays queued PCM back in order', () => {
-    processor.port.deliver({ type: 'pcm', blocks: [block(0.5)] });
-    const out = render(processor);
-    for (let i = 0; i < out.length; i++) expect(out[i]).toBeCloseTo(0.5, 6);
-  });
-
-  it('outputs silence rather than throwing when the queue runs dry', () => {
-    const out = render(processor, 2);
-    expect(Array.from(out).every((sample) => sample === 0)).toBe(true);
-  });
-
-  it('only re-requests once the queue drops to the low-water mark', () => {
-    processor.port.deliver({
-      type: 'pcm',
-      blocks: [block(0.1), block(0.1), block(0.1), block(0.1)],
-    });
-    processor.port.sent.length = 0;
-
-    // One quantum out of ~4000 queued samples: still well above the mark.
-    render(processor);
-    expect(processor.port.sent).toEqual([]);
-
-    // Drain past the low-water mark and it asks for exactly the shortfall.
-    render(processor, Math.ceil((CABIN_PCM_BLOCK * 2) / QUANTUM));
-    expect(processor.port.sent.length).toBe(1);
-    expect(processor.port.sent[0]!.type).toBe('need');
-    expect(processor.port.sent[0]!.blocks).toBeLessThanOrEqual(CABIN_QUEUE_TARGET_BLOCKS);
-    expect(processor.port.sent[0]!.blocks).toBeGreaterThan(0);
-
-    // ... and does not pile up a second request while one is outstanding.
-    render(processor);
-    expect(processor.port.sent.length).toBe(1);
-  });
-
-  it('stops the node when told to', () => {
-    expect(processor.process([], [[new Float32Array(QUANTUM)]])).toBe(true);
-    processor.port.deliver({ type: 'stop' });
-    expect(processor.process([], [[new Float32Array(QUANTUM)]])).toBe(false);
-  });
-});
-
-describe('cabin worklet: convolution', () => {
-  it('applies the impulse response to the bed', () => {
-    // [0.5, 0.25] convolved with a constant 1.0 bed settles at 0.75, one
-    // sample after the first tap arrives.
-    processor.port.deliver({ type: 'ir', taps: Float32Array.from([0.5, 0.25]) });
-    processor.port.deliver({ type: 'pcm', blocks: [block(1)] });
-    const out = render(processor);
-    expect(out[0]).toBeCloseTo(0.5, 6);
-    expect(out[1]).toBeCloseTo(0.75, 6);
-    expect(out[64]).toBeCloseTo(0.75, 6);
-  });
-
-  it('passes the bed through untouched before an IR arrives', () => {
-    processor.port.deliver({ type: 'pcm', blocks: [block(0.3)] });
-    const out = render(processor);
-    expect(out[0]).toBeCloseTo(0.3, 6);
-  });
-
-  it('clamps the output to [-1, 1]', () => {
-    processor.port.deliver({ type: 'ir', taps: Float32Array.from([1, 1, 1, 1]) });
-    processor.port.deliver({ type: 'pcm', blocks: [block(1)] });
-    const out = render(processor);
-    for (let i = 0; i < out.length; i++) {
-      expect(out[i]).toBeGreaterThanOrEqual(-1);
-      expect(out[i]).toBeLessThanOrEqual(1);
+    const got = render(p, 40, radio);
+    const want = { left: new Float32Array(CABIN_QUANTUM * 40), right: new Float32Array(CABIN_QUANTUM * 40) };
+    for (let q = 0; q < 40; q++) {
+      const l = want.left.subarray(q * CABIN_QUANTUM, (q + 1) * CABIN_QUANTUM);
+      const r = want.right.subarray(q * CABIN_QUANTUM, (q + 1) * CABIN_QUANTUM);
+      twin.render(radio[0], radio[1], l, r, CABIN_QUANTUM);
     }
+    expect(Array.from(got.left)).toEqual(Array.from(want.left));
+    expect(Array.from(got.right)).toEqual(Array.from(want.right));
+    expect(got.left.some((s) => s !== 0)).toBe(true);
   });
 
-  it('swaps an IR of the same length without resetting the tail', () => {
-    processor.port.deliver({ type: 'ir', taps: Float32Array.from([1, 0]) });
-    processor.port.deliver({ type: 'pcm', blocks: [block(1), block(1)] });
-    render(processor);
-    // A roof toggle re-colours the same 128 taps; the history ring is reused,
-    // so the second IR immediately sees the samples already in flight.
-    processor.port.deliver({ type: 'ir', taps: Float32Array.from([0, 1]) });
-    const out = render(processor);
-    expect(out[0]).toBeCloseTo(1, 6);
+  it('the SIMD binary renders the same bits as the scalar one', async () => {
+    const a = await ready(scalarModule, false);
+    const b = await ready(simdModule, true);
+    for (const p of [a, b]) {
+      p.port.deliver({ type: 'params', ...DRIVE });
+      p.port.deliver({ type: 'ir', taps: irFor(0, 1, 1024) });
+    }
+    const radio = radioBlock();
+    expect(Array.from(render(a, 30, radio).right)).toEqual(Array.from(render(b, 30, radio).right));
+  });
+
+  it('plays the radio input through the cabin: roof and vehicle change it', async () => {
+    const radioOnly = { ...DRIVE, rpm: 0, speedMps: 0, rain: 0, wetRoad: 0, windMps: 0, wipers: false };
+    const room = async (vehicle: number, openness: number): Promise<Float32Array> => {
+      const p = await ready();
+      p.port.deliver({ type: 'params', ...radioOnly, vehicle, openness });
+      p.port.deliver({ type: 'ir', taps: irFor(vehicle, openness, vehicle === 3 ? 2048 : 1024) });
+      render(p, 400, radioBlock()); // settle the 40 ms parameter glide
+      return render(p, 20, radioBlock()).left;
+    };
+    const closed = await room(0, 0);
+    const open = await room(0, 1);
+    const limo = await room(3, 0);
+    const energy = (x: Float32Array): number => x.reduce((acc, v) => acc + v * v, 0);
+    expect(energy(closed)).toBeGreaterThan(0);
+    expect(Array.from(open)).not.toEqual(Array.from(closed));
+    expect(Array.from(limo)).not.toEqual(Array.from(closed));
+  });
+
+  it('a mono radio input feeds both speakers', async () => {
+    const p = await ready();
+    p.port.deliver({ type: 'params', ...DRIVE, rpm: 0, speedMps: 0, rain: 0, wetRoad: 0, windMps: 0 });
+    const mono = radioBlock()[0];
+    let left = 0;
+    let right = 0;
+    for (let q = 0; q < 200; q++) {
+      const l = new Float32Array(CABIN_QUANTUM);
+      const r = new Float32Array(CABIN_QUANTUM);
+      p.process([[mono]], [[l, r]]);
+      if (q >= 100) {
+        left += l.reduce((a, v) => a + v * v, 0);
+        right += r.reduce((a, v) => a + v * v, 0);
+      }
+    }
+    expect(left).toBeGreaterThan(0);
+    expect(right).toBeGreaterThan(0);
+  });
+
+  it('posts stats on its own clock, with no underruns', async () => {
+    const p = await ready();
+    p.port.deliver({ type: 'params', ...DRIVE });
+    const every = Math.round((SAMPLE_RATE * CABIN_STATS_SECONDS) / CABIN_QUANTUM);
+    render(p, every * 3);
+    const stats = p.port.sent.filter((m) => m.type === 'stats');
+    expect(stats.length).toBe(3);
+    const last = stats[stats.length - 1]!;
+    expect(last.quanta).toBe(every * 3);
+    expect(last.rendered).toBe(every * 3);
+    expect(last.underruns).toBe(0);
+  });
+
+  it('stops on request and frees the engine', async () => {
+    const p = await ready();
+    p.port.deliver({ type: 'stop' });
+    const { alive, left } = render(p, 1);
+    expect(alive).toBe(false);
+    expect(left.every((s) => s === 0)).toBe(true);
+  });
+
+  it('a stop that lands before the engine is up still frees it', async () => {
+    const p = instantiate();
+    p.port.deliver({ type: 'module', module: scalarModule, simd: false });
+    p.port.deliver({ type: 'stop' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(p.port.sent.some((m) => m.type === 'ready')).toBe(false);
+    expect(render(p, 1).alive).toBe(false);
+  });
+
+  it('an empty IR message is the identity, and an over-long one is truncated', async () => {
+    const p = await ready();
+    p.port.deliver({ type: 'params', ...DRIVE });
+    p.port.deliver({ type: 'ir', taps: new Float32Array(0) });
+    p.port.deliver({ type: 'ir', taps: irFor(3, 0, 5000) });
+    const { left } = render(p, 8);
+    expect(left.every((s) => Number.isFinite(s) && Math.abs(s) <= 1)).toBe(true);
   });
 });

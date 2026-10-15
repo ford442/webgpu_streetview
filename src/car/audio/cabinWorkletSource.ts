@@ -3,152 +3,242 @@
  *
  * `CabinAudio` turns this into a Blob URL and hands it to
  * `audioWorklet.addModule()`, which is why it lives here as a string instead of
- * as a second entry point: the constants below stay single-sourced with the
- * main-thread side, and no extra chunk or `src/**\/*.js` file ships.
+ * as a second entry point: the constants stay single-sourced with the main
+ * thread, and no extra chunk or `src/**\/*.js` file ships.
  *
- * The processor itself does no synthesis. PCM is generated on the main thread
- * by the WASM `fill_engine_noise` export (or its JS twin) and queued here; the
- * worklet drains that queue and convolves it with the cabin IR from
- * `fill_cabin_ir`. One numeric SSOT, and the audio thread never allocates or
- * calls into WebAssembly.
+ * The processor hosts the WASM cabin engine (cpp/src/cabin_dsp_module.cpp).
+ * The main thread fetches the binary once and posts its bytes (no JS glue,
+ * STANDALONE_WASM) — not a compiled `WebAssembly.Module`: Chromium refuses to
+ * deserialize one in AudioWorkletGlobalScope (the port gets `messageerror`,
+ * the message never arrives). The worklet instantiates the bytes (a compiled
+ * module is accepted too, for engines that allow it), creates one engine and
+ * calls `dsp_render` every render
+ * quantum, straight into the output channels. Input 0 is the car radio. The
+ * main thread only posts parameters and IRs — there is no PCM queue, so no
+ * main-thread stall (a Maps tile decode, a React commit) can starve it.
+ *
+ * Protocol (main → worklet):
+ *   { type: 'module', bytes: ArrayBuffer, simd: boolean }   (or `module`)
+ *   { type: 'params', rpm, load, speedMps, openness, vehicle, wetRoad, rain,
+ *     windMps, radioGain, wipers }        targets; the engine smooths them
+ *   { type: 'ir', taps: Float32Array }     cabin IR (crossfaded in the engine)
+ *   { type: 'stop' }
+ * (worklet → main):
+ *   { type: 'ready', simd, maxIrTaps }
+ *   { type: 'stats', quanta, rendered, underruns, renderMsAvg, renderMsMax }
+ *   { type: 'error', message }             instantiate/render failed, or a
+ *                                          message could not be deserialized;
+ *                                          the main thread falls back
  */
 
 /** `registerProcessor` name; must match the `AudioWorkletNode` constructor. */
 export const CABIN_PROCESSOR_NAME = 'streetview-cabin-engine';
 
-/** Samples per queued PCM block (~23 ms at 44.1 kHz). */
-export const CABIN_PCM_BLOCK = 1024;
+/** The Web Audio render quantum (and the engine's FIR partition). */
+export const CABIN_QUANTUM = 128;
 
-/** Blocks the worklet tries to keep queued ahead of the render quantum. */
-export const CABIN_QUEUE_TARGET_BLOCKS = 4;
-
-/** Refill is requested once the queue falls to this many blocks. */
-export const CABIN_QUEUE_LOW_BLOCKS = 2;
+/** The worklet posts `stats` about this often. */
+export const CABIN_STATS_SECONDS = 0.5;
 
 /**
  * The processor source. Runs in `AudioWorkletGlobalScope`, which has no
  * `fetch`, no DOM and no module imports — everything it needs arrives over
- * `port`.
+ * `port`; `sampleRate` is a scope global.
  */
 export const CABIN_WORKLET_SOURCE = `
+const QUANTUM = ${CABIN_QUANTUM};
+const clock = typeof performance !== 'undefined' && typeof performance.now === 'function'
+  ? () => performance.now()
+  : null;
+
 class CabinEngineProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    /** Queued PCM blocks from the main thread, oldest first. */
-    this.queue = [];
-    /** Read cursor inside queue[0]. */
-    this.readPos = 0;
-    /** Total samples still queued, tracked so process() never walks the list. */
-    this.queued = 0;
-    /** Cabin impulse response (Float32Array) and its FIR history ring. */
-    this.ir = null;
-    this.history = null;
-    this.historyPos = 0;
-    /** At most one outstanding refill request. */
-    this.pending = false;
     this.running = true;
+    this.exp = null;
+    this.state = 0;
+    this.io = 0;
+    this.maxIrTaps = 0;
+    this.buffer = null;
+    this.views = null;
+    this.pendingParams = null;
+    this.pendingIr = null;
+    this.errored = false;
+    this.quanta = 0;
+    this.rendered = 0;
+    this.underruns = 0;
+    this.renderMsSum = 0;
+    this.renderMsMax = 0;
+    this.timed = 0;
+    this.statsEvery = Math.max(1, Math.round((sampleRate * ${CABIN_STATS_SECONDS}) / QUANTUM));
 
     this.port.onmessage = (event) => {
       const msg = event.data;
       if (!msg) return;
-      if (msg.type === 'pcm') {
-        this.pending = false;
-        for (let i = 0; i < msg.blocks.length; i++) {
-          const block = msg.blocks[i];
-          if (block && block.length > 0) {
-            this.queue.push(block);
-            this.queued += block.length;
-          }
-        }
+      if (msg.type === 'module') {
+        this.load(msg.bytes || msg.module, !!msg.simd);
+      } else if (msg.type === 'params') {
+        if (this.state) this.applyParams(msg);
+        else this.pendingParams = msg;
       } else if (msg.type === 'ir') {
-        this.setIr(msg.taps);
+        if (this.state) this.applyIr(msg.taps);
+        else this.pendingIr = msg.taps || null;
       } else if (msg.type === 'stop') {
         this.running = false;
+        this.destroy();
       }
     };
-
-    this.request();
+    this.port.onmessageerror = () => this.fail(new Error('a message could not be deserialized in the worklet'));
   }
 
-  setIr(taps) {
+  async load(source, simd) {
+    try {
+      if (!source) throw new Error('no binary in the module message');
+      const result = await WebAssembly.instantiate(source, {
+        env: { emscripten_notify_memory_growth: () => { this.buffer = null; } },
+      });
+      // Bytes give { module, instance }; a compiled module gives the instance.
+      const exp = (result.instance || result).exports;
+      if (typeof exp._initialize === 'function') exp._initialize();
+      const state = exp.dsp_create(sampleRate);
+      if (!state) throw new Error('dsp_create returned null');
+      const maxIrTaps = exp.dsp_max_ir_taps();
+      // One malloc'd block for the I/O: radio L/R, out L/R, then the IR.
+      const io = exp.malloc((QUANTUM * 4 + maxIrTaps) * 4);
+      if (!io) throw new Error('malloc for the cabin I/O failed');
+      this.exp = exp;
+      this.state = state;
+      this.io = io;
+      this.maxIrTaps = maxIrTaps;
+      if (!this.running) {
+        this.destroy();
+        return;
+      }
+      if (this.pendingParams) this.applyParams(this.pendingParams);
+      if (this.pendingIr) this.applyIr(this.pendingIr);
+      this.pendingParams = null;
+      this.pendingIr = null;
+      this.port.postMessage({ type: 'ready', simd: simd, maxIrTaps: maxIrTaps });
+    } catch (err) {
+      this.fail(err);
+    }
+  }
+
+  fail(err) {
+    if (this.errored) return;
+    this.errored = true;
+    this.port.postMessage({ type: 'error', message: String((err && err.message) || err) });
+  }
+
+  /** Typed-array views over the I/O block, rebuilt if memory ever grows. */
+  getViews() {
+    const buffer = this.exp.memory.buffer;
+    if (this.buffer !== buffer || !this.views) {
+      const io = this.io;
+      this.buffer = buffer;
+      this.views = {
+        inL: new Float32Array(buffer, io, QUANTUM),
+        inR: new Float32Array(buffer, io + QUANTUM * 4, QUANTUM),
+        outL: new Float32Array(buffer, io + QUANTUM * 8, QUANTUM),
+        outR: new Float32Array(buffer, io + QUANTUM * 12, QUANTUM),
+        ir: new Float32Array(buffer, io + QUANTUM * 16, this.maxIrTaps),
+      };
+    }
+    return this.views;
+  }
+
+  applyParams(p) {
+    this.exp.dsp_set_params(
+      this.state, +p.rpm, +p.load, +p.speedMps, +p.openness, p.vehicle | 0,
+      +p.wetRoad, +p.rain, +p.windMps, +p.radioGain, p.wipers ? 1 : 0,
+    );
+  }
+
+  applyIr(taps) {
     if (!taps || taps.length === 0) {
-      this.ir = null;
-      this.history = null;
+      this.exp.dsp_set_ir(this.state, 0, 0);
       return;
     }
-    this.ir = taps;
-    // Reuse the ring when the length is unchanged (the usual case: a roof
-    // toggle re-colours the same 128 taps), so the tail carries over instead
-    // of clicking through a zeroed history.
-    if (!this.history || this.history.length !== taps.length) {
-      this.history = new Float32Array(taps.length);
-      this.historyPos = 0;
+    const n = Math.min(taps.length, this.maxIrTaps);
+    this.getViews().ir.set(n === taps.length ? taps : taps.subarray(0, n));
+    this.exp.dsp_set_ir(this.state, this.io + QUANTUM * 16, n);
+  }
+
+  destroy() {
+    if (this.exp && this.state) {
+      this.exp.dsp_destroy(this.state);
+      this.exp.free(this.io);
     }
+    this.state = 0;
+    this.io = 0;
+    this.views = null;
   }
 
-  /** Ask the main thread for whatever it takes to reach the target depth. */
-  request() {
-    if (this.pending || !this.running) return;
-    const have = Math.ceil(this.queued / ${CABIN_PCM_BLOCK});
-    const blocks = ${CABIN_QUEUE_TARGET_BLOCKS} - have;
-    if (blocks <= 0) return;
-    this.pending = true;
-    this.port.postMessage({ type: 'need', blocks: blocks });
+  silence(output) {
+    for (let c = 0; c < output.length; c++) output[c].fill(0);
   }
 
-  /** Next queued sample, or 0 when the main thread has fallen behind. */
-  nextSample() {
-    while (this.queue.length > 0) {
-      const block = this.queue[0];
-      if (this.readPos < block.length) {
-        const sample = block[this.readPos];
-        this.readPos++;
-        this.queued--;
-        return sample;
-      }
-      this.queue.shift();
-      this.readPos = 0;
-    }
-    return 0;
-  }
-
-  /** One FIR tap-and-accumulate against the cabin IR. */
-  convolve(sample) {
-    const ir = this.ir;
-    const history = this.history;
-    if (!ir || !history) return sample;
-    const n = ir.length;
-    this.historyPos = this.historyPos === 0 ? n - 1 : this.historyPos - 1;
-    history[this.historyPos] = sample;
-    let acc = 0;
-    let h = this.historyPos;
-    for (let k = 0; k < n; k++) {
-      acc += ir[k] * history[h];
-      h++;
-      if (h === n) h = 0;
-    }
-    return acc;
-  }
-
-  process(_inputs, outputs) {
+  process(inputs, outputs) {
     const output = outputs[0];
-    const channel = output && output[0];
-    if (!channel) return this.running;
+    if (!output || output.length === 0) return this.running;
+    this.quanta++;
 
-    for (let i = 0; i < channel.length; i++) {
-      let sample = this.convolve(this.nextSample());
-      // The IR has unity DC gain but a resonant cabin can still overshoot on
-      // a transient; clamp rather than let the graph clip downstream.
-      if (sample > 1) sample = 1;
-      else if (sample < -1) sample = -1;
-      channel[i] = sample;
+    if (!this.state) {
+      // Before the engine is up (start-up) this is just silence; after it
+      // has rendered, a silent quantum is an underrun.
+      if (this.rendered > 0) this.underruns++;
+      this.silence(output);
+      this.maybeStats();
+      return this.running;
     }
 
-    // Copy the mono bed to any extra channels the destination asked for.
-    for (let c = 1; c < output.length; c++) output[c].set(channel);
+    const left = output[0];
+    const frames = Math.min(left.length, QUANTUM);
+    const v = this.getViews();
+    const input = inputs[0];
+    const radioL = input && input[0];
+    const radioR = input && (input[1] || input[0]);
+    if (radioL) v.inL.set(radioL.subarray(0, frames)); else v.inL.fill(0);
+    if (radioR) v.inR.set(radioR.subarray(0, frames)); else v.inR.fill(0);
 
-    if (this.queued <= ${CABIN_QUEUE_LOW_BLOCKS} * ${CABIN_PCM_BLOCK}) this.request();
+    const t0 = clock ? clock() : 0;
+    try {
+      this.exp.dsp_render(
+        this.state, this.io, this.io + QUANTUM * 4,
+        this.io + QUANTUM * 8, this.io + QUANTUM * 12, frames,
+      );
+    } catch (err) {
+      this.underruns++;
+      this.silence(output);
+      this.fail(err);
+      this.maybeStats();
+      return this.running;
+    }
+    if (clock) {
+      const ms = clock() - t0;
+      this.renderMsSum += ms;
+      if (ms > this.renderMsMax) this.renderMsMax = ms;
+      this.timed++;
+    }
+
+    left.set(v.outL.subarray(0, frames));
+    if (output.length > 1) output[1].set(v.outR.subarray(0, frames));
+    for (let c = 2; c < output.length; c++) output[c].fill(0);
+    this.rendered++;
+    this.maybeStats();
     return this.running;
+  }
+
+  maybeStats() {
+    if (this.quanta % this.statsEvery !== 0) return;
+    this.port.postMessage({
+      type: 'stats',
+      quanta: this.quanta,
+      rendered: this.rendered,
+      underruns: this.underruns,
+      renderMsAvg: this.timed > 0 ? this.renderMsSum / this.timed : null,
+      renderMsMax: this.timed > 0 ? this.renderMsMax : null,
+    });
   }
 }
 

@@ -143,6 +143,59 @@ export function downsample2d(
   return dst;
 }
 
+const F_BT709_R = Math.fround(BT709_R);
+const F_BT709_G = Math.fround(BT709_G);
+const F_BT709_B = Math.fround(BT709_B);
+/** 255 * 10000: integer luma of white (`kLumaFullScale`). */
+const LUMA_FULL_SCALE = 2550000;
+
+/**
+ * JS twin of `sw_luma_analyze` (cpp/src/luma_module.cpp), bit-exact: the box
+ * average is {@link downsample2d}'s, the bin is computed in f32 like
+ * `bt709_bin_u8`, and mean/min/max come from integer luma (2126 r + 7152 g +
+ * 722 b) — exact in a double for any frame below ~3.5 G pixels.
+ */
+export function lumaAnalyze(
+  rgba: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  dstW: number,
+  dstH: number,
+): LumaReduce & { bins: Uint32Array } {
+  const bins = new Uint32Array(HIST_BINS);
+  if (width <= 0 || height <= 0 || dstW <= 0 || dstH <= 0 || rgba.length < width * height * 4) {
+    return { bins, mean: 0, min: 0, max: 0, count: 0 };
+  }
+  const small = downsample2d(rgba, width, height, dstW, dstH);
+  const f = Math.fround;
+  let sum = 0;
+  let min = Infinity;
+  let max = 0;
+  const count = dstW * dstH;
+  for (let i = 0; i < count; i += 1) {
+    const o = i * 4;
+    const r = small[o]!;
+    const g = small[o + 1]!;
+    const b = small[o + 2]!;
+    const acc = f(f(f(F_BT709_R * r) + f(F_BT709_G * g)) + f(F_BT709_B * b));
+    let bin = Math.floor(f(acc + 0.5));
+    if (bin < 0) bin = 0;
+    if (bin > 255) bin = 255;
+    bins[bin] = (bins[bin]! + 1) >>> 0;
+    const y = 2126 * r + 7152 * g + 722 * b;
+    sum += y;
+    if (y < min) min = y;
+    if (y > max) max = y;
+  }
+  return {
+    bins,
+    mean: f(sum / (count * LUMA_FULL_SCALE)),
+    min: f(min / LUMA_FULL_SCALE),
+    max: f(max / LUMA_FULL_SCALE),
+    count,
+  };
+}
+
 export const PICKER_THUMB_WIDTH = 160;
 export const PICKER_THUMB_HEIGHT = 90;
 

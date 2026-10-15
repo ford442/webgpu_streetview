@@ -1,0 +1,14 @@
+<!doctype html>
+<!--
+  The cabin audio engine (#321), end to end in a real AudioContext. Driven by
+  e2e/cabin-audio.spec.ts — not part of the product.
+  See engine.ts for what it builds and what it exposes on window.__cabin.
+-->
+<html>
+  <!-- The loader fetches ./wasm/… (PUBLIC_URL is "."), as the app does from its root. -->
+  <head><meta charset="utf-8" /><base href="/" /><title>cabin audio engine</title></head>
+  <body style="margin:0;background:#222;color:#ccc;font:14px sans-serif">
+    <button id="start" style="margin:24px;padding:12px 20px">start cabin audio</button>
+    <script type="module" src="/e2e/fixtures/cabin-audio/engine.ts"></script>
+  </body>
+</html>

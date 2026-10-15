@@ -123,7 +123,9 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
       }
     }
     expect(duplicates).toBe(0);
-  });
+    // ~3.5 s alone (172 M samples); the default 5 s flaked once the cabin DSP
+    // parity suite ran beside it.
+  }, 20_000);
 
   test('fillEngineNoise: the JS twin agrees bit-for-bit an hour into the drive', () => {
     const a = new Float32Array(1024);

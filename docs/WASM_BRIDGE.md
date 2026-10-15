@@ -83,7 +83,8 @@ over every translation unit listed in `scripts/lint-cpp.sh` `SOURCES`; CI
 commit `compile_commands.json`.
 
 **Adding a translation unit** means adding it in four places: the emcc
-`add_executable`, the host `add_library(streetview_cpu …)`, `SOURCES` in
+`STREETVIEW_WASM_SOURCES` list (both wasm targets build from it), the host
+`add_library(streetview_cpu …)`, `SOURCES` in
 `scripts/lint-cpp.sh`, and `WASM_SOURCE_FILES` in
 `scripts/wasm-source-hash.mjs`. `src/wasm/__tests__/compileCommandsContract.test.ts`
 diffs all four against `cpp/src/*.cpp` and fails when one is forgotten.
@@ -94,14 +95,25 @@ CMake options:
 |---|---|---|
 | `STREETVIEW_WERROR` | `ON` | warnings are errors on our sources (never on `third_party/`) |
 | `STREETVIEW_SANITIZERS` | `OFF` | ASan + UBSan on the host target |
-| `STREETVIEW_WASM_SIMD` | `OFF` | adds `-msimd128` to the emcc build (autovectorization only) |
 
-`STREETVIEW_WASM_SIMD` does **not** introduce a second algorithm: the C++ stays
-scalar and the option only lets the compiler vectorize the `fill_*` loops. WASM
-SIMD128 has no FMA and we never pass `-ffast-math`, so results stay bit-identical
-to the scalar goldens — `cpp/tests` asserts that the tile fills and the scalar
-`noise2d` entry point agree exactly, which is the invariant a SIMD path must
-preserve.
+**Two binaries, one source list.** The emcc build always links two targets
+from `STREETVIEW_WASM_SOURCES` with identical flags except `-msimd128`:
+
+| File | Who loads it |
+|---|---|
+| `public/wasm/streetview-wasm.wasm` (scalar) | the main-thread loader (`loadWasmModule`), and the cabin AudioWorklet when SIMD does not validate or `?cabinDsp=scalar` |
+| `public/wasm/streetview-wasm.simd.wasm` | the cabin AudioWorklet (`CabinAudio`), selected with `WebAssembly.validate` on a one-instruction SIMD probe module (`wasmSimdSupported()` in `src/wasm/index.ts`) |
+
+SIMD ships only where it pays: `cabin_dsp_module.cpp`'s FIR is hand-vectorised
+with `<wasm_simd128.h>` under `__wasm_simd128__`; everything else is plain C++
+the compiler may autovectorize. The main thread stays scalar — #300 measured
+~0 % from SIMD on the cold kernels. Neither binary introduces a second
+algorithm: WASM SIMD128 has no FMA, we never pass `-ffast-math`, and the FIR's
+summation order is canonical (four lane accumulators over `j mod 4`, then
+`(a0 + a1) + (a2 + a3)`), so **both binaries reproduce `cpp/tests/goldens.json`
+bit for bit** — CI's `build-wasm-emscripten` asserts it with
+`gen-wasm-goldens.mjs --compare --wasm public/wasm/streetview-wasm.simd.wasm`,
+and `cabinDspParity.test.ts` runs every golden on both committed binaries.
 
 ---
 
@@ -250,20 +262,84 @@ binary to pin this.
 | `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
 | `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
-| `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed filled on the main thread and queued to the cabin AudioWorklet; JS fill + oscillators if WASM or the worklet is missing |
-| `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR the worklet convolves the bed with; roof openness raises its high-frequency transfer |
-| `WindAudio` (car mode) | `fill_hrtf` | per-ear IR pair convolved with the wind/rain bed via two `ConvolverNode`s, rebuilt when head-vs-car heading moves; `StereoPannerNode` remains the pre-load/failure fallback |
-| gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
+| cabin AudioWorklet (`cabinWorkletSource.ts`, car mode) | `dsp_create` / `dsp_set_params` / `dsp_set_ir` / `dsp_render` / `dsp_destroy` / `dsp_max_ir_taps` | the whole car bed + radio, rendered on the audio thread — see §3a |
+| `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR (1024–2048 taps) posted to the worklet; roof openness raises its high-frequency transfer and lets the late tail escape |
+| `WindAudio` (car mode, oscillator fallback only) | `fill_hrtf` | per-ear IR pair convolved with the wind bed via two `ConvolverNode`s; it stays off while the cabin engine runs (the engine renders the wind) |
+| gpu-chores (`GpuChores`, #216) | `luma_analyze` (CPU path), `downsample_2d` (picker thumbs) | fused downsample + histogram + exact reduce for the luma gauge — one copy-in instead of three. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
 
-The cabin audio graph fills PCM on the main thread (one loader, one JS
-fallback, one set of goldens) and posts it to an AudioWorklet, which drains the
-queue and runs the 128-tap FIR from `fill_cabin_ir`. The worklet asks for more
-as it drains, so the audio clock paces the fills; `createScriptProcessor` is
-gone from `src/car/audio/`. The processor source lives in
-`src/car/audio/cabinWorkletSource.ts` as text and is loaded via a Blob URL, so
-its constants stay single-sourced with the main thread and no extra chunk ships.
+`fill_engine_noise`, `luma_histogram_bt709` and `reduce_luma_bt709` keep their
+exports and goldens (the engine voice and the bin rule are shared with
+`dsp_render` / `luma_analyze` op for op) but have no production caller left.
 
-Heading-relative **binaural convolution** is `fill_hrtf`, alongside `fill_cabin_ir`
+### 3a. The cabin engine (#321)
+
+`cpp/src/cabin_dsp_module.cpp` renders the car at audio rate **inside the
+AudioWorklet**. `CabinAudio` fetches the chosen binary once
+(`loadStreetViewWasmBytes`) and posts a copy of the bytes; the worklet
+instantiates them, `dsp_create`s one engine (state `malloc`'d from the module
+heap — no globals) and calls `dsp_render` every 128-frame quantum straight into
+its output channels. The main thread posts only `params` (every frame) and an
+`ir` (when the vehicle or roof changes). There is no PCM queue: the old design
+filled 1024-sample blocks on the main thread with ~93 ms queued, so any stall
+longer than that was a dropout; now a stall cannot reach the audio thread
+(`e2e/cabin-audio.spec.ts` stalls the main thread for 300 ms and asserts zero
+underruns on `window.__CABIN_AUDIO_PROBE__`).
+
+> **Do not post a `WebAssembly.Module` to the worklet.** It is structured-
+> cloneable on paper, but Chromium will not deserialize one in
+> `AudioWorkletGlobalScope`: the port gets `messageerror` and the message
+> silently never arrives. Post the bytes (transferred copy). The worklet
+> reports `messageerror` as an `error`, and `CabinAudio` falls back.
+
+Per sample: engine (the `fill_engine_noise` voice, f64 phase), road rumble +
+hiss + wet-arch spray, a wind band that rises with airspeed (speed + ambient
+wind, gusting), granular rain on the roof (drums sealed, splatters open),
+wiper thumps (a Taylor-cosine resonator), and the stereo radio from input 0.
+Outside sources pass a body-occlusion one-pole set by openness; the wind, and
+the radio from the dash speakers (±30°), are placed with the `fill_hrtf`
+head-shadow coefficients (`sv_audio::hrtf_shadow` in `cpp/include/audio_kernels.h`).
+Then one stereo cabin FIR — uniformly partitioned into 128-tap partitions (the
+render quantum), up to 4096 taps, crossfading 256 samples on an IR swap — a
+DC blocker and a clamp. Convolution and head shadow are both LTI, so placing
+first and convolving once is the same room as convolving every source.
+
+Every parameter has a per-sample one-pole (~40 ms): post at any cadence,
+no zipper noise (`cabin_dsp_test.cpp` steps the radio gain and bounds the
+per-sample change). Inputs come from `car/audio/cabinParams.ts`: telemetry
+(rpm, load, speed — floored at the routed trip's cruise pace), roof and
+vehicle, the weather panel (rain → rain on the roof and a wet road, wind) and
+live conditions (precipitation keeps the road wet, live wind).
+
+**The radio goes through the cabin.** `audio/carAudioGraph.ts` owns the car's
+one AudioContext; the car radio (`AudioAnalyzer({ carCabin: true })` in
+`useCabinRadioBinding`) feeds its radio bus, which runs into the worklet's
+input while the engine is up (and straight out otherwise). The dash
+visualiser taps the post-cabin mix. User volume and the trip-aware retune
+crossfade stay on the station's own gain node. The free-look toolbar radio
+(`app/useRadioAudio.ts`) has no cabin and stays direct.
+
+**Render budget** (`node scripts/bench-cabin-dsp.mjs`, a wet rainy windy
+cruise with the radio on, per 128-frame quantum at 48 kHz, Node 24 / V8 on the
+dev VM; the quantum's real-time budget is 2.667 ms):
+
+| IR taps | scalar | SIMD128 | speed-up |
+|---|---|---|---|
+| 128 | 0.036 ms (1.4 %) | 0.020 ms (0.8 %) | 1.8× |
+| 1024 | 0.150 ms (5.6 %) | 0.046 ms (1.7 %) | 3.3× |
+| 2048 | 0.281 ms (10.5 %) | 0.074 ms (2.8 %) | 3.8× |
+| 4096 | 0.629 ms (23.6 %) | 0.142 ms (5.3 %) | 4.4× |
+
+The acceptance bar was ≥ 1024 taps in ≤ 25 % of the quantum on the scalar
+binary. The worklet also posts `renderMsAvg` / `renderMsMax` to the probe
+where its scope has a clock (Chromium's AudioWorkletGlobalScope has no
+`performance.now`, so there they read null). kissfft was not needed: at these
+lengths the partitioned time-domain FIR is well inside budget.
+
+Fallbacks: no AudioWorklet, no WebAssembly, a binary that fails to fetch,
+validate or instantiate, or `?cabinDsp=off` → two oscillators through a biquad
+(the old fallback). `?cabinDsp=scalar` forces the scalar binary.
+
+Heading-relative **binaural convolution** (`WindAudio`, oscillator fallback only) is `fill_hrtf`, alongside `fill_cabin_ir`
 (`cpp/src/hrtf_module.cpp`; `fill_cabin_ir` and the engine bed live in
 `cpp/src/audio_module.cpp`). It is an analytic ITD/ILD shadow
 model, not a measured HRTF (no `cpp/data/` table). `WindAudio` fans its gain
@@ -339,5 +415,9 @@ shipped as emcc STANDALONE_WASM.
 2. ✅ **Ship path is emcc.** `npm run build:wasm` / `npm run build` compile C++.
    `verify-build.sh` hashes the C++ inputs. SDK pin: `cpp/emsdk.version`.
 3. ✅ **WAT retired.** There is no `streetview-wasm.wat`. Do not add one.
-4. ✅ **SIMD128 CI (not shipped).** `STREETVIEW_WASM_SIMD=ON` is a CI row that
-   must keep goldens bit-identical. Production CMake default stays `OFF`.
+4. ✅ **SIMD128 shipped where it pays (#321).** `streetview-wasm.simd.wasm`
+   is built from the same sources with `-msimd128` and runs the cabin engine's
+   hand-vectorised FIR in the AudioWorklet; CI asserts it reproduces every
+   golden bit for bit. The main thread stays on the scalar binary.
+5. ✅ **WASM in the AudioWorklet (#321, deferred §3 of #300).** See §3a.
+6. ✅ **Fused, exact luma chore (#321, deferred §5 of #300).** `luma_analyze`.
