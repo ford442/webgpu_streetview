@@ -125,8 +125,8 @@ export const TelemetryChip: React.FC<TelemetryChipProps> = ({
   const speedRounded = Math.round(speedKmh);
   const rpmLabel = formatRpm(rpm);
   const glow =
-    nightGlow > 0.3
-      ? `0 0 ${8 + nightGlow * 12}px var(--ambient-glow, rgba(70, 210, 130, 0.35))`
+    nightGlow > 0.45
+      ? `0 0 ${3 + nightGlow * 5}px var(--ambient-glow, rgba(76, 175, 80, 0.35))`
       : 'none';
 
   return (

@@ -24,6 +24,8 @@ describe('applyTheme accent override', () => {
     const style = applyTheme(darkTheme, { accent: '#00BCD4' }) as Record<string, string>;
     expect(style['--bg-glass']).toBe(darkTheme['--bg-glass']);
     expect(style['--accent']).toBe('#00BCD4');
+    expect(style['--color-primary']).toBe('#00BCD4');
+    expect(style['--color-glow']).toBe('rgba(0, 188, 212, 0.28)');
     expect(style['--accent-hover']).toBe('rgba(0, 188, 212, 0.3)');
     expect(style['--accent-active']).toBe('rgba(0, 188, 212, 0.45)');
   });
@@ -31,6 +33,7 @@ describe('applyTheme accent override', () => {
   it('does not change accent when no override is passed', () => {
     const style = applyTheme(darkTheme, {}) as Record<string, string>;
     expect(style['--accent']).toBe(darkTheme['--accent']);
+    expect(style['--color-primary']).toBe(darkTheme['--accent']);
   });
 });
 

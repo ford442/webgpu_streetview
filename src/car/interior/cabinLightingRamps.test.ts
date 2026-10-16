@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLUSTER_WELL_EMISSIVE,
+  CONTENT_MAP_EMISSIVE,
+  DASH_SPILL_COLOR,
+  DISPLAY_HOUSING_EMISSIVE,
   cabinEmitterTargets,
   cabinFillTargets,
   cabinGlowScale,
@@ -99,8 +103,8 @@ describe('cabinLightingRamps', () => {
     expect(fill.dome).toBeGreaterThan(1.0);
     expect(fill.dash).toBeLessThan(fill.dome * 0.3);
     expect(fill.hemi).toBeLessThan(0.02);
-    expect(emit.domeFixture).toBeGreaterThan(1.0);
-    expect(emit.domeFixture).toBeLessThanOrEqual(1.1);
+    expect(emit.domeFixture).toBeGreaterThan(0.7);
+    expect(emit.domeFixture).toBeLessThanOrEqual(0.9);
     // The dials carry the cluster's light; the backplate well stays under them
     // so the cluster doesn't read as one flat neon slab.
     const dial = gaugeDialGlow({ effectiveNight: 1, headlightsOn: false, rpmFrac: 0, breathe: 0 });
@@ -129,7 +133,12 @@ describe('cabinLightingRamps', () => {
     });
     expect(fill.hemi).toBeGreaterThan(0.1);
     expect(fill.hemi).toBeLessThan(0.25);
-    expect(fill.ambient).toBeLessThan(0.06);
+    expect(fill.ambient).toBeLessThan(0.04);
+    // Overhead is a soft fill. The sun directional (not this rig) is the key,
+    // so a second overhead sun does not flatten the leather.
+    expect(fill.overhead).toBeGreaterThan(0);
+    expect(fill.overhead).toBeLessThan(0.12);
+    expect(fill.overhead).toBeLessThan(fill.hemi);
     expect(fill.dome).toBe(0);
     expect(fill.dash).toBe(0);
     expect(emit.cluster).toBeLessThan(0.3);
@@ -282,6 +291,28 @@ describe('cabinLightingRamps', () => {
     expect(centerDisplayGlowFromNight(-2)).toBeCloseTo(centerDisplayGlowFromNight(0), 5);
     expect(locationPanelGlowFromNight(4)).toBeCloseTo(locationPanelGlowFromNight(1), 5);
     expect(locationPanelGlowFromNight(-2)).toBeCloseTo(locationPanelGlowFromNight(0), 5);
+  });
+
+  it('keeps content maps white and the dash spill warm, not an accent flood', () => {
+    const luma = (hex: number) => {
+      const channel = (c: number) => {
+        const s = c / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      const r = (hex >> 16) & 255;
+      const g = (hex >> 8) & 255;
+      const b = hex & 255;
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    expect(CONTENT_MAP_EMISSIVE).toBe(0xffffff);
+    expect(luma(CLUSTER_WELL_EMISSIVE)).toBeLessThan(0.02);
+    expect(luma(DISPLAY_HOUSING_EMISSIVE)).toBeLessThan(0.02);
+    expect(luma(DASH_SPILL_COLOR)).toBeGreaterThan(0.6);
+    const r = (DASH_SPILL_COLOR >> 16) & 255;
+    const g = (DASH_SPILL_COLOR >> 8) & 255;
+    const b = DASH_SPILL_COLOR & 255;
+    expect(r).toBeGreaterThan(b + 20);
+    expect(g).toBeGreaterThan(b);
   });
 
   it('rain cuts the sun by at most 75% and clamps out-of-range rain', () => {

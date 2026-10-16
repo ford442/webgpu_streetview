@@ -3,6 +3,7 @@ import { VehicleConfig } from '../VehicleManager';
 import { resolveGaugeLayout } from '../vehicleLayout';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
+import { CLUSTER_WELL_EMISSIVE, DISPLAY_HOUSING_EMISSIVE } from './cabinLightingRamps';
 import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
@@ -81,14 +82,14 @@ export class CarInteriorDashboardBuilder {
         this.interiorGroup.add(dashTop);
 
         const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
-        // Instrument cluster: dark well with a green backlight that the lighting
-        // manager raises at night. Keep emissive in-family with the HUD, not cyan.
+        // Dark recess the dials sit in. The dials (white emissive × painted face)
+        // are the light; a saturated well here reads as one flat neon slab.
         const clusterMat = new THREE.MeshStandardMaterial({
-            color: 0x030805,
-            emissive: accentHex,
+            color: 0x07080a,
+            emissive: CLUSTER_WELL_EMISSIVE,
             emissiveIntensity: 0.2,
-            roughness: 0.55,
-            metalness: 0.05,
+            roughness: 0.78,
+            metalness: 0.02,
         });
         const clusterW =
             Math.abs(gaugeLayout.tacho.x - gaugeLayout.speed.x) + gaugeLayout.dialRadius * 2 + 0.06;
@@ -99,10 +100,10 @@ export class CarInteriorDashboardBuilder {
         this.interiorGroup.add(cluster);
 
         const displayMat = new THREE.MeshStandardMaterial({
-            color: 0x040808,
-            emissive: accentHex,
+            color: 0x07080a,
+            emissive: DISPLAY_HOUSING_EMISSIVE,
             emissiveIntensity: 0.24,
-            roughness: 0.4,
+            roughness: 0.62,
             metalness: 0.02,
         });
         const display = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.02), displayMat);
@@ -308,9 +309,9 @@ export class CarInteriorDashboardBuilder {
             clearcoat: 0.35,
             clearcoatRoughness: 0.4,
             emissive: 0xffb060,
-            emissiveIntensity: 0.12,
+            emissiveIntensity: 0.28,
         });
-        registerGlowMaterial(btnMat, 0.12);
+        registerGlowMaterial(btnMat, 0.28);
 
         for (let row = 0; row < 2; row++) {
             for (let col = 0; col < 4; col++) {
@@ -325,13 +326,13 @@ export class CarInteriorDashboardBuilder {
         const startBtnMat = new THREE.MeshPhysicalMaterial({
             color: 0xcc0000,
             emissive: 0x220000,
-            emissiveIntensity: 0.2,
+            emissiveIntensity: 0.32,
             roughness: 0.3,
             metalness: 0.4,
             clearcoat: 0.8,
             clearcoatRoughness: 0.1,
         });
-        registerGlowMaterial(startBtnMat, 0.2);
+        registerGlowMaterial(startBtnMat, 0.32);
         const startBtn = new THREE.Mesh(startBtnGeo, startBtnMat);
         startBtn.position.set(0.0, 0.82, -0.72);
         this.interiorGroup.add(startBtn);

@@ -51,11 +51,15 @@ export class CarInteriorVariantBuilder {
         const glowSprites: CabinGlowSprite[] = [];
         const accentHex = parseInt(this.vehicleConfig.accentColor.replace('#', '0x'));
         const monitorGeo = new THREE.BoxGeometry(0.4, 0.25, 0.05);
+        // Dark teal, not the full accent. The center-display ramp still
+        // brightens these at night; a saturated #00BCD4 face reads as a
+        // light panel and washes the clinical cabin.
         const monitorMat = new THREE.MeshStandardMaterial({
-            color: 0x001418,
-            emissive: accentHex,
+            color: 0x041014,
+            emissive: 0x0c5c66,
             emissiveIntensity: 0.24,
-            roughness: 0.2,
+            roughness: 0.35,
+            metalness: 0.04,
         });
 
         const monitorPositions: Array<[number, number, number]> = [

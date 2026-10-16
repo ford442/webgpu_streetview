@@ -71,6 +71,15 @@ describe('DigitalClock', () => {
     vi.restoreAllMocks();
   });
 
+  it('emits the painted accent glyphs instead of tinting them a second time', () => {
+    const clock = makeClock();
+    const mat = clock.getMaterial();
+    expect(mat.emissive.r).toBeCloseTo(1, 5);
+    expect(mat.emissive.g).toBeCloseTo(1, 5);
+    expect(mat.emissive.b).toBeCloseTo(1, 5);
+    expect(mat.emissiveMap).toBe(mat.map);
+  });
+
   describe('shows the panorama’s local time', () => {
     it('Tokyo: epoch 0 → 09:00:00', () => {
       const clock = makeClock();

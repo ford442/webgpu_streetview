@@ -231,7 +231,6 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         rearGlassMesh: host.rearGlassMesh,
         clinical: host.vehicleConfig.theme === 'clinical',
         emitterGlows: host.emitterGlowSprites,
-        dashLightColor: parseInt(host.vehicleConfig.accentColor.replace('#', '0x')),
     });
 
     if (host.vehicleConfig.hasDashboard && host.quality !== 'low') {

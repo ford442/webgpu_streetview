@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { VehicleConfig } from '../VehicleManager';
 import { resolveGaugeLayout, type GaugeLayoutConfig } from '../vehicleLayout';
+import { CONTENT_MAP_EMISSIVE } from './cabinLightingRamps';
 import { DigitalClock } from './DigitalClock';
 
 export const SPEED_DIAL_MAX_KMH = 180;
@@ -191,16 +192,19 @@ export class CarInteriorGauges {
     private static buildDialMesh(
         canvas: HTMLCanvasElement,
         radius: number,
-        emissive: number,
         anisotropy: number
     ): { mesh: THREE.Mesh; material: THREE.MeshStandardMaterial } {
         const tex = new THREE.CanvasTexture(canvas);
         tex.anisotropy = anisotropy;
         tex.colorSpace = THREE.SRGBColorSpace;
+        // Emissive stays white. The painted face is the emissiveMap, and Three
+        // multiplies the two — a dark tint (the old per-dial 0x002211) crushes
+        // the ticks no matter what gaugeDialGlow sets the intensity to.
         const material = new THREE.MeshStandardMaterial({
             map: tex,
-            roughness: 0.7,
-            emissive: new THREE.Color(emissive),
+            roughness: 0.55,
+            metalness: 0.02,
+            emissive: new THREE.Color(CONTENT_MAP_EMISSIVE),
             emissiveIntensity: 0.25,
             emissiveMap: tex,
         });
@@ -228,8 +232,8 @@ export class CarInteriorGauges {
             color,
             emissive: color,
             emissiveIntensity: 1.0,
-            roughness: 0.4,
-            metalness: 0.1,
+            roughness: 0.32,
+            metalness: 0.08,
         });
         const mesh = new THREE.Mesh(geo, material);
         return { mesh, material };
@@ -257,7 +261,7 @@ export class CarInteriorGauges {
                 minorTicksPerMajor: 5,
                 unit: 'km/h',
             }),
-            L.dialRadius, 0x002211, anisotropy
+            L.dialRadius, anisotropy
         );
         speedDial.mesh.position.set(L.speed.x, L.speed.y, L.speed.z);
         interiorGroup.add(speedDial.mesh);
@@ -280,7 +284,7 @@ export class CarInteriorGauges {
                 unit: 'x1000',
                 redlineFrac: TACHO_REDLINE_RPM / TACHO_DIAL_MAX_RPM,
             }),
-            L.dialRadius, 0x220800, anisotropy
+            L.dialRadius, anisotropy
         );
         tachoDial.mesh.position.set(L.tacho.x, L.tacho.y, L.tacho.z);
         interiorGroup.add(tachoDial.mesh);
@@ -307,7 +311,7 @@ export class CarInteriorGauges {
                     minorTicksPerMajor: 2,
                     unit: 'FUEL',
                 }),
-                miniRadius, 0x221400, anisotropy
+                miniRadius, anisotropy
             );
             fuelDial.mesh.position.set(L.fuel.x, L.fuel.y, L.fuel.z);
             interiorGroup.add(fuelDial.mesh);
@@ -328,7 +332,7 @@ export class CarInteriorGauges {
                     unit: 'TEMP',
                     redlineFrac: 0.86,
                 }),
-                miniRadius, 0x081422, anisotropy
+                miniRadius, anisotropy
             );
             tempDial.mesh.position.set(L.temp.x, L.temp.y, L.temp.z);
             interiorGroup.add(tempDial.mesh);

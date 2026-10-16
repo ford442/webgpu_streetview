@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
-import { locationPanelGlowFromNight } from './cabinLightingRamps';
+import { CONTENT_MAP_EMISSIVE, locationPanelGlowFromNight } from './cabinLightingRamps';
 
 /**
  * LocationPanel
@@ -40,11 +40,13 @@ export class LocationPanel {
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.anisotropy = gpuProfileName === 'high' ? 8 : 4;
     this.texture.generateMipmaps = true;
+    this.texture.colorSpace = THREE.SRGBColorSpace;
 
-    const accentHex = parseInt(this.accent.replace('#', '0x')) || 0x00ffcc;
+    // VFD glyphs are painted in the accent colour. White emissive lets that
+    // paint through; an accent emissive would multiply it a second time.
     this.material = new THREE.MeshStandardMaterial({
       map: this.texture,
-      emissive: new THREE.Color(accentHex),
+      emissive: new THREE.Color(CONTENT_MAP_EMISSIVE),
       emissiveIntensity: 0.6,
       emissiveMap: this.texture,
       roughness: 0.28,

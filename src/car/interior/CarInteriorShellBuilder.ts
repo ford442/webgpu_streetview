@@ -152,13 +152,20 @@ export class CarInteriorShellBuilder {
 
         const fixtureGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.012, 24);
         const fixtureMat = new THREE.MeshStandardMaterial({
-            color: 0xf2ead8, emissive: 0xFFE8B0, emissiveIntensity: 0,
-            roughness: 0.28, metalness: 0.15,
+            // Dark smoked lens. A cream albedo stays a pale disc when the
+            // lamp is off, because the dash spill still lights it.
+            color: 0x2a241c, emissive: 0xFFE8B0, emissiveIntensity: 0,
+            roughness: 0.42, metalness: 0.02,
         });
         const domeLightFixtureMesh = new THREE.Mesh(fixtureGeo, fixtureMat);
         // Hangs just under the headliner (sedan roof slab underside is 1.575,
         // the Cortianics glass 1.57). At 1.59 the disc sat inside the slab.
         domeLightFixtureMesh.position.set(0, 1.56, 0.3);
+        // The dome point light is centimetres away. On layer 0 it inverse-square
+        // lights this diffuser to a flat white disc. Layer 1 keeps the emissive
+        // as the visible source; the light still fills the cabin on layer 0.
+        // The cabin camera enables layer 1 (see CarInteriorBootstrap).
+        domeLightFixtureMesh.layers.set(1);
         mountGroup.add(domeLightFixtureMesh);
 
         if (this.quality !== 'low') {

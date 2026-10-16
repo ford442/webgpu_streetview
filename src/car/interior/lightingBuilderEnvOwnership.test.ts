@@ -28,6 +28,7 @@ vi.mock('./cabinPmrem', () => ({
     })),
 }));
 
+import { DASH_SPILL_COLOR } from './cabinLightingRamps';
 import { buildInteriorLighting } from './LightingBuilder';
 import { createCabinPmrem } from './cabinPmrem';
 
@@ -100,5 +101,11 @@ describe('LightingBuilder — studio IBL ownership', () => {
         expect(lights.sunLight).toBeInstanceOf(THREE.DirectionalLight);
         expect(lights.domeLightSource).toBeInstanceOf(THREE.PointLight);
         expect(scene.environment).toBeNull();
+        // Accent stays on emissive trim. The dash point is a warm spill for
+        // every vehicle, including the green sedan.
+        expect(lights.dashLight.color.getHex()).toBe(DASH_SPILL_COLOR);
+        expect(lights.dashLight.color.getHex()).not.toBe(
+            parseInt(VEHICLES.sedan.accentColor.replace('#', ''), 16),
+        );
     });
 });
