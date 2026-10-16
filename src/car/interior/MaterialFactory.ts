@@ -107,11 +107,11 @@ function brushedMetalRoughnessTexture(size: number): THREE.CanvasTexture {
     const img = ctx.createImageData(size, size);
     const d = img.data;
     for (let y = 0; y < size; y++) {
-      const streak = 50 + Math.random() * 40;
+      const streak = 110 + Math.random() * 50;
       for (let x = 0; x < size; x++) {
-        const v = streak + (Math.random() - 0.5) * 18;
+        const v = streak + (Math.random() - 0.5) * 16;
         const i = (y * size + x) * 4;
-        d[i] = d[i + 1] = d[i + 2] = Math.max(30, Math.min(120, v));
+        d[i] = d[i + 1] = d[i + 2] = Math.max(80, Math.min(190, v));
         d[i + 3] = 255;
       }
     }
@@ -147,8 +147,9 @@ export function registerGlowMaterial(
   glowRegistry.push({ material, base: baseIntensity });
 }
 
-/** Base emissive of the shared `materials.accent` (shifter knob, stalk tips). */
-export const ACCENT_TRIM_GLOW_BASE = 0.2;
+/** Base emissive of the shared `materials.accent` (shifter knob, stalk tips).
+ *  Kept under the bezel rings: a 0.2 base turned the knob into a green bulb. */
+export const ACCENT_TRIM_GLOW_BASE = 0.1;
 
 /** Registry base for an accent piece: the neon theme lifts every accent 1.6x. */
 export function accentGlowBase(config: VehicleConfig, emissiveIntensity: number): number {
@@ -205,13 +206,15 @@ export function createAccentMaterial(
   const base = accentGlowBase(config, emissiveIntensity);
   const material = new THREE.MeshPhysicalMaterial({
     color: accentHex,
-    roughness: 0.3,
-    metalness: 0.65,
+    // Painted trim, not chrome: the emissive term is the light, clearcoat
+    // is the lacquer that catches the pano.
+    roughness: 0.42,
+    metalness: 0.12,
     emissive: accentHex,
     emissiveIntensity: base,
-    envMapIntensity: 0.8,
-    clearcoat: 0.9,
-    clearcoatRoughness: 0.12,
+    envMapIntensity: 0.55,
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.2,
     side: THREE.DoubleSide,
   });
   registerGlowMaterial(material, base);
@@ -238,10 +241,12 @@ export function createMaterials(
         Math.cos(px * 0.1 - py * 0.15) *
         10;
       const micro = Math.sin(px * 0.9) * Math.cos(py * 0.7) * 3;
-      const v = 58 + fine + coarse + micro;
-      data[i] = Math.max(30, Math.min(115, v));
-      data[i + 1] = Math.max(18, Math.min(82, v * 0.71));
-      data[i + 2] = Math.max(8, Math.min(55, v * 0.54));
+      // ~0.08 linear at the mean: dark leather the sun can still model.
+      // The old ~58 base sat near 0.04 and read as an unlit box by day.
+      const v = 82 + fine + coarse + micro;
+      data[i] = Math.max(42, Math.min(145, v));
+      data[i + 1] = Math.max(26, Math.min(108, v * 0.71));
+      data[i + 2] = Math.max(14, Math.min(78, v * 0.54));
       data[i + 3] = 255;
     }
     // Stitch thread color where the height field raises the seam dashes
@@ -291,8 +296,8 @@ export function createMaterials(
   // 0x1a1a1a (~0.010): at that level neither the sun nor the pano IBL could
   // model the dash, and at night nothing short of an emitter showed on it.
   const dashboardColors: Record<string, number> = {
-    dark: 0x2c2c30,
-    light: 0x3a3a3c,
+    dark: 0x343438,
+    light: 0x3e3e42,
     neon: 0x0a0a1a,
     // Cool instrument-bay grey — lighter than sedan, not hospital-white
     // so night IBL (0.18) does not read as a fluorescent room.
@@ -313,14 +318,16 @@ export function createMaterials(
     map: clinical ? null : dashTex,
     normalMap: clinical ? null : dashNormalTex,
     normalScale: new THREE.Vector2(0.4, 0.4),
-    roughness: clinical ? 0.32 : 0.82,
-    metalness: clinical ? 0.12 : 0.03,
-    clearcoat: clinical ? 0.7 : 0.18,
-    clearcoatRoughness: clinical ? 0.18 : 0.55,
-    sheen: clinical ? 0 : 0.22,
-    sheenRoughness: 0.85,
-    sheenColor: new THREE.Color(0x1a1a1a),
-    envMapIntensity: clinical ? 0.55 : 0.58,
+    // Soft-touch, not chalk: roughness high enough to kill mirror highlights,
+    // clearcoat low enough that the pano and cluster still catch the top.
+    roughness: clinical ? 0.26 : 0.56,
+    metalness: clinical ? 0.08 : 0.04,
+    clearcoat: clinical ? 0.75 : 0.34,
+    clearcoatRoughness: clinical ? 0.14 : 0.36,
+    sheen: clinical ? 0 : 0.16,
+    sheenRoughness: 0.7,
+    sheenColor: new THREE.Color(clinical ? 0xd5dee6 : 0x5c5c62),
+    envMapIntensity: clinical ? 0.7 : 0.82,
     side: THREE.DoubleSide,
   });
 
@@ -329,30 +336,34 @@ export function createMaterials(
     map: leatherTex,
     normalMap: leatherNormalTex,
     normalScale: new THREE.Vector2(0.75, 0.75),
-    roughness: cortianics ? 0.58 : clinical ? 0.62 : 0.7,
+    roughness: cortianics ? 0.5 : clinical ? 0.5 : 0.52,
     metalness: 0,
-    sheen: cortianics ? 0.55 : 0.42,
-    sheenRoughness: 0.62,
-    sheenColor: new THREE.Color(cortianics ? 0x2a2c2e : clinical ? 0x8899aa : 0x3a2a1a),
-    envMapIntensity: 0.48,
+    clearcoat: cortianics ? 0.28 : clinical ? 0.2 : 0.22,
+    clearcoatRoughness: cortianics ? 0.32 : clinical ? 0.35 : 0.4,
+    sheen: cortianics ? 0.48 : 0.36,
+    sheenRoughness: 0.5,
+    // Sheen was near-black, so grazing light never showed. Warm tan on the
+    // sedan, cool grey in the lab, muted on the GT.
+    sheenColor: new THREE.Color(cortianics ? 0x9a9078 : clinical ? 0xd5dee6 : 0xc4a07a),
+    envMapIntensity: cortianics ? 0.66 : clinical ? 0.62 : 0.72,
     side: THREE.DoubleSide,
   });
 
   // Brushed metal: streaked roughness map breaks up reflections along the grain.
   const metal = new THREE.MeshPhysicalMaterial({
     color: clinical ? 0xd4d4d4 : 0x969696,
-    roughness: detailMaps ? 1.0 : 0.22,
+    roughness: detailMaps ? 1.0 : 0.45,
     roughnessMap: detailMaps ? brushedMetalRoughnessTexture(128) : null,
-    metalness: 0.88,
-    envMapIntensity: 1,
+    metalness: 0.82,
+    envMapIntensity: 0.85,
     side: THREE.DoubleSide,
   });
 
   const frame = new THREE.MeshStandardMaterial({
     color: clinical ? 0x8a9298 : 0x222226,
-    roughness: clinical ? 0.55 : 0.88,
+    roughness: clinical ? 0.48 : 0.78,
     metalness: 0,
-    envMapIntensity: 0.28,
+    envMapIntensity: clinical ? 0.45 : 0.42,
     side: THREE.DoubleSide,
   });
 
@@ -378,12 +389,12 @@ export function createMaterials(
 
   // Polished chrome for vent surrounds, rings, handles.
   const chrome = new THREE.MeshPhysicalMaterial({
-    color: 0xe8e8e8,
-    roughness: 0.08,
+    color: 0xd0d0d0,
+    roughness: 0.18,
     metalness: 1,
-    clearcoat: 1,
-    clearcoatRoughness: 0.06,
-    envMapIntensity: 1.4,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.2,
+    envMapIntensity: 0.85,
   });
 
   return { dashboard, leather, metal, frame, glass, mirror, accent, chrome };

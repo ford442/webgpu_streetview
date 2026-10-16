@@ -115,6 +115,9 @@ export function bootstrapCarInterior(
     camera.position.set(0, 0, 0);
     camera.rotation.order = 'YXZ';
     camera.rotation.set(0, 0, 0);
+    // See the dome diffuser, which lives on layer 1 so its own point light
+    // cannot blow it out. Everything else stays on layer 0.
+    camera.layers.enable(1);
 
     const cabinRenderer = readyHandle ?? createCabinRenderer({ gpuProfile, sharedDevice });
     const { renderer, isReady: isRendererReady } = cabinRenderer;

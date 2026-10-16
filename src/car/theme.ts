@@ -74,18 +74,22 @@ export function applyTheme(
   }
 ): React.CSSProperties {
   const glow = overrides.ambientLightColor ?? base['--ambient-glow'];
-  const style: Theme = {
+  const style: Theme & Record<string, string> = {
     ...base,
     '--ambient-glow': glow,
     '--night-intensity': (overrides.nightIntensity ?? 0).toString(),
   };
+  const accent = overrides.accent ? normalizeHex(overrides.accent) : base['--accent'];
   if (overrides.accent) {
-    const accent = normalizeHex(overrides.accent);
     style['--accent'] = accent;
     style['--accent-hover'] = hexToRgba(accent, 0.3);
     style['--accent-active'] = hexToRgba(accent, 0.45);
     style['--border-hover'] = hexToRgba(accent, 0.3);
   }
+  // HUD controls read --color-primary. Leaving the stylesheet default
+  // (#00d4ff) paints a night-cyan wash that the 3D cluster does not have.
+  style['--color-primary'] = accent;
+  style['--color-glow'] = hexToRgba(accent, 0.28);
   return style as React.CSSProperties;
 }
 
