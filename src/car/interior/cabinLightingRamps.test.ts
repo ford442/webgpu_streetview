@@ -67,10 +67,21 @@ describe('cabinLightingRamps', () => {
     expect(fill.dome).toBe(0);
     expect(fill.headlights).toBeGreaterThan(0);
     expect(fill.headlights).toBeLessThan(0.35);
-    expect(fill.dash).toBeGreaterThan(0.15);
-    expect(fill.dash).toBeLessThan(0.45);
+    // Faint spill: at 0.32 the patch above the cluster measured luma 56 against
+    // the cluster's 36 (software WebGPU, sedan, driver framing).
+    expect(fill.dash).toBeGreaterThan(0.12);
+    expect(fill.dash).toBeLessThan(0.2);
     expect(fill.bounce).toBeGreaterThan(0.1);
-    expect(fill.bounce).toBeLessThan(0.3);
+    expect(fill.bounce).toBeLessThan(0.2);
+  });
+
+  it('headlights lift the dash spill and bounce only a little at night', () => {
+    const base = { effectiveNight: 1, rain: 0, domeLightOn: false };
+    const off = cabinFillTargets({ ...base, headlightsOn: false });
+    const on = cabinFillTargets({ ...base, headlightsOn: true });
+    expect(off.bounce).toBe(0);
+    expect(on.dash).toBeGreaterThan(off.dash);
+    expect(on.dash).toBeLessThan(off.dash * 1.6);
   });
 
   it('dome halo is night-weighted: faint by day, strong at night', () => {
