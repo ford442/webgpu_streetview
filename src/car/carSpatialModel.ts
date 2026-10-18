@@ -3,18 +3,27 @@
  *
  * World model
  * -----------
- * - **Car body / chassis** (`carHeading`): yaw of the vehicle in world space.
- *   Dashboard, A-pillars, steering wheel, and mirror frame are locked to this.
- * - **Head / free-look** (`heading` / `pitch` in StreetViewProvider): independent
- *   look direction. In `controlMode === 'freeLook'` (and `headCoupling === 'free'`),
- *   mouse drag pans the head only — it must **not** rotate the chassis.
- *   The cabin camera is scene-root, so it is aimed with world heading
- *   (`cabinCameraWorldYaw`), not the car-relative offset.
- * - **Steering** rotates `carHeading` only when:
- *     1. `controlMode === 'carSteer'`, or
- *     2. temporary steer from grabbing the steering wheel (`isTempSteerMode`), or
- *     3. explicit steer keys while in `carSteer` (A/D, Q/E).
- *   Shift / RMB / wheel alone must not steer in free-look.
+ * The Three.js cabin scene **is the car's frame**. Nothing in it turns with the
+ * world; world turning is expressed only through the Street View panorama.
+ *
+ * - **Car rig** (`interiorGroup`): holds the shell, dashboard, steering wheel,
+ *   mirrors. Identity rotation, always — it never rotates for mouse input,
+ *   steering, or `carHeading`.
+ * - **Head pivot** (`headPivot`, child of the car rig at the driver's eye
+ *   point) → **camera** (child of the pivot, `rotation.order = 'YXZ'`). The
+ *   camera's local rotation is the head pose and nothing else. The interior is
+ *   never a child of the camera or the pivot.
+ * - **State**: `carHeading` (deg, compass, clockwise from north, `povStore`)
+ *   and `headYaw` / `headPitch` (radians, car-local, +yaw = look LEFT,
+ *   +pitch = look UP, `cabinHeadStore`). The Street View POV is *derived*
+ *   from them once per frame by `panoramaPovFromCabin` — the minus sign there
+ *   is the compass (clockwise) vs Three.js (counter-clockwise) convention gap.
+ * - **World-anchored cabin lighting** (sun light, pano IBL) is placed at the
+ *   compass bearing *relative to the car* (`carRelativeBearing`), since the
+ *   scene itself never yaws.
+ * - **Input modes** (`car/input/cabinInputMachine.ts`): only STEER changes
+ *   `carHeading` from the mouse; FREE_LOOK changes the head only;
+ *   UI_INTERACT changes nothing but the cursor.
  *
  * Night exposure floors (shared by WGSL + GLSL reference comments/tests)
  * ---------------------------------------------------------------------
@@ -49,16 +58,77 @@ export const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
 /** Parked wiper base angle (radians). */
 export const WIPER_PARK_ANGLE = Math.PI / 6;
 
+const DEG = Math.PI / 180;
+
+const normalize360 = (deg: number): number => ((deg % 360) + 360) % 360;
+
+/** Head yaw clamp: ±90° (radians). */
+export const HEAD_YAW_LIMIT = Math.PI / 2;
+/** Head pitch clamp: −45°..+45° (radians). */
+export const HEAD_PITCH_MIN = -Math.PI / 4;
+export const HEAD_PITCH_MAX = Math.PI / 4;
+
+export function clampHeadYaw(yaw: number): number {
+  return Math.max(-HEAD_YAW_LIMIT, Math.min(HEAD_YAW_LIMIT, yaw));
+}
+
+export function clampHeadPitch(pitch: number): number {
+  return Math.max(HEAD_PITCH_MIN, Math.min(HEAD_PITCH_MAX, pitch));
+}
+
 /**
- * World-space yaw for the cabin camera (degrees, 0–360).
+ * The Street View POV for a car heading + car-local head pose — the one
+ * place the panorama's heading/pitch come from in car mode.
  *
- * The Three.js camera lives on the scene root, not under `interiorGroup`, so
- * its yaw must be the same Street View heading the panorama uses — not the
- * car-relative `headYawOffset`. Passing the offset yaws the overlay chassis
- * with look (default `carHeading` is 34°, camera would sit at 0°).
+ * `headYaw` is +left (Three.js, counter-clockwise) while compass heading is
+ * clockwise, hence `carHeading − yaw`.
  */
-export function cabinCameraWorldYaw(carHeading: number, headYawOffset: number): number {
-  return ((carHeading + headYawOffset) % 360 + 360) % 360;
+export function panoramaPovFromCabin(
+  carHeading: number,
+  headYaw: number,
+  headPitch: number,
+): { heading: number; pitch: number } {
+  return {
+    heading: normalize360(carHeading - headYaw / DEG),
+    pitch: headPitch / DEG,
+  };
+}
+
+/**
+ * Compass bearing → bearing relative to the car's nose (degrees, clockwise).
+ * Anything world-anchored in the cabin scene (sun, pano IBL) goes through this,
+ * because the scene is the car's frame and never yaws itself.
+ */
+export function carRelativeBearing(compassBearing: number, carHeading: number): number {
+  return normalize360(compassBearing - carHeading);
+}
+
+/** Frame-rate-independent exponential decay toward 0: `x · e^(−k·dt)`. */
+export function dampTowardZero(x: number, k: number, dt: number): number {
+  return x * Math.exp(-k * Math.max(0, dt));
+}
+
+/** Rate (1/s) the head eases back to centre while steering. */
+export const STEER_HEAD_RECENTER_RATE = 4;
+
+/** Mouse-look sensitivity in FREE_LOOK (radians per pixel of movement). */
+export const FREE_LOOK_RAD_PER_PX = 0.0025;
+
+/** Mouse steering sensitivity in STEER (degrees of carHeading per pixel). */
+export const STEER_DEG_PER_PX = 0.15;
+
+/** Fastest the chassis may yaw from mouse steering (degrees per second). */
+export const MAX_STEER_RATE_DPS = 180;
+
+/**
+ * Mouse-X → `carHeading` delta (degrees), rate-limited to
+ * `MAX_STEER_RATE_DPS` over the time since the previous steer event (`dtS`,
+ * clamped to a frame-ish window so one stalled event can't snap the car).
+ */
+export function steerDeltaFromMouse(movementX: number, dtS: number): number {
+  const window = Math.min(0.1, Math.max(1 / 240, dtS));
+  const limit = MAX_STEER_RATE_DPS * window;
+  return Math.max(-limit, Math.min(limit, movementX * STEER_DEG_PER_PX));
 }
 
 /**
@@ -68,22 +138,6 @@ export function cabinCameraWorldYaw(carHeading: number, headYawOffset: number): 
 export function cabinAudioPanFromHeadYaw(headHeading: number, carHeading: number): number {
   const signed = signedAngleDiff(headHeading, carHeading);
   return Math.max(-1, Math.min(1, signed / 90));
-}
-
-/**
- * Whether a free-look mouse drag should steer the chassis.
- * Only steering-wheel grabs (temp-steer handoff frames) may steer in free-look.
- * RMB / Shift alone must not.
- */
-export function freeLookDragShouldSteer(opts: {
-  isSteeringWheelDrag: boolean;
-  isRightMouse?: boolean;
-  shiftKey?: boolean;
-}): boolean {
-  // Explicitly ignore RMB/shift — documented free-look contract.
-  void opts.isRightMouse;
-  void opts.shiftKey;
-  return opts.isSteeringWheelDrag === true;
 }
 
 /** Low-quality static "on" pose for left/right wiper z-rotation (radians). */

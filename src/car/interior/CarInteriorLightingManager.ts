@@ -38,6 +38,10 @@ export class CarInteriorLightingManager {
     private isDomeLightOn: boolean = false;
     /** 0 = sun up, 1 = full night; derived from real sun altitude. */
     private sunNightFactor: number = 0;
+    private sunAzimuth = 0;
+    private sunAltitude = 0;
+    /** Car compass heading (radians): the scene is the car's frame, so the sun is placed relative to it. */
+    private carHeadingRad = 0;
     private headlightsOn = false;
     /** 0-1 rain intensity: overcast skies dim and diffuse the daylight. */
     private weatherIntensity: number = 0;
@@ -118,17 +122,11 @@ export class CarInteriorLightingManager {
      */
     public setSunState(azimuth: number, altitude: number): void {
         this.sunNightFactor = sunNightFactorFromAltitude(altitude);
+        this.sunAzimuth = azimuth;
+        this.sunAltitude = altitude;
 
         if (this.sunLight) {
-            const heading = azimuth + Math.PI;
-            const cosAlt = Math.cos(altitude);
-            const sinAlt = Math.sin(altitude);
-            this.sunLight.position.set(
-                Math.sin(heading) * cosAlt * 20,
-                sinAlt * 20,
-                -Math.cos(heading) * cosAlt * 20
-            );
-            this.sunLight.target.position.set(0, 0, 0);
+            this.placeSun();
 
             const strength = sunStrengthFromAltitude(altitude);
             this.sunBaseIntensity = sunBaseIntensityFromStrength(strength);
@@ -147,6 +145,33 @@ export class CarInteriorLightingManager {
         this.overheadLight?.color.copy(tint);
         this.leftWindowLight?.color.copy(tint);
         this.rightWindowLight?.color.copy(tint);
+    }
+
+    /**
+     * Car compass heading (degrees). The cabin scene never yaws with the car,
+     * so the sun light is re-placed at its bearing relative to the car's nose.
+     */
+    public setCarHeading(carHeading: number): void {
+        const rad = THREE.MathUtils.degToRad(carHeading);
+        if (rad === this.carHeadingRad) return;
+        this.carHeadingRad = rad;
+        this.placeSun();
+    }
+
+    private placeSun(): void {
+        if (!this.sunLight) return;
+        // SunCalc azimuth is from south (positive west); +π makes it a compass
+        // bearing, and subtracting the car heading makes it car-relative
+        // (`carSpatialModel.carRelativeBearing`). Bearing b maps to (sin b, ·, −cos b).
+        const bearing = this.sunAzimuth + Math.PI - this.carHeadingRad;
+        const cosAlt = Math.cos(this.sunAltitude);
+        const sinAlt = Math.sin(this.sunAltitude);
+        this.sunLight.position.set(
+            Math.sin(bearing) * cosAlt * 20,
+            sinAlt * 20,
+            -Math.cos(bearing) * cosAlt * 20
+        );
+        this.sunLight.target.position.set(0, 0, 0);
     }
 
     /** Night factor (0-1) derived from the last reported sun altitude. */

@@ -5,18 +5,17 @@ import type { CarHudMode } from './useCarHudMode';
 
 export interface CarControlModeOverlayProps {
   controlMode: ControlMode;
-  isTempSteerMode: boolean;
   hudMode: CarHudMode;
-  setControlMode: (mode: ControlMode) => void;
+  /** Runs inside the click handler — Steer/Free Look request pointer lock. */
+  selectControlMode: (mode: ControlMode) => void;
   setHudModeAndPersist: (mode: CarHudMode) => void;
   toggleDashboard: () => void;
 }
 
 export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
   controlMode,
-  isTempSteerMode,
   hudMode,
-  setControlMode,
+  selectControlMode,
   setHudModeAndPersist,
   toggleDashboard,
 }) => (
@@ -48,13 +47,10 @@ export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
         width: '8px',
         height: '8px',
         borderRadius: '50%',
-        background: controlMode === 'freeLook' ? '#4CAF50' : controlMode === 'uiMouse' ? '#2196F3' : '#FF9800',
-        boxShadow: `0 0 8px ${controlMode === 'freeLook' ? '#4CAF50' : controlMode === 'uiMouse' ? '#2196F3' : '#FF9800'}`,
+        background: controlMode === 'FREE_LOOK' ? '#4CAF50' : controlMode === 'UI_INTERACT' ? '#2196F3' : '#FF9800',
+        boxShadow: `0 0 8px ${controlMode === 'FREE_LOOK' ? '#4CAF50' : controlMode === 'UI_INTERACT' ? '#2196F3' : '#FF9800'}`,
       }} />
       <span style={{ fontWeight: 600 }}>{getModeDisplayName(controlMode)}</span>
-      {isTempSteerMode && (
-        <span style={{ color: '#FFCC80', fontSize: '10px' }}>(Temp)</span>
-      )}
     </div>
     <div style={{ fontSize: '10px', opacity: 0.7, lineHeight: '1.3' }}>
       {getModeDescription(controlMode)}
@@ -66,27 +62,27 @@ export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
       paddingTop: '8px',
       borderTop: '1px solid rgba(255,255,255,0.1)',
     }}>
-      {(['freeLook', 'uiMouse', 'carSteer'] as const).map((mode) => (
+      {(['FREE_LOOK', 'UI_INTERACT', 'STEER'] as const).map((mode) => (
         <button
           key={mode}
-          onClick={() => setControlMode(mode)}
+          onClick={() => selectControlMode(mode)}
           style={{
             flex: 1,
             padding: '4px 8px',
             background: controlMode === mode
-              ? (mode === 'freeLook' ? 'rgba(76,175,80,0.3)' : mode === 'uiMouse' ? 'rgba(33,150,243,0.3)' : 'rgba(255,152,0,0.3)')
+              ? (mode === 'FREE_LOOK' ? 'rgba(76,175,80,0.3)' : mode === 'UI_INTERACT' ? 'rgba(33,150,243,0.3)' : 'rgba(255,152,0,0.3)')
               : 'rgba(255,255,255,0.05)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '6px',
             color: controlMode === mode
-              ? (mode === 'freeLook' ? '#A5D6A7' : mode === 'uiMouse' ? '#90CAF9' : '#FFCC80')
+              ? (mode === 'FREE_LOOK' ? '#A5D6A7' : mode === 'UI_INTERACT' ? '#90CAF9' : '#FFCC80')
               : 'rgba(255,255,255,0.6)',
             cursor: 'pointer',
             fontSize: '10px',
             transition: 'all 0.2s',
           }}
         >
-          {mode === 'freeLook' ? 'Free' : mode === 'uiMouse' ? 'UI' : 'Steer'}
+          {mode === 'FREE_LOOK' ? 'Free' : mode === 'UI_INTERACT' ? 'UI' : 'Steer'}
         </button>
       ))}
     </div>

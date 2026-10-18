@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { PostProcessingManager } from './PostProcessingManager';
-import { CameraFovConfig, zoomToVerticalFov } from '../vehicleLayout';
+import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
 import type { CabinRenderer } from './createCabinRenderer';
 import { CabinFrameTarget } from './cabinFrameTarget';
 import { publishCabinCompositeState } from './cabinRendererProbe';
@@ -9,7 +9,8 @@ import type { CabinOverlaySource } from '../../renderer/cabinComposite';
 export class CarInteriorRenderer {
     /** Post-FX (bloom/SMAA/OutputPass) breaks alpha compositing over the WebGPU panorama. */
     private postProcessingActive = false;
-    private cameraFov: CameraFovConfig;
+    /** Last Street View store zoom; the FOV is re-derived from it on resize. */
+    private zoom = 1;
     /**
      * Set on the WebGPU cabin: the interior draws into a `GPUTexture` the
      * Street View renderer composites into its own frame, instead of a second
@@ -24,13 +25,10 @@ export class CarInteriorRenderer {
         private scene: THREE.Scene,
         private postProcessing: PostProcessingManager | undefined,
         private canvas: HTMLCanvasElement,
-        cameraFov: CameraFovConfig,
         /** WebGPU only — false until `createCabinRenderer`'s async init resolves; always true for WebGL. */
         private isRendererReady: () => boolean = () => true,
     ) {
-        this.cameraFov = cameraFov;
-        this.camera.fov = cameraFov.base;
-        this.camera.updateProjectionMatrix();
+        this.applyPanoramaFov();
 
         const adoption = CabinFrameTarget.create(this.renderer, {
             canvas: this.canvas,
@@ -52,12 +50,6 @@ export class CarInteriorRenderer {
     /** True while the cabin is actually feeding the one-frame compositor. */
     public isCompositedIntoRoadFrame(): boolean {
         return this.frameTarget?.isActive() === true;
-    }
-
-    public setCameraFov(fov: CameraFovConfig): void {
-        this.cameraFov = fov;
-        this.camera.fov = fov.base;
-        this.camera.updateProjectionMatrix();
     }
 
     public render(): void {
@@ -93,16 +85,29 @@ export class CarInteriorRenderer {
     }
 
     public resize(width: number, height: number): void {
+        if (width <= 0 || height <= 0) return;
         this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
+        this.applyPanoramaFov();
         this.renderer.setSize(width, height);
         if (this.postProcessing) {
             this.postProcessing.setSize(width, height);
         }
     }
 
+    /**
+     * Match the panorama's field of view. Street View zoom is a horizontal FOV
+     * (≈ 180° / 2^zoom) and `camera.fov` is vertical, so this depends on the
+     * aspect and is re-run on resize. A mismatch makes the outside slide
+     * against the window frames as the head turns. (The per-vehicle
+     * `cameraFov` endpoints no longer drive the cabin camera for that reason.)
+     */
     public setZoomFOV(zoom: number): void {
-        this.camera.fov = zoomToVerticalFov(zoom, this.cameraFov);
+        this.zoom = zoom;
+        this.applyPanoramaFov();
+    }
+
+    private applyPanoramaFov(): void {
+        this.camera.fov = panoramaMatchedVerticalFov(this.zoom, this.camera.aspect);
         this.camera.updateProjectionMatrix();
     }
 

@@ -4,13 +4,13 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CarInputHandler from '../CarInputHandler';
 import { povStore } from '../../state/povStore';
+import { cabinHeadStore } from '../../state/cabinHeadStore';
+import type { ControlMode } from '../../car/input/cabinInputMachine';
 
-let controlMode: 'freeLook' | 'uiMouse' | 'carSteer' = 'freeLook';
+let controlMode: ControlMode = 'FREE_LOOK';
 
 vi.mock('../../hooks/useStreetView', () => ({
   useStreetView: () => ({
-    setHeading: povStore.setHeading,
-    setPitch: povStore.setPitch,
     setZoom: povStore.setZoom,
     advance: vi.fn(),
   }),
@@ -20,12 +20,7 @@ vi.mock('../../hooks/useViewMode', () => ({
   useViewMode: () => ({
     toggleViewMode: vi.fn(),
     controlMode,
-    toggleControlMode: vi.fn(),
-    headCoupling: 'free',
-    startTempSteerMode: vi.fn(),
-    endTempSteerMode: vi.fn(),
-    isTempSteerMode: false,
-    setCarHeading: povStore.setCarHeading,
+    dispatchCabinInput: vi.fn(() => null),
   }),
 }));
 
@@ -50,24 +45,27 @@ function runFrames(ms: number, frameMs: number) {
   }
 }
 
+const yawDeg = () => (cabinHeadStore.get().headYaw * 180) / Math.PI;
+
 describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
-    controlMode = 'freeLook';
+    controlMode = 'FREE_LOOK';
     povStore.reset({ heading: 100, pitch: 10, carHeading: 100 });
+    cabinHeadStore.reset();
   });
   afterEach(() => vi.useRealTimers());
 
-  it('turns at KEYBOARD_LOOK_RATE deg/s regardless of frame rate', () => {
+  it('turns the head at 90°/s regardless of frame rate (D = right = −yaw)', () => {
     for (const frameMs of [1000 / 120, 1000 / 60, 1000 / 30]) {
-      povStore.reset({ heading: 100 });
+      cabinHeadStore.reset();
       const { unmount } = render(<Harness />);
       act(() => key('keydown', 'd'));
-      runFrames(1000, frameMs);
+      runFrames(500, frameMs);
       act(() => key('keyup', 'd'));
-      // 90°/s for ~1 s (frame quantisation ≤ one frame of drift)
-      expect(povStore.get().heading).toBeCloseTo(190, -1);
-      expect(Math.abs(povStore.get().heading - 190)).toBeLessThan(8);
+      // 90°/s for ~0.5 s (frame quantisation ≤ one frame of drift)
+      expect(Math.abs(yawDeg() + 45)).toBeLessThan(4);
+      expect(povStore.get().carHeading).toBe(100);
       unmount();
     }
   });
@@ -76,34 +74,35 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
     render(<Harness />);
     act(() => key('keydown', 'd'));
     for (let i = 0; i < 50; i++) act(() => key('keydown', 'd', true));
-    const afterRepeats = povStore.get().heading;
-    expect(afterRepeats).toBe(100); // no frame has elapsed → no turn from keydown spam
-    runFrames(500, 1000 / 60);
+    expect(yawDeg()).toBe(0); // no frame has elapsed → no turn from keydown spam
+    runFrames(250, 1000 / 60);
     act(() => key('keyup', 'd'));
-    expect(Math.abs(povStore.get().heading - 145)).toBeLessThan(5);
+    expect(Math.abs(yawDeg() + 22.5)).toBeLessThan(3);
   });
 
-  it('A turns left, D turns right, both cancel, release stops the loop', () => {
+  it('A looks left, both cancel, release stops the loop; the head clamps at 90°', () => {
     render(<Harness />);
     act(() => key('keydown', 'a'));
     runFrames(500, 1000 / 60);
     act(() => key('keyup', 'a'));
-    expect(povStore.get().heading).toBeLessThan(100);
+    expect(yawDeg()).toBeGreaterThan(0);
 
-    povStore.reset({ heading: 100 });
+    cabinHeadStore.reset();
     act(() => {
       key('keydown', 'a');
       key('keydown', 'd');
     });
     runFrames(300, 1000 / 60);
-    expect(povStore.get().heading).toBe(100);
-
+    expect(yawDeg()).toBe(0);
     act(() => {
       key('keyup', 'a');
       key('keyup', 'd');
     });
-    runFrames(300, 1000 / 60);
-    expect(povStore.get().heading).toBe(100);
+
+    act(() => key('keydown', 'a'));
+    runFrames(3000, 1000 / 60);
+    act(() => key('keyup', 'a'));
+    expect(yawDeg()).toBeCloseTo(90, 6);
   });
 
   it('a sub-frame tap still turns proportionally to hold time', () => {
@@ -113,18 +112,18 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
       vi.advanceTimersByTime(10); // < one 60 Hz frame; the loop has not ticked yet
       key('keyup', 'd');
     });
-    expect(povStore.get().heading).toBeGreaterThan(100);
-    expect(povStore.get().heading).toBeLessThan(102);
+    expect(yawDeg()).toBeLessThan(0);
+    expect(yawDeg()).toBeGreaterThan(-2);
   });
 
-  it('steers the chassis (not the head) in carSteer mode', () => {
-    controlMode = 'carSteer';
+  it('steers the car (not the head) in STEER mode', () => {
+    controlMode = 'STEER';
     render(<Harness />);
     act(() => key('keydown', 'd'));
     runFrames(500, 1000 / 60);
     act(() => key('keyup', 'd'));
     expect(povStore.get().carHeading).toBeGreaterThan(110); // 60°/s × 0.5 s ≈ 30°
-    expect(povStore.get().heading).toBe(100); // headCoupling 'free' here
+    expect(cabinHeadStore.get().headYaw).toBe(0);
   });
 
   it('stops turning on window blur (no stuck key)', () => {
@@ -134,8 +133,8 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
     act(() => {
       window.dispatchEvent(new Event('blur'));
     });
-    const h = povStore.get().heading;
+    const h = yawDeg();
     runFrames(500, 1000 / 60);
-    expect(povStore.get().heading).toBe(h);
+    expect(yawDeg()).toBe(h);
   });
 });

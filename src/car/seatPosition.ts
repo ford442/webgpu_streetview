@@ -1,4 +1,4 @@
-/** Object3D-like seat group used while the Three.js graph is still booting. */
+/** Object3D-like head pivot used while the Three.js graph is still booting. */
 export interface SeatGroupLike {
     position?: { set: (x: number, y: number, z: number) => unknown };
 }
@@ -10,16 +10,17 @@ export interface SeatCameraPosition {
 }
 
 /**
- * Place the driver-seat group at the vehicle camera anchor plus seat slider.
+ * Place the head pivot (driver's eye point) at the vehicle camera anchor plus
+ * the seat slider.
  * Returns false when the graph is not ready (bootstrap / missing config) so
  * callers never read `.position` on undefined.
  */
 export function applyDriverSeatOffset(
-    driverSeatGroup: SeatGroupLike | null | undefined,
+    headPivot: SeatGroupLike | null | undefined,
     cameraPosition: SeatCameraPosition | null | undefined,
     seatOffset: number,
 ): boolean {
-    const position = driverSeatGroup?.position;
+    const position = headPivot?.position;
     if (!position || !cameraPosition) {
         return false;
     }

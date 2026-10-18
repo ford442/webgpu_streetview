@@ -13,7 +13,8 @@ import {
 import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
 import { getWindAudio } from '../../effects/WindAudio';
 import { isCabinEngineAttached } from '../../audio/carAudioGraph';
-import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
+import { panoramaPovFromCabin, wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
+import { applyHeadPose } from './cabinRig';
 
 export interface CarInteriorAmbientState {
   rainNorm: number;
@@ -39,7 +40,6 @@ export class CarInteriorAnimator {
   private wiperDwell: number = 0;
   private speedometer: number = 0;
   private tachometer: number = 0;
-  private isActive: boolean = true;
   private roofTargetY: number = 0;
   private ambientTime = 0;
   private ambient: CarInteriorAmbientState = {
@@ -67,9 +67,9 @@ export class CarInteriorAnimator {
   private nightFactor: number = 0;
   private headlightsOn: boolean = false;
 
-  // Last orientation setCarOrientation()/setHeadOrientation() were called
-  // with — cached so syncWindAudio() can drive WindAudio.setHeadingPan()
-  // every frame without every caller having to also pass heading into update().
+  // Last car heading / head pose — cached so syncWindAudio() can drive
+  // WindAudio.setHeadingPan() every frame without every caller having to also
+  // pass them into update().
   private lastCarHeading = 0;
   private lastHeadYaw = 0;
 
@@ -246,7 +246,8 @@ export class CarInteriorAnimator {
         });
       } else {
         wind.update(speed);
-        wind.setHeadingPan(this.lastHeadYaw, this.lastCarHeading);
+        const view = panoramaPovFromCabin(this.lastCarHeading, this.lastHeadYaw, 0);
+        wind.setHeadingPan(view.heading, this.lastCarHeading);
       }
     } else if (wind.isPlaying()) {
       wind.stop();
@@ -318,34 +319,23 @@ export class CarInteriorAnimator {
     }
   }
 
-  public setActive(active: boolean): void {
-    this.isActive = active;
-  }
-
-  public setCarOrientation(carHeading: number, bodyPitch: number = 0, bodyRoll: number = 0): void {
+  /**
+   * Record the car's compass heading (degrees). Deliberately touches no
+   * transform: the car rig stays at identity and world turning is the
+   * panorama's job (`carSpatialModel.ts`).
+   */
+  public setCarHeading(carHeading: number): void {
     this.lastCarHeading = carHeading;
-    const safePitch = this.isActive ? bodyPitch : 0;
-    const safeRoll = this.isActive ? bodyRoll : 0;
-    const yawRad = -THREE.MathUtils.degToRad(carHeading);
-    const pitchRad = THREE.MathUtils.degToRad(safePitch);
-    const rollRad = THREE.MathUtils.degToRad(safeRoll);
-    // Yaw first so look/steer pitch-roll cannot gimbal the chassis around Y.
-    this.interiorGroup.rotation.order = 'YXZ';
-    this.interiorGroup.rotation.set(pitchRad, yawRad, rollRad);
   }
 
   /**
-   * Aim the scene-root cabin camera.
-   * `headYaw` / `headPitch` are world-space degrees (Street View heading/pitch),
-   * not a car-relative offset — the camera is not parented to the chassis.
+   * Aim the camera with the car-local head pose (radians; +yaw = left,
+   * +pitch = up). The camera hangs off the head pivot inside the car rig,
+   * so this is the whole look — no world heading belongs here.
    */
   public setHeadOrientation(headYaw: number, headPitch: number): void {
     this.lastHeadYaw = headYaw;
-    const clampedPitch = Math.max(-45, Math.min(65, headPitch));
-    const localYaw = -THREE.MathUtils.degToRad(headYaw);
-    const localPitch = -THREE.MathUtils.degToRad(clampedPitch);
-    this.camera.rotation.order = 'YXZ';
-    this.camera.rotation.set(localPitch, localYaw, 0);
+    applyHeadPose(this.camera, headYaw, headPitch);
   }
 
   public setSteeringAngle(angle: number): void {

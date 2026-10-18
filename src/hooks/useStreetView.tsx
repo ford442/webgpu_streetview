@@ -8,6 +8,7 @@ import {
   STABILITY_POLL_INTERVAL_MS,
 } from '../utils/panoramaStability';
 import { povStore } from '../state/povStore';
+import { streetViewZoomLevel } from '../utils/streetViewFov';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
 import { HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer/historicalWipe';
 
@@ -149,7 +150,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (!pano || isPanoramaUpdatePausedRef.current) return;
     const { heading, pitch, zoom } = povStore.get();
     pano.setPov({ heading, pitch });
-    const panoZoom = Math.floor(zoom);
+    const panoZoom = streetViewZoomLevel(zoom);
     if (panoZoom !== pano.getZoom()) {
       pano.setZoom(panoZoom);
     }

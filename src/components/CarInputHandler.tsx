@@ -1,37 +1,63 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { povStore } from '../state/povStore';
-import { useViewMode, ControlMode } from '../hooks/useViewMode';
-import { freeLookDragShouldSteer } from '../car/carSpatialModel';
+import { cabinHeadStore } from '../state/cabinHeadStore';
+import { useViewMode } from '../hooks/useViewMode';
+import { applyPointerLockEffect, type CabinInputEvent } from '../car/input/cabinInputMachine';
+import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../car/carSpatialModel';
 
 interface CarInputHandlerProps {
+  /** The cabin view element: pointer-lock target and click surface. */
   targetRef: React.RefObject<HTMLElement | null>;
-  isSteeringWheelAtPoint?: (x: number, y: number) => boolean;
+  /**
+   * True when a UI_INTERACT click lands on a dashboard control handled
+   * elsewhere (e.g. the centre display's own click handler) — such a click
+   * must not grab the pointer.
+   */
+  isDashboardControlAtPoint?: (x: number, y: number) => boolean;
   onThrust?: (direction: 'forward' | 'backward') => void;
   onSteeringDelta?: (delta: number) => void;
   /** Notifies when the U key is pressed (used for long-press immersive HUD handling). */
   onHudKeyDown?: () => void;
   /** Notifies when the U key is released (used for long-press immersive HUD handling). */
   onHudKeyUp?: () => void;
+  /** UI_INTERACT raycast against cabin controls (buttons, knobs, levers). True = hit. */
   onInteriorPointerDown?: (clientX: number, clientY: number, editMode: boolean) => boolean;
   onInteriorPointerMove?: (clientX: number, clientY: number) => boolean;
   onInteriorPointerUp?: () => void;
-  interiorEditMode?: boolean;
 }
 
+/** Keyboard head turn in FREE_LOOK (radians per second). */
+const KEYBOARD_LOOK_RATE = Math.PI / 2;
+/** Keyboard steering in STEER / UI_INTERACT (degrees of carHeading per second). */
+const KEYBOARD_STEER_RATE = 60;
+const MAX_LOOK_DT_S = 0.1; // clamp after a stalled frame / background tab
+/** Steering-wheel visual turn per degree of heading change. */
+const WHEEL_PER_HEADING_DEG = 0.5;
+
 /**
- * CarInputHandler - Routes input by control mode:
- * - freeLook: click-drag = head look only; chassis stays put unless the user
- *   grabs the steering wheel (temp-steer → carSteer). RMB/Shift do NOT steer.
- *   A/D = head turn. No W/S drive.
- * - uiMouse: dashboard/menus only, right-drag = steer
- * - carSteer: click-drag X = steer car heading, drag Y = pitch, W/S = drive
+ * CarInputHandler — feeds DOM input to the cabin input machine
+ * (`car/input/cabinInputMachine.ts`) and applies the current mode:
  *
- * World model (car body vs head): see `src/car/carSpatialModel.ts`.
+ * - **STEER** (locked): mouse X → `carHeading` (rate-limited) + wheel. The head
+ *   eases back to centre in the frame loop (`useCarDashboardBridge`).
+ * - **FREE_LOOK** (locked; hold RMB or toggle F): mouse → `headYaw`/`headPitch`.
+ *   The car is untouched.
+ * - **UI_INTERACT** (unlocked): the mouse moves the cursor and nothing else;
+ *   clicks raycast dashboard controls; a click on bare cabin re-locks.
+ *
+ * Tab toggles UI_INTERACT ↔ the previous locked mode. Esc belongs to the
+ * browser — losing the lock (`pointerlockchange`) is what lands us in
+ * UI_INTERACT. The first mouse delta after any lock change is dropped
+ * (browsers report a spurious jump).
+ *
+ * Input only writes `carHeading` (povStore) and the head pose
+ * (`cabinHeadStore`); the Street View POV is derived from them once per frame.
+ * World model: `src/car/carSpatialModel.ts`.
  */
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,
-  isSteeringWheelAtPoint,
+  isDashboardControlAtPoint,
   onThrust,
   onSteeringDelta,
   onHudKeyDown,
@@ -39,125 +65,95 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   onInteriorPointerDown,
   onInteriorPointerMove,
   onInteriorPointerUp,
-  interiorEditMode = false,
 }) => {
-  const {
-    setHeading,
-    setPitch,
-    setZoom,
-    advance
-  } = useStreetView();
+  const { setZoom, advance } = useStreetView();
+  const { toggleViewMode, controlMode, dispatchCabinInput } = useViewMode();
 
-  const {
-    toggleViewMode,
-    controlMode,
-    toggleControlMode,
-    headCoupling,
-    startTempSteerMode,
-    endTempSteerMode,
-    isTempSteerMode,
-    setCarHeading,
-  } = useViewMode();
+  const callbacksRef = useRef({
+    isDashboardControlAtPoint,
+    onThrust,
+    onSteeringDelta,
+    onHudKeyDown,
+    onHudKeyUp,
+    onInteriorPointerDown,
+    onInteriorPointerMove,
+    onInteriorPointerUp,
+  });
+  callbacksRef.current = {
+    isDashboardControlAtPoint,
+    onThrust,
+    onSteeringDelta,
+    onHudKeyDown,
+    onHudKeyUp,
+    onInteriorPointerDown,
+    onInteriorPointerMove,
+    onInteriorPointerUp,
+  };
 
-  const isDraggingRef = useRef(false);
-  const isSteeringWheelDragRef = useRef(false);
-  const isRightMouseRef = useRef(false);
-  const dragStartedOnTargetRef = useRef(false);
-
-  const keysPressedRef = useRef<Set<string>>(new Set());
-  const onThrustRef = useRef(onThrust);
-  useEffect(() => { onThrustRef.current = onThrust; }, [onThrust]);
-  const onHudKeyDownRef = useRef(onHudKeyDown);
-  useEffect(() => { onHudKeyDownRef.current = onHudKeyDown; }, [onHudKeyDown]);
-  const onHudKeyUpRef = useRef(onHudKeyUp);
-  useEffect(() => { onHudKeyUpRef.current = onHudKeyUp; }, [onHudKeyUp]);
-  const onInteriorPointerDownRef = useRef(onInteriorPointerDown);
-  useEffect(() => { onInteriorPointerDownRef.current = onInteriorPointerDown; }, [onInteriorPointerDown]);
-  const onInteriorPointerMoveRef = useRef(onInteriorPointerMove);
-  useEffect(() => { onInteriorPointerMoveRef.current = onInteriorPointerMove; }, [onInteriorPointerMove]);
-  const onInteriorPointerUpRef = useRef(onInteriorPointerUp);
-  useEffect(() => { onInteriorPointerUpRef.current = onInteriorPointerUp; }, [onInteriorPointerUp]);
-  const interiorEditModeRef = useRef(interiorEditMode);
-  useEffect(() => { interiorEditModeRef.current = interiorEditMode; }, [interiorEditMode]);
+  // Survive listener re-registration on mode changes.
+  const skipNextMoveRef = useRef(false);
+  const lastSteerTimeRef = useRef<number | null>(null);
   const interiorDragRef = useRef(false);
+  const keysPressedRef = useRef<Set<string>>(new Set());
 
-  const HEAD_LOOK_SENSITIVITY = 0.18;
-  const KEYBOARD_LOOK_RATE = 90;
-  const KEYBOARD_STEER_RATE = 60;
-  const MAX_LOOK_DT_S = 0.1; // clamp after a stalled frame / background tab
-
-  const applySteering = useCallback((steerDelta: number) => {
-    setCarHeading(prev => ((prev + steerDelta + 360) % 360));
-    if (headCoupling === 'rigid') {
-      setHeading(prev => (prev + steerDelta + 360) % 360);
-    }
-    onSteeringDelta?.(steerDelta * 0.5);
-  }, [headCoupling, setCarHeading, setHeading, onSteeringDelta]);
-
-  const clearDragState = useCallback(() => {
-    if (isSteeringWheelDragRef.current) {
-      endTempSteerMode();
-    }
-    isDraggingRef.current = false;
-    isSteeringWheelDragRef.current = false;
-    isRightMouseRef.current = false;
-    dragStartedOnTargetRef.current = false;
-  }, [endTempSteerMode]);
-
-  // Drop any in-progress drag when switching control modes (but not during a
-  // steering-wheel hold, which intentionally switches into temp carSteer).
+  // Leaving the car view drops the lock and resets the machine.
   useEffect(() => {
-    if (controlMode === 'freeLook') {
-      isSteeringWheelDragRef.current = false;
-    }
-    if (!isTempSteerMode) {
-      clearDragState();
-    }
-  }, [controlMode, isTempSteerMode, clearDragState]);
+    const target = targetRef.current;
+    return () => {
+      applyPointerLockEffect(dispatchCabinInput({ type: 'RESET' }), target);
+    };
+  }, [dispatchCabinInput, targetRef]);
 
   useEffect(() => {
     const target = targetRef.current;
     if (!target) return;
 
-    const getEffectiveControlMode = (): ControlMode => controlMode;
+    const dispatch = (event: CabinInputEvent) => {
+      applyPointerLockEffect(dispatchCabinInput(event), target);
+    };
 
-    const isMouseButtonHeld = (e: MouseEvent): boolean =>
-      (e.buttons & 1) !== 0 || (e.buttons & 2) !== 0;
+    const steer = (deltaDeg: number) => {
+      if (deltaDeg === 0) return;
+      povStore.setCarHeading((prev) => prev + deltaDeg);
+      callbacksRef.current.onSteeringDelta?.(deltaDeg * WHEEL_PER_HEADING_DEG);
+    };
+
+    const turnHead = (dYaw: number, dPitch: number) => {
+      const { headYaw, headPitch } = cabinHeadStore.get();
+      cabinHeadStore.set({ headYaw: headYaw + dYaw, headPitch: headPitch + dPitch });
+    };
+
+    const handlePointerLockChange = () => {
+      skipNextMoveRef.current = true;
+      lastSteerTimeRef.current = null;
+      dispatch({ type: document.pointerLockElement === target ? 'LOCK_ACQUIRED' : 'LOCK_LOST' });
+    };
 
     const handleMouseDown = (e: MouseEvent) => {
-      const editMode = interiorEditModeRef.current || (e.shiftKey && controlMode === 'freeLook');
-      if (editMode && e.button === 0) {
-        const hit = onInteriorPointerDownRef.current?.(e.clientX, e.clientY, true);
-        if (hit) {
+      if (controlMode === 'UI_INTERACT') {
+        if (e.button !== 0) return;
+        // Only bare cabin counts. HUD overlays stop propagation in React, but
+        // React dispatches at the root — after this native listener has run.
+        if (e.target !== target && !(e.target instanceof HTMLCanvasElement)) return;
+        const cb = callbacksRef.current;
+        if (cb.onInteriorPointerDown?.(e.clientX, e.clientY, true)) {
           interiorDragRef.current = true;
           e.stopPropagation();
           return;
         }
+        if (cb.isDashboardControlAtPoint?.(e.clientX, e.clientY)) return;
+        dispatch({ type: 'CLICK_CABIN' });
+        return;
       }
-
-      if (controlMode === 'uiMouse' && e.button === 0) return;
-
-      if (e.button === 0) {
-        isDraggingRef.current = true;
-        dragStartedOnTargetRef.current = true;
-        const onWheel = !!isSteeringWheelAtPoint?.(e.clientX, e.clientY);
-        isSteeringWheelDragRef.current = onWheel;
-        if (getEffectiveControlMode() === 'freeLook' && onWheel) {
-          startTempSteerMode();
-        }
-        isRightMouseRef.current = false;
-      } else if (e.button === 2) {
-        isDraggingRef.current = true;
-        dragStartedOnTargetRef.current = true;
-        isRightMouseRef.current = true;
-        isSteeringWheelDragRef.current = false;
-      }
+      if (e.button === 2) dispatch({ type: 'RMB_DOWN' });
     };
 
-    const handleWheel = (e: WheelEvent) => {
-      if (controlMode === 'uiMouse') return;
-      e.preventDefault();
-      setZoom(prev => Math.max(0.5, Math.min(3, prev - e.deltaY * 0.001)));
+    const handleMouseUp = (e: MouseEvent) => {
+      if (interiorDragRef.current) {
+        interiorDragRef.current = false;
+        callbacksRef.current.onInteriorPointerUp?.();
+      }
+      if (e.button === 2) dispatch({ type: 'RMB_UP' });
     };
 
     const handleContextMenu = (e: MouseEvent) => {
@@ -166,63 +162,37 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
 
     const handleMouseMove = (e: MouseEvent) => {
       if (interiorDragRef.current) {
-        if (onInteriorPointerMoveRef.current?.(e.clientX, e.clientY)) {
-          return;
-        }
-      }
-
-      const currentMode = getEffectiveControlMode();
-      if (!isDraggingRef.current || !dragStartedOnTargetRef.current) return;
-
-      // Require an actual held mouse button — prevents stale drag state from
-      // mode switches or missed mouseup events from panning without a click.
-      if (!isMouseButtonHeld(e)) {
-        clearDragState();
+        callbacksRef.current.onInteriorPointerMove?.(e.clientX, e.clientY);
         return;
       }
-
-      if (currentMode === 'freeLook') {
-        // Chassis steers only during steering-wheel grab (temp-steer handoff
-        // frames before controlMode flips to carSteer). RMB/Shift do not steer.
-        const steeringDrag = freeLookDragShouldSteer({
-          isSteeringWheelDrag: isSteeringWheelDragRef.current,
-          isRightMouse: isRightMouseRef.current,
-          shiftKey: e.shiftKey,
-        });
-        if (steeringDrag) {
-          applySteering(e.movementX * 0.3);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        } else {
-          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        }
-      } else if (currentMode === 'carSteer') {
-        const maySteerChassis = !isTempSteerMode || isSteeringWheelDragRef.current;
-        if (maySteerChassis) {
-          applySteering(e.movementX * 0.3);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        } else {
-          setHeading(prev => (prev + e.movementX * HEAD_LOOK_SENSITIVITY + 360) % 360);
-          setPitch(prev => Math.max(-45, Math.min(65, prev - e.movementY * HEAD_LOOK_SENSITIVITY)));
-        }
-      } else if (currentMode === 'uiMouse' && isRightMouseRef.current) {
-        applySteering(e.movementX * 0.3);
+      // UI_INTERACT: the cursor moves; head, car and panorama do not.
+      if (controlMode === 'UI_INTERACT') return;
+      if (skipNextMoveRef.current) {
+        skipNextMoveRef.current = false;
+        return;
       }
+      const dx = e.movementX || 0;
+      const dy = e.movementY || 0;
+      if (controlMode === 'FREE_LOOK') {
+        // +yaw looks left, +pitch looks up; mouse right/up is +X/−Y.
+        turnHead(-dx * FREE_LOOK_RAD_PER_PX, -dy * FREE_LOOK_RAD_PER_PX);
+        return;
+      }
+      const last = lastSteerTimeRef.current;
+      lastSteerTimeRef.current = e.timeStamp;
+      const dt = last === null ? 1 / 60 : (e.timeStamp - last) / 1000;
+      steer(steerDeltaFromMouse(dx, dt));
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
-      if (interiorDragRef.current) {
-        interiorDragRef.current = false;
-        onInteriorPointerUpRef.current?.();
-      }
-      if (e.button === 0 || e.button === 2) {
-        clearDragState();
-      }
+    const handleWheel = (e: WheelEvent) => {
+      if (controlMode === 'UI_INTERACT') return;
+      e.preventDefault();
+      setZoom((prev) => Math.max(0.5, Math.min(3, prev - e.deltaY * 0.001)));
     };
 
     // Keyboard look/steer is frame-rate driven: while A/D are held a rAF loop
-    // integrates KEYBOARD_*_RATE (deg/s) over the real frame delta, so turn speed
-    // no longer depends on the OS key-repeat delay/rate.
+    // integrates the rate over the real frame delta, so turn speed does not
+    // depend on the OS key-repeat delay/rate.
     let lookRaf: number | null = null;
     let lookLast = 0;
     const lookDir = (): number =>
@@ -232,10 +202,10 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       lookLast = now;
       const dir = lookDir();
       if (dir === 0 || dt === 0) return;
-      if (controlMode === 'freeLook') {
-        setHeading(prev => prev + dir * KEYBOARD_LOOK_RATE * dt);
-      } else if (controlMode === 'carSteer') {
-        applySteering(dir * KEYBOARD_STEER_RATE * dt);
+      if (controlMode === 'FREE_LOOK') {
+        turnHead(-dir * KEYBOARD_LOOK_RATE * dt, 0);
+      } else {
+        steer(dir * KEYBOARD_STEER_RATE * dt);
       }
     };
     const lookFrame = (now: number) => {
@@ -267,27 +237,41 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       keysPressedRef.current.add(key);
 
       switch (key) {
+        case 'tab': {
+          // While the cursor is free and focus sits on a HUD control or a modal,
+          // Tab keeps its keyboard-navigation job.
+          const focused = document.activeElement;
+          const focusOnControl = focused instanceof HTMLElement && focused !== document.body && focused !== target;
+          if (!document.pointerLockElement && focusOnControl) break;
+          // Keydown is a user gesture, so a Tab back into a locked mode can
+          // request the lock right here.
+          e.preventDefault();
+          dispatch({ type: 'TAB' });
+          break;
+        }
+        case 'f':
+          // Shift+F is cinema mode (useAppKeyboardShortcuts).
+          if (!e.repeat && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            dispatch({ type: 'TOGGLE_FREE_LOOK' });
+          }
+          break;
         case 'w':
         case 'arrowup':
-          if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
           advance('forward', povStore.get().carHeading);
-          onThrustRef.current?.('forward');
+          callbacksRef.current.onThrust?.('forward');
           break;
         case 's':
         case 'arrowdown':
-          if (controlMode === 'freeLook') break;
           if (key.startsWith('arrow')) e.preventDefault();
           advance('backward', povStore.get().carHeading);
-          onThrustRef.current?.('backward');
+          callbacksRef.current.onThrust?.('backward');
           break;
         case 'arrowleft':
-          if (controlMode === 'freeLook') break;
           e.preventDefault();
           advance('left', povStore.get().carHeading);
           break;
         case 'arrowright':
-          if (controlMode === 'freeLook') break;
           e.preventDefault();
           advance('right', povStore.get().carHeading);
           break;
@@ -297,29 +281,23 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
           break;
         case 'q':
           e.preventDefault();
-          if (controlMode === 'carSteer') applySteering(-45);
+          if (controlMode !== 'FREE_LOOK') steer(-45);
           break;
         case 'e':
           e.preventDefault();
-          if (controlMode === 'carSteer') applySteering(45);
+          if (controlMode !== 'FREE_LOOK') steer(45);
           break;
         case 'c': {
-          const pov = povStore.get();
-          const headYawOffset = (pov.heading - pov.carHeading + 540) % 360 - 180;
-          if (Math.abs(headYawOffset) > 1 || Math.abs(pov.pitch - 10) > 1) {
-            setHeading(pov.carHeading);
-            setPitch(10);
+          const { headYaw, headPitch } = cabinHeadStore.get();
+          if (Math.abs(headYaw) > 0.017 || Math.abs(headPitch) > 0.017) {
+            cabinHeadStore.reset();
           } else {
             toggleViewMode();
           }
           break;
         }
-        case 'h':
-          clearDragState();
-          toggleControlMode();
-          break;
         case 'u':
-          if (!e.repeat) onHudKeyDownRef.current?.();
+          if (!e.repeat) callbacksRef.current.onHudKeyDown?.();
           break;
       }
     };
@@ -327,7 +305,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     const handleKeyUp = (e: KeyboardEvent) => {
       const upKey = e.key.toLowerCase();
       if (upKey === 'u') {
-        onHudKeyUpRef.current?.();
+        callbacksRef.current.onHudKeyUp?.();
       }
       // Credit the time held since the last frame so a sub-frame tap still turns.
       if (upKey === 'a' || upKey === 'd') stepLook(performance.now());
@@ -335,6 +313,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       keysPressedRef.current.delete(e.key);
     };
 
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
     target.addEventListener('mousedown', handleMouseDown);
     target.addEventListener('wheel', handleWheel, { passive: false });
     target.addEventListener('contextmenu', handleContextMenu);
@@ -347,6 +326,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
 
     return () => {
       stopLookLoop();
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
       window.removeEventListener('blur', handleBlur);
       target.removeEventListener('mousedown', handleMouseDown);
       target.removeEventListener('wheel', handleWheel);
@@ -356,25 +336,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [
-    targetRef,
-    isSteeringWheelAtPoint,
-    controlMode,
-    headCoupling,
-    setHeading,
-    setPitch,
-    setZoom,
-    advance,
-    toggleViewMode,
-    toggleControlMode,
-    startTempSteerMode,
-    endTempSteerMode,
-    setCarHeading,
-    applySteering,
-    onSteeringDelta,
-    isTempSteerMode,
-    clearDragState,
-  ]);
+  }, [targetRef, controlMode, dispatchCabinInput, setZoom, advance, toggleViewMode]);
 
   return null;
 };

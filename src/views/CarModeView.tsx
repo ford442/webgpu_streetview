@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
-import { useViewMode } from '../hooks/useViewMode';
+import { useViewMode, type ControlMode } from '../hooks/useViewMode';
+import { applyPointerLockEffect } from '../car/input/cabinInputMachine';
 import {
   useCarEnvSettings,
   useLightingSettings,
@@ -40,8 +41,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const sharedGpuDevice = renderer?.getSharedGpuDevice?.();
   const {
     controlMode,
-    setControlMode,
-    isTempSteerMode,
+    dispatchCabinInput,
     registerCarModeState,
   } = useViewMode();
 
@@ -121,7 +121,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const {
     telemetry,
     steeringInputRef,
-    isSteeringWheelAtPoint,
+    isDashboardControlAtPoint,
     handleDisplayMouseDown,
     handleDisplayClick,
     handleThrust,
@@ -131,7 +131,6 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     registerCarModeState,
     sharedGpuDevice,
     controlMode,
-    panorama,
     position,
     canvas,
     wipersEnabled,
@@ -164,6 +163,11 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   // Steering changes the pose without re-rendering this view; notifyPose gates by movement.
   usePovEffect((p) => p.carHeading, pushRearPose, { immediate: false });
 
+  // HUD mode buttons: a click is a user gesture, so the lock request can run here.
+  const selectControlMode = useCallback((mode: ControlMode) => {
+    applyPointerLockEffect(dispatchCabinInput({ type: 'SELECT_MODE', mode }), containerRef.current);
+  }, [dispatchCabinInput]);
+
   const handleToggleGPS = useCallback(() => {
     setIsMapOpen((prev) => !prev);
   }, []);
@@ -188,12 +192,13 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         overflow: 'hidden',
         backgroundColor: 'transparent',
         pointerEvents: 'auto',
-        cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'default',
+        // Locked modes hide the cursor anyway; UI_INTERACT shows a plain one.
+        cursor: 'default',
       }}
     >
       <CarInputHandler
         targetRef={containerRef}
-        isSteeringWheelAtPoint={isSteeringWheelAtPoint}
+        isDashboardControlAtPoint={isDashboardControlAtPoint}
         onThrust={handleThrust}
         onSteeringDelta={handleSteeringDelta}
         onHudKeyDown={handleHudKeyDown}
@@ -201,7 +206,6 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         onInteriorPointerDown={(x, y, edit) => handleCarInteriorPointerDown(x, y, edit)}
         onInteriorPointerMove={(x, y) => handleCarInteriorPointerMove(x, y)}
         onInteriorPointerUp={() => handleCarInteriorPointerUp()}
-        interiorEditMode={controlMode === 'uiMouse'}
       />
 
       <DashboardUI
@@ -283,9 +287,8 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
 
       <CarControlModeOverlay
         controlMode={controlMode}
-        isTempSteerMode={isTempSteerMode}
         hudMode={hudMode}
-        setControlMode={setControlMode}
+        selectControlMode={selectControlMode}
         setHudModeAndPersist={setHudModeAndPersist}
         toggleDashboard={toggleDashboard}
       />

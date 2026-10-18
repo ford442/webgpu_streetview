@@ -251,9 +251,6 @@ webgpu_streetview/
 │   │   ├── LightingEffects.ts
 │   │   ├── WindAudio.ts             # Procedural wind audio
 │   │   └── index.ts
-│   ├── animation/
-│   │   ├── PhysicsAnimations.ts     # Spring physics for UI / camera
-│   │   └── index.ts
 │   ├── audio/
 │   │   ├── AudioAnalyzer.ts         # Radio stream Web Audio analysis
 │   │   └── index.ts
@@ -335,9 +332,7 @@ State is no longer owned solely by `App.tsx`. Three React Context providers (plu
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
    - Owns `viewMode: 'freelook' | 'car'`.
    - Exposes `setCarHeading` (the value lives in `povStore.carHeading`, independent of head-look heading).
-   - Tracks `controlMode`: `freeLook` | `uiMouse` | `carSteer`.
-   - Tracks `headCoupling`: `rigid` (head turns with car) | `free` (head independent).
-   - Supports temporary steering mode (`startTempSteerMode` / `endTempSteerMode`) triggered by clicking the steering wheel.
+   - Exposes `controlMode`: `FREE_LOOK` | `STEER` | `UI_INTERACT`, derived from the pure cabin input machine (`src/car/input/cabinInputMachine.ts`, transition table `CABIN_INPUT_TRANSITIONS`), fed through `dispatchCabinInput(event)`. The returned pointer-lock effect must be run by the caller inside the same event handler (`applyPointerLockEffect`).
    - Initializes / toggles the Three.js car mode via `initCarMode()` from `src/car/index.ts`.
 
 3. **`EnvironmentSettingsProvider`** (`src/hooks/useEnvironmentSettings.tsx`)
@@ -610,12 +605,12 @@ sprite last.
 - `c` key → toggle car mode.
 - Guards against input when `document.activeElement` is an input/textarea.
 
-**CarInputHandler.tsx**:
-- Three control modes: `freeLook` (head look only), `uiMouse` (UI interaction, right-drag to steer), `carSteer` (mouse X steers car, A/D steer).
-- Temporary steering mode: clicking the steering wheel in `freeLook` enters `carSteer` temporarily; releasing ends it.
-- `h` key → toggle control mode.
-- `c` key → recenter head to car body, or toggle view mode if already centered.
-- `q` / `e` → snap steer ±45° in `carSteer` mode.
+**CarInputHandler.tsx** (pointer lock; modes from `cabinInputMachine.ts`):
+- `STEER` (locked, default on lock): mouse X → `carHeading` (rate-limited, `steerDeltaFromMouse`) + wheel; the head eases back to centre (`x·e^(−k·dt)`, in the bridge frame loop).
+- `FREE_LOOK` (locked): hold RMB (`contextmenu` is prevented) or latch with `F` → mouse moves `cabinHeadStore` (`headYaw` +left, `headPitch` +up, radians, clamped ±90° / ±45°). Car untouched.
+- `UI_INTERACT` (unlocked): cursor only; clicks raycast dashboard controls; a click on bare cabin requests the lock.
+- `Tab` toggles UI_INTERACT ↔ previous locked mode. Esc is the browser's: `pointerlockchange` (lock lost) lands in UI_INTERACT. The first mouse delta after any lock change is dropped.
+- `c` → recenter head, or toggle view mode if already centered. `q` / `e` → snap steer ±45° (not in FREE_LOOK). A/D steer, or turn the head in FREE_LOOK. W/S drive in every mode.
 
 Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `keydown`. Every UI overlay (panels, modals, inputs, dashboard buttons) **must** call `e.stopPropagation()` on mouse and keyboard events, or the panorama will spin when users type or click buttons.
 
@@ -855,14 +850,14 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 ### Car Spatial Correctness Manual Checklist
 Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `src/renderer/webgl/weatherReference.glsl.ts` (epic #171):
 
-**World model** (`src/car/carSpatialModel.ts`): car body yaw = `carHeading`; head look = Street View `heading`/`pitch`. Free-look pans the head only. Chassis steers only in `carSteer`, temp-steer (steering-wheel grab), or explicit steer keys.
+**World model** (`src/car/carSpatialModel.ts`): the cabin scene is the car's frame. `interiorGroup` (car rig) stays at identity; the camera hangs off `headPivot` and takes only the car-local head pose. Street View `heading`/`pitch` are derived once per frame (`car/input/cabinPovSync.ts`: `heading = carHeading − deg(headYaw)`), and the cabin FOV is the panorama's (`utils/streetViewFov.ts`). Only STEER moves `carHeading` from the mouse. Automated: `src/car/__tests__/cabinRig.acceptance.test.ts`.
 
 1. **Free-look vs chassis**
-   - Enter car mode (default control mode is free-look). Left-drag to look around the cabin and out the side windows.
-   - **Pass**: dashboard / A-pillars / steering wheel stay fixed; only the outside panorama and head camera move. `carHeading` must not change.
-   - **Fail**: chassis yaws while looking around; feeling of "fighting" the car body.
-   - Grab the steering wheel and drag — chassis may yaw (temp-steer). Release — back to head-only look.
-   - Press `H` into `carSteer`, drag — chassis yaws with mouse X. RMB/Shift in free-look must **not** steer.
+   - Enter car mode (starts in UI_INTERACT), click the cabin to grab the pointer (STEER). Hold RMB and look around the cabin and out the side windows.
+   - **Pass**: dashboard / A-pillars / steering wheel stay fixed; only the outside panorama and head camera move; the outside stays registered with the window frames (no sliding). `carHeading` must not change.
+   - **Fail**: chassis yaws while looking around; feeling of "fighting" the car body; scenery sliding against the frames.
+   - Release RMB — mouse X steers; turning right pans the outside leftward across the windshield, the cabin doesn't move, the head drifts back to centre.
+   - Tab / Esc → cursor visible, mouse wiggles change nothing, dashboard buttons click.
 
 2. **Rearview mirror — feed OFF (default)**
    - Look up at the interior rearview glass with the dashboard **Rear** button unlit.

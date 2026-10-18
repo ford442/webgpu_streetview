@@ -2,19 +2,19 @@ import type { ControlMode } from '../../hooks/useViewMode';
 
 export function getModeDisplayName(mode: ControlMode): string {
   switch (mode) {
-    case 'freeLook': return 'Free Look';
-    case 'uiMouse': return 'UI Mouse';
-    case 'carSteer': return 'Car Steer';
+    case 'FREE_LOOK': return 'Free Look';
+    case 'UI_INTERACT': return 'UI Mouse';
+    case 'STEER': return 'Car Steer';
   }
 }
 
 export function getModeDescription(mode: ControlMode): string {
   switch (mode) {
-    case 'freeLook':
-      return '🖱️ Click-drag = look around • A/D = turn head • Car stays put • Click wheel = steer';
-    case 'uiMouse':
-      return '🖱️ Dashboard controls • Click cabin knobs/buttons • Right-drag = steer • H = switch mode';
-    case 'carSteer':
-      return '🚗 Click-drag X = steer car • drag Y = look up/down • W/S = drive • Q/E = snap ±45°';
+    case 'FREE_LOOK':
+      return '🖱️ Mouse = look around the cabin • car stays put • release RMB / F = steer • Tab = cursor';
+    case 'UI_INTERACT':
+      return '🖱️ Cursor only • click knobs/buttons • click the cabin to grab the mouse • Tab = back to driving';
+    case 'STEER':
+      return '🚗 Mouse X = steer • hold RMB / F = free look • W/S = drive • Q/E = snap ±45° • Tab/Esc = cursor';
   }
 }

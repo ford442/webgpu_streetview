@@ -6,10 +6,6 @@ import CarInputHandler from '../CarInputHandler';
 
 vi.mock('../../hooks/useStreetView', () => ({
   useStreetView: () => ({
-    heading: 0,
-    pitch: 0,
-    setHeading: vi.fn(),
-    setPitch: vi.fn(),
     setZoom: vi.fn(),
     advance: vi.fn(),
   }),
@@ -18,14 +14,8 @@ vi.mock('../../hooks/useStreetView', () => ({
 vi.mock('../../hooks/useViewMode', () => ({
   useViewMode: () => ({
     toggleViewMode: vi.fn(),
-    controlMode: 'freeLook',
-    toggleControlMode: vi.fn(),
-    headCoupling: 'free',
-    startTempSteerMode: vi.fn(),
-    endTempSteerMode: vi.fn(),
-    isTempSteerMode: false,
-    carHeading: 0,
-    setCarHeading: vi.fn(),
+    controlMode: 'STEER',
+    dispatchCabinInput: vi.fn(() => null),
   }),
 }));
 

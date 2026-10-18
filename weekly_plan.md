@@ -52,6 +52,21 @@
 
 ---
 
+## Done
+
+### 9. Grounded cabin + 3-mode input (FREE_LOOK | STEER | UI_INTERACT)
+- **Problem**: Mouse movement made the car interior feel glued to the player's face instead of a stationary cabin to look around in.
+- **Root cause**: the cabin camera was parented under the chassis group (`interiorGroup` → seat group → camera) but aimed with the *world* heading (`cabinCameraWorldYaw` = carHeading + offset), so `carHeading` was counted twice — steering swung the cabin around the eye. The camera also pitched opposite to the panorama, the cabin FOV was a per-vehicle lerp instead of the panorama's, and the cabin never resized.
+- **Status**: **Resolved** —
+  - Car rig (`interiorGroup`) stays at identity; `headPivot` → camera (`'YXZ'`) carry only the car-local head pose (`src/car/interior/cabinRig.ts`, `src/state/cabinHeadStore.ts`; yaw ±90°, pitch ±45°, +yaw = left). Sun light and pano IBL are placed car-relative instead of rotating the scene.
+  - One per-frame POV sync (`src/car/input/cabinPovSync.ts`): `heading = carHeading − deg(headYaw)`, `pitch = deg(headPitch)`, written to `povStore` and forwarded to Maps by `useStreetView` (honours hold-pause). The bridge's direct per-frame `setPov` is gone.
+  - Cabin `camera.fov` = panorama FOV (horizontal 180°/2^zoom → vertical via aspect), re-derived on resize (`src/utils/streetViewFov.ts`, `ResizeObserver` in `CarInterior`).
+  - Pointer-lock state machine + transition table (`src/car/input/cabinInputMachine.ts`, `CABIN_INPUT_TRANSITIONS`): STEER default on lock, RMB-hold / `F` FREE_LOOK, Tab ↔ UI_INTERACT, Esc via `pointerlockchange`, first post-lock delta dropped. Temp-steer, `H` cycling and head coupling removed.
+- **Tests**: `cabinInputMachine.test.ts` (table replay), `CarInputHandler.modes.test.tsx`, `cabinRig.acceptance.test.ts` (interior matrix byte-identical under look; window-frame registration vs an independent pinhole panorama model at zooms 1–3; steer-right pans the world left).
+- **Last run**: 2026-10-15 — `npm run verify` (see PR). Manual checklist: AGENTS.md → *Car Spatial Correctness Manual Checklist* §1.
+
+---
+
 ## Residual / open (track as issues)
 
 Each row points at the live issue that owns it. Do not re-open the numbered
