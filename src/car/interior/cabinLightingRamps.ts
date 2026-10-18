@@ -119,12 +119,15 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
   // Headlights: a little dash bounce, not a cabin flood. Rain adds bounce
   // (wet road scatter) instead of extra ambient.
   const bounce =
-    (input.headlightsOn ? night * 0.2 : 0) +
+    (input.headlightsOn ? night * 0.14 : 0) +
     rain * 0.1 * (0.3 + day * 0.7);
+  // The spill sits ~0.4 m off the dash face, so it lands as a patch above the
+  // cluster. At the old 0.22 + 0.1 that patch out-shone the cluster at night;
+  // half that keeps it a glow around the instruments.
   const dash =
-    night * 0.22 +
-    (input.headlightsOn ? night * 0.1 : 0) +
-    (input.domeLightOn ? 0.04 : 0);
+    night * 0.11 +
+    (input.headlightsOn ? night * 0.05 : 0) +
+    (input.domeLightOn ? 0.02 : 0);
   const dome = input.domeLightOn ? 1.3 : 0;
   const headlights = input.headlightsOn ? 0.2 : 0;
 

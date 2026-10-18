@@ -138,8 +138,11 @@ export function buildInteriorLighting(
   interiorGroup.add(headlightsLight);
   interiorGroup.add(headlightsLight.target);
 
-  const interiorBounceLight = new THREE.PointLight(0xffc080, 0, 1.4, 2);
-  interiorBounceLight.position.set(0, 0.52, -0.7);
+  // Headlight / wet-road bounce. Low between the knees, ~0.45 m clear of the
+  // dash block: at the old (0, 0.52, -0.7) it sat 5 cm off the lower dash face
+  // and painted a cream hot ring beside the column, brighter than the cluster.
+  const interiorBounceLight = new THREE.PointLight(0xffc080, 0, 1.6, 2);
+  interiorBounceLight.position.set(0, 0.42, -0.3);
   interiorGroup.add(interiorBounceLight);
 
   const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.8, 2);
