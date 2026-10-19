@@ -10,6 +10,7 @@ import {
     sunBaseIntensityFromStrength,
     sunNightFactorFromAltitude,
     sunIntensityUnderWeather,
+    sunSideFromBearing,
     sunStrengthFromAltitude,
 } from './cabinLightingRamps';
 
@@ -42,6 +43,8 @@ export class CarInteriorLightingManager {
     private sunAltitude = 0;
     /** Car compass heading (radians): the scene is the car's frame, so the sun is placed relative to it. */
     private carHeadingRad = 0;
+    /** -1…1 lateral sun position in the car's frame; drives the window-fill split. */
+    private sunSide = 0;
     private headlightsOn = false;
     /** 0-1 rain intensity: overcast skies dim and diffuse the daylight. */
     private weatherIntensity: number = 0;
@@ -125,9 +128,9 @@ export class CarInteriorLightingManager {
         this.sunAzimuth = azimuth;
         this.sunAltitude = altitude;
 
-        if (this.sunLight) {
-            this.placeSun();
+        this.placeSun();
 
+        if (this.sunLight) {
             const strength = sunStrengthFromAltitude(altitude);
             this.sunBaseIntensity = sunBaseIntensityFromStrength(strength);
             this.sunLight.color
@@ -159,11 +162,12 @@ export class CarInteriorLightingManager {
     }
 
     private placeSun(): void {
-        if (!this.sunLight) return;
         // SunCalc azimuth is from south (positive west); +π makes it a compass
         // bearing, and subtracting the car heading makes it car-relative
         // (`carSpatialModel.carRelativeBearing`). Bearing b maps to (sin b, ·, −cos b).
         const bearing = this.sunAzimuth + Math.PI - this.carHeadingRad;
+        this.sunSide = sunSideFromBearing(bearing, this.sunAltitude);
+        if (!this.sunLight) return;
         const cosAlt = Math.cos(this.sunAltitude);
         const sinAlt = Math.sin(this.sunAltitude);
         this.sunLight.position.set(
@@ -244,6 +248,7 @@ export class CarInteriorLightingManager {
             headlightsOn,
             domeLightOn,
             clinical: this.clinical,
+            sunSide: this.sunSide,
         };
         const fill = cabinFillTargets(rampIn);
         const emit = cabinEmitterTargets(rampIn);
