@@ -16,8 +16,10 @@ import {
   locationPanelGlowFromNight,
   sunBaseIntensityFromStrength,
   sunNightFactorFromAltitude,
+  sunSideFromBearing,
   sunStrengthFromAltitude,
   sunIntensityUnderWeather,
+  windowFillBalance,
 } from './cabinLightingRamps';
 
 const DEG = Math.PI / 180;
@@ -331,5 +333,70 @@ describe('cabinLightingRamps', () => {
     expect(sunIntensityUnderWeather(1.55, 1)).toBeCloseTo(1.55 * 0.25);
     expect(sunIntensityUnderWeather(1.55, 2)).toBeCloseTo(1.55 * 0.25);
     expect(sunIntensityUnderWeather(1.55, -1)).toBeCloseTo(1.55);
+  });
+
+  it('sun side: low sun off one window takes a side, noon / ahead / below horizon do not', () => {
+    // Bearing is car-relative: +π/2 = passenger (right) window.
+    expect(sunSideFromBearing(Math.PI / 2, 10 * DEG)).toBeGreaterThan(0.9);
+    expect(sunSideFromBearing(-Math.PI / 2, 10 * DEG)).toBeLessThan(-0.9);
+    expect(sunSideFromBearing(0, 10 * DEG)).toBeCloseTo(0, 6);
+    expect(sunSideFromBearing(Math.PI, 10 * DEG)).toBeCloseTo(0, 6);
+    // High sun pours in evenly; the side term fades with cos²(altitude).
+    expect(Math.abs(sunSideFromBearing(Math.PI / 2, 80 * DEG))).toBeLessThan(0.05);
+    expect(sunSideFromBearing(Math.PI / 2, 45 * DEG)).toBeCloseTo(0.5, 6);
+    // No direct sun below the horizon, whatever the bearing.
+    expect(sunSideFromBearing(Math.PI / 2, -5 * DEG)).toBe(0);
+    expect(sunSideFromBearing(Math.PI / 2, 0)).toBe(0);
+  });
+
+  it('window fill balance moves daylight to the sun side without adding any', () => {
+    const even = windowFillBalance(0, 0);
+    expect(even).toEqual({ left: 1, right: 1 });
+
+    const right = windowFillBalance(1, 0);
+    expect(right.right).toBeGreaterThan(right.left);
+    expect(right.right).toBeLessThanOrEqual(1.6);
+    expect(right.left).toBeGreaterThanOrEqual(0.4);
+    expect((right.left + right.right) / 2).toBeCloseTo(1, 6);
+
+    const left = windowFillBalance(-1, 0);
+    expect(left.left).toBe(right.right);
+    expect(left.right).toBe(right.left);
+
+    // Overcast diffuses the skylight: the split flattens back toward even.
+    const overcast = windowFillBalance(1, 1);
+    expect(overcast).toEqual({ left: 1, right: 1 });
+    const drizzle = windowFillBalance(1, 0.5);
+    expect(drizzle.right - drizzle.left).toBeCloseTo((right.right - right.left) / 2, 6);
+
+    // Out-of-range inputs clamp instead of inverting a window.
+    expect(windowFillBalance(5, 0)).toEqual(windowFillBalance(1, 0));
+    expect(windowFillBalance(0, -1)).toEqual(windowFillBalance(0, 0));
+  });
+
+  it('day window fills follow the sun side; night fills and the rest of the rig ignore it', () => {
+    const base = { effectiveNight: 0, rain: 0, headlightsOn: false, domeLightOn: false };
+    const even = cabinFillTargets(base);
+    const sunRight = cabinFillTargets({ ...base, sunSide: 1 });
+    const sunLeft = cabinFillTargets({ ...base, sunSide: -1 });
+
+    expect(sunRight.rightWindow).toBeGreaterThan(even.rightWindow);
+    expect(sunRight.leftWindow).toBeLessThan(even.leftWindow);
+    expect(sunLeft.leftWindow).toBeGreaterThan(even.leftWindow);
+    expect(sunLeft.rightWindow).toBeLessThan(even.rightWindow);
+    // Sun off the passenger window flips the driver-side bias of the base fills.
+    expect(sunRight.rightWindow).toBeGreaterThan(sunRight.leftWindow);
+    // Omitted sunSide is the balanced rig.
+    expect(cabinFillTargets({ ...base, sunSide: 0 })).toEqual(even);
+
+    // Only the window fills move.
+    for (const key of ['hemi', 'ambient', 'overhead', 'bounce', 'dash', 'dome', 'headlights'] as const) {
+      expect(sunRight[key]).toBe(even[key]);
+      expect(sunLeft[key]).toBe(even[key]);
+    }
+
+    // At night the day term is gone, so the streetlight hint stays flat.
+    const night = { ...base, effectiveNight: 1 };
+    expect(cabinFillTargets({ ...night, sunSide: 1 })).toEqual(cabinFillTargets(night));
   });
 });

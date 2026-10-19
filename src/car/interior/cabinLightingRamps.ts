@@ -33,6 +33,42 @@ export interface CabinRampInput {
   domeLightOn: boolean;
   /** Science-lab clinical theme: cooler, slightly brighter day fill. */
   clinical?: boolean;
+  /**
+   * -1…1 lateral sun position in the car's frame (`sunSideFromBearing`):
+   * +1 = sun low off the passenger (right) window, -1 = low off the driver's
+   * window, 0 = overhead, dead ahead/behind, or below the horizon. Shifts the
+   * day window fill toward the sun side so the cabin reads as lit from one
+   * window. Omitted = balanced.
+   */
+  sunSide?: number;
+}
+
+/**
+ * Lateral sun component in the car's frame. `bearingRad` is the car-relative
+ * sun bearing (0 = ahead, +π/2 = right); the horizontal x-component is
+ * `sin(bearing) · cos(altitude)`, weighted by a second `cos(altitude)` so a
+ * high sun pours through the windscreen/roofline evenly while a low sun
+ * (golden hour) lands on one side. Below the horizon there is no direct sun
+ * to take a side.
+ */
+export function sunSideFromBearing(bearingRad: number, altitudeRad: number): number {
+  if (altitudeRad <= 0) return 0;
+  const cosAlt = Math.cos(altitudeRad);
+  const side = Math.sin(bearingRad) * cosAlt * cosAlt;
+  return Math.max(-1, Math.min(1, side));
+}
+
+/**
+ * Left/right multipliers for the day window fills. They average to 1 so the
+ * total daylight entering the cabin does not change with heading — it just
+ * moves to the sun side. Rain/overcast diffuses the skylight and flattens
+ * the split back toward even.
+ */
+export function windowFillBalance(sunSide: number, rain: number): { left: number; right: number } {
+  const side = Math.max(-1, Math.min(1, sunSide));
+  const r = Math.max(0, Math.min(1, rain));
+  const split = side * 0.6 * (1 - r);
+  return { left: 1 - split, right: 1 + split };
 }
 
 /** Below-horizon night factor; fully night by nautical twilight (~-12°). */
@@ -113,8 +149,12 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
   const hemi = (0.12 * day * clinical + 0.008 * night) * diffuse;
   const ambient = (0.022 * day * clinical + 0.002 * night) * diffuse;
   const overhead = 0.09 * day * direct * clinical;
-  const leftWindow = (0.1 * day * clinical + 0.008 * night) * diffuse;
-  const rightWindow = (0.07 * day * clinical + 0.006 * night) * diffuse;
+  // Window fills: the day term follows the sun side (a low sun off the
+  // driver's window lights the driver's side), the night term is a flat
+  // streetlight hint. The driver-side bias in the base values stays.
+  const balance = windowFillBalance(input.sunSide ?? 0, rain);
+  const leftWindow = (0.1 * day * clinical * balance.left + 0.008 * night) * diffuse;
+  const rightWindow = (0.07 * day * clinical * balance.right + 0.006 * night) * diffuse;
 
   // Headlights: a little dash bounce, not a cabin flood. Rain adds bounce
   // (wet road scatter) instead of extra ambient.
