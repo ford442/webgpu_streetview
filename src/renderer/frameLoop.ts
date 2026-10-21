@@ -3,7 +3,7 @@ import type { TextureLifecycle } from './textureLifecycle';
 import type { WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import type { WeatherPostProcessMode } from './RendererBackend';
 import type { Pass1TimingContext } from './streetViewPass';
-import type { CabinCompositePass } from './cabinComposite';
+import type { CabinCompositePass, CabinCompositeRegion, CabinCompositeViewport } from './cabinComposite';
 import type { FrameContext, FramePassRegistry } from './framePasses/FramePassRegistry';
 import type { FramePassId } from './passStatus';
 import type { UpscaleTimingContext } from './upscale/UpscalePass';
@@ -94,9 +94,10 @@ export interface EncodeFrameOptions {
     passes: FramePassRegistry;
     /**
      * Per-frame context handed to every pass (`textures` and `timings` are
-     * filled in here). `frame.renderScale` sizes the intermediate.
+     * filled in here, and `phase` is `main`). `frame.renderScale` sizes the
+     * intermediate.
      */
-    frame: Omit<FrameContext, 'textures' | 'timings'>;
+    frame: Omit<FrameContext, 'textures' | 'timings' | 'phase'>;
     /** Null unless the performance overlay wants timings this frame. */
     gpuPassTimer: GpuPassTimer | null;
     timings: FramePassTimings;
@@ -133,12 +134,29 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): FramePassId[]
     textures.ensureIntermediateTexture(frame.renderScale.width, frame.renderScale.height);
 
     const commandEncoder = device.createCommandEncoder({ label: 'streetview-frame' });
-    const encoded = passes.encode(commandEncoder, { ...frame, textures, timings });
+    const encoded = passes.encode(commandEncoder, { ...frame, textures, timings, phase: 'main' });
 
     if (gpuPassTimer) {
         gpuPassTimer.resolveAndScheduleRead(commandEncoder, frame.renderScale.scale);
     }
 
+    device.queue.submit([commandEncoder.finish()]);
+    return encoded;
+}
+
+/**
+ * Encode and submit a split frame's tail (#331): `reproject` and the cabin
+ * composite, on their own encoder, later in the same display frame
+ * (`reproject/frameTail.ts`). No timestamp spans — the overlay's road GPU time
+ * is the main encode.
+ */
+export function encodeAndSubmitTail(
+    device: GPUDevice,
+    passes: FramePassRegistry,
+    frame: Omit<FrameContext, 'timings' | 'phase'>,
+): FramePassId[] {
+    const commandEncoder = device.createCommandEncoder({ label: 'streetview-frame-tail' });
+    const encoded = passes.encode(commandEncoder, { ...frame, timings: {}, phase: 'tail' });
     device.queue.submit([commandEncoder.finish()]);
     return encoded;
 }
@@ -155,12 +173,14 @@ export function encodeCabinComposite(
     commandEncoder: GPUCommandEncoder,
     cabinComposite: CabinCompositePass | null | undefined,
     getSwapChainView: (() => GPUTextureView | null) | undefined,
+    viewport?: CabinCompositeViewport,
+    region?: CabinCompositeRegion,
 ): boolean {
     if (!cabinComposite || !getSwapChainView || !cabinComposite.isReady()) return false;
     try {
         const view = getSwapChainView();
         if (!view) return false;
-        return cabinComposite.encode(commandEncoder, view);
+        return cabinComposite.encode(commandEncoder, view, viewport, region);
     } catch (e) {
         console.warn('[frameLoop] cabin composite pass skipped this frame:', e);
         return false;

@@ -103,6 +103,16 @@ export interface StreetViewRenderer {
         zoom?: number
     ): void;
     setDebugOptions?(options: Partial<RendererDebugOptions>): void;
+    /**
+     * WebGPU only (#331) — the split frame's tail: late latch / stereo.
+     * `livePov` is read when the tail encodes, after the car loop.
+     */
+    setPresentTail?(
+        options: import('./reproject/presentTail').PresentTailOptions,
+        livePov?: () => import('./reproject/reprojectMath').PovSample,
+    ): void;
+    /** WebGPU only (#331) — this display frame's rAF timestamp, before the render call. */
+    beginFrame?(frameTime: number): void;
     /** WebGPU only — returns which weather post-process pipeline is active. */
     getWeatherPostProcessMode?(): WeatherPostProcessMode;
     /** WebGPU only — updates panorama sampler anisotropy from the active quality preset. */

@@ -446,6 +446,46 @@ panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
   a failure (model missing, integrity, device lost, no chores readback) is
   reported there and in `window.__SCENE_DEPTH__`, never on the road frame.
 
+### Split frame tail, stereo and the WebXR cockpit (`src/renderer/reproject/`, `src/xr/`, #331)
+
+The road frame can end with a **tail**: a second submit that runs
+`reproject.wgsl` and then the cabin composite (`framePasses` phase `tail` /
+`last`). It exists only with `?latelatch`, `?stereo=sbs|anaglyph` or a WebXR
+session presenting; otherwise the frame is exactly the pre-#331 frame.
+
+- **Why a tail**: `WebGPUCanvas`'s rAF packs the road before the car loop's rAF
+  derives this frame's POV (`cabinPovSync`) and renders the cabin. rAF
+  callbacks of one display frame share a timestamp and present together, so
+  the tail is **deferred until the car loop calls
+  `frameTailScheduler.producerDone(frameTime)`** — road and cabin then show the
+  same frame's POV. A tail the producer never releases is dropped (the canvas
+  repeats, never black).
+- **Late latch**: the tail turns the packed frame to the POV read *now* — an
+  exact rotation (`reprojectMath.latchRotation`; the shader takes a 3×3
+  `sourceFromOutput` plus the output's frustum). Delta 0 → mode `copy`
+  (`textureLoad`, bit-exact). Probe: `__STREETVIEW_PROBE__.getLateLatch()`.
+- **Stereo**: a gather warp along the row by depth (map blended with the
+  proxy), nearest-far-neighbour disocclusion fill + 3-tap blur. 64 mm IPD,
+  convergence 1 m on a flat display (the mono cabin sits at zero parallax),
+  infinity in a headset (each eye has its own frustum). The cabin renders two
+  eye cameras derived from the head camera (`car/interior/cabinStereo.ts`,
+  request via `renderer/cabinStereoRequest.ts`) into one side-by-side target.
+- **WebXR** (`xr/xrSession.ts`): `immersive-vr` + the WebXR/WebGPU binding on
+  the **one** device (requested `xrCompatible` in `bootDevice.ts` when
+  `xr/xrSupport.ts` finds a headset — reported as `capabilityMatrix.xrCompatible`).
+  Entered from the HUD's **Enter VR** button (a user gesture). While presenting,
+  `xr/frameClock.ts` runs the road and car loops from the session's rAF, so the
+  tail draws each eye into the projection layer's sub-image *inside* the XR
+  callback (`renderer/xrPresentFrame.ts`). The head pose goes to
+  `cabinHeadStore` (clamped yaw/pitch) + `cabinHeadOffsetStore` (clamped lean,
+  `carSpatialModel.HEAD_OFFSET_LIMIT`); roll and the rest ride in each eye's
+  `eyeFromHead`. **The rig never moves.** The left stick steers via `XR_STICK`
+  rows in `CABIN_INPUT_TRANSITIONS` (STEER for the whole session); the right
+  trigger presses dash controls along its ray
+  (`car/runtime/interaction.pressCarInteriorAlongRay`). The release dolly is
+  capped in a headset (`depthParams.XR_RELEASE_DOLLY_SCALE`). Fallbacks:
+  `docs/RENDERER_FALLBACK.md` § WebXR fallback matrix.
+
 ### WebGL2 Fallback / Debug Renderer
 
 `src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required**: a failed boot probe is a hard-fail (blocking overlay). There is **no live GL weather class** in the runtime module graph — including for `?renderer=webgl` / stale localStorage (preference is recorded as `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:
@@ -901,6 +941,18 @@ Run this after touching `WindowWeatherOverlay.ts`, `WindshieldPortal.ts`, `cabin
 4. **Hold-pause.** Cruise with rain on for 10+ hops. During each hop the droplets refract the *held* frame (probe `portal.held: true`), and `window.__STREETVIEW_PROBE__.getWarnings()` stays empty. The portal must never cause a live Maps upload.
 5. **Resize.** Drag the window edge while rain is on. No flash to black in the glass, no `Destroyed texture … used in a submit` validation error in the console.
 6. **Night.** Night preset + rain: droplet interiors read as dark as the road around them, not as a bright daytime picture.
+
+### WebXR Cockpit Manual Checklist
+Run after touching `src/xr/`, `renderer/xrPresentFrame.ts`, the reproject tail, `cabinStereo.ts`, `cabinComposite.ts`'s formats or `bootDevice.ts`'s adapter options. Needs a WebGPU-XR browser and a headset (Chrome with `chrome://flags/#webxr-webgpu-binding` + a PC headset, Quest Browser with WebGPU-XR enabled, or visionOS Safari); the automated half is `xrSession.test.ts`, `Renderer.reproject.test.ts`, `cabinRig.acceptance.test.ts` and `e2e/gpu-foundation.spec.ts`'s split-frame tests.
+
+1. **Detection.** `window.rendererAdapterInfo.xrCompatible` is `true` and `__STREETVIEW_PROBE__.getXr().support.state === 'available'`. In a browser without the flag the car HUD shows a disabled **Enter VR** with "Needs WebGPU-XR …"; in Firefox there is no button.
+2. **Enter.** Car mode → **Enter VR**. The cabin surrounds you at the driver's seat, the road is outside the glass, the mode chip says **Steer**. `getXr().presenting` is `true` and `presentedFrames` climbs every frame. No `device lost` in the console.
+3. **Look.** Turn your head 90° left: the driver door, the road beyond it, no swim between cabin and road. Roll your head: the cabin and the road roll together. Lean toward the side window: the head moves a little (≤ 20 cm), then stops — you never leave the seat. The dash and the wheel stay put.
+4. **Steer.** Left stick right: the car turns right, the wheel turns, the road pans left across the windshield. Stick at rest: nothing drifts.
+5. **Press.** Point the right controller at the hazard / wiper stalk / gear lever and pull the trigger: the control acts as a click would.
+6. **Hop.** Cruise a few hops in the headset: the release dolly is gentle, never a lunge; `__STREETVIEW_PROBE__.getWarnings()` stays empty (no live Maps upload during a hold).
+7. **Exit.** Press **Exit VR** (or the headset's system button). The screen view returns at the zoom it had, the head is centred, Tab / click lock the pointer again, the mouse steers. No `device lost`, no validation errors. Enter and exit three times in a row.
+8. **Device loss.** With a session running, trigger a loss (`chrome://gpucrash` in a separate tab). The session ends, the 2D view recovers, and the button says the device was lost.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):

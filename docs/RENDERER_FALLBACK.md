@@ -72,6 +72,31 @@ The gate is decided once, where the cabin renderer is constructed (`createCabinR
 
 **Testing it.** Unit: `windshieldWetMask` / `windshieldAperture` / `roadFrameBinding` / `windshieldPortalSupport` / `windshieldPortal.parity` / `WindowWeatherOverlay` / `Renderer.roadFrame` tests. GPU: `npx playwright test --project=chromium-webgpu e2e/windshield-portal.spec.ts` drives `e2e/fixtures/windshield-portal/*` on Chromium's software WebGPU adapter (SwiftShader, which exposes `clip-distances`); in that project a missing adapter is a failure, not a skip. Manual: car mode, rain on, WebGPU host — wiper arcs should leave a clean strip that re-wets; `?portal=off` or `?no_clip_distances` should fall back to the hole + decal with no console errors.
 
+## Split frame tail and WebXR (#331)
+
+With `?latelatch`, `?stereo=sbs|anaglyph`, or a WebXR session presenting, the road frame is **split**: the main submit renders pass 1 → weather (→ upscale) into the reproject pass's *present source* (`renderer/reproject/ReprojectPass.ts`), and a **tail** submit (`frameLoop.encodeAndSubmitTail`) runs `reproject.wgsl` and then the cabin composite into the swap chain — or into the headset's layer. In car mode the tail waits for the car loop of the same display frame (`reproject/frameTail.ts`), so road and cabin both use the POV of *this* frame. Without any of those, nothing is built and the frame is the pre-#331 frame (`Renderer.reproject.test.ts`).
+
+- **Late latch** (`?latelatch`): the tail re-reads the POV and turns the packed frame by the difference — an exact rotation homography (`reprojectMath.latchRotation`), no depth. At rest it is `textureLoad` texel for texel (bit-exact, `e2e/gpu-foundation.spec.ts`). Probe: `__STREETVIEW_PROBE__.getLateLatch()` → `latchDeltaDeg` (> 0 while looking, 0 at rest), `mode`, deferred/dropped tails.
+- **Stereo** (`?stereo=sbs|anaglyph`): each eye is gathered from the centre image by depth (scene-depth map blended with the ground-plane proxy; the proxy alone without the model) with a nearest-far-neighbour disocclusion fill and a 3-tap blur (off under reduced motion). No hole > 2 px at 64 mm on the depth golden (`e2e/stereo.spec.ts`). No extra Street View imagery for the second eye. With `sbs` the cabin draws two eye cameras into one side-by-side target (`car/interior/cabinStereo.ts`); the compositor maps halves to halves.
+
+### WebXR fallback matrix
+
+| Condition | What the user gets | Where |
+| --- | --- | --- |
+| No `navigator.xr` (Firefox desktop, most browsers) | No VR button at all | `xrSupport` → `no-webxr`; `XrCockpitButton` renders nothing |
+| `?xr=off` | No VR button; boot asks for a plain adapter | `xrSupport` → `off` |
+| WebXR without `XRGPUBinding` (Chrome without `chrome://flags/#webxr-webgpu-binding`) | Disabled button: "Needs WebGPU-XR …" with the flag named | `no-webgpu-binding` |
+| Binding present, no headset runtime answers (or `isSessionSupported` hangs > 750 ms) | Disabled button: "No VR headset is available" | `no-immersive-vr` |
+| WebGL2 fallback renderer (`?webgl2=1`) | Disabled button: "Needs the WebGPU renderer" | no shared device |
+| Session granted without the `webgpu` feature | Session ended at once; the reason under the button | `startXrCockpit` → `XrUnavailableError` |
+| `xrCompatible` adapter refused | Boot retries without it; XR then reads unavailable on that device | `bootDevice.ts` |
+| Device lost in-session | Session ends, the frame loops go back to the window, the usual device-loss recovery brings 2D back; the button says why | `device.lost` → `session.end()` |
+| User leaves the car view | Session ends | `CarModeView` unmount |
+| A frame with no road frame packed (no live source, a skipped loop) | The last road frame re-aimed at the new head pose | `representXrFrame` |
+| Layer format ≠ swap-chain format (e.g. `?hdr`'s `rgba16float`) | First frame builds the per-format pipelines and draws nothing; `?hdr`'s extended range is clipped to the 8-bit layer | `ReprojectPass.ensureFormat`, `CabinCompositePass.ensureFormat` |
+
+**There is no WebGL XR path** and no three `WebXRManager`: one device, one compositor. While presenting the canvas swap chain is not touched (no mirror view).
+
 ## Backend Selection
 
 Use URL flags:
@@ -249,6 +274,7 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | `rg11b10ufloat-renderable` | Requested when adapter exposes it | **Used:** Pass-1 HDR intermediate is `rg11b10ufloat` when enabled and alpha is unused; otherwise `rgba16float`. Recorded as `capabilityMatrix.intermediateFormat`. |
 | `dual-source-blending` | Requested when adapter exposes it | **Used:** fragment weather `fs_main` outputs precip as `@second_blend_source` (`assembleDualSourceWeatherShader`). In-shader `col + precipAdd` remains the naga-clean fallback. |
 | `clip-distances` | Requested when adapter exposes it; `?no_clip_distances` leaves it out | **Used:** gates the cabin's windshield portal — three emits the portal's aperture planes as hardware clip distances (no fragment `discard`). Without it the glass keeps today's hole + decal overlay. See § Windshield portal |
+| `xrCompatible` | Adapter requested with `xrCompatible: true` only when boot detection found a WebGPU-XR headset (`xr/xrSupport.ts`: `navigator.xr` + `XRGPUBinding` + `isSessionSupported('immersive-vr')`); an adapter refused that way is re-requested without it | The one device must be XR-compatible from creation — there is no `makeXRCompatible` for WebGPU. `false` = no Enter VR. `?xr=off` never asks. See § Split frame tail and WebXR |
 | `core-features-and-limits` | Requested when adapter exposes it **and** not `?gpu=compat` | Must not undo compatibility mode |
 | `optionalFeaturesAttempted` / `Enabled` | Attempted = `OPTIONAL_FEATURES_ATTEMPTED`; enabled = `requestDevice` list | Chip count; `?gpu=features` dumps JSON including `intermediateFormat` and `shaderFeatureUses` |
 | `intermediateFormat` | `rgba16float` (default) or `rg11b10ufloat` | Packed format only when `rg11b10ufloat-renderable` is enabled |

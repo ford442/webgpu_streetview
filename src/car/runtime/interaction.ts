@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { getState } from './state';
 
 /**
@@ -64,6 +65,22 @@ export function handleCarInteriorPointerDown(clientX: number, clientY: number, e
     const state = getState();
     if (!state) return false;
     return state.interior.handleInteriorPointerDown(clientX, clientY, editMode);
+}
+
+/**
+ * A WebXR controller's `select` (#331): press the dash control along its ray.
+ * `origin`/`direction` are car-frame, relative to the driver's eye point.
+ */
+export function pressCarInteriorAlongRay(
+    origin: { x: number; y: number; z: number },
+    direction: { x: number; y: number; z: number },
+): boolean {
+    const state = getState();
+    if (!state) return false;
+    return state.interior.pressInteriorAlongRay(
+        new THREE.Vector3(origin.x, origin.y, origin.z),
+        new THREE.Vector3(direction.x, direction.y, direction.z).normalize(),
+    );
 }
 
 export function handleCarInteriorPointerMove(clientX: number, clientY: number): boolean {

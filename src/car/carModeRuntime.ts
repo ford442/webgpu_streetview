@@ -86,6 +86,7 @@ export {
     triggerCarInteriorPress,
     setCarInteriorEditMode,
     handleCarInteriorPointerDown,
+    pressCarInteriorAlongRay,
     handleCarInteriorPointerMove,
     handleCarInteriorPointerUp,
 } from './runtime/interaction';

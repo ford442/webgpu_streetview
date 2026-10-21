@@ -67,6 +67,10 @@ export interface RecordedPass {
     label?: string;
     /** Render passes: each colour attachment's view, in order. */
     targets: unknown[];
+    /** `setViewport(x, y, w, h)` calls, in order. */
+    viewports: Array<[number, number, number, number]>;
+    /** Dynamic offsets handed to `setBindGroup`, per call (empty when none). */
+    dynamicOffsets: number[][];
 }
 
 export interface RecordedBindGroup {
@@ -138,7 +142,7 @@ export interface FakeGpu {
     querySets: RecordedQuerySet[];
     computePipelines: Array<{ id: number; entryPoint: string }>;
     renderPipelines: Array<{ id: number; label?: string }>;
-    writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }>;
+    writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView; offset?: number }>;
     writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }>;
     submits: number;
     /**
@@ -201,7 +205,7 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     const querySets: RecordedQuerySet[] = [];
     const computePipelines: Array<{ id: number; entryPoint: string }> = [];
     const renderPipelines: Array<{ id: number; label?: string }> = [];
-    const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }> = [];
+    const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView; offset?: number }> = [];
     const writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }> = [];
     const state = { submits: 0 };
     const submitErrors: string[] = [];
@@ -246,10 +250,16 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             writeTimestampCalls: [],
             label: descriptor?.label,
             targets: [...(descriptor?.colorAttachments ?? [])].map((a) => a?.view),
+            viewports: [],
+            dynamicOffsets: [],
         };
         return Object.assign(pass, {
             setPipeline: (p: unknown) => { pass.pipeline = p; },
-            setBindGroup: (index: number, group: unknown) => { pass.bindGroups.push({ index, group }); },
+            setBindGroup: (index: number, group: unknown, offsets?: number[]) => {
+                pass.bindGroups.push({ index, group });
+                pass.dynamicOffsets.push([...(offsets ?? [])]);
+            },
+            setViewport: (x: number, y: number, w: number, h: number) => { pass.viewports.push([x, y, w, h]); },
             dispatchWorkgroups: (x: number, y: number) => { pass.dispatches.push([x, y]); },
             draw: (n: number) => { pass.draws.push(n); },
             end: () => { pass.ended = true; },
@@ -367,8 +377,8 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         },
         createCommandEncoder,
         queue: {
-            writeBuffer: (buffer: FakeBuffer, _offset: number, data: ArrayBufferView) => {
-                writeBufferCalls.push({ buffer, data });
+            writeBuffer: (buffer: FakeBuffer, offset: number, data: ArrayBufferView) => {
+                writeBufferCalls.push({ buffer, data, offset });
             },
             writeTexture: (dst: { texture: FakeTexture }, _data: unknown, _layout: unknown, size: unknown) => {
                 writeTextureCalls.push({ texture: dst.texture, size });
