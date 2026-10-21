@@ -8,15 +8,15 @@
  * thread does (a compiled `WebAssembly.Module` is accepted too). That covers what would otherwise
  * only run on a real audio thread: instantiating the engine, the pending
  * params/IR hand-off, rendering into the output channels (bit-identical to the
- * JS twin), the radio input, stats, failure and stop.
+ * cabin DSP scripts in cpp/tests/goldens.json), the radio input, stats, failure
+ * and stop.
  */
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, it, expect, beforeAll } from 'vitest';
 
-import { JS_FALLBACK } from '../../wasm/jsFallback';
-import type { CabinDspParams } from '../../wasm';
+import { requireWasm, type CabinDspParams } from '../../wasm';
 import {
   CABIN_PROCESSOR_NAME,
   CABIN_QUANTUM,
@@ -26,6 +26,34 @@ import {
 
 const SAMPLE_RATE = 48000;
 const REPO_ROOT = join(__dirname, '..', '..', '..');
+
+/** One cabin engine script from cpp/tests/goldens.json (scripts/gen-wasm-goldens.mjs). */
+interface DspGolden {
+  label: string;
+  sampleRate: number;
+  irTaps: number;
+  blocks: number;
+  keyframes: (CabinDspParams & { block: number; ir?: { vehicle: number; openness: number } | null })[];
+  expectedChecksum: number;
+}
+
+const DSP_GOLDENS = (JSON.parse(
+  readFileSync(join(REPO_ROOT, 'cpp', 'tests', 'goldens.json'), 'utf8'),
+) as { cabinDsp: DspGolden[] }).cabinDsp;
+
+/** The golden harness's radio input (scripts/gen-wasm-goldens.mjs). */
+const goldenRadioSample = (k: number, ch: number): number =>
+  Math.fround((((k % 2001) * 7919 + ch * 104729) % 2001 - 1000) / 2000);
+
+/** FNV-1a over the f32 bit patterns, as the golden generator folds every block. */
+function fnv1a(h: number, samples: Float32Array): number {
+  const words = new Uint32Array(samples.buffer, samples.byteOffset, samples.length);
+  for (let i = 0; i < words.length; i++) {
+    h ^= words[i]!;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
 
 interface PortMessage {
   type: string;
@@ -53,7 +81,7 @@ interface Processor {
 }
 
 /** Evaluate the worklet source and return a fresh processor instance. */
-function instantiate(): Processor {
+function instantiate(rate: number = SAMPLE_RATE): Processor {
   let ctor: (new () => Processor) | null = null;
   class StubAudioWorkletProcessor {
     port = new StubPort();
@@ -65,7 +93,7 @@ function instantiate(): Processor {
   new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', CABIN_WORKLET_SOURCE)(
     StubAudioWorkletProcessor,
     registerProcessor,
-    SAMPLE_RATE,
+    rate,
   );
   if (!ctor) throw new Error('worklet source did not register a processor');
   return new (ctor as new () => Processor)();
@@ -93,8 +121,12 @@ async function untilMessage(port: StubPort, type: string): Promise<PortMessage> 
   throw new Error(`worklet never posted '${type}'`);
 }
 
-async function ready(module: WebAssembly.Module = scalarModule, simd = false): Promise<Processor> {
-  const p = instantiate();
+async function ready(
+  module: WebAssembly.Module = scalarModule,
+  simd = false,
+  rate: number = SAMPLE_RATE,
+): Promise<Processor> {
+  const p = instantiate(rate);
   p.port.deliver({ type: 'module', module, simd });
   await untilMessage(p.port, 'ready');
   return p;
@@ -126,7 +158,7 @@ const DRIVE: CabinDspParams = {
 
 function irFor(vehicle: number, openness: number, taps = 1024): Float32Array {
   const ir = new Float32Array(taps);
-  JS_FALLBACK.fillCabinIr(ir, taps, vehicle, openness, SAMPLE_RATE);
+  requireWasm().fillCabinIr(ir, taps, vehicle, openness, SAMPLE_RATE);
   return ir;
 }
 
@@ -197,27 +229,37 @@ describe('cabin worklet: start-up', () => {
 });
 
 describe('cabin worklet: rendering', () => {
-  it('renders exactly what the engine renders (the JS twin, bit for bit)', async () => {
-    const p = await ready();
-    const twin = JS_FALLBACK.createCabinDsp(SAMPLE_RATE)!;
-    const ir = irFor(3, 0, 2048);
-    const radio = radioBlock();
-    p.port.deliver({ type: 'params', ...DRIVE, vehicle: 3 });
-    p.port.deliver({ type: 'ir', taps: ir.slice() });
-    twin.setParams({ ...DRIVE, vehicle: 3 });
-    twin.setIr(ir);
-
-    const got = render(p, 40, radio);
-    const want = { left: new Float32Array(CABIN_QUANTUM * 40), right: new Float32Array(CABIN_QUANTUM * 40) };
-    for (let q = 0; q < 40; q++) {
-      const l = want.left.subarray(q * CABIN_QUANTUM, (q + 1) * CABIN_QUANTUM);
-      const r = want.right.subarray(q * CABIN_QUANTUM, (q + 1) * CABIN_QUANTUM);
-      twin.render(radio[0], radio[1], l, r, CABIN_QUANTUM);
-    }
-    expect(Array.from(got.left)).toEqual(Array.from(want.left));
-    expect(Array.from(got.right)).toEqual(Array.from(want.right));
-    expect(got.left.some((s) => s !== 0)).toBe(true);
-  });
+  for (const golden of DSP_GOLDENS.filter((g) => g.sampleRate > 0)) {
+    it(`renders the "${golden.label}" golden script bit for bit`, async () => {
+      for (const [module, simd] of [[scalarModule, false], [simdModule, true]] as const) {
+        const p = await ready(module, simd, golden.sampleRate);
+        const byBlock = new Map(golden.keyframes.map((k) => [k.block, k]));
+        const ir = new Float32Array(golden.irTaps);
+        let checksum = 2166136261;
+        for (let b = 0; b < golden.blocks; b++) {
+          const k = byBlock.get(b);
+          if (k) {
+            p.port.deliver({ type: 'params', ...k });
+            if (k.ir === null) p.port.deliver({ type: 'ir', taps: null });
+            else if (k.ir) {
+              requireWasm().fillCabinIr(ir, golden.irTaps, k.ir.vehicle, k.ir.openness, golden.sampleRate);
+              p.port.deliver({ type: 'ir', taps: ir.slice() });
+            }
+          }
+          const l = new Float32Array(CABIN_QUANTUM);
+          const r = new Float32Array(CABIN_QUANTUM);
+          for (let i = 0; i < CABIN_QUANTUM; i++) {
+            l[i] = goldenRadioSample(b * CABIN_QUANTUM + i, 0);
+            r[i] = goldenRadioSample(b * CABIN_QUANTUM + i, 1);
+          }
+          const got = render(p, 1, [l, r]);
+          checksum = fnv1a(checksum, got.left);
+          checksum = fnv1a(checksum, got.right);
+        }
+        expect(checksum, `${golden.label} (${simd ? 'SIMD' : 'scalar'})`).toBe(golden.expectedChecksum);
+      }
+    }, 60_000);
+  }
 
   it('the SIMD binary renders the same bits as the scalar one', async () => {
     const a = await ready(scalarModule, false);

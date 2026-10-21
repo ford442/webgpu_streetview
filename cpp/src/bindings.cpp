@@ -26,9 +26,25 @@
  * Emscripten's Module() factory.
  */
 
+#include <cstdint>
+
+/*
+ * The element types the TS loader views linear memory through (src/wasm/index.ts,
+ * the cabin worklet): a size change here would make every wrapper read garbage
+ * without a single ABI-lock failure, so it fails the build instead. Checked on
+ * the host build too, where this TU is otherwise empty.
+ */
+static_assert(sizeof(float) == 4, "Float32Array views: tiles, PCM, IRs, depth maps, luma stats");
+static_assert(sizeof(double) == 8, "Float64Array views: polylines, offset_latlng, depth state3");
+static_assert(sizeof(unsigned int) == 4, "Uint32Array view: the 256 luma bins");
+static_assert(sizeof(unsigned char) == 1, "Uint8Array views: packed RGBA8");
+static_assert(alignof(double) <= 8, "the scratch arena is 8-byte aligned (src/wasm/marshal.ts)");
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include "streetview_wasm.h"
+
+static_assert(sizeof(void*) == 4, "wasm32: every pointer argument is a JS number offset");
 
 extern "C" {
 
@@ -225,6 +241,26 @@ void dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
 
 EMSCRIPTEN_KEEPALIVE
 int dsp_max_ir_taps(void) { return sw_dsp_max_ir_taps(); }
+
+/* Scene depth (depth_module.cpp): DepthController runs these per inference. */
+EMSCRIPTEN_KEEPALIVE
+void depth_percentiles(const float* disparity, int count, double low_pct,
+                       double high_pct, float* scratch, double* out2) {
+    sw_depth_percentiles(disparity, count, low_pct, high_pct, scratch, out2);
+}
+
+EMSCRIPTEN_KEEPALIVE
+double depth_near_depth(const float* nearness, int width, int height, double horizon_y) {
+    return sw_depth_near_depth(nearness, width, height, horizon_y);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void depth_normalize(const float* disparity, int count, int width, int height,
+                     double horizon_y, int aligned, int same_scene,
+                     double* state3, const float* previous, float* out) {
+    sw_depth_normalize(disparity, count, width, height, horizon_y, aligned,
+                       same_scene, state3, previous, out);
+}
 
 } // extern "C"
 #endif // __EMSCRIPTEN__

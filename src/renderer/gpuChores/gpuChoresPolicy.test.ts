@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   readGpuChoresLimitsVerdict,
   readNoGpuComputeFlag,
-  resolveCpuChoresBackend,
   resolveGpuChoresEligibility,
 } from './gpuChoresPolicy';
 
@@ -40,10 +39,5 @@ describe('gpuChoresPolicy', () => {
     }) as unknown as Parameters<typeof readGpuChoresLimitsVerdict>[0];
     expect(readGpuChoresLimitsVerdict(probe(true))).toEqual({ ok: true });
     expect(readGpuChoresLimitsVerdict(probe(false, 'low'))).toEqual({ ok: false, reason: 'low' });
-  });
-
-  it('CPU fallback prefers WASM when the module compiled', () => {
-    expect(resolveCpuChoresBackend(true)).toBe('wasm');
-    expect(resolveCpuChoresBackend(false)).toBe('js');
   });
 });

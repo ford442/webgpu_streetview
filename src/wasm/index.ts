@@ -10,31 +10,42 @@
  *   const n = wasm.noise2d(1.2, 3.4); // value in [-1, 1]
  *   const dist = wasm.haversine(40.7128, -74.006, 51.5074, -0.1278);
  *
- * The module is lazy-loaded (not included in the initial JS bundle).
- * A pure-JS fallback (jsFallback.ts) is used automatically when the WASM
- * file is unavailable. The ABI contract itself lives in abi.ts; this file is
- * just the loader — instantiate the binary, marshal buffers across the linear
- * memory boundary, cache the result.
+ * The binary is the only implementation of every kernel — there is no JS
+ * twin. The app loads it before the first React render (src/index.tsx) and
+ * the renderer awaits the same promise during boot; a failed fetch is
+ * reported on `webgpuProbe` (stage `wasm`) with the same hard-fail overlay as
+ * a failed required shader. Synchronous callers use {@link requireWasm}. The ABI
+ * contract itself lives in abi.ts; this file is just the loader — instantiate
+ * the binary, marshal buffers across the linear memory boundary, cache the
+ * result.
  */
 import type {
   CabinDsp,
   CabinDspParams,
+  DepthNormalizeOptions,
+  DepthNormalizeState,
   LumaAnalysis,
   LumaReduce,
   StreetViewWasmAPI,
 } from './abi';
-import { JS_FALLBACK, resetJsFallbackState } from './jsFallback';
-import { createScratchArena } from './marshal';
+import { createScratchArena, WASM_STACK_SIZE } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
-export type { CabinDsp, CabinDspParams, LumaAnalysis, LumaReduce } from './abi';
-export { CABIN_IR_PROFILE_COUNT } from './jsFallback';
+export type {
+  CabinDsp,
+  CabinDspParams,
+  DepthNormalizeOptions,
+  DepthNormalizeState,
+  LumaAnalysis,
+  LumaReduce,
+} from './abi';
 
 // ---------------------------------------------------------------------------
 // WASM loader
 // ---------------------------------------------------------------------------
 
 let _cachedModule: StreetViewWasmAPI | null = null;
+let _pendingModule: Promise<StreetViewWasmAPI> | null = null;
 
 /** The two shipped builds of the same sources (see cpp/CMakeLists.txt). */
 export type WasmBinaryVariant = 'scalar' | 'simd';
@@ -97,42 +108,41 @@ export function loadStreetViewWasmBytes(variant: WasmBinaryVariant): Promise<Arr
 }
 
 /**
- * Lazy-load the WASM module.
- * Returns the cached instance on subsequent calls.
- * Falls back to a pure-JS implementation if the WASM file cannot be fetched
- * or if `WebAssembly` is unavailable. The main thread always runs the scalar
- * binary: its kernels are cold, and #300 measured ~0 % from SIMD there.
+ * Load the scalar binary once; later calls return the same promise. Rejects
+ * when the fetch fails or the bytes do not instantiate against the ABI — there
+ * is nothing to fall back to, so the page reports it and hard-fails. A
+ * rejection is forgotten, so a later call fetches again. The main thread always runs the
+ * scalar binary: its kernels are cold, and #300 measured ~0 % from SIMD there.
  */
-export async function loadWasmModule(): Promise<StreetViewWasmAPI> {
-  if (_cachedModule) return _cachedModule;
-
-  if (typeof WebAssembly === 'undefined') {
-    _cachedModule = JS_FALLBACK;
-    return _cachedModule;
+export function loadWasmModule(): Promise<StreetViewWasmAPI> {
+  if (_cachedModule) return Promise.resolve(_cachedModule);
+  if (!_pendingModule) {
+    const pending = loadStreetViewWasmBytes('scalar')
+      .then((bytes) => instantiateStreetViewWasm(bytes))
+      .then((mod) => {
+        if (_pendingModule === pending) _cachedModule = mod;
+        return mod;
+      });
+    pending.catch(() => {
+      if (_pendingModule === pending) _pendingModule = null;
+    });
+    _pendingModule = pending;
   }
-
-  try {
-    _cachedModule = await instantiateStreetViewWasm(await fetchWasmBytes('scalar'));
-  } catch {
-    _cachedModule = JS_FALLBACK;
-  }
-
-  return _cachedModule;
+  return _pendingModule;
 }
 
 /**
  * Instantiate the compiled binary and wrap its exports in the
- * {@link StreetViewWasmAPI} marshalling layer. Throws (rather than falling
- * back) on any ABI or memory-layout mismatch; {@link loadWasmModule} turns
- * that into the JS twin. Exported so tests can drive the real wrappers with
- * the committed binary (fetch is unavailable under jsdom).
+ * {@link StreetViewWasmAPI} marshalling layer. Throws on any ABI or
+ * memory-layout mismatch. Exported so tests can drive the real wrappers with
+ * the committed binaries (src/setupTests.ts installs the scalar one).
  */
 export async function instantiateStreetViewWasm(
   bytes: BufferSource,
 ): Promise<StreetViewWasmAPI> {
   // Emscripten STANDALONE_WASM links libm statically; the binary's only
   // import is the ALLOW_MEMORY_GROWTH notification. Anything else it imports
-  // makes instantiate throw, which loadWasmModule turns into the JS twin.
+  // makes instantiate throw, and loadWasmModule rejects with it.
   const importObject = {
     env: {
       emscripten_notify_memory_growth: (): void => {},
@@ -240,15 +250,36 @@ export async function instantiateStreetViewWasm(
     throw new Error('WASM ABI missing cabin dsp exports');
   }
 
+  const depth_percentiles = exp['depth_percentiles'] as (
+    disparity: number, count: number, lowPct: number, highPct: number, scratch: number, out2: number,
+  ) => void;
+  const depth_near_depth = exp['depth_near_depth'] as (
+    nearness: number, w: number, h: number, horizonY: number,
+  ) => number;
+  const depth_normalize = exp['depth_normalize'] as (
+    disparity: number, count: number, w: number, h: number, horizonY: number,
+    aligned: number, sameScene: number, state3: number, previous: number, out: number,
+  ) => void;
+  if (typeof depth_percentiles !== 'function' || typeof depth_near_depth !== 'function'
+    || typeof depth_normalize !== 'function') {
+    throw new Error('WASM ABI missing scene-depth exports');
+  }
+
   const malloc = exp['malloc'];
   const free = exp['free'];
   if (typeof malloc !== 'function' || typeof free !== 'function') {
     throw new Error('WASM ABI missing malloc/free (scratch arena)');
   }
   const stackBaseFn = exp['emscripten_stack_get_base'];
-  const stackBase = typeof stackBaseFn === 'function'
-    ? (stackBaseFn as () => number)()
-    : undefined;
+  const stackEndFn = exp['emscripten_stack_get_end'];
+  if (typeof stackBaseFn !== 'function' || typeof stackEndFn !== 'function') {
+    throw new Error('WASM ABI missing emscripten_stack_get_base/end (stack contract)');
+  }
+  const stackBase = (stackBaseFn as () => number)();
+  const stackSize = stackBase - (stackEndFn as () => number)();
+  if (stackSize !== WASM_STACK_SIZE) {
+    throw new Error(`WASM stack is ${stackSize} B; the loader expects -s STACK_SIZE=${WASM_STACK_SIZE}`);
+  }
   /**
    * Every kernel's inputs/outputs live in one malloc'd block above the
    * stack. `reserve` may grow memory: create views after it, never before.
@@ -371,7 +402,7 @@ export async function instantiateStreetViewWasm(
     sampleRate: number,
   ): number => {
     // count <= 0 still goes through the kernel so the returned phase is
-    // wrapped exactly like the C++ (and the JS twin) wraps it.
+    // wrapped exactly like the C++ wraps it.
     const n = Math.max(0, count);
     const ptr = scratch.reserve(n * 4);
     const next = fill_engine_noise(
@@ -494,6 +525,70 @@ export async function instantiateStreetViewWasm(
     };
   };
 
+  const depthPercentiles = (
+    disparity: Float32Array,
+    lowPct: number,
+    highPct: number,
+  ): [number, number] => {
+    const n = disparity.length;
+    if (n === 0) return [0, 0];
+    // [disparity n f32][scratch n f32][pad][out 2 f64]
+    const outRel = (n * 8 + 7) & ~7;
+    const ptr = scratch.reserve(outRel + 16);
+    new Float32Array(wasmMemory.buffer, ptr, n).set(disparity);
+    depth_percentiles(ptr, n, lowPct, highPct, ptr + n * 4, ptr + outRel);
+    const out = new Float64Array(wasmMemory.buffer, ptr + outRel, 2);
+    return [out[0]!, out[1]!];
+  };
+
+  const depthNearDepth = (
+    nearness: Float32Array,
+    width: number,
+    height: number,
+    horizonY: number,
+  ): number => {
+    const n = Math.max(0, width) * Math.max(0, height);
+    if (n === 0 || nearness.length < n) return depth_near_depth(0, 0, 0, horizonY);
+    const ptr = scratch.reserve(n * 4);
+    new Float32Array(wasmMemory.buffer, ptr, n).set(nearness.subarray(0, n));
+    return depth_near_depth(ptr, width, height, horizonY);
+  };
+
+  const depthNormalize = (
+    disparity: Float32Array,
+    state: DepthNormalizeState,
+    options: DepthNormalizeOptions,
+    out: Float32Array,
+  ): Float32Array => {
+    const n = disparity.length;
+    if (n === 0) {
+      state.previous = out;
+      return out;
+    }
+    const prev = options.aligned && state.previous?.length === n ? state.previous : null;
+    // [state 3 f64][disparity n f32][previous n f32][out n f32] — separate
+    // regions, so `out` may be the caller's previous map.
+    const dispOff = 24;
+    const prevOff = dispOff + n * 4;
+    const outOff = prevOff + n * 4;
+    const ptr = scratch.reserve(outOff + n * 4);
+    new Float64Array(wasmMemory.buffer, ptr, 3).set([state.lo, state.hi, state.nearDepth]);
+    new Float32Array(wasmMemory.buffer, ptr + dispOff, n).set(disparity);
+    if (prev) new Float32Array(wasmMemory.buffer, ptr + prevOff, n).set(prev);
+    depth_normalize(
+      ptr + dispOff, n, options.width, options.height, options.horizonY,
+      options.aligned ? 1 : 0, options.sameScene ? 1 : 0,
+      ptr, prev ? ptr + prevOff : 0, ptr + outOff,
+    );
+    const st = new Float64Array(wasmMemory.buffer, ptr, 3);
+    state.lo = st[0]!;
+    state.hi = st[1]!;
+    state.nearDepth = st[2]!;
+    out.set(new Float32Array(wasmMemory.buffer, ptr + outOff, Math.min(n, out.length)));
+    state.previous = out;
+    return out;
+  };
+
   const maxIrTaps = dsp_max_ir_taps();
   /**
    * The engine keeps its own malloc'd state; the wrapper owns one more block
@@ -576,25 +671,41 @@ export async function instantiateStreetViewWasm(
     downsample2d,
     lumaAnalyze,
     createCabinDsp,
-    isWasm: true,
+    depthPercentiles,
+    depthNearDepth,
+    depthNormalize,
   };
 }
 
 /**
- * Synchronous access to the module.
- * Returns null until `loadWasmModule()` has resolved at least once.
- * Prefer the async version whenever possible.
+ * Synchronous access to the loaded module. Throws until
+ * {@link loadWasmModule} has resolved — the app awaits it before the first
+ * React render, so a throw here means a caller ran at import time or on a
+ * path that must `await loadWasmModule()` first.
  */
-export function getWasmModule(): StreetViewWasmAPI | null {
+export function requireWasm(): StreetViewWasmAPI {
+  if (!_cachedModule) {
+    throw new Error('streetview-wasm is not loaded yet: await loadWasmModule() before calling a kernel');
+  }
   return _cachedModule;
 }
 
 /**
- * Reset the cached module (useful for testing).
+ * Install an already-instantiated module (src/setupTests.ts, which reads the
+ * committed binary from disk — Node has no server for public/wasm/).
+ * @internal
+ */
+export function _installWasmModule(mod: StreetViewWasmAPI): void {
+  _cachedModule = mod;
+  _pendingModule = null;
+}
+
+/**
+ * Forget the cached module and fetched bytes (tests only).
  * @internal
  */
 export function _resetWasmModule(): void {
   _cachedModule = null;
+  _pendingModule = null;
   _binaries.clear();
-  resetJsFallbackState();
 }

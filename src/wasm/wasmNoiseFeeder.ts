@@ -96,16 +96,12 @@ export class WasmNoiseFeeder {
     return this.wasm !== null;
   }
 
-  /** Resolves once the module has finished loading (WASM or JS fallback). Mainly for tests/warmup. */
+  /** Resolves once the module has finished loading. Mainly for tests/warmup. */
   public async waitUntilLoaded(): Promise<void> {
     this.ensureLoaded();
     await this.loading;
   }
 
-  /** True when backed by the compiled WASM binary; false for the JS fallback. */
-  public get isWasm(): boolean {
-    return this.wasm?.isWasm ?? false;
-  }
 
   /**
    * Returns a freshly-filled tile when `frameCount` lands on the update

@@ -7,6 +7,7 @@ import { requireGpuAdapter } from './gpuLane';
  * - a pass whose WGSL fails validation is disabled and reported on
  *   `webgpuProbe.passes`, while the road frame keeps presenting and the device
  *   raises no per-frame validation errors;
+ * - a .wasm that does not load fails boot at probe stage `wasm`;
  * - the canvas backing store is CSS size × DPR;
  * - an external device loss re-inits exactly once, and the renderer's own
  *   `destroy()` never re-inits.
@@ -130,6 +131,20 @@ test.describe('GPU foundation on a real WebGPU device', () => {
     requireGpuAdapter(testInfo, out.fatal);
     expect(out.fatal).toMatch(/renderer failed to boot/);
     expect(out.probe).toEqual({ ok: false, stage: 'pipeline' });
+  });
+
+  test('a .wasm that does not load fails boot at stage "wasm" — the binary is the only implementation', async ({ page }, testInfo) => {
+    await page.goto(`${FIXTURE}?wasm=missing`);
+    await page.waitForFunction(() => (window as unknown as { __out?: { done?: boolean } }).__out?.done === true);
+    const out = await page.evaluate(() => ({
+      fatal: (window as unknown as { __out: Out }).__out.fatal,
+      probe: window.webgpuProbe
+        ? { ok: window.webgpuProbe.ok, stage: window.webgpuProbe.stage, reason: window.webgpuProbe.reason }
+        : null,
+    }));
+    requireGpuAdapter(testInfo, out.fatal);
+    expect(out.fatal).toMatch(/renderer failed to boot/);
+    expect(out.probe).toEqual({ ok: false, stage: 'wasm', reason: expect.stringMatching(/streetview-wasm failed to load: HTTP 404/) });
   });
 
   test.describe('at DPR 2', () => {

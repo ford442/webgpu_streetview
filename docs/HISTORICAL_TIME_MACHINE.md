@@ -35,7 +35,7 @@ Tracking: #221 (stills hop, shipped) → year-strip / GPU wipe product issue.
   the ~11 m grid cell. That cache stores only `panoId` / `imageDate` / lat-lng
   metadata, never imagery.
 - Results are deduped by `panoId`, then by `imageDate`.
-- The ring uses the WASM `offset_latlng` export (#278) with its JS twin.
+- The ring uses the WASM `offset_latlng` export (#278).
 - Shared-session guests do not crawl; they follow the host `panoId` / `imageDate`.
 
 ## Year-chip wipe (slice 2)

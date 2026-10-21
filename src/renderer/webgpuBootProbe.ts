@@ -16,6 +16,8 @@ export type WebGpuProbeStage =
   | 'compute'
   /** A required pass (pass 1, or weather with no present fallback) failed validation. */
   | 'pipeline'
+  /** public/wasm/streetview-wasm.wasm did not fetch or instantiate — no JS twin to fall back to. */
+  | 'wasm'
   | 'ok';
 
 export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';

@@ -33,6 +33,7 @@ import { Renderer } from './Renderer';
 import { getPassStatuses } from './passStatus';
 import { publishCabinOverlaySource, resetCabinOverlaySourceForTests } from './cabinOverlayRegistry';
 import { resetRoadFrameSourceForTests } from './roadFrameRegistry';
+import { _installWasmModule, _resetWasmModule, requireWasm } from '../wasm';
 
 let gpu: FakeGpu;
 let pipelineLabels: Map<unknown, string>;
@@ -193,6 +194,27 @@ describe('pass isolation', () => {
         expect(boot.publishBootFailure).toHaveBeenCalledWith({}, 'pipeline', expect.stringContaining('streetview'));
         expect(destroyDevice).toHaveBeenCalledTimes(1);
         expect(renderer.getSharedGpuDevice()).toBeUndefined();
+    });
+
+    it('a .wasm that does not load fails boot at stage "wasm" — there is no JS twin to run instead', async () => {
+        const installed = requireWasm();
+        _resetWasmModule();
+        try {
+            serveShaders();
+            const serve = globalThis.fetch as (url: string) => Promise<unknown>;
+            (globalThis as Record<string, unknown>).fetch = async (url: string) =>
+                (String(url).endsWith('.wasm') ? { ok: false, status: 404, statusText: 'Not Found' } : serve(url));
+            const renderer = new Renderer(canvas());
+            expect(await renderer.init()).toBe(false);
+            expect(boot.publishBootFailure).toHaveBeenCalledWith(
+                {}, 'wasm', expect.stringMatching(/streetview-wasm failed to load: HTTP 404/),
+            );
+            expect(boot.publishBootSuccess).not.toHaveBeenCalled();
+            expect(destroyDevice).toHaveBeenCalledTimes(1);
+            expect(renderer.getSharedGpuDevice()).toBeUndefined();
+        } finally {
+            _installWasmModule(installed);
+        }
     });
 });
 

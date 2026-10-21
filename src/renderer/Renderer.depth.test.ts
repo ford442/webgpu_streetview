@@ -17,14 +17,6 @@ vi.mock('./bootDevice', async (importOriginal) => ({
     ...(await importOriginal<typeof import('./bootDevice')>()),
     bootDevice: boot.bootDevice,
 }));
-vi.mock('../wasm', async (importOriginal) => {
-    const { JS_FALLBACK } = await import('../wasm/jsFallback');
-    return {
-        ...(await importOriginal<typeof import('../wasm')>()),
-        loadWasmModule: async () => JS_FALLBACK,
-        getWasmModule: () => JS_FALLBACK,
-    };
-});
 
 const weather = vi.hoisted(() => ({ setSceneDepth: [] as unknown[] }));
 vi.mock('./WeatherPostProcessor', () => ({
