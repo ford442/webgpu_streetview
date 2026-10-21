@@ -12,6 +12,7 @@ export const LOCAL_STORAGE_MIRROR: Record<OfflineStoreName, string | null> = {
   snapshots: 'webgpu_streetview_snapshots',
   panoMetadata: null,
   routeGraph: null,
+  tripRecordings: null,
 };
 
 const MIRROR_STORES = (Object.keys(LOCAL_STORAGE_MIRROR) as OfflineStoreName[]).filter(

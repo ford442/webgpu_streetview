@@ -5,6 +5,7 @@
  */
 
 import { absoluteAngleDiff, initialBearing } from '../utils/navigation';
+import { nearestPano, shortestPanoPath, type LinkGraph } from '../wasm/graph';
 import type { RouteGraphNode } from './offlineStore';
 
 const MAX_HEADING_DIFF_DEG = 45;
@@ -17,7 +18,7 @@ const MAX_HEADING_DIFF_DEG = 45;
  * graph or no neighbor is within `MAX_HEADING_DIFF_DEG`.
  */
 export function findBestOfflineLink(
-  nodes: RouteGraphNode[],
+  nodes: readonly RouteGraphNode[],
   currentPanoId: string,
   targetHeading: number,
 ): RouteGraphNode | null {
@@ -82,4 +83,46 @@ export function findPathBetweenPanos(
   }
 
   return null;
+}
+
+export type OfflineHopPlan =
+  /** Next pano on the kernel's shortest path to the destination. */
+  | { kind: 'astar'; next: RouteGraphNode; remainingHops: number }
+  /**
+   * The kernel found no path (the cached graph has a gap); this is the greedy
+   * bearing walk's pick instead. Callers report it — it can dead-end.
+   */
+  | { kind: 'greedy'; next: RouteGraphNode }
+  /** Already at the graph pano nearest the destination. */
+  | { kind: 'arrived' };
+
+/**
+ * Where to hop next when driving a prefetched graph without the network:
+ * the next pano on the shortest path (`graph_astar`) from `currentPanoId` to
+ * the graph pano nearest `destination`. When the graph has no path, falls
+ * back to {@link findBestOfflineLink} aimed at the destination and says so
+ * (`kind: 'greedy'`). Null when the current pano is not in the graph or the
+ * greedy walk has nowhere to go either.
+ */
+export function planOfflineHop(
+  graph: LinkGraph,
+  currentPanoId: string,
+  destination: { lat: number; lng: number },
+): OfflineHopPlan | null {
+  const current = graph.indexOf.get(currentPanoId);
+  if (current === undefined) return null;
+  const goal = nearestPano(graph, destination.lat, destination.lng);
+  if (goal === null) return null;
+  if (goal === currentPanoId) return { kind: 'arrived' };
+
+  const path = shortestPanoPath(graph, currentPanoId, goal);
+  if (path && path.length >= 2) {
+    const next = graph.nodes[graph.indexOf.get(path[1]!)!]!;
+    return { kind: 'astar', next, remainingHops: path.length - 1 };
+  }
+
+  const here = graph.nodes[current]!;
+  const heading = initialBearing(here.lat, here.lng, destination.lat, destination.lng);
+  const greedy = findBestOfflineLink(graph.nodes, currentPanoId, heading);
+  return greedy ? { kind: 'greedy', next: greedy } : null;
 }

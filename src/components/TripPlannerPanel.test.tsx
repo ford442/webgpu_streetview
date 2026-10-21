@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { L_ROUTE, ORIGIN } from '../services/routing/__tests__/routeFixtures';
+import { buildActiveRoute } from '../services/routing/routeGeometry';
 import { tripStore } from '../state/tripStore';
 import TripPlannerPanel from './TripPlannerPanel';
 
@@ -15,8 +17,13 @@ function props(overrides: Partial<React.ComponentProps<typeof TripPlannerPanel>>
     onStop: vi.fn(),
     onClear: vi.fn(),
     onSaveOffline: vi.fn(),
+    onCancelOffline: vi.fn(),
     offlineBusy: false,
     offlineError: null,
+    offlineEstimate: null,
+    offlineProgress: null,
+    offlineResult: null,
+    offlineSavedNodes: 0,
     isCruiseMode: false,
     getShareUrl: () => null,
     ...overrides,
@@ -67,6 +74,28 @@ describe('TripPlannerPanel', () => {
   it('says so when routing is switched off', () => {
     render(<TripPlannerPanel {...props({ routing: { endpoint: null, usingDemo: false } })} />);
     expect(screen.getByRole('status')).toHaveTextContent(/switched off/);
+  });
+
+  it('shows the offline save cost and asks before making any lookup', () => {
+    const route = buildActiveRoute(L_ROUTE, { stops: [ORIGIN, L_ROUTE.polyline[4]!], providerId: 'test' });
+    tripStore.reset({ status: 'ready', route, stops: [] });
+    const p = props({ offlineEstimate: { calls: 51, maxCalls: 64 } });
+    const { rerender } = render(<TripPlannerPanel {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: /Save for offline \(≈51 lookups\)/ }));
+    expect(p.onSaveOffline).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/≈51 panorama lookups \(at most 64\).*metered/);
+    fireEvent.click(screen.getByRole('button', { name: 'Start (51 lookups)' }));
+    expect(p.onSaveOffline).toHaveBeenCalledTimes(1);
+
+    rerender(<TripPlannerPanel {...p} offlineBusy offlineProgress={{
+      routeId: route.id, callsUsed: 12, estimate: { calls: 51, maxCalls: 64 }, alongM: 120, lengthM: route.lengthM, nodes: 12,
+    }} />);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '120');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(p.onCancelOffline).toHaveBeenCalled();
+
+    rerender(<TripPlannerPanel {...p} offlineResult={{ stop: 'budget', nodes: 12, callsUsed: 12, coveredM: 120 }} />);
+    expect(screen.getByText(/Stopped at the session call cap: 12 panos saved \(12 metered lookups\)/)).toBeInTheDocument();
   });
 
   it('closes on Escape', () => {

@@ -11,7 +11,7 @@
  *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
  *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d, luma_analyze,
  *   dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
- *   dsp_max_ir_taps
+ *   dsp_max_ir_taps, graph_astar, graph_nearest
  *
  * This comment is a convenience copy — the SSOT for the export set is
  * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
@@ -28,6 +28,7 @@
  *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d /
  *                       luma_analyze
  *   cabin_dsp_module.cpp  dsp_* — the stateful cabin engine the AudioWorklet runs
+ *   graph_module.cpp    graph_astar / graph_nearest over the cached link graph
  *
  * audio_kernels.h holds the internal (unexported) pieces the audio domains
  * share: the sample hash, the engine tone and the head-shadow coefficients.
@@ -179,6 +180,37 @@ int sw_polyline_resample(const double* in, int n, double step_m,
  */
 void sw_polyline_project(const double* poly, int n, double lat, double lng,
                          double* out3);
+
+/** Bytes of caller-owned `work` that sw_graph_astar needs per node. */
+#define SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE 32
+
+/**
+ * Shortest path over a directed CSR link graph (A*, haversine edge cost and
+ * heuristic). Deterministic: ties break on the lower node index.
+ *
+ * @param offsets    node_count + 1 ints: node i's edges are
+ *                   neighbors[offsets[i] .. offsets[i + 1]). Must start at 0,
+ *                   never decrease and end at edge_count.
+ * @param neighbors  edge_count target node indices (out-of-range ones skipped).
+ * @param coords     node_count [lat, lng] pairs in degrees.
+ * @param work       node_count * SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE bytes,
+ *                   8-byte aligned; contents on return are unspecified.
+ * @param out_path   Receives the path's node indices, `from` first and `to`
+ *                   last; at most `max_len` are written (nullptr / 0 to size).
+ * @return           The path's node count — like snprintf it can exceed
+ *                   `max_len` — 1 when from == to, -1 when `to` is unreachable
+ *                   or the input is invalid.
+ */
+int sw_graph_astar(const int* offsets, const int* neighbors, const double* coords,
+                   int node_count, int edge_count, int from, int to,
+                   void* work, int* out_path, int max_len);
+
+/**
+ * Index of the node nearest (haversine) to [lat, lng]; ties: the lower index.
+ * @param coords  node_count [lat, lng] pairs in degrees.
+ * @return        -1 for an empty graph or nullptr.
+ */
+int sw_graph_nearest(const double* coords, int node_count, double lat, double lng);
 
 /**
  * Normalise an angle to [0, 360).

@@ -37,6 +37,16 @@ export interface TripSummary {
   avgSpeedMps: number | null;
 }
 
+/** How an offline drive's hops were chosen (`tripController` graph planner). */
+export interface OfflineDriveStats {
+  /** Hops on the kernel's shortest path. */
+  astarHops: number;
+  /** Hops where the graph had no path and the greedy walk chose instead. */
+  greedyHops: number;
+  /** Hops from a pano the cached graph does not cover (live follower used). */
+  offGraphHops: number;
+}
+
 export interface TripState {
   readonly status: TripStatus;
   readonly stops: readonly TripStop[];
@@ -46,6 +56,8 @@ export interface TripState {
   readonly resnaps: number;
   readonly startedAt: number | null;
   readonly summary: TripSummary | null;
+  /** Non-null once a hop has been planned offline on this drive. */
+  readonly offlineDrive: OfflineDriveStats | null;
 }
 
 export const IDLE_TRIP: TripState = {
@@ -57,6 +69,7 @@ export const IDLE_TRIP: TripState = {
   resnaps: 0,
   startedAt: null,
   summary: null,
+  offlineDrive: null,
 };
 
 export interface TripStore {
@@ -121,6 +134,7 @@ export function tripProbeSnapshot(state: TripState = tripStore.get()): {
   crossM: number | null;
   resnaps: number;
   error: string | null;
+  offlineDrive: OfflineDriveStats | null;
 } {
   return {
     status: state.status,
@@ -130,5 +144,6 @@ export function tripProbeSnapshot(state: TripState = tripStore.get()): {
     crossM: state.progress?.crossM ?? null,
     resnaps: state.resnaps,
     error: state.error,
+    offlineDrive: state.offlineDrive,
   };
 }

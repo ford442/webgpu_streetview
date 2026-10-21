@@ -27,7 +27,12 @@ export {
   type RouteGraphSummary,
   type OfflineStoreName,
 } from './offlineStore';
-export { findBestOfflineLink, findPathBetweenPanos } from './routeGraphNavigation';
+export {
+  findBestOfflineLink,
+  findPathBetweenPanos,
+  planOfflineHop,
+  type OfflineHopPlan,
+} from './routeGraphNavigation';
 export {
   migrateLocalStorageToIndexedDB,
   loadMirroredJson,

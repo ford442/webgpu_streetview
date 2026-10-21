@@ -3,6 +3,8 @@ import { isLookId } from '../config/lookPacks';
 import { isValidVehicleType, type VehicleType } from '../car/VehicleManager';
 import { isCabinView, type CabinView } from '../car/cabinView';
 import { decodeRouteStops } from '../services/routing/routeLink';
+import { TRIP_LINK_MAX_CHARS } from '../trip/tripFile';
+import type { SessionReplay } from '../trip/tripReplayController';
 
 export type { CabinView } from '../car/cabinView';
 
@@ -26,6 +28,7 @@ export interface HostBroadcastExtras {
   carHeading?: number;
   hdr?: boolean;
   route?: string | null;
+  replay?: SessionReplay | null;
 }
 
 export interface NormalizedSessionFilmSet {
@@ -36,6 +39,7 @@ export interface NormalizedSessionFilmSet {
   carHeading?: number;
   hdr?: boolean;
   route?: string;
+  replay?: SessionReplay;
 }
 
 /**
@@ -51,6 +55,7 @@ export function normalizeIncomingSessionFields(
     carHeading?: unknown;
     hdr?: unknown;
     route?: unknown;
+    replay?: unknown;
   },
 ): NormalizedSessionFilmSet {
   const out: NormalizedSessionFilmSet = {};
@@ -74,6 +79,15 @@ export function normalizeIncomingSessionFields(
   }
   if (typeof incoming.route === 'string' && decodeRouteStops(incoming.route)) {
     out.route = incoming.route;
+  }
+  const replay = incoming.replay as Partial<SessionReplay> | null | undefined;
+  if (
+    replay
+    && typeof replay.link === 'string' && replay.link.length > 0 && replay.link.length <= TRIP_LINK_MAX_CHARS
+    && /^[A-Za-z0-9_-]+$/.test(replay.link)
+    && typeof replay.index === 'number' && Number.isInteger(replay.index) && replay.index >= 0
+  ) {
+    out.replay = { link: replay.link, index: replay.index, playing: replay.playing === true };
   }
   return out;
 }
@@ -107,6 +121,7 @@ export function buildHostBroadcastPayload(
         carHeading: extras.carHeading,
         hdr: extras.hdr,
         route: extras.route ?? undefined,
+        replay: extras.replay ?? undefined,
       })
     : {};
 

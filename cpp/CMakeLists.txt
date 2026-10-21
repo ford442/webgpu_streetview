@@ -75,7 +75,7 @@ if(EMSCRIPTEN)
     #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
     #       reduce_luma_bt709, downsample_2d, luma_analyze, dsp_create,
     #       dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
-    #       dsp_max_ir_taps
+    #       dsp_max_ir_taps, graph_astar, graph_nearest
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
@@ -100,6 +100,7 @@ if(EMSCRIPTEN)
         src/hrtf_module.cpp
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
+        src/graph_module.cpp
         src/bindings.cpp
     )
     add_executable(streetview-wasm ${STREETVIEW_WASM_SOURCES})
@@ -125,7 +126,7 @@ if(EMSCRIPTEN)
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
         "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_malloc','_free','_emscripten_stack_get_base']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_graph_astar','_graph_nearest','_malloc','_free','_emscripten_stack_get_base']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -172,6 +173,7 @@ else()
         src/hrtf_module.cpp
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
+        src/graph_module.cpp
         src/bindings.cpp
     )
     target_include_directories(streetview_cpu PUBLIC include)

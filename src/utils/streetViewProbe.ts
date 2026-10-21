@@ -18,7 +18,9 @@
  */
 
 import { getMapsCallBudget, type MapsCallBudgetStats } from '../services/maps/callBudget';
+import { povStore } from '../state/povStore';
 import { tripProbeSnapshot } from '../state/tripStore';
+import { tripLibrary, type TripReplayState } from '../trip/tripLibrary';
 import type { ScraperHealth } from './scraperHealth';
 import { createInitialScraperHealth } from './scraperHealth';
 
@@ -193,6 +195,14 @@ declare global {
       getCallBudget: () => MapsCallBudgetStats;
       /** Routed trip status / progress / re-snaps (state/tripStore.ts). */
       getTrip: () => ReturnType<typeof tripProbeSnapshot>;
+      /** Trip recorder / replay (trip/tripLibrary.ts): recordings by id, the recording in progress, the replay. */
+      getTripRecordings: () => {
+        recordings: { id: string; hops: { panoId: string; panoDate: string | null; heading: number; pitch: number }[] }[];
+        recordingId: string | null;
+        replay: TripReplayState | null;
+        /** The live view, to compare with a replayed hop. */
+        pov: { heading: number; pitch: number; zoom: number; carHeading: number };
+      };
       enablePixelWatch: () => void;
       disablePixelWatch: () => void;
       clear: () => void;
@@ -208,6 +218,15 @@ export function installStreetViewProbe(): void {
     getScraperHealth: () => streetViewProbe.getScraperHealth(),
     getCallBudget: () => getMapsCallBudget().getStats(),
     getTrip: () => tripProbeSnapshot(),
+    getTripRecordings: () => {
+      const s = tripLibrary.get();
+      return {
+        recordings: s.recordings.map((r) => ({ id: r.id, hops: r.hops.map((h) => ({ panoId: h.panoId, panoDate: h.panoDate, heading: h.heading, pitch: h.pitch })) })),
+        recordingId: s.recordingId,
+        replay: s.replay,
+        pov: (({ heading, pitch, zoom, carHeading }) => ({ heading, pitch, zoom, carHeading }))(povStore.get()),
+      };
+    },
     enablePixelWatch: () => streetViewProbe.enablePixelWatch(),
     disablePixelWatch: () => streetViewProbe.disablePixelWatch(),
     clear: () => streetViewProbe.clear(),

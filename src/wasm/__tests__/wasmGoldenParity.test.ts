@@ -81,6 +81,9 @@ interface Goldens {
     width: number; height: number; rgba: number[];
     dstW: number; dstH: number; expected: number[];
   };
+  graph: { nodeCount: number; offsets: number[]; neighbors: number[]; coords: number[] };
+  graphAstar: { from: number; to: number; expectedLength: number; expected: number[] }[];
+  graphNearest: { lat: number; lng: number; expected: number }[];
 }
 
 const goldens: Goldens = JSON.parse(
@@ -265,6 +268,27 @@ describe('WASM golden parity (JS fallback)', () => {
       expectRelClose(out.alongMeters, c.expectedAlong, TOLERANCES.haversineRelative, `polylineProject ${c.label} along`);
       // Cross-track is a small difference of bearings; a millimetre is plenty.
       expectClose(out.crossMeters, c.expectedCross, 1e-3, `polylineProject ${c.label} cross`);
+    }
+  });
+
+  it('graphAstar returns the golden node lists exactly', () => {
+    const graph = {
+      nodeCount: goldens.graph.nodeCount,
+      offsets: Int32Array.from(goldens.graph.offsets),
+      neighbors: Int32Array.from(goldens.graph.neighbors),
+      coords: Float64Array.from(goldens.graph.coords),
+    };
+    for (const c of goldens.graphAstar) {
+      const path = api.graphAstar(graph, c.from, c.to);
+      const label = `graphAstar ${c.from}->${c.to}`;
+      if (c.expectedLength < 0) {
+        expect(path, label).toBeNull();
+      } else {
+        expect(Array.from(path ?? []), label).toEqual(c.expected);
+      }
+    }
+    for (const c of goldens.graphNearest) {
+      expect(api.graphNearest(graph, c.lat, c.lng), `graphNearest ${c.lat},${c.lng}`).toBe(c.expected);
     }
   });
 

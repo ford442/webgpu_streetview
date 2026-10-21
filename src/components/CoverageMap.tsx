@@ -32,6 +32,7 @@ import {
   type PoiCoverage,
 } from '../search/poiCoverage';
 import type { NearbyPoi } from '../search/poiModel';
+import { useTripLibrary } from '../trip/tripLibrary';
 import { createGoogleCoverageMap, type GoogleCoverageMap } from './coverageMap/googleCoverageMap';
 import { createCesiumCoverageScene, type CesiumCoverageScene } from './coverageMap/cesiumCoverageScene';
 
@@ -230,6 +231,12 @@ const CoverageMap: React.FC<CoverageMapProps> = ({ panorama, pois, onTeleportPan
     googleMapRef.current?.setPois(pois, coverage);
     cesiumSceneRef.current?.setPois(pois, coverage);
   }, [pois, poiCoverage, checkPois, googleReady, cesiumState]);
+
+  // The trip album picked in the Trip panel: its recorded path and stills.
+  const album = useTripLibrary((s) => s.recordings.find((r) => r.id === s.albumId) ?? null);
+  useEffect(() => {
+    googleMapRef.current?.setTrip(album ? { path: album.hops, stills: album.stills } : null);
+  }, [album, googleReady]);
 
   const layerStyle = (active: boolean): React.CSSProperties => ({
     position: 'absolute',

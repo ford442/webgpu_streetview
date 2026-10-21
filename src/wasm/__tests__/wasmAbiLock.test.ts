@@ -52,6 +52,8 @@ const EXPECTED_EXPORTS = [
   'dsp_set_ir',
   'dsp_render',
   'dsp_max_ir_taps',
+  'graph_astar',
+  'graph_nearest',
 ] as const;
 
 /** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
@@ -216,6 +218,8 @@ describe('WASM ABI lock', () => {
       createCabinDsp: [
         'dsp_create', 'dsp_destroy', 'dsp_set_params', 'dsp_set_ir', 'dsp_render', 'dsp_max_ir_taps',
       ],
+      graphAstar: ['graph_astar'],
+      graphNearest: ['graph_nearest'],
     };
 
     for (const method of Object.keys(methodToExport)) {

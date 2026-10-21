@@ -13,7 +13,7 @@ import {
   lumaHistogramBt709 as jsLumaHistogramBt709,
   reduceLumaBt709 as jsReduceLumaBt709,
 } from '../renderer/gpuChores/lumaMath';
-import type { StreetViewWasmAPI } from './abi';
+import type { CsrGraph, StreetViewWasmAPI } from './abi';
 import { engineTone, hashU32, hashUnit, hrtfShadow } from './audioKernels';
 import { CabinDspTwin } from './cabinDspTwin';
 
@@ -555,6 +555,123 @@ function _jsFillHrtf(
   }
 }
 
+function _jsNodeDistance(coords: Float64Array, a: number, b: number): number {
+  return _jsHaversine(coords[a * 2]!, coords[a * 2 + 1]!, coords[b * 2]!, coords[b * 2 + 1]!);
+}
+
+function _jsGraphAstar(graph: CsrGraph, from: number, to: number): Int32Array | null {
+  // Mirrors sw_graph_astar (cpp/src/graph_module.cpp): same validation, same
+  // heap order (f, then node index) and strict-< relaxation, so the path is
+  // the same node list.
+  const { nodeCount: n, offsets, neighbors, coords } = graph;
+  if (!(n > 0) || offsets.length < n + 1 || coords.length < n * 2) return null;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from >= n || to < 0 || to >= n) {
+    return null;
+  }
+  const edgeCount = neighbors.length;
+  if (offsets[0] !== 0 || offsets[n] !== edgeCount) return null;
+  for (let i = 1; i <= n; i++) if (offsets[i]! < offsets[i - 1]!) return null;
+
+  const UNSEEN = -1;
+  const CLOSED = -2;
+  const g = new Float64Array(n).fill(Infinity);
+  const f = new Float64Array(n).fill(Infinity);
+  const parent = new Int32Array(n).fill(-1);
+  const pos = new Int32Array(n).fill(UNSEEN);
+  const heap = new Int32Array(n);
+  let size = 0;
+
+  const before = (a: number, b: number): boolean => f[a]! < f[b]! || (f[a] === f[b] && a < b);
+  const place = (slot: number, node: number): void => {
+    heap[slot] = node;
+    pos[node] = slot;
+  };
+  const siftUp = (slot: number): void => {
+    const node = heap[slot]!;
+    while (slot > 0) {
+      const up = (slot - 1) >> 1;
+      if (!before(node, heap[up]!)) break;
+      place(slot, heap[up]!);
+      slot = up;
+    }
+    place(slot, node);
+  };
+  const siftDown = (slot: number): void => {
+    const node = heap[slot]!;
+    for (;;) {
+      const left = slot * 2 + 1;
+      if (left >= size) break;
+      const right = left + 1;
+      let child = left;
+      if (right < size && before(heap[right]!, heap[left]!)) child = right;
+      if (!before(heap[child]!, node)) break;
+      place(slot, heap[child]!);
+      slot = child;
+    }
+    place(slot, node);
+  };
+
+  g[from] = 0;
+  f[from] = _jsNodeDistance(coords, from, to);
+  heap[0] = from;
+  pos[from] = 0;
+  size = 1;
+
+  let found = false;
+  while (size > 0) {
+    const node: number = heap[0]!;
+    size--;
+    if (size > 0) {
+      heap[0] = heap[size]!;
+      pos[heap[0]!] = 0;
+      siftDown(0);
+    }
+    pos[node] = CLOSED;
+    if (node === to) {
+      found = true;
+      break;
+    }
+    for (let e: number = offsets[node]!; e < offsets[node + 1]!; e++) {
+      const next = neighbors[e]!;
+      if (next < 0 || next >= n || pos[next] === CLOSED) continue;
+      const tentative = g[node]! + _jsNodeDistance(coords, node, next);
+      if (!(tentative < g[next]!)) continue;
+      g[next] = tentative;
+      f[next] = tentative + _jsNodeDistance(coords, next, to);
+      parent[next] = node;
+      if (pos[next] === UNSEEN) {
+        heap[size] = next;
+        pos[next] = size;
+        size++;
+        siftUp(size - 1);
+      } else {
+        siftUp(pos[next]!);
+      }
+    }
+  }
+  if (!found) return null;
+
+  const path: number[] = [];
+  for (let at = to; at !== from; at = parent[at]!) path.push(at);
+  path.push(from);
+  return Int32Array.from(path.reverse());
+}
+
+function _jsGraphNearest(graph: CsrGraph, lat: number, lng: number): number {
+  const n = graph.nodeCount;
+  if (!(n > 0) || graph.coords.length < n * 2) return -1;
+  let best = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = _jsHaversine(graph.coords[i * 2]!, graph.coords[i * 2 + 1]!, lat, lng);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
 export const JS_FALLBACK: StreetViewWasmAPI = {
   seed: _jsSeed,
   noise2d: _jsNoise2d,
@@ -578,6 +695,8 @@ export const JS_FALLBACK: StreetViewWasmAPI = {
   downsample2d: jsDownsample2d,
   lumaAnalyze: jsLumaAnalyze,
   createCabinDsp: (sampleRate: number) => new CabinDspTwin(sampleRate),
+  graphAstar: _jsGraphAstar,
+  graphNearest: _jsGraphNearest,
   isWasm: false,
 };
 
