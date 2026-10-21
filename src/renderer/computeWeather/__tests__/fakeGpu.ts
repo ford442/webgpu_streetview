@@ -63,6 +63,10 @@ export interface RecordedPass {
      * that takes the pass-descriptor path.
      */
     writeTimestampCalls: Array<{ querySet: unknown; index: number }>;
+    /** The descriptor's `label`, when it had one. */
+    label?: string;
+    /** Render passes: each colour attachment's view, in order. */
+    targets: unknown[];
 }
 
 export interface RecordedBindGroup {
@@ -133,7 +137,7 @@ export interface FakeGpu {
     encoders: RecordedEncoder[];
     querySets: RecordedQuerySet[];
     computePipelines: Array<{ id: number; entryPoint: string }>;
-    renderPipelines: Array<{ id: number }>;
+    renderPipelines: Array<{ id: number; label?: string }>;
     writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }>;
     writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }>;
     submits: number;
@@ -196,7 +200,7 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     const encoders: RecordedEncoder[] = [];
     const querySets: RecordedQuerySet[] = [];
     const computePipelines: Array<{ id: number; entryPoint: string }> = [];
-    const renderPipelines: Array<{ id: number }> = [];
+    const renderPipelines: Array<{ id: number; label?: string }> = [];
     const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }> = [];
     const writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }> = [];
     const state = { submits: 0 };
@@ -221,10 +225,13 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
      * One object is both the recording and the pass API, so a `setPipeline`
      * call made through the encoder is visible on the object tests inspect.
      */
-    function makePass(
-        type: 'compute' | 'render',
-        descriptor?: { timestampWrites?: RecordedPass['timestampWrites'] },
-    ): RecordedPass {
+    type PassDescriptor = {
+        label?: string;
+        timestampWrites?: RecordedPass['timestampWrites'];
+        colorAttachments?: Iterable<{ view: unknown } | null>;
+    };
+
+    function makePass(type: 'compute' | 'render', descriptor?: PassDescriptor): RecordedPass {
         if (options.rejectPassDescriptorTimestampWrites && descriptor?.timestampWrites) {
             throw new TypeError('timestampWrites is not supported on this pass descriptor');
         }
@@ -237,6 +244,8 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             ended: false,
             timestampWrites: descriptor?.timestampWrites,
             writeTimestampCalls: [],
+            label: descriptor?.label,
+            targets: [...(descriptor?.colorAttachments ?? [])].map((a) => a?.view),
         };
         return Object.assign(pass, {
             setPipeline: (p: unknown) => { pass.pipeline = p; },
@@ -254,12 +263,12 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         const rec: RecordedEncoder = { passes: [], copies: [], querySetResolves: [], bufferCopies: [] };
         encoders.push(rec);
         return {
-            beginComputePass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+            beginComputePass: (d?: PassDescriptor) => {
                 const p = makePass('compute', d);
                 rec.passes.push(p);
                 return p;
             },
-            beginRenderPass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+            beginRenderPass: (d?: PassDescriptor) => {
                 const p = makePass('render', d);
                 rec.passes.push(p);
                 return p;
@@ -342,9 +351,9 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             computePipelines.push({ id: p.id, entryPoint });
             return p;
         },
-        createRenderPipeline: (_d: GPURenderPipelineDescriptor) => {
+        createRenderPipeline: (d: GPURenderPipelineDescriptor) => {
             const p = { kind: 'renderPipeline', id: nextId++, getBindGroupLayout: (i: number) => ({ kind: 'bgl', group: i }) };
-            renderPipelines.push({ id: p.id });
+            renderPipelines.push({ id: p.id, label: d.label });
             return p;
         },
         createBindGroup: (d: GPUBindGroupDescriptor) => {

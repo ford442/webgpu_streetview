@@ -9,7 +9,10 @@ import { requireGpuAdapter } from './gpuLane';
  *   raises no per-frame validation errors;
  * - the canvas backing store is CSS size × DPR;
  * - an external device loss re-inits exactly once, and the renderer's own
- *   `destroy()` never re-inits.
+ *   `destroy()` never re-inits;
+ * - render scale (#329): `?scale=0.5` renders the road at half size and the
+ *   lazy upscale pass (FSR 1.0 EASU + RCAS, or `?upscale=bilinear`) presents
+ *   it at full size; an upscale that cannot build keeps the road at scale 1.
  *
  * Unit tests pin the same logic against a fake device; this is where a real
  * `getCompilationInfo` / `createRenderPipelineAsync` / error scope runs.
@@ -37,6 +40,15 @@ interface Out {
   bootsAfterExternalDestroy?: number;
   bootsAfterIntentionalDestroy?: number;
   lastLostReason?: string;
+  renderScale?: {
+    scale: number;
+    width: number;
+    height: number;
+    outputWidth: number;
+    outputHeight: number;
+    upscale: string;
+    limitedBy: string | null;
+  } | null;
 }
 
 async function run(page: Page, testInfo: TestInfo, query = ''): Promise<Out> {
@@ -80,6 +92,31 @@ async function presentedBrightness(page: Page): Promise<number> {
  */
 const PRESENTED = 150;
 
+/** Mean RGB of each cell of a 8×6 grid over the presented canvas — layout, not detail. */
+async function presentedGrid(page: Page): Promise<number[][]> {
+  const png = await page.locator('#gpu').screenshot();
+  return page.evaluate(async (b64) => {
+    const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const c = document.createElement('canvas');
+    c.width = 8;
+    c.height = 6;
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, 8, 6);
+    const d = ctx.getImageData(0, 0, 8, 6).data;
+    const cells: number[][] = [];
+    for (let i = 0; i < d.length; i += 4) cells.push([d[i]!, d[i + 1]!, d[i + 2]!]);
+    return cells;
+  }, png.toString('base64'));
+}
+
+function maxCellDelta(a: number[][], b: number[][]): number {
+  let max = 0;
+  a.forEach((cell, i) => cell.forEach((v, k) => { max = Math.max(max, Math.abs(v - b[i]![k]!)); }));
+  return max;
+}
+
 test.setTimeout(120_000);
 
 test.describe('GPU foundation on a real WebGPU device', () => {
@@ -92,9 +129,49 @@ test.describe('GPU foundation on a real WebGPU device', () => {
     // Scene depth (#320) is a lazy pass: registered, but nothing is built or
     // downloaded until it is switched on — e2e/scene-depth.spec.ts drives it.
     expect(out.passes?.depth).toBeUndefined();
+    // Render scale 1: the upscale pass is lazy and never built.
+    expect(out.passes?.upscale).toBeUndefined();
+    expect(out.renderScale).toMatchObject({ scale: 1, width: 400, height: 300, upscale: 'none' });
     expect(out.uncaptured).toEqual([]);
     expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
     expect(out.maxTextureDimension2D).toBeGreaterThanOrEqual(4096);
+  });
+
+  test.describe('render scale (#329)', () => {
+    test('?scale=1 builds no upscale and presents the same frame as no flag', async ({ page }, testInfo) => {
+      await run(page, testInfo);
+      const unflagged = await presentedGrid(page);
+      const out = await run(page, testInfo, '?scale=1');
+      expect(out.passes?.upscale).toBeUndefined();
+      expect(out.renderScale).toMatchObject({ scale: 1, width: 400, height: 300, upscale: 'none', limitedBy: null });
+      expect(maxCellDelta(await presentedGrid(page), unflagged)).toBe(0);
+    });
+
+    for (const upscale of ['fsr', 'bilinear'] as const) {
+      test(`?scale=0.5 (${upscale}): a half-size road frame, upscaled to the full canvas`, async ({ page }, testInfo) => {
+        await run(page, testInfo);
+        const native = await presentedGrid(page);
+        const out = await run(page, testInfo, `?scale=0.5${upscale === 'bilinear' ? '&upscale=bilinear' : ''}`);
+        expect(out.passes?.upscale?.state, out.passes?.upscale?.reason).toBe('ready');
+        expect(out.renderScale).toMatchObject({
+          scale: 0.5, width: 200, height: 150, outputWidth: 400, outputHeight: 300, upscale, limitedBy: null,
+        });
+        expect(out.uncaptured).toEqual([]);
+        expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
+        // The whole frame, in place: a quarter-frame or offset upscale would move the cells far.
+        expect(maxCellDelta(await presentedGrid(page), native)).toBeLessThan(24);
+      });
+    }
+
+    test('a broken upscale.wgsl: failed on the probe, the road stays at scale 1 and presents', async ({ page }, testInfo) => {
+      const out = await run(page, testInfo, '?scale=0.5&break=upscale.wgsl');
+      const upscale = out.passes?.upscale;
+      expect(upscale?.state).toBe('failed');
+      expect(upscale?.compilation?.some((m) => m.type === 'error' && m.lineNum > 0)).toBe(true);
+      expect(out.renderScale).toMatchObject({ scale: 1, width: 400, limitedBy: 'upscale-unavailable' });
+      expect(out.uncaptured).toEqual([]);
+      expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
+    });
   });
 
   test('a broken cabin-composite.wgsl is isolated: failed with compilation info, road frame still presents', async ({ page }, testInfo) => {

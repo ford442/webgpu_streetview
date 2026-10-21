@@ -270,6 +270,58 @@ The GLSL reference does not implement either — it ignores slots 38/39.
 
 ---
 
+## 7. Render scale and upscale
+
+The road frame renders at `round(canvas × scale)`, `scale` ∈ [0.5, 1] in 0.05
+steps (`src/renderer/renderScale.ts`); the cabin, DOM overlays and the cabin's
+pixel ratio (`applyPerformanceProfile`) are not scaled. The app never skips a
+frame to keep up: under load the scale drops first, a preset downgrade last.
+
+| What | Where |
+|---|---|
+| Request (mode, range, reason) | `renderScale.ts` — preset `renderScale`/`renderScaleMin` (Low 0.75/0.5, Medium 1/0.6, High 1/0.7, Ultra 1/0.75), or `?scale=` (fixed, no budget loop) |
+| Budget loop | `frameBudget.ts` — pure `stepFrameBudget`, driven per frame by `WebGPUCanvas` |
+| Applied per frame | `Renderer.resolveFrameScale` → `FrameContext.renderScale`; `window.webgpuProbe.renderScale` |
+| Upscale | `upscale/UpscalePass.ts` + `public/shaders/upscale.wgsl`, frame pass `upscale` (order 350) |
+| Overlay | `PerformanceStatsOverlay` — scale, road size → output, upscaler, range; per-pass GPU ms incl. upscale |
+
+**Scaled frame.** Pass 1, the intermediate, the compute weather targets and
+the gpuChores inputs follow the intermediate's size. `weather-post.wgsl`
+derives its UV from `textureDimensions(sceneTex)`, so weather must render at
+the intermediate's size: below 1 it writes the upscale's **road target**
+(`presentationFormat`, scaled) instead of the swap chain, and the upscale pass
+presents it. The windshield portal keeps sampling the (smaller) pass-1
+intermediate. At scale 1 weather writes the swap chain and the upscale pass is
+neither encoded nor built — `?scale=1` and no flag are byte-identical to the
+pre-#329 frame (fragment, compute and `?hdr`, checked on SwiftShader).
+
+**Upscale.** FSR 1.0 (MIT): EASU — the 12-tap edge-adaptive Lanczos with its
+deringing clamp, a `textureLoad` port — into an `rgba16float` texture at output
+size, then RCAS (0.2 stops, the limiter's ceiling the `?hdr` headroom) into the
+swap chain. `?upscale=bilinear` is one filtered stretch. One timestamp span
+(slots 6–7) covers both passes. The pass is optional and **lazy**: the first
+request below 1 starts building it, and until it is ready the road stays at 1
+(`limitedBy: 'upscale-pending'`); if it fails it is reported on
+`webgpuProbe.passes.upscale` and the road stays at 1 for the session
+(`'upscale-unavailable'`). Temporal reprojection and FSR 2/3, DLSS, XeSS are
+out of scope.
+
+**Budget loop.** One 0.05 step at most every 10 frames, on the median of that
+window. With `timestamp-query` it reads the road's GPU time (pass 1 + weather
++ blit + upscale) against 75 % of a 60 Hz frame and predicts a step up as
+`cost × (up / scale)²` — it climbs back as soon as a load ends and never
+re-enters a level that will not fit; a level it stepped *up* into and then
+overloaded is blocked for 8 s (doubling, ≤ 64 s). A timing sample counts once
+and only if it timed a frame at the current scale. Without timestamps it reads
+the raw rAF interval: a vsync-capped signal cannot show headroom, so after 3 s
+at budget it probes one step up, and every level that overloads is blocked the
+same way. The display's own refresh (≥ 48 Hz) is learned as the budget, so a
+50 Hz panel is not "over budget". Hold-pause and reduced motion freeze the
+scale (`Renderer` keeps the armed scale; the hold timeline on
+`__STREETVIEW_PROBE__` records it at arm and release).
+
+---
+
 ## 8. Artistic looks (scene packs)
 
 Named looks live in `src/config/lookPacks.ts` and apply **weather + grading +

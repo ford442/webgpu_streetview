@@ -29,6 +29,8 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?legacyTransitions` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Force the legacy CPU-timed panorama transition (on) or the GPU transition (off). |
 | `?no_gpu_compute` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Kill switch for GPU chores (luma/horizon compute). Weather rendering is unaffected. |
 | `?no_clip_distances` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Do not request the `clip-distances` device feature (also disables the windshield portal). |
+| `?scale` | number | number (0.5…1) | — | Fixed road render scale (0.5–1, snapped to 0.05) and no frame-budget loop. Unset: the preset default, adapted to the GPU budget. `?scale=1` is bit-exact with no scaling. |
+| `?upscale` | enum | `fsr` \| `bilinear` | `fsr` | How a scaled road frame reaches the screen: FSR 1.0 EASU + RCAS, or a plain bilinear stretch. |
 | `?cabin` | enum | `webgl` \| `webgpu` | — | Cabin overlay backend. Default follows the WebGPU probe; `webgl` is the escape hatch. |
 | `?portal` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `true` | Windshield portal. `?portal=off` forces the hole + decal overlay. |
 | `?cabinDsp` | enum | `auto` \| `scalar` \| `off` | `auto` | Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback. |

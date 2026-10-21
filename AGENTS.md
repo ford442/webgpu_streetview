@@ -381,7 +381,8 @@ the module that owns it, not to the façade:
 | `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth) |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
 | `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
@@ -545,10 +546,10 @@ Consequences worth knowing:
   reads `renderer.isCabinCompositedInFrame()`; when it is false the 2D latch in
   `car/runtime/frameCapture.ts` is not wired up at all. The latch stays for
   `?cabin=webgl` and every fallback — do not delete it.
-- **The road loop stops frame-skipping while compositing**
-  (`shouldRenderHeldFrameThisTick({ cabinComposited })`). The cabin no longer
-  has a canvas of its own to animate on, so a skipped road frame would freeze
-  the wipers and gauges.
+- **The road loop renders every frame.** The cabin has no canvas of its own
+  to animate on, so a skipped road frame would freeze the wipers and gauges.
+  There is no frame skipping at all since #329 — under load the road's render
+  scale drops instead (`WebGPUCanvas.frameLoop.test.tsx`).
 - **`cabinOverlayRegistry` must stay a single module instance.** It is written
   from the lazy car chunk and read from the eager renderer; a Rollup split that
   duplicated it would give each chunk its own state and break the handoff
@@ -627,13 +628,12 @@ Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `
 ### Performance & Adaptive Quality
 
 `WebGPUCanvas.tsx` implements:
-- **Adaptive frame skipping**: `shouldSkipFrame()` from `usePerformanceMonitor` can drop to 30fps.
-- **Source-change detection**: forces full 60fps when the scraped canvas changes.
-- **Transition boost**: forces full fps while `isTransitioning` is true.
+- **Every frame renders** — never skip one to keep up (car-mode gauges and wipers animate on the road's frame).
+- **Dynamic render scale (#329)**: the frame-budget loop (`renderer/frameBudget.ts`, fed GPU timestamps or the raw rAF interval) moves the road's render scale within the preset's range; `?scale=` pins it. Frozen through hold-pause and reduced motion. See `docs/GRAPHICS.md` §7.
 - **Debounced resize**: 150ms debounce on window resize.
 - **WebGPU device loss recovery**: reinitializes renderer on `device.lost`.
 
-`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps).
+`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps). Resolution is the first lever, a preset downgrade the last.
 
 ---
 
@@ -808,8 +808,9 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
-- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
-- `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
+- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released, render scale at arm and release), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
+- `src/components/WebGPUCanvas.frameLoop.test.tsx` — the real render loop renders every animation frame (live, weather-only, held) at any frame time; GPU load lowers the requested render scale; a hold freezes it.
+- `src/renderer/renderScale.test.ts`, `frameBudget.test.ts`, `upscale/UpscalePass.test.ts`, `Renderer.renderScale.test.ts` — render scale (#329): quantisation and the request/probe store; the budget loop on simulated timing traces (converges within 2 s, never oscillates by more than a step, backs off failed probes, learns a 50 Hz refresh, frozen holds); the EASU → RCAS / bilinear encode; and the real `Renderer` at scale 1 (no upscale built or encoded) vs 0.5 (scaled intermediate + road target), hold freeze, and a failing upscale.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts`, `src/renderer/webgpuBootProbe.test.ts` — Backend preference/debug-flag parsing, WebGPU-required hard-fail (no WebGL construct), and `webgpuProbe` brand/stage records.
 - `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
@@ -824,7 +825,7 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
 - `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~1 min per inference on SwiftShader.
-- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1.
 - The GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements

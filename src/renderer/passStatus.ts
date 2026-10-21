@@ -16,6 +16,8 @@ export type FramePassId =
     | 'historical-wipe'
     | 'weather'
     | 'present-fallback'
+    /** Render scale (#329): the scaled road frame → swap chain; encoded only below scale 1. */
+    | 'upscale'
     | 'cabin-composite'
     /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
     | 'depth';

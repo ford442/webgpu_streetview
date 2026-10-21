@@ -11,12 +11,16 @@
  * - (the spec screenshots the canvas itself to see the road frame is on screen);
  * - `backing` / `css` — the canvas backing store vs its CSS box, sized by the
  *   production `canvasBackingStore` helpers;
+ * - `renderScale` — `webgpuProbe.renderScale` (#329) after the frames: with
+ *   `?scale=<0.5..1>` the renderer builds the lazy upscale pass on the first
+ *   scaled frame, so the fixture keeps rendering until that pass has settled
+ *   (ready or failed), then renders `frames` more;
  * - with `?lost=1`, how many times the renderer booted across an external
  *   `device.destroy()` and a later intentional `renderer.destroy()`, driven by
  *   the production `DeviceLossRecovery` the way `WebGPUCanvas` drives it.
  *
  * Query: `break=<file.wgsl>` serves that shader with a syntax error;
- * `frames=N`; `lost=1`.
+ * `frames=N`; `lost=1`; `scale=` / `upscale=` (the app's own flags).
  */
 import { createStreetViewRenderer } from '/src/renderer/createStreetViewRenderer';
 import type { StreetViewRenderer } from '/src/renderer/RendererBackend';
@@ -117,12 +121,21 @@ async function main() {
             uncaptured.push((e as GPUUncapturedErrorEvent).error.message);
         });
         await renderFrames(renderer, source, frames);
+        if (q.has('scale')) {
+            // Lazy upscale (#329): requested by the first scaled frame, built in the background.
+            const deadline = performance.now() + 60_000;
+            while (!window.webgpuProbe?.passes?.upscale && performance.now() < deadline) {
+                await renderFrames(renderer, source, 1);
+            }
+            await renderFrames(renderer, source, frames);
+        }
         // Let any asynchronous validation errors from those frames arrive.
         await device.queue.onSubmittedWorkDone();
         await new Promise((r) => setTimeout(r, 100));
         out.probeOk = window.webgpuProbe?.ok ?? null;
         out.passes = JSON.parse(JSON.stringify(window.webgpuProbe?.passes ?? {}));
         out.cabinComposited = renderer.isCabinCompositedInFrame?.() ?? null;
+        out.renderScale = JSON.parse(JSON.stringify(window.webgpuProbe?.renderScale ?? null));
         out.maxTextureDimension2D = device.limits.maxTextureDimension2D;
         out.uncaptured = uncaptured;
         // Left running: the spec screenshots the presented frame.

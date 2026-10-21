@@ -17,6 +17,7 @@
  * (see scripts/hold-pause-probe.mjs).
  */
 
+import { getAppliedRenderScale } from '../renderer/renderScale';
 import { getMapsCallBudget, type MapsCallBudgetStats } from '../services/maps/callBudget';
 import { tripProbeSnapshot } from '../state/tripStore';
 import type { ScraperHealth } from './scraperHealth';
@@ -28,6 +29,13 @@ export interface HoldTimelineEntry {
   releasedAt: number | null;
   /** releasedAt - armedAt, once released. */
   holdDurationMs: number | null;
+  /**
+   * The road's applied render scale (#329) at arm and at release. A hold
+   * freezes it, so the two are equal — `scripts/hold-pause-probe.mjs` fails
+   * a hop where they are not.
+   */
+  renderScaleArmed: number;
+  renderScaleReleased: number | null;
 }
 
 export interface ProbeWarning {
@@ -87,7 +95,14 @@ class StreetViewProbe {
   private scraperHealth: ScraperHealth = createInitialScraperHealth();
 
   holdArmed(): void {
-    this.current = { armedAt: now(), firstStableAt: null, releasedAt: null, holdDurationMs: null };
+    this.current = {
+      armedAt: now(),
+      firstStableAt: null,
+      releasedAt: null,
+      holdDurationMs: null,
+      renderScaleArmed: getAppliedRenderScale().scale,
+      renderScaleReleased: null,
+    };
     this.timeline.push(this.current);
     if (this.timeline.length > MAX_TIMELINE_ENTRIES) this.timeline.shift();
     this.lastBrightness = null;
@@ -107,6 +122,7 @@ class StreetViewProbe {
     if (this.current) {
       this.current.releasedAt = now();
       this.current.holdDurationMs = this.current.releasedAt - this.current.armedAt;
+      this.current.renderScaleReleased = getAppliedRenderScale().scale;
       console.log(`[StreetViewProbe] released at T+${this.current.holdDurationMs.toFixed(0)}ms (hold total)`);
       this.current = null;
     }

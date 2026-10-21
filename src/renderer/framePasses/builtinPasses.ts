@@ -10,6 +10,7 @@
  * | 200 | `historical-wipe` | `HistoricalWipePass` |
  * | 300 | `weather` | `WeatherPostProcessor` / `ComputeWeatherPostProcessor` |
  * | 310 | `present-fallback` (lazy) | `PresentFallbackPostProcessor` — only when weather failed |
+ * | 350 | `upscale` (lazy) | `upscale/UpscalePass` — only below render scale 1 |
  * | 400 | `cabin-composite` | `CabinCompositePass` |
  */
 import { createStreetViewPipeline, encodeStreetViewPass } from '../streetViewPass';
@@ -18,6 +19,7 @@ import { encodeCabinComposite } from '../frameLoop';
 import type { TransitionManager } from '../TransitionManager';
 import type { HistoricalWipePass } from '../HistoricalWipePass';
 import type { CabinCompositePass } from '../cabinComposite';
+import type { UpscalePass } from '../upscale/UpscalePass';
 import type { WeatherPostInitOptions, WeatherPostProcessorLike } from '../weatherPostProcessorTypes';
 import type { FramePass } from './FramePassRegistry';
 
@@ -26,6 +28,7 @@ export const PASS_ORDER = {
     historicalWipe: 200,
     weather: 300,
     presentFallback: 310,
+    upscale: 350,
     cabinComposite: 400,
 } as const;
 
@@ -104,8 +107,9 @@ export interface WeatherPassDeps {
 
 /**
  * Weather (or, when weather failed validation, the present fallback): reads the
- * intermediate pass 1 wrote and writes the swap chain. Shares the weather
- * timestamp slots — only one of the two ever encodes.
+ * intermediate pass 1 wrote and writes the swap chain — or, below render scale
+ * 1, the upscale pass's road target. Shares the weather timestamp slots — only
+ * one of the two ever encodes.
  */
 export function createWeatherFramePass(deps: WeatherPassDeps): FramePass {
     return {
@@ -114,13 +118,41 @@ export function createWeatherFramePass(deps: WeatherPassDeps): FramePass {
         lazy: deps.lazy,
         init: () => deps.processor.init(deps.presentationFormat, deps.initOptions),
         enabled: () => true,
-        encode(encoder, { timings, aux }) {
+        encode(encoder, { timings, aux, roadTarget }) {
             // Kept on the processor too: `renderWeatherOnly` frames encode
             // outside the registry and bind whatever depth was last current.
             deps.processor.setSceneDepth(aux.depth ?? null);
-            deps.processor.renderPass(encoder, timings.weather);
+            deps.processor.renderPass(encoder, timings.weather, roadTarget);
         },
         destroy: () => deps.processor.dispose(),
+    };
+}
+
+export interface UpscalePassDeps {
+    pass: UpscalePass;
+    presentationFormat: GPUTextureFormat;
+    /** RCAS's limiter ceiling: 1 on SDR, the extended tone-mapping headroom on `?hdr`. */
+    peak: number;
+}
+
+/**
+ * The scaled road frame → the swap chain (#329). Lazy — `Renderer` builds it
+ * the first time a scale below 1 is requested — and enabled only below scale
+ * 1, so at scale 1 a frame encodes exactly the pre-#329 passes.
+ */
+export function createUpscaleFramePass(deps: UpscalePassDeps): FramePass {
+    return {
+        id: 'upscale',
+        order: PASS_ORDER.upscale,
+        lazy: true,
+        init: () => deps.pass.init(deps.presentationFormat, { peak: deps.peak }),
+        enabled: ({ renderScale }) => renderScale.scale < 1,
+        encode(encoder, { getSwapChainView, renderScale, timings }) {
+            const view = getSwapChainView();
+            if (!view) return;
+            deps.pass.encode(encoder, view, renderScale.outputWidth, renderScale.outputHeight, timings.upscale);
+        },
+        destroy: () => deps.pass.dispose(),
     };
 }
 

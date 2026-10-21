@@ -11,6 +11,7 @@ import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 import { exposureHintFromMeanLuma } from '../renderer/gpuChores/lumaMath';
 import type { AutoExposureStatus } from '../renderer/autoExposure';
 import { useSceneDepthStats } from '../renderer/depth/sceneDepthStatsStore';
+import type { AppliedRenderScale } from '../renderer/renderScale';
 
 interface PerformanceStatsOverlayProps {
   fpsStats: PerformanceMonitorState;
@@ -18,6 +19,7 @@ interface PerformanceStatsOverlayProps {
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
   autoExposureStatus?: AutoExposureStatus;
+  renderScale?: AppliedRenderScale;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   visible?: boolean;
   showMemory?: boolean;
@@ -30,6 +32,35 @@ function formatAutoExposureState(status: AutoExposureStatus | undefined): string
   const ev = `${status.appliedEv >= 0 ? '+' : ''}${status.appliedEv.toFixed(2)}`;
   return status.holdActive ? `(auto held ${ev})` : `(auto → ${ev})`;
 }
+
+const UPSCALE_LABEL: Record<AppliedRenderScale['upscale'], string> = {
+  fsr: 'FSR 1.0',
+  bilinear: 'bilinear',
+  none: 'native',
+};
+
+/** `0.75× auto · over-budget`, or `1.00× fixed · flag`. */
+export function formatRenderScale(s: AppliedRenderScale): string {
+  const why = s.frozen ? 'held' : s.limitedBy ?? s.reason;
+  return `${s.scale.toFixed(2)}× ${s.mode} · ${why}`;
+}
+
+/** Render scale (#329): what the road rendered at, the range, how it reached the screen. */
+const RenderScaleRows: React.FC<{ renderScale: AppliedRenderScale }> = ({ renderScale: s }) => (
+  <>
+    <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '8px 0' }} />
+    <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#ffffff' }}>
+      Render scale
+    </div>
+    <div style={{ marginBottom: '4px', color: '#cccccc' }} data-testid="perf-render-scale">
+      {formatRenderScale(s)}
+    </div>
+    <div style={{ marginBottom: '4px', color: '#888888', fontSize: '10px' }}>
+      {s.width}×{s.height} → {s.outputWidth}×{s.outputHeight} · {UPSCALE_LABEL[s.upscale]}
+      {s.mode === 'auto' ? ` · ${s.min.toFixed(2)}–${s.max.toFixed(2)}` : ''}
+    </div>
+  </>
+);
 
 /**
  * Scene depth (#320): inference time and cadence. Subscribes to its own store,
@@ -75,6 +106,7 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
   gpuPassTimings,
   gpuChoresStats,
   autoExposureStatus,
+  renderScale,
   position = 'top-left',
   visible = true,
   showMemory = true,
@@ -160,8 +192,15 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
               Blit: {gpuPassTimings.blitMs.toFixed(2)}ms
             </div>
           )}
+          {gpuPassTimings.upscaleMs != null && (
+            <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+              Upscale: {gpuPassTimings.upscaleMs.toFixed(2)}ms
+            </div>
+          )}
         </>
       )}
+
+      {renderScale && renderScale.outputWidth > 0 && <RenderScaleRows renderScale={renderScale} />}
 
       {gpuChoresStats && gpuChoresStats.backend !== 'disabled' && (
         <>
