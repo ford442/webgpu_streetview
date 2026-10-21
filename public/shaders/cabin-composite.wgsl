@@ -20,6 +20,15 @@
 @group(0) @binding(0) var cabinTex: texture_2d<f32>;
 @group(0) @binding(1) var cabinSampler: sampler;
 
+// The part of the cabin texture this draw shows (#331): the whole of it, or —
+// for a stereo cabin drawn eye by eye — one half. offset + uv * scale; the
+// whole texture is (0, 0, 1, 1), which leaves the UV exactly as it was.
+struct CabinRect {
+    offset: vec2<f32>,
+    scale: vec2<f32>,
+};
+@group(0) @binding(2) var<uniform> rect: CabinRect;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -44,5 +53,5 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSampleLevel(cabinTex, cabinSampler, in.uv, 0.0);
+    return textureSampleLevel(cabinTex, cabinSampler, rect.offset + in.uv * rect.scale, 0.0);
 }

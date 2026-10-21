@@ -14,6 +14,9 @@ import {
     type CabinOverlaySource,
 } from './cabinComposite';
 import { encodeCabinComposite } from './frameLoop';
+import { installGpuGlobals } from './computeWeather/__tests__/fakeGpu';
+
+installGpuGlobals();
 import {
     getCabinOverlaySource,
     publishCabinOverlaySource,
@@ -36,9 +39,13 @@ function createFakeDevice() {
     const passes: RecordedPass[] = [];
     const bindGroups: GPUBindGroupDescriptor[] = [];
     const pipelines: GPURenderPipelineDescriptor[] = [];
+    const rects = new Map<string, number[]>();
+    const viewports: number[][] = [];
     const device = {
         createShaderModule: (d: GPUShaderModuleDescriptor) => ({ kind: 'module', code: d.code }),
         createSampler: () => ({ kind: 'sampler' }),
+        createBindGroupLayout: (d: GPUBindGroupLayoutDescriptor) => ({ kind: 'bgl', label: d.label }),
+        createPipelineLayout: (d: GPUPipelineLayoutDescriptor) => ({ kind: 'pipelineLayout', label: d.label }),
         createBindGroup: (d: GPUBindGroupDescriptor) => {
             bindGroups.push(d);
             return { kind: 'bindGroup', id: bindGroups.length };
@@ -46,6 +53,12 @@ function createFakeDevice() {
         createRenderPipeline: (d: GPURenderPipelineDescriptor) => {
             pipelines.push(d);
             return { kind: 'renderPipeline', getBindGroupLayout: () => ({ kind: 'bgl' }) };
+        },
+        createBuffer: (d: GPUBufferDescriptor) => ({ kind: 'buffer', label: d.label, destroy: () => undefined }),
+        queue: {
+            writeBuffer: (buffer: { label?: string }, _offset: number, data: Float32Array) => {
+                rects.set(buffer.label ?? '', Array.from(data));
+            },
         },
     } as unknown as GPUDevice;
 
@@ -61,13 +74,14 @@ function createFakeDevice() {
             return {
                 setPipeline: () => undefined,
                 setBindGroup: (_i: number, g: unknown) => pass.bindGroups.push(g),
+                setViewport: (...v: number[]) => viewports.push(v),
                 draw: (count: number) => pass.draws.push(count),
                 end: () => { pass.ended = true; },
             };
         },
     } as unknown as GPUCommandEncoder;
 
-    return { device, encoder, passes, bindGroups, pipelines };
+    return { device, encoder, passes, bindGroups, pipelines, rects, viewports };
 }
 
 function fakeTexture(label: string) {
@@ -167,6 +181,47 @@ describe('CabinCompositePass', () => {
         expect(pass.isActive()).toBe(false);
         expect(pass.encode(encoder, {} as GPUTextureView)).toBe(false);
         expect(passes).toHaveLength(0);
+    });
+
+    it('samples the whole cabin by default, or one eye of a side-by-side cabin into a viewport (#331)', async () => {
+        const { device, encoder, bindGroups, rects, viewports } = createFakeDevice();
+        const pass = new CabinCompositePass(device);
+        await pass.init('bgra8unorm');
+        // Written once at init — no per-frame uniform traffic.
+        expect(rects.get('cabin-composite-rect-full')).toEqual([0, 0, 1, 1]);
+        expect(rects.get('cabin-composite-rect-left')).toEqual([0, 0, 0.5, 1]);
+        expect(rects.get('cabin-composite-rect-right')).toEqual([0.5, 0, 0.5, 1]);
+
+        pass.setSource({ getTexture: () => fakeTexture('cabin'), getLayout: () => 'sbs' });
+        expect(pass.getLayout()).toBe('sbs');
+        pass.encode(encoder, {} as GPUTextureView);
+        expect(viewports).toEqual([]);
+        pass.encode(encoder, {} as GPUTextureView, { x: 0, y: 0, width: 50, height: 40 }, 'right');
+        expect(viewports).toEqual([[0, 0, 50, 40, 0, 1]]);
+        const rectOf = (d: GPUBindGroupDescriptor) => (
+            [...d.entries].find((e) => e.binding === 2)!.resource as { buffer: { label: string } }
+        ).buffer.label;
+        expect(bindGroups.map(rectOf)).toEqual(['cabin-composite-rect-full', 'cabin-composite-rect-right']);
+
+        pass.setSource(sourceFor(fakeTexture('mono')));
+        expect(pass.getLayout()).toBe('mono');
+    });
+
+    it('draws into a WebXR layer of another format only once that pipeline exists, sharing the bind group (#331)', async () => {
+        const { device, encoder, bindGroups, pipelines, passes } = createFakeDevice();
+        const pass = new CabinCompositePass(device);
+        await pass.init('rgba16float');
+        const cabin = fakeTexture('cabin');
+        pass.setSource({ getTexture: () => cabin, getLayout: () => 'sbs' });
+        expect(pass.hasFormat('rgba8unorm')).toBe(false);
+        expect(pass.encode(encoder, {} as GPUTextureView, undefined, 'left', 'rgba8unorm')).toBe(false);
+        await pass.ensureFormat('rgba8unorm');
+        expect(pass.hasFormat('rgba8unorm')).toBe(true);
+        expect(pipelines.map((p) => [...p.fragment!.targets].map((t) => t!.format))).toEqual([['rgba16float'], ['rgba8unorm']]);
+        expect(pass.encode(encoder, {} as GPUTextureView, undefined, 'left', 'rgba8unorm')).toBe(true);
+        expect(pass.encode(encoder, {} as GPUTextureView, undefined, 'left')).toBe(true);
+        expect(bindGroups).toHaveLength(1);
+        expect(passes).toHaveLength(2);
     });
 
     it('rebinds when three reallocates the cabin texture, and only then', async () => {

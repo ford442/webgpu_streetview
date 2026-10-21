@@ -85,6 +85,11 @@ export interface DeviceCapabilityMatrix {
     /** `'unknown'` when the browser does not expose `GPURequestAdapterOptions.featureLevel`. */
     featureLevel: AdapterFeatureLevel | 'unknown';
     forceFallbackAdapter: boolean;
+    /**
+     * #331: the adapter was requested `xrCompatible` (a WebGPU-XR headset was
+     * available at boot), so the one device can drive an immersive session.
+     */
+    xrCompatible: boolean;
     canvasFormat: GPUTextureFormat;
     canvasColorSpace: 'srgb' | 'display-p3';
     canvasToneMapping: 'standard' | 'extended';

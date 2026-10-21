@@ -171,6 +171,7 @@ export {
     triggerCarInteriorPress,
     setCarInteriorEditMode,
     handleCarInteriorPointerDown,
+    pressCarInteriorAlongRay,
     handleCarInteriorPointerMove,
     handleCarInteriorPointerUp,
     setCarWeather,

@@ -21,6 +21,7 @@ const SHADERS = [
     'public/shaders/cabin-composite.wgsl',
     'public/shaders/historical-wipe.wgsl',
     'public/shaders/upscale.wgsl',
+    'public/shaders/reproject.wgsl',
     // Subgroup / dual-source variants are assembled at pipeline-create time
     // (`enable subgroups` / `enable dual_source_blending`). naga-cli rejects
     // those enables without extra feature flags — scalar fallbacks above are

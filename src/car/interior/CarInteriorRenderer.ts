@@ -5,6 +5,8 @@ import type { CabinRenderer } from './createCabinRenderer';
 import { CabinFrameTarget } from './cabinFrameTarget';
 import { publishCabinCompositeState } from './cabinRendererProbe';
 import type { CabinOverlaySource } from '../../renderer/cabinComposite';
+import { getCabinStereoRequest, type CabinStereoRequest } from '../../renderer/cabinStereoRequest';
+import { createEyeCameras, eyeViewport, updateEyeCameras, type EyeCameras } from './cabinStereo';
 
 export class CarInteriorRenderer {
     /** Post-FX (bloom/SMAA/OutputPass) breaks alpha compositing over the WebGPU panorama. */
@@ -18,6 +20,8 @@ export class CarInteriorRenderer {
      * the CSS overlay and the 2D cinema latch stay in charge.
      */
     private frameTarget: CabinFrameTarget | null = null;
+    /** #331: the two eye cameras, built the first time stereo is asked for. */
+    private eyes: EyeCameras | null = null;
 
     constructor(
         private renderer: CabinRenderer,
@@ -66,11 +70,50 @@ export class CarInteriorRenderer {
             return;
         }
         frameTarget.beginFrame();
-        this.renderer.render(this.scene, this.camera);
+        const stereo = getCabinStereoRequest();
+        if (stereo) {
+            this.renderEyes(stereo);
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
+        frameTarget.setLayout(stereo ? 'sbs' : 'mono');
         // Latches the CSS-overlay fallback if the backend never handed over a
         // texture, which is only observable after a real draw. `onUnavailable`
         // reports it once.
         frameTarget.endFrame();
+    }
+
+    /**
+     * Both eyes into the one cabin target, left half then right (#331). The
+     * viewport goes on the renderer, not the target: three renders through its
+     * own framebuffer target (tone mapping / sRGB output) sized to the output
+     * target and copies all of it across, so the halves must be laid out
+     * there. The first eye clears the whole target (a WebGPU clear is the
+     * attachment's load op — scissor does not confine it); the second loads.
+     */
+    private renderEyes(stereo: CabinStereoRequest): void {
+        const renderer = this.renderer as CabinRenderer & { coordinateSystem: number };
+        this.scene.updateMatrixWorld();
+        this.camera.updateMatrixWorld();
+        this.eyes ??= createEyeCameras();
+        updateEyeCameras(this.eyes, this.camera, stereo, renderer.coordinateSystem);
+        const size = renderer.getSize(new THREE.Vector2());
+        const autoClear = renderer.autoClear;
+        try {
+            renderer.setScissorTest(true);
+            ([this.eyes.left, this.eyes.right] as const).forEach((eye, i) => {
+                const viewport = eyeViewport(i as 0 | 1, size.x, size.y);
+                renderer.setViewport(viewport);
+                renderer.setScissor(viewport);
+                renderer.autoClear = i === 0 ? autoClear : false;
+                renderer.render(this.scene, eye);
+            });
+        } finally {
+            renderer.autoClear = autoClear;
+            renderer.setScissorTest(false);
+            renderer.setViewport(0, 0, size.x, size.y);
+            renderer.setScissor(0, 0, size.x, size.y);
+        }
     }
 
     /** Release the offscreen target and put the cabin canvas back on screen. */

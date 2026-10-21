@@ -11,7 +11,8 @@
  * | 300 | `weather` | `WeatherPostProcessor` / `ComputeWeatherPostProcessor` |
  * | 310 | `present-fallback` (lazy) | `PresentFallbackPostProcessor` — only when weather failed |
  * | 350 | `upscale` (lazy) | `upscale/UpscalePass` — only below render scale 1 |
- * | 400 | `cabin-composite` | `CabinCompositePass` |
+ * | 380 | `reproject` (lazy, tail) | `reproject/ReprojectPass` — late latch / stereo (#331) |
+ * | 400 | `cabin-composite` (last) | `CabinCompositePass` |
  */
 import { createStreetViewPipeline, encodeStreetViewPass } from '../streetViewPass';
 import { resolveSceneDepthBindGroup } from '../depth/sceneDepthBinding';
@@ -20,6 +21,7 @@ import type { TransitionManager } from '../TransitionManager';
 import type { HistoricalWipePass } from '../HistoricalWipePass';
 import type { CabinCompositePass } from '../cabinComposite';
 import type { UpscalePass } from '../upscale/UpscalePass';
+import type { ReprojectPass } from '../reproject/ReprojectPass';
 import type { WeatherPostInitOptions, WeatherPostProcessorLike } from '../weatherPostProcessorTypes';
 import type { FramePass } from './FramePassRegistry';
 
@@ -29,6 +31,7 @@ export const PASS_ORDER = {
     weather: 300,
     presentFallback: 310,
     upscale: 350,
+    reproject: 380,
     cabinComposite: 400,
 } as const;
 
@@ -147,10 +150,39 @@ export function createUpscaleFramePass(deps: UpscalePassDeps): FramePass {
         lazy: true,
         init: () => deps.pass.init(deps.presentationFormat, { peak: deps.peak }),
         enabled: ({ renderScale }) => renderScale.scale < 1,
-        encode(encoder, { getSwapChainView, renderScale, timings }) {
-            const view = getSwapChainView();
+        encode(encoder, { getSwapChainView, presentTarget, renderScale, timings }) {
+            const view = presentTarget ?? getSwapChainView();
             if (!view) return;
             deps.pass.encode(encoder, view, renderScale.outputWidth, renderScale.outputHeight, timings.upscale);
+        },
+        destroy: () => deps.pass.dispose(),
+    };
+}
+
+export interface ReprojectPassDeps {
+    pass: ReprojectPass;
+    presentationFormat: GPUTextureFormat;
+    device: GPUDevice;
+}
+
+/**
+ * The split frame's tail (#331): the present source → the swap chain, re-aimed
+ * at the POV read at tail time and, in stereo, as two eyes. Lazy — built the
+ * first time a tail is wanted — and encoded only in the tail. `Renderer`
+ * writes slot 0's uniforms before it encodes the tail.
+ */
+export function createReprojectFramePass(deps: ReprojectPassDeps): FramePass {
+    return {
+        id: 'reproject',
+        order: PASS_ORDER.reproject,
+        lazy: true,
+        phase: 'tail',
+        init: () => deps.pass.init(deps.presentationFormat),
+        enabled: () => true,
+        encode(encoder, { getSwapChainView, aux }) {
+            const view = getSwapChainView();
+            if (!view) return;
+            deps.pass.encode(encoder, view, resolveSceneDepthBindGroup(deps.device, aux));
         },
         destroy: () => deps.pass.dispose(),
     };
@@ -161,17 +193,40 @@ export interface CabinCompositePassDeps {
     presentationFormat: GPUTextureFormat;
     /** The pass with this frame's cabin source applied, or null when it is unavailable. */
     resolve: () => CabinCompositePass | null;
+    /**
+     * True when the frame presents two eyes side by side (`?stereo=sbs`). A
+     * stereo cabin (`cabinStereoRequest`) maps 1:1; a mono one — the WebGL
+     * hatch, or the frame before the cabin picked the request up — is drawn
+     * into each half, at zero parallax, where the convergence plane sits
+     * (`reprojectMath.DEFAULT_CONVERGENCE_METRES`, about the dash).
+     */
+    sideBySide?: () => boolean;
 }
 
-/** Car mode's cabin texture over the swap chain weather just wrote. */
+/**
+ * Car mode's cabin texture over whatever presents: the swap chain weather just
+ * wrote, or — in a split frame — the one the reproject tail just wrote, so the
+ * cabin rendered after the road (same display frame) is the one shown.
+ */
 export function createCabinCompositeFramePass(deps: CabinCompositePassDeps): FramePass {
     return {
         id: 'cabin-composite',
         order: PASS_ORDER.cabinComposite,
+        phase: 'last',
         init: () => deps.pass.init(deps.presentationFormat),
         enabled: () => deps.resolve() !== null,
-        encode(encoder, { getSwapChainView }) {
-            encodeCabinComposite(encoder, deps.resolve(), getSwapChainView);
+        encode(encoder, { getSwapChainView, renderScale }) {
+            const pass = deps.resolve();
+            // A stereo cabin is already side by side, like the road: 1:1.
+            if (!deps.sideBySide?.() || pass?.getLayout() === 'sbs') {
+                encodeCabinComposite(encoder, pass, getSwapChainView);
+                return;
+            }
+            const half = renderScale.outputWidth / 2;
+            const height = renderScale.outputHeight;
+            for (const x of [0, half]) {
+                encodeCabinComposite(encoder, pass, getSwapChainView, { x, y: 0, width: half, height });
+            }
         },
         destroy: () => deps.pass.dispose(),
     };

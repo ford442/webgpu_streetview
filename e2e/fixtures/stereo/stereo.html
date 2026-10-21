@@ -1,0 +1,18 @@
+<!doctype html>
+<!--
+  Stereo synthesis (#331) on a real WebGPU device, against the scene-depth
+  golden (docs/looks/scene-depth/depth-map-webgpu.jpg: the alley photo and the
+  depth map #320 inferred for it, side by side). Driven by e2e/stereo.spec.ts —
+  not part of the product. <base href="/"> puts the app's shader URLs where the
+  dev server serves them (public/).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <title>stereo</title>
+  </head>
+  <body style="margin:0;background:#000">
+    <script type="module" src="/e2e/fixtures/stereo/stereo.ts"></script>
+  </body>
+</html>

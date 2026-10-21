@@ -18,6 +18,8 @@ export type FramePassId =
     | 'present-fallback'
     /** Render scale (#329): the scaled road frame → swap chain; encoded only below scale 1. */
     | 'upscale'
+    /** #331: late latch / stereo / WebXR eyes — the split frame's tail; lazy. */
+    | 'reproject'
     | 'cabin-composite'
     /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
     | 'depth';

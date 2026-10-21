@@ -38,7 +38,7 @@ import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
 import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
-import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from './carSpatialModel';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y, type HeadOffset } from './carSpatialModel';
 import type { RouteGuidance } from '../services/routing/guidanceFormat';
 
 /**
@@ -276,6 +276,11 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.animator.setHeadOrientation(headYaw, headPitch);
     }
 
+    /** A headset's lean within the head pivot (#331, metres, car frame); zero otherwise. */
+    public setHeadOffset(offset: HeadOffset): void {
+        this.animator.setHeadOffset(offset);
+    }
+
     public setSteeringAngle(angle: number): void {
         this.animator.setSteeringAngle(angle);
     }
@@ -457,6 +462,19 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public handleInteriorPointerUp(): void {
         this.microInteractions.handlePointerUp();
+    }
+
+    /**
+     * Press the dash control a ray meets (#331, a WebXR controller). The ray is
+     * in the car frame relative to the driver's eye point — the `local`
+     * reference space `xr/xrSession.ts` aligns with it — so it goes through the
+     * head pivot, never through the (head-turned) camera.
+     */
+    public pressInteriorAlongRay(origin: THREE.Vector3, direction: THREE.Vector3): boolean {
+        this.headPivot.updateWorldMatrix(true, false);
+        const worldOrigin = this.headPivot.localToWorld(origin.clone());
+        const worldDirection = direction.clone().transformDirection(this.headPivot.matrixWorld);
+        return this.microInteractions.pressAlongRay(worldOrigin, worldDirection);
     }
 
     public setPostProcessingEnabled(enabled: boolean): void {
