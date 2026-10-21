@@ -1,6 +1,6 @@
 import { setGpuPassTimings, publishGpuPassTimingsToWindow } from './gpuPassTimingStore';
 
-const QUERY_COUNT = 6;
+const QUERY_COUNT = 8;
 const NS_TO_MS = 1 / 1_000_000;
 
 /**
@@ -83,6 +83,8 @@ export class GpuPassTimer {
     private destroyed = false;
     /** Which stamping path this device took — mirrored onto the capability matrix. */
     public readonly strategy: TimestampWriteStrategy;
+    /** Read sequence, so a consumer can tell a fresh sample from the one it already used. */
+    private seq = 0;
 
     constructor(private readonly device: GPUDevice) {
         this.querySet = device.createQuerySet({
@@ -123,11 +125,13 @@ export class GpuPassTimer {
      * or undefined when this device is not on the descriptor path (a dictionary
      * member set to undefined is the same as omitting it).
      *
-     * Indices: 0-1 pass1, 2-3 weather, 4-5 blit (compute path only).
+     * Indices: 0-1 pass1, 2-3 weather, 4-5 blit (compute path only), 6-7
+     * upscale (render scale < 1 only). Either end may be left out when a span
+     * covers several passes — the upscale's EASU stamps the start, RCAS the end.
      */
     renderPassTimestampWrites(
-        startIndex: number,
-        endIndex: number,
+        startIndex: number | undefined,
+        endIndex: number | undefined,
     ): GPURenderPassTimestampWrites | undefined {
         return this.timestampWrites(startIndex, endIndex);
     }
@@ -141,15 +145,14 @@ export class GpuPassTimer {
     }
 
     private timestampWrites(
-        startIndex: number,
-        endIndex: number,
+        startIndex: number | undefined,
+        endIndex: number | undefined,
     ): GPURenderPassTimestampWrites | undefined {
         if (this.strategy !== 'pass-descriptor') return undefined;
-        return {
-            querySet: this.querySet,
-            beginningOfPassWriteIndex: startIndex,
-            endOfPassWriteIndex: endIndex,
-        };
+        const writes: GPURenderPassTimestampWrites = { querySet: this.querySet };
+        if (startIndex !== undefined) writes.beginningOfPassWriteIndex = startIndex;
+        if (endIndex !== undefined) writes.endOfPassWriteIndex = endIndex;
+        return writes;
     }
 
     /**
@@ -174,7 +177,12 @@ export class GpuPassTimer {
         writable.writeTimestamp(this.querySet, index);
     }
 
-    resolveAndScheduleRead(encoder: GPUCommandEncoder): void {
+    /**
+     * `renderScale` tags the sample with the scale this frame rendered at: the
+     * read lands a frame or more later, and the budget loop must not judge a
+     * new scale by an old scale's cost.
+     */
+    resolveAndScheduleRead(encoder: GPUCommandEncoder, renderScale: number | null = null): void {
         if (this.strategy === 'none' || this.destroyed) return;
         // Never copy into readBuffer while its previous map is still in flight.
         if (this.pendingRead) return;
@@ -186,12 +194,12 @@ export class GpuPassTimer {
         // after the copy above is on the queue. `pendingRead` stays set until
         // readTimings has unmapped the buffer.
         this.device.queue.onSubmittedWorkDone().then(
-            () => this.readTimings(readBuffer),
+            () => this.readTimings(readBuffer, renderScale),
             () => { this.pendingRead = false; },
         );
     }
 
-    private async readTimings(buffer: GPUBuffer): Promise<void> {
+    private async readTimings(buffer: GPUBuffer, renderScale: number | null): Promise<void> {
         let mapped = false;
         try {
             await buffer.mapAsync(GPUMapMode.READ);
@@ -204,10 +212,14 @@ export class GpuPassTimer {
                 if (data[b]! <= data[a]!) return null;
                 return Number(data[b]! - data[a]!) * NS_TO_MS;
             };
+            // Unstamped slots resolve to 0, so a span the frame did not encode reads null.
             setGpuPassTimings({
                 pass1Ms: delta(0, 1),
                 weatherMs: delta(2, 3),
                 blitMs: delta(4, 5),
+                upscaleMs: delta(6, 7),
+                renderScale,
+                seq: ++this.seq,
                 available: true,
             });
             publishGpuPassTimingsToWindow();
@@ -226,7 +238,14 @@ export class GpuPassTimer {
         this.querySet.destroy();
         this.resolveBuffer.destroy();
         this.readBuffer.destroy();
-        setGpuPassTimings({ available: false, pass1Ms: null, weatherMs: null, blitMs: null });
+        setGpuPassTimings({
+            available: false,
+            pass1Ms: null,
+            weatherMs: null,
+            blitMs: null,
+            upscaleMs: null,
+            renderScale: null,
+        });
         publishGpuPassTimingsToWindow();
     }
 }

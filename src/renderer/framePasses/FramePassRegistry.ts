@@ -7,6 +7,7 @@ import {
 import type { TextureLifecycle } from '../textureLifecycle';
 import type { FramePassTimings } from '../frameLoop';
 import type { FrameAux } from '../depth/sceneDepthBinding';
+import type { RenderScaleFrame } from '../renderScale';
 
 /** What every pass may read while it encodes one frame. Built once per frame by `Renderer`. */
 export interface FrameContext {
@@ -14,6 +15,13 @@ export interface FrameContext {
     timings: FramePassTimings;
     /** This frame's swap-chain view, for passes that load what weather stored. */
     getSwapChainView: () => GPUTextureView | null;
+    /** The road's render scale and sizes this frame (`renderScale.ts`). */
+    renderScale: RenderScaleFrame;
+    /**
+     * Where the weather pass writes: undefined for the swap chain (scale 1),
+     * else the upscale pass's road target at the intermediate's size.
+     */
+    roadTarget: GPUTextureView | undefined;
     /**
      * Auxiliary textures produced outside the road frame (today: scene depth,
      * `depth/`). Every entry is optional — a consumer binds its fallback when
@@ -58,7 +66,7 @@ export class RequiredPassError extends Error {
 
 /**
  * The frame as an ordered list of passes: `streetview → [historical-wipe] →
- * weather | present-fallback → cabin-composite`.
+ * weather | present-fallback → [upscale] → cabin-composite`.
  *
  * Boot builds every non-lazy pass concurrently (their WGSL fetches and pipeline
  * compiles overlap). Per frame, only passes that are ready *and* enabled are

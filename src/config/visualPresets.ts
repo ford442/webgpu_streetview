@@ -75,6 +75,15 @@ export interface VisualPreset {
   targetFPS: number;
   pixelRatio: number;
   antialias: boolean;
+  /**
+   * Road render scale (#329, `renderer/renderScale.ts`): pass 1 and weather
+   * render at `canvas × scale` and the upscale pass brings the frame back to
+   * the swap chain. `renderScale` is where a session starts and the most the
+   * frame-budget loop will climb to; `renderScaleMin` is how far it may drop.
+   * `?scale=` pins one value and switches the loop off.
+   */
+  renderScale: number;
+  renderScaleMin: number;
 }
 
 // ============================================================
@@ -119,6 +128,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 30,
     pixelRatio: 0.75,
     antialias: false,
+    renderScale: 0.75,
+    renderScaleMin: 0.5,
   },
 
   medium: {
@@ -158,6 +169,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 30,
     pixelRatio: 1.0,
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.6,
   },
 
   high: {
@@ -200,6 +213,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 60,
     pixelRatio: 1.0,
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.7,
   },
 
   ultra: {
@@ -239,6 +254,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 60,
     pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2),
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.75,
   },
 };
 

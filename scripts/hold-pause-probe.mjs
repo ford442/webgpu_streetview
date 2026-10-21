@@ -218,6 +218,8 @@ async function main() {
         hop: i,
         sawHold,
         holdDurationMs: hopEntry?.holdDurationMs ?? null,
+        renderScaleArmed: hopEntry?.renderScaleArmed ?? null,
+        renderScaleReleased: hopEntry?.renderScaleReleased ?? null,
         warnings,
         intraHoldSampleCount: intraHoldSamples.length,
         maxIntraHoldJump,
@@ -237,6 +239,15 @@ async function main() {
       if (warnings.length > 0) {
         failed = true;
         console.error(`[hop ${i}] PROBE WARNINGS:`, warnings.map((w) => w.message));
+      }
+      // A hold freezes the road's render scale (#329).
+      if (sawHold && hopEntry?.renderScaleReleased != null
+        && hopEntry.renderScaleReleased !== hopEntry.renderScaleArmed) {
+        failed = true;
+        console.error(
+          `[hop ${i}] FAIL: render scale changed during the hold `
+            + `(${hopEntry.renderScaleArmed} → ${hopEntry.renderScaleReleased})`
+        );
       }
       if (intraHoldLeakSuspected) {
         failed = true;

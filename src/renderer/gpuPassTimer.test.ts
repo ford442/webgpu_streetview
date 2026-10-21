@@ -4,6 +4,7 @@ import { encodeStreetViewPass } from './streetViewPass';
 import { recordBlitPass, recordWeatherPass } from './computeWeather/dispatch';
 import { buildFramePassTimings } from './frameLoop';
 import { createFakeGpu, installGpuGlobals, type FakeGpu } from './computeWeather/__tests__/fakeGpu';
+import { getGpuPassTimings, resetGpuPassTimings } from './gpuPassTimingStore';
 
 const TIMESTAMP_QUERY = 'timestamp-query';
 const INSIDE_PASSES = 'timestamp-query-inside-passes';
@@ -76,8 +77,21 @@ describe('GpuPassTimer strategy selection', () => {
     timer.resolveAndScheduleRead(encoder);
 
     expect(gpu.lastEncoder().querySetResolves).toEqual([
-      { querySet: gpu.querySets[0], firstQuery: 0, queryCount: 6 },
+      { querySet: gpu.querySets[0], firstQuery: 0, queryCount: 8 },
     ]);
+  });
+
+  it('can open a span on one pass and close it on another (the upscale EASU → RCAS span)', () => {
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY] });
+    const timer = makeTimer(gpu);
+    expect(timer.renderPassTimestampWrites(6, undefined)).toEqual({
+      querySet: gpu.querySets[0],
+      beginningOfPassWriteIndex: 6,
+    });
+    expect(timer.renderPassTimestampWrites(undefined, 7)).toEqual({
+      querySet: gpu.querySets[0],
+      endOfPassWriteIndex: 7,
+    });
   });
 });
 
@@ -291,6 +305,28 @@ describe('GpuPassTimer readback', () => {
     expect(readBuffer.mapState).toBe('unmapped');
     expect(frame(gpu, timer).bufferCopies).toHaveLength(1);
     expect(gpu.submitErrors).toEqual([]);
+  });
+
+  it('tags every read with the render scale it timed and a fresh sequence number', async () => {
+    resetGpuPassTimings();
+    const gpu = createFakeGpu({ features: [TIMESTAMP_QUERY] });
+    const timer = makeTimer(gpu);
+
+    const encoder = gpu.createCommandEncoder();
+    timer.resolveAndScheduleRead(encoder, 0.75);
+    gpu.device.queue.submit([encoder.finish()]);
+    await flush();
+    const first = getGpuPassTimings();
+    expect(first.renderScale).toBe(0.75);
+    // Unstamped slots resolve to 0: no span the frame did not encode.
+    expect(first.upscaleMs).toBeNull();
+
+    const next = gpu.createCommandEncoder();
+    timer.resolveAndScheduleRead(next, 1);
+    gpu.device.queue.submit([next.finish()]);
+    await flush();
+    expect(getGpuPassTimings().renderScale).toBe(1);
+    expect(getGpuPassTimings().seq).toBe(first.seq + 1);
   });
 
   it('stops scheduling reads once destroyed', () => {

@@ -33,7 +33,14 @@ export interface UsePerformanceMonitorReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
   resetStats: () => void;
-  shouldSkipFrame: () => boolean;
+  /**
+   * The last rAF interval, ms — null until the first frame. The frame-budget
+   * loop's signal when there are no GPU timestamps (`renderer/frameBudget.ts`
+   * smooths it with its own windowed median; an EMA here would lag a step's
+   * effect by ~20 frames and make the loop overshoot). The app never skips
+   * frames to keep up: the road's render scale is the lever (#329).
+   */
+  getFrameTimeMs: () => number | null;
   getAdaptiveDelta: () => number;
 }
 
@@ -64,7 +71,7 @@ export function usePerformanceMonitor(
   const frameCountRef = useRef<number>(0);
   const animationFrameRef = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
-  const frameSkipRef = useRef<number>(0);
+  const lastFrameDeltaRef = useRef<number | null>(null);
   const adaptiveDeltaRef = useRef<number>(1);
   const droppedFramesRef = useRef<number>(0);
   
@@ -136,6 +143,8 @@ export function usePerformanceMonitor(
     const delta = lastFrameTimeRef.current ? now - lastFrameTimeRef.current : 16.67;
     lastFrameTimeRef.current = now;
     
+    lastFrameDeltaRef.current = delta;
+
     // Calculate instantaneous FPS
     const instantFPS = 1000 / (delta || 16.67);
     
@@ -169,22 +178,9 @@ export function usePerformanceMonitor(
         droppedFrames: droppedFramesRef.current
       }));
     }
-    
-    // Adjust frame skipping based on quality
-    switch (state.quality) {
-      case 'low':
-        frameSkipRef.current = 1; // Skip every other frame
-        break;
-      case 'medium':
-        frameSkipRef.current = 0; // No skipping
-        break;
-      case 'high':
-        frameSkipRef.current = 0; // No skipping
-        break;
-    }
-    
+
     animationFrameRef.current = requestAnimationFrame(tick);
-  }, [calculateFPS, fullConfig.sampleSize, fullConfig.targetFPS, state.quality, updateQuality]);
+  }, [calculateFPS, fullConfig.sampleSize, fullConfig.targetFPS, updateQuality]);
   
   /**
    * Start monitoring
@@ -218,7 +214,7 @@ export function usePerformanceMonitor(
     frameTimesRef.current = [];
     lastFrameTimeRef.current = 0;
     frameCountRef.current = 0;
-    frameSkipRef.current = 0;
+    lastFrameDeltaRef.current = null;
     droppedFramesRef.current = 0;
     
     setState({
@@ -235,13 +231,7 @@ export function usePerformanceMonitor(
     });
   }, [fullConfig.targetFPS, state.isMonitoring]);
   
-  /**
-   * Check if current frame should be skipped
-   */
-  const shouldSkipFrame = useCallback((): boolean => {
-    if (frameSkipRef.current === 0) return false;
-    return frameCountRef.current % (frameSkipRef.current + 1) !== 0;
-  }, []);
+  const getFrameTimeMs = useCallback((): number | null => lastFrameDeltaRef.current, []);
   
   /**
    * Get adaptive delta for time-based animations
@@ -264,7 +254,7 @@ export function usePerformanceMonitor(
     startMonitoring,
     stopMonitoring,
     resetStats,
-    shouldSkipFrame,
+    getFrameTimeMs,
     getAdaptiveDelta
   };
 }

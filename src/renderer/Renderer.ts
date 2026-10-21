@@ -36,6 +36,7 @@ import {
     createCabinCompositeFramePass,
     createHistoricalWipeFramePass,
     createStreetViewFramePass,
+    createUpscaleFramePass,
     createWeatherFramePass,
 } from './framePasses/builtinPasses';
 import { PresentFallbackPostProcessor } from './PresentFallbackPostProcessor';
@@ -66,6 +67,15 @@ import { releaseSceneDepthFallback, type FrameAux } from './depth/sceneDepthBind
 import { DepthController } from './depth/DepthController';
 import type { SceneDepthOptions } from './depth/sceneDepthOptions';
 import { isPassFailed } from './passStatus';
+import { UpscalePass } from './upscale/UpscalePass';
+import {
+    getRenderScaleRequest,
+    publishAppliedRenderScale,
+    scaledSize,
+    type RenderScaleFrame,
+} from './renderScale';
+import { EXTENDED_TONEMAP_HEADROOM } from './shaderFeatureVariants';
+import { readFlag } from '../config/flags';
 
 type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
 
@@ -88,6 +98,7 @@ function wrapUnit(v: number): number {
  * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
  * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
  * | `HistoricalWipePass.ts` | the year-chip wipe from the hold snapshot, over pass 1 |
+ * | `upscale/UpscalePass.ts` | below render scale 1: the scaled road frame → swap chain |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
  * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
@@ -124,6 +135,25 @@ export class Renderer implements StreetViewRenderer {
     private gpuChores: GpuChores | null = null;
     private cabinComposite: CabinCompositePass | null = null;
     private historicalWipe: HistoricalWipePass | null = null;
+    /** Render scale (#329): the lazy `upscale` pass, built on the first scale below 1. */
+    private upscale: UpscalePass | null = null;
+    private upscaleInit: Promise<boolean> | null = null;
+    /**
+     * This frame's scale (`FrameContext.renderScale`), refilled per frame. Its
+     * `scale` is also what a hold freezes on: no scale change between
+     * `beginHoldTransition` and `endHoldTransition`.
+     */
+    private readonly frameScale: RenderScaleFrame = {
+        scale: 1,
+        width: 0,
+        height: 0,
+        outputWidth: 0,
+        outputHeight: 0,
+        upscale: 'none',
+        frozen: false,
+        limitedBy: null,
+    };
+    private hasFrameScale = false;
     /** Scene depth (#320): the lazy `depth` pass and everything feeding it. */
     private depth: DepthController | null = null;
     /** Set while the lazy `depth` pass is initialising (download + session create). */
@@ -229,6 +259,9 @@ export class Renderer implements StreetViewRenderer {
                 : new WeatherPostProcessor(this.device, this.context, this.canvas);
             this.cabinComposite = new CabinCompositePass(this.device);
             this.historicalWipe = new HistoricalWipePass(this.device);
+            this.upscale = new UpscalePass(this.device, readFlag('upscale'));
+            this.upscaleInit = null;
+            this.hasFrameScale = false;
             this.transitionManager = new TransitionManager(this.device, this.sampler, intermediateFormat);
 
             const passes = this.buildPassRegistry(intermediateFormat);
@@ -332,6 +365,12 @@ export class Renderer implements StreetViewRenderer {
             initOptions: {
                 canvasToneMapping: this.canvasOutputPolicy.hdr ? 'extended' : 'standard',
             },
+        }));
+        passes.register(createUpscaleFramePass({
+            pass: this.upscale!,
+            presentationFormat: this.presentationFormat,
+            // Same "applied, not requested" rule as the weather tone curve.
+            peak: this.canvasOutputPolicy.hdr ? EXTENDED_TONEMAP_HEADROOM : 1,
         }));
         passes.register(createCabinCompositeFramePass({
             pass: this.cabinComposite!,
@@ -557,9 +596,12 @@ export class Renderer implements StreetViewRenderer {
                 this.weatherPostProcessor?.dispose();
                 this.cabinComposite?.dispose();
                 this.historicalWipe?.dispose();
+                this.upscale?.dispose();
             }
             this.cabinComposite = null;
             this.historicalWipe = null;
+            this.upscale = null;
+            this.upscaleInit = null;
             // Destroyed with the passes (it is one); drop the handle.
             this.depth = null;
             this.depthInit = null;
@@ -648,14 +690,69 @@ export class Renderer implements StreetViewRenderer {
 
     public renderWeatherOnly(): void {
         if (this.isDestroyed || !this.device) return;
-        const canvasWidth = this.canvas.width;
-        const canvasHeight = this.canvas.height;
-        this.textures.ensureIntermediateTexture(canvasWidth, canvasHeight);
+        const frame = this.resolveFrameScale();
+        this.textures.ensureIntermediateTexture(frame.width, frame.height);
+        const upscale = frame.scale < 1 ? this.upscale : null;
+        const roadTarget = upscale?.ensureInput(frame.width, frame.height);
         const cabin = this.resolveCabinComposite();
         this.weatherPostProcessor?.renderWeatherOnly(
             this.textures.intermediateTextureView,
-            (encoder) => encodeCabinComposite(encoder, cabin, () => this.getSwapChainView()),
+            (encoder) => {
+                if (upscale) {
+                    const view = this.getSwapChainView();
+                    if (view) upscale.encode(encoder, view, frame.outputWidth, frame.outputHeight);
+                }
+                encodeCabinComposite(encoder, cabin, () => this.getSwapChainView());
+            },
+            roadTarget,
         );
+    }
+
+    /**
+     * The road's scale for the frame about to be encoded (`renderScale.ts`):
+     * the request, unless the upscale pass is not there to present a scaled
+     * frame (then 1 — and the first such request starts building it), or a
+     * hold is active (then whatever the hold was armed at: the held frame
+     * never changes resolution under the user).
+     */
+    private resolveFrameScale(): RenderScaleFrame {
+        const frame = this.frameScale;
+        const requested = getRenderScaleRequest().scale;
+        const hold = this.holdTransition.isHoldActive();
+        let scale: number;
+        let limitedBy: RenderScaleFrame['limitedBy'] = null;
+        if (hold && this.hasFrameScale) {
+            scale = frame.scale;
+            limitedBy = frame.limitedBy;
+        } else if (requested < 1 && !this.upscale?.isReady()) {
+            scale = 1;
+            limitedBy = this.requestUpscalePass() ? 'upscale-pending' : 'upscale-unavailable';
+        } else {
+            scale = requested;
+        }
+        const size = scaledSize(this.canvas.width, this.canvas.height, scale);
+        frame.scale = scale;
+        frame.width = size.width;
+        frame.height = size.height;
+        frame.outputWidth = this.canvas.width;
+        frame.outputHeight = this.canvas.height;
+        frame.upscale = scale < 1 && this.upscale ? this.upscale.getMode() : 'none';
+        frame.frozen = hold && this.hasFrameScale;
+        frame.limitedBy = limitedBy;
+        this.hasFrameScale = true;
+        publishAppliedRenderScale(frame);
+        return frame;
+    }
+
+    /**
+     * Start building the lazy `upscale` pass once. False when it cannot come:
+     * it failed (reported on `webgpuProbe.passes.upscale`, not retried) or
+     * there is no device.
+     */
+    private requestUpscalePass(): boolean {
+        if (!this.upscale || !this.passes || isPassFailed('upscale')) return false;
+        this.upscaleInit ??= this.passes.initPass('upscale');
+        return true;
     }
 
     /**
@@ -806,11 +903,14 @@ export class Renderer implements StreetViewRenderer {
             this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
                 ? this.depth?.currentAux()
                 : undefined;
-            // Timestamp queries only while the overlay is open to read them.
+            // Timestamp queries only while the overlay or the budget loop reads them.
             const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;
+            const renderScale = this.resolveFrameScale();
+            const roadTarget = renderScale.scale < 1
+                ? this.upscale?.ensureInput(renderScale.width, renderScale.height)
+                : undefined;
             encodeAndSubmitFrame({
                 device: this.device,
-                canvas: this.canvas,
                 textures: this.textures,
                 uniformBuffer: this.uniformBuffer,
                 uniforms: packFrameUniforms({
@@ -823,7 +923,12 @@ export class Renderer implements StreetViewRenderer {
                     capturePan: this.holdTransition.getCapturePan(),
                 }, this.frameUniforms),
                 passes,
-                frame: { getSwapChainView: () => this.getSwapChainView(), aux: this.frameAux },
+                frame: {
+                    getSwapChainView: () => this.getSwapChainView(),
+                    aux: this.frameAux,
+                    renderScale,
+                    roadTarget,
+                },
                 gpuPassTimer: timer,
                 timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });
