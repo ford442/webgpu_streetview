@@ -17,7 +17,6 @@ export type { ChoresSample } from './GpuChores';
 export {
   readGpuChoresLimitsVerdict,
   readNoGpuComputeFlag,
-  resolveCpuChoresBackend,
   resolveGpuChoresEligibility,
 } from './gpuChoresPolicy';
 export type { GpuChoresBackend } from './gpuChoresPolicy';

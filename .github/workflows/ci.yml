@@ -103,10 +103,11 @@ jobs:
           cmake --build cpp/build-host -j"$(nproc)"
           ctest --test-dir cpp/build-host --output-on-failure
 
-      # Advisory: cpp/.clang-tidy has WarningsAsErrors empty, so findings
-      # print but do not fail the job. Missing clang-tidy or a missing
-      # compilation database *does* fail so the step cannot silently skip.
-      - name: clang-tidy (advisory)
+      # Gating: cpp/.clang-tidy sets WarningsAsErrors to bugprone-*, so any
+      # bugprone finding fails the job (modernize-* still only prints).
+      # Missing clang-tidy or a missing compilation database fails too, so
+      # the step cannot silently skip.
+      - name: clang-tidy (bugprone-* gating)
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-tidy

@@ -55,16 +55,12 @@ export class WasmParticleFeeder {
         return this.wasm !== null;
     }
 
-    /** Resolves once the module has finished loading (WASM or JS fallback). */
+    /** Resolves once the module has finished loading. */
     public async waitUntilLoaded(): Promise<void> {
         this.ensureLoaded();
         await this.loading;
     }
 
-    /** True when backed by the compiled WASM binary; false for the JS fallback. */
-    public get isWasm(): boolean {
-        return this.wasm?.isWasm ?? false;
-    }
 
     /**
      * Returns a freshly filled seed buffer (4 floats/particle: x, y, speed,

@@ -18,16 +18,6 @@ vi.mock('./bootDevice', async (importOriginal) => ({
     ...(await importOriginal<typeof import('./bootDevice')>()),
     bootDevice: boot.bootDevice,
 }));
-vi.mock('../wasm', async (importOriginal) => {
-    const { JS_FALLBACK } = await import('../wasm/jsFallback');
-    return {
-        ...(await importOriginal<typeof import('../wasm')>()),
-        // The JS twin: the chores' CPU path is irrelevant here, and the real
-        // loader would try to fetch the committed binary through the fake fetch.
-        loadWasmModule: async () => JS_FALLBACK,
-        getWasmModule: () => JS_FALLBACK,
-    };
-});
 vi.mock('./WeatherPostProcessor', () => ({
     WeatherPostProcessor: class {
         init = vi.fn().mockResolvedValue(undefined);

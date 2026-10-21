@@ -6,6 +6,13 @@
  * instantiated); this file holds the one piece that's genuinely shared.
  */
 
+/**
+ * The shadow stack the build pins (`-s STACK_SIZE` in cpp/CMakeLists.txt;
+ * wasmAbiLock.test.ts keeps the two equal). The loader refuses a binary whose
+ * stack is any other size: #300's corruption was an assumption about it.
+ */
+export const WASM_STACK_SIZE = 64 * 1024;
+
 /** Initial arena size; grown on demand (a 512² noise tile is 1 MiB). */
 export const SCRATCH_INITIAL_BYTES = 64 * 1024;
 
@@ -33,8 +40,8 @@ export interface ScratchArena {
  *
  * @param stackBase  Highest stack address (`emscripten_stack_get_base()`), when
  *                   the binary exports it. The arena must start at or above it;
- *                   a layout where it does not throws, and the loader falls back
- *                   to the JS twin rather than corrupt the stack.
+ *                   a layout where it does not throws (and the load rejects)
+ *                   rather than corrupt the stack.
  */
 export function createScratchArena(
   malloc: (bytes: number) => number,

@@ -16,6 +16,7 @@
  *   the production `DeviceLossRecovery` the way `WebGPUCanvas` drives it.
  *
  * Query: `break=<file.wgsl>` serves that shader with a syntax error;
+ * `wasm=missing` answers the numeric layer's binary with a 404;
  * `frames=N`; `lost=1`.
  */
 import { createStreetViewRenderer } from '/src/renderer/createStreetViewRenderer';
@@ -31,14 +32,21 @@ const q = new URLSearchParams(location.search);
 const broken = q.get('break');
 const frames = Number(q.get('frames') ?? 30);
 const lostMode = q.has('lost');
+const wasmMissing = q.get('wasm') === 'missing';
 
 const out: Record<string, unknown> = {};
 (window as unknown as { __out: unknown }).__out = out;
 
-// The app fetches `./shaders/...` relative to its own page; this page lives deeper.
+// The app fetches `./shaders/...` and `./wasm/...` relative to its own page;
+// this page lives deeper.
 const realFetch = window.fetch.bind(window);
 window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const wasm = /\/wasm\/([^/?#]+\.wasm)/.exec(url);
+    if (wasm) {
+        if (wasmMissing) return new Response('not found', { status: 404 });
+        return realFetch(`/wasm/${wasm[1]}`, init);
+    }
     const m = /\/shaders\/([^/?#]+\.wgsl)/.exec(url);
     if (!m) return realFetch(input, init);
     const response = await realFetch(`/shaders/${m[1]}`, init);

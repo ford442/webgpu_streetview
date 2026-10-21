@@ -38,6 +38,7 @@ describe('C++ compile_commands contract', () => {
         expect(TRANSLATION_UNITS).toContain('audio_module.cpp');
         expect(TRANSLATION_UNITS).toContain('luma_module.cpp');
         expect(TRANSLATION_UNITS).toContain('cabin_dsp_module.cpp');
+        expect(TRANSLATION_UNITS).toContain('depth_module.cpp');
         expect(TRANSLATION_UNITS).toContain('bindings.cpp');
     });
 

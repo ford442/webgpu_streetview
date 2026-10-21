@@ -91,6 +91,9 @@ inline HrtfShadow hrtf_shadow(float azimuth_deg, float sample_rate) {
     const float abs_shaped = shaped < 0.0f ? -shaped : shaped;
 
     HrtfShadow s{};
+    // Truncating x + 0.5f (x >= 0) is golden-pinned: lround differs where the
+    // f32 add itself rounds up (0.49999997f + 0.5f == 1.0f).
+    // NOLINTNEXTLINE(bugprone-incorrect-roundings)
     s.delay = static_cast<int>(kMaxItdSeconds * sample_rate * abs_shaped + 0.5f);
     s.far_gain = 1.0f - kMaxFarGainCut * abs_shaped;
     s.damp = 1.0f - (1.0f - kFarEarDampFloor) * abs_shaped;
