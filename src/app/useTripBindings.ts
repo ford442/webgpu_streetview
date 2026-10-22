@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { readFlag } from '../config/flags';
 import { useViewMode } from '../hooks/useViewMode';
+import { estimateTripPrefetch, type TripPrefetchEstimate, type TripPrefetchProgress, type TripPrefetchResult } from '../offline/tripPrefetch';
 import type { UseRoutePrefetchResult } from '../hooks/useRoutePrefetch';
 import { prefersReducedMotion } from '../renderer/cinematicCameraFx';
 import { getMapsCallBudget } from '../services/maps/callBudget';
 import type { LatLng } from '../services/routing/RouteProvider';
 import { RouteAnnouncer } from '../services/routing/routeAnnouncements';
-import { distanceBetween, resampledWaypoints } from '../services/routing/routeGeometry';
+import { distanceBetween } from '../services/routing/routeGeometry';
 import { buildRouteLinkUrl, readRouteLink } from '../services/routing/routeLink';
 import {
   clearTrip,
   configureTripController,
   pauseDrive,
   planTrip,
+  setTripOfflineGraph,
   startDrive,
 } from '../services/routing/tripController';
 import { createConfiguredRouteProvider, resolveRoutingConfig, type RoutingConfig } from '../services/routing/routingConfig';
@@ -19,8 +22,10 @@ import { povStore } from '../state/povStore';
 import { tripStore, useTripSelector, type TripStop } from '../state/tripStore';
 import { signedAngleDiff } from '../utils/navigation';
 
-/** Prefetch graph spacing for "Save for offline": one link lookup per 50 m. */
-export const TRIP_OFFLINE_SPACING_M = 50;
+/** Drive with the cached graph planner: no network, or `?offline=1`. */
+export function isTripOffline(): boolean {
+  return readFlag('offline') === true || (typeof navigator !== 'undefined' && navigator.onLine === false);
+}
 
 /** A trip whose start is further than this from the car teleports there first. */
 const LINK_ORIGIN_SNAP_M = 150;
@@ -48,9 +53,18 @@ export interface TripPanelBindings {
   onDrive: () => void;
   onStop: () => void;
   onClear: () => void;
+  /** Starts "Save for offline" — the panel shows `offlineEstimate` and asks first. */
   onSaveOffline: () => void;
+  onCancelOffline: () => void;
   offlineBusy: boolean;
   offlineError: string | null;
+  /** What saving the planned route for offline will cost (null without a route). */
+  offlineEstimate: TripPrefetchEstimate | null;
+  offlineProgress: TripPrefetchProgress | null;
+  /** How the last save of this route ended (this session). */
+  offlineResult: TripPrefetchResult | null;
+  /** Panos in the saved graph for the planned route (0 = none saved). */
+  offlineSavedNodes: number;
   isCruiseMode: boolean;
   getShareUrl: () => string | null;
 }
@@ -132,6 +146,7 @@ export function useTripBindings({
         return true;
       },
       easeCarHeading,
+      isOffline: isTripOffline,
     });
 
     const announcer = new RouteAnnouncer((m) => live.current.announce(m));
@@ -190,13 +205,29 @@ export function useTripBindings({
   }, [isConnected, isPanoramaReady, getOrigin, teleportSafe, provider]);
 
   const route = useTripSelector((s) => s.route);
-  const onSaveOffline = useCallback(() => {
+  const { prepareTripGraph, cancelTripGraph, getRouteGraph } = routePrefetch;
+  const offlineSavedNodes = route
+    ? routePrefetch.summaries.find((r) => r.routeId === route.id)?.nodeCount ?? 0
+    : 0;
+
+  // Hand the planner this route's saved graph (if any) whenever the route or
+  // its saved graph changes. Reading IndexedDB is not a Maps call.
+  useEffect(() => {
     if (!route) return;
-    void routePrefetch.prepareOfflineGraph(
-      route.id,
-      resampledWaypoints(route, TRIP_OFFLINE_SPACING_M).map((p) => ({ lat: p.lat, lng: p.lng })),
-    );
-  }, [route, routePrefetch]);
+    let cancelled = false;
+    getRouteGraph(route.id)
+      .then((nodes) => {
+        if (!cancelled) setTripOfflineGraph(route.id, nodes);
+      })
+      .catch((err) => console.warn('[trip] Failed to load the offline graph', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [route, offlineSavedNodes, getRouteGraph]);
+
+  const onSaveOffline = useCallback(() => {
+    if (route) void prepareTripGraph(route);
+  }, [route, prepareTripGraph]);
 
   const getShareUrl = useCallback((): string | null => {
     const stops = tripStore.get().stops;
@@ -211,8 +242,13 @@ export function useTripBindings({
     onStop,
     onClear,
     onSaveOffline,
+    onCancelOffline: cancelTripGraph,
     offlineBusy: route !== null && routePrefetch.busyRouteId === route.id,
     offlineError: routePrefetch.error,
+    offlineEstimate: route ? estimateTripPrefetch(route) : null,
+    offlineProgress: route && routePrefetch.tripProgress?.routeId === route.id ? routePrefetch.tripProgress : null,
+    offlineResult: route ? routePrefetch.tripResults[route.id] ?? null : null,
+    offlineSavedNodes,
     isCruiseMode,
     getShareUrl,
   };

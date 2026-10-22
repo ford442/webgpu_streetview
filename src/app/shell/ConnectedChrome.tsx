@@ -15,6 +15,7 @@ import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
 import type { TripPanelBindings } from '../useTripBindings';
+import type { TripRecordingBindings } from '../useTripRecording';
 import { tourWaypointsToStops } from '../../services/routing/routeExport';
 import type { AppPanels } from '../useAppPanels';
 export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
@@ -182,7 +183,7 @@ export interface ConnectedChromeProps {
   accessibilitySettings: AccessibilitySettings;
   setAccessibilitySettings: React.Dispatch<React.SetStateAction<AccessibilitySettings>>;
   tourPanelProps: TourPanelBindings;
-  tripPanelProps: TripPanelBindings;
+  tripPanelProps: TripPanelBindings & { recordings?: TripRecordingBindings };
   globe: ConnectedChromeGlobe;
   overlays: ConnectedChromeOverlays;
   offlineRoutes: ConnectedChromeOfflineRoutes;

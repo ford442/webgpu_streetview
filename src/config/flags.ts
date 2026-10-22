@@ -131,6 +131,14 @@ export const FLAGS = {
     kind: 'string', format: 'lat,lng;lat,lng[;…]',
     doc: 'Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it.',
   },
+  offline: {
+    kind: 'bool',
+    doc: 'Drive a routed trip with the offline graph planner (`offline/routeGraphNavigation.ts`) as if `navigator.onLine` were false. Needs a graph from "Save for offline" covering the current pano.',
+  },
+  trip: {
+    kind: 'string', format: 'base64url(gzip(.svtrip JSON))',
+    doc: 'Shared trip recording (`trip/tripFile.ts`). Plans the recording\'s route and opens it in the Trip panel ready to replay; every replayed hop is a metered pano lookup.',
+  },
   liveWeather: {
     kind: 'bool',
     doc: 'Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default).',

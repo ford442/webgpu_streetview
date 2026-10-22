@@ -25,7 +25,14 @@ export interface GoogleCoverageMap {
   setCurrent(lat: number, lng: number): void;
   setCoverageLayerVisible(visible: boolean): void;
   setPois(pois: readonly NearbyPoi[], coverage: ReadonlyMap<string, PoiCoverage>): void;
+  /** A trip album: the recorded path and where each still was taken (null clears it). */
+  setTrip(trip: CoverageTrip | null): void;
   destroy(): void;
+}
+
+export interface CoverageTrip {
+  path: readonly { lat: number; lng: number }[];
+  stills: readonly { lat: number; lng: number; name: string; panoId: string | null }[];
 }
 
 export function createGoogleCoverageMap(
@@ -68,6 +75,18 @@ export function createGoogleCoverageMap(
   let coverageLayer: google.maps.StreetViewCoverageLayer | null = null;
   let poiCircles: google.maps.Circle[] = [];
   let poiListeners: google.maps.MapsEventListener[] = [];
+
+  let tripLine: google.maps.Polyline | null = null;
+  let tripStills: google.maps.Circle[] = [];
+  let tripListeners: google.maps.MapsEventListener[] = [];
+  const clearTrip = () => {
+    tripListeners.forEach((l) => l.remove());
+    tripStills.forEach((c) => c.setMap(null));
+    tripLine?.setMap(null);
+    tripListeners = [];
+    tripStills = [];
+    tripLine = null;
+  };
 
   const clearPois = () => {
     poiListeners.forEach((l) => l.remove());
@@ -114,7 +133,39 @@ export function createGoogleCoverageMap(
         poiCircles.push(circle);
       }
     },
+    setTrip(trip) {
+      clearTrip();
+      if (!trip || trip.path.length === 0) return;
+      tripLine = new google.maps.Polyline({
+        map,
+        path: trip.path.map((p) => ({ lat: p.lat, lng: p.lng })),
+        strokeColor: '#FFB300',
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        clickable: false,
+        zIndex: 4,
+      });
+      for (const still of trip.stills) {
+        const circle = new google.maps.Circle({
+          map,
+          center: { lat: still.lat, lng: still.lng },
+          radius: 7,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 2,
+          fillColor: '#FF7043',
+          fillOpacity: 1,
+          clickable: true,
+          zIndex: 6,
+        });
+        tripListeners.push(circle.addListener('click', () => {
+          if (still.panoId) handlers.onPickPano(still.panoId);
+          else handlers.onPickLatLng(still.lat, still.lng);
+        }));
+        tripStills.push(circle);
+      }
+    },
     destroy() {
+      clearTrip();
       clearPois();
       clickListener.remove();
       coverageLayer?.setMap(null);

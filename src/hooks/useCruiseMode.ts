@@ -13,7 +13,8 @@ import type { LatLng } from '../services/routing/RouteProvider';
  * it which way to go before each hop; it never makes a Maps call on-route.
  */
 export interface CruiseRouteGuide {
-  planHop(position: LatLng, links: readonly google.maps.StreetViewLink[]): RouteHopDecision;
+  /** `panoId` is the pano the car is on (the offline graph planner keys on it). */
+  planHop(position: LatLng, links: readonly google.maps.StreetViewLink[], panoId?: string): RouteHopDecision;
   /** After every hop attempt, with the pano position it ended on. */
   afterHop(position: LatLng | null, moved: boolean): void;
   /** One metered re-snap to a route point; resolves true when the pano moved there. */
@@ -207,7 +208,7 @@ export function useCruiseMode({
     ): Promise<HopOutcome> => {
       const links = (panorama.getLinks?.() ?? [])
         .filter((link): link is google.maps.StreetViewLink => link != null);
-      const decision = guide.planHop(here, links);
+      const decision = guide.planHop(here, links, panoIdBefore);
       if (decision.kind === 'arrived') {
         guide.arrived();
         setIsCruiseMode(false);

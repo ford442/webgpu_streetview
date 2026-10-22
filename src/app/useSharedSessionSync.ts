@@ -13,6 +13,7 @@ import { tripStore } from '../state/tripStore';
 import { decodeRouteStops, encodeRouteStops } from '../services/routing/routeLink';
 import { clearTrip, planTrip } from '../services/routing/tripController';
 import { createConfiguredRouteProvider } from '../services/routing/routingConfig';
+import { activeReplayBroadcast, followHostReplay, isFollowingHostReplay } from '../trip/tripReplayController';
 
 /** The host's planned trip as a route payload, read at send time. */
 function currentTripRoute(): string | undefined {
@@ -108,6 +109,7 @@ export function useSharedSessionSync({
         carHeading,
         hdr,
         route: currentTripRoute(),
+        replay: activeReplayBroadcast(),
       };
       const payload = buildHostBroadcastPayload(
         panorama,
@@ -140,8 +142,14 @@ export function useSharedSessionSync({
 
     const film = normalizeIncomingSessionFields(latestState);
 
+    // The host's replay runs locally on the guest (own lookups); while it does,
+    // it drives the pano rather than the host's position packets.
+    void followHostReplay(film.replay);
     const currentPanoId = panorama?.getPano();
-    if (shouldTeleportGuestToPano(latestState.panoId, currentPanoId, lastAppliedPanoRef.current)) {
+    if (
+      !film.replay && !isFollowingHostReplay()
+      && shouldTeleportGuestToPano(latestState.panoId, currentPanoId, lastAppliedPanoRef.current)
+    ) {
       lastAppliedPanoRef.current = latestState.panoId;
       void teleportToPanoSafe(latestState.panoId);
     }

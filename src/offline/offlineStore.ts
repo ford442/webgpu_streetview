@@ -1,5 +1,6 @@
 export const OFFLINE_DB_NAME = 'webgpu-streetview-offline';
-export const OFFLINE_DB_VERSION = 1;
+/** v2 added `tripRecordings` (onupgradeneeded only creates stores that are missing). */
+export const OFFLINE_DB_VERSION = 2;
 
 export type OfflineStoreName =
   | 'bookmarks'
@@ -7,7 +8,8 @@ export type OfflineStoreName =
   | 'tours'
   | 'snapshots'
   | 'panoMetadata'
-  | 'routeGraph';
+  | 'routeGraph'
+  | 'tripRecordings';
 
 export interface PanoMetadata {
   panoId: string;
@@ -23,6 +25,10 @@ export interface RouteGraphNode {
   linkPanoIds: string[];
   lat: number;
   lng: number;
+  /** Heading of each link, aligned with `linkPanoIds` (trip prefetch only; NaN = unknown). */
+  linkHeadings?: number[];
+  /** Capture date (`YYYY-MM`) — lets a trip recording keep the imagery year. */
+  imageDate?: string;
   routeId: string;
   cachedAt: string;
 }
@@ -49,6 +55,7 @@ function openDb(): Promise<IDBDatabase> {
         'snapshots',
         'panoMetadata',
         'routeGraph',
+        'tripRecordings',
       ];
       for (const store of stores) {
         if (!db.objectStoreNames.contains(store)) {
@@ -124,6 +131,7 @@ export async function offlineClearAll(): Promise<void> {
     'snapshots',
     'panoMetadata',
     'routeGraph',
+    'tripRecordings',
   ];
   await Promise.all(stores.map((store) => offlineClearStore(store)));
 }

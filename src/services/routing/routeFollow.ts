@@ -63,7 +63,14 @@ export interface LinkLike {
 }
 
 export type RouteHopDecision =
-  | { kind: 'follow'; heading: number; targetBearing: number }
+  | {
+    kind: 'follow';
+    heading: number;
+    targetBearing: number;
+    /** Set by the offline graph planner: the pano this hop should land on. */
+    panoId?: string;
+    planner?: 'astar' | 'greedy';
+  }
   | { kind: 'resnap'; target: LatLng; reason: 'cross-track' | 'no-link' }
   | { kind: 'arrived' };
 

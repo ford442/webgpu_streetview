@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createStreetViewLinkCollector,
   prefetchRouteGraph,
@@ -11,6 +11,12 @@ import {
   type RouteGraphNode,
   type RouteGraphSummary,
 } from '../offline';
+import {
+  prefetchTripGraph,
+  type TripPrefetchProgress,
+  type TripPrefetchResult,
+  type TripPrefetchRoute,
+} from '../offline/tripPrefetch';
 
 export interface UseRoutePrefetchResult {
   /** One summary row per prepared route graph (routeId, node count, last-cached time). */
@@ -27,6 +33,14 @@ export interface UseRoutePrefetchResult {
   deleteRouteGraph: (routeId: string) => Promise<void>;
   /** Re-read summaries from IndexedDB (e.g. after external changes). */
   refreshSummaries: () => Promise<void>;
+  /** Live progress of the running trip prefetch ("Save for offline"), if any. */
+  tripProgress: TripPrefetchProgress | null;
+  /** How the last trip prefetch ended, per route id. */
+  tripResults: Record<string, TripPrefetchResult>;
+  /** Walk the link graph along a planned trip (metered; see `offline/tripPrefetch.ts`). */
+  prepareTripGraph: (route: TripPrefetchRoute) => Promise<TripPrefetchResult | null>;
+  /** Stop the running trip prefetch; what it gathered so far is saved. */
+  cancelTripGraph: () => void;
   /** Nodes for one route graph, for consumers that need the raw link data (e.g. tour playback). */
   getRouteGraph: (routeId: string) => Promise<RouteGraphNode[]>;
   /** All prefetched nodes across every route, for consumers with no single "current route" (e.g. cruise mode). */
@@ -106,6 +120,48 @@ export function useRoutePrefetch(): UseRoutePrefetchResult {
     [refreshSummaries],
   );
 
+  const [tripProgress, setTripProgress] = useState<TripPrefetchProgress | null>(null);
+  const [tripResults, setTripResults] = useState<Record<string, TripPrefetchResult>>({});
+  const tripAbortRef = useRef<AbortController | null>(null);
+
+  const prepareTripGraph = useCallback(
+    async (route: TripPrefetchRoute): Promise<TripPrefetchResult | null> => {
+      if (!navigator.onLine) {
+        setError('Cannot save a trip for offline while offline — connect to the internet first.');
+        return null;
+      }
+      if (typeof google === 'undefined' || !google.maps?.StreetViewService) {
+        setError('Street View is not ready yet — try again once the map has loaded.');
+        return null;
+      }
+      tripAbortRef.current?.abort();
+      const controller = new AbortController();
+      tripAbortRef.current = controller;
+      setError(null);
+      setBusyRouteId(route.id);
+      try {
+        const result = await prefetchTripGraph(route, new google.maps.StreetViewService(), {
+          signal: controller.signal,
+          onProgress: setTripProgress,
+        });
+        setTripResults((prev) => ({ ...prev, [route.id]: result }));
+        await refreshSummaries();
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to save the trip for offline.');
+        return null;
+      } finally {
+        if (tripAbortRef.current === controller) tripAbortRef.current = null;
+        setTripProgress(null);
+        setBusyRouteId(null);
+      }
+    },
+    [refreshSummaries],
+  );
+
+  const cancelTripGraph = useCallback(() => tripAbortRef.current?.abort(), []);
+  useEffect(() => () => tripAbortRef.current?.abort(), []);
+
   const getRouteGraph = useCallback((routeId: string) => offlineGetRouteGraph(routeId), []);
   const loadAllCachedNodes = useCallback(() => offlineGetAllRouteGraphNodes(), []);
 
@@ -117,6 +173,10 @@ export function useRoutePrefetch(): UseRoutePrefetchResult {
     prepareOfflineGraph,
     deleteRouteGraph,
     refreshSummaries,
+    tripProgress,
+    tripResults,
+    prepareTripGraph,
+    cancelTripGraph,
     getRouteGraph,
     loadAllCachedNodes,
   };

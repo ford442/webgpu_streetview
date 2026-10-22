@@ -59,6 +59,12 @@ export interface SessionState {
    * same road route themselves; the polyline never travels over the channel.
    */
   route?: string;
+  /**
+   * The host's trip replay: the recording as its `?trip=` payload plus the hop
+   * on screen. Guests replay it locally (their own metered lookups); only
+   * recordings short enough for a link are shared this way.
+   */
+  replay?: { link: string; index: number; playing: boolean };
   seq: number;
 }
 

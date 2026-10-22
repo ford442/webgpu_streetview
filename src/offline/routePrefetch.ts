@@ -30,6 +30,10 @@ export interface PanoLinkSnapshot {
   lat: number;
   lng: number;
   linkPanoIds: string[];
+  /** Heading of each link, aligned with `linkPanoIds` (NaN when unknown). */
+  linkHeadings?: number[];
+  /** Capture date (`YYYY-MM`) as the Maps API reported it. */
+  imageDate?: string;
 }
 
 /**
@@ -45,6 +49,8 @@ export function buildRouteGraphNodes(
     linkPanoIds: [...snap.linkPanoIds],
     lat: snap.lat,
     lng: snap.lng,
+    ...(snap.linkHeadings ? { linkHeadings: [...snap.linkHeadings] } : {}),
+    ...(snap.imageDate ? { imageDate: snap.imageDate } : {}),
   }));
 }
 
