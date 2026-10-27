@@ -76,7 +76,7 @@ if(EMSCRIPTEN)
     #       reduce_luma_bt709, downsample_2d, luma_analyze, dsp_create,
     #       dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
     #       dsp_max_ir_taps, depth_percentiles, depth_near_depth,
-    #       depth_normalize
+    #       depth_normalize, graph_astar, graph_nearest
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
@@ -102,6 +102,7 @@ if(EMSCRIPTEN)
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
         src/depth_module.cpp
+        src/graph_module.cpp
         src/bindings.cpp
     )
     add_executable(streetview-wasm ${STREETVIEW_WASM_SOURCES})
@@ -146,7 +147,7 @@ if(EMSCRIPTEN)
         # WASM_STACK_SIZE in src/wasm/marshal.ts) and puts the scratch arena above
         # it. #300's corruption was an assumption about exactly this number.
         "-s STACK_SIZE=65536"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_depth_percentiles','_depth_near_depth','_depth_normalize','_malloc','_free','_emscripten_stack_get_base','_emscripten_stack_get_end']"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_depth_percentiles','_depth_near_depth','_depth_normalize','_graph_astar','_graph_nearest','_malloc','_free','_emscripten_stack_get_base','_emscripten_stack_get_end']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -198,6 +199,7 @@ else()
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
         src/depth_module.cpp
+        src/graph_module.cpp
         src/bindings.cpp
     )
     target_include_directories(streetview_cpu PUBLIC include)

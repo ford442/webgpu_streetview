@@ -55,6 +55,8 @@ const EXPECTED_EXPORTS = [
   'depth_percentiles',
   'depth_near_depth',
   'depth_normalize',
+  'graph_astar',
+  'graph_nearest',
 ] as const;
 
 /** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
@@ -231,6 +233,8 @@ describe('WASM ABI lock', () => {
       depthPercentiles: ['depth_percentiles'],
       depthNearDepth: ['depth_near_depth'],
       depthNormalize: ['depth_normalize'],
+      graphAstar: ['graph_astar'],
+      graphNearest: ['graph_nearest'],
     };
 
     for (const method of Object.keys(methodToExport)) {

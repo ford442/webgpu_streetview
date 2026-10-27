@@ -11,10 +11,13 @@
  */
 
 import type { CruiseRouteGuide } from '../../hooks/useCruiseMode';
-import { tripStore, type TripStop, type TripSummary } from '../../state/tripStore';
+import type { RouteGraphNode } from '../../offline/offlineStore';
+import { planOfflineHop } from '../../offline/routeGraphNavigation';
+import { tripStore, type OfflineDriveStats, type TripStop, type TripSummary } from '../../state/tripStore';
+import { linkGraphFor, type LinkGraph } from '../../wasm/graph';
 import { getMapsCallBudget } from '../maps/callBudget';
-import { RouteFollower, type RouteFollowConfig } from './routeFollow';
-import { buildActiveRoute, type ActiveRoute } from './routeGeometry';
+import { RouteFollower, type LinkLike, type RouteFollowConfig, type RouteHopDecision } from './routeFollow';
+import { bearingBetween, buildActiveRoute, type ActiveRoute } from './routeGeometry';
 import {
   RouteError,
   describeRouteError,
@@ -31,15 +34,83 @@ export interface TripControllerDeps {
   onArrived?(summary: TripSummary): void;
   now?(): number;
   followConfig?: Partial<RouteFollowConfig>;
+  /**
+   * True when hops should come from the cached link graph (`navigator.onLine`
+   * false, or `?offline=1`). The hop itself is still `setPano` via cruise.
+   */
+  isOffline?(): boolean;
 }
 
 let deps: TripControllerDeps | null = null;
 let follower: RouteFollower | null = null;
 let lastHopWasResnap = false;
 let planAbort: AbortController | null = null;
+let offlineGraph: { routeId: string; graph: LinkGraph } | null = null;
 
 export function configureTripController(next: TripControllerDeps | null): void {
   deps = next;
+}
+
+/**
+ * The prefetched link graph for `routeId` ("Save for offline"), or null to
+ * drop it. Marshalled to CSR once (`wasm/graph.ts`, cached by route id).
+ */
+export function setTripOfflineGraph(routeId: string, nodes: readonly RouteGraphNode[] | null): void {
+  offlineGraph = nodes && nodes.length > 0 ? { routeId, graph: linkGraphFor(routeId, nodes) } : null;
+}
+
+/** Whether a cached graph covers `routeId` (and how many panos it holds). */
+export function tripOfflineGraphSize(routeId: string): number {
+  return offlineGraph?.routeId === routeId ? offlineGraph.graph.panoIds.length : 0;
+}
+
+/** A pano of the cached graph (its capture date seeds a trip recording), if loaded. */
+export function tripOfflineGraphNode(panoId: string): RouteGraphNode | null {
+  const i = offlineGraph?.graph.indexOf.get(panoId);
+  return i === undefined ? null : offlineGraph!.graph.nodes[i]!;
+}
+
+const NO_OFFLINE_HOPS: OfflineDriveStats = { astarHops: 0, greedyHops: 0, offGraphHops: 0 };
+
+function countOfflineHop(key: keyof OfflineDriveStats): void {
+  tripStore.update((s) => {
+    const prev = s.offlineDrive ?? NO_OFFLINE_HOPS;
+    return { offlineDrive: { ...prev, [key]: prev[key] + 1 } };
+  });
+}
+
+/**
+ * The graph planner's hop, or null to let the live follower decide (no graph
+ * for this route, or the pano is not in it). A greedy fallback is counted and
+ * logged, never silent.
+ */
+function planGraphHop(
+  active: RouteFollower,
+  panoId: string,
+  position: LatLng,
+  links: readonly LinkLike[],
+): RouteHopDecision | null {
+  if (!offlineGraph || offlineGraph.routeId !== active.route.id) return null;
+  if (active.hasArrived(position)) return { kind: 'arrived' };
+  const { graph } = offlineGraph;
+  const destination = active.route.polyline[active.route.polyline.length - 1]!;
+  const plan = planOfflineHop(graph, panoId, destination);
+  if (!plan) {
+    countOfflineHop('offGraphHops');
+    return null;
+  }
+  if (plan.kind === 'arrived') return { kind: 'arrived' };
+  if (plan.kind === 'greedy') {
+    console.warn(`[trip] Offline graph has no path from ${panoId}; greedy link walk chose ${plan.next.panoId}`);
+  }
+  countOfflineHop(plan.kind === 'astar' ? 'astarHops' : 'greedyHops');
+
+  const here = graph.nodes[graph.indexOf.get(panoId)!]!;
+  const k = here.linkPanoIds.indexOf(plan.next.panoId);
+  const stored = k >= 0 ? here.linkHeadings?.[k] : undefined;
+  const heading = links.find((l) => l.pano === plan.next.panoId)?.heading
+    ?? (stored !== undefined && Number.isFinite(stored) ? stored : bearingBetween(here, plan.next));
+  return { kind: 'follow', heading, targetBearing: heading, panoId: plan.next.panoId, planner: plan.kind };
 }
 
 const now = (): number => deps?.now?.() ?? Date.now();
@@ -93,7 +164,7 @@ export function startDrive(position: LatLng | null): boolean {
   follower = new RouteFollower(route, deps?.followConfig, now);
   lastHopWasResnap = false;
   const progress = position ? follower.notePosition(position) : null;
-  tripStore.update({ status: 'driving', progress, resnaps: 0, startedAt: now(), summary: null });
+  tripStore.update({ status: 'driving', progress, resnaps: 0, startedAt: now(), summary: null, offlineDrive: null });
   return true;
 }
 
@@ -128,8 +199,12 @@ function finish(): void {
 }
 
 const guide: CruiseRouteGuide = {
-  planHop(position, links) {
+  planHop(position, links, panoId) {
     if (!follower) return { kind: 'arrived' };
+    if (panoId && deps?.isOffline?.()) {
+      const offline = planGraphHop(follower, panoId, position, links);
+      if (offline) return offline;
+    }
     return follower.planHop(position, links);
   },
   afterHop(position, moved) {
@@ -162,4 +237,5 @@ export function resetTripControllerForTests(): void {
   clearTrip();
   deps = null;
   lastHopWasResnap = false;
+  offlineGraph = null;
 }

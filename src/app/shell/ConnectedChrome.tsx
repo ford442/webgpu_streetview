@@ -15,6 +15,7 @@ import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
 import type { TripPanelBindings } from '../useTripBindings';
+import type { TripRecordingBindings } from '../useTripRecording';
 import { tourWaypointsToStops } from '../../services/routing/routeExport';
 import type { AppPanels } from '../useAppPanels';
 export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
@@ -40,7 +41,6 @@ import {
   AccessibilityPanel,
   HistoricalTimeline,
   TourPanel,
-  TripPlannerPanel,
   SharedSessionPanel,
   PerformanceStatsOverlay,
   RendererBackendIndicator,
@@ -52,6 +52,8 @@ import GlobeReturnButton from '../../components/GlobeReturnButton';
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 /** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */
 const CoverageMap = lazy(() => import('../../components/CoverageMap'));
+/** Trip planner panel (routing, guidance, recordings, offline prefetch); lazy chunk. */
+const TripPlannerPanel = lazy(() => import('../../components/TripPlannerPanel'));
 
 /** GlobeView only needs the heading as its entry pose — keep it off the shell's render path. */
 function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>, 'currentHeading'>) {
@@ -184,7 +186,7 @@ export interface ConnectedChromeProps {
   accessibilitySettings: AccessibilitySettings;
   setAccessibilitySettings: React.Dispatch<React.SetStateAction<AccessibilitySettings>>;
   tourPanelProps: TourPanelBindings;
-  tripPanelProps: TripPanelBindings;
+  tripPanelProps: TripPanelBindings & { recordings?: TripRecordingBindings };
   globe: ConnectedChromeGlobe;
   overlays: ConnectedChromeOverlays;
   offlineRoutes: ConnectedChromeOfflineRoutes;
@@ -569,11 +571,13 @@ export function ConnectedChrome({
       )}
 
       {isTripPanelOpen && (
-        <TripPlannerPanel
-          isOpen={isTripPanelOpen}
-          onClose={() => setIsTripPanelOpen(false)}
-          {...tripPanelProps}
-        />
+        <Suspense fallback={null}>
+          <TripPlannerPanel
+            isOpen={isTripPanelOpen}
+            onClose={() => setIsTripPanelOpen(false)}
+            {...tripPanelProps}
+          />
+        </Suspense>
       )}
 
       {isMapOpen && !globeMode.isEngaged && (

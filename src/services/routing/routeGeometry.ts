@@ -101,7 +101,11 @@ export function projectInWindow(
  * search stays near it unless the position is clearly elsewhere (a re-snap or
  * a teleport), in which case the whole route is searched.
  */
-export function projectOnRoute(route: ActiveRoute, pos: LatLng, hintAlongM?: number | null): RouteProjection {
+export function projectOnRoute(
+  route: Pick<ActiveRoute, 'flat' | 'cumulativeM' | 'lengthM'>,
+  pos: LatLng,
+  hintAlongM?: number | null,
+): RouteProjection {
   if (hintAlongM == null) return projectInWindow(route, pos, 0, route.lengthM);
   const near = projectInWindow(route, pos, hintAlongM - 150, hintAlongM + 400);
   if (Math.abs(near.crossM) <= 60) return near;

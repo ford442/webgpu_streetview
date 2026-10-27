@@ -29,6 +29,7 @@ load fails the boot (§4).
 | `cpp/src/luma_module.cpp` | Rec.709 histogram / reduce / box downsample |
 | `cpp/src/cabin_dsp_module.cpp` | the cabin audio engine (AudioWorklet, §3a) |
 | `cpp/src/depth_module.cpp` | scene-depth calibration: disparity percentiles, ground-calibrated near depth, normalisation + easing (`docs/SCENE_DEPTH.md`) |
+| `cpp/src/graph_module.cpp` | A* (`graph_astar`) and nearest node (`graph_nearest`) over the CSR link graph a trip prefetch saves — see `docs/ROAD_TRIPS.md` |
 | `cpp/src/bindings.cpp` | raw `extern "C"` wrappers with the canonical export names |
 | `cpp/include/streetview_wasm.h` | `sw_*` declarations + per-function contracts |
 | `cpp/CMakeLists.txt` | host target (`streetview_cpu`) **and** the Emscripten link flags |
@@ -205,6 +206,8 @@ engine's `dsp_*` family is in §3a):
 | `initial_bearing(f64 ×4) → f64` | `initialBearing` | forward azimuth `[0, 360)`; identical points give 0. `navigation.ts#initialBearing`, cruise and route following dispatch onto it |
 | `polyline_resample(in, n, step, out, cap) → i32` | `polylineResample` | evenly spaced points every `step` m along the route (ends kept, longitudes wrapped to `[-180, 180)`); returns the full count like `snprintf` — the loader calls it once to size and once to fill |
 | `polyline_project(poly, n, lat, lng, out3) → void` | `polylineProject` | `{segment, along m, signed cross m (+ right)}` of the closest point on the route — "where am I on it, how far off it" |
+| `graph_astar(offsets, neighbors, coords, n, edges, from, to, work, out, max) → i32` | `graphAstar` | shortest path over a directed CSR graph (haversine cost + heuristic); `work` is `n × 32` B of arena; returns the path length (`snprintf`-style; -1 unreachable / invalid). Ties break on the lower node index, so paths are bit-stable across scalar, SIMD and the JS twin |
+| `graph_nearest(coords, n, lat, lng) → i32` | `graphNearest` | index of the nearest node (ties: lower index), -1 when empty |
 | `fill_engine_noise(ptr, count, rpm, load, speed, phase: f64, sampleIndex: f64, sr) → f64` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]`; returns the next oscillator phase (feed it back, advance `sampleIndex` by `count`) |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |

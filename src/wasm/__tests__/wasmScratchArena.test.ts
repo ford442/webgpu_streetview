@@ -101,6 +101,45 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     expect(Array.from(a)).toEqual(Array.from(b));
   });
 
+  test('graphAstar on a 5000-node grid (arena regrow) matches an instance that never relocates', () => {
+    // 100 x 50 grid, every street two-way except each tenth row eastbound only.
+    const cols = 100;
+    const rows = 50;
+    const n = cols * rows;
+    const coords = new Float64Array(n * 2);
+    const adj: number[][] = Array.from({ length: n }, () => []);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        coords[i * 2] = 60 + r * 0.0003 + ((i * 7919) % 13) * 1e-6;
+        coords[i * 2 + 1] = 10 + c * 0.0005;
+        if (c + 1 < cols) {
+          adj[i]!.push(i + 1);
+          if (r % 10 !== 0) adj[i + 1]!.push(i);
+        }
+        if (r + 1 < rows) {
+          adj[i]!.push(i + cols);
+          adj[i + cols]!.push(i);
+        }
+      }
+    }
+    const offsets = new Int32Array(n + 1);
+    const flat: number[] = [];
+    adj.forEach((list, i) => {
+      flat.push(...list);
+      offsets[i + 1] = flat.length;
+    });
+    const graph = { nodeCount: n, offsets, neighbors: Int32Array.from(flat), coords };
+    for (const [from, to] of [[0, n - 1], [n - 1, 0], [cols - 1, (rows - 1) * cols], [1234, 4321]] as const) {
+      const a = wasm.graphAstar(graph, from, to);
+      const b = settled.graphAstar(graph, from, to);
+      expect(a).not.toBeNull();
+      expect(Array.from(a!)).toEqual(Array.from(b!));
+    }
+    expect(wasm.graphNearest(graph, 60.0075, 10.025)).toBe(settled.graphNearest(graph, 60.0075, 10.025));
+    expect(wasm.graphAstar({ ...graph, offsets: offsets.subarray(0, 3) }, 0, 1)).toBeNull();
+  });
+
   test('polylineProject on a 5000-point high-latitude route matches an instance that never relocates', () => {
     const pts = route(5000, -67.5);
     for (const [dLat, dLng] of [[0.1, 0.1002], [0.25, 0.2497], [0.4999, 0.4999]] as const) {

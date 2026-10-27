@@ -22,6 +22,7 @@
 import type {
   CabinDsp,
   CabinDspParams,
+  CsrGraph,
   DepthNormalizeOptions,
   DepthNormalizeState,
   LumaAnalysis,
@@ -34,6 +35,7 @@ export type { StreetViewWasmAPI } from './abi';
 export type {
   CabinDsp,
   CabinDspParams,
+  CsrGraph,
   DepthNormalizeOptions,
   DepthNormalizeState,
   LumaAnalysis,
@@ -200,6 +202,16 @@ export async function instantiateStreetViewWasm(
     || typeof polyline_resample !== 'function'
     || typeof polyline_project !== 'function') {
     throw new Error('WASM ABI missing route-geometry exports');
+  }
+  const graph_astar = exp['graph_astar'] as (
+    offsets: number, neighbors: number, coords: number, nodeCount: number, edgeCount: number,
+    from: number, to: number, work: number, outPath: number, maxLen: number,
+  ) => number;
+  const graph_nearest = exp['graph_nearest'] as (
+    coords: number, nodeCount: number, lat: number, lng: number,
+  ) => number;
+  if (typeof graph_astar !== 'function' || typeof graph_nearest !== 'function') {
+    throw new Error('WASM ABI missing link-graph exports');
   }
   const fill_engine_noise = exp['fill_engine_noise'] as (
     ptr: number, count: number,
@@ -389,6 +401,41 @@ export async function instantiateStreetViewWasm(
     polyline_project(ptr, n, lat, lng, outOffset);
     const view = new Float64Array(wasmMemory.buffer, outOffset, 3);
     return { segment: view[0]!, alongMeters: view[1]!, crossMeters: view[2]! };
+  };
+
+  /** Copy a graph into scratch: offsets, neighbors, coords (8-aligned), then `extraBytes`. */
+  const placeGraph = (graph: CsrGraph, extraBytes: number) => {
+    const n = graph.nodeCount;
+    const edges = graph.neighbors.length;
+    const neighborsAt = (n + 1) * 4;
+    const coordsAt = (neighborsAt + edges * 4 + 7) & ~7;
+    const extraAt = coordsAt + n * 16;
+    const ptr = scratch.reserve(extraAt + extraBytes);
+    new Int32Array(wasmMemory.buffer, ptr, n + 1).set(graph.offsets.subarray(0, n + 1));
+    if (edges > 0) new Int32Array(wasmMemory.buffer, ptr + neighborsAt, edges).set(graph.neighbors);
+    new Float64Array(wasmMemory.buffer, ptr + coordsAt, n * 2).set(graph.coords.subarray(0, n * 2));
+    return { offsets: ptr, neighbors: ptr + neighborsAt, coords: ptr + coordsAt, extra: ptr + extraAt };
+  };
+
+  const graphAstar = (graph: CsrGraph, from: number, to: number): Int32Array | null => {
+    const n = graph.nodeCount;
+    if (n <= 0 || graph.offsets.length < n + 1 || graph.coords.length < n * 2) return null;
+    // Work (32 B/node, SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE), then the path (≤ n nodes).
+    const at = placeGraph(graph, n * 32 + n * 4);
+    const pathAt = at.extra + n * 32;
+    const length = graph_astar(
+      at.offsets, at.neighbors, at.coords, n, graph.neighbors.length, from, to, at.extra, pathAt, n,
+    );
+    if (length <= 0) return null;
+    return new Int32Array(wasmMemory.buffer.slice(pathAt, pathAt + length * 4));
+  };
+
+  const graphNearest = (graph: CsrGraph, lat: number, lng: number): number => {
+    const n = graph.nodeCount;
+    if (n <= 0 || graph.coords.length < n * 2) return -1;
+    const ptr = scratch.reserve(n * 16);
+    new Float64Array(wasmMemory.buffer, ptr, n * 2).set(graph.coords.subarray(0, n * 2));
+    return graph_nearest(ptr, n, lat, lng);
   };
 
   const fillEngineNoise = (
@@ -674,6 +721,8 @@ export async function instantiateStreetViewWasm(
     depthPercentiles,
     depthNearDepth,
     depthNormalize,
+    graphAstar,
+    graphNearest,
   };
 }
 

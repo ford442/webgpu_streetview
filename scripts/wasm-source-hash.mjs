@@ -21,6 +21,7 @@ export const WASM_SOURCE_FILES = [
   'cpp/src/luma_module.cpp',
   'cpp/src/cabin_dsp_module.cpp',
   'cpp/src/depth_module.cpp',
+  'cpp/src/graph_module.cpp',
   'cpp/src/bindings.cpp',
   'cpp/include/streetview_wasm.h',
   'cpp/include/audio_kernels.h',

@@ -16,6 +16,19 @@ export interface LumaAnalysis extends LumaReduce {
 }
 
 /**
+ * A directed link graph in CSR form — the shape `graph_astar` reads. Node
+ * `i`'s outgoing edges are `neighbors[offsets[i] .. offsets[i + 1])`;
+ * `coords` holds `nodeCount` [lat, lng] pairs. Built from a prefetched
+ * `RouteGraphNode[]` by `src/wasm/graph.ts`.
+ */
+export interface CsrGraph {
+  nodeCount: number;
+  offsets: Int32Array;
+  neighbors: Int32Array;
+  coords: Float64Array;
+}
+
+/**
  * Carried between scene-depth inferences ({@link StreetViewWasmAPI.depthNormalize});
  * reset when the scene or view changes.
  */
@@ -369,4 +382,15 @@ export interface StreetViewWasmAPI {
     dstW: number,
     dstH: number,
   ): Uint8Array;
+  /**
+   * Shortest path (A*, haversine edge cost and heuristic) from node `from` to
+   * node `to`. Ties break on the lower node index, so the path is identical on
+   * every backend.
+   * @returns Node indices `from` … `to` (just `[from]` when they are equal), or
+   *          null when `to` is unreachable or the graph is malformed.
+   */
+  graphAstar(graph: CsrGraph, from: number, to: number): Int32Array | null;
+
+  /** Index of the node nearest to [lat, lng] (ties: the lower index); -1 when empty. */
+  graphNearest(graph: CsrGraph, lat: number, lng: number): number;
 }

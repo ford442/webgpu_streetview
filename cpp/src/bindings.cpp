@@ -6,7 +6,7 @@
  * match the TypeScript loader ABI in src/wasm/index.ts.  The underlying
  * implementations (sw_* functions) live one translation unit per domain:
  * noise_module.cpp, geodesy_module.cpp, audio_module.cpp, hrtf_module.cpp,
- * luma_module.cpp and cabin_dsp_module.cpp.
+ * luma_module.cpp, cabin_dsp_module.cpp, depth_module.cpp and graph_module.cpp.
  *
  * When building with Emscripten:
  *   - CMakeLists.txt exports `_seed`, `_noise2d`, etc. via EXPORTED_FUNCTIONS.
@@ -260,6 +260,24 @@ void depth_normalize(const float* disparity, int count, int width, int height,
                      double* state3, const float* previous, float* out) {
     sw_depth_normalize(disparity, count, width, height, horizon_y, aligned,
                        same_scene, state3, previous, out);
+}
+
+/**
+ * A* over a CSR link graph; returns the path length (-1: none) and writes at
+ * most `max_len` node indices to `out_path`. Matches ABI export: 'graph_astar'.
+ */
+EMSCRIPTEN_KEEPALIVE
+int graph_astar(const int* offsets, const int* neighbors, const double* coords,
+                int node_count, int edge_count, int from, int to,
+                void* work, int* out_path, int max_len) {
+    return sw_graph_astar(offsets, neighbors, coords, node_count, edge_count,
+                          from, to, work, out_path, max_len);
+}
+
+/** Nearest graph node to a coordinate. Matches ABI export: 'graph_nearest'. */
+EMSCRIPTEN_KEEPALIVE
+int graph_nearest(const double* coords, int node_count, double lat, double lng) {
+    return sw_graph_nearest(coords, node_count, lat, lng);
 }
 
 } // extern "C"

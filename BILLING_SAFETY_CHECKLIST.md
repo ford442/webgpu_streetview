@@ -109,14 +109,15 @@ traffic.
 
 `src/services/maps/callBudget.ts` counts every `StreetViewService.getPanorama`
 the app makes (teleport prefetch, historical ring crawl, route-prefetch link
-collection, globe snap, pano image-date / IBL lookups, the route re-snap, the
+collection, the trip link-graph prefetch (`trip-prefetch`), trip replay
+(`replay`), globe snap, pano image-date / IBL lookups, the route re-snap, the
 coverage map's `coverage-graph` / `coverage-poi` / `coverage-map-click`) and
 every place-search call, per kind and per call site, and caps each kind for the
 session.
 
 | Kind | Cap | Notes |
 |------|-----|-------|
-| `panorama` | 2000 / session | A runaway guard; a teleport is 1 call, a historical crawl 12, a route re-snap 1, on-route following **0** |
+| `panorama` | 2000 / session | A runaway guard; a teleport is 1 call, a historical crawl 12, a route re-snap 1, on-route following **0**, trip prefetch ≈ route length / 10 m, a replayed hop 1 |
 | `placeSearch` | counted only | capped by its own `PlaceSearchBudget` (80, above) |
 | `directions` | **0** | Google `DirectionsService` — no provider uses it; raising the cap is a billing decision |
 | `routing` | 40 / session | OSRM-compatible route requests (not Google, not billed — see below) |
@@ -138,8 +139,11 @@ request per planned trip (and one per guest in a shared session).
 | Google Directions provider | **not implemented / off** | `directions` meter cap 0 — add one only with a row here first |
 | Route-following hop | **0** extra Maps calls (`getLinks` + `setPano` only, no prefetch hint) | `useCruiseMode.route.test.tsx` asserts it |
 | Off-route re-snap | 1 metered `getPanorama` after 2 off-route hops | `app/useTripBindings.ts` (`route-resnap`) |
-| "Save for offline" | ~1 `getPanorama` per 50 m of route, user-initiated, metered | `route-prefetch` source |
-| Cache | route in memory only; Google imagery still `network-only` | `swPolicy.ts` |
+| "Save for offline" (trip link-graph prefetch) | **opt-in**, cost shown and confirmed first: ≈1 `getPanorama` per 10 m of route (one per pano walked), hard stop at 1.25× the estimate and at the session `panorama` cap; stores pano id / position / link ids + headings / capture date only — **never imagery** | `offline/tripPrefetch.ts` (`trip-prefetch`); `tripPrefetch.test.ts` |
+| Offline drive over a saved graph | **0** Maps calls to plan a hop (`graph_astar` over IndexedDB data); the hop is still `setPano` | `tripController.ts` `planGraphHop`; `useCruiseMode.route.test.tsx` |
+| Trip recording | **0** calls — samples the loaded panorama, `povStore` and the user's settings per hop | `trip/tripRecorder.ts` |
+| Trip replay (local, `?trip=` link, shared-session guest) | user-initiated; **1 metered `getPanorama` by pano id per replayed hop** (button shows the count), stops at the session cap; a vanished pano with a recorded date costs one historical crawl (≤ 12, `historical-crawl`) | `trip/tripReplay.ts` (`replay`); `trip.test.ts` |
+| Cache | route in memory only; trip graphs and recordings in IndexedDB (metadata); Google imagery still `network-only` | `swPolicy.ts` |
 
 **Not Google, not billed, but with usage policies**: Open-Meteo live conditions
 (opt-in, ≤ 1 request / 10 min while within 25 km, CC BY 4.0 attribution shown,

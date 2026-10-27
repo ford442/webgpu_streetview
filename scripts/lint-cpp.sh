@@ -17,6 +17,7 @@ SOURCES=(
   "${ROOT}/cpp/src/luma_module.cpp"
   "${ROOT}/cpp/src/cabin_dsp_module.cpp"
   "${ROOT}/cpp/src/depth_module.cpp"
+  "${ROOT}/cpp/src/graph_module.cpp"
   "${ROOT}/cpp/src/bindings.cpp"
 )
 

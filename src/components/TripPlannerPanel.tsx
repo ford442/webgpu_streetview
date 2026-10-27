@@ -6,11 +6,16 @@ import { formatEta, formatGuidanceDistance, maneuverInstruction } from '../servi
 import { parseLatLngText } from '../services/routing/routeLink';
 import { downloadTextFile, routeToGpx } from '../services/routing/routeExport';
 import { nextStep, useTripSelector, type TripStop } from '../state/tripStore';
-import { TRIP_OFFLINE_SPACING_M, type TripPanelBindings } from '../app/useTripBindings';
+import type { TripPanelBindings } from '../app/useTripBindings';
+import type { TripRecordingBindings } from '../app/useTripRecording';
+import { TripRecordingsSection } from './TripRecordingsSection';
+import type { TripPrefetchResult } from '../offline/tripPrefetch';
 
 interface TripPlannerPanelProps extends TripPanelBindings {
   isOpen: boolean;
   onClose: () => void;
+  /** Recorded trips (replay, export, share, album); omitted in tests that do not need them. */
+  recordings?: TripRecordingBindings;
 }
 
 /** Via-points between the origin and the destination. */
@@ -35,6 +40,98 @@ const btn = (bg: string, disabled = false): React.CSSProperties => ({
 });
 
 const stop = (e: React.SyntheticEvent): void => e.stopPropagation();
+
+function describePrefetchResult(r: TripPrefetchResult, lengthM: number): string {
+  const saved = `${r.nodes} pano${r.nodes === 1 ? '' : 's'} saved (${r.callsUsed} metered lookup${r.callsUsed === 1 ? '' : 's'})`;
+  const covered = `${formatGuidanceDistance(r.coveredM)} of ${formatGuidanceDistance(lengthM)}`;
+  switch (r.stop) {
+    case 'complete': return `Saved for offline: ${saved}.`;
+    case 'budget': return `Stopped at the session call cap: ${saved}, covering ${covered}.`;
+    case 'cap': return `Stopped at the estimate's limit: ${saved}, covering ${covered}.`;
+    case 'aborted': return `Cancelled: ${saved}, covering ${covered}.`;
+    case 'no-imagery': return 'No Street View imagery near the start of the route — nothing saved.';
+  }
+}
+
+type OfflineProps = Pick<
+  TripPanelBindings,
+  'onSaveOffline' | 'onCancelOffline' | 'offlineBusy' | 'offlineError' | 'offlineEstimate'
+  | 'offlineProgress' | 'offlineResult' | 'offlineSavedNodes'
+> & { lengthM: number };
+
+/**
+ * "Save for offline": the cost is shown and confirmed before a single lookup
+ * is made, progress is visible while it runs, and the outcome says how much
+ * of the route the saved graph covers.
+ */
+function OfflineSection({
+  onSaveOffline,
+  onCancelOffline,
+  offlineBusy,
+  offlineError,
+  offlineEstimate,
+  offlineProgress,
+  offlineResult,
+  offlineSavedNodes,
+  lengthM,
+}: OfflineProps) {
+  const [confirming, setConfirming] = useState(false);
+  if (!offlineEstimate) return null;
+  const progress = offlineProgress;
+  return (
+    <div aria-label="Save for offline" role="group" style={{ marginTop: 10, fontSize: 12, color: '#ccc' }}>
+      {offlineBusy && progress ? (
+        <div>
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            Saving the link graph — {progress.callsUsed} / ≈{progress.estimate.calls} lookups · {progress.nodes} panos
+            <progress
+              max={Math.max(1, progress.lengthM)}
+              value={progress.alongM}
+              style={{ display: 'block', width: '100%', marginTop: 4 }}
+            />
+          </label>
+          <button type="button" onClick={onCancelOffline} style={btn('rgba(255,255,255,0.12)')}>Cancel</button>
+        </div>
+      ) : confirming ? (
+        <div role="alertdialog" aria-label="Confirm offline save">
+          <p style={{ margin: '0 0 6px' }}>
+            Walks the Street View link graph along the route: ≈{offlineEstimate.calls} panorama lookups
+            (at most {offlineEstimate.maxCalls}), each one a metered Maps call on this session&apos;s meter.
+            Only pano ids, positions, links and capture dates are stored — never imagery.
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                onSaveOffline();
+              }}
+              style={btn('#1565c0')}
+            >
+              Start ({offlineEstimate.calls} lookups)
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} style={btn('rgba(255,255,255,0.12)')}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          disabled={offlineBusy}
+          title={`About ${offlineEstimate.calls} metered panorama lookups.`}
+          style={btn('rgba(255,255,255,0.12)', offlineBusy)}
+        >
+          {offlineSavedNodes > 0 ? 'Re-save for offline' : 'Save for offline'} (≈{offlineEstimate.calls} lookups)
+        </button>
+      )}
+      {offlineResult && !offlineBusy && <p role="status" style={{ margin: '6px 0 0' }}>{describePrefetchResult(offlineResult, lengthM)}</p>}
+      {!offlineResult && offlineSavedNodes > 0 && !offlineBusy && (
+        <p style={{ margin: '6px 0 0' }}>Offline graph saved: {offlineSavedNodes} panos.</p>
+      )}
+      {offlineError && <p role="alert" style={{ color: '#ff6b6b', margin: '6px 0 0' }}>{offlineError}</p>}
+    </div>
+  );
+}
 
 /**
  * One stop field: free text goes through the (budgeted) place search, a typed
@@ -157,10 +254,16 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
   onStop,
   onClear,
   onSaveOffline,
+  onCancelOffline,
   offlineBusy,
   offlineError,
+  offlineEstimate,
+  offlineProgress,
+  offlineResult,
+  offlineSavedNodes,
   isCruiseMode,
   getShareUrl,
+  recordings,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [destination, setDestination] = useState<StopDraft>(EMPTY_DRAFT);
@@ -174,6 +277,7 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
   const resnaps = useTripSelector((s) => s.resnaps);
   const upcoming = useTripSelector(nextStep);
   const tripStops = useTripSelector((s) => s.stops);
+  const offlineDrive = useTripSelector((s) => s.offlineDrive);
 
   useFocusTrap(panelRef, isOpen);
   if (!isOpen) return null;
@@ -199,7 +303,6 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
       window.prompt('Copy this trip link', url);
     }
   };
-  const offlineLookups = route ? Math.ceil(route.lengthM / TRIP_OFFLINE_SPACING_M) + 1 : 0;
 
   return (
     <div
@@ -319,15 +422,6 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onSaveOffline}
-                disabled={offlineBusy}
-                title={`Prefetches the Street View link graph along the route: about ${offlineLookups} pano lookups, counted on the session call meter.`}
-                style={btn('rgba(255,255,255,0.12)', offlineBusy)}
-              >
-                {offlineBusy ? 'Saving…' : 'Save for offline'}
-              </button>
-              <button
-                type="button"
                 onClick={() => downloadTextFile(routeToGpx(route, tripStops), 'road-trip.gpx', 'application/gpx+xml')}
                 style={btn('rgba(255,255,255,0.12)')}
               >
@@ -335,7 +429,24 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
               </button>
               <button type="button" onClick={onClear} style={btn('rgba(255,255,255,0.12)')}>Clear</button>
             </div>
-            {offlineError && <p role="alert" style={{ color: '#ff6b6b', fontSize: 12 }}>{offlineError}</p>}
+            <OfflineSection
+              onSaveOffline={onSaveOffline}
+              onCancelOffline={onCancelOffline}
+              offlineBusy={offlineBusy}
+              offlineError={offlineError}
+              offlineEstimate={offlineEstimate}
+              offlineProgress={offlineProgress}
+              offlineResult={offlineResult}
+              offlineSavedNodes={offlineSavedNodes}
+              lengthM={route.lengthM}
+            />
+            {offlineDrive && (
+              <p role="status" style={{ fontSize: 12, color: '#ccc', margin: '6px 0 0' }}>
+                Offline drive: {offlineDrive.astarHops} hops on the cached graph&apos;s shortest path
+                {offlineDrive.greedyHops > 0 ? ` · ${offlineDrive.greedyHops} by the greedy fallback (no cached path)` : ''}
+                {offlineDrive.offGraphHops > 0 ? ` · ${offlineDrive.offGraphHops} off the cached graph` : ''}
+              </p>
+            )}
           </section>
         )}
 
@@ -357,6 +468,8 @@ const TripPlannerPanel: React.FC<TripPlannerPanelProps> = ({
             </div>
           </section>
         )}
+
+        {recordings && <TripRecordingsSection {...recordings} />}
       </div>
     </div>
   );

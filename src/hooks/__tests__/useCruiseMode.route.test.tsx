@@ -16,8 +16,10 @@ import {
   getActiveRouteGuide,
   planTrip,
   resetTripControllerForTests,
+  setTripOfflineGraph,
   startDrive,
 } from '../../services/routing/tripController';
+import type { RouteGraphNode } from '../../offline/offlineStore';
 import type { RouteProvider } from '../../services/routing/RouteProvider';
 import { absoluteAngleDiff } from '../../utils/navigation';
 import { DESTINATION, L_ROUTE, ORIGIN, buildGraph, linksOf } from '../../services/routing/__tests__/routeFixtures';
@@ -133,6 +135,60 @@ describe('route-following cruise', () => {
     expect(resnapTo).toHaveBeenCalledTimes(1);
     expect(tripStore.get().resnaps).toBe(1);
     expect(getMapsCallBudget().getStats().byKind.panorama.used).toBe(1);
+    act(() => view.result.current.setIsCruiseMode(false));
+  });
+});
+
+describe('offline drive over a cached link graph', () => {
+  it('plans every hop on the graph shortest path and reaches the destination with zero Maps calls', async () => {
+    const h = harness('m0');
+    await plan(h);
+    const routeId = tripStore.get().route!.id;
+    const nodes: RouteGraphNode[] = Array.from(h.graph.values(), (p) => ({
+      panoId: p.id,
+      lat: p.pos.lat,
+      lng: p.pos.lng,
+      linkPanoIds: [...p.links],
+      linkHeadings: linksOf(h.graph, p.id).map((l) => l.heading),
+      routeId,
+      cachedAt: '2026-10-21T00:00:00.000Z',
+    }));
+    const resnapTo = vi.fn(async () => false);
+    configureTripController({ resnapTo, isOffline: () => true });
+    setTripOfflineGraph(routeId, nodes);
+    const view = mountCruise(h);
+    const visited = new Set<string>();
+    for (let tick = 0; tick < 70 && view.result.current.isCruiseMode; tick++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      visited.add(h.current());
+    }
+    expect(tripStore.get().status).toBe('arrived');
+    expect(visited.has('s1')).toBe(true);
+    expect(visited.has('m31')).toBe(false);
+    const stats = tripStore.get().offlineDrive!;
+    expect(stats.astarHops).toBeGreaterThan(40);
+    expect(stats.greedyHops).toBe(0);
+    expect(stats.offGraphHops).toBe(0);
+    expect(resnapTo).not.toHaveBeenCalled();
+    expect(getPanorama).not.toHaveBeenCalled();
+    expect(getMapsCallBudget().getStats().byKind.panorama.used).toBe(0);
+  });
+
+  it('online, the cached graph is not consulted', async () => {
+    const h = harness('m0');
+    await plan(h);
+    configureTripController({ resnapTo: async () => false, isOffline: () => false });
+    setTripOfflineGraph(tripStore.get().route!.id, [
+      { panoId: 'm0', lat: 0, lng: 0, linkPanoIds: [], routeId: 'x', cachedAt: '' },
+    ]);
+    const view = mountCruise(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(tripStore.get().offlineDrive).toBeNull();
+    expect(h.current()).not.toBe('m0');
     act(() => view.result.current.setIsCruiseMode(false));
   });
 });

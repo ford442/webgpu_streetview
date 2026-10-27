@@ -39,6 +39,7 @@ import { useAppDirector } from './useAppDirector';
 import { useAppBootLinks } from './useAppBootLinks';
 import { useAppShortcuts } from './useAppShortcuts';
 import { useTripBindings } from './useTripBindings';
+import { useTripRecording } from './useTripRecording';
 import { getActiveRouteGuide } from '../services/routing/tripController';
 import { ConnectedChrome } from './shell/ConnectedChrome';
 import { CinemaLayer } from './shell/CinemaLayer';
@@ -186,6 +187,22 @@ export function AppShell() {
     isCruiseMode, setIsCruiseMode, announce, routePrefetch,
   });
 
+  const tripRecordings = useTripRecording({
+    panorama,
+    isConnected: connection.isConnected,
+    isPanoramaReady,
+    teleportToPanoSafe,
+    env,
+    setHeading,
+    setPitch,
+    setZoom,
+    setCarHeading,
+    currentImageDate,
+    snapshots: capture.gallery.snapshots,
+    openTripPanel: () => panels.setIsTripPanelOpen(true),
+    setIsCruiseMode,
+  });
+
   useAppBootLinks({
     isConnected: connection.isConnected,
     panorama,
@@ -290,7 +307,7 @@ export function AppShell() {
           accessibilitySettings={accessibilitySettings}
           setAccessibilitySettings={setAccessibilitySettings}
           tourPanelProps={tourPanelProps}
-          tripPanelProps={tripPanelProps}
+          tripPanelProps={{ ...tripPanelProps, recordings: tripRecordings }}
           globe={{
             globeMode,
             effectiveMapsKey: maps.effectiveMapsKey,
