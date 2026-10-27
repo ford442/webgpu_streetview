@@ -46,6 +46,7 @@ export class GpuChores {
   private gpuReady = false;
   private initPromise: Promise<void> | null = null;
   private inFlight = false;
+  private tornDown = false;
   private readonly wasm: StreetViewWasmAPI = requireWasm();
   private readonly killSwitch: boolean;
   private readonly probeOk: boolean;
@@ -269,7 +270,9 @@ export class GpuChores {
       this.publish(sample);
       return sample;
     } catch (err) {
-      console.warn('[gpu-chores] GPU hist failed — CPU fallback next sample', err);
+      if (!this.isTeardownAbort(err)) {
+        console.warn('[gpu-chores] GPU hist failed — CPU fallback next sample', err);
+      }
       this.gpuReady = false;
       return null;
     } finally {
@@ -336,7 +339,8 @@ export class GpuChores {
       readBuf.unmap();
       return tight;
     } catch (err) {
-      console.warn('[gpu-chores] GPU downsample failed', err);
+      // Device teardown aborts the pending map; that is not a chores failure.
+      if (!this.isTeardownAbort(err)) console.warn('[gpu-chores] GPU downsample failed', err);
       return null;
     } finally {
       dstTex.destroy();
@@ -344,7 +348,13 @@ export class GpuChores {
     }
   }
 
+  /** True once `destroy()` ran, or when the device died under an in-flight readback. */
+  private isTeardownAbort(err: unknown): boolean {
+    return this.tornDown && (err as { name?: string } | null)?.name === 'AbortError';
+  }
+
   public destroy(): void {
+    this.tornDown = true;
     this.binsBuffer?.destroy();
     this.binsReadback?.destroy();
     this.sizeBuffer?.destroy();

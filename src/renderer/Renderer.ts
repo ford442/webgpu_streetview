@@ -624,6 +624,10 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public destroy() {
+        // Destroys the shared device the cabin renderer adopts — record who asked.
+        if (!this.isDisposed) {
+            console.warn('[Renderer] destroy() — shared GPUDevice will be destroyed', new Error('Renderer.destroy').stack);
+        }
         // Intentional: the `lost` promise this resolves must not re-init.
         this.teardownIntended = true;
         this.onLostCallback = undefined;

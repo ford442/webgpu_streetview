@@ -48,6 +48,9 @@ function disposeMaterialTextures(material: THREE.Material): void {
 export function disposeCarInteriorResources(host: CarInteriorDisposeHost): void {
     cancelAnimationFrame(host.animationId);
 
+    // Call-site breadcrumb: a cabin dispose near a device loss shows who triggered it.
+    console.debug('[CarInterior] dispose call site', new Error('disposeCarInteriorResources').stack);
+
     // Cancels any in-flight zone lookup; the texture itself is also swept below.
     host.digitalClock?.dispose();
     host.digitalClock = null;
