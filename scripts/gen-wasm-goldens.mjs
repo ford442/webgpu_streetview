@@ -4,20 +4,19 @@
  *
  * Generate the cross-implementation golden vectors for the WASM numeric ABI.
  *
- * There are three implementations of the same algorithms:
+ * One C++ source (cpp/src/*_module.cpp), built two ways:
  *
- *   1. public/wasm/streetview-wasm.wasm  – what actually ships
- *   2. cpp/src/*_module.cpp              – the C++ source of truth
- *   3. src/wasm/index.ts (JS_FALLBACK)   – the jsdom/degrade twin
+ *   1. public/wasm/streetview-wasm{,.simd}.wasm  – what actually ships (emcc)
+ *   2. the host build                            – native ctest, four compilers
  *
- * The goldens are captured **from the shipping binary** (1) and then asserted
- * against (2) by the native host tests (cpp/tests/noise_module_test.cpp) and
- * against (3) by src/wasm/__tests__/wasmGoldenParity.test.ts. One fixture,
- * two consumers — so a change in any single implementation shows up as a test
- * failure instead of silent drift.
+ * The goldens are captured **from the shipping scalar binary** and then
+ * asserted against (2) by the native host tests (cpp/tests/*_test.cpp) and
+ * against both binaries, through the TS loader's wrappers, by
+ * src/wasm/__tests__/wasmGoldenParity.test.ts. There is no JS twin: a
+ * compiler, flag or SIMD change that moves one bit shows up as a failure.
  *
  * Outputs (both committed):
- *   cpp/tests/goldens.json            – consumed by Vitest (JS twin)
+ *   cpp/tests/goldens.json            – consumed by Vitest (both binaries)
  *   cpp/tests/goldens_generated.h     – consumed by the native host tests
  *
  * Usage:
@@ -563,6 +562,95 @@ const cabinDsp = DSP_SCRIPTS.map((script) => {
 });
 const dspMaxIrTaps = exp.dsp_max_ir_taps();
 
+// ---------------------------------------------------------------------------
+// Scene depth (depth_*): percentiles, ground calibration, and a normalize
+// sequence that walks every easing branch (fresh, same scene, aligned).
+// ---------------------------------------------------------------------------
+// Inputs are explicit f32 maps, except `nanIndices` / `infIndices`, which the
+// consumers poke in as NaN / +Infinity (JSON and C++ literals cannot carry
+// them) — non-finite texels must be skipped by the percentiles and read as far.
+const DEPTH_W = 24;
+const DEPTH_H = 20;
+const depthMap = (scale, shift, salt) => Array.from({ length: DEPTH_W * DEPTH_H }, (_, i) => {
+  const x = i % DEPTH_W;
+  const y = Math.floor(i / DEPTH_W);
+  return Math.fround(shift + scale * ((y + 1) / DEPTH_H) ** 2 + ((x * 31 + y * 17 + salt) % 13) / 130);
+});
+const DEPTH_NAN = [5, 77, 300];
+const DEPTH_INF = [123];
+/** Strided percentile input, by formula: f32(((i * 7919) % 10007) / 10007) — longer than 16384, so the stride is 2. */
+const DEPTH_STRIDED_COUNT = 20000;
+const depthBlock = exp.malloc(DEPTH_STRIDED_COUNT * 8 + 4096);
+if (!depthBlock) throw new Error('malloc for the depth goldens failed');
+const writeDepthMap = (values) => {
+  const view = new Float32Array(memory.buffer, depthBlock, values.length);
+  view.set(values);
+  for (const i of DEPTH_NAN) if (i < values.length) view[i] = NaN;
+  for (const i of DEPTH_INF) if (i < values.length) view[i] = Infinity;
+};
+const DEPTH_PERCENTILE_CASES = [
+  { label: 'map-2-98', values: depthMap(3, 0.5, 0), low: 0.02, high: 0.98 },
+  { label: 'map-10-90', values: depthMap(3, 0.5, 0), low: 0.1, high: 0.9 },
+];
+const depthPercentiles = DEPTH_PERCENTILE_CASES.map((c) => {
+  writeDepthMap(c.values);
+  const n = c.values.length;
+  const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
+  exp.depth_percentiles(depthBlock, n, c.low, c.high, depthBlock + n * 4, out);
+  return { ...c, expected: Array.from(new Float64Array(memory.buffer, out, 2)) };
+});
+{
+  const view = new Float32Array(memory.buffer, depthBlock, DEPTH_STRIDED_COUNT);
+  for (let i = 0; i < DEPTH_STRIDED_COUNT; i++) view[i] = ((i * 7919) % 10007) / 10007;
+  const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
+  exp.depth_percentiles(depthBlock, DEPTH_STRIDED_COUNT, 0.02, 0.98, depthBlock + DEPTH_STRIDED_COUNT * 4, out);
+  depthPercentiles.push({
+    label: 'strided-20000', values: null, low: 0.02, high: 0.98,
+    expected: Array.from(new Float64Array(memory.buffer, out, 2)),
+  });
+}
+// Each step feeds the state (and, when aligned, the previous output) forward.
+const DEPTH_STEPS = [
+  { label: 'fresh', values: depthMap(3, 0.5, 0), aligned: false, sameScene: false, horizonY: 0.45 },
+  { label: 'same-scene-rescaled', values: depthMap(7, -0.25, 3), aligned: false, sameScene: true, horizonY: 0.45 },
+  { label: 'aligned', values: depthMap(5, 0.1, 6), aligned: true, sameScene: true, horizonY: 0.5 },
+  { label: 'looking-up', values: depthMap(5, 0.1, 9), aligned: false, sameScene: false, horizonY: 0.8 },
+  { label: 'flat', values: Array(DEPTH_W * DEPTH_H).fill(1.5), aligned: true, sameScene: true, horizonY: 0.45 },
+];
+const depthNormalize = (() => {
+  const n = DEPTH_W * DEPTH_H;
+  const stateOff = depthBlock + n * 12;
+  const prevOff = depthBlock + n * 4;
+  const outOff = depthBlock + n * 8;
+  new Float64Array(memory.buffer, stateOff, 3).fill(0);
+  let havePrev = false;
+  return DEPTH_STEPS.map((step) => {
+    writeDepthMap(step.values);
+    const usePrev = step.aligned && havePrev;
+    exp.depth_normalize(
+      depthBlock, n, DEPTH_W, DEPTH_H, step.horizonY, step.aligned ? 1 : 0, step.sameScene ? 1 : 0,
+      stateOff, usePrev ? prevOff : 0, outOff,
+    );
+    const expected = Array.from(new Float32Array(memory.buffer, outOff, n));
+    new Float32Array(memory.buffer, prevOff, n).set(expected);
+    havePrev = true;
+    return { ...step, expected, expectedState: Array.from(new Float64Array(memory.buffer, stateOff, 3)) };
+  });
+})();
+// Ground calibration on the first step's output (a real nearness-shaped map is
+// not needed: any [0, 1] map exercises the band, the median and the clamp).
+const DEPTH_NEAR_CASES = [
+  { label: 'ground', horizonY: 0.45 },
+  { label: 'looking-up', horizonY: 0.8 },
+  { label: 'high-horizon', horizonY: 0.1 },
+];
+const depthNearMap = depthNormalize[0].expected.map((v) => Math.fround(1 - v));
+const depthNearDepth = DEPTH_NEAR_CASES.map((c) => {
+  new Float32Array(memory.buffer, depthBlock, depthNearMap.length).set(depthNearMap);
+  return { ...c, expected: exp.depth_near_depth(depthBlock, DEPTH_W, DEPTH_H, c.horizonY) };
+});
+exp.free(depthBlock);
+
 const goldens = {
   $comment:
     'GENERATED by scripts/gen-wasm-goldens.mjs from public/wasm/streetview-wasm.wasm. '
@@ -592,6 +680,17 @@ const goldens = {
   lumaAnalyze,
   dspMaxIrTaps,
   cabinDsp,
+  depth: {
+    width: DEPTH_W,
+    height: DEPTH_H,
+    nanIndices: DEPTH_NAN,
+    infIndices: DEPTH_INF,
+    stridedCount: DEPTH_STRIDED_COUNT,
+    percentiles: depthPercentiles,
+    normalize: depthNormalize,
+    nearMap: depthNearMap,
+    nearDepth: depthNearDepth,
+  },
 };
 
 function vectorsOnly(obj) {
@@ -661,8 +760,8 @@ lines.push(' *');
 lines.push(' *     npm run gen:wasm-goldens');
 lines.push(' *');
 lines.push(' * The same vectors are emitted to cpp/tests/goldens.json, which');
-lines.push(' * src/wasm/__tests__/wasmGoldenParity.test.ts asserts the JS fallback');
-lines.push(' * against — so C++, the emcc binary and JS are pinned to one contract.');
+lines.push(' * src/wasm/__tests__/wasmGoldenParity.test.ts asserts both shipped');
+lines.push(' * binaries against — so the host C++ and the emcc builds share one contract.');
 lines.push(' */');
 lines.push('#pragma once');
 lines.push('');
@@ -914,6 +1013,44 @@ cabinDsp.forEach((c, i) => {
 });
 lines.push('};');
 lines.push(`inline constexpr int kDspScriptCount = ${cabinDsp.length};`);
+lines.push('');
+
+lines.push('// --- depth_* (scene depth) --------------------------------------------');
+lines.push(`inline constexpr int kDepthWidth = ${DEPTH_W};`);
+lines.push(`inline constexpr int kDepthHeight = ${DEPTH_H};`);
+lines.push(`inline constexpr int kDepthNanIndices[] = { ${DEPTH_NAN.join(', ')} };`);
+lines.push(`inline constexpr int kDepthInfIndices[] = { ${DEPTH_INF.join(', ')} };`);
+lines.push(`inline constexpr int kDepthStridedCount = ${DEPTH_STRIDED_COUNT};`);
+lines.push('// values == nullptr: the strided formula input (see gen-wasm-goldens.mjs)');
+lines.push('struct DepthPercentileGolden { const char* label; const float* values; double low; double high; double expected[2]; };');
+depthPercentiles.forEach((c, i) => {
+  if (c.values) lines.push(f32Array(`kDepthPercentileIn${i}`, c.values));
+});
+lines.push('inline constexpr DepthPercentileGolden kDepthPercentileCases[] = {');
+depthPercentiles.forEach((c, i) => {
+  lines.push(`    { "${c.label}", ${c.values ? `kDepthPercentileIn${i}` : 'nullptr'}, ${f64(c.low)}, ${f64(c.high)}, `
+    + `{ ${f64(c.expected[0])}, ${f64(c.expected[1])} } },`);
+});
+lines.push('};');
+lines.push('struct DepthStepGolden { const char* label; const float* values; int aligned; int same_scene; double horizon_y;');
+lines.push('                         const float* expected; double expected_state[3]; };');
+depthNormalize.forEach((c, i) => {
+  lines.push(f32Array(`kDepthStepIn${i}`, c.values));
+  lines.push(f32Array(`kDepthStepExpected${i}`, c.expected));
+});
+lines.push('inline constexpr DepthStepGolden kDepthSteps[] = {');
+depthNormalize.forEach((c, i) => {
+  lines.push(`    { "${c.label}", kDepthStepIn${i}, ${c.aligned ? 1 : 0}, ${c.sameScene ? 1 : 0}, ${f64(c.horizonY)}, `
+    + `kDepthStepExpected${i}, { ${c.expectedState.map(f64).join(', ')} } },`);
+});
+lines.push('};');
+lines.push(f32Array('kDepthNearMap', depthNearMap));
+lines.push('struct DepthNearGolden { const char* label; double horizon_y; double expected; };');
+lines.push('inline constexpr DepthNearGolden kDepthNearCases[] = {');
+depthNearDepth.forEach((c) => {
+  lines.push(`    { "${c.label}", ${f64(c.horizonY)}, ${f64(c.expected)} },`);
+});
+lines.push('};');
 lines.push('');
 
 lines.push('} // namespace goldens');

@@ -19,12 +19,9 @@ const wasmMocks = vi.hoisted(() => ({
 
 vi.mock('../../wasm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../wasm')>();
-  const { JS_FALLBACK } = await import('../../wasm/jsFallback');
   return {
     ...actual,
-    // Under jsdom a relative fetch would go to the network; the IRs come from
-    // the JS twin, which the goldens hold bit-identical to the binary.
-    loadWasmModule: async () => JS_FALLBACK,
+    // loadWasmModule stays real: src/setupTests.ts installed the committed binary.
     loadStreetViewWasmBytes: wasmMocks.compile,
     wasmSimdSupported: wasmMocks.simd,
   };

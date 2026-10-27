@@ -4,12 +4,12 @@
  * corner, south 200 m down "Side Road". Main Street carries on east past the
  * corner, so a follower that ignores the route goes straight on.
  */
-import { JS_FALLBACK } from '../../../wasm/jsFallback';
+import { requireWasm } from '../../../wasm';
 import type { LatLng, Route } from '../RouteProvider';
 
 export const ORIGIN: LatLng = { lat: 55.95, lng: -3.2 };
 const offset = (p: LatLng, metres: number, bearing: number): LatLng =>
-  JS_FALLBACK.offsetLatLng(p.lat, p.lng, metres, bearing);
+  requireWasm().offsetLatLng(p.lat, p.lng, metres, bearing);
 
 export const CORNER = offset(ORIGIN, 300, 90);
 export const DESTINATION = offset(CORNER, 200, 180);
@@ -56,6 +56,6 @@ export function linksOf(graph: Map<string, FakePano>, id: string): { pano: strin
   const from = graph.get(id)!;
   return from.links.map((to) => {
     const p = graph.get(to)!.pos;
-    return { pano: to, heading: JS_FALLBACK.initialBearing(from.pos.lat, from.pos.lng, p.lat, p.lng) };
+    return { pano: to, heading: requireWasm().initialBearing(from.pos.lat, from.pos.lng, p.lat, p.lng) };
   });
 }

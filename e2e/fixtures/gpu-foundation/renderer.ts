@@ -51,14 +51,21 @@ const lostMode = q.has('lost');
 const [liveHeading = 0, livePitch = 0] = (q.get('livepov') ?? '0,0').split(',').map(Number);
 const tailFlags = readPresentTailFlags();
 const wantsTail = tailFlags.latch || !!tailFlags.stereo;
+const wasmMissing = q.get('wasm') === 'missing';
 
 const out: Record<string, unknown> = {};
 (window as unknown as { __out: unknown }).__out = out;
 
-// The app fetches `./shaders/...` relative to its own page; this page lives deeper.
+// The app fetches `./shaders/...` and `./wasm/...` relative to its own page;
+// this page lives deeper.
 const realFetch = window.fetch.bind(window);
 window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const wasm = /\/wasm\/([^/?#]+\.wasm)/.exec(url);
+    if (wasm) {
+        if (wasmMissing) return new Response('not found', { status: 404 });
+        return realFetch(`/wasm/${wasm[1]}`, init);
+    }
     const m = /\/shaders\/([^/?#]+\.wgsl)/.exec(url);
     if (!m) return realFetch(input, init);
     const response = await realFetch(`/shaders/${m[1]}`, init);

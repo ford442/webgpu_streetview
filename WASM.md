@@ -73,7 +73,7 @@ cpp/
 │   ├── CMakeLists.txt          Host-only test target (streetview_cpu_tests)
 │   ├── noise_module_test.cpp   doctest golden-vector tests
 │   ├── goldens_generated.h     GENERATED goldens for C++ (npm run gen:wasm-goldens)
-│   └── goldens.json            The same goldens for the Vitest JS-fallback parity test
+│   └── goldens.json            The same goldens for the Vitest parity test (both binaries)
 └── third_party/
     └── doctest/                Vendored single-header test framework (MIT, v2.4.11)
 
@@ -88,7 +88,7 @@ scripts/
 └── gen-wasm-goldens.mjs        Capture goldens from the shipping binary
 
 src/wasm/
-├── index.ts                    TypeScript wrapper + pure-JS fallback
+├── index.ts                    Loader (loadWasmModule / requireWasm) + TypeScript wrappers
 ├── useWasmModule.ts            React hooks (useWasmModule, useNoiseFunction)
 ├── wasmNoiseFeeder.ts          Imperative render-loop noise-tile bridge
 └── wasmParticleFeeder.ts       Imperative render-loop particle-seed bridge
@@ -133,8 +133,8 @@ imports `env.emscripten_notify_memory_growth`. Host `haversine` tests allow
 | `normalizeAngle` | `(angle: number) → number` | Maps angle → \[0, 360). |
 | `signedAngleDiff` | `(from, to: number) → number` | Smallest signed delta in (-180, 180\]. |
 
-`isWasm: boolean` — `true` when running the compiled binary, `false` for the
-JS fallback.
+Kernel call sites use `requireWasm()`, which throws if the binary has not
+loaded yet; the boot sequence awaits it before the first render.
 
 ---
 
@@ -212,7 +212,7 @@ Configuring writes `cpp/build-host/compile_commands.json`
 (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`). Only `build-host` copies that file to
 `cpp/compile_commands.json` (not a symlink; ASan/clang extra trees keep their
 own databases). `cpp/.clangd` points at `build-host`. `npm run lint:cpp` runs
-advisory clang-tidy against that database.
+clang-tidy against that database, gating on `bugprone-*` (`cpp/.clang-tidy`).
 
 Regenerate the goldens only when an algorithm deliberately changes:
 
@@ -300,18 +300,13 @@ Kernel buffers live in a `malloc`'d scratch arena above the C++ stack — see
 
 ---
 
-## JS Fallback
+## No JS Fallback
 
-`loadWasmModule()` automatically falls back to a pure-TypeScript
-implementation when:
-
-- `WebAssembly` is not available in the browser.
-- The `.wasm` file fetch returns a non-OK HTTP status.
-- Any other error occurs during instantiation (including missing imports).
-
-The fallback mirrors the WASM algorithm exactly, so behaviour is identical
-(minus the performance advantage). The `isWasm` flag lets you distinguish the
-two at runtime.
+The binary is the only implementation. `loadWasmModule()` **rejects** when
+`WebAssembly` is missing, the fetch fails, the module is invalid or imports
+something the loader does not supply, or its stack does not match
+`WASM_STACK_SIZE`. The boot then fails at `webgpuProbe` stage `wasm` with the
+blocking WebGPU-failure overlay (see `docs/WASM_BRIDGE.md` §4).
 
 ---
 
@@ -347,11 +342,12 @@ committed alongside the binary so CI can verify it without rebuilding.
 ## Testing
 
 ```bash
-# JS fallback + compiled WASM binary (wasmCompiled.test.ts loads public/wasm/*.wasm directly)
+# every suite runs the committed binary (src/setupTests.ts instantiates public/wasm/streetview-wasm.wasm)
 npm test -- --reporter=verbose
 ```
 
-- `src/wasm/__tests__/wasm.test.ts` — JS fallback parity (no WASM required).
+- `src/wasm/__tests__/wasm.test.ts` — the API over the installed binary, and the loader (404 rejects + retries, HTML is not a module, bytes cached).
+- `src/wasm/__tests__/wasmGoldenParity.test.ts` — every golden, exactly, on both the scalar and SIMD binaries.
 - `src/wasm/__tests__/wasmCompiled.test.ts` — compiled binary ABI, memory layout,
   haversine host-import wiring. Loads the file directly via `fs.readFileSync`.
 - `src/wasm/__tests__/wasmNoiseFeeder.test.ts` — `WasmNoiseFeeder` cadence and buffer reuse.

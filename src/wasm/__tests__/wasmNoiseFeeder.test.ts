@@ -9,14 +9,13 @@ import {
   FBM_TILE_GAIN,
   getWasmNoisePreference,
 } from '../wasmNoiseFeeder';
-import { _resetWasmModule, loadWasmModule } from '../index';
+import { loadWasmModule } from '../index';
 
 const setSearch = (search: string) => {
   window.history.pushState({}, '', `/${search}`);
 };
 
 beforeEach(() => {
-  _resetWasmModule();
   setSearch('');
   localStorage.clear();
 });
@@ -86,12 +85,6 @@ describe('WasmNoiseFeeder', () => {
     const first = feeder.sampleTile(0, 0);
     const second = feeder.sampleTile(NOISE_UPDATE_INTERVAL_FRAMES, 1);
     expect(first).toBe(second);
-  });
-
-  test('isWasm reflects the loaded module (false for the JS fallback used in Jest)', async () => {
-    const feeder = new WasmNoiseFeeder();
-    await feeder.waitUntilLoaded();
-    expect(feeder.isWasm).toBe(false);
   });
 });
 

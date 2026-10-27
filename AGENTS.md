@@ -789,14 +789,23 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 ### WASM numeric layer (`cpp/` + `src/wasm/`)
 
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
-audio engine, panorama luma analysis)
-exists as three implementations — the shipping binaries
-(`public/wasm/streetview-wasm.wasm` and its SIMD128 twin
-`streetview-wasm.simd.wasm`, same sources), the C++ in `cpp/src/*_module.cpp`
-(one translation unit per domain: noise, geodesy, audio, hrtf, luma, cabin
-dsp), and the pure-JS fallback in `src/wasm/jsFallback.ts` (the cabin engine's
-twin is `src/wasm/cabinDspTwin.ts`). They are pinned to **one set of golden vectors** captured
-from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
+audio engine, panorama luma analysis, scene-depth calibration) has **one
+implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth), shipped as the
+committed binaries (`public/wasm/streetview-wasm.wasm` and the SIMD128
+`streetview-wasm.simd.wasm`, same sources). There is **no JS twin**: the binary
+runs on the main thread, in the AudioWorklet and in Vitest (`src/setupTests.ts`
+instantiates the committed `.wasm` and installs it — never mock it).
+
+- **Boot**: `src/index.tsx` awaits `loadBootWasm()` (`renderer/bootWasm.ts`)
+  before rendering `<App />`, and `Renderer.init` awaits the same load beside
+  its pass inits. A failure is `webgpuProbe = { ok: false, stage: 'wasm' }`
+  plus the blocking WebGPU-failure overlay (`app/WasmBootFailure.tsx`,
+  `e2e/wasm-boot.spec.ts`). `loadWasmModule()` rejects (and retries on the next
+  call); kernel call sites use `requireWasm()`, which throws before the load.
+
+Everything is pinned to **one set of golden vectors** captured from the
+shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
@@ -806,15 +815,22 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
-  points at `build-host`. `npm run lint:cpp` runs advisory clang-tidy
-  (`WarningsAsErrors` empty) over `SOURCES` in `scripts/lint-cpp.sh`, which
+  points at `build-host`. `npm run lint:cpp` runs clang-tidy, **gating on
+  `bugprone-*`** (`cpp/.clang-tidy` `WarningsAsErrors`; modernize/readability
+  stay advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which
   must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
   host build. A new translation unit also goes in both CMake source lists and
   `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
-- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
-  the JS fallback (runs with `npm test`). **`cabinDspParity.test.ts`** runs the
-  `dsp_render` parameter scripts (FNV-1a checksums + excerpts) and
-  `luma_analyze` on the JS twin and **both** committed binaries.
+- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — every golden, exactly,
+  on **both** committed binaries through the TS loader (runs with `npm test`),
+  including the `dsp_render` parameter scripts (FNV-1a checksums + excerpts),
+  `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
+  worklet source with the cabin goldens.
+- **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
+  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
+  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
+  change that moves a single golden bit is dropped, not re-baselined.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
@@ -834,8 +850,8 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
-application code — the JS fallback is a degrade/test twin, not a third place to
-invent behaviour. Geodesy in particular has exactly one copy per formula:
+application code, and never re-implement a kernel in TypeScript (not even for
+tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
 `haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /

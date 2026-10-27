@@ -58,7 +58,7 @@ pass-1 HDR intermediate ──gpuChores.downsampleTexture──▶ RGBA8, ≈252
 | `renderer/depth/depthScheduler.ts` | when to infer (below) |
 | `renderer/depth/DepthEstimator.ts` / `depthWorker.ts` / `depthProtocol.ts` | the Worker: runtime import, device, session, inference |
 | `renderer/depth/depthModelCache.ts` | the one-time, verified download into the Cache API |
-| `renderer/depth/depthMath.ts` | sRGB re-encode, ImageNet tensor, normalisation + calibration, f16 packing |
+| `renderer/depth/depthMath.ts` | sRGB re-encode, ImageNet tensor, f16 packing; normalisation + calibration are thin wrappers over `cpp/src/depth_module.cpp` (`depth_normalize`, goldens in `cpp/tests/goldens.json`) |
 | `renderer/depth/depthParams.ts` | trust (confidence), look-around shift, dolly direction |
 | `renderer/depth/sceneDepthBinding.ts` | `FrameAux`, the shared bind-group layout, the zero fallback, `SceneDepthParams` indices |
 | `renderer/depth/depthModel.ts` + `depthModel.manifest.json` | pins: model revision, files, sizes, SHA-256, runtime version |

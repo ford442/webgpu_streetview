@@ -53,8 +53,8 @@ static inline float lerp(float a, float b, float t) {
     return a + t * (b - a);
 }
 
-static inline float grad2d(int hash, float x, float y) {
-    const float* g = grad2[hash & 7];
+static inline float grad2d(unsigned hash, float x, float y) {
+    const float* g = grad2[hash & 7u];
     return g[0] * x + g[1] * y;
 }
 
@@ -104,9 +104,10 @@ float sw_noise2d(float x, float y) {
     float u = fade(fx);
     float v = fade(fy);
 
-    // Wrap to [0, 255].
-    int X = ix & 255;
-    int Y = iy & 255;
+    // Wrap to [0, 255]. Through unsigned: a negative lattice index wraps
+    // modulo 2^32 (C++20), so the low byte is what two's complement gives.
+    const unsigned X = static_cast<unsigned>(ix) & 255u;
+    const unsigned Y = static_cast<unsigned>(iy) & 255u;
 
     // Gradient values at four corners.
     float n00 = grad2d(perm[perm[X    ] + Y    ], fx,       fy      );
