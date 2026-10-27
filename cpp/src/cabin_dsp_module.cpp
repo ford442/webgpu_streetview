@@ -48,6 +48,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <span>
 
 #ifdef __wasm_simd128__
 #include <wasm_simd128.h>
@@ -68,6 +69,10 @@ constexpr int kMaxIrTaps = 4096;
 /** History slot of the first sample of the current block. */
 constexpr int kHistoryOffset = kMaxIrTaps - 1;
 constexpr int kHistoryLen = kHistoryOffset + kQuantum;
+// The worklet (CABIN_QUANTUM in src/car/audio/cabinWorkletSource.ts) and the
+// loader's createCabinDsp pack their I/O block as 4 x 128 floats + the IR.
+static_assert(kQuantum == 128, "the Web Audio render quantum; the TS I/O blocks are sized from it");
+static_assert(kMaxIrTaps % kQuantum == 0, "IRs pad to whole partitions");
 /** IR swaps crossfade over two quanta (~5 ms) instead of clicking. */
 constexpr int kXfadeFrames = 256;
 constexpr float kInvXfadeFrames = 1.0f / 256.0f;
@@ -237,8 +242,10 @@ void hrtf_voice_init(HrtfVoice& v, float azimuth_deg, float sample_rate) {
 /** Push one sample; adds the near ear's and the far ear's signal to l / r. */
 inline void hrtf_voice_step(HrtfVoice& v, float x, float& l, float& r) {
     v.ring[v.pos] = x;
-    const float delayed = v.ring[(v.pos - v.delay) & kItdMask];
-    v.pos = (v.pos + 1) & kItdMask;
+    // Ring indices wrap through unsigned (pos - delay is negative near 0).
+    const unsigned mask = static_cast<unsigned>(kItdMask);
+    const float delayed = v.ring[(static_cast<unsigned>(v.pos) - static_cast<unsigned>(v.delay)) & mask];
+    v.pos = static_cast<int>((static_cast<unsigned>(v.pos) + 1u) & mask);
     v.far_y += v.damp * ((v.far_gain * delayed) - v.far_y);
     if (v.right_is_near != 0) {
         r += x;
@@ -317,9 +324,12 @@ inline void fir_block(const float* hr, const float* x, int len, int frames, floa
     for (; n < frames; ++n) y[n] = fir_dot(hr, x + n, len);
 }
 
-/** Render at most one quantum. */
-void render_block(DspState& s, const float* in_l, const float* in_r,
-                  float* out_l, float* out_r, int frames) {
+/**
+ * Render one chunk of at most a quantum (`frames`). An empty input span is
+ * silence and an empty output span is discarded — the extern "C" nullptrs.
+ */
+void render_block(DspState& s, std::span<const float> in_l, std::span<const float> in_r,
+                  std::span<float> out_l, std::span<float> out_r, int frames) {
     const float k = s.smooth_k;
     for (int i = 0; i < frames; ++i) {
         // Parameter smoothing: one pole per parameter, per sample, so the
@@ -413,8 +423,9 @@ void render_block(DspState& s, const float* in_l, const float* in_r,
 
         // --- radio from the dash speakers --------------------------------
         const float radio_gain = c[kRadio];
-        float rl = in_l != nullptr ? in_l[i] : 0.0f;
-        float rr = in_r != nullptr ? in_r[i] : 0.0f;
+        const size_t at = static_cast<size_t>(i);
+        float rl = in_l.empty() ? 0.0f : in_l[at];
+        float rr = in_r.empty() ? 0.0f : in_r[at];
         if (!(rl >= -kInputLimit && rl <= kInputLimit)) rl = 0.0f;
         if (!(rr >= -kInputLimit && rr <= kInputLimit)) rr = 0.0f;
         rl *= radio_gain;
@@ -464,8 +475,8 @@ void render_block(DspState& s, const float* in_l, const float* in_r,
         s.dc_y_l = dl;
         s.dc_x_r = yr;
         s.dc_y_r = dr;
-        if (out_l != nullptr) out_l[n] = clampf(dl, -1.0f, 1.0f);
-        if (out_r != nullptr) out_r[n] = clampf(dr, -1.0f, 1.0f);
+        if (!out_l.empty()) out_l[static_cast<size_t>(n)] = clampf(dl, -1.0f, 1.0f);
+        if (!out_r.empty()) out_r[static_cast<size_t>(n)] = clampf(dr, -1.0f, 1.0f);
     }
 
     std::memmove(s.hist_l, s.hist_l + frames, sizeof(float) * static_cast<size_t>(kHistoryOffset));
@@ -570,12 +581,15 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count) {
     // Write into the idle buffer, then fade from the current one. A swap
     // that lands mid-fade restarts the fade from the IR that was fading in.
     const int next = 1 - s.ir_cur;
-    float* hr = s.ir[next];
-    for (int j = 0; j < len; ++j) hr[j] = 0.0f;
+    const std::span<float> hr(s.ir[next], static_cast<size_t>(len));
+    const std::span<const float> in = identity
+        ? std::span<const float>{}
+        : std::span<const float>(taps, static_cast<size_t>(n));
+    for (float& tap : hr) tap = 0.0f;
     for (int t = 0; t < n; ++t) {
-        float v = identity ? 1.0f : taps[t];
+        float v = identity ? 1.0f : in[static_cast<size_t>(t)];
         if (!(v >= -16.0f && v <= 16.0f)) v = 0.0f;
-        hr[len - 1 - t] = v;
+        hr[static_cast<size_t>(len - 1 - t)] = v;
     }
     s.prev_ir_len = s.ir_len;
     s.ir_cur = next;
@@ -587,15 +601,27 @@ void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in
                    float* out_l, float* out_r, int frames) {
     if (state == nullptr || frames <= 0) return;
     DspState& s = *reinterpret_cast<DspState*>(state);
+    const size_t total = static_cast<size_t>(frames);
+    const auto in_span = [total](const float* p) {
+        return p != nullptr ? std::span<const float>(p, total) : std::span<const float>{};
+    };
+    const auto out_span = [total](float* p) {
+        return p != nullptr ? std::span<float>(p, total) : std::span<float>{};
+    };
+    const std::span<const float> in_l = in_span(radio_in_l);
+    const std::span<const float> in_r = in_span(radio_in_r);
+    const std::span<float> o_l = out_span(out_l);
+    const std::span<float> o_r = out_span(out_r);
+    const auto chunk_of = [](auto whole, size_t at, size_t count) {
+        return whole.empty() ? decltype(whole){} : whole.subspan(at, count);
+    };
     int done = 0;
     while (done < frames) {
         const int chunk = frames - done < kQuantum ? frames - done : kQuantum;
-        render_block(s,
-                     radio_in_l != nullptr ? radio_in_l + done : nullptr,
-                     radio_in_r != nullptr ? radio_in_r + done : nullptr,
-                     out_l != nullptr ? out_l + done : nullptr,
-                     out_r != nullptr ? out_r + done : nullptr,
-                     chunk);
+        const size_t at = static_cast<size_t>(done);
+        const size_t count = static_cast<size_t>(chunk);
+        render_block(s, chunk_of(in_l, at, count), chunk_of(in_r, at, count),
+                     chunk_of(o_l, at, count), chunk_of(o_r, at, count), chunk);
         done += chunk;
     }
 }

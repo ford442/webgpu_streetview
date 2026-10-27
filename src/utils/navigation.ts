@@ -1,11 +1,8 @@
-import { getWasmModule, loadWasmModule } from '../wasm';
-import { JS_FALLBACK as jsFallback } from '../wasm/jsFallback';
+import { requireWasm } from '../wasm';
 
-// Warm the module at import time — same "module-level cached api" shape as
-// getWasmModule()/the feeders. normalizeAngle/signedAngleDiff/haversineDistance
-// below must stay synchronous (callers include per-frame audio panning), so
-// they read jsFallback directly until this resolves.
-void loadWasmModule();
+// normalizeAngle/signedAngleDiff/haversineDistance below must stay synchronous
+// (callers include per-frame audio panning). The binary is loaded before the
+// first React render (src/index.tsx), so they call it through requireWasm().
 
 /**
  * Default half-angle of the cone a link must fall in to count as "this way".
@@ -66,25 +63,23 @@ export function findBestLink(
  * Normalize angle to [0, 360)
  * Handles negative angles and angles >= 360
  *
- * Delegates to the WASM `normalize_angle` export (or its JS fallback twin)
- * instead of a third copy of the formula — see docs/WASM_BRIDGE.md.
+ * Delegates to the WASM `normalize_angle` export instead of a second copy of the formula — see docs/WASM_BRIDGE.md.
  */
 export function normalizeAngle(angle: number): number {
-    return (getWasmModule() ?? jsFallback).normalizeAngle(angle);
+    return requireWasm().normalizeAngle(angle);
 }
 
 /**
  * Calculate the shortest signed angular difference [-180, 180]
  * Positive means rotate clockwise, negative means rotate counter-clockwise
  *
- * Delegates to the WASM `signed_angle_diff` export (or its JS fallback twin)
- * instead of a third copy of the formula — see docs/WASM_BRIDGE.md. Note the
+ * Delegates to the WASM `signed_angle_diff` export instead of a second copy of the formula — see docs/WASM_BRIDGE.md. Note the
  * argument order: this function is (target, current) = target - current,
- * while the WASM/fallback `signedAngleDiff` is (from, to) = to - from, so the
+ * while the WASM `signedAngleDiff` is (from, to) = to - from, so the
  * call below swaps them.
  */
 export function signedAngleDiff(target: number, current: number): number {
-    return (getWasmModule() ?? jsFallback).signedAngleDiff(current, target);
+    return requireWasm().signedAngleDiff(current, target);
 }
 
 /**
@@ -96,7 +91,7 @@ export function absoluteAngleDiff(a: number, b: number): number {
     return Math.min(diff, 360 - diff);
 }
 
-/** Approximate Earth radius per unit — matches the WASM/fallback `haversine`'s R=6371000m. */
+/** Approximate Earth radius per unit — matches the WASM `haversine`'s R=6371000m. */
 const EARTH_RADIUS_BY_UNIT = { km: 6371, mi: 3959, nm: 3440 } as const;
 const EARTH_RADIUS_METERS = 6371000;
 
@@ -109,8 +104,8 @@ const EARTH_RADIUS_METERS = 6371000;
  * @param unit - Unit for result: 'km' (default), 'mi' (miles), or 'nm' (nautical miles)
  * @returns Distance in specified unit
  *
- * Delegates to the WASM `haversine` export (or its JS fallback twin) for the
- * actual great-circle computation instead of a third copy of the formula —
+ * Delegates to the WASM `haversine` export for the actual great-circle
+ * computation instead of a second copy of the formula —
  * see docs/WASM_BRIDGE.md. The unit conversion below reproduces the original
  * per-unit Earth radii exactly, as a ratio against the metres result.
  */
@@ -119,7 +114,7 @@ export function haversineDistance(
     lat2: number, lon2: number,
     unit: 'km' | 'mi' | 'nm' = 'km'
 ): number {
-    const meters = (getWasmModule() ?? jsFallback).haversine(lat1, lon1, lat2, lon2);
+    const meters = requireWasm().haversine(lat1, lon1, lat2, lon2);
     return meters * (EARTH_RADIUS_BY_UNIT[unit] / EARTH_RADIUS_METERS);
 }
 
@@ -131,12 +126,12 @@ export function haversineDistance(
  * @param lon2 - Longitude of destination point in degrees
  * @returns Initial bearing in degrees [0, 360), where 0 is North, 90 is East
  *
- * Delegates to the WASM `initial_bearing` export (or its JS fallback twin) —
+ * Delegates to the WASM `initial_bearing` export —
  * route following, cruise and the offline graph walk all share that one copy.
  */
 export function initialBearing(
     lat1: number, lon1: number,
     lat2: number, lon2: number
 ): number {
-    return (getWasmModule() ?? jsFallback).initialBearing(lat1, lon1, lat2, lon2);
+    return requireWasm().initialBearing(lat1, lon1, lat2, lon2);
 }

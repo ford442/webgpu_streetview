@@ -1,26 +1,22 @@
 /**
  * Panorama analysis chores. Adopts the Renderer GPUDevice — never requestDevice.
  *
- * Backend order: WebGPU compute → WASM → JS. Weather post ownership is untouched.
+ * Backend order: WebGPU compute → WASM. Weather post ownership is untouched.
+ * The renderer awaited the binary during boot, so the WASM side is always there.
  */
 
-import { loadWasmModule, type StreetViewWasmAPI } from '../../wasm';
+import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
 import { isWebGpuProbeOk } from '../webgpuBootProbe';
 import {
   CHORES_WORKGROUP_SIZE,
   downsample2d,
   HIST_BINS,
   histDownsampleSize,
-  lumaAnalyze,
   meanLumaFromHistogram,
   PICKER_THUMB_HEIGHT,
   PICKER_THUMB_WIDTH,
 } from './lumaMath';
-import {
-  resolveCpuChoresBackend,
-  resolveGpuChoresEligibility,
-  type GpuChoresBackend,
-} from './gpuChoresPolicy';
+import { resolveGpuChoresEligibility, type GpuChoresBackend } from './gpuChoresPolicy';
 import { setGpuChoresStats } from './gpuChoresStatsStore';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
 import { deviceHasFeature } from '../shaderFeatureVariants';
@@ -49,7 +45,7 @@ export class GpuChores {
   private gpuReady = false;
   private initPromise: Promise<void> | null = null;
   private inFlight = false;
-  private wasm: StreetViewWasmAPI | null = null;
+  private readonly wasm: StreetViewWasmAPI = requireWasm();
   private readonly killSwitch: boolean;
   private readonly probeOk: boolean;
 
@@ -59,11 +55,11 @@ export class GpuChores {
     this.probeOk = eligibility.probeOk && isWebGpuProbeOk();
     this.device = eligibility.gpuEligible && device ? device : null;
     if (device && !eligibility.limitsOk) {
-      console.info('[gpu-chores] adapter limits too low for GPU chores — WASM/JS:', eligibility.limitsReason);
+      console.info('[gpu-chores] adapter limits too low for GPU chores — WASM:', eligibility.limitsReason);
     }
     setGpuChoresStats({
       killSwitch: this.killSwitch,
-      backend: this.device ? 'webgpu' : resolveCpuChoresBackend(false),
+      backend: this.device ? 'webgpu' : 'wasm',
     });
   }
 
@@ -79,17 +75,11 @@ export class GpuChores {
   }
 
   private async init(): Promise<void> {
-    try {
-      this.wasm = await loadWasmModule();
-    } catch {
-      this.wasm = null;
-    }
-
     if (!this.device || this.killSwitch || !this.probeOk) {
       this.device = null;
       setGpuChoresStats({
         killSwitch: this.killSwitch,
-        backend: resolveCpuChoresBackend(this.wasm?.isWasm === true),
+        backend: 'wasm',
       });
       return;
     }
@@ -155,11 +145,11 @@ export class GpuChores {
       this.gpuReady = true;
       setGpuChoresStats({ backend: 'webgpu', killSwitch: this.killSwitch });
     } catch (err) {
-      console.warn('[gpu-chores] WebGPU init failed — WASM/JS fallback', err);
+      console.warn('[gpu-chores] WebGPU init failed — WASM fallback', err);
       this.gpuReady = false;
       this.device = null;
       setGpuChoresStats({
-        backend: resolveCpuChoresBackend(this.wasm?.isWasm === true),
+        backend: 'wasm',
         killSwitch: this.killSwitch,
       });
     }
@@ -167,11 +157,11 @@ export class GpuChores {
 
   public currentBackend(): GpuChoresBackend {
     if (this.gpuReady && this.device) return 'webgpu';
-    return resolveCpuChoresBackend(this.wasm?.isWasm === true);
+    return 'wasm';
   }
 
   /**
-   * Histogram + reduce on packed RGBA (WASM if compiled, else JS).
+   * Histogram + reduce on packed RGBA, in WASM.
    * Full-res input is quarter-downsampled first (break-even vs CPU hist) —
    * inside the same fused pass (`luma_analyze`), so the frame is copied into
    * WASM memory once instead of downsample + histogram + reduce copy-ins.
@@ -202,13 +192,11 @@ export class GpuChores {
     dstH: number,
   ): ChoresSample {
     const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const analysis = this.wasm?.isWasm
-      ? this.wasm.lumaAnalyze(rgba, width, height, dstW, dstH)
-      : lumaAnalyze(rgba, width, height, dstW, dstH);
+    const analysis = this.wasm.lumaAnalyze(rgba, width, height, dstW, dstH);
 
     const sampleMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
     const sample: ChoresSample = {
-      backend: resolveCpuChoresBackend(this.wasm?.isWasm === true),
+      backend: 'wasm',
       meanLuma: analysis.mean,
       minLuma: analysis.min,
       maxLuma: analysis.max,
@@ -226,10 +214,7 @@ export class GpuChores {
     dstW: number = PICKER_THUMB_WIDTH,
     dstH: number = PICKER_THUMB_HEIGHT,
   ): Uint8Array {
-    if (this.wasm?.isWasm) {
-      return this.wasm.downsample2d(rgba, width, height, dstW, dstH);
-    }
-    return downsample2d(rgba, width, height, dstW, dstH);
+    return this.wasm.downsample2d(rgba, width, height, dstW, dstH);
   }
 
   /**

@@ -6,8 +6,8 @@
  *
  * The dsp_render goldens are parameter scripts captured from the shipping
  * scalar binary by scripts/gen-wasm-goldens.mjs (the SIMD binary is checked
- * against the same vectors with `--compare`, the JS twin by
- * src/wasm/__tests__/cabinDspParity.test.ts). The harness below is the one
+ * against the same vectors with `--compare`, and both binaries through the TS
+ * loader by src/wasm/__tests__/wasmGoldenParity.test.ts). The harness below is the one
  * that script documents: keyframes at block boundaries, 128-frame renders,
  * the radioSample() input, FNV-1a over the f32 bits, L then R.
  */

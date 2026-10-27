@@ -380,7 +380,7 @@ TEST_CASE("polyline_resample spaces points evenly and keeps both ends") {
     const auto& c = goldens::kResampleCases[2];
     const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
     std::vector<double> out(static_cast<size_t>(n) * 2);
-    sw_polyline_resample(c.in, c.in_count, c.step, out.data(), n);
+    CHECK(sw_polyline_resample(c.in, c.in_count, c.step, out.data(), n) == n);
     CHECK(out[0] == c.in[0]);
     CHECK(out[1] == c.in[1]);
     CHECK(out[out.size() - 2] == c.in[(c.in_count - 1) * 2]);
@@ -400,7 +400,7 @@ TEST_CASE("polyline_resample: truncates to cap, wraps longitudes, survives bad i
     CHECK(n == c.out_count);
     CHECK(out[4] == c.expected[4]); // only 3 points written, the 3rd matches
     std::vector<double> full(static_cast<size_t>(n) * 2);
-    sw_polyline_resample(c.in, c.in_count, c.step, full.data(), n);
+    CHECK(sw_polyline_resample(c.in, c.in_count, c.step, full.data(), n) == n);
     for (int i = 0; i < n; ++i) {
         const double lng = full[static_cast<size_t>(i) * 2 + 1];
         INFO(at(i));
@@ -436,7 +436,7 @@ TEST_CASE("polyline_project: on-route points sit at their resampled distance") {
     const auto& c = goldens::kResampleCases[2];
     const int n = sw_polyline_resample(c.in, c.in_count, c.step, nullptr, 0);
     std::vector<double> pts(static_cast<size_t>(n) * 2);
-    sw_polyline_resample(c.in, c.in_count, c.step, pts.data(), n);
+    CHECK(sw_polyline_resample(c.in, c.in_count, c.step, pts.data(), n) == n);
     for (int i = 0; i + 1 < n; ++i) {
         INFO(at(i));
         double out[3] = { 0.0, 0.0, 0.0 };
@@ -719,8 +719,10 @@ TEST_CASE("fill_cabin_ir: distinct cabins, clamped arguments, safe edges") {
 
 TEST_CASE("fill_engine_noise clamps to [-1, 1] and tolerates degenerate input") {
     std::vector<float> buf(256, 7.0f);
-    sw_fill_engine_noise(buf.data(), static_cast<int>(buf.size()),
-                         9000.0f, 1.0f, 400.0f, 0.5, 4389450.0, 44100.0f);
+    const double next = sw_fill_engine_noise(buf.data(), static_cast<int>(buf.size()),
+                                             9000.0f, 1.0f, 400.0f, 0.5, 4389450.0, 44100.0f);
+    CHECK(next >= 0.0);
+    CHECK(next < 1.0);
     for (size_t i = 0; i < buf.size(); ++i) {
         INFO(at(static_cast<int>(i)));
         CHECK(buf[i] >= -1.0f);

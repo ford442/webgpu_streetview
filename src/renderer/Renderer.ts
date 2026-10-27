@@ -23,6 +23,7 @@ import {
     publishBootFailure,
     type BootProbeContext,
 } from './bootDevice';
+import { loadBootWasm, WasmLoadError } from './bootWasm';
 import { buildSamplerDescriptor } from './streetViewPass';
 import {
     FRAME_UNIFORM_FLOAT_COUNT,
@@ -81,6 +82,7 @@ function wrapUnit(v: number): number {
  * |---|---|
  * | `deviceInit.ts` | adapter/limit/canvas-output policy |
  * | `bootDevice.ts` | boot sequence and the single `requestDevice` call site |
+ * | `bootWasm.ts` | the WASM numeric layer, awaited beside the pass shaders |
  * | `streetViewPass.ts` | pass-1 pipeline, bind group layout, sampler, encode |
  * | `framePasses/` | the ordered pass registry — init, ready/failed state, encode |
  * | `frameLoop.ts` | per-frame encode + submit and uniform packing |
@@ -180,6 +182,9 @@ export class Renderer implements StreetViewRenderer {
         resetPassStatuses();
 
         let probe: BootProbeContext | undefined;
+        // In flight across the adapter/device round trips; awaited with the passes.
+        const wasmLoad = loadBootWasm();
+        wasmLoad.catch(() => {});
         try {
             const boot = await bootDevice({
                 canvas: this.canvas,
@@ -237,8 +242,9 @@ export class Renderer implements StreetViewRenderer {
             // Every pass fetches and compiles concurrently. A required pass
             // (pass 1) failing rejects; any other is disabled and reported on
             // `webgpuProbe.passes`, and the frame loop skips it.
-            const [passOutcome] = await Promise.allSettled([
+            const [passOutcome, wasmOutcome] = await Promise.allSettled([
                 passes.initAll(),
+                wasmLoad,
                 this.transitionManager.init(!!options?.legacyTransitions).then(
                     () => {
                         if (options?.legacyTransitions) reportPassReady('transitions');
@@ -250,6 +256,7 @@ export class Renderer implements StreetViewRenderer {
                 ),
             ]);
             if (passOutcome.status === 'rejected') throw passOutcome.reason;
+            if (wasmOutcome.status === 'rejected') throw wasmOutcome.reason;
             if (this.isDisposed) return false;
 
             this.textures.updateBindGroup();
@@ -296,7 +303,10 @@ export class Renderer implements StreetViewRenderer {
         } catch (e) {
             this._fallbackReason = e instanceof Error ? e.message : String(e);
             if (probe) {
-                publishBootFailure(probe, e instanceof RequiredPassError ? 'pipeline' : 'device', this._fallbackReason);
+                const stage = e instanceof RequiredPassError ? 'pipeline'
+                    : e instanceof WasmLoadError ? 'wasm'
+                    : 'device';
+                publishBootFailure(probe, stage, this._fallbackReason);
             }
             console.warn('WebGPU init failed:', this._fallbackReason);
             // Never leak the device of a failed boot — and never report its

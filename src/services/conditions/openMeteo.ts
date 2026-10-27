@@ -13,8 +13,7 @@
  * 10 minutes); a jump of more than 25 km refetches, at most once a minute.
  */
 
-import { getWasmModule } from '../../wasm';
-import { JS_FALLBACK } from '../../wasm/jsFallback';
+import { requireWasm } from '../../wasm';
 
 export const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
 
@@ -100,7 +99,7 @@ export function shouldFetchConditions(
   const elapsed = now - last.at;
   if (elapsed >= CONDITIONS_REFRESH_MS) return true;
   if (elapsed < CONDITIONS_MIN_SPACING_MS) return false;
-  const moved = (getWasmModule() ?? JS_FALLBACK).haversine(last.lat, last.lng, pos.lat, pos.lng);
+  const moved = requireWasm().haversine(last.lat, last.lng, pos.lat, pos.lng);
   return moved > CONDITIONS_REFETCH_DISTANCE_M;
 }
 

@@ -1,13 +1,11 @@
-import { loadWasmModule, _resetWasmModule, type StreetViewWasmAPI } from '../wasm';
+import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';
 import { computeRouteStats, formatDistanceMetric, toLatLonPairs } from './routeStats';
 import { haversineDistance } from './navigation';
 
 let wasm: StreetViewWasmAPI;
 
 beforeEach(async () => {
-    _resetWasmModule();
-    // fetch() is unavailable under vitest, so this resolves to the JS fallback —
-    // the same code path a browser without the binary takes.
+    // src/setupTests.ts installed the committed binary.
     wasm = await loadWasmModule();
 });
 
