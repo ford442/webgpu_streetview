@@ -15,9 +15,7 @@ export function normalizeMapsKey(value: string | undefined): string {
 }
 
 export function getConfiguredMapsKey(): string {
-  // Vite replaces process.env.* at build time (see vite.config.ts define shim).
-  const buildTimeKey =
-    process.env.VITE_MAPS_API_KEY || process.env.REACT_APP_MAPS_API_KEY;
+  const buildTimeKey = import.meta.env.VITE_PUBLIC_MAPS_API_KEY;
 
   return getConfiguredMapsKeyFromEnv(
     buildTimeKey,

@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { povStore } from '../state/povStore';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
-import { RendererBackendType, StreetViewRenderer } from '../renderer/RendererBackend';
+import { type RendererBackendType, type StreetViewRenderer } from '../renderer/RendererBackend';
 import { packWeatherParams } from '../renderer/packWeatherParams';
 import { WeatherParamIndex } from '../renderer/weatherUniformLayout';
 import {

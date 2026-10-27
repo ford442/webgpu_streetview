@@ -5,6 +5,7 @@ import {
     createShaderModuleChecked,
     fetchShaderSource,
 } from './gpuPipelineFactory';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 /** Timestamp-query slots for pass 1, when the adapter supports them. */
 export interface Pass1TimingContext {
@@ -75,7 +76,7 @@ export async function createStreetViewPipeline(
     device: GPUDevice,
     intermediateFormat: GPUTextureFormat,
 ): Promise<GPURenderPipeline> {
-    const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/streetview.wgsl`;
+    const shaderUrl = `${PUBLIC_URL}/shaders/streetview.wgsl`;
     let shaderCode: string;
     try {
         shaderCode = await fetchShaderSource(shaderUrl, 'streetview.wgsl');

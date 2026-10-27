@@ -1,3 +1,4 @@
+import { PUBLIC_URL } from '../config/publicUrl';
 const isLocalhost = Boolean(
   window.location.hostname === 'localhost' ||
     window.location.hostname === '[::1]' ||
@@ -55,13 +56,13 @@ function checkValidServiceWorker(swUrl: string, config?: ServiceWorkerConfig) {
 export function registerServiceWorker(config?: ServiceWorkerConfig) {
   if (!('serviceWorker' in navigator)) return;
 
-  const enableInDev = process.env.REACT_APP_ENABLE_SW === 'true';
-  if (process.env.NODE_ENV !== 'production' && !isLocalhost && !enableInDev) {
+  const enableInDev = import.meta.env.VITE_PUBLIC_ENABLE_SW === 'true';
+  if (!import.meta.env.PROD && !isLocalhost && !enableInDev) {
     return;
   }
 
   window.addEventListener('load', () => {
-    const swUrl = `${process.env.PUBLIC_URL}/service-worker.js`;
+    const swUrl = `${PUBLIC_URL}/service-worker.js`;
     if (isLocalhost) {
       checkValidServiceWorker(swUrl, config);
       return;

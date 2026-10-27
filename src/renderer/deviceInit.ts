@@ -7,8 +7,8 @@ import {
     type AdapterFeatureLevel,
     type AdapterSelectionPolicy,
     type CanvasOutputFlags,
-    RendererInitOptions,
-    WeatherPostProcessMode,
+    type RendererInitOptions,
+    type WeatherPostProcessMode,
 } from './RendererBackend';
 import {
     COMPUTE_WEATHER_WORKGROUP_SIZE,

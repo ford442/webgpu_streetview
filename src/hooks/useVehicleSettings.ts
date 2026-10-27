@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { 
-    VehicleType, 
-    VehicleConfig, 
+    type VehicleType, 
+    type VehicleConfig, 
     getVehicleConfig, 
     isValidVehicleType,
     vehicleManager 

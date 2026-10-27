@@ -360,36 +360,33 @@ export function measurePerformance(name: string, startLabel: string, endLabel: s
 /**
  * Throttle a function to maintain target FPS
  */
-// `any[]` is the canonical constraint for "any function": `unknown[]` would reject typed callbacks.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function throttleToFPS<T extends (...args: any[]) => void>(
-  fn: T,
+export function throttleToFPS<A extends unknown[]>(
+  fn: (...args: A) => void,
   targetFPS: number
-): T {
+): (...args: A) => void {
   let lastCall = 0;
   const minInterval = 1000 / targetFPS;
   
-  return ((...args: Parameters<T>) => {
+  return (...args: A) => {
     const now = performance.now();
     if (now - lastCall >= minInterval) {
       lastCall = now;
       fn(...args);
     }
-  }) as T;
+  };
 }
 
 /**
  * Debounce frame updates for non-critical operations
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function debounceFrame<T extends (...args: any[]) => void>(
-  fn: T,
+export function debounceFrame<A extends unknown[]>(
+  fn: (...args: A) => void,
   frames: number = 1
-): T {
+): (...args: A) => void {
   let frameCount = 0;
-  let pendingArgs: Parameters<T> | null = null;
+  let pendingArgs: A | null = null;
   
-  return ((...args: Parameters<T>) => {
+  return (...args: A) => {
     pendingArgs = args;
     
     const tick = () => {
@@ -406,7 +403,7 @@ export function debounceFrame<T extends (...args: any[]) => void>(
     };
     
     requestAnimationFrame(tick);
-  }) as T;
+  };
 }
 
 // ============================================================
@@ -459,13 +456,13 @@ export function getNavigationTiming(): Partial<PerformanceNavigationTiming> | nu
   if (typeof performance === 'undefined') return null;
   
   let startMark = 0;
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     startMark = performance.now();
   }
 
   // Fast path: fully resolved cache
   if (navigationTimingCache?.isResolved) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       const duration = performance.now() - startMark;
       console.log(`[usePerformanceMonitor] getNavigationTiming (cache hit) took ${duration.toFixed(4)}ms`);
     }
@@ -492,7 +489,7 @@ export function getNavigationTiming(): Partial<PerformanceNavigationTiming> | nu
   }
   // If we get empty but are still inside retry window, we do nothing and allow future calls
 
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     const duration = performance.now() - startMark;
     const cacheStatus = navigationTimingCache?.isResolved ? 'resolved' : 'retrying';
     console.log(`[usePerformanceMonitor] getNavigationTiming (API call, ${cacheStatus}) took ${duration.toFixed(4)}ms`);

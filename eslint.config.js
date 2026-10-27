@@ -73,12 +73,20 @@ export default tseslint.config(
             'react/no-unescaped-entities': 'off',
             'react/display-name': 'off',
             'react-hooks/exhaustive-deps': 'error',
+            // Build config reaches src/ as `import.meta.env.VITE_PUBLIC_*` (vite.config.ts) and
+            // asset URLs go through config/publicUrl.ts; there is no `process` in the browser.
+            'no-restricted-properties': ['error', {
+                object: 'process',
+                property: 'env',
+                message: 'Use import.meta.env.VITE_PUBLIC_* (see vite.config.ts) or config/publicUrl.ts.',
+            }],
         },
     },
 
     // Unit tests run in node/jsdom and may touch both worlds.
     {
         files: ['src/**/*.{test,spec}.{ts,tsx}', 'src/**/__tests__/**/*.{ts,tsx}', 'src/setupTests.ts'],
+        rules: { 'no-restricted-properties': 'off' },
         languageOptions: {
             globals: {
                 ...globals.browser,

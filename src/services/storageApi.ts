@@ -1,4 +1,4 @@
-const STORAGE_API_BASE = process.env.REACT_APP_STORAGE_API_URL || 'https://storage.noahcohn.com';
+const STORAGE_API_BASE = import.meta.env.VITE_PUBLIC_STORAGE_API_URL || 'https://storage.noahcohn.com';
 
 export interface CloudLocation {
     id: string;

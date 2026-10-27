@@ -2,7 +2,7 @@ import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
 import {
     WEATHER_POST_PROCESSOR_METHODS,
-    WeatherPostProcessorLike,
+    type WeatherPostProcessorLike,
 } from './weatherPostProcessorTypes';
 
 describe('WeatherPostProcessorLike contract', () => {

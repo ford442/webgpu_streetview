@@ -46,7 +46,9 @@ function* walk(dir) {
   }
 }
 
-const secrets = [...collectEnv()].filter(([k, v]) => !allow.has(k) && v.length >= MIN_LEN);
+// Build stamps (git hash, timestamp) are shipped on purpose (BuildBadge) and are not secrets.
+const BUILD_STAMP = /^(REACT_APP|VITE)_BUILD_(VERSION|TIME)$/;
+const secrets = [...collectEnv()].filter(([k, v]) => !allow.has(k) && !BUILD_STAMP.test(k) && v.length >= MIN_LEN);
 const files = [...walk(buildDir)].map((f) => [f, fs.readFileSync(f, 'utf8')]);
 const leaks = [];
 for (const [key, value] of secrets) {

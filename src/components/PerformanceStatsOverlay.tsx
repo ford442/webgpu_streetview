@@ -1,11 +1,11 @@
 /** @fileoverview Performance statistics overlay component */
 import React from 'react';
 import { 
-  PerformanceMonitorState, 
+  type PerformanceMonitorState, 
   getPerformanceOverlayStyles, 
   getFPSColor
 } from '../hooks/usePerformanceMonitor';
-import { MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
+import { type MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
 import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 import { exposureHintFromMeanLuma } from '../renderer/gpuChores/lumaMath';

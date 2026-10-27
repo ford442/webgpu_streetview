@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 import { buildStudioShareUrl } from '../utils/studioLink';
 import {
-    ImageExportFormat,
+    type ImageExportFormat,
     convertDataUrlFormat,
     blobToDataUrl,
     formatExtension,

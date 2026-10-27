@@ -1,19 +1,19 @@
 import * as THREE from 'three';
-import { VehicleType, VehicleConfig, getVehicleConfig } from './VehicleManager';
-import { FrustumCuller, VehicleLODConfig, detectGPUProfile } from '../utils/performance';
-import { PanoLocationInfo } from '../utils/panoLocation';
-import { CarInteriorAnimator } from './interior/CarInteriorAnimator';
-import { CarInteriorRenderer } from './interior/CarInteriorRenderer';
-import { CarInteriorLightingManager } from './interior/CarInteriorLightingManager';
-import { InteractionHelper } from './interior/InteractionHelper';
-import { GeometryFactory } from './interior/GeometryFactory';
-import { LODManager } from './interior/LODManager';
+import { type VehicleType, type VehicleConfig, getVehicleConfig } from './VehicleManager';
+import { type FrustumCuller, type VehicleLODConfig, detectGPUProfile } from '../utils/performance';
+import { type PanoLocationInfo } from '../utils/panoLocation';
+import { type CarInteriorAnimator } from './interior/CarInteriorAnimator';
+import { type CarInteriorRenderer } from './interior/CarInteriorRenderer';
+import { type CarInteriorLightingManager } from './interior/CarInteriorLightingManager';
+import { type InteractionHelper } from './interior/InteractionHelper';
+import { type GeometryFactory } from './interior/GeometryFactory';
+import { type LODManager } from './interior/LODManager';
 import type { PostProcessingManager } from './interior/PostProcessingManager';
-import { RainSystem } from './interior/RainSystem';
-import { DustMoteSystem } from './interior/DustMoteSystem';
-import { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
-import { InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
-import { CabinLeverCallbacks } from './interior/CarInteriorDetailProps';
+import { type RainSystem } from './interior/RainSystem';
+import { type DustMoteSystem } from './interior/DustMoteSystem';
+import { type WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
+import { type InteriorMicroInteractions } from './interior/InteriorMicroInteractions';
+import { type CabinLeverCallbacks } from './interior/CarInteriorDetailProps';
 import {
     GEAR_POSITIONS,
     SHIFTER_KNOB_MESH,
@@ -22,12 +22,12 @@ import {
     type GearPosition,
     type WiperStalkPosition,
 } from './interior/CabinControls';
-import { VanityMirror } from './interior/VanityMirror';
-import { CenterDisplay } from './interior/CenterDisplay';
-import { SunShafts } from './interior/SunShafts';
-import { PanoEnvironment } from './interior/PanoEnvironment';
-import { PerformanceProfiler } from './interior/PerformanceProfiler';
-import { LocationPanel } from './interior/LocationPanel';
+import { type VanityMirror } from './interior/VanityMirror';
+import { type CenterDisplay } from './interior/CenterDisplay';
+import { type SunShafts } from './interior/SunShafts';
+import { type PanoEnvironment } from './interior/PanoEnvironment';
+import { type PerformanceProfiler } from './interior/PerformanceProfiler';
+import { type LocationPanel } from './interior/LocationPanel';
 import type { GaugeRig } from './interior/CarInteriorGauges';
 import type { DigitalClock } from './interior/DigitalClock';
 import {

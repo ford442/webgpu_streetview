@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
+import { type PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
 import { CONTENT_MAP_EMISSIVE, locationPanelGlowFromNight } from './cabinLightingRamps';
 
 /**

@@ -14,7 +14,8 @@
     "noUnusedParameters": false,
     "strict": false,
     "noUncheckedIndexedAccess": false,
-    "incremental": false,
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo",
     "noEmit": true
   },
   "include": [

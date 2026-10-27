@@ -21,6 +21,7 @@ import { setGpuChoresStats } from './gpuChoresStatsStore';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
 import { deviceHasFeature } from '../shaderFeatureVariants';
 import { createComputePipelineChecked, createShaderModuleChecked } from '../gpuPipelineFactory';
+import { PUBLIC_URL } from '../../config/publicUrl';
 
 export interface ChoresSample {
   backend: GpuChoresBackend;
@@ -85,7 +86,7 @@ export class GpuChores {
     }
 
     try {
-      const base = `${process.env.PUBLIC_URL || '/'}/shaders`;
+      const base = `${PUBLIC_URL}/shaders`;
       const histFile = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.subgroups)
         ? 'gpu-chores-hist-subgroups.wgsl'
         : 'gpu-chores-hist.wgsl';

@@ -66,6 +66,18 @@ The Emscripten SDK version is pinned in `cpp/emsdk.version`, and
 emit different bytes, and CI diffs the committed binary against a rebuild).
 `STREETVIEW_ALLOW_EMCC_MISMATCH=1` overrides that for local experiments only.
 
+Installing the pinned SDK (also what `mymindstorm/setup-emsdk` does in CI):
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
+PIN=$(tr -d '[:space:]' < cpp/emsdk.version)
+/opt/emsdk/emsdk install "$PIN" && /opt/emsdk/emsdk activate "$PIN"
+source /opt/emsdk/emsdk_env.sh
+npm run build:wasm
+# or, without a local SDK:
+docker run --rm -v "$(pwd):/src" -w /src emscripten/emsdk bash scripts/build-wasm.sh
+```
+
 ### Working on the C++
 
 The algorithms build and test with the **system** compiler — no emcc, no

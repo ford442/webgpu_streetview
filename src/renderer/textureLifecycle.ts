@@ -1,6 +1,6 @@
 import { getCanvasFingerprint } from '../utils/panoramaStability';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
+import { type WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 import { createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
 import { clampTextureSize } from './deviceInit';

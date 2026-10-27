@@ -45,7 +45,7 @@ describe('cesiumImagery', () => {
   it('getCesiumIonToken trims and defaults empty', () => {
     expect(getCesiumIonToken('  tok  ')).toBe('tok');
     expect(getCesiumIonToken('')).toBe('');
-    // Explicit empty override — do not call with `undefined` (that uses process.env default)
+    // Explicit empty override — do not call with `undefined` (that uses the runtime config default)
     expect(getCesiumIonToken('   ')).toBe('');
   });
 
@@ -75,23 +75,20 @@ describe('cesiumImagery', () => {
 
   it('resolveMiniMapLayerOptions uses Ion terrain when token works', async () => {
     const Cesium = makeMockCesium();
-    const prev = process.env.REACT_APP_CESIUM_ION_TOKEN;
-    process.env.REACT_APP_CESIUM_ION_TOKEN = 'ion-token';
+    vi.stubGlobal('window', { CESIUM_ION_TOKEN: 'ion-token' });
     try {
       const opts = await resolveMiniMapLayerOptions(Cesium);
       expect(opts.imagerySource).toBe('ion');
       expect(opts.terrainProvider).toEqual({ kind: 'world-terrain' });
       expect(opts.baseLayer).toEqual({ kind: 'ion-world' });
     } finally {
-      if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-      else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
+      vi.unstubAllGlobals();
     }
   });
 
   it('resolveMiniMapLayerOptions falls back to ellipsoid+Carto when terrain fails', async () => {
     const Cesium = makeMockCesium({ terrainRejects: true });
-    const prev = process.env.REACT_APP_CESIUM_ION_TOKEN;
-    process.env.REACT_APP_CESIUM_ION_TOKEN = 'ion-token';
+    vi.stubGlobal('window', { CESIUM_ION_TOKEN: 'ion-token' });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const opts = await resolveMiniMapLayerOptions(Cesium);
@@ -102,8 +99,7 @@ describe('cesiumImagery', () => {
       );
     } finally {
       warn.mockRestore();
-      if (prev === undefined) delete process.env.REACT_APP_CESIUM_ION_TOKEN;
-      else process.env.REACT_APP_CESIUM_ION_TOKEN = prev;
+      vi.unstubAllGlobals();
     }
   });
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HistoryEntry } from '../hooks/useLocationHistory';
+import { type HistoryEntry } from '../hooks/useLocationHistory';
 
 interface HistoryPanelProps {
     history: HistoryEntry[];

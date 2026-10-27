@@ -149,23 +149,25 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     }
   });
 
-  test('fillEngineNoise: an hour of 1024-sample blocks has no repeated samples', () => {
+  test('fillEngineNoise: 1024-sample blocks have no repeated samples, at the start and deep into a drive', () => {
+    // The old bug needed a large absolute sample clock, not a long run: walk 20 s
+    // of consecutive blocks starting at 0, 1 h and 10 h instead of the whole hour.
     const block = new Float32Array(1024);
-    const hour = 3600 * 48000;
-    let phase = 0;
-    let prev = 2;
-    let duplicates = 0;
-    for (let at = 0; at < hour; at += block.length) {
-      phase = wasm.fillEngineNoise(block, block.length, 2500, 0.6, 0, phase, at, 48000);
-      for (let i = 0; i < block.length; i++) {
-        if (block[i] === prev) duplicates++;
-        prev = block[i]!;
+    const span = 20 * 48000;
+    for (const start of [0, 3600 * 48000, 36000 * 48000]) {
+      let phase = 0;
+      let prev = 2;
+      let duplicates = 0;
+      for (let at = start; at < start + span; at += block.length) {
+        phase = wasm.fillEngineNoise(block, block.length, 2500, 0.6, 0, phase, at, 48000);
+        for (let i = 0; i < block.length; i++) {
+          if (block[i] === prev) duplicates++;
+          prev = block[i]!;
+        }
       }
+      expect(duplicates).toBe(0);
     }
-    expect(duplicates).toBe(0);
-    // ~3.5 s alone (172 M samples); the default 5 s flaked once the cabin DSP
-    // parity suite ran beside it.
-  }, 20_000);
+  });
 });
 
 describe('createScratchArena', () => {

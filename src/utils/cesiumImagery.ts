@@ -47,7 +47,8 @@ export function getConfiguredCesiumIonTokenFromEnv(
 
 export function getConfiguredCesiumIonToken(): string {
   return getConfiguredCesiumIonTokenFromEnv(
-    process.env.REACT_APP_CESIUM_ION_TOKEN,
+    // Never a build-time value: the Ion token reaches the page only via public/config.js.
+    undefined,
     CESIUM_ION_TOKEN_DEPLOY_SENTINEL,
     typeof window !== 'undefined' ? window.CESIUM_ION_TOKEN : undefined,
   );

@@ -41,8 +41,7 @@ export function getConfiguredSupabaseAnonKeyFromEnv(
 }
 
 export function getConfiguredSupabaseUrl(): string {
-  // Vite replaces process.env.* at build time (see vite.config.ts define shim).
-  const buildTimeValue = process.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
+  const buildTimeValue = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
   return getConfiguredSupabaseUrlFromEnv(
     buildTimeValue,
     typeof window !== 'undefined' ? window.SUPABASE_URL : undefined,
@@ -50,7 +49,7 @@ export function getConfiguredSupabaseUrl(): string {
 }
 
 export function getConfiguredSupabaseAnonKey(): string {
-  const buildTimeValue = process.env.VITE_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY;
+  const buildTimeValue = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
   return getConfiguredSupabaseAnonKeyFromEnv(
     buildTimeValue,
     typeof window !== 'undefined' ? window.SUPABASE_ANON_KEY : undefined,

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VehicleConfig } from '../VehicleManager';
+import { type VehicleConfig } from '../VehicleManager';
 import { DASH_SPILL_COLOR } from './cabinLightingRamps';
 import { type CabinRenderer } from './createCabinRenderer';
 import { createCabinPmrem } from './cabinPmrem';

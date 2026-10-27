@@ -25,6 +25,7 @@ import {
     recordIntermediateClear,
     recordWeatherPass,
 } from './computeWeather/dispatch';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 /**
  * Compute-shader variant of the weather post-processing pass. Renders the
@@ -104,7 +105,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         presentationFormat: GPUTextureFormat,
         options: WeatherPostInitOptions = {},
     ): Promise<void> {
-        const base = process.env.PUBLIC_URL || '/';
+        const base = PUBLIC_URL;
 
         this.computePipeline = await createWeatherComputePipeline(
             this.device,

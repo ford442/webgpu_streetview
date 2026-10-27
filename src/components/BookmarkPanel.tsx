@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bookmark } from '../hooks/useBookmarks';
+import { type Bookmark } from '../hooks/useBookmarks';
 import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
 
 interface BookmarkPanelProps {

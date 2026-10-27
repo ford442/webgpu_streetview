@@ -7,6 +7,7 @@ import {
     createShaderModuleChecked,
     fetchShaderSource,
 } from './gpuPipelineFactory';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 export interface Pass1TimingContext {
     timer: GpuPassTimer;
@@ -55,7 +56,7 @@ export class TransitionManager {
             return;
         }
 
-        const baseUrl = process.env.PUBLIC_URL || '/';
+        const baseUrl = PUBLIC_URL;
 
         this.transitionBindGroupLayout = this.device.createBindGroupLayout({
             label: 'Transition Bind Group Layout',

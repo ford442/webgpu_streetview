@@ -1,5 +1,5 @@
-import { TransitionManager } from './TransitionManager';
-import { TextureLifecycle } from './textureLifecycle';
+import { type TransitionManager } from './TransitionManager';
+import { type TextureLifecycle } from './textureLifecycle';
 
 export interface HoldTransitionDeps {
     getDevice: () => GPUDevice;

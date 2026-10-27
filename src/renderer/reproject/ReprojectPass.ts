@@ -13,6 +13,7 @@
  * WebXR frame encodes both eyes into one submit and a `writeBuffer` between
  * two passes of the same submit would leave both reading the last write.
  */
+import { PUBLIC_URL } from '../../config/publicUrl';
 import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
@@ -59,7 +60,7 @@ export class ReprojectPass {
     constructor(private readonly device: GPUDevice) {}
 
     public async init(presentationFormat: GPUTextureFormat): Promise<void> {
-        const url = `${process.env.PUBLIC_URL || '/'}/${REPROJECT_SHADER_PATH}`;
+        const url = `${PUBLIC_URL}/${REPROJECT_SHADER_PATH}`;
         const code = await fetchShaderSource(url, 'reproject.wgsl');
         if (this.disposed) return;
         this.module = await createShaderModuleChecked(this.device, { label: 'reproject.wgsl', code });

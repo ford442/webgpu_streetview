@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getMemoryProfiler, MemoryProfiler } from '../../utils/memoryProfiler';
-import { GeometryFactory } from './GeometryFactory';
-import { LODManager } from './LODManager';
+import { type GeometryFactory } from './GeometryFactory';
+import { type LODManager } from './LODManager';
 import type { PanoEnvironment } from './PanoEnvironment';
 import type { PostProcessingManager } from './PostProcessingManager';
 import type { RainSystem } from './RainSystem';

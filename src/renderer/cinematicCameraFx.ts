@@ -14,7 +14,7 @@
  * land in weather uniform slots 38/39 (see weatherUniformLayout.ts).
  */
 
-import { PRESETS, QualityLevel } from '../config/visualPresets';
+import { PRESETS, type QualityLevel } from '../config/visualPresets';
 
 export interface CinematicCameraFxInput {
     quality: QualityLevel;

@@ -13,6 +13,8 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "noUnusedLocals": true,

@@ -4,7 +4,7 @@ import {
     saveLocationToCloud,
     deleteLocationFromCloud,
     updateLocationInCloud,
-    SaveLocationRequest,
+    type SaveLocationRequest,
 } from '../services/storageApi';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
 

@@ -162,7 +162,7 @@ describe('half floats for r16float', () => {
         expect(bits & 0x03ff).not.toBe(0);
     });
 
-    const F16 = (globalThis as { Float16Array?: Float32ArrayConstructor }).Float16Array;
+    const F16 = (globalThis as unknown as { Float16Array?: Float32ArrayConstructor }).Float16Array;
     it.runIf(!!F16)('matches the engine\'s Float16Array rounding across [0, 1] and beyond', () => {
         const values = new Float32Array(20001);
         for (let i = 0; i < values.length; i++) values[i] = (i / 10000) ** 3 * 2;

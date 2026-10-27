@@ -1,8 +1,8 @@
-import { RenderMode } from './types';
+import { type RenderMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
-import { WeatherPostProcessorLike } from './weatherPostProcessorTypes';
+import { type WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { configureCanvasContext, type CanvasOutputPolicy } from './deviceInit';
 import { GpuPassTimer } from './gpuPassTimer';
 import { resetGpuPassTimings } from './gpuPassTimingStore';
@@ -11,11 +11,11 @@ import type { QualityLevel } from '../config/visualPresets';
 import { HoldTransitionController } from './holdTransition';
 import { TextureLifecycle } from './textureLifecycle';
 import {
-    PanoramaStatsOptions,
-    RendererDebugOptions,
-    RendererInitOptions,
-    StreetViewRenderer,
-    WeatherPostProcessMode,
+    type PanoramaStatsOptions,
+    type RendererDebugOptions,
+    type RendererInitOptions,
+    type StreetViewRenderer,
+    type WeatherPostProcessMode,
 } from './RendererBackend';
 import {
     bootDevice,

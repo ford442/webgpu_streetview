@@ -2,7 +2,7 @@
  * ICE server resolution for WebRTC shared sessions.
  *
  * STUN is always included. TURN is optional — supply via build-time env
- * (REACT_APP_TURN_URL / REACT_APP_TURN_USERNAME / REACT_APP_TURN_CREDENTIAL)
+ * (REACT_APP_TURN_URL / _USERNAME / _CREDENTIAL, surfaced as import.meta.env.VITE_PUBLIC_TURN_*)
  * or runtime window.TURN_* in public/config.js. Never commit credentials.
  */
 
@@ -17,28 +17,23 @@ declare global {
 }
 
 function readEnv(key: string): string {
-  const vite = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.[key];
-  if (vite?.trim()) return vite.trim();
-  const react = (process.env as Record<string, string | undefined>)[key];
-  return react?.trim() || '';
+  const value = (import.meta.env as Record<string, string | undefined>)[key];
+  return value?.trim() || '';
 }
 
 function buildTurnServer(): RTCIceServer | null {
   const urls =
-    readEnv('VITE_TURN_URL') ||
-    readEnv('REACT_APP_TURN_URL') ||
+    readEnv('VITE_PUBLIC_TURN_URL') ||
     (typeof window !== 'undefined' ? window.TURN_URL?.trim() : '') ||
     '';
   if (!urls) return null;
 
   const username =
-    readEnv('VITE_TURN_USERNAME') ||
-    readEnv('REACT_APP_TURN_USERNAME') ||
+    readEnv('VITE_PUBLIC_TURN_USERNAME') ||
     (typeof window !== 'undefined' ? window.TURN_USERNAME?.trim() : '') ||
     undefined;
   const credential =
-    readEnv('VITE_TURN_CREDENTIAL') ||
-    readEnv('REACT_APP_TURN_CREDENTIAL') ||
+    readEnv('VITE_PUBLIC_TURN_CREDENTIAL') ||
     (typeof window !== 'undefined' ? window.TURN_CREDENTIAL?.trim() : '') ||
     undefined;
 

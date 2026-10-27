@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { GeometryFactory } from './GeometryFactory';
-import { LODManager } from './LODManager';
+import { type GeometryFactory } from './GeometryFactory';
+import { type LODManager } from './LODManager';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 
 /**

@@ -1,7 +1,7 @@
 import React from 'react';
 
-const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || 'dev';
-const BUILD_TIME = process.env.REACT_APP_BUILD_TIME || '';
+const BUILD_VERSION = import.meta.env.VITE_PUBLIC_BUILD_VERSION || 'dev';
+const BUILD_TIME = import.meta.env.VITE_PUBLIC_BUILD_TIME || '';
 
 const BuildBadge: React.FC = () => (
   <div

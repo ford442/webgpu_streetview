@@ -29,6 +29,7 @@ import type {
   LumaReduce,
   StreetViewWasmAPI,
 } from './abi';
+import { PUBLIC_URL } from '../config/publicUrl';
 import { createScratchArena, WASM_STACK_SIZE } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
@@ -76,7 +77,7 @@ export function wasmSimdSupported(): boolean {
 /** Vite serves public/ at the root, so the binaries are at ./wasm/. */
 function wasmBinaryUrl(variant: WasmBinaryVariant): string {
   const file = variant === 'simd' ? 'streetview-wasm.simd.wasm' : 'streetview-wasm.wasm';
-  return `${process.env.PUBLIC_URL || ''}/wasm/${file}`;
+  return `${PUBLIC_URL}/wasm/${file}`;
 }
 
 async function fetchWasmBytes(variant: WasmBinaryVariant): Promise<ArrayBuffer> {

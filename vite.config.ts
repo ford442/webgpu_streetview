@@ -28,7 +28,7 @@ const PUBLIC_ENV_KEYS: string[] = publicEnvKeys;
  * CRA → Vite migration config.
  * - base './' keeps Contabo /streetview relative asset paths (former homepage: ".")
  * - outDir build/ + static/js/main.[hash].js preserves deploy.py key baking
- * - Allowlisted REACT_APP_* / VITE_* keys injected via process.env.* define (compat shim)
+ * - Allowlisted REACT_APP_* / VITE_* keys surfaced as import.meta.env.VITE_PUBLIC_*
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['REACT_APP_', 'VITE_']);
@@ -38,51 +38,28 @@ export default defineConfig(({ mode }) => {
     env.VITE_BUILD_TIME ||
     `${new Date().toISOString().replace('T', ' ').substring(0, 16)} UTC`;
 
-  const processEnvDefines: Record<string, string> = {
-    'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
-    // Relative public URL for subpath deploy (shaders, wasm, service worker).
-    'process.env.PUBLIC_URL': JSON.stringify('.'),
-    'process.env.REACT_APP_BUILD_VERSION': JSON.stringify(buildVersion),
-    'process.env.REACT_APP_BUILD_TIME': JSON.stringify(buildTime),
-  };
-
-  // Only allowlisted, client-visible keys are inlined. A blanket loop over every
+  // Build-time config reaches src/ only as `import.meta.env.VITE_PUBLIC_*`.
+  // Only allowlisted, client-visible keys are surfaced. A blanket loop over every
   // REACT_APP_* / VITE_* var would bake any stray secret in a developer's .env
-  // into the public bundle. Add a key here only when src/ reads it AND it is safe
-  // to ship to every visitor. The Cesium Ion token is intentionally absent: it is
-  // supplied at runtime via public/config.js (window.CESIUM_ION_TOKEN).
+  // into the public bundle. Add a key to scripts/public-env-keys.json only when
+  // src/ reads it AND it is safe to ship to every visitor. The Cesium Ion token is
+  // intentionally absent: it is supplied at runtime via public/config.js.
+  // `REACT_APP_X` and `VITE_X` collapse to one `VITE_PUBLIC_X` (the VITE_ spelling
+  // wins); every name is always set (empty) so reads never see `undefined`.
+  // Vite loads `envPrefix` vars from process.env after this function returns, so
+  // setting them here covers `vite`, `vite build` and vitest alike.
+  const publicEnv: Record<string, string> = {
+    VITE_PUBLIC_BUILD_VERSION: buildVersion,
+    VITE_PUBLIC_BUILD_TIME: buildTime,
+  };
   for (const key of PUBLIC_ENV_KEYS) {
-    const value = env[key];
-    if (value !== undefined) {
-      processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
-    }
+    const rest = key.replace(/^(REACT_APP|VITE)_/, '');
+    const name = `VITE_PUBLIC_${rest}`;
+    // The VITE_ spelling first, but only if it is itself on the allowlist.
+    const twin = `VITE_${rest}`;
+    publicEnv[name] ||= (PUBLIC_ENV_KEYS.includes(twin) && env[twin]) || env[key] || '';
   }
-  // Always defined (empty) so `process.env.X` reads never hit a ReferenceError in
-  // the browser and the runtime config.js path stays reachable.
-  for (const key of ['REACT_APP_CESIUM_ION_TOKEN']) {
-    processEnvDefines[`process.env.${key}`] = JSON.stringify('');
-  }
-
-  // Ensure Maps key define exists even when unset (empty string) so the deploy
-  // sentinel path in mapsKeyUtils stays reachable.
-  if (!('process.env.REACT_APP_MAPS_API_KEY' in processEnvDefines)) {
-    processEnvDefines['process.env.REACT_APP_MAPS_API_KEY'] = JSON.stringify('');
-  }
-  if (!('process.env.VITE_MAPS_API_KEY' in processEnvDefines)) {
-    processEnvDefines['process.env.VITE_MAPS_API_KEY'] = JSON.stringify('');
-  }
-  // Same reachable-define guarantee for the Supabase signaling config (Shared
-  // Exploration Sessions room-code relay) — see src/services/signaling/supabaseConfig.ts.
-  for (const key of [
-    'REACT_APP_SUPABASE_URL',
-    'VITE_SUPABASE_URL',
-    'REACT_APP_SUPABASE_ANON_KEY',
-    'VITE_SUPABASE_ANON_KEY',
-  ]) {
-    if (!(`process.env.${key}` in processEnvDefines)) {
-      processEnvDefines[`process.env.${key}`] = JSON.stringify('');
-    }
-  }
+  for (const [name, value] of Object.entries(publicEnv)) process.env[name] = value;
 
   return {
     base: './',
@@ -99,11 +76,9 @@ export default defineConfig(({ mode }) => {
             }),
           ]),
     ],
-    define: processEnvDefines,
     // Vite inlines EVERY variable with these prefixes wherever `import.meta.env` is
     // referenced as an object (some dependencies do), so this must stay an opt-in
-    // namespace nothing else uses. Build-time config reaches src/ only through the
-    // allowlisted `process.env.*` defines above.
+    // namespace nothing else uses. It is populated only from the allowlist above.
     envPrefix: ['VITE_PUBLIC_'],
     resolve: {
       alias: {

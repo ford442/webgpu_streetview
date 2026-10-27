@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { povStore } from '../state/povStore';
 import { cabinHeadStore } from '../state/cabinHeadStore';

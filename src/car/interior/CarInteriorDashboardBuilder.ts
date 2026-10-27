@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { VehicleConfig } from '../VehicleManager';
+import { type VehicleConfig } from '../VehicleManager';
 import { resolveGaugeLayout } from '../vehicleLayout';
-import { GeometryFactory } from './GeometryFactory';
-import { LODManager } from './LODManager';
+import { type GeometryFactory } from './GeometryFactory';
+import { type LODManager } from './LODManager';
 import { CLUSTER_WELL_EMISSIVE, DISPLAY_HOUSING_EMISSIVE } from './cabinLightingRamps';
 import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';

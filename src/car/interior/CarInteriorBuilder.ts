@@ -1,7 +1,7 @@
-import * as THREE from 'three';
-import { VehicleConfig } from '../VehicleManager';
-import { GeometryFactory } from './GeometryFactory';
-import { LODManager } from './LODManager';
+import type * as THREE from 'three';
+import { type VehicleConfig } from '../VehicleManager';
+import { type GeometryFactory } from './GeometryFactory';
+import { type LODManager } from './LODManager';
 import { CarInteriorDashboardBuilder } from './CarInteriorDashboardBuilder';
 import { CarInteriorSeatBuilder } from './CarInteriorSeatBuilder';
 import { CarInteriorSteeringBuilder } from './CarInteriorSteeringBuilder';

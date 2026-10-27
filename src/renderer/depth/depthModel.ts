@@ -15,6 +15,7 @@
  *   (`depthBundleGuard.test.ts`, `scripts/check-bundle-budget.sh`).
  */
 import manifest from './depthModel.manifest.json';
+import { PUBLIC_URL } from '../../config/publicUrl';
 
 export type DepthModelVariant = keyof typeof manifest.variants;
 
@@ -64,7 +65,7 @@ export function depthInputSize(canvasWidth: number, canvasHeight: number): { wid
 }
 
 function modelUrl(file: string, baseUrl: string): string {
-    const base = (process.env.PUBLIC_URL || '.').replace(/\/$/, '');
+    const base = PUBLIC_URL || '.';
     return new URL(`${base}/models/depth/${file}`, baseUrl).href;
 }
 

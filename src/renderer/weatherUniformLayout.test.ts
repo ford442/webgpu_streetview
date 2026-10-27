@@ -5,7 +5,7 @@ import {
   WEATHER_PARAMS_BYTE_SIZE,
   WEATHER_PARAMS_FLOAT_COUNT,
   WeatherParamIndex,
-  WeatherParamName,
+  type WeatherParamName,
 } from './weatherUniformLayout';
 
 const __filename = fileURLToPath(import.meta.url);

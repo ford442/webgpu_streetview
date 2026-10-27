@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SnapshotMetadata, SnapshotShareResult } from '../hooks/useSnapshots';
-import { ImageExportFormat } from '../utils/imageExport';
+import { type SnapshotMetadata, type SnapshotShareResult } from '../hooks/useSnapshots';
+import { type ImageExportFormat } from '../utils/imageExport';
 
 interface SnapshotGalleryProps {
     snapshots: SnapshotMetadata[];

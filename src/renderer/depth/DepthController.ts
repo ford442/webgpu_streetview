@@ -287,7 +287,7 @@ export class DepthController {
         const chores = this.deps.getChores();
         const intermediate = this.deps.getIntermediate();
         if (!chores || !intermediate || intermediate.width < 2 || intermediate.height < 2) {
-            this.scheduler.failed(performance.now());
+            this.scheduler.failed(this.lastFrameMs ?? 0);
             return;
         }
         this.inFlight = true;
@@ -335,7 +335,7 @@ export class DepthController {
             this.recordInference(result.ms, size);
         } catch (error) {
             if (this.disposed || this.estimator !== estimator) return;
-            this.scheduler.failed(performance.now());
+            this.scheduler.failed(this.lastFrameMs ?? 0);
             // A missing readback path is permanent; a single failed run is not.
             if (error instanceof DepthUnavailableError) this.fail(error);
         } finally {

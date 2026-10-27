@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VehicleConfig } from '../VehicleManager';
+import { type VehicleConfig } from '../VehicleManager';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 import { registerGlowMaterial } from './MaterialFactory';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';

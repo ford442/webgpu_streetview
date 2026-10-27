@@ -29,6 +29,13 @@ import { fileURLToPath } from 'url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const verbose = process.argv.includes('--verbose');
 
+const MIN_NODE_MAJOR = 22;
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (nodeMajor < MIN_NODE_MAJOR) {
+  console.error(`\n❌ Node ${process.versions.node} is too old — this repo needs Node ${MIN_NODE_MAJOR}+ (CI runs 24).\n`);
+  process.exit(1);
+}
+
 const fail = (lines) => {
   console.error(`\n❌ Incomplete install — node_modules does not match package.json.\n`);
   for (const line of lines) console.error(line);

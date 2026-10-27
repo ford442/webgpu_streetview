@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
-import { InteriorMicroInteractions, InteriorInteractive } from './InteriorMicroInteractions';
+import { InteriorMicroInteractions, type InteriorInteractive } from './InteriorMicroInteractions';
 
 const RECT = { left: 0, top: 0, width: 100, height: 100 } as DOMRect;
 const CENTER_X = 50;

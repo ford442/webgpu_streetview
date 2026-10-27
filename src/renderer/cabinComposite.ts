@@ -78,6 +78,7 @@ export const CABIN_COMPOSITE_BLEND: GPUBlendState = {
     alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
 };
 
+import { PUBLIC_URL } from '../config/publicUrl';
 import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
@@ -88,7 +89,7 @@ import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 export const CABIN_COMPOSITE_SHADER_PATH = 'shaders/cabin-composite.wgsl';
 
 export async function loadCabinCompositeShader(): Promise<string> {
-    const url = `${process.env.PUBLIC_URL || '/'}/${CABIN_COMPOSITE_SHADER_PATH}`;
+    const url = `${PUBLIC_URL}/${CABIN_COMPOSITE_SHADER_PATH}`;
     return fetchShaderSource(url, 'cabin-composite.wgsl');
 }
 

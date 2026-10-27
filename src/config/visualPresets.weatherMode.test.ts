@@ -1,4 +1,4 @@
-import { PRESETS, QualityLevel } from './visualPresets';
+import { PRESETS, type QualityLevel } from './visualPresets';
 
 /**
  * The preset weather defaults are a shipped policy, not an implementation

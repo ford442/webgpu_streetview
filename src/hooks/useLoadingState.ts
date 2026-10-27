@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { LoadingType, loadingStateManager } from '../store/loadingState';
+import { type LoadingType, loadingStateManager } from '../store/loadingState';
 
 export interface UseLoadingStateReturn {
   isLoading: boolean;

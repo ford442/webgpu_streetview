@@ -6,11 +6,11 @@ import {
     getRendererDebugOptions,
     getRendererPreference,
     getWeatherPostProcessModePolicy,
-    RendererBackendType,
-    RendererDebugOptions,
-    RendererInitOptions,
-    StreetViewRenderer,
-    WeatherPostProcessMode,
+    type RendererBackendType,
+    type RendererDebugOptions,
+    type RendererInitOptions,
+    type StreetViewRenderer,
+    type WeatherPostProcessMode,
 } from './RendererBackend';
 import { getPreset, detectRecommendedQuality } from '../config/visualPresets';
 import { publishWebGpuProbe, type WebGpuProbeStage } from './webgpuBootProbe';

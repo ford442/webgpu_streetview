@@ -47,3 +47,6 @@ verification/
 .env*
 !.env.example
 !.env.*.example
+
+# TypeScript incremental build state
+*.tsbuildinfo

@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { LoadingType, loadingStateManager } from '../store/loadingState';
+import { type LoadingType, loadingStateManager } from '../store/loadingState';
 import { useFadeTransition, easings } from '../hooks/useTransition';
 
 export interface LoadingOverlayProps {

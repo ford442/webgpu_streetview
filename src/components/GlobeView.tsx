@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { GlobeTransition } from '../hooks/useGlobeMode';
+import { type GlobeTransition } from '../hooks/useGlobeMode';
 import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
 import ScoutCard from './ScoutCard';
 import { type GlobeBookmark, type GlobePOI } from './globe/globeTypes';

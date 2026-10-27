@@ -3,10 +3,10 @@ import {
     applyPerformanceProfile,
     optimizeTextures,
     FrustumCuller,
-    VehicleLODConfig,
+    type VehicleLODConfig,
 } from '../../utils/performance';
 import { detectGPUProfile } from '../../utils/performance';
-import { VehicleType, VehicleConfig, getVehicleConfig } from '../VehicleManager';
+import { type VehicleType, type VehicleConfig, getVehicleConfig } from '../VehicleManager';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';

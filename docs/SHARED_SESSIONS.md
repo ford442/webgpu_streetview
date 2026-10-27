@@ -33,7 +33,7 @@ Host browser                         Guest browser
 The app resolves ICE servers in `src/utils/iceServers.ts`:
 
 1. Google STUN (always).
-2. Optional TURN when `REACT_APP_TURN_URL` (or `VITE_TURN_URL`) is set at build time, **or** `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`.
+2. Optional TURN when `REACT_APP_TURN_URL` is set at build time, **or** `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`.
 
 **No code fork is required** — only configuration. Never commit TURN credentials to git; use deploy secrets or post-deploy `config.js` edits.
 

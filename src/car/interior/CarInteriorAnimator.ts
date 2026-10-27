@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { LODManager } from './LODManager';
-import { RainSystem } from './RainSystem';
-import { DustMoteSystem } from './DustMoteSystem';
-import { WindowWeatherOverlay } from './WindowWeatherOverlay';
-import { InteriorMicroInteractions } from './InteriorMicroInteractions';
+import { type LODManager } from './LODManager';
+import { type RainSystem } from './RainSystem';
+import { type DustMoteSystem } from './DustMoteSystem';
+import { type WindowWeatherOverlay } from './WindowWeatherOverlay';
+import { type InteriorMicroInteractions } from './InteriorMicroInteractions';
 import {
-    GaugeRig,
+    type GaugeRig,
     needleAngle,
     SPEED_DIAL_MAX_KMH,
     TACHO_DIAL_MAX_RPM,

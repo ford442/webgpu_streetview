@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { Tour, TourWaypoint, CurrentPOV, TourTransitionType } from '../hooks/useTours';
+import { type Tour, type TourWaypoint, type CurrentPOV, type TourTransitionType } from '../hooks/useTours';
 import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '../offline';
 import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
 import { useWasmModule } from '../wasm/useWasmModule';

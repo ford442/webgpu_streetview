@@ -25,15 +25,13 @@ describe('weatherPresetSync', () => {
 });
 
 describe('iceServers', () => {
-  const originalEnv = { ...process.env };
-
   beforeEach(() => {
     vi.resetModules();
     delete (window as Window & { TURN_URL?: string }).TURN_URL;
   });
 
   afterEach(() => {
-    process.env = { ...originalEnv };
+    vi.unstubAllEnvs();
   });
 
   it('always includes STUN', async () => {
@@ -42,10 +40,10 @@ describe('iceServers', () => {
     expect(servers.some((s) => String(s.urls).includes('stun:'))).toBe(true);
   });
 
-  it('adds TURN when REACT_APP_TURN_URL is set', async () => {
-    process.env.REACT_APP_TURN_URL = 'turn:example.com:3478';
-    process.env.REACT_APP_TURN_USERNAME = 'u';
-    process.env.REACT_APP_TURN_CREDENTIAL = 'p';
+  it('adds TURN when VITE_PUBLIC_TURN_URL is set', async () => {
+    vi.stubEnv('VITE_PUBLIC_TURN_URL', 'turn:example.com:3478');
+    vi.stubEnv('VITE_PUBLIC_TURN_USERNAME', 'u');
+    vi.stubEnv('VITE_PUBLIC_TURN_CREDENTIAL', 'p');
     const { resolveIceServers, hasTurnConfigured } = await import('./iceServers');
     const servers = resolveIceServers();
     expect(hasTurnConfigured()).toBe(true);

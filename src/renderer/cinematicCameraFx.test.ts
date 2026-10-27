@@ -3,7 +3,7 @@ import {
     isCinematicQuality,
     CINEMATIC_FX_OFF,
 } from './cinematicCameraFx';
-import { QualityLevel } from '../config/visualPresets';
+import { type QualityLevel } from '../config/visualPresets';
 
 function fx(quality: QualityLevel, reducedMotion = false, speedNormalized = 1) {
     return resolveCinematicCameraFx({ quality, reducedMotion, speedNormalized });

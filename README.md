@@ -124,7 +124,7 @@ Earlier versions of this feature required manually copy-pasting base64 SDP blobs
 
 ### STUN/TURN and connection failures
 
-WebRTC needs to traverse NAT to connect two browsers directly. ICE servers are resolved in [`src/utils/iceServers.ts`](src/utils/iceServers.ts) (consumed by `useSharedSession.ts`): **Google STUN is always included**; optional TURN is added when `REACT_APP_TURN_URL` / `VITE_TURN_URL` is set at build time, or `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`. Full setup: [`docs/SHARED_SESSIONS.md`](docs/SHARED_SESSIONS.md).
+WebRTC needs to traverse NAT to connect two browsers directly. ICE servers are resolved in [`src/utils/iceServers.ts`](src/utils/iceServers.ts) (consumed by `useSharedSession.ts`): **Google STUN is always included**; optional TURN is added when `REACT_APP_TURN_URL` is set at build time, or `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`. Full setup: [`docs/SHARED_SESSIONS.md`](docs/SHARED_SESSIONS.md).
 
 STUN is enough for most home/mobile networks, but two participants both behind symmetric NATs or restrictive corporate firewalls may fail to connect a data channel even though signaling succeeds. When that happens:
 
@@ -161,7 +161,7 @@ npm install
 npm start          # dev server at http://localhost:3000
 ```
 
-`package-lock.json` is committed. Local setup uses `npm install`; CI and deploy use `npm ci` on Node 20. When changing dependencies, regenerate the lockfile on Node 20 and commit it with the PR.
+`package-lock.json` is committed. Local setup uses `npm install`; CI and deploy use `npm ci` on Node 24. When changing dependencies, regenerate the lockfile on Node 24 and commit it with the PR.
 
 The Google Maps API key is resolved at runtime from `window.MAPS_API_KEY` (via `public/config.js`) with a build-time fallback from `REACT_APP_MAPS_API_KEY`.
 
@@ -439,8 +439,7 @@ webgpu_streetview/
 ├── deploy.py                      # Contabo bundle deploy (env vars only — see .env.deploy.example)
 ├── package.json
 ├── AGENTS.md                      # AI agent SSOT
-├── CLAUDE.md                      # Short pointer to AGENTS.md
-└── weekly_plan.md                 # Active residuals
+└── CLAUDE.md                      # Short pointer to AGENTS.md
 ```
 
 ---
@@ -613,7 +612,6 @@ Index  Field            Range / Notes
 | `docs/GRAPHICS.md` | Graphics pipeline — weather/atmosphere looks, cohesion model, camera FX |
 | `docs/FLAGS.md` | Every `?flag` URL parameter (generated from `src/config/flags.ts`) |
 | `docs/archive/` | Historical plans, task specs and PR bodies — not current |
-| `weekly_plan.md` | Active residuals (not archived checklists) |
 
 ---
 

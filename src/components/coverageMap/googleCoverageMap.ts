@@ -51,8 +51,8 @@ export function createGoogleCoverageMap(
     clickableIcons: false,
     streetViewControl: false,
     keyboardShortcuts: false,
-    ...(process.env.REACT_APP_GOOGLE_MAPS_MAP_ID
-      ? { mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID }
+    ...(import.meta.env.VITE_PUBLIC_GOOGLE_MAPS_MAP_ID
+      ? { mapId: import.meta.env.VITE_PUBLIC_GOOGLE_MAPS_MAP_ID }
       : {}),
   });
 

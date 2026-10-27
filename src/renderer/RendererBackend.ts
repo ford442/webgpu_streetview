@@ -1,4 +1,4 @@
-import { RenderMode } from './types';
+import { type RenderMode } from './types';
 import { readFlag } from '../config/flags';
 
 export type RendererBackendType = 'webgpu' | 'webgl';

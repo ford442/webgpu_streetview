@@ -10,6 +10,7 @@
 
 import { LOOK_PACKS, type LookId, type LookPack } from '../config/lookPacks';
 import type { QualityLevel } from '../config/visualPresets';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 export const LUT_SIZE_DEFAULT = 32;
 export const LUT_SIZE_LOW = 16;
@@ -153,9 +154,7 @@ export function shouldLoadLookLut(lookId: LookId | null | undefined): lookId is 
 }
 
 function publicUrl(file: string): string {
-  const base = (typeof process !== 'undefined' && process.env.PUBLIC_URL) || './';
-  const prefix = base.endsWith('/') ? base : `${base}/`;
-  return `${prefix}${file}`;
+  return `${PUBLIC_URL || '.'}/${file}`;
 }
 
 /**

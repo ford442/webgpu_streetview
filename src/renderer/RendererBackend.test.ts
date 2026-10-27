@@ -11,7 +11,7 @@ import {
   getRendererPreference,
   getWeatherPostProcessMode,
   getWeatherPostProcessModePolicy,
-  RendererDebugOptions,
+  type RendererDebugOptions,
 } from './RendererBackend';
 
 // Test-only view of window for installing/removing globals without `any`.

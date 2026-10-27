@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Tour } from '../hooks/useTours';
+import { type Tour } from '../hooks/useTours';
 import type { RouteGraphNode } from '../offline';
 import { findPathBetweenPanos } from '../offline';
 import { resolveDirectorAt, type TourDirectorKeyframe } from '../utils/tourDirector';

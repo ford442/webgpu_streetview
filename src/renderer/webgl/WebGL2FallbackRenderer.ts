@@ -7,11 +7,11 @@
  * weather, LUTs, temporal history, GPU snapshots, or one-frame cabin compositor.
  * Shaders come from `weatherReference.glsl.ts` (parity-tested against WGSL).
  */
-import { RenderMode } from '../types';
+import { type RenderMode } from '../types';
 import {
-    RendererDebugOptions,
-    RendererEffectIsolation,
-    StreetViewRenderer,
+    type RendererDebugOptions,
+    type RendererEffectIsolation,
+    type StreetViewRenderer,
 } from '../RendererBackend';
 import { getCanvasFingerprint } from '../../utils/panoramaStability';
 import {

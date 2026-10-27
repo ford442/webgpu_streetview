@@ -21,11 +21,11 @@ import {
   isConvertibleOpen,
   getCurrentVehicleType,
   gearHopCount,
-  CarModeState,
+  type CarModeState,
   type GearPosition,
 } from '../../car';
 import { publishCameraSpeed } from '../../renderer/cameraMotionSignal';
-import { VehicleDynamics, VehicleTelemetry } from '../../car/VehicleDynamics';
+import { VehicleDynamics, type VehicleTelemetry } from '../../car/VehicleDynamics';
 import { applyVehicleTelemetry } from '../../car/telemetryFeed';
 import { CabinAudio, type CabinEnvironment } from '../../car/audio/CabinAudio';
 import {

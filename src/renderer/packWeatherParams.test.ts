@@ -1,7 +1,7 @@
 import {
     createDefaultWeatherParams,
     packWeatherParams,
-    WeatherParamsEnvInput,
+    type WeatherParamsEnvInput,
 } from './packWeatherParams';
 import {
     WEATHER_PARAMS_FLOAT_COUNT,

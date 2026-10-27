@@ -3,8 +3,8 @@ import {
     WeatherParamIndex,
 } from './weatherUniformLayout';
 import { resolveWeatherCohesion } from './weatherCohesion';
-import { CINEMATIC_FX_OFF, CinematicCameraFx } from './cinematicCameraFx';
-import { HORIZON_OFF, HorizonUniforms } from './gpuChores/horizonEstimate';
+import { CINEMATIC_FX_OFF, type CinematicCameraFx } from './cinematicCameraFx';
+import { HORIZON_OFF, type HorizonUniforms } from './gpuChores/horizonEstimate';
 
 /** Env + frame fields needed to pack the 44-float weather uniform array. */
 export interface WeatherParamsEnvInput {

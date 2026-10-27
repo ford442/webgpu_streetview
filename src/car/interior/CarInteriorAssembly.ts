@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import {
     setupVehicleInteriorLOD,
-    VehicleLODConfig,
-    FrustumCuller,
+    type VehicleLODConfig,
+    type FrustumCuller,
 } from '../../utils/performance';
-import { VehicleType, VehicleConfig, getVehicleConfig } from '../VehicleManager';
+import { type VehicleType, type VehicleConfig, getVehicleConfig } from '../VehicleManager';
 import { CarInteriorBuilder } from './CarInteriorBuilder';
 import { CarInteriorGauges } from './CarInteriorGauges';
 import { LocationPanel } from './LocationPanel';
@@ -14,14 +14,14 @@ import { SunShafts } from './SunShafts';
 import { CenterDisplay } from './CenterDisplay';
 import { VanityMirror } from './VanityMirror';
 import { beginCabinGlowRegistry, createMaterials } from './MaterialFactory';
-import { GeometryFactory } from './GeometryFactory';
-import { LODManager } from './LODManager';
-import { RainSystem } from './RainSystem';
-import { DustMoteSystem } from './DustMoteSystem';
-import { InteriorMicroInteractions } from './InteriorMicroInteractions';
-import { CarInteriorAnimator } from './CarInteriorAnimator';
-import { CarInteriorRenderer } from './CarInteriorRenderer';
-import { CarInteriorLightingManager } from './CarInteriorLightingManager';
+import { type GeometryFactory } from './GeometryFactory';
+import { type LODManager } from './LODManager';
+import { type RainSystem } from './RainSystem';
+import { type DustMoteSystem } from './DustMoteSystem';
+import { type InteriorMicroInteractions } from './InteriorMicroInteractions';
+import { type CarInteriorAnimator } from './CarInteriorAnimator';
+import { type CarInteriorRenderer } from './CarInteriorRenderer';
+import { type CarInteriorLightingManager } from './CarInteriorLightingManager';
 import type { GaugeRig } from './CarInteriorGauges';
 import type { DigitalClock } from './DigitalClock';
 import type { CabinLeverCallbacks } from './CarInteriorDetailProps';

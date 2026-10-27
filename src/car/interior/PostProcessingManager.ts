@@ -4,7 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { GPUPerformanceProfile } from '../../utils/performance';
+import { type GPUPerformanceProfile } from '../../utils/performance';
 
 /**
  * Manages optional post-processing stack for the car interior scene.

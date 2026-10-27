@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FrustumCuller } from '../../utils/performance';
+import { type FrustumCuller } from '../../utils/performance';
 
 /**
  * Manages InstancedMesh pools for repetitive small parts (bolts, handles, vents)

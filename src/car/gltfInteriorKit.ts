@@ -22,6 +22,7 @@ import {
 } from './gltfSockets';
 import type { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
 import type { GaugeRig } from './interior/CarInteriorGauges';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 export { GLTF_INTERIOR_ASSET, GLTF_INTERIOR_SOCKETS, GLTF_INTERIOR_STORAGE_KEY };
 export type { GltfInteriorSocket };
@@ -93,9 +94,7 @@ export interface GltfInteriorHost {
 }
 
 function assetUrl(file: string): string {
-  const base = (typeof process !== 'undefined' && process.env.PUBLIC_URL) || './';
-  const prefix = base.endsWith('/') ? base : `${base}/`;
-  return `${prefix}${file}`;
+  return `${PUBLIC_URL || '.'}/${file}`;
 }
 
 function asGroup(obj: THREE.Object3D | undefined): THREE.Group | null {

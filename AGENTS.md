@@ -50,7 +50,7 @@ The application acts as a custom renderer wrapper around the Google Maps JavaScr
 # Clean-environment install — exactly the lockfile, stale trees removed.
 npm ci
 
-# Local incremental install. CI / deploy always use `npm ci` on Node 20.
+# Local incremental install. CI / deploy always use `npm ci` on Node 24.
 # package-lock.json is committed — always include lockfile changes in dependency PRs.
 npm install
 
@@ -96,7 +96,7 @@ MAPS_API_KEY='AIzaSy...' python deploy.py
 # Uploads build/ via Contabo storage manager → test.1ink.us or go.1ink.us
 ```
 
-Env notes: only the keys in `scripts/public-env-keys.json` are inlined into the bundle (via `process.env.*` defines in `vite.config.ts`); `envPrefix` is the unused `VITE_PUBLIC_` so `import.meta.env` cannot leak anything either. `scripts/check-build-env-leak.mjs` (run by `verify-build.sh`) fails the build if any other `.env` value shows up in `build/`. Put a dev key in `.env.local` (`REACT_APP_MAPS_API_KEY` or `VITE_MAPS_API_KEY`); `.env.example` / `.env.deploy.example` are the only tracked env files. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production. The Cesium Ion token is runtime-only (`window.CESIUM_ION_TOKEN`).
+Env notes: only the keys in `scripts/public-env-keys.json` are inlined into the bundle and reach `src/` only as `import.meta.env.VITE_PUBLIC_*` (`REACT_APP_X` / `VITE_X` collapse to `VITE_PUBLIC_X`, set in `vite.config.ts`; typed in `src/vite-env.d.ts`). `envPrefix` is that same opt-in `VITE_PUBLIC_`, so nothing else is inlined. Asset URLs use `PUBLIC_URL` from `src/config/publicUrl.ts` (`import.meta.env.BASE_URL`); ESLint forbids `process.env` under `src/` (tests excepted). Adding a key: list it in `public-env-keys.json`, declare it in `vite-env.d.ts`. `scripts/check-build-env-leak.mjs` (run by `verify-build.sh`) fails the build if any other `.env` value shows up in `build/`. Put a dev key in `.env.local` (`REACT_APP_MAPS_API_KEY` or `VITE_MAPS_API_KEY`); `.env.example` / `.env.deploy.example` are the only tracked env files. Runtime `public/config.js` / `MAPS_API_KEY` deploy bake still win for production. The Cesium Ion token is runtime-only (`window.CESIUM_ION_TOKEN`).
 
 URL flags (`?hdr`, `?cabin`, `?portal`, `?no_gpu_compute`, …) are declared once in `src/config/flags.ts` and parsed only there — one grammar (`1|true|on|yes` / `0|false|off|no`, bare presence = true, case-insensitive). The table is generated into [`docs/FLAGS.md`](docs/FLAGS.md) (`npm run gen:flags-doc`); `flags.test.ts` fails on drift or on any other `location.search` / `new URLSearchParams(<string>)` under `src/`.
 ---

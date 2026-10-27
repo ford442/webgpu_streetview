@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { findBestLink } from '../utils/navigation';
-import { StreetViewRenderer } from '../renderer/RendererBackend';
+import { type StreetViewRenderer } from '../renderer/RendererBackend';
 import {
   advancePanoramaStabilityTick,
   createPanoramaStabilityState,

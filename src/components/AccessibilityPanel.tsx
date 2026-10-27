@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    AccessibilitySettings,
+    type AccessibilitySettings,
     saveAccessibilitySettings,
     KEYBOARD_SHORTCUTS,
     useFocusTrap,

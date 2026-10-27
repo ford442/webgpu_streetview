@@ -1,5 +1,5 @@
 import React from 'react';
-import { VehicleType, VehicleConfig, VEHICLE_LIST } from '../car/VehicleManager';
+import { type VehicleType, type VehicleConfig, VEHICLE_LIST } from '../car/VehicleManager';
 
 interface VehicleSelectorProps {
     currentVehicle: VehicleType;

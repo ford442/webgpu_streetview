@@ -20,6 +20,7 @@
  * render at the intermediate's size, so a scaled frame without this pass would
  * have nothing to present it.
  */
+import { PUBLIC_URL } from '../../config/publicUrl';
 import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
@@ -113,7 +114,7 @@ export class UpscalePass {
     }
 
     public async init(presentationFormat: GPUTextureFormat, options: UpscaleInitOptions): Promise<void> {
-        const url = `${process.env.PUBLIC_URL || '/'}/${UPSCALE_SHADER_PATH}`;
+        const url = `${PUBLIC_URL}/${UPSCALE_SHADER_PATH}`;
         const code = await fetchShaderSource(url, 'upscale.wgsl');
         if (this.disposed) return;
         const module = await createShaderModuleChecked(this.device, { label: 'upscale.wgsl', code });

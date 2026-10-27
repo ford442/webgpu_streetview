@@ -13,7 +13,7 @@
  * same sign; keep them together.
  */
 
-import { PRESETS, QualityLevel } from '../config/visualPresets';
+import { PRESETS, type QualityLevel } from '../config/visualPresets';
 import type { WeatherPostProcessMode } from './RendererBackend';
 import { WEATHER_FALL_Y_SIGN } from '../car/carSpatialModel';
 

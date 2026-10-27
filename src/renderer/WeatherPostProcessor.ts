@@ -37,6 +37,7 @@ import {
     createShaderModuleChecked,
     fetchShaderSource,
 } from './gpuPipelineFactory';
+import { PUBLIC_URL } from '../config/publicUrl';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -104,7 +105,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         presentationFormat: GPUTextureFormat,
         options: WeatherPostInitOptions = {},
     ): Promise<void> {
-        const shaderUrl = `${process.env.PUBLIC_URL || '/'}/shaders/weather-post.wgsl`;
+        const shaderUrl = `${PUBLIC_URL}/shaders/weather-post.wgsl`;
         let shaderCode: string;
         try {
             shaderCode = await fetchShaderSource(shaderUrl, 'weather-post.wgsl');

@@ -185,8 +185,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     center: startLocation,
                     zoom: 12,
                     disableDefaultUI: true,
-                    ...(process.env.REACT_APP_GOOGLE_MAPS_MAP_ID
-                        ? { mapId: process.env.REACT_APP_GOOGLE_MAPS_MAP_ID }
+                    ...(import.meta.env.VITE_PUBLIC_GOOGLE_MAPS_MAP_ID
+                        ? { mapId: import.meta.env.VITE_PUBLIC_GOOGLE_MAPS_MAP_ID }
                         : {}),
                 };
                 const mapInstance = new google.maps.Map(mapDiv, mapOptions);

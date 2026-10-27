@@ -331,7 +331,7 @@ A: Immediately disable the API key, check logs for anomalies, and contact suppor
 
 ## Related Documents
 
-- [`BILLING_WARNINGS.md`](../BILLING_WARNINGS.md) - Critical billing incident documentation
+- [`BILLING_SAFETY_CHECKLIST.md`](../BILLING_SAFETY_CHECKLIST.md) - Billing checklist and 2026-05-08 incident report
 - [Google Cloud API Security](https://cloud.google.com/docs/authentication)
 - [Maps JavaScript API Documentation](https://developers.google.com/maps/documentation/javascript)
 - [GCP Billing Documentation](https://cloud.google.com/billing/docs)
@@ -339,4 +339,4 @@ A: Immediately disable the API key, check logs for anomalies, and contact suppor
 ---
 
 **Last Updated**: 2026-05-08
-**For Questions**: Refer to BILLING_WARNINGS.md or Google Cloud Support
+**For Questions**: Refer to BILLING_SAFETY_CHECKLIST.md or Google Cloud Support

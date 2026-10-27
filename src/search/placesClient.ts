@@ -37,12 +37,11 @@ export interface CoverageResult {
   reason?: 'no-coverage' | PlaceSearchBlockReason;
 }
 
-let placesLibraryPromise: Promise<unknown> | null = null;
-/* eslint-disable @typescript-eslint/no-explicit-any */
+let placesLibraryPromise: Promise<google.maps.PlacesLibrary> | null = null;
 // Places API (New) via Maps JS: AutocompleteSuggestion / Place.
 // Legacy AutocompleteService/PlacesService are unavailable to new projects.
-type PlacesLib = any;
-let sessionToken: any = null;
+type PlacesLib = google.maps.PlacesLibrary;
+let sessionToken: google.maps.places.AutocompleteSessionToken | null = null;
 
 async function loadPlacesLibrary(): Promise<PlacesLib | null> {
   if (typeof google === 'undefined' || !google.maps?.importLibrary) return null;
@@ -50,7 +49,7 @@ async function loadPlacesLibrary(): Promise<PlacesLib | null> {
     placesLibraryPromise = google.maps.importLibrary('places');
   }
   try {
-    return (await placesLibraryPromise) as PlacesLib;
+    return await placesLibraryPromise;
   } catch {
     placesLibraryPromise = null;
     return null;
@@ -77,10 +76,10 @@ export async function fetchPlaceSuggestions(input: string): Promise<PlaceSuggest
     });
     getPlaceSearchBudget().recordSuccess('autocomplete');
     return (suggestions ?? [])
-      .map((s: any) => s.placePrediction)
-      .filter(Boolean)
+      .map((s) => s.placePrediction)
+      .filter((p): p is google.maps.places.PlacePrediction => !!p)
       .slice(0, 8)
-      .map((p: any) => ({ placeId: p.placeId, description: p.text?.toString?.() ?? String(p.text ?? '') }));
+      .map((p) => ({ placeId: p.placeId, description: p.text?.toString?.() ?? String(p.text ?? '') }));
   } catch (err) {
     console.warn('[places] AutocompleteSuggestion failed (enable Places API (New) on the key)', err);
     getPlaceSearchBudget().recordError('autocomplete');
@@ -221,10 +220,9 @@ export async function fetchNearbyPois(
       });
       getPlaceSearchBudget().recordSuccess('nearby');
       batch = (places ?? [])
-        .filter((p: any) => p.location && p.id)
-        .map((p: any) => ({
-          id: p.id, lat: p.location.lat(), lng: p.location.lng(), label: p.displayName || 'Place', category,
-        }));
+        .flatMap((p) => (p.location && p.id
+          ? [{ id: p.id, lat: p.location.lat(), lng: p.location.lng(), label: p.displayName || 'Place', category }]
+          : []));
     } catch {
       getPlaceSearchBudget().recordError('nearby');
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TourWaypoint } from '../hooks/useTours';
+import { type TourWaypoint } from '../hooks/useTours';
 
 interface TourRecorderProps {
     isRecording: boolean;
