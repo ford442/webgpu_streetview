@@ -142,7 +142,7 @@ webgpu_streetview/
 │   │   └── index.ts                 # Barrel exports
 │   ├── offline/                     # PWA shell + IndexedDB metadata (Phase 1–3 offline mode)
 │   │   ├── serviceWorkerRegistration.ts
-│   │   ├── swPolicy.ts              # Cache rules (never cache Google imagery)
+│   │   ├── swPolicy.ts              # Cache rules (never cache Google imagery); cache-name prefixes
 │   │   ├── offlineStore.ts          # IndexedDB stores
 │   │   ├── offlinePersistence.ts    # localStorage ↔ IndexedDB mirror
 │   │   ├── storageEstimate.ts       # navigator.storage.estimate helpers

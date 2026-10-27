@@ -1,30 +1,13 @@
-/** Cache naming — bump CACHE_VERSION when precache/runtime strategy changes. */
-export const CACHE_VERSION = 'streetview-v1';
-export const STATIC_CACHE = `${CACHE_VERSION}-static`;
-export const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
+/**
+ * Cache naming. The worker's real names are `${CACHE_PREFIX}<content id>-static|runtime`
+ * (id stamped at build time by scripts/stamp-sw.mjs). The prefix is deliberately not
+ * plain `streetview-`: the scene-depth model's bucket must stay out of reach.
+ */
+export const CACHE_PREFIX = 'streetview-sw-';
+/** Pre-stamping builds named their caches `streetview-v1-static|runtime`. */
+export const LEGACY_CACHE_PREFIX = 'streetview-v1';
 
 export type SwFetchStrategy = 'cache-first' | 'network-first' | 'network-only';
-
-/** Known static assets to precache on service-worker install (relative to app root). */
-export const PRECACHE_URLS: string[] = [
-  './',
-  './index.html',
-  './manifest.json',
-  './config.js',
-  './asset-manifest.json',
-  './shaders/streetview.wgsl',
-  './shaders/weather-post.wgsl',
-  './shaders/weather-post-compute.wgsl',
-  './shaders/carview.wgsl',
-  './shaders/texture.wgsl',
-  './shaders/transition-fade.wgsl',
-  './shaders/transition-zoom.wgsl',
-  './shaders/transition-zoom-blur.wgsl',
-  './shaders/transition-zoom-chromatic.wgsl',
-  './wasm/streetview-wasm.wasm',
-  './wasm/streetview-wasm.simd.wasm',
-  './icons/icon.svg',
-];
 
 const GOOGLE_HOST_RE = /(^|\.)google(?:apis)?\.com$|(^|\.)gstatic\.com$/;
 
@@ -72,5 +55,5 @@ export function resolveSwFetchStrategy(url: string, method: string, pageOrigin: 
 }
 
 export function isOfflineCacheName(name: string): boolean {
-  return name.startsWith(CACHE_VERSION);
+  return name.startsWith(CACHE_PREFIX) || name.startsWith(LEGACY_CACHE_PREFIX);
 }

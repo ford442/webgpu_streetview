@@ -51,13 +51,15 @@ function checkValidServiceWorker(swUrl: string, config?: ServiceWorkerConfig) {
 
 /**
  * Register the offline shell service worker.
- * Enabled in production builds and on localhost (for Lighthouse / manual PWA checks).
+ * Production builds only; the dev server opts in with `REACT_APP_ENABLE_SW=true`
+ * (Lighthouse / manual PWA checks). A cache-first worker over Vite's moving dev
+ * assets is a stale-bundle trap, and `localhost` alone is no reason to register one.
  */
 export function registerServiceWorker(config?: ServiceWorkerConfig) {
   if (!('serviceWorker' in navigator)) return;
 
   const enableInDev = import.meta.env.VITE_PUBLIC_ENABLE_SW === 'true';
-  if (!import.meta.env.PROD && !isLocalhost && !enableInDev) {
+  if (!import.meta.env.PROD && !enableInDev) {
     return;
   }
 

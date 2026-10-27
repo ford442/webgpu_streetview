@@ -1,4 +1,4 @@
-import { resolveSwFetchStrategy, isOfflineCacheName, PRECACHE_URLS } from './swPolicy';
+import { resolveSwFetchStrategy, isOfflineCacheName } from './swPolicy';
 import { DEPTH_MODEL_CACHE_NAME } from '../renderer/depth/depthModel';
 
 describe('swPolicy', () => {
@@ -36,7 +36,9 @@ describe('swPolicy', () => {
   });
 
   it('flags offline cache names', () => {
-    expect(isOfflineCacheName('streetview-v1-static')).toBe(true);
+    expect(isOfflineCacheName('streetview-sw-3f9a1c0b7d2e-static')).toBe(true);
+    expect(isOfflineCacheName('streetview-sw-3f9a1c0b7d2e-runtime')).toBe(true);
+    expect(isOfflineCacheName('streetview-v1-static')).toBe(true); // pre-stamping builds
     expect(isOfflineCacheName('other-cache')).toBe(false);
   });
 
@@ -47,12 +49,6 @@ describe('swPolicy', () => {
     expect(
       resolveSwFetchStrategy(`${origin}/streetview/models/depth/depth-anything-v2-small.q4f16.onnx`, 'GET', origin),
     ).toBeNull();
-    expect(PRECACHE_URLS.some((url) => url.includes('/models/'))).toBe(false);
     expect(isOfflineCacheName(DEPTH_MODEL_CACHE_NAME)).toBe(false);
-  });
-
-  it('precaches shader and wasm paths', () => {
-    expect(PRECACHE_URLS.some((url) => url.includes('streetview.wgsl'))).toBe(true);
-    expect(PRECACHE_URLS.some((url) => url.includes('streetview-wasm.wasm'))).toBe(true);
   });
 });

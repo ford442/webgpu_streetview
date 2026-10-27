@@ -25,6 +25,16 @@ function gitShortHash(): string {
 const PUBLIC_ENV_KEYS: string[] = publicEnvKeys;
 
 /**
+ * Same isolation headers production sends (public/.htaccess), so dev and prod agree
+ * on `crossOriginIsolated` / `SharedArrayBuffer`. `credentialless` (not
+ * `require-corp`) is what keeps the Maps and Street View requests loadable.
+ */
+const CROSS_ORIGIN_ISOLATION_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
+};
+
+/**
  * CRA → Vite migration config.
  * - base './' keeps Contabo /streetview relative asset paths (former homepage: ".")
  * - outDir build/ + static/js/main.[hash].js preserves deploy.py key baking
@@ -93,10 +103,12 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       strictPort: true,
       open: false,
+      headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     },
     preview: {
       port: 3000,
       strictPort: true,
+      headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     },
     // The scene-depth Worker (renderer/depth/depthWorker.ts) is an ES module:
     // it imports onnxruntime-web from a pinned CDN URL at run time, which an

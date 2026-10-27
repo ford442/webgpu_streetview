@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { dismissWelcome, gotoApp } from './helpers';
 
 test.describe('offline shell registration', () => {
-  test('service-worker.js is reachable and registration is attempted on localhost', async ({
+  test('service-worker.js is reachable; registered in builds, not on the dev server', async ({
     page,
   }) => {
     const swResponses: number[] = [];
@@ -21,7 +21,17 @@ test.describe('offline shell registration', () => {
     const body = await sw.text();
     expect(body).toMatch(/streetview-v1|STATIC_CACHE|Never caches Google/i);
 
-    // On localhost the app fetches then registers the SW (see serviceWorkerRegistration.ts).
+    // Production builds register the worker; the dev server does not (a
+    // cache-first worker over Vite's moving assets is a stale-bundle trap). The
+    // same page must be isolated either way — production and dev send the same
+    // COOP/COEP headers.
+    expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
+    const isDevServer = (await page.request.get('/@vite/client')).ok();
+    if (isDevServer) {
+      await page.waitForTimeout(2_000);
+      expect(swResponses).toEqual([]);
+      return;
+    }
     await expect
       .poll(async () => {
         if (swResponses.some((s) => s >= 200 && s < 400)) return true;

@@ -120,8 +120,13 @@ exactly during the release that follows a hold.
   ≈5.5 MB of WebAssembly, brotli). No npm dependency; the Worker itself is ~2 KB
   gzip. `depthBundleGuard.test.ts` and `scripts/check-bundle-budget.sh` fail if
   ORT code or an `.onnx` ever lands in `build/static`.
-- **No threads / `SharedArrayBuffer`** (`numThreads = 1`): the page is not
-  cross-origin isolated, and COOP/COEP would break the Maps embed.
+- **No threads** (`numThreads = 1`): the page *is* cross-origin isolated in
+  production (`public/.htaccess`: COOP `same-origin`, COEP `credentialless` —
+  `require-corp` is what breaks the Maps embed) and in dev (`vite.config.ts`
+  sends the same headers), so `SharedArrayBuffer` is available. Threads stay
+  off because the small model is not the bottleneck and the threaded runtime
+  build is a separate CDN artifact nobody has measured; if that changes, gate
+  `numThreads > 1` on `crossOriginIsolated`.
 
 ## The model
 

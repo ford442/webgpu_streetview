@@ -27,6 +27,19 @@ if ! node "$SCRIPT_ROOT/scripts/check-build-env-leak.mjs" "$BUILD_DIR"; then
   ERRORS=$((ERRORS+1))
 fi
 
+# ---------------------------------------------------------------------------
+# 0b. The service worker must be stamped (content-derived cache id): an unstamped
+#     worker would keep serving a returning user's old cached wasm/shaders.
+# ---------------------------------------------------------------------------
+SW_FILE="$BUILD_DIR/service-worker.js"
+if [ ! -f "$SW_FILE" ]; then
+  echo "❌ ERROR: $SW_FILE is missing."
+  ERRORS=$((ERRORS+1))
+elif ! grep -Eq "^const CACHE_ID = \"[0-9a-f]{12}\"; // @sw-stamp:cache-id$" "$SW_FILE"; then
+  echo "❌ ERROR: $SW_FILE is not stamped — run: node scripts/stamp-sw.mjs $BUILD_DIR"
+  ERRORS=$((ERRORS+1))
+fi
+
 echo "ℹ️  Historical key check disabled (key is intentionally used with referrer restrictions)"
 
 # ---------------------------------------------------------------------------
