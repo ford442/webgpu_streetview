@@ -6,8 +6,10 @@ import {
     packSceneDepthParams,
     RELEASE_DOLLY,
     RELEASE_DOLLY_LATERAL,
+    releaseDollyScale,
     stepDepthConfidence,
     travelRelativeToView,
+    XR_RELEASE_DOLLY_SCALE,
     type DepthParamsInput,
 } from './depthParams';
 import { SceneDepthParamIndex as I } from './sceneDepthBinding';
@@ -79,5 +81,14 @@ describe('depth confidence', () => {
         let c = 0;
         for (let i = 0; i < 60; i++) c = stepDepthConfidence(c, 1, 16, false);
         expect(c).toBe(1);
+    });
+});
+
+describe('release dolly scale', () => {
+    it('is off under reduced motion, capped in a headset (#331), full otherwise', () => {
+        expect(releaseDollyScale({ reducedMotion: true, xr: true })).toBe(0);
+        expect(releaseDollyScale({ reducedMotion: false, xr: true })).toBe(XR_RELEASE_DOLLY_SCALE);
+        expect(XR_RELEASE_DOLLY_SCALE).toBeLessThan(1);
+        expect(releaseDollyScale({ reducedMotion: false, xr: false })).toBe(1);
     });
 });

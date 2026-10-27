@@ -12,6 +12,7 @@ import {
     collectOptionalDeviceFeatures,
     configureCanvasContext,
     describeAdapterSelection,
+    withXrCompatible,
     HDR_CANVAS_FORMAT,
     labelDevice,
     MAX_REQUESTED_TEXTURE_DIMENSION_2D,
@@ -298,9 +299,18 @@ describe('adapter request options v2', () => {
 
     it('describeAdapterSelection reports unknown featureLevel when it was not sent', () => {
         expect(describeAdapterSelection({ powerPreference: 'high-performance' }))
-            .toEqual({ featureLevel: 'unknown', forceFallbackAdapter: false });
+            .toEqual({ featureLevel: 'unknown', forceFallbackAdapter: false, xrCompatible: false });
         expect(describeAdapterSelection({ featureLevel: 'compatibility', forceFallbackAdapter: true } as GPURequestAdapterOptions))
-            .toEqual({ featureLevel: 'compatibility', forceFallbackAdapter: true });
+            .toEqual({ featureLevel: 'compatibility', forceFallbackAdapter: true, xrCompatible: false });
+    });
+
+    it('asks for an XR-compatible adapter only when a WebGPU-XR headset is there (#331), and reports it', () => {
+        const base: GPURequestAdapterOptions = { powerPreference: 'high-performance' };
+        expect(withXrCompatible(base, false)).toBe(base);
+        expect(withXrCompatible(base, true)).toEqual({ powerPreference: 'high-performance', xrCompatible: true });
+        expect(describeAdapterSelection(withXrCompatible(base, true)).xrCompatible).toBe(true);
+        expect(buildCapabilityMatrix('fragment', {}, [], { xrCompatible: true }).xrCompatible).toBe(true);
+        expect(buildCapabilityMatrix('fragment', {}, []).xrCompatible).toBe(false);
     });
 });
 

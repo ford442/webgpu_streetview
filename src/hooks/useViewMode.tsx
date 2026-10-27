@@ -7,8 +7,8 @@ import {
   cabinInputMode,
   transitionCabinInput,
   type CabinInputEvent,
+  type CabinInputTransition,
   type ControlMode,
-  type PointerLockEffect,
 } from '../car/input/cabinInputMachine';
 
 // Types
@@ -26,10 +26,11 @@ export interface ViewModeState {
   // (lock, right button, F, Tab), never per mouse move.
   controlMode: ControlMode;
   /**
-   * Feed an input event to the machine. Returns the pointer-lock effect the
-   * caller must run *inside the same event handler* (`applyPointerLockEffect`).
+   * Feed an input event to the machine. Returns the transition: its
+   * pointer-lock `effect` the caller must run *inside the same event handler*
+   * (`applyPointerLockEffect`), and any `steerDeg` to apply (a WebXR stick).
    */
-  dispatchCabinInput: (event: CabinInputEvent) => PointerLockEffect | null;
+  dispatchCabinInput: (event: CabinInputEvent) => CabinInputTransition;
 
   // Car body heading (separate from head-look heading in useStreetView)
   setCarHeading: (heading: number | ((prev: number) => number)) => void;
@@ -69,11 +70,11 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   // synchronously inside gesture handlers); React sees only the derived mode.
   const cabinInputRef = useRef(INITIAL_CABIN_INPUT);
   const [controlMode, setControlMode] = useState<ControlMode>(cabinInputMode(INITIAL_CABIN_INPUT));
-  const dispatchCabinInput = useCallback((event: CabinInputEvent): PointerLockEffect | null => {
-    const { state, effect } = transitionCabinInput(cabinInputRef.current, event);
-    cabinInputRef.current = state;
-    setControlMode(cabinInputMode(state));
-    return effect;
+  const dispatchCabinInput = useCallback((event: CabinInputEvent): CabinInputTransition => {
+    const transition = transitionCabinInput(cabinInputRef.current, event);
+    cabinInputRef.current = transition.state;
+    setControlMode(cabinInputMode(transition.state));
+    return transition;
   }, []);
 
   // Car body heading (independent of head-look heading)

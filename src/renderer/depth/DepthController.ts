@@ -45,11 +45,13 @@ import { DepthScheduler, sameView, type DepthPov } from './depthScheduler';
 import {
     depthConfidenceTarget,
     packSceneDepthParams,
+    releaseDollyScale,
     stepDepthConfidence,
     travelRelativeToView,
     type DepthHoldPose,
     type DepthMapPose,
 } from './depthParams';
+import { isXrPresenting } from '../xrPresentFrame';
 import { getSceneDepthStats, resetSceneDepthStats, setSceneDepthStats } from './sceneDepthStatsStore';
 import type { SceneDepthOptions } from './sceneDepthOptions';
 
@@ -212,7 +214,7 @@ export class DepthController {
         packSceneDepthParams({
             blend: this.options.enabled ? this.options.blend : 0,
             confidence: this.confidence,
-            dollyScale: this.options.reducedMotion ? 0 : 1,
+            dollyScale: releaseDollyScale({ reducedMotion: this.options.reducedMotion, xr: isXrPresenting() }),
             view: frame.view,
             map: this.mapPose,
             hold: this.hold,

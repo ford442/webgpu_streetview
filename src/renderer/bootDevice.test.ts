@@ -133,4 +133,23 @@ describe('bootDevice', () => {
         await flush();
         expect(onDeviceLost).toHaveBeenCalledWith(expect.objectContaining({ reason: 'unknown' }));
     });
+
+    it('asks for an XR-compatible adapter when a headset is there, and boots without one if none comes back (#331)', async () => {
+        const gpu = installFakeGpu();
+        const adapter = await gpu.requestAdapter();
+        gpu.requestAdapter.mockReset();
+        gpu.requestAdapter.mockImplementation(async (o?: GPURequestAdapterOptions) => (o?.xrCompatible ? null : adapter));
+        (globalThis as Record<string, unknown>).XRGPUBinding = class {};
+        vi.stubGlobal('navigator', { ...navigator, xr: { isSessionSupported: async () => true } });
+        try {
+            const result = await bootDevice({ canvas: gpu.canvas, weatherPostProcessMode: 'fragment', onDeviceLost: vi.fn() });
+            expect(result.ok).toBe(true);
+            expect(gpu.requestAdapter.mock.calls.map(([o]) => (o as GPURequestAdapterOptions).xrCompatible === true))
+                .toEqual([true, false]);
+            expect(result.ok && result.capabilityMatrix.xrCompatible).toBe(false);
+            expect(gpu.requestDevice).toHaveBeenCalledTimes(1);
+        } finally {
+            delete (globalThis as Record<string, unknown>).XRGPUBinding;
+        }
+    });
 });

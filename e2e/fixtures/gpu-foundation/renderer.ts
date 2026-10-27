@@ -19,12 +19,25 @@
  *   `device.destroy()` and a later intentional `renderer.destroy()`, driven by
  *   the production `DeviceLossRecovery` the way `WebGPUCanvas` drives it.
  *
+ * - `lateLatch` — the split frame's tail (#331) with `?latelatch` / `?stereo`
+ *   (the app's flags, applied the way `WebGPUCanvas` applies them). The road is
+ *   packed at heading 0, pitch 0; `livepov=<heading>,<pitch>` is what the tail
+ *   reads, standing in for a car loop that moved the view after the road was
+ *   packed. The lazy reproject pass settles like the upscale.
+ *
  * Query: `break=<file.wgsl>` serves that shader with a syntax error;
- * `frames=N`; `lost=1`; `scale=` / `upscale=` (the app's own flags).
+ * `frames=N`; `lost=1`; `scale=` / `upscale=` / `latelatch` / `stereo` (the
+ * app's own flags); `livepov=h,p`; `pattern=bars` (vertical colour bars, so a
+ * horizontal move is visible).
  */
 import { createStreetViewRenderer } from '/src/renderer/createStreetViewRenderer';
 import type { StreetViewRenderer } from '/src/renderer/RendererBackend';
 import { DeviceLossRecovery } from '/src/renderer/deviceLossRecovery';
+import {
+    getLateLatchStats,
+    readPresentTailFlags,
+    resolvePresentTailOptions,
+} from '/src/renderer/reproject/presentTail';
 import {
     dprCapForPixelRatio,
     observeCanvasBox,
@@ -35,6 +48,9 @@ const q = new URLSearchParams(location.search);
 const broken = q.get('break');
 const frames = Number(q.get('frames') ?? 30);
 const lostMode = q.has('lost');
+const [liveHeading = 0, livePitch = 0] = (q.get('livepov') ?? '0,0').split(',').map(Number);
+const tailFlags = readPresentTailFlags();
+const wantsTail = tailFlags.latch || !!tailFlags.stereo;
 
 const out: Record<string, unknown> = {};
 (window as unknown as { __out: unknown }).__out = out;
@@ -79,6 +95,14 @@ function makeSource(): HTMLCanvasElement {
     c.width = 512;
     c.height = 256;
     const ctx = c.getContext('2d')!;
+    if (q.get('pattern') === 'bars') {
+        const colours = ['#e33', '#3c3', '#36f', '#ee3', '#3ee', '#e3e', '#fff', '#888'];
+        colours.forEach((colour, i) => {
+            ctx.fillStyle = colour;
+            ctx.fillRect(i * 64, 0, 64, 256);
+        });
+        return c;
+    }
     const g = ctx.createLinearGradient(0, 0, 0, 256);
     g.addColorStop(0, '#8fc4ff');
     g.addColorStop(0.55, '#d9e7f2');
@@ -89,12 +113,12 @@ function makeSource(): HTMLCanvasElement {
     return c;
 }
 
-const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+const nextFrame = () => new Promise<number>((r) => requestAnimationFrame((t) => r(t)));
 
 /** Render `n` frames, one per animation frame. */
 async function renderFrames(renderer: StreetViewRenderer, source: HTMLCanvasElement, n: number): Promise<void> {
     for (let i = 0; i < n; i++) {
-        await nextFrame();
+        renderer.beginFrame?.(await nextFrame());
         renderer.renderStreetView('streetview', source, 0, 0, 1);
     }
 }
@@ -120,7 +144,22 @@ async function main() {
         device.addEventListener('uncapturederror', (e: Event) => {
             uncaptured.push((e as GPUUncapturedErrorEvent).error.message);
         });
+        if (wantsTail) {
+            renderer.setPresentTail?.(
+                resolvePresentTailOptions({ reducedMotion: false, ...tailFlags }),
+                () => ({ heading: liveHeading, pitch: livePitch, zoom: 1 }),
+            );
+        }
         await renderFrames(renderer, source, frames);
+        if (wantsTail) {
+            // Lazy reproject (#331): requested by the first frame with a tail.
+            const deadline = performance.now() + 60_000;
+            while (!window.webgpuProbe?.passes?.reproject && performance.now() < deadline) {
+                await renderFrames(renderer, source, 1);
+            }
+            await renderFrames(renderer, source, frames);
+            out.lateLatch = getLateLatchStats();
+        }
         if (q.has('scale')) {
             // Lazy upscale (#329): requested by the first scaled frame, built in the background.
             const deadline = performance.now() + 60_000;

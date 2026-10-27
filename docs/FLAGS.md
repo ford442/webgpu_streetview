@@ -31,6 +31,9 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?no_clip_distances` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Do not request the `clip-distances` device feature (also disables the windshield portal). |
 | `?scale` | number | number (0.5…1) | — | Fixed road render scale (0.5–1, snapped to 0.05) and no frame-budget loop. Unset: the preset default, adapted to the GPU budget. `?scale=1` is bit-exact with no scaling. |
 | `?upscale` | enum | `fsr` \| `bilinear` | `fsr` | How a scaled road frame reaches the screen: FSR 1.0 EASU + RCAS, or a plain bilinear stretch. |
+| `?latelatch` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Late-latched look: the road frame is presented after the car loop and re-aimed at that frame's POV, with this frame's cabin (`renderer/reproject/`). A bit-exact copy at rest. |
+| `?stereo` | enum | `sbs` \| `anaglyph` | — | Stereo synthesised from scene depth (the ground-plane proxy without it): `sbs` half side-by-side for 3D TVs, `anaglyph` red/cyan. |
+| `?xr` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WebXR cockpit (#331). `off` hides the VR button and boots a non-XR-compatible adapter; unset follows what the browser supports (`xr/xrSupport.ts`). |
 | `?cabin` | enum | `webgl` \| `webgpu` | — | Cabin overlay backend. Default follows the WebGPU probe; `webgl` is the escape hatch. |
 | `?portal` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `true` | Windshield portal. `?portal=off` forces the hole + decal overlay. |
 | `?cabinDsp` | enum | `auto` \| `scalar` \| `off` | `auto` | Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback. |

@@ -18,6 +18,9 @@
  */
 
 import { getAppliedRenderScale } from '../renderer/renderScale';
+import { clearLateLatchStats, getLateLatchStats, type LateLatchStats } from '../renderer/reproject/presentTail';
+import { getXrPresentedFrames, isXrPresenting } from '../renderer/xrPresentFrame';
+import { getLastXrSupport, type XrSupport } from '../xr/xrSupport';
 import { getMapsCallBudget, type MapsCallBudgetStats } from '../services/maps/callBudget';
 import { tripProbeSnapshot } from '../state/tripStore';
 import type { ScraperHealth } from './scraperHealth';
@@ -209,6 +212,10 @@ declare global {
       getCallBudget: () => MapsCallBudgetStats;
       /** Routed trip status / progress / re-snaps (state/tripStore.ts). */
       getTrip: () => ReturnType<typeof tripProbeSnapshot>;
+      /** The frame tail (#331): `latchDeltaDeg` > 0 while looking, 0 at rest; mode, deferrals. */
+      getLateLatch: () => LateLatchStats;
+      /** WebXR cockpit (#331): what boot detected, whether a session presents, eye frames drawn. */
+      getXr: () => { support: XrSupport | null; presenting: boolean; presentedFrames: number };
       enablePixelWatch: () => void;
       disablePixelWatch: () => void;
       clear: () => void;
@@ -224,8 +231,13 @@ export function installStreetViewProbe(): void {
     getScraperHealth: () => streetViewProbe.getScraperHealth(),
     getCallBudget: () => getMapsCallBudget().getStats(),
     getTrip: () => tripProbeSnapshot(),
+    getLateLatch: () => getLateLatchStats(),
+    getXr: () => ({ support: getLastXrSupport(), presenting: isXrPresenting(), presentedFrames: getXrPresentedFrames() }),
     enablePixelWatch: () => streetViewProbe.enablePixelWatch(),
     disablePixelWatch: () => streetViewProbe.disablePixelWatch(),
-    clear: () => streetViewProbe.clear(),
+    clear: () => {
+      streetViewProbe.clear();
+      clearLateLatchStats();
+    },
   };
 }

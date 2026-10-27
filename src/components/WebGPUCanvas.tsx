@@ -40,6 +40,11 @@ import {
 import { resolveSceneDepthOptions, type SceneDepthOptions } from '../renderer/depth/sceneDepthOptions';
 import { sceneDepthStore } from '../state/sceneDepthStore';
 import {
+    readPresentTailFlags,
+    resolvePresentTailOptions,
+    type PresentTailOptions,
+} from '../renderer/reproject/presentTail';
+import {
     AUTO_EXPOSURE_IDLE,
     resolveAutoExposureFrame,
     setAutoExposureStatus,
@@ -51,6 +56,7 @@ import {
     type HorizonFrameState,
 } from '../renderer/gpuChores/horizonEstimate';
 import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 import {
     DEFAULT_MAX_TEXTURE_DIMENSION,
     dprCapForPixelRatio,
@@ -399,7 +405,12 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         budgetStateRef.current = createFrameBudgetState(scaleRequest.scale);
         if (scaleRequest.mode === 'auto') setGpuPassTimingsWanted(true, 'budget');
 
-        const animate = () => {
+        // #331: the URL's late latch / stereo, read once; reduced motion per frame.
+        const tailFlags = readPresentTailFlags();
+        const tailOptions: PresentTailOptions = resolvePresentTailOptions({ reducedMotion: false, ...tailFlags });
+        const livePov = () => povStore.get();
+
+        const animate = (frameTime: number = performance.now()) => {
             if (!active) return;
 
             const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
@@ -468,6 +479,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
                 currentRendererRef.current.updateWeatherParams(params);
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
+                currentRendererRef.current.setPresentTail?.(
+                    resolvePresentTailOptions({ reducedMotion, ...tailFlags }, tailOptions),
+                    livePov,
+                );
                 currentRendererRef.current.setSceneDepth?.(resolveSceneDepthOptions({
                     quality: qualityRef.current,
                     optedIn: sceneDepthStore.get().enabled,
@@ -531,6 +546,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
             if (currentRendererRef.current) {
                 const renderer = currentRendererRef.current;
+                renderer.beginFrame?.(frameTime);
                 const holding = panoramaUpdatePaused || renderer.isHoldActive();
                 if (holding) {
                     renderer.renderHeldFrame(renderHeading, renderPitch, renderZoom);
@@ -549,12 +565,14 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             }
 
             frameCountRef.current++;
-            animationFrameId.current = requestAnimationFrame(animate);
+            // The frame clock is the window's rAF — or a WebXR session's while
+            // one presents (#331), so the road packs inside the XR frame.
+            animationFrameId.current = requestFrame(animate);
         };
         animate();
         return () => {
             active = false;
-            cancelAnimationFrame(animationFrameId.current);
+            cancelFrame(animationFrameId.current);
             setGpuPassTimingsWanted(false, 'budget');
         };
     }, [currentRendererRef]);

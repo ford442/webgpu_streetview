@@ -14,10 +14,17 @@
  * Esc reaches us, and it lands in UI_INTERACT. Tab toggles UI_INTERACT ↔ the
  * previous locked mode.
  *
+ * In a WebXR session (#331) the headset is the head, so the mode is STEER for
+ * as long as the session lasts: the left thumbstick's X steers through the
+ * same `steer` path as the mouse (`XR_STICK` → `steerDeg`), and nothing about
+ * the pointer lock matters until the session ends (`XR_EXIT`).
+ *
  * This module is pure: `transitionCabinInput` returns the next state plus at
  * most one pointer-lock effect, which the caller runs inside the same event
  * handler (so the user-gesture requirement holds).
  */
+
+import { steerDeltaFromStick } from '../carSpatialModel';
 
 export type ControlMode = 'FREE_LOOK' | 'STEER' | 'UI_INTERACT';
 
@@ -28,6 +35,8 @@ export interface CabinInputState {
   readonly freeLookLatched: boolean;
   /** Right mouse held — FREE_LOOK only while held; cleared when the lock goes. */
   readonly freeLookHeld: boolean;
+  /** An immersive WebXR session is presenting the cabin (#331). */
+  readonly xr: boolean;
 }
 
 export type CabinInputEvent =
@@ -42,32 +51,46 @@ export type CabinInputEvent =
   /** HUD mode button. */
   | { type: 'SELECT_MODE'; mode: ControlMode }
   /** Car view entered / left. */
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  /** WebXR session started / ended (`xr/xrSession.ts`). */
+  | { type: 'XR_ENTER' }
+  | { type: 'XR_EXIT' }
+  /** Left controller thumbstick X (−1 left … +1 right), held for `dtS` seconds. */
+  | { type: 'XR_STICK'; axisX: number; dtS: number };
 
 export type PointerLockEffect = 'requestPointerLock' | 'exitPointerLock';
 
 export interface CabinInputTransition {
   state: CabinInputState;
   effect: PointerLockEffect | null;
+  /** Car heading change for the caller's `steer` (degrees, + = right); absent = 0. */
+  steerDeg?: number;
 }
 
 export const INITIAL_CABIN_INPUT: CabinInputState = {
   locked: false,
   freeLookLatched: false,
   freeLookHeld: false,
+  xr: false,
 };
 
 export function cabinInputMode(state: CabinInputState): ControlMode {
+  if (state.xr) return 'STEER';
   if (!state.locked) return 'UI_INTERACT';
   return state.freeLookLatched || state.freeLookHeld ? 'FREE_LOOK' : 'STEER';
 }
 
 const stay = (state: CabinInputState): CabinInputTransition => ({ state, effect: null });
 
+const XR_SESSION_EVENTS: ReadonlySet<CabinInputEvent['type']> = new Set(['XR_ENTER', 'XR_EXIT', 'XR_STICK', 'RESET']);
+
 export function transitionCabinInput(
   state: CabinInputState,
   event: CabinInputEvent,
 ): CabinInputTransition {
+  // While the headset presents, desktop gestures neither lock the pointer nor
+  // change mode; only the session's own events and leaving the car view count.
+  if (state.xr && !XR_SESSION_EVENTS.has(event.type)) return stay(state);
   switch (event.type) {
     case 'LOCK_ACQUIRED':
       return stay({ ...state, locked: true, freeLookHeld: false });
@@ -99,6 +122,18 @@ export function transitionCabinInput(
         state: INITIAL_CABIN_INPUT,
         effect: state.locked ? 'exitPointerLock' : null,
       };
+    case 'XR_ENTER':
+      // The headset takes the head: a held right button or a lock no longer means anything.
+      return {
+        state: { ...state, xr: true, locked: false, freeLookHeld: false },
+        effect: state.locked ? 'exitPointerLock' : null,
+      };
+    case 'XR_EXIT':
+      return stay({ ...state, xr: false });
+    case 'XR_STICK': {
+      const steerDeg = state.xr && cabinInputMode(state) === 'STEER' ? steerDeltaFromStick(event.axisX, event.dtS) : 0;
+      return steerDeg === 0 ? stay(state) : { state, effect: null, steerDeg };
+    }
   }
 }
 
@@ -112,6 +147,8 @@ export interface CabinInputTransitionRow {
   event: CabinInputEvent;
   to: ControlMode;
   lock: LockColumn;
+  /** Steering the row asks for (degrees); checked when present. */
+  steerDeg?: number;
 }
 
 const UI: CabinInputState = INITIAL_CABIN_INPUT;
@@ -119,6 +156,7 @@ const UI_LATCHED: CabinInputState = { ...UI, freeLookLatched: true };
 const STEER: CabinInputState = { ...UI, locked: true };
 const LOOK_HELD: CabinInputState = { ...STEER, freeLookHeld: true };
 const LOOK_LATCHED: CabinInputState = { ...STEER, freeLookLatched: true };
+const XR: CabinInputState = { ...UI, xr: true };
 
 /**
  * The transition table — documentation *and* test oracle
@@ -145,6 +183,16 @@ export const CABIN_INPUT_TRANSITIONS: readonly CabinInputTransitionRow[] = [
   { from: 'STEER', fromState: STEER, trigger: 'pointerlockchange → unlocked (Esc)', event: { type: 'LOCK_LOST' }, to: 'UI_INTERACT', lock: 'unlocked' },
   { from: 'FREE_LOOK (RMB held)', fromState: LOOK_HELD, trigger: 'pointerlockchange → unlocked (Esc)', event: { type: 'LOCK_LOST' }, to: 'UI_INTERACT', lock: 'unlocked' },
   { from: 'STEER', fromState: STEER, trigger: 'leave car view', event: { type: 'RESET' }, to: 'UI_INTERACT', lock: 'exit lock' },
+  { from: 'UI_INTERACT', fromState: UI, trigger: 'WebXR session starts', event: { type: 'XR_ENTER' }, to: 'STEER', lock: 'unlocked' },
+  { from: 'STEER', fromState: STEER, trigger: 'WebXR session starts', event: { type: 'XR_ENTER' }, to: 'STEER', lock: 'exit lock' },
+  { from: 'FREE_LOOK (F latched)', fromState: LOOK_LATCHED, trigger: 'WebXR session starts', event: { type: 'XR_ENTER' }, to: 'STEER', lock: 'exit lock' },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'left thumbstick X', event: { type: 'XR_STICK', axisX: 1, dtS: 0.1 }, to: 'STEER', lock: 'unlocked', steerDeg: 6 },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'left thumbstick X in the deadzone', event: { type: 'XR_STICK', axisX: 0.1, dtS: 0.1 }, to: 'STEER', lock: 'unlocked', steerDeg: 0 },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'pointerlockchange → unlocked', event: { type: 'LOCK_LOST' }, to: 'STEER', lock: 'unlocked' },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'right mouse down', event: { type: 'RMB_DOWN' }, to: 'STEER', lock: 'unlocked' },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'Tab', event: { type: 'TAB' }, to: 'STEER', lock: 'unlocked' },
+  { from: 'STEER (XR)', fromState: XR, trigger: 'WebXR session ends', event: { type: 'XR_EXIT' }, to: 'UI_INTERACT', lock: 'unlocked' },
+  { from: 'UI_INTERACT', fromState: UI, trigger: 'left thumbstick X (no session)', event: { type: 'XR_STICK', axisX: 1, dtS: 0.1 }, to: 'UI_INTERACT', lock: 'unlocked', steerDeg: 0 },
 ];
 
 /**

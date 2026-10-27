@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clampHeadPitch, clampHeadYaw } from '../carSpatialModel';
+import { clampHeadOffset, clampHeadPitch, clampHeadYaw, type HeadOffset } from '../carSpatialModel';
 
 /**
  * The cabin transform hierarchy (see `car/carSpatialModel.ts`):
@@ -41,4 +41,14 @@ export function attachCameraToHeadPivot(camera: THREE.PerspectiveCamera, headPiv
 export function applyHeadPose(camera: THREE.Camera, headYaw: number, headPitch: number): void {
     camera.rotation.order = 'YXZ';
     camera.rotation.set(clampHeadPitch(headPitch), clampHeadYaw(headYaw), 0);
+}
+
+/**
+ * Move the eye within the head pivot (#331, a headset's lean), clamped to
+ * `HEAD_OFFSET_LIMIT`. The pivot's identity rotation inside the rig makes this
+ * a car-frame offset; the rig itself never moves.
+ */
+export function applyHeadOffset(camera: THREE.Camera, offset: HeadOffset): void {
+    const o = clampHeadOffset(offset);
+    camera.position.set(o.x, o.y, o.z);
 }

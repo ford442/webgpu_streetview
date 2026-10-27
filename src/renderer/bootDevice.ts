@@ -122,8 +122,15 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         return fail('canvas', 'Could not acquire a WebGPU canvas context');
     }
 
-    const adapterOptions = await resolveAdapterRequestOptions(initOptions);
-    const adapter = await navigator.gpu.requestAdapter(adapterOptions);
+    let adapterOptions = await resolveAdapterRequestOptions(initOptions);
+    let adapter = await navigator.gpu.requestAdapter(adapterOptions);
+    if (!adapter && adapterOptions.xrCompatible) {
+        // No XR-compatible adapter: boot the 2D app anyway; the capability
+        // matrix then says xrCompatible: false and the VR button says why.
+        const { xrCompatible: _dropped, ...withoutXr } = adapterOptions;
+        adapterOptions = withoutXr;
+        adapter = await navigator.gpu.requestAdapter(adapterOptions);
+    }
     if (!adapter) {
         console.warn('No WebGPU adapter found. Hard-fail — no live GL weather.');
         return fail('adapter', 'No compatible WebGPU adapter found');

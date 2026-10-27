@@ -17,7 +17,10 @@ import {
   handleCarInteriorPointerDown,
   handleCarInteriorPointerMove,
   handleCarInteriorPointerUp,
+  pressCarInteriorAlongRay,
 } from '../car';
+import { XrCockpitButton } from './car/XrCockpitButton';
+import { getActiveXrCockpit } from '../xr/xrSession';
 import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
 import { povStore, usePovEffect } from '../state/povStore';
@@ -163,9 +166,14 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   // Steering changes the pose without re-rendering this view; notifyPose gates by movement.
   usePovEffect((p) => p.carHeading, pushRearPose, { immediate: false });
 
+  // Leaving the car view takes the headset off too (#331): the cockpit is this view.
+  useEffect(() => () => {
+    void getActiveXrCockpit()?.end();
+  }, []);
+
   // HUD mode buttons: a click is a user gesture, so the lock request can run here.
   const selectControlMode = useCallback((mode: ControlMode) => {
-    applyPointerLockEffect(dispatchCabinInput({ type: 'SELECT_MODE', mode }), containerRef.current);
+    applyPointerLockEffect(dispatchCabinInput({ type: 'SELECT_MODE', mode }).effect, containerRef.current);
   }, [dispatchCabinInput]);
 
   const handleToggleGPS = useCallback(() => {
@@ -291,7 +299,9 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         selectControlMode={selectControlMode}
         setHudModeAndPersist={setHudModeAndPersist}
         toggleDashboard={toggleDashboard}
-      />
+      >
+        <XrCockpitButton device={sharedGpuDevice} pressAlongRay={pressCarInteriorAlongRay} />
+      </CarControlModeOverlay>
 
       <CarLeverFallbacks
         hudMode={hudMode}

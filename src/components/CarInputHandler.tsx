@@ -4,6 +4,7 @@ import { povStore } from '../state/povStore';
 import { cabinHeadStore } from '../state/cabinHeadStore';
 import { useViewMode } from '../hooks/useViewMode';
 import { applyPointerLockEffect, type CabinInputEvent } from '../car/input/cabinInputMachine';
+import { setXrCabinInputListener } from '../xr/xrCabinInput';
 import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../car/carSpatialModel';
 
 interface CarInputHandlerProps {
@@ -100,7 +101,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   useEffect(() => {
     const target = targetRef.current;
     return () => {
-      applyPointerLockEffect(dispatchCabinInput({ type: 'RESET' }), target);
+      applyPointerLockEffect(dispatchCabinInput({ type: 'RESET' }).effect, target);
     };
   }, [dispatchCabinInput, targetRef]);
 
@@ -108,15 +109,21 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     const target = targetRef.current;
     if (!target) return;
 
-    const dispatch = (event: CabinInputEvent) => {
-      applyPointerLockEffect(dispatchCabinInput(event), target);
-    };
-
     const steer = (deltaDeg: number) => {
       if (deltaDeg === 0) return;
       povStore.setCarHeading((prev) => prev + deltaDeg);
       callbacksRef.current.onSteeringDelta?.(deltaDeg * WHEEL_PER_HEADING_DEG);
     };
+
+    const dispatch = (event: CabinInputEvent) => {
+      const { effect, steerDeg } = dispatchCabinInput(event);
+      applyPointerLockEffect(effect, target);
+      // Only the machine says how far to steer from a stick (STEER, in a session).
+      if (steerDeg) steer(steerDeg);
+    };
+
+    // A WebXR session's enter/exit and left stick (#331) come through the same machine.
+    setXrCabinInputListener(dispatch);
 
     const turnHead = (dYaw: number, dPitch: number) => {
       const { headYaw, headPitch } = cabinHeadStore.get();
@@ -326,6 +333,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
 
     return () => {
       stopLookLoop();
+      setXrCabinInputListener(null);
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
       window.removeEventListener('blur', handleBlur);
       target.removeEventListener('mousedown', handleMouseDown);

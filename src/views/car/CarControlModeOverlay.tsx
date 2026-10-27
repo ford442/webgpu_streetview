@@ -10,6 +10,8 @@ export interface CarControlModeOverlayProps {
   selectControlMode: (mode: ControlMode) => void;
   setHudModeAndPersist: (mode: CarHudMode) => void;
   toggleDashboard: () => void;
+  /** Extra controls under the HUD toggle (the WebXR button, #331). */
+  children?: React.ReactNode;
 }
 
 export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
@@ -18,6 +20,7 @@ export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
   selectControlMode,
   setHudModeAndPersist,
   toggleDashboard,
+  children,
 }) => (
   <div
     onMouseDown={(e) => e.stopPropagation()}
@@ -104,5 +107,6 @@ export const CarControlModeOverlay: React.FC<CarControlModeOverlayProps> = ({
     >
       {hudMode === 'immersive' ? 'Exit Immersive' : hudMode === 'full' ? 'Compact HUD (U)' : 'Full HUD (U)'}
     </button>
+    {children}
   </div>
 );

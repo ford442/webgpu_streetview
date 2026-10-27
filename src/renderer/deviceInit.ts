@@ -20,6 +20,7 @@ import {
     type DeviceCapabilityMatrix,
 } from './deviceCapabilities';
 import { currentSearch, readFlag } from '../config/flags';
+import { detectXrSupport } from '../xr/xrSupport';
 import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 import {
     resolveHdrIntermediateFormat,
@@ -52,15 +53,25 @@ export async function resolveAdapterRequestOptions(
     const selection = getAdapterSelectionPolicy();
     const featureLevelSupported = supportsAdapterFeatureLevel();
     const policy = getAdapterPowerPreferencePolicy(options);
-    if (policy.source !== 'default') {
-        return buildAdapterRequestOptions(policy.powerPreference, selection, featureLevelSupported);
-    }
+    const [powerPreference, xr] = await Promise.all([
+        policy.source !== 'default' ? policy.powerPreference : resolveDefaultPowerPreference(),
+        detectXrSupport(),
+    ]);
+    const request = buildAdapterRequestOptions(powerPreference, selection, featureLevelSupported);
+    return withXrCompatible(request, xr.state === 'available');
+}
 
-    return buildAdapterRequestOptions(
-        await resolveDefaultPowerPreference(),
-        selection,
-        featureLevelSupported,
-    );
+/**
+ * #331: ask for an XR-compatible adapter when a WebGPU-XR headset is there.
+ * The device cannot be made XR-compatible after the fact, and `bootDevice` is
+ * the one `requestDevice`, so this is decided at boot. A browser that cannot
+ * honour it returns no adapter — `bootDevice` then retries without it.
+ */
+export function withXrCompatible(
+    request: GPURequestAdapterOptions,
+    xrCompatible: boolean,
+): GPURequestAdapterOptions {
+    return xrCompatible ? { ...request, xrCompatible: true } : request;
 }
 
 /** Battery heuristic for the default (no `?gpu=`, no override) power preference. */
@@ -242,6 +253,8 @@ export interface CapabilityMatrixContext {
     /** Omitted (=> `'unknown'`) when the browser has no `featureLevel` field. */
     featureLevel?: AdapterFeatureLevel | 'unknown';
     forceFallbackAdapter?: boolean;
+    /** The adapter was requested `xrCompatible` (#331). */
+    xrCompatible?: boolean;
     canvas?: AppliedCanvasConfiguration;
     /** Pass-1 HDR intermediate; defaults to rgba16float when omitted. */
     intermediateFormat?: GPUTextureFormat;
@@ -273,6 +286,7 @@ export function buildCapabilityMatrix(
         temporalDepthPingPong: weatherPostProcessMode === 'compute',
         featureLevel: context.featureLevel ?? 'unknown',
         forceFallbackAdapter: context.forceFallbackAdapter ?? false,
+        xrCompatible: context.xrCompatible ?? false,
         canvasFormat: canvas?.format ?? 'bgra8unorm',
         canvasColorSpace: canvas?.colorSpace ?? 'srgb',
         canvasToneMapping: canvas?.toneMapping ?? 'standard',
@@ -295,11 +309,12 @@ export function buildCapabilityMatrix(
 /** Derive the capability-matrix adapter fields from the options we actually sent. */
 export function describeAdapterSelection(
     requestOptions: GPURequestAdapterOptions,
-): Pick<CapabilityMatrixContext, 'featureLevel' | 'forceFallbackAdapter'> {
+): Pick<CapabilityMatrixContext, 'featureLevel' | 'forceFallbackAdapter' | 'xrCompatible'> {
     const featureLevel = (requestOptions as { featureLevel?: AdapterFeatureLevel }).featureLevel;
     return {
         featureLevel: featureLevel ?? 'unknown',
         forceFallbackAdapter: requestOptions.forceFallbackAdapter === true,
+        xrCompatible: requestOptions.xrCompatible === true,
     };
 }
 
