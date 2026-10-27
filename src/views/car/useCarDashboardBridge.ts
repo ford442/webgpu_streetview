@@ -38,7 +38,9 @@ import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect } from '../../state/povStore';
 import { cabinHeadStore } from '../../state/cabinHeadStore';
 import { createCabinPovSync } from '../../car/input/cabinPovSync';
+import { frameTailScheduler } from '../../renderer/reproject/frameTail';
 import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../car/carSpatialModel';
+import { cancelFrame, isXrDriven, requestFrame } from '../../xr/frameClock';
 import { tripStore } from '../../state/tripStore';
 import { liveConditionsStore } from '../../state/liveConditionsStore';
 
@@ -263,14 +265,15 @@ export function useCarDashboardBridge({
     let rafId: number;
     let lastTime = performance.now();
 
-    const animate = () => {
+    const animate = (frameTime?: number) => {
       if (!active) return;
       const now = performance.now();
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
 
-      // STEER: the head drifts back to centre, frame-rate independent.
-      if (controlMode === 'STEER') {
+      // STEER: the head drifts back to centre, frame-rate independent — not
+      // while a headset is the head (#331): its pose is the user's own.
+      if (controlMode === 'STEER' && !isXrDriven()) {
         const { headYaw, headPitch } = cabinHeadStore.get();
         const settle = (x: number) => {
           const next = dampTowardZero(x, STEER_HEAD_RECENTER_RATE, Math.min(deltaTime, 0.1));
@@ -294,6 +297,9 @@ export function useCarDashboardBridge({
         headlightsOn,
         domeLightOn,
       );
+      // The cabin for this display frame is drawn: release the road frame's
+      // tail (late latch, renderer/reproject/frameTail.ts) to present with it.
+      if (frameTime !== undefined) frameTailScheduler.producerDone(frameTime);
 
       setCarSteering(steeringInputRef.current);
 
@@ -325,13 +331,14 @@ export function useCarDashboardBridge({
         }
       }
 
-      rafId = requestAnimationFrame(animate);
+      rafId = requestFrame(animate);
     };
 
-    rafId = requestAnimationFrame(animate);
+    // The window's rAF, or the WebXR session's while it presents (#331).
+    rafId = requestFrame(animate);
     return () => {
       active = false;
-      cancelAnimationFrame(rafId);
+      cancelFrame(rafId);
     };
   }, [nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen, gearRef]);
 

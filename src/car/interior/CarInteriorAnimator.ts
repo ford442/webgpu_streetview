@@ -14,7 +14,8 @@ import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
 import { getWindAudio } from '../../effects/WindAudio';
 import { isCabinEngineAttached } from '../../audio/carAudioGraph';
 import { panoramaPovFromCabin, wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
-import { applyHeadPose } from './cabinRig';
+import { applyHeadOffset, applyHeadPose } from './cabinRig';
+import type { HeadOffset } from '../carSpatialModel';
 
 export interface CarInteriorAmbientState {
   rainNorm: number;
@@ -336,6 +337,11 @@ export class CarInteriorAnimator {
   public setHeadOrientation(headYaw: number, headPitch: number): void {
     this.lastHeadYaw = headYaw;
     applyHeadPose(this.camera, headYaw, headPitch);
+  }
+
+  /** A headset's lean within the head pivot (#331); zero otherwise. */
+  public setHeadOffset(offset: HeadOffset): void {
+    applyHeadOffset(this.camera, offset);
   }
 
   public setSteeringAngle(angle: number): void {

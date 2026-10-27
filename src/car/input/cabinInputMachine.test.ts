@@ -25,6 +25,7 @@ describe('cabin input machine', () => {
       expect(effect).toBe(expectedEffect);
       if (row.lock === 'locked') expect(state.locked).toBe(true);
       if (row.lock === 'unlocked' || row.lock === 'exit lock') expect(state.locked).toBe(false);
+      if (row.steerDeg !== undefined) expect(transitionCabinInput(row.fromState, row.event).steerDeg ?? 0).toBeCloseTo(row.steerDeg, 9);
     },
   );
 
@@ -57,7 +58,21 @@ describe('cabin input machine', () => {
 
   it('a mode is a pure function of state (no hidden fields)', () => {
     for (const row of CABIN_INPUT_TRANSITIONS) {
-      expect(Object.keys(row.fromState).sort()).toEqual(['freeLookHeld', 'freeLookLatched', 'locked']);
+      expect(Object.keys(row.fromState).sort()).toEqual(['freeLookHeld', 'freeLookLatched', 'locked', 'xr']);
     }
+  });
+
+  it('a WebXR session steers only through the stick, and leaving it returns to the cursor (#331)', () => {
+    const inXr = run(INITIAL_CABIN_INPUT, { type: 'LOCK_ACQUIRED' }, { type: 'TOGGLE_FREE_LOOK' }, { type: 'XR_ENTER' });
+    expect(cabinInputMode(inXr)).toBe('STEER');
+    // Desktop gestures do nothing mid-session — no lock requests behind the headset.
+    for (const event of [{ type: 'CLICK_CABIN' }, { type: 'TAB' }, { type: 'SELECT_MODE', mode: 'FREE_LOOK' }] as const) {
+      expect(transitionCabinInput(inXr, event)).toEqual({ state: inXr, effect: null });
+    }
+    const left = transitionCabinInput(inXr, { type: 'XR_STICK', axisX: -0.6, dtS: 1 / 72 }).steerDeg ?? 0;
+    expect(left).toBeLessThan(0);
+    // The F latch survives the session, like it survives Esc.
+    expect(cabinInputMode(run(inXr, { type: 'XR_EXIT' }, { type: 'LOCK_ACQUIRED' }))).toBe('FREE_LOOK');
+    expect(run(inXr, { type: 'RESET' })).toEqual(INITIAL_CABIN_INPUT);
   });
 });

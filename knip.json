@@ -23,7 +23,8 @@
     "naga"
   ],
   "ignoreDependencies": [
-    "@types/google.maps"
+    "@types/google.maps",
+    "@types/webxr"
   ],
   "ignoreUnresolved": [
     "^/src/"

@@ -29,6 +29,7 @@ import {
     FRAME_UNIFORM_FLOAT_COUNT,
     buildFramePassTimings,
     encodeAndSubmitFrame,
+    encodeAndSubmitTail,
     encodeCabinComposite,
     packFrameUniforms,
 } from './frameLoop';
@@ -36,7 +37,9 @@ import { FramePassRegistry, RequiredPassError } from './framePasses/FramePassReg
 import {
     createCabinCompositeFramePass,
     createHistoricalWipeFramePass,
+    createReprojectFramePass,
     createStreetViewFramePass,
+    createUpscaleFramePass,
     createWeatherFramePass,
 } from './framePasses/builtinPasses';
 import { PresentFallbackPostProcessor } from './PresentFallbackPostProcessor';
@@ -48,6 +51,7 @@ import {
     HORIZON_ROWS_HEIGHT,
     HORIZON_ROWS_WIDTH,
     rowLumaMeans,
+    viewHorizonYReference,
 } from './gpuChores/horizonEstimate';
 import { publishHorizonRows } from './gpuChores/gpuChoresStatsStore';
 import { CabinCompositePass } from './cabinComposite';
@@ -63,10 +67,52 @@ import {
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import { HistoricalWipePass } from './HistoricalWipePass';
 import type { WipeDirection } from './historicalWipe';
-import { releaseSceneDepthFallback, type FrameAux } from './depth/sceneDepthBinding';
+import { releaseSceneDepthFallback, resolveSceneDepthBindGroup, type FrameAux } from './depth/sceneDepthBinding';
 import { DepthController } from './depth/DepthController';
 import type { SceneDepthOptions } from './depth/sceneDepthOptions';
 import { isPassFailed } from './passStatus';
+import { UpscalePass } from './upscale/UpscalePass';
+import {
+    getRenderScaleRequest,
+    publishAppliedRenderScale,
+    scaledSize,
+    type RenderScaleFrame,
+} from './renderScale';
+import { EXTENDED_TONEMAP_HEADROOM } from './shaderFeatureVariants';
+import { readFlag } from '../config/flags';
+import { ReprojectPass } from './reproject/ReprojectPass';
+import { publishCabinStereoRequest } from './cabinStereoRequest';
+import {
+    DEFAULT_CONVERGENCE_METRES,
+    DEFAULT_IPD_METRES,
+    REPROJECT_UNIFORM_FLOAT_COUNT,
+    latchDelta,
+    packReprojectUniforms,
+    resolveReprojectMode,
+    rotationDelta,
+    sourceFromEyeRotation,
+    type LatchDelta,
+    type PovSample,
+} from './reproject/reprojectMath';
+import { REPROJECT_UNIFORM_SLOTS } from './reproject/ReprojectPass';
+import {
+    getXrPresentFrame,
+    isXrPresenting,
+    noteXrFramePresented,
+    releaseXrRepresentHandler,
+    setXrRepresentHandler,
+    type XrPresentFrame,
+} from './xrPresentFrame';
+import { frameTailScheduler } from './reproject/frameTail';
+import {
+    PRESENT_TAIL_OFF,
+    recordNoTail,
+    recordTail,
+    wantsTail,
+    type PresentTailOptions,
+} from './reproject/presentTail';
+
+const NO_LATCH: LatchDelta = { yawDeg: 0, pitchDeg: 0, magnitudeDeg: 0 };
 
 type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
 
@@ -90,6 +136,8 @@ function wrapUnit(v: number): number {
  * | `cabinComposite.ts` | car mode's cabin, drawn over the swap chain last |
  * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
  * | `HistoricalWipePass.ts` | the year-chip wipe from the hold snapshot, over pass 1 |
+ * | `upscale/UpscalePass.ts` | below render scale 1: the scaled road frame → swap chain |
+ * | `reproject/` | the split frame's tail: late latch, stereo, WebXR eyes (#331) |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
  * lost), the hold-pause guard, and the public `StreetViewRenderer` surface the
@@ -126,6 +174,39 @@ export class Renderer implements StreetViewRenderer {
     private gpuChores: GpuChores | null = null;
     private cabinComposite: CabinCompositePass | null = null;
     private historicalWipe: HistoricalWipePass | null = null;
+    /** Render scale (#329): the lazy `upscale` pass, built on the first scale below 1. */
+    private upscale: UpscalePass | null = null;
+    private upscaleInit: Promise<boolean> | null = null;
+    /**
+     * This frame's scale (`FrameContext.renderScale`), refilled per frame. Its
+     * `scale` is also what a hold freezes on: no scale change between
+     * `beginHoldTransition` and `endHoldTransition`.
+     */
+    private readonly frameScale: RenderScaleFrame = {
+        scale: 1,
+        width: 0,
+        height: 0,
+        outputWidth: 0,
+        outputHeight: 0,
+        upscale: 'none',
+        frozen: false,
+        limitedBy: null,
+    };
+    private hasFrameScale = false;
+    /** #331: the lazy `reproject` pass — present source → swap chain, in the frame's tail. */
+    private reproject: ReprojectPass | null = null;
+    private reprojectInit: Promise<boolean> | null = null;
+    private presentTail: PresentTailOptions = { ...PRESENT_TAIL_OFF };
+    /** The POV at tail time (`povStore.get`), set by `WebGPUCanvas`. */
+    private livePov: (() => PovSample) | null = null;
+    /** The POV of the road frame in the present source — what a WebXR re-present re-aims (#331). */
+    private lastPacked: PovSample | null = null;
+    private readonly representXr = (): void => {
+        if (this.lastPacked && getXrPresentFrame()) this.encodeTail(this.lastPacked);
+    };
+    /** This display frame's rAF timestamp — the tail scheduler's frame identity. */
+    private frameTime: number | null = null;
+    private readonly reprojectUniforms = new Float32Array(REPROJECT_UNIFORM_FLOAT_COUNT);
     /** Scene depth (#320): the lazy `depth` pass and everything feeding it. */
     private depth: DepthController | null = null;
     /** Set while the lazy `depth` pass is initialising (download + session create). */
@@ -234,6 +315,14 @@ export class Renderer implements StreetViewRenderer {
                 : new WeatherPostProcessor(this.device, this.context, this.canvas);
             this.cabinComposite = new CabinCompositePass(this.device);
             this.historicalWipe = new HistoricalWipePass(this.device);
+            this.upscale = new UpscalePass(this.device, readFlag('upscale'));
+            this.upscaleInit = null;
+            this.reproject = new ReprojectPass(this.device);
+            this.reprojectInit = null;
+            this.lastPacked = null;
+            setXrRepresentHandler(this.representXr);
+            frameTailScheduler.reset();
+            this.hasFrameScale = false;
             this.transitionManager = new TransitionManager(this.device, this.sampler, intermediateFormat);
 
             const passes = this.buildPassRegistry(intermediateFormat);
@@ -343,10 +432,22 @@ export class Renderer implements StreetViewRenderer {
                 canvasToneMapping: this.canvasOutputPolicy.hdr ? 'extended' : 'standard',
             },
         }));
+        passes.register(createUpscaleFramePass({
+            pass: this.upscale!,
+            presentationFormat: this.presentationFormat,
+            // Same "applied, not requested" rule as the weather tone curve.
+            peak: this.canvasOutputPolicy.hdr ? EXTENDED_TONEMAP_HEADROOM : 1,
+        }));
+        passes.register(createReprojectFramePass({
+            pass: this.reproject!,
+            presentationFormat: this.presentationFormat,
+            device: this.device,
+        }));
         passes.register(createCabinCompositeFramePass({
             pass: this.cabinComposite!,
             presentationFormat: this.presentationFormat,
             resolve: () => this.resolveCabinComposite(),
+            sideBySide: () => this.presentTail.stereo === 'sbs',
         }));
         // Lazy: initialised by `setSceneDepth` when scene depth is switched on.
         this.depth = new DepthController({
@@ -567,9 +668,20 @@ export class Renderer implements StreetViewRenderer {
                 this.weatherPostProcessor?.dispose();
                 this.cabinComposite?.dispose();
                 this.historicalWipe?.dispose();
+                this.upscale?.dispose();
+                this.reproject?.dispose();
             }
+            frameTailScheduler.reset();
+            releaseXrRepresentHandler(this.representXr);
+            this.lastPacked = null;
+            if (this.presentTail.stereo === 'sbs') publishCabinStereoRequest(null);
+            this.presentTail = { ...PRESENT_TAIL_OFF };
             this.cabinComposite = null;
             this.historicalWipe = null;
+            this.upscale = null;
+            this.upscaleInit = null;
+            this.reproject = null;
+            this.reprojectInit = null;
             // Destroyed with the passes (it is one); drop the handle.
             this.depth = null;
             this.depthInit = null;
@@ -630,6 +742,29 @@ export class Renderer implements StreetViewRenderer {
         this.weatherPostProcessor?.updateCameraParams(heading, pitch);
     }
 
+    /**
+     * The split frame's tail (#331): late latch and/or stereo. `livePov` is
+     * read when the tail encodes — after the car loop in car mode.
+     */
+    public setPresentTail(options: PresentTailOptions, livePov?: () => PovSample): void {
+        if (options.stereo !== this.presentTail.stereo) {
+            // The cabin draws its own two eyes for a side-by-side road; the
+            // anaglyph keeps the mono cabin (it sits at the convergence plane).
+            publishCabinStereoRequest(options.stereo === 'sbs'
+                ? { kind: 'sbs', ipd: DEFAULT_IPD_METRES, convergence: DEFAULT_CONVERGENCE_METRES }
+                : null);
+        }
+        this.presentTail.latch = options.latch;
+        this.presentTail.stereo = options.stereo;
+        this.presentTail.fillBlur = options.fillBlur;
+        if (livePov) this.livePov = livePov;
+    }
+
+    /** The display frame's rAF timestamp, before this frame's render call. */
+    public beginFrame(frameTime: number): void {
+        this.frameTime = frameTime;
+    }
+
     public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         // The first six floats only — `readRoadLookInto` leaves the rest alone.
         readRoadLookInto(params.subarray(0, 6), this.roadLook);
@@ -658,14 +793,195 @@ export class Renderer implements StreetViewRenderer {
 
     public renderWeatherOnly(): void {
         if (this.isDestroyed || !this.device) return;
-        const canvasWidth = this.canvas.width;
-        const canvasHeight = this.canvas.height;
-        this.textures.ensureIntermediateTexture(canvasWidth, canvasHeight);
+        const frame = this.resolveFrameScale();
+        this.textures.ensureIntermediateTexture(frame.width, frame.height);
+        const upscale = frame.scale < 1 ? this.upscale : null;
+        const roadTarget = upscale?.ensureInput(frame.width, frame.height);
         const cabin = this.resolveCabinComposite();
         this.weatherPostProcessor?.renderWeatherOnly(
             this.textures.intermediateTextureView,
-            (encoder) => encodeCabinComposite(encoder, cabin, () => this.getSwapChainView()),
+            (encoder) => {
+                if (upscale) {
+                    const view = this.getSwapChainView();
+                    if (view) upscale.encode(encoder, view, frame.outputWidth, frame.outputHeight);
+                }
+                encodeCabinComposite(encoder, cabin, () => this.getSwapChainView());
+            },
+            roadTarget,
         );
+    }
+
+    /**
+     * The road's scale for the frame about to be encoded (`renderScale.ts`):
+     * the request, unless the upscale pass is not there to present a scaled
+     * frame (then 1 — and the first such request starts building it), or a
+     * hold is active (then whatever the hold was armed at: the held frame
+     * never changes resolution under the user).
+     */
+    private resolveFrameScale(): RenderScaleFrame {
+        const frame = this.frameScale;
+        const requested = getRenderScaleRequest().scale;
+        const hold = this.holdTransition.isHoldActive();
+        let scale: number;
+        let limitedBy: RenderScaleFrame['limitedBy'] = null;
+        if (hold && this.hasFrameScale) {
+            scale = frame.scale;
+            limitedBy = frame.limitedBy;
+        } else if (requested < 1 && !this.upscale?.isReady()) {
+            scale = 1;
+            limitedBy = this.requestUpscalePass() ? 'upscale-pending' : 'upscale-unavailable';
+        } else {
+            scale = requested;
+        }
+        const size = scaledSize(this.canvas.width, this.canvas.height, scale);
+        frame.scale = scale;
+        frame.width = size.width;
+        frame.height = size.height;
+        frame.outputWidth = this.canvas.width;
+        frame.outputHeight = this.canvas.height;
+        frame.upscale = scale < 1 && this.upscale ? this.upscale.getMode() : 'none';
+        frame.frozen = hold && this.hasFrameScale;
+        frame.limitedBy = limitedBy;
+        this.hasFrameScale = true;
+        publishAppliedRenderScale(frame);
+        return frame;
+    }
+
+    /**
+     * The present source when this frame has a tail, else undefined (the
+     * frame presents in `main`, as before #331). The first frame that wants a
+     * tail starts building the lazy pass and presents without one meanwhile; a
+     * pass that failed is reported on `webgpuProbe.passes.reproject` and the
+     * tail stays off.
+     */
+    private resolvePresentTarget(frame: RenderScaleFrame): GPUTextureView | undefined {
+        if (!(wantsTail(this.presentTail) || isXrPresenting()) || !this.reproject || !this.passes) return undefined;
+        if (!this.reproject.isReady()) {
+            if (!isPassFailed('reproject')) this.reprojectInit ??= this.passes.initPass('reproject');
+            return undefined;
+        }
+        return this.reproject.ensureSource(frame.outputWidth, frame.outputHeight);
+    }
+
+    /**
+     * Hand the tail to the scheduler: now, or after the car loop of this same
+     * display frame. It reads the POV again and re-aims the packed frame.
+     */
+    private scheduleTail(packed: PovSample): void {
+        this.lastPacked = packed;
+        const frameTime = this.frameTime ?? performance.now();
+        frameTailScheduler.submit(frameTime, () => this.encodeTail(packed));
+    }
+
+    private encodeTail(packed: PovSample): void {
+        const passes = this.passes;
+        const reproject = this.reproject;
+        if (this.isDestroyed || !passes || !reproject?.isReady()) return;
+        const xr = getXrPresentFrame();
+        if (xr) {
+            this.encodeXrTail(packed, reproject, xr);
+            return;
+        }
+        const options = this.presentTail;
+        const live = options.latch && this.livePov ? this.livePov() : packed;
+        const delta = options.latch ? latchDelta(packed, live) : NO_LATCH;
+        const mode = resolveReprojectMode(options.stereo, delta);
+        const frame = this.frameScale;
+        packReprojectUniforms({
+            mode,
+            zoom: packed.zoom,
+            outputWidth: frame.outputWidth,
+            outputHeight: frame.outputHeight,
+            delta,
+            packedPitchDeg: packed.pitch,
+            horizonY: viewHorizonYReference((packed.pitch + 90) / 180, 0.5, 0),
+            fillBlur: options.fillBlur,
+        }, this.reprojectUniforms);
+        reproject.writeUniforms(0, this.reprojectUniforms);
+        encodeAndSubmitTail(this.device, passes, {
+            textures: this.textures,
+            getSwapChainView: () => this.getSwapChainView(),
+            aux: this.frameAux,
+            renderScale: frame,
+            roadTarget: undefined,
+            hasTail: true,
+            presentTarget: undefined,
+        });
+        recordTail(options, mode, delta, frameTailScheduler.stats());
+    }
+
+    /**
+     * A WebXR frame's tail (#331): each eye drawn from the packed road frame —
+     * re-aimed by the eye's full orientation, its own frustum, its own
+     * parallax (convergence at infinity: each eye has its own frustum) — then
+     * the cabin's matching half over it, into the layer's sub-image. The
+     * canvas is left alone. A layer format without a pipeline yet starts
+     * building one and skips the frame (the compositor reprojects the last).
+     */
+    private encodeXrTail(packed: PovSample, reproject: ReprojectPass, xr: XrPresentFrame): void {
+        if (!reproject.hasFormat(xr.format)) {
+            void reproject.ensureFormat(xr.format).catch((error: unknown) => {
+                console.warn('[Renderer] reproject pipeline for the WebXR layer failed', error);
+            });
+            return;
+        }
+        const cabin = this.resolveCabinComposite();
+        const cabinOn = !!cabin?.isActive();
+        if (cabinOn && !cabin!.hasFormat(xr.format)) {
+            void cabin!.ensureFormat(xr.format).catch((error: unknown) => {
+                console.warn('[Renderer] cabin composite pipeline for the WebXR layer failed', error);
+            });
+        }
+        const sideBySide = cabin?.getLayout() === 'sbs';
+        const frame = this.frameScale;
+        const depth = resolveSceneDepthBindGroup(this.device, this.frameAux);
+        const encoder = this.device.createCommandEncoder({ label: 'streetview-frame-xr' });
+        let firstDelta: LatchDelta = NO_LATCH;
+        xr.eyes.forEach((eye, i) => {
+            // Slot 0 is the flat tail's; the eyes take the rest.
+            if (i >= REPROJECT_UNIFORM_SLOTS - 1) return;
+            const rotation = sourceFromEyeRotation(packed, eye.worldFromEye);
+            if (i === 0) firstDelta = rotationDelta(rotation);
+            packReprojectUniforms({
+                mode: 'eye',
+                zoom: packed.zoom,
+                // The *source's* size: its aspect sets the packed frustum.
+                outputWidth: frame.outputWidth,
+                outputHeight: frame.outputHeight,
+                delta: NO_LATCH,
+                rotation,
+                outFrustum: eye.frustum,
+                ipd: xr.halfIpd * 2,
+                convergence: Number.POSITIVE_INFINITY,
+                eyeSign: eye.eyeSign,
+                horizonY: viewHorizonYReference((packed.pitch + 90) / 180, 0.5, 0),
+                fillBlur: this.presentTail.fillBlur,
+            }, this.reprojectUniforms);
+            reproject.writeUniforms(1 + i, this.reprojectUniforms);
+            reproject.encode(encoder, eye.view, depth, {
+                slot: 1 + i,
+                format: xr.format,
+                viewport: eye.viewport,
+                clear: eye.clear,
+            });
+            if (cabinOn && cabin!.hasFormat(xr.format)) {
+                cabin!.encode(encoder, eye.view, eye.viewport, sideBySide ? (eye.eyeSign < 0 ? 'left' : 'right') : 'full', xr.format);
+            }
+        });
+        this.device.queue.submit([encoder.finish()]);
+        noteXrFramePresented();
+        recordTail({ ...this.presentTail, latch: true }, 'eye', firstDelta, frameTailScheduler.stats());
+    }
+
+    /**
+     * Start building the lazy `upscale` pass once. False when it cannot come:
+     * it failed (reported on `webgpuProbe.passes.upscale`, not retried) or
+     * there is no device.
+     */
+    private requestUpscalePass(): boolean {
+        if (!this.upscale || !this.passes || isPassFailed('upscale')) return false;
+        this.upscaleInit ??= this.passes.initPass('upscale');
+        return true;
     }
 
     /**
@@ -816,11 +1132,15 @@ export class Renderer implements StreetViewRenderer {
             this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
                 ? this.depth?.currentAux()
                 : undefined;
-            // Timestamp queries only while the overlay is open to read them.
+            // Timestamp queries only while the overlay or the budget loop reads them.
             const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;
+            const renderScale = this.resolveFrameScale();
+            const presentTarget = this.resolvePresentTarget(renderScale);
+            const roadTarget = renderScale.scale < 1
+                ? this.upscale?.ensureInput(renderScale.width, renderScale.height)
+                : presentTarget;
             encodeAndSubmitFrame({
                 device: this.device,
-                canvas: this.canvas,
                 textures: this.textures,
                 uniformBuffer: this.uniformBuffer,
                 uniforms: packFrameUniforms({
@@ -833,10 +1153,22 @@ export class Renderer implements StreetViewRenderer {
                     capturePan: this.holdTransition.getCapturePan(),
                 }, this.frameUniforms),
                 passes,
-                frame: { getSwapChainView: () => this.getSwapChainView(), aux: this.frameAux },
+                frame: {
+                    getSwapChainView: () => this.getSwapChainView(),
+                    aux: this.frameAux,
+                    renderScale,
+                    roadTarget,
+                    hasTail: !!presentTarget,
+                    presentTarget,
+                },
                 gpuPassTimer: timer,
                 timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });
+            if (presentTarget) {
+                this.scheduleTail({ heading: heading || 0, pitch: pitch || 0, zoom: zoom || 1 });
+            } else {
+                recordNoTail();
+            }
         } catch {
             // Suppress sporadic frame errors
         }

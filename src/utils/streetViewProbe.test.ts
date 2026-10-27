@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { installStreetViewProbe, streetViewProbe } from './streetViewProbe';
+import { publishAppliedRenderScale, resetRenderScaleForTests } from '../renderer/renderScale';
 
 // Test-only view of window for installing/removing globals without `any`.
 const win = window as unknown as Record<string, unknown>;
@@ -45,6 +46,18 @@ describe('streetViewProbe timeline', () => {
 
     // released() with no active hold is a no-op, not a crash.
     expect(() => streetViewProbe.released()).not.toThrow();
+  });
+
+  it('records the applied render scale at arm and at release', () => {
+    publishAppliedRenderScale({
+      scale: 0.75, width: 48, height: 27, outputWidth: 64, outputHeight: 36,
+      upscale: 'fsr', frozen: false, limitedBy: null,
+    });
+    streetViewProbe.holdArmed();
+    expect(streetViewProbe.getTimeline()[0]!).toMatchObject({ renderScaleArmed: 0.75, renderScaleReleased: null });
+    streetViewProbe.released();
+    expect(streetViewProbe.getTimeline()[0]!).toMatchObject({ renderScaleArmed: 0.75, renderScaleReleased: 0.75 });
+    resetRenderScaleForTests();
   });
 
   it('ignores firstStable/released calls when no hold is currently armed', () => {

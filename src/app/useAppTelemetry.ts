@@ -8,6 +8,7 @@ import {
 } from '../renderer/gpuPassTimingStore';
 import { getGpuChoresStats, type GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
 import { getAutoExposureStatus, type AutoExposureStatus } from '../renderer/autoExposure';
+import { getAppliedRenderScale, type AppliedRenderScale } from '../renderer/renderScale';
 
 export interface AppTelemetry {
   showPerformanceStats: boolean;
@@ -17,6 +18,7 @@ export interface AppTelemetry {
   gpuPassTimings: GpuPassTimings;
   gpuChoresStats: GpuChoresStats;
   autoExposureStatus: AutoExposureStatus;
+  renderScale: AppliedRenderScale;
 }
 
 /** Performance overlay + memory profiler sampling for the stats panel. */
@@ -27,6 +29,9 @@ export function useAppTelemetry(): AppTelemetry {
   const [gpuChoresStats, setGpuChoresStatsState] = useState<GpuChoresStats>(() => getGpuChoresStats());
   const [autoExposureStatus, setAutoExposureStatusState] = useState<AutoExposureStatus>(
     () => getAutoExposureStatus(),
+  );
+  const [renderScale, setRenderScaleState] = useState<AppliedRenderScale>(
+    () => ({ ...getAppliedRenderScale() }),
   );
   const { stats: perfStats } = usePerformanceMonitor({
     targetFPS: 60,
@@ -51,6 +56,7 @@ export function useAppTelemetry(): AppTelemetry {
       setGpuPassTimingsState(getGpuPassTimings());
       setGpuChoresStatsState({ ...getGpuChoresStats() });
       setAutoExposureStatusState({ ...getAutoExposureStatus() });
+      setRenderScaleState({ ...getAppliedRenderScale() });
     }, 1000);
     return () => clearInterval(interval);
   }, [showPerformanceStats]);
@@ -63,5 +69,6 @@ export function useAppTelemetry(): AppTelemetry {
     gpuPassTimings,
     gpuChoresStats,
     autoExposureStatus,
+    renderScale,
   };
 }

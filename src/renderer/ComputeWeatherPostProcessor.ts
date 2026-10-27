@@ -305,12 +305,17 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    /**
+     * `textureLoad` blit of the write texture into `target` (the swap chain
+     * when omitted). Both are the intermediate's size — the swap chain at
+     * render scale 1, the upscale pass's road target below it.
+     */
+    private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext, target?: GPUTextureView): void {
         if (!this.blitBindGroup || !this.blitPipeline) return;
         recordBlitPass(commandEncoder, {
             pipeline: this.blitPipeline,
             bindGroup: this.blitBindGroup,
-            targetView: this.context.getCurrentTexture().createView(),
+            targetView: target ?? this.context.getCurrentTexture().createView(),
             timing,
         });
         this.copyColorHistory(commandEncoder);
@@ -334,6 +339,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     public renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void {
         if (!this.device || !this.computePipeline) return;
 
@@ -344,7 +350,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             recordIntermediateClear(commandEncoder, intermediateTextureView);
 
             this.dispatch(commandEncoder);
-            this.blit(commandEncoder);
+            this.blit(commandEncoder, undefined, target);
 
             afterWeather?.(commandEncoder);
 
@@ -354,9 +360,13 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    public renderPass(
+        commandEncoder: GPUCommandEncoder,
+        timing?: WeatherPassTimingContext,
+        target?: GPUTextureView,
+    ): void {
         this.dispatch(commandEncoder, timing);
-        this.blit(commandEncoder, timing);
+        this.blit(commandEncoder, timing, target);
     }
 
     public dispose(): void {

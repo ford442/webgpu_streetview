@@ -305,6 +305,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     public renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void {
         if (!this.device || !this.weatherPipeline || !this.weatherBindGroup) return;
 
@@ -324,7 +325,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             });
             clearPass.end();
 
-            const finalTextureView = this.context.getCurrentTexture().createView();
+            const finalTextureView = target ?? this.context.getCurrentTexture().createView();
             const postPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
                     view: finalTextureView,
@@ -349,10 +350,14 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    public renderPass(
+        commandEncoder: GPUCommandEncoder,
+        timing?: WeatherPassTimingContext,
+        target?: GPUTextureView,
+    ): void {
         if (!this.weatherPipeline || !this.weatherBindGroup) return;
         this.flushWeatherParams();
-        const finalTextureView = this.context.getCurrentTexture().createView();
+        const finalTextureView = target ?? this.context.getCurrentTexture().createView();
         const postPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
                 view: finalTextureView,

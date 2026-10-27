@@ -109,6 +109,26 @@ export const FLAGS = {
     kind: 'bool', default: false,
     doc: 'Do not request the `clip-distances` device feature (also disables the windshield portal).',
   },
+  scale: {
+    kind: 'number', min: 0.5, max: 1,
+    doc: 'Fixed road render scale (0.5–1, snapped to 0.05) and no frame-budget loop. Unset: the preset default, adapted to the GPU budget. `?scale=1` is bit-exact with no scaling.',
+  },
+  upscale: {
+    kind: 'enum', values: ['fsr', 'bilinear'], default: 'fsr',
+    doc: 'How a scaled road frame reaches the screen: FSR 1.0 EASU + RCAS, or a plain bilinear stretch.',
+  },
+  latelatch: {
+    kind: 'bool', default: false,
+    doc: 'Late-latched look: the road frame is presented after the car loop and re-aimed at that frame\'s POV, with this frame\'s cabin (`renderer/reproject/`). A bit-exact copy at rest.',
+  },
+  stereo: {
+    kind: 'enum', values: ['sbs', 'anaglyph'],
+    doc: 'Stereo synthesised from scene depth (the ground-plane proxy without it): `sbs` half side-by-side for 3D TVs, `anaglyph` red/cyan.',
+  },
+  xr: {
+    kind: 'bool',
+    doc: 'WebXR cockpit (#331). `off` hides the VR button and boots a non-XR-compatible adapter; unset follows what the browser supports (`xr/xrSupport.ts`).',
+  },
   // ── Cabin / car ──────────────────────────────────────────────────────────
   cabin: {
     kind: 'enum', values: ['webgl', 'webgpu'],
