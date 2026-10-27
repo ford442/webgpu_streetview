@@ -337,11 +337,9 @@ describe('carModeRuntime — lifecycle', () => {
         const interior = madeInteriors[0]!;
 
         runtime.toggleCarMode(true);
-        expect(interior.setActive).toHaveBeenCalledWith(true);
         expect((interior.canvas as { style: { cssText: string } }).style.cssText).toContain('display: block');
 
         runtime.toggleCarMode(false);
-        expect(interior.setActive).toHaveBeenCalledWith(false);
         expect((interior.canvas as { style: { cssText: string } }).style.cssText).toContain('display: none');
     });
 
@@ -357,15 +355,15 @@ describe('carModeRuntime — lifecycle', () => {
         expect(interior.update).toHaveBeenCalled();
     });
 
-    it('aims the cabin camera with world heading so the chassis does not yaw with look', () => {
+    it('passes the car-local head pose straight to the camera, never a world heading', () => {
         runtime.initCarMode(container());
         runtime.toggleCarMode(true);
         const interior = madeInteriors[0]!;
 
-        runtime.updateCarMode(34, 20, 10);
+        runtime.updateCarMode(34, 0.35, 0.17);
 
-        expect(interior.setCarOrientation).toHaveBeenCalledWith(34);
-        expect(interior.setHeadOrientation).toHaveBeenCalledWith(54, 10);
+        expect(interior.setCarHeading).toHaveBeenCalledWith(34);
+        expect(interior.setHeadOrientation).toHaveBeenCalledWith(0.35, 0.17);
     });
 
     it('dispose clears the singleton so the guards apply again', () => {

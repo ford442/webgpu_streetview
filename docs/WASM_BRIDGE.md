@@ -9,7 +9,12 @@ pixels in WGSL, cabin geometry in Three.js.
 | UI, Maps, app state | TypeScript |
 | Per-pixel effects | WGSL |
 | Car interior | Three.js |
-| Noise tiles, particle seeds, batch geodesy | **C++ → WASM** |
+| Noise tiles, particle seeds, batch geodesy, cabin DSP, luma, depth calibration | **C++ → WASM** |
+
+The committed binary is the **only** implementation of these kernels — on the
+main thread, in the AudioWorklet and in Vitest. There is no JS twin:
+the app does not render until the binary has loaded, and a binary that fails to
+load fails the boot (§4).
 
 ---
 
@@ -22,6 +27,8 @@ pixels in WGSL, cabin geometry in Three.js.
 | `cpp/src/audio_module.cpp` | engine PCM, cabin IR |
 | `cpp/src/hrtf_module.cpp` | analytic binaural shadow IR pair |
 | `cpp/src/luma_module.cpp` | Rec.709 histogram / reduce / box downsample |
+| `cpp/src/cabin_dsp_module.cpp` | the cabin audio engine (AudioWorklet, §3a) |
+| `cpp/src/depth_module.cpp` | scene-depth calibration: disparity percentiles, ground-calibrated near depth, normalisation + easing (`docs/SCENE_DEPTH.md`) |
 | `cpp/src/bindings.cpp` | raw `extern "C"` wrappers with the canonical export names |
 | `cpp/include/streetview_wasm.h` | `sw_*` declarations + per-function contracts |
 | `cpp/CMakeLists.txt` | host target (`streetview_cpu`) **and** the Emscripten link flags |
@@ -29,7 +36,8 @@ pixels in WGSL, cabin geometry in Three.js.
 | `cpp/tests/` | doctest golden-vector tests + the generated goldens |
 | `cpp/third_party/doctest/` | vendored single-header test framework (MIT) |
 | `scripts/gen-wasm-goldens.mjs` | captures the goldens from the shipping binary |
-| `src/wasm/index.ts` | loader, camelCase API, **pure-JS fallback** |
+| `src/wasm/index.ts` | loader (`loadWasmModule`, `requireWasm`), camelCase API |
+| `src/renderer/bootWasm.ts` | boot-time load; failures become `WasmLoadError` → `webgpuProbe` stage `wasm` |
 | `src/wasm/marshal.ts` | malloc-backed scratch arena every kernel wrapper copies through |
 | `src/wasm/useWasmModule.ts` | React hook (`useWasmModule`) for React-side consumers |
 | `src/wasm/wasmNoiseFeeder.ts` | render-loop tile feeder |
@@ -79,11 +87,33 @@ and must not clobber the host copy — otherwise `clang-tidy -p cpp` picks up
 `-fsanitize=address,undefined`. The committed `cpp/.clangd` points clangd at
 `build-host` directly. `npm run lint:cpp` runs `clang-tidy -p cpp/build-host`
 over every translation unit listed in `scripts/lint-cpp.sh` `SOURCES`; CI
-(`wasm-cpp-host`) runs it as **advisory** (`WarningsAsErrors` empty). Do not
+(`wasm-cpp-host`) **gates** on it: `cpp/.clang-tidy` sets
+`WarningsAsErrors: 'bugprone-*'`; the `modernize-*`/`performance-*`/
+`readability-*` checks stay advisory. A deliberate exception takes a
+`NOLINTNEXTLINE(check)` with the reason next to it. Do not
 commit `compile_commands.json`.
 
+**Link flags** (`cpp/CMakeLists.txt`, both wasm targets):
+
+| Flag | Why |
+|---|---|
+| `-s STRICT=1` | no deprecated settings or implicit defaults sneak in |
+| `-s STACK_SIZE=65536` | explicit; `WASM_STACK_SIZE` in `src/wasm/marshal.ts` must match — the loader checks `emscripten_stack_get_base() - emscripten_stack_get_end()` against it and rejects the binary otherwise, and `wasmAbiLock.test.ts` diffs the two numbers |
+| `-s MAXIMUM_MEMORY=134217728` (128 MiB) | caps growth. The largest tile is the snapshot path: `useAppCapture` → `downsample_2d` copies the whole output canvas in (32 MiB at a 4K backing store, 59 MiB at 5K) and the scratch arena rounds to a power of two, so 5K reserves 64 MiB on top of the 16 MiB initial heap. 64 MiB would fail 4K+ snapshots |
+| `-flto` (Release only) | link-time optimisation; the goldens re-run on both binaries proved it bit-identical |
+| `-s ASSERTIONS=1` (Debug only) | a Debug binary imports `wasi_snapshot_preview1` for its messages, so it never loads in the app — host tests and ASan are the debug path |
+| `-msimd128` at link (SIMD target) | wasm-opt runs with `--enable-simd` explicitly |
+
+**C++ conventions.** Internal kernels take `std::span` behind the extern "C"
+shims (the shims build the spans from pointer + count, and own the null/size
+checks); value-returning exports are `SW_NODISCARD`; `bindings.cpp`
+`static_assert`s the scalar sizes the TS side packs (`float`/`double`/`unsigned`,
+`alignof(double) <= 8`, 32-bit pointers under emscripten), and
+`cabin_dsp_module.cpp` asserts its quantum / IR partition layout.
+
 **Adding a translation unit** means adding it in four places: the emcc
-`add_executable`, the host `add_library(streetview_cpu …)`, `SOURCES` in
+`STREETVIEW_WASM_SOURCES` list (both wasm targets build from it), the host
+`add_library(streetview_cpu …)`, `SOURCES` in
 `scripts/lint-cpp.sh`, and `WASM_SOURCE_FILES` in
 `scripts/wasm-source-hash.mjs`. `src/wasm/__tests__/compileCommandsContract.test.ts`
 diffs all four against `cpp/src/*.cpp` and fails when one is forgotten.
@@ -94,22 +124,32 @@ CMake options:
 |---|---|---|
 | `STREETVIEW_WERROR` | `ON` | warnings are errors on our sources (never on `third_party/`) |
 | `STREETVIEW_SANITIZERS` | `OFF` | ASan + UBSan on the host target |
-| `STREETVIEW_WASM_SIMD` | `OFF` | adds `-msimd128` to the emcc build (autovectorization only) |
 
-`STREETVIEW_WASM_SIMD` does **not** introduce a second algorithm: the C++ stays
-scalar and the option only lets the compiler vectorize the `fill_*` loops. WASM
-SIMD128 has no FMA and we never pass `-ffast-math`, so results stay bit-identical
-to the scalar goldens — `cpp/tests` asserts that the tile fills and the scalar
-`noise2d` entry point agree exactly, which is the invariant a SIMD path must
-preserve.
+**Two binaries, one source list.** The emcc build always links two targets
+from `STREETVIEW_WASM_SOURCES` with identical flags except `-msimd128`:
+
+| File | Who loads it |
+|---|---|
+| `public/wasm/streetview-wasm.wasm` (scalar) | the main-thread loader (`loadWasmModule`), and the cabin AudioWorklet when SIMD does not validate or `?cabinDsp=scalar` |
+| `public/wasm/streetview-wasm.simd.wasm` | the cabin AudioWorklet (`CabinAudio`), selected with `WebAssembly.validate` on a one-instruction SIMD probe module (`wasmSimdSupported()` in `src/wasm/index.ts`) |
+
+SIMD ships only where it pays: `cabin_dsp_module.cpp`'s FIR is hand-vectorised
+with `<wasm_simd128.h>` under `__wasm_simd128__`; everything else is plain C++
+the compiler may autovectorize. The main thread stays scalar — #300 measured
+~0 % from SIMD on the cold kernels. Neither binary introduces a second
+algorithm: WASM SIMD128 has no FMA, we never pass `-ffast-math`, and the FIR's
+summation order is canonical (four lane accumulators over `j mod 4`, then
+`(a0 + a1) + (a2 + a3)`), so **both binaries reproduce `cpp/tests/goldens.json`
+bit for bit** — CI's `build-wasm-emscripten` asserts it with
+`gen-wasm-goldens.mjs --compare --wasm public/wasm/streetview-wasm.simd.wasm`,
+and `wasmGoldenParity.test.ts` runs every golden on both committed binaries.
 
 ---
 
-## 1a. One contract, three implementations
+## 1a. One contract, one implementation
 
-The same algorithms exist three times — the shipping `.wasm`, the C++, and the
-JS fallback — so they are pinned to a **single set of golden vectors** rather
-than to each other:
+The algorithms exist once, in C++, and are pinned to a **single set of golden
+vectors** captured from the shipping binary:
 
 ```
 public/wasm/streetview-wasm.wasm   (what ships)
@@ -118,21 +158,23 @@ public/wasm/streetview-wasm.wasm   (what ships)
             ▼
    cpp/tests/goldens.json  +  cpp/tests/goldens_generated.h
             │                          │
-            │ Vitest                   │ ctest (host CI, no emcc)
+            │ Vitest (both binaries)   │ ctest (host CI, no emcc)
             ▼                          ▼
-   src/wasm/jsFallback.ts          cpp/src/*_module.cpp
+   public/wasm/*.wasm              cpp/src/*_module.cpp
 ```
 
-- `cpp/tests/noise_module_test.cpp` asserts the C++ against the generated
-  header — bit-exact on every f32 path, `1e-12` relative on `haversine`
-  (host libm vs the module's host-math imports).
-- `src/wasm/__tests__/wasmGoldenParity.test.ts` asserts the JS fallback against
-  the same numbers, exactly where the paths are exact (particle seeds, angle
-  helpers) and within a few f32 ULP where the JS twin accumulates in double and
-  rounds once.
-- Both files also check the committed binary's SHA-256 against the one recorded
-  in the goldens, so a rebuilt binary with stale goldens fails rather than
-  silently re-baselining.
+- `cpp/tests/*_test.cpp` assert the host C++ against the generated header —
+  bit-exact on every f32 path, `1e-12` relative on `haversine` (host libm vs
+  the libm emcc linked).
+- `src/wasm/__tests__/wasmGoldenParity.test.ts` runs every golden on **both**
+  committed binaries (scalar and SIMD) through the TS loader, exactly — no
+  tolerances. `src/car/audio/cabinWorklet.test.ts` drives the real worklet
+  source with the cabin goldens' keyframes and checks their checksums.
+- Vitest instantiates the committed scalar binary once in `src/setupTests.ts`
+  (`fs.readFileSync` + `instantiateStreetViewWasm` + `_installWasmModule`), so
+  every test that reaches a kernel runs the real `.wasm`. There is no mock.
+- The goldens record the binary's SHA-256, so a rebuilt binary with stale
+  goldens fails rather than silently re-baselining.
 
 Regenerate with `npm run gen:wasm-goldens` **only** as part of a deliberate
 algorithm change, and review the resulting diff — it is the record of what
@@ -143,8 +185,9 @@ cannot drift from the binary or be hand-edited.
 
 ## 2. The ABI
 
-Seventeen exports, identical in `bindings.cpp`, the CMake export list and the
-TypeScript loader:
+The exports are identical in `bindings.cpp`, the CMake export list and the
+TypeScript loader (`node scripts/check-wasm-abi.mjs` lists them; the cabin
+engine's `dsp_*` family is in §3a):
 
 | Export | TS wrapper | Notes |
 |---|---|---|
@@ -168,6 +211,10 @@ TypeScript loader:
 | `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
 | `reduce_luma_bt709(rgba, w, h, out3)` | `reduceLumaBt709` | mean/min/max luma in `[0, 1]` |
 | `downsample_2d(src, sw, sh, dst, dw, dh)` | `downsample2d` | integer box-filter downsample, packed RGBA8 |
+| `luma_analyze(…)` | `lumaAnalyze` | fused downsample + histogram + exact reduce (gpu-chores CPU path) |
+| `depth_percentiles(map, n, lo, hi, scratch, out2)` | `depthPercentiles` | exact order statistics of a ≤ 16384-texel strided sample, non-finite texels skipped |
+| `depth_near_depth(nearness, w, h, horizonY) → f64` | `depthNearDepth` | proxy-scale depth of the nearest disparity, median over the bottom-centre road band, clamped to `[0.04, 0.3]` (0.1 when the band is not ground) |
+| `depth_normalize(map, n, w, h, horizonY, aligned, sameScene, state3, prev, out)` | `depthNormalize` | percentile stretch → nearness → `q / n` depth, eased across same-scene inferences; `state3` is `{lo, hi, q}` and is updated in place |
 
 Plus the exported `memory`, which the loader needs to marshal buffers.
 
@@ -177,11 +224,11 @@ Plus the exported `memory`, which the loader needs to marshal buffers.
 `src/wasm/__tests__/wasmAbiLock.test.ts` fails if any of them drifts, and
 `scripts/check-wasm-abi.mjs` fails if the compiled binary is missing a name
 `bindings.cpp` declares — otherwise a missing wrapper would only show up as a
-silent JS-fallback at runtime.
+`TypeError` at the first call.
 
 Write the algorithm in C++ **first**, in the translation unit for its domain
-(noise, geodesy, audio, hrtf, luma) — not in `jsFallback.ts`, and never in a
-hand-written `.wat`.
+(noise, geodesy, audio, hrtf, luma, cabin dsp, depth) — never in TypeScript
+next to the wrapper, and never in a hand-written `.wat`.
 
 ### Determinism and float precision
 
@@ -204,15 +251,6 @@ time as an f32: by 10 minutes 84/127 consecutive samples were duplicates
 (a staircase waveform), 118/127 by an hour. `cpp/tests` and
 `wasmScratchArena.test.ts` render a full simulated hour and require zero.
 
-The JS fallback mirrors the same algorithms — where a value would otherwise
-round twice through a double intermediate, the fallback applies `Math.fround`
-explicitly (see `_TWO_PI_F32` in `src/wasm/jsFallback.ts`). It is exact on the
-integer-LCG paths (particle seeds), the angle helpers, the cabin IR and the
-engine PCM, and within ~2.2e-7 on the noise/fBm buffers, because it accumulates in double and rounds once at
-the `Float32Array` store while the module rounds after every operation. Measured
-worst cases are recorded in `TOLERANCES` in `wasmGoldenParity.test.ts`; treat a
-tolerance bump there as a bug report, not a fix.
-
 `haversine` has no WASM-native transcendentals; the Emscripten STANDALONE_WASM
 build links `sin`/`cos`/`atan2` statically. The binary's only import is
 `env.emscripten_notify_memory_growth` (`ALLOW_MEMORY_GROWTH`), and the loader
@@ -230,8 +268,7 @@ both. `reserve(bytes)` returns the 8-byte-aligned base, replacing the block
 (`free` + a larger `malloc`) when a call needs more; there is no `malloc` per
 call. A `reserve` can grow — and so detach — `memory.buffer`: create typed-array
 views only after it returns. At load the loader checks the arena against
-`emscripten_stack_get_base()` and falls back to the JS twin if it is ever
-below it. `scripts/gen-wasm-goldens.mjs` uses the same `malloc` path.
+`emscripten_stack_get_base()` and rejects the binary if it is ever below it. `scripts/gen-wasm-goldens.mjs` uses the same `malloc` path.
 
 Never pass a kernel a fixed offset. Scratch used to live at 64 KiB, inside the
 top ~5 KiB of the stack: libm's `sin`/`cos` spill a frame for arguments > π/4,
@@ -250,28 +287,92 @@ binary to pin this.
 | `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
 | `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
-| `CabinAudio` (car mode) | `fill_engine_noise` | engine/road bed filled on the main thread and queued to the cabin AudioWorklet; JS fill + oscillators if WASM or the worklet is missing |
-| `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR the worklet convolves the bed with; roof openness raises its high-frequency transfer |
-| `WindAudio` (car mode) | `fill_hrtf` | per-ear IR pair convolved with the wind/rain bed via two `ConvolverNode`s, rebuilt when head-vs-car heading moves; `StereoPannerNode` remains the pre-load/failure fallback |
-| gpu-chores (`GpuChores`, #216) | `luma_histogram_bt709` / `reduce_luma_bt709` / `downsample_2d` | panorama hist + reduce for the luma gauge; picker thumbs. WebGPU compute first; WASM/JS when `?no_gpu_compute` or the boot probe failed |
+| cabin AudioWorklet (`cabinWorkletSource.ts`, car mode) | `dsp_create` / `dsp_set_params` / `dsp_set_ir` / `dsp_render` / `dsp_destroy` / `dsp_max_ir_taps` | the whole car bed + radio, rendered on the audio thread — see §3a |
+| `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR (1024–2048 taps) posted to the worklet; roof openness raises its high-frequency transfer and lets the late tail escape |
+| `DepthController` (`renderer/depth/depthMath.ts`, `?depth`) | `depth_normalize` / `depth_percentiles` / `depth_near_depth` | turns each network inference into the `r16float` depth texture — see `docs/SCENE_DEPTH.md` |
+| `WindAudio` (car mode, oscillator fallback only) | `fill_hrtf` | per-ear IR pair convolved with the wind bed via two `ConvolverNode`s; it stays off while the cabin engine runs (the engine renders the wind) |
+| gpu-chores (`GpuChores`, #216) | `luma_analyze` (CPU path), `downsample_2d` (picker thumbs) | fused downsample + histogram + exact reduce for the luma gauge — one copy-in instead of three. WebGPU compute first; WASM when `?no_gpu_compute` or the boot probe failed |
 
-The cabin audio graph fills PCM on the main thread (one loader, one JS
-fallback, one set of goldens) and posts it to an AudioWorklet, which drains the
-queue and runs the 128-tap FIR from `fill_cabin_ir`. The worklet asks for more
-as it drains, so the audio clock paces the fills; `createScriptProcessor` is
-gone from `src/car/audio/`. The processor source lives in
-`src/car/audio/cabinWorkletSource.ts` as text and is loaded via a Blob URL, so
-its constants stay single-sourced with the main thread and no extra chunk ships.
+`fill_engine_noise`, `luma_histogram_bt709` and `reduce_luma_bt709` keep their
+exports and goldens (the engine voice and the bin rule are shared with
+`dsp_render` / `luma_analyze` op for op) but have no production caller left.
 
-Heading-relative **binaural convolution** is `fill_hrtf`, alongside `fill_cabin_ir`
+### 3a. The cabin engine (#321)
+
+`cpp/src/cabin_dsp_module.cpp` renders the car at audio rate **inside the
+AudioWorklet**. `CabinAudio` fetches the chosen binary once
+(`loadStreetViewWasmBytes`) and posts a copy of the bytes; the worklet
+instantiates them, `dsp_create`s one engine (state `malloc`'d from the module
+heap — no globals) and calls `dsp_render` every 128-frame quantum straight into
+its output channels. The main thread posts only `params` (every frame) and an
+`ir` (when the vehicle or roof changes). There is no PCM queue: the old design
+filled 1024-sample blocks on the main thread with ~93 ms queued, so any stall
+longer than that was a dropout; now a stall cannot reach the audio thread
+(`e2e/cabin-audio.spec.ts` stalls the main thread for 300 ms and asserts zero
+underruns on `window.__CABIN_AUDIO_PROBE__`).
+
+> **Do not post a `WebAssembly.Module` to the worklet.** It is structured-
+> cloneable on paper, but Chromium will not deserialize one in
+> `AudioWorkletGlobalScope`: the port gets `messageerror` and the message
+> silently never arrives. Post the bytes (transferred copy). The worklet
+> reports `messageerror` as an `error`, and `CabinAudio` falls back.
+
+Per sample: engine (the `fill_engine_noise` voice, f64 phase), road rumble +
+hiss + wet-arch spray, a wind band that rises with airspeed (speed + ambient
+wind, gusting), granular rain on the roof (drums sealed, splatters open),
+wiper thumps (a Taylor-cosine resonator), and the stereo radio from input 0.
+Outside sources pass a body-occlusion one-pole set by openness; the wind, and
+the radio from the dash speakers (±30°), are placed with the `fill_hrtf`
+head-shadow coefficients (`sv_audio::hrtf_shadow` in `cpp/include/audio_kernels.h`).
+Then one stereo cabin FIR — uniformly partitioned into 128-tap partitions (the
+render quantum), up to 4096 taps, crossfading 256 samples on an IR swap — a
+DC blocker and a clamp. Convolution and head shadow are both LTI, so placing
+first and convolving once is the same room as convolving every source.
+
+Every parameter has a per-sample one-pole (~40 ms): post at any cadence,
+no zipper noise (`cabin_dsp_test.cpp` steps the radio gain and bounds the
+per-sample change). Inputs come from `car/audio/cabinParams.ts`: telemetry
+(rpm, load, speed — floored at the routed trip's cruise pace), roof and
+vehicle, the weather panel (rain → rain on the roof and a wet road, wind) and
+live conditions (precipitation keeps the road wet, live wind).
+
+**The radio goes through the cabin.** `audio/carAudioGraph.ts` owns the car's
+one AudioContext; the car radio (`AudioAnalyzer({ carCabin: true })` in
+`useCabinRadioBinding`) feeds its radio bus, which runs into the worklet's
+input while the engine is up (and straight out otherwise). The dash
+visualiser taps the post-cabin mix. User volume and the trip-aware retune
+crossfade stay on the station's own gain node. The free-look toolbar radio
+(`app/useRadioAudio.ts`) has no cabin and stays direct.
+
+**Render budget** (`node scripts/bench-cabin-dsp.mjs`, a wet rainy windy
+cruise with the radio on, per 128-frame quantum at 48 kHz, Node 24 / V8 on the
+dev VM; the quantum's real-time budget is 2.667 ms):
+
+| IR taps | scalar | SIMD128 | speed-up |
+|---|---|---|---|
+| 128 | 0.036 ms (1.4 %) | 0.020 ms (0.8 %) | 1.8× |
+| 1024 | 0.150 ms (5.6 %) | 0.046 ms (1.7 %) | 3.3× |
+| 2048 | 0.281 ms (10.5 %) | 0.074 ms (2.8 %) | 3.8× |
+| 4096 | 0.629 ms (23.6 %) | 0.142 ms (5.3 %) | 4.4× |
+
+The acceptance bar was ≥ 1024 taps in ≤ 25 % of the quantum on the scalar
+binary. The worklet also posts `renderMsAvg` / `renderMsMax` to the probe
+where its scope has a clock (Chromium's AudioWorkletGlobalScope has no
+`performance.now`, so there they read null). kissfft was not needed: at these
+lengths the partitioned time-domain FIR is well inside budget.
+
+Fallbacks: no AudioWorklet, no WebAssembly, a binary that fails to fetch,
+validate or instantiate, or `?cabinDsp=off` → two oscillators through a biquad
+(the old fallback). `?cabinDsp=scalar` forces the scalar binary.
+
+Heading-relative **binaural convolution** (`WindAudio`, oscillator fallback only) is `fill_hrtf`, alongside `fill_cabin_ir`
 (`cpp/src/hrtf_module.cpp`; `fill_cabin_ir` and the engine bed live in
 `cpp/src/audio_module.cpp`). It is an analytic ITD/ILD shadow
 model, not a measured HRTF (no `cpp/data/` table). `WindAudio` fans its gain
 node into two `ConvolverNode`s (one per ear) recombined via a
 `ChannelMergerNode`, rebuilding both `AudioBuffer`s only when
 `signedAngleDiff(head, car)` has moved enough to matter. `StereoPannerNode`
-remains as the fallback while WASM is still loading, or if building the
-convolver graph throws.
+remains as the fallback if building the convolver graph throws.
 
 `WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
 default and is what the fragment path gets, so the default look is unchanged;
@@ -283,22 +384,39 @@ uniform dust density.
 `fill_particle_seeds` is consumed by `WasmParticleFeeder` on the compute
 weather path: seeds are uploaded once (and on grid-size change or a dry→wet
 restart), then `weather-particles.wgsl` integrates and splats into storage
-textures 7/8. The JS fallback of `fillParticleSeeds` is what Vitest exercises
-when `fetch` cannot load `public/wasm/`. `?wasmParticles=off` (or stored
+textures 7/8. `?wasmParticles=off` (or stored
 `streetview.wasmParticles=off`) leaves 7/8 as 1×1 dummies so the procedural
 compute rain/snow is easy to A/B. The fragment path never calls the feeder.
 
 ---
 
-## 4. Fallback guarantee
+## 4. Boot and failure
 
-`loadWasmModule()` returns the pure-JS fallback whenever `WebAssembly` is
-missing, the fetch fails, or the binary imports something the loader does not
-supply. **Every export has a fallback**, so no caller needs to branch on
-`isWasm` — `WasmNoiseFeeder.isWasm` and `StreetViewWasmAPI.isWasm` exist for
-diagnostics only. `src/wasm/__tests__/wasm.test.ts` covers the fallback (Node has
-no `fetch` for `public/`, so it is what the suite exercises by default) and
-`wasmCompiled.test.ts` instantiates the real binary to check the two agree.
+The binary loads in the boot sequence, before the first frame:
+
+- `src/index.tsx` awaits `loadBootWasm()` (`src/renderer/bootWasm.ts`) before
+  rendering `<App />` — React code calls kernels from its first effects, so the
+  app cannot render without them. On failure it renders `WasmBootFailure`
+  instead: `webgpuProbe = { ok: false, stage: 'wasm', reason }` and the same
+  blocking `LoadingOverlay` (with Retry) as a failed shader fetch.
+- `Renderer.init` starts the same (cached) load in parallel with `bootDevice`
+  and the pass/shader inits, and settles them together; a rejection is a
+  `WasmLoadError` and publishes the boot failure at stage `wasm`.
+- `loadWasmModule()` **rejects** on a missing `WebAssembly`, a failed fetch, an
+  invalid module, an unexpected import or a stack-contract mismatch, and
+  forgets the rejected promise so Retry (or a later call) fetches again.
+- Kernel call sites use `requireWasm()`, which **throws** if the module is not
+  loaded yet — a call before boot is a bug, not a degrade path. Code that may
+  run pre-boot awaits `loadWasmModule()` instead.
+- The cabin AudioWorklet loads its own copy (`loadStreetViewWasmBytes`, SIMD or
+  scalar); its oscillator fallback (§3a) covers a missing AudioWorklet, not a
+  missing algorithm.
+
+Covered by `src/wasm/__tests__/wasm.test.ts` ("the loader": 404 rejects and
+retries, HTML is not a module, bytes are cached),
+`Renderer.passIsolation.test.ts` (a 404 fails `init` at stage `wasm`),
+`e2e/wasm-boot.spec.ts` (smoke lane: overlay + probe) and
+`e2e/gpu-foundation.spec.ts` (`?wasm=missing` on a real device).
 
 ---
 
@@ -306,25 +424,24 @@ no `fetch` for `public/`, so it is what the suite exercises by default) and
 
 - **Changing an algorithm?** Edit the owning `cpp/src/*_module.cpp` first and run
   `npm run test:cpp` — it will fail against the goldens, which is the point.
-  Mirror the change in the JS fallback, rebuild (`npm run build:wasm`),
+  Rebuild (`npm run build:wasm`),
   regenerate (`npm run gen:wasm-goldens`) and re-run `npm run test:cpp && npm test`.
   The golden diff is the behavioural record.
 - **New export?** The `cpp/src/*_module.cpp` for its domain (a new one if it
   fits none) + `streetview_wasm.h` + `bindings.cpp` + `CMakeLists.txt`
-  + `src/wasm/abi.ts` (API type) + `src/wasm/jsFallback.ts` (JS twin) +
-  `src/wasm/index.ts` (WASM marshalling wrapper) — then `npm run build:wasm`.
-  Add coverage to `cpp/tests/noise_module_test.cpp` and vectors to
+  + `src/wasm/abi.ts` (API type) + `src/wasm/index.ts` (marshalling wrapper)
+  + `wasmAbiLock.test.ts` `EXPECTED_EXPORTS` — then `npm run build:wasm`.
+  Add coverage to `cpp/tests/` and vectors to
   `scripts/gen-wasm-goldens.mjs` in the same change; the ABI lock only checks
   that the *name* exists everywhere, not that the maths agrees.
 - **Rebuilt the wasm?** Commit `public/wasm/streetview-wasm.wasm` **and** its
   `.sha256`, or `verify-build.sh` fails — and regenerate the goldens, or the
   binary-hash assertions fail.
-- **Touching float math?** Check `wasmCompiled.test.ts` and
-  `wasmGoldenParity.test.ts` still match before assuming a tolerance bump is
-  fine — a real double-rounding difference means the paths have diverged.
-- **No new hand-written `.wat` algorithms**, and no new `src/**/*.js`
-  application code. The JS fallback is a test/degrade twin, not a third place to
-  invent behaviour.
+- **Touching flags?** Re-run `gen-wasm-goldens.mjs --compare` on both binaries
+  (CI does); a flag that changes a single bit is dropped, not re-baselined.
+- **No new hand-written `.wat` algorithms**, no new `src/**/*.js` application
+  code, and no TS re-implementation of a kernel "for tests" — Vitest runs the
+  binary.
 
 ---
 
@@ -339,5 +456,13 @@ shipped as emcc STANDALONE_WASM.
 2. ✅ **Ship path is emcc.** `npm run build:wasm` / `npm run build` compile C++.
    `verify-build.sh` hashes the C++ inputs. SDK pin: `cpp/emsdk.version`.
 3. ✅ **WAT retired.** There is no `streetview-wasm.wat`. Do not add one.
-4. ✅ **SIMD128 CI (not shipped).** `STREETVIEW_WASM_SIMD=ON` is a CI row that
-   must keep goldens bit-identical. Production CMake default stays `OFF`.
+4. ✅ **SIMD128 shipped where it pays (#321).** `streetview-wasm.simd.wasm`
+   is built from the same sources with `-msimd128` and runs the cabin engine's
+   hand-vectorised FIR in the AudioWorklet; CI asserts it reproduces every
+   golden bit for bit. The main thread stays on the scalar binary.
+5. ✅ **WASM in the AudioWorklet (#321, deferred §3 of #300).** See §3a.
+6. ✅ **Fused, exact luma chore (#321, deferred §5 of #300).** `luma_analyze`.
+7. ✅ **JS twin deleted; build hardened.** The binary is the only
+   implementation (§4); STRICT, LTO, an explicit stack contract and a 128 MiB
+   cap; clang-tidy gates on `bugprone-*`; depth calibration moved to
+   `depth_module.cpp`.

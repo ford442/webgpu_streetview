@@ -7,8 +7,7 @@
  * Region comes from the stations' own metadata, so no reverse geocoding.
  */
 
-import { getWasmModule } from '../../wasm';
-import { JS_FALLBACK } from '../../wasm/jsFallback';
+import { requireWasm } from '../../wasm';
 
 export const RADIO_REQUERY_DISTANCE_M = 50_000;
 
@@ -27,7 +26,7 @@ export function shouldRequeryRadio(
   pinned: boolean,
 ): boolean {
   if (pinned || !tuned) return false;
-  return (getWasmModule() ?? JS_FALLBACK).haversine(tuned.lat, tuned.lng, pos.lat, pos.lng) > RADIO_REQUERY_DISTANCE_M;
+  return requireWasm().haversine(tuned.lat, tuned.lng, pos.lat, pos.lng) > RADIO_REQUERY_DISTANCE_M;
 }
 
 const norm = (s: string): string => s.trim().toLowerCase();

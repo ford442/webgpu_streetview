@@ -16,6 +16,10 @@ import {
     createWeatherComputePipeline,
 } from './computeWeather/pipeline';
 import {
+    getSceneDepthFallback,
+    type AuxDepth,
+} from './depth/sceneDepthBinding';
+import {
     recordBlitPass,
     recordColorHistoryCopy,
     recordIntermediateClear,
@@ -67,11 +71,20 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private readonly params: WeatherParamBlock;
 
     private computePipeline: GPUComputePipeline | null = null;
-    private computeBindGroup: GPUBindGroup | null = null;
+    /**
+     * Weather bind groups by ping-pong parity (`depth:particleState`). The
+     * parities flip every dispatch, so each combination is built once and
+     * reused until something it binds changes — a resize, new particle
+     * textures, history toggling or priming — which clears the cache. Before
+     * this, every dispatch rebuilt the 13-entry group with fresh views.
+     */
+    private readonly computeBindGroups = new Map<string, GPUBindGroup>();
     private blitPipeline: GPURenderPipeline | null = null;
     private blitBindGroup: GPUBindGroup | null = null;
 
     private temporalHistoryEnabled = false;
+    /** Group 2: the published scene depth, or null for the per-device zero fallback. */
+    private sceneDepth: AuxDepth | null = null;
     private shaderEffectsEnabled = true;
     private lastIntermediateView: GPUTextureView | null = null;
     /** Reused per dispatch — `writeBuffer` copies it, so one scratch array is enough. */
@@ -106,25 +119,39 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.blitPipeline = await createBlitPipeline(this.device, presentationFormat);
     }
 
-    private rebuildComputeBindGroup(intermediateTextureView: GPUTextureView): void {
+    /** Drop every cached weather bind group; the next dispatch builds what it binds. */
+    private invalidateComputeBindGroups(): void {
+        this.computeBindGroups.clear();
+    }
+
+    private bindGroupKey(): string {
+        return `${this.resources.getDepthParity()}:${this.particles.getStateParity()}`;
+    }
+
+    /** The weather bind group for this dispatch's ping-pong parity, built on first use. */
+    private currentComputeBindGroup(): GPUBindGroup | null {
+        const key = this.bindGroupKey();
+        const cached = this.computeBindGroups.get(key);
+        if (cached) return cached;
+        const intermediateTextureView = this.lastIntermediateView;
         const res = this.resources;
-        if (this.particles.isEnabled()) {
-            this.particles.ensureDensityTexture(res.writeWidth, res.writeHeight);
-        }
         const depthRead = res.getDepthReadTexture();
         const depthWrite = res.getDepthWriteTexture();
         if (
-            !this.computePipeline
-            || !this.blitPipeline
+            !intermediateTextureView
+            || !this.computePipeline
             || !res.writeTexture
             || !depthRead
             || !depthWrite
             || !res.isReady()
         ) {
-            return;
+            return null;
+        }
+        if (this.particles.isEnabled()) {
+            this.particles.ensureDensityTexture(res.writeWidth, res.writeHeight);
         }
 
-        this.computeBindGroup = createWeatherBindGroup(this.device, this.computePipeline, {
+        const group = createWeatherBindGroup(this.device, this.computePipeline, {
             filteringSampler: res.filteringSampler!,
             intermediateView: intermediateTextureView,
             writeTexture: res.writeTexture,
@@ -139,8 +166,18 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             comparisonSampler: res.comparisonSampler!,
             noiseBuffer: res.noiseBuffer!,
         });
+        this.computeBindGroups.set(key, group);
+        return group;
+    }
 
-        this.blitBindGroup = createBlitBindGroup(this.device, this.blitPipeline, res.writeTexture);
+    /** Something a weather bind group binds changed: rebuild this dispatch's group now. */
+    private rebuildComputeBindGroup(): void {
+        this.invalidateComputeBindGroups();
+        this.currentComputeBindGroup();
+    }
+
+    public setSceneDepth(depth: AuxDepth | null): void {
+        this.sceneDepth = depth;
     }
 
     public setLookLut(volume: LutVolume | null): void {
@@ -151,7 +188,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         if (this.temporalHistoryEnabled === enabled) return;
         this.temporalHistoryEnabled = enabled;
         if (!enabled) this.resources.historyReady = false;
-        if (this.lastIntermediateView) this.rebuildComputeBindGroup(this.lastIntermediateView);
+        this.rebuildComputeBindGroup();
     }
 
     public updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void {
@@ -159,13 +196,17 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             return;
         }
 
-        if (this.resources.ensureWriteTexture(width || 1, height || 1)) {
+        const resized = this.resources.ensureWriteTexture(width || 1, height || 1);
+        if (resized) {
             this.particles.ensureDensityTexture(this.resources.writeWidth, this.resources.writeHeight);
         }
         if (!this.resources.writeTexture) return;
 
         this.lastIntermediateView = intermediateTextureView;
-        this.rebuildComputeBindGroup(intermediateTextureView);
+        this.rebuildComputeBindGroup();
+        if (resized || !this.blitBindGroup) {
+            this.blitBindGroup = createBlitBindGroup(this.device, this.blitPipeline, this.resources.writeTexture);
+        }
     }
 
     public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
@@ -181,9 +222,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     public updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void {
         if (!this.device) return;
         if (!this.particles.uploadSeeds(seeds, width, height, this.params.getTime())) return;
-        if (this.lastIntermediateView) {
-            this.rebuildComputeBindGroup(this.lastIntermediateView);
-        }
+        this.rebuildComputeBindGroup();
     }
 
     /** True when bindings 7/8 are the real particle textures (not 1×1 dummies). */
@@ -223,8 +262,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
     private dispatch(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
         const res = this.resources;
+        const bindGroup = this.currentComputeBindGroup();
         if (
-            !this.computeBindGroup
+            !bindGroup
             || !this.computePipeline
             || !res.computeUniformsBuffer
             || res.writeWidth <= 0
@@ -251,8 +291,9 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
         recordWeatherPass(commandEncoder, {
             pipeline: this.computePipeline,
-            bindGroup: this.computeBindGroup,
+            bindGroup,
             lutBindGroup: this.lut.getBindGroup(),
+            sceneDepthBindGroup: this.sceneDepth?.bindGroup ?? getSceneDepthFallback(this.device),
             width: res.writeWidth,
             height: res.writeHeight,
             timing,
@@ -262,17 +303,19 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         if (particlesRan) {
             this.particles.swapIfActive();
         }
-        if (this.lastIntermediateView) {
-            this.rebuildComputeBindGroup(this.lastIntermediateView);
-        }
     }
 
-    private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    /**
+     * `textureLoad` blit of the write texture into `target` (the swap chain
+     * when omitted). Both are the intermediate's size — the swap chain at
+     * render scale 1, the upscale pass's road target below it.
+     */
+    private blit(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext, target?: GPUTextureView): void {
         if (!this.blitBindGroup || !this.blitPipeline) return;
         recordBlitPass(commandEncoder, {
             pipeline: this.blitPipeline,
             bindGroup: this.blitBindGroup,
-            targetView: this.context.getCurrentTexture().createView(),
+            targetView: target ?? this.context.getCurrentTexture().createView(),
             timing,
         });
         this.copyColorHistory(commandEncoder);
@@ -287,16 +330,16 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             width: res.writeWidth,
             height: res.writeHeight,
         });
-        if (!copied) return;
+        if (!copied || res.historyReady) return;
+        // First copy: binding 9 switches from the dummy to the real history.
         res.historyReady = true;
-        if (this.lastIntermediateView) {
-            this.rebuildComputeBindGroup(this.lastIntermediateView);
-        }
+        this.rebuildComputeBindGroup();
     }
 
     public renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void {
         if (!this.device || !this.computePipeline) return;
 
@@ -307,7 +350,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             recordIntermediateClear(commandEncoder, intermediateTextureView);
 
             this.dispatch(commandEncoder);
-            this.blit(commandEncoder);
+            this.blit(commandEncoder, undefined, target);
 
             afterWeather?.(commandEncoder);
 
@@ -317,9 +360,13 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    public renderPass(
+        commandEncoder: GPUCommandEncoder,
+        timing?: WeatherPassTimingContext,
+        target?: GPUTextureView,
+    ): void {
         this.dispatch(commandEncoder, timing);
-        this.blit(commandEncoder, timing);
+        this.blit(commandEncoder, timing, target);
     }
 
     public dispose(): void {
@@ -327,7 +374,8 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.particles.dispose();
         this.lut.dispose();
         this.computePipeline = null;
-        this.computeBindGroup = null;
+        this.sceneDepth = null;
+        this.invalidateComputeBindGroups();
         this.blitPipeline = null;
         this.blitBindGroup = null;
     }

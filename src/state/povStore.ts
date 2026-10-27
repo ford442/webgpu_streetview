@@ -36,6 +36,8 @@ export interface PovStore {
   subscribe(listener: () => void): () => void;
   setHeading(value: PovUpdate): void;
   setPitch(value: PovUpdate): void;
+  /** Heading + pitch in one write (one notify) — the car-mode per-frame sync. */
+  setView(heading: number, pitch: number): void;
   setZoom(value: PovUpdate): void;
   setCarHeading(value: PovUpdate): void;
   /** Replace the whole POV (provider mount / tests). Always notifies if anything changed. */
@@ -83,6 +85,7 @@ export function createPovStore(initial: Partial<Pov> = {}): PovStore {
     },
     setHeading: (v) => commit({ ...state, heading: resolve(v, state.heading) }),
     setPitch: (v) => commit({ ...state, pitch: resolve(v, state.pitch) }),
+    setView: (heading, pitch) => commit({ ...state, heading, pitch }),
     setZoom: (v) => commit({ ...state, zoom: resolve(v, state.zoom) }),
     setCarHeading: (v) => commit({ ...state, carHeading: resolve(v, state.carHeading) }),
     reset: (next = {}) => commit({ ...DEFAULT_POV, ...next }),

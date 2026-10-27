@@ -45,6 +45,13 @@ export interface VisualPreset {
    * pitch-only horizon and skips the per-row luma readback.
    */
   horizonEstimateBlend: number;
+  /**
+   * Weight (0–1) of the monocular scene-depth map against the depth proxy
+   * (renderer/depth/ → `SceneDepthParams.blend`). 0 keeps today's proxy
+   * bit-exactly and never downloads the model; above 0 it applies only once
+   * the user opts in (weather panel, `?depth`).
+   */
+  depthBlend: number;
 
   /**
    * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
@@ -68,6 +75,15 @@ export interface VisualPreset {
   targetFPS: number;
   pixelRatio: number;
   antialias: boolean;
+  /**
+   * Road render scale (#329, `renderer/renderScale.ts`): pass 1 and weather
+   * render at `canvas × scale` and the upscale pass brings the frame back to
+   * the swap chain. `renderScale` is where a session starts and the most the
+   * frame-budget loop will climb to; `renderScaleMin` is how far it may drop.
+   * `?scale=` pins one value and switches the loop off.
+   */
+  renderScale: number;
+  renderScaleMin: number;
 }
 
 // ============================================================
@@ -100,6 +116,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
+    depthBlend: 0,
 
     maxLights: 2,
     ambientOcclusion: false,
@@ -111,6 +128,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 30,
     pixelRatio: 0.75,
     antialias: false,
+    renderScale: 0.75,
+    renderScaleMin: 0.5,
   },
 
   medium: {
@@ -138,6 +157,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: false,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
+    depthBlend: 0,
 
     maxLights: 4,
     ambientOcclusion: false,
@@ -149,6 +169,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 30,
     pixelRatio: 1.0,
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.6,
   },
 
   high: {
@@ -179,6 +201,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: true,
     motionBlurEnabled: false,
     horizonEstimateBlend: 0.5,
+    depthBlend: 0.6,
 
     maxLights: 8,
     ambientOcclusion: true,
@@ -190,6 +213,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 60,
     pixelRatio: 1.0,
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.7,
   },
 
   ultra: {
@@ -217,6 +242,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     depthOfFieldEnabled: true,
     motionBlurEnabled: true,
     horizonEstimateBlend: 0.7,
+    depthBlend: 0.8,
 
     maxLights: 16,
     ambientOcclusion: true,
@@ -228,6 +254,8 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     targetFPS: 60,
     pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2),
     antialias: true,
+    renderScale: 1.0,
+    renderScaleMin: 0.75,
   },
 };
 

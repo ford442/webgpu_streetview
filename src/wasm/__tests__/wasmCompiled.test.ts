@@ -1,12 +1,11 @@
 /**
  * src/wasm/__tests__/wasmCompiled.test.ts
  *
- * Loads the actual compiled public/wasm/streetview-wasm.wasm binary directly
- * (bypassing fetch, which loadWasmModule() uses and which always fails in
- * jsdom/Node — see wasm.test.ts) so the real WASM path gets exercised too,
- * not just the pure-JS fallback. The raw exports are driven here; the
- * loader's marshalling wrappers over the same binary are exercised in
- * wasmScratchArena.test.ts.
+ * Loads the compiled public/wasm/streetview-wasm.wasm binary directly with
+ * WebAssembly.instantiate and drives its raw exports (pointers, linear
+ * memory) — below the loader. The marshalling wrappers over the same binary
+ * are exercised in wasm.test.ts and wasmScratchArena.test.ts; the exact
+ * numbers are pinned by wasmGoldenParity.test.ts.
  */
 
 import { readFileSync } from 'fs';
@@ -244,86 +243,6 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(Array.from(again)).toEqual(Array.from(first));
   });
 
-  test('fill_particle_seeds matches the JS fallback bit-for-bit', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
-    // fetch() is unavailable here, so this resolves to the pure-JS fallback.
-    const fallback = await loadWasmModule();
-    expect(fallback.isWasm).toBe(false);
-
-    const count = 32;
-    const ptr = SCRATCH;
-    exp.fill_particle_seeds(ptr, count, 777);
-    const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count * 4));
-
-    const jsBuf = new Float32Array(count * 4);
-    fallback.fillParticleSeeds(jsBuf, count, 777);
-    expect(Array.from(jsBuf)).toEqual(fromWasm);
-    _resetWasmModule();
-  });
-
-  test('fill_engine_noise matches the JS fallback bit-for-bit', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
-    const fallback = await loadWasmModule();
-    expect(fallback.isWasm).toBe(false);
-
-    const count = 48;
-    const ptr = SCRATCH;
-    const args = [2200, 0.55, 48, 0.75, 33075, 44100] as const;
-    const wasmPhase = exp.fill_engine_noise(ptr, count, ...args);
-    const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
-
-    const jsBuf = new Float32Array(count);
-    const jsPhase = fallback.fillEngineNoise(jsBuf, count, ...args);
-    expect(Array.from(jsBuf)).toEqual(fromWasm);
-    expect(jsPhase).toBe(wasmPhase);
-    _resetWasmModule();
-  });
-
-  test('fill_cabin_ir matches the JS fallback bit-for-bit', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
-    const fallback = await loadWasmModule();
-    expect(fallback.isWasm).toBe(false);
-
-    // A fractional openness on purpose: the interpolated coefficients are
-    // where an f64 literal in the twin would show up (the 0/1 endpoints
-    // collapse to an exact operand and hide the difference).
-    const count = 128;
-    const ptr = SCRATCH;
-    const args = [1, 0.35, 48000] as const;
-    exp.fill_cabin_ir(ptr, count, ...args);
-    const fromWasm = Array.from(new Float32Array(exp.memory.buffer, ptr, count));
-
-    const jsBuf = new Float32Array(count);
-    fallback.fillCabinIr(jsBuf, count, ...args);
-    expect(Array.from(jsBuf)).toEqual(fromWasm);
-    _resetWasmModule();
-  });
-
-  test('fill_hrtf matches the JS fallback bit-for-bit', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
-    const fallback = await loadWasmModule();
-    expect(fallback.isWasm).toBe(false);
-
-    const count = 32;
-    const leftPtr = SCRATCH;
-    const rightPtr = leftPtr + count * 4;
-    const args = [45, 44100] as const;
-    exp.fill_hrtf(leftPtr, rightPtr, count, ...args);
-    const leftFromWasm = Array.from(new Float32Array(exp.memory.buffer, leftPtr, count));
-    const rightFromWasm = Array.from(new Float32Array(exp.memory.buffer, rightPtr, count));
-
-    const leftJs = new Float32Array(count);
-    const rightJs = new Float32Array(count);
-    fallback.fillHrtf(leftJs, rightJs, count, ...args);
-    expect(Array.from(leftJs)).toEqual(leftFromWasm);
-    expect(Array.from(rightJs)).toEqual(rightFromWasm);
-    _resetWasmModule();
-  });
-
   test('batch_haversine writes per-segment distances and returns their sum', () => {
     const points = [
       [40.7128, -74.006],
@@ -350,22 +269,13 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(total).toBeCloseTo(expectedTotal, 6);
   });
 
-  test('offset_latlng agrees with the JS twin and lands the requested distance away', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
-    const fallback = await loadWasmModule();
-    expect(fallback.isWasm).toBe(false);
-
+  test('offset_latlng lands the requested distance away on every bearing', () => {
     const ptr = SCRATCH;
     for (let bearing = 0; bearing < 360; bearing += 45) {
       exp.offset_latlng(40.7128, -74.006, 10, bearing, ptr);
       const out = new Float64Array(exp.memory.buffer, ptr, 2);
-      const twin = fallback.offsetLatLng(40.7128, -74.006, 10, bearing);
-      expect(out[0]).toBeCloseTo(twin.lat, 12);
-      expect(out[1]).toBeCloseTo(twin.lng, 12);
       expect(exp.haversine(40.7128, -74.006, out[0]!, out[1]!)).toBeCloseTo(10, 6);
     }
-    _resetWasmModule();
   });
 
   test('batch_haversine returns 0 and writes nothing for fewer than two points', () => {

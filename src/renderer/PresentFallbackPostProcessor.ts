@@ -96,12 +96,16 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
         });
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    public renderPass(
+        commandEncoder: GPUCommandEncoder,
+        timing?: WeatherPassTimingContext,
+        target?: GPUTextureView,
+    ): void {
         if (!this.pipeline || !this.bindGroup) return;
         const pass = commandEncoder.beginRenderPass({
             label: 'present-fallback',
             colorAttachments: [{
-                view: this.context.getCurrentTexture().createView(),
+                view: target ?? this.context.getCurrentTexture().createView(),
                 clearValue: { r: 0, g: 0, b: 0, a: 1 },
                 loadOp: 'clear',
                 storeOp: 'store',
@@ -119,6 +123,7 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
     public renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void {
         if (!this.pipeline) return;
         try {
@@ -133,7 +138,7 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
                     storeOp: 'store',
                 }],
             }).end();
-            this.renderPass(encoder);
+            this.renderPass(encoder, undefined, target);
             afterWeather?.(encoder);
             this.device.queue.submit([encoder.finish()]);
         } catch {
@@ -145,6 +150,8 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
     public updateParticleSeeds(): void {}
     public setLookLut(): void {}
     public setTemporalHistoryEnabled(): void {}
+    /** The fallback is a plain ACES blit; there is no depth consumer to feed. */
+    public setSceneDepth(): void {}
     public updateWeatherParams(): void {}
     public updateColorParams(): void {}
     public updateWeatherAnimation(): void {}

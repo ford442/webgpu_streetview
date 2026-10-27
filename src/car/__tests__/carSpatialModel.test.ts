@@ -1,46 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   cabinAudioPanFromHeadYaw,
-  cabinCameraWorldYaw,
+  carRelativeBearing,
+  clampHeadPitch,
+  clampHeadYaw,
+  dampTowardZero,
+  MAX_STEER_RATE_DPS,
   NIGHT_BASE_FLOOR,
   NIGHT_SKY_FLOOR,
+  panoramaPovFromCabin,
+  steerDeltaFromMouse,
   WEATHER_FALL_Y_SIGN,
-  freeLookDragShouldSteer,
   nightBaseLuminance,
   weatherParticleYDelta,
   wiperLowQualityOnPose,
   wiperParkPose,
 } from '../carSpatialModel';
-
-describe('carSpatialModel free-look steering contract', () => {
-  it('steers only when the steering wheel is grabbed', () => {
-    expect(
-      freeLookDragShouldSteer({ isSteeringWheelDrag: true })
-    ).toBe(true);
-  });
-
-  it('does not steer on RMB or Shift alone', () => {
-    expect(
-      freeLookDragShouldSteer({
-        isSteeringWheelDrag: false,
-        isRightMouse: true,
-        shiftKey: true,
-      })
-    ).toBe(false);
-    expect(
-      freeLookDragShouldSteer({
-        isSteeringWheelDrag: false,
-        isRightMouse: true,
-      })
-    ).toBe(false);
-    expect(
-      freeLookDragShouldSteer({
-        isSteeringWheelDrag: false,
-        shiftKey: true,
-      })
-    ).toBe(false);
-  });
-});
 
 describe('carSpatialModel night exposure floors', () => {
   it('keeps full-night luminance well above crushed black', () => {
@@ -84,19 +59,50 @@ describe('carSpatialModel cabin audio pan', () => {
   });
 });
 
-describe('carSpatialModel cabin camera world yaw', () => {
-  it('matches Street View heading when the head is centered on the chassis', () => {
-    expect(cabinCameraWorldYaw(34, 0)).toBeCloseTo(34, 5);
-    expect(cabinCameraWorldYaw(0, 0)).toBeCloseTo(0, 5);
+const deg = (d: number) => (d * Math.PI) / 180;
+
+describe('carSpatialModel panorama POV from the cabin', () => {
+  it('is carHeading − headYaw (the compass/Three.js sign flip)', () => {
+    expect(panoramaPovFromCabin(34, 0, 0)).toEqual({ heading: 34, pitch: 0 });
+    // Looking LEFT (+yaw) turns the compass heading counter-clockwise.
+    expect(panoramaPovFromCabin(34, deg(90), 0).heading).toBeCloseTo(304, 9);
+    expect(panoramaPovFromCabin(34, deg(-20), 0).heading).toBeCloseTo(54, 9);
+    expect(panoramaPovFromCabin(10, deg(30), deg(15))).toEqual({
+      heading: expect.closeTo(340, 9),
+      pitch: expect.closeTo(15, 9),
+    });
   });
 
-  it('adds the signed look offset without dragging chassis yaw', () => {
-    expect(cabinCameraWorldYaw(34, 20)).toBeCloseTo(54, 5);
-    expect(cabinCameraWorldYaw(34, -15)).toBeCloseTo(19, 5);
+  it('clamps the head to ±90° yaw and −45°..+45° pitch', () => {
+    expect(clampHeadYaw(deg(120))).toBeCloseTo(deg(90), 12);
+    expect(clampHeadYaw(deg(-120))).toBeCloseTo(deg(-90), 12);
+    expect(clampHeadPitch(deg(60))).toBeCloseTo(deg(45), 12);
+    expect(clampHeadPitch(deg(-60))).toBeCloseTo(deg(-45), 12);
   });
 
-  it('wraps through 0/360', () => {
-    expect(cabinCameraWorldYaw(350, 20)).toBeCloseTo(10, 5);
-    expect(cabinCameraWorldYaw(10, -20)).toBeCloseTo(350, 5);
+  it('measures world bearings from the car nose', () => {
+    expect(carRelativeBearing(124, 34)).toBe(90);
+    expect(carRelativeBearing(10, 350)).toBe(20);
+  });
+});
+
+describe('carSpatialModel head recentre damping', () => {
+  it('is frame-rate independent (x · e^(−k·dt))', () => {
+    const k = 4;
+    let at30 = 1;
+    for (let i = 0; i < 30; i++) at30 = dampTowardZero(at30, k, 1 / 30);
+    let at144 = 1;
+    for (let i = 0; i < 144; i++) at144 = dampTowardZero(at144, k, 1 / 144);
+    expect(at30).toBeCloseTo(Math.exp(-k), 9);
+    expect(at144).toBeCloseTo(Math.exp(-k), 9);
+  });
+});
+
+describe('carSpatialModel mouse steering', () => {
+  it('turns right for mouse right and caps the yaw rate', () => {
+    expect(steerDeltaFromMouse(10, 1 / 60)).toBeGreaterThan(0);
+    expect(steerDeltaFromMouse(-10, 1 / 60)).toBeLessThan(0);
+    // A huge flick in one 60 Hz event cannot exceed MAX_STEER_RATE_DPS / 60.
+    expect(steerDeltaFromMouse(10_000, 1 / 60)).toBeCloseTo(MAX_STEER_RATE_DPS / 60, 9);
   });
 });

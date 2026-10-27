@@ -12,8 +12,8 @@ import { chromium } from 'playwright';
 
 const BASE = process.env.E2E_BASE_URL || 'http://127.0.0.1:3000';
 const outDir = process.argv[2] || 'cabin-look-out';
-// Driver's-eye framing on the cluster + center stack (head pitch is degrees, +down).
-const FRAME = 'pitch=25&w=640&h=360&frames=30';
+// Driver's-eye framing on the cluster + center stack (head pitch is degrees, +up like Street View).
+const FRAME = 'pitch=-25&w=640&h=360&frames=30';
 const DEFAULT_SHOTS = {
   'day': `${FRAME}&night=0&alt=0.6`,
   'night-dome-off': `${FRAME}&night=1&hl=1`,

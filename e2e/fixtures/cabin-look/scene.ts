@@ -7,7 +7,8 @@
  * `CabinCompositePass`. Reports a PNG data URL on `window.__out.png`.
  *
  * Query: w, h, frames, night (0-1), alt (sun altitude, rad), az, dome, hl,
- * rain, vehicle, quality (low|medium|high, default medium), yaw (head yaw offset, deg), pitch (deg).
+ * rain, vehicle, quality (low|medium|high, default medium), yaw (head yaw, deg, + = look right like
+ * Street View), pitch (deg, + = look up).
  * Diagnostics: `probe` (emitter attribution over `region=x0,y0,x1,y1` as frame
  * fractions, default the cluster well), `sprites=0` (hide the glow halos for a
  * with/without pair), `glowgain=<n>` (force shader-halo intensity), and
@@ -129,7 +130,8 @@ async function main() {
     interior.setHeadlights(hl);
 
     for (let f = 0; f < frames; f++) {
-        updateCarMode(0, yaw, pitch, 0, night, hl, dome);
+        // updateCarMode takes the car-local head pose in radians, +yaw = look LEFT.
+        updateCarMode(0, (-yaw * Math.PI) / 180, (pitch * Math.PI) / 180, 0, night, hl, dome);
         await new Promise((r) => setTimeout(r, 0));
     }
     await device.queue.onSubmittedWorkDone();

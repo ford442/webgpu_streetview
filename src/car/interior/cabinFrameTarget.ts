@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import type { CabinOverlaySource } from '../../renderer/cabinComposite';
+import type { CabinOverlayLayout, CabinOverlaySource } from '../../renderer/cabinComposite';
 import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
 import { estimateTextureBytes } from '../../renderer/gpuTextureBytes';
 import { getMemoryProfiler } from '../../utils/memoryProfiler';
@@ -104,6 +104,8 @@ export class CabinFrameTarget {
     /** Latched once the backend refuses the texture — stop re-asking every frame. */
     private failureReason: string | undefined;
     private disposed = false;
+    /** How the last frame was drawn: one view, or two eyes side by side (#331). */
+    private layout: CabinOverlayLayout = 'mono';
     private readonly memoryId = `cabin-frame-target#${nextMemoryId++}`;
 
     private constructor(
@@ -178,9 +180,14 @@ export class CabinFrameTarget {
         return readRenderTargetGpuTexture(this.renderer, this.target);
     }
 
+    /** Set by the cabin renderer after each draw. */
+    public setLayout(layout: CabinOverlayLayout): void {
+        this.layout = layout;
+    }
+
     /** Adapter for `renderer/cabinOverlayRegistry`. */
     public asOverlaySource(): CabinOverlaySource {
-        return { getTexture: () => this.getTexture() };
+        return { getTexture: () => this.getTexture(), getLayout: () => this.layout };
     }
 
     public dispose(): void {

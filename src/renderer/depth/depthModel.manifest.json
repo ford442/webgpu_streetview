@@ -1,0 +1,30 @@
+{
+  "$comment": "Scene-depth model + runtime pins (#320). Read by src/renderer/depth/depthModel.ts and scripts/fetch-depth-model.mjs. Changing a file or hash: bump cacheVersion so browsers drop the old Cache API bucket.",
+  "model": "Depth Anything V2 Small",
+  "license": "Apache-2.0",
+  "source": "https://huggingface.co/onnx-community/depth-anything-v2-small",
+  "revision": "4472b7362082ad9968fee890ca0f1e5aca36b93d",
+  "cacheVersion": 1,
+  "variants": {
+    "q4f16": {
+      "file": "depth-anything-v2-small.q4f16.onnx",
+      "remote": "onnx/model_q4f16.onnx",
+      "bytes": 19126267,
+      "sha256": "eca72971aea64216d767c70c534160de53b5435b588d362bac6dbd5a73f9bf1e",
+      "requiresShaderF16": true
+    },
+    "q4": {
+      "file": "depth-anything-v2-small.q4.onnx",
+      "remote": "onnx/model_q4.onnx",
+      "bytes": 27404416,
+      "sha256": "5d55b02762e1907589158af3e366bd61ddf648155852a07bbf5e3a074639fcf8",
+      "requiresShaderF16": false
+    }
+  },
+  "runtime": {
+    "package": "onnxruntime-web",
+    "version": "1.30.0",
+    "entry": "dist/ort.webgpu.min.mjs",
+    "downloadBytes": 5528011
+  }
+}

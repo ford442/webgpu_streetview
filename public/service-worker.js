@@ -24,6 +24,8 @@ const PRECACHE_URLS = [
   './shaders/transition-zoom-blur.wgsl',
   './shaders/transition-zoom-chromatic.wgsl',
   './wasm/streetview-wasm.wasm',
+  // The cabin AudioWorklet's engine (SIMD128 build of the same sources).
+  './wasm/streetview-wasm.simd.wasm',
   './icons/icon.svg',
 ];
 
@@ -62,7 +64,8 @@ function resolveStrategy(url, method) {
 function cacheFirst(request) {
   return caches.open(RUNTIME_CACHE).then(function (cache) {
     return cache.match(request).then(function (cached) {
-      var network = fetch(request)
+      if (cached) return cached;
+      return fetch(request)
         .then(function (response) {
           if (response && response.ok) {
             cache.put(request, response.clone());
@@ -70,9 +73,8 @@ function cacheFirst(request) {
           return response;
         })
         .catch(function () {
-          return cached;
+          return Response.error();
         });
-      return cached || network;
     });
   });
 }
@@ -91,10 +93,13 @@ function networkFirst(request) {
           if (cached) return cached;
           if (request.mode === 'navigate') {
             return cache.match('./index.html').then(function (shell) {
-              return shell || cache.match('./');
+              if (shell) return shell;
+              return cache.match('./').then(function (root) {
+                return root || Response.error();
+              });
             });
           }
-          return undefined;
+          return Response.error();
         });
       });
   });

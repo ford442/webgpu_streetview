@@ -6,14 +6,16 @@
 #   source /path/to/emsdk/emsdk_env.sh    # activate emcc (pin: cpp/emsdk.version)
 #
 # Output:
-#   public/wasm/streetview-wasm.wasm      – standalone WASM (no JS glue)
-#   public/wasm/streetview-wasm.wasm.sha256 – SHA-256 of the C++ inputs
+#   public/wasm/streetview-wasm.wasm      – standalone WASM (no JS glue), scalar
+#   public/wasm/streetview-wasm.simd.wasm – the same sources with -msimd128
+#                                           (the AudioWorklet's cabin DSP)
+#   public/wasm/streetview-wasm.wasm.sha256 – SHA-256 of the C++ inputs (both
+#                                           binaries come from the same inputs)
 #
 # Usage:
 #   bash scripts/build-wasm.sh [--release|--debug]
 #
 # Env:
-#   STREETVIEW_WASM_SIMD=ON   pass -DSTREETVIEW_WASM_SIMD=ON (CI only; not shipped)
 #   CI=true                   fail if emcc is missing (do not reuse a stale binary)
 
 set -euo pipefail
@@ -41,6 +43,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$REPO_ROOT/cpp"
 OUT_DIR="$REPO_ROOT/public/wasm"
 WASM_OUT="$OUT_DIR/streetview-wasm.wasm"
+SIMD_OUT="$OUT_DIR/streetview-wasm.simd.wasm"
 HASH_OUT="$OUT_DIR/streetview-wasm.wasm.sha256"
 GLUE_JS="$OUT_DIR/streetview-wasm.js"
 
@@ -67,7 +70,7 @@ if ! command -v emcc &>/dev/null; then
     echo "       (see WASM.md / mymindstorm/setup-emsdk)." >&2
     exit 1
   fi
-  if [ -f "$WASM_OUT" ] && [ -f "$HASH_OUT" ] && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
+  if [ -f "$WASM_OUT" ] && [ -f "$SIMD_OUT" ] && [ -f "$HASH_OUT" ] && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
     echo "==> emcc not found; C++ source hash matches committed wasm — skipping rebuild."
     exit 0
   fi
@@ -100,19 +103,12 @@ BUILD_DIR="$CPP_DIR/build-emscripten"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-SIMD_CMAKE=()
-if [[ "${STREETVIEW_WASM_SIMD:-}" == "ON" || "${STREETVIEW_WASM_SIMD:-}" == "1" ]]; then
-  SIMD_CMAKE=(-DSTREETVIEW_WASM_SIMD=ON)
-  echo "==> STREETVIEW_WASM_SIMD=ON (autovectorization only; do not ship this binary)"
-fi
-
 # Optimisation level comes from CMAKE_BUILD_TYPE only (see cpp/CMakeLists.txt).
 # CMAKE_CXX_FLAGS is passed empty so a stale cache entry from an older script
 # (which passed -O3 here) cannot leak into the build.
 emcmake cmake "$CPP_DIR" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_CXX_FLAGS="" \
-  "${SIMD_CMAKE[@]}"
+  -DCMAKE_CXX_FLAGS=""
 
 emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
@@ -120,17 +116,17 @@ emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 # into build/ by Vite and precached by the service worker.
 rm -f "$GLUE_JS"
 
-if [ ! -f "$WASM_OUT" ] || [ ! -s "$WASM_OUT" ]; then
-  echo "ERROR: expected non-empty $WASM_OUT after emcc link." >&2
-  exit 1
-fi
+for out in "$WASM_OUT" "$SIMD_OUT"; do
+  if [ ! -f "$out" ] || [ ! -s "$out" ]; then
+    echo "ERROR: expected non-empty $out after emcc link." >&2
+    exit 1
+  fi
+done
 
 # Record the C++ source hash so verify-build.sh can detect staleness.
-# SIMD CI rebuilds must not rewrite the committed hash of the scalar ship binary.
-if [[ "${STREETVIEW_WASM_SIMD:-}" != "ON" && "${STREETVIEW_WASM_SIMD:-}" != "1" ]]; then
-  printf '%s\n' "$SOURCE_HASH" > "$HASH_OUT"
-  echo "==> C++ source hash written: $SOURCE_HASH"
-fi
+printf '%s\n' "$SOURCE_HASH" > "$HASH_OUT"
+echo "==> C++ source hash written: $SOURCE_HASH"
 
 echo "==> Emscripten build done."
 echo "    WASM: $WASM_OUT ($(wc -c < "$WASM_OUT") bytes)"
+echo "    SIMD: $SIMD_OUT ($(wc -c < "$SIMD_OUT") bytes)"

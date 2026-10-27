@@ -9,7 +9,6 @@ import {
   setCarWipers,
   setCarSeatOffset,
   updateCarGauges,
-  isCarSteeringWheelHit,
   setWindowTint,
   setMirrorStreetViewCanvas,
   setCarZoomFOV,
@@ -25,11 +24,10 @@ import {
   CarModeState,
   type GearPosition,
 } from '../../car';
-import { publishCameraSpeed, resetCameraSpeed } from '../../renderer/cameraMotionSignal';
+import { publishCameraSpeed } from '../../renderer/cameraMotionSignal';
 import { VehicleDynamics, VehicleTelemetry } from '../../car/VehicleDynamics';
 import { applyVehicleTelemetry } from '../../car/telemetryFeed';
-import { CabinAudio } from '../../car/audio/CabinAudio';
-import { SpringPhysics } from '../../animation/PhysicsAnimations';
+import { CabinAudio, type CabinEnvironment } from '../../car/audio/CabinAudio';
 import {
   createCabinRendererAsync,
   preloadWebGPUCabinRenderer,
@@ -38,6 +36,34 @@ import {
 import { detectGPUProfile } from '../../utils/performance';
 import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect } from '../../state/povStore';
+import { cabinHeadStore } from '../../state/cabinHeadStore';
+import { createCabinPovSync } from '../../car/input/cabinPovSync';
+import { frameTailScheduler } from '../../renderer/reproject/frameTail';
+import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../car/carSpatialModel';
+import { cancelFrame, isXrDriven, requestFrame } from '../../xr/frameClock';
+import { tripStore } from '../../state/tripStore';
+import { liveConditionsStore } from '../../state/liveConditionsStore';
+
+/**
+ * The world the cabin engine hears, read imperatively once per frame: the
+ * weather panel (which live conditions drive while live), the live
+ * precipitation/wind themselves, and the routed trip's cruise pace.
+ */
+function readCabinEnvironment(
+  { rainIntensity, wind, wipersEnabled }: Pick<CabinEnvironment, 'rainIntensity' | 'wind' | 'wipersEnabled'>,
+): CabinEnvironment {
+  const live = liveConditionsStore.get();
+  const conditions = live.status === 'live' ? live.conditions : null;
+  const trip = tripStore.get();
+  return {
+    rainIntensity,
+    wind,
+    wipersEnabled,
+    livePrecipitationMm: conditions?.precipitationMm ?? null,
+    liveWindKmh: conditions?.windSpeedKmh ?? null,
+    tripSpeedMps: trip.status === 'driving' ? trip.progress?.avgSpeedMps ?? null : null,
+  };
+}
 
 export interface UseCarDashboardBridgeOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -45,7 +71,6 @@ export interface UseCarDashboardBridgeOptions {
   /** Street View's shared `GPUDevice` — see `createCabinRenderer.ts`. */
   sharedGpuDevice?: GPUDevice;
   controlMode: ControlMode;
-  panorama: google.maps.StreetViewPanorama | null;
   position: google.maps.LatLng | null;
   canvas: HTMLCanvasElement | null;
   wipersEnabled: boolean;
@@ -66,7 +91,7 @@ export interface UseCarDashboardBridgeOptions {
 export interface UseCarDashboardBridgeResult {
   telemetry: VehicleTelemetry;
   steeringInputRef: React.MutableRefObject<number>;
-  isSteeringWheelAtPoint: (x: number, y: number) => boolean;
+  isDashboardControlAtPoint: (x: number, y: number) => boolean;
   handleDisplayMouseDown: (e: React.MouseEvent) => void;
   handleDisplayClick: (e: React.MouseEvent) => void;
   handleThrust: (direction: 'forward' | 'backward') => void;
@@ -78,7 +103,6 @@ export function useCarDashboardBridge({
   registerCarModeState,
   sharedGpuDevice,
   controlMode,
-  panorama,
   position,
   canvas,
   wipersEnabled,
@@ -106,12 +130,12 @@ export function useCarDashboardBridge({
   });
   const lastTelemetryPushRef = useRef(0);
   const cabinAudioRef = useRef<CabinAudio | null>(null);
-  const rollSpringRef = useRef(new SpringPhysics({ stiffness: 48, damping: 9, mass: 1 }));
-  const pitchSpringRef = useRef(new SpringPhysics({ stiffness: 36, damping: 8, mass: 1 }));
+  // Read by the frame loop; a ref so a weather slider drag does not restart it.
+  const cabinWeatherRef = useRef({ rainIntensity, wind, wipersEnabled });
   const prevPositionRef = useRef<google.maps.LatLng | null>(null);
-  const bodyPitchRef = useRef(0);
-  const bodyRollRef = useRef(0);
-  const pitchImpulseRef = useRef(0);
+  // One sync for the life of the view (it remembers what it last wrote, to
+  // tell its own writes from a tour/shared-session aiming the view).
+  const povSyncRef = useRef(createCabinPovSync());
 
   const displayPressRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -164,9 +188,6 @@ export function useCarDashboardBridge({
       toggleCarMode(false);
       disposeCarMode();
       carModeStateRef.current = null;
-      bodyPitchRef.current = 0;
-      bodyRollRef.current = 0;
-      pitchImpulseRef.current = 0;
       cabinAudioRef.current?.dispose();
       cabinAudioRef.current = null;
     };
@@ -212,12 +233,16 @@ export function useCarDashboardBridge({
   }, [rainIntensity, wind, fogDensity, snowIntensity, sunAltitude, isRoofOpen]);
 
   useEffect(() => {
-    setCarInteriorEditMode(controlMode === 'uiMouse');
+    setCarInteriorEditMode(controlMode === 'UI_INTERACT');
   }, [controlMode]);
 
   useEffect(() => {
     setCarWeather(rainIntensity / 100);
   }, [rainIntensity]);
+
+  useEffect(() => {
+    cabinWeatherRef.current = { rainIntensity, wind, wipersEnabled };
+  }, [rainIntensity, wind, wipersEnabled]);
 
   useEffect(() => {
     setMirrorStreetViewCanvas(canvas);
@@ -240,33 +265,41 @@ export function useCarDashboardBridge({
     let rafId: number;
     let lastTime = performance.now();
 
-    const animate = () => {
+    const animate = (frameTime?: number) => {
       if (!active) return;
       const now = performance.now();
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
 
-      const pov = povStore.get();
-      const headYawOffset = (pov.heading - pov.carHeading + 540) % 360 - 180;
-      const headPitch = pov.pitch;
-
-      if (panorama) {
-        panorama.setPov({
-          heading: pov.heading,
-          pitch: pov.pitch,
-        });
+      // STEER: the head drifts back to centre, frame-rate independent — not
+      // while a headset is the head (#331): its pose is the user's own.
+      if (controlMode === 'STEER' && !isXrDriven()) {
+        const { headYaw, headPitch } = cabinHeadStore.get();
+        const settle = (x: number) => {
+          const next = dampTowardZero(x, STEER_HEAD_RECENTER_RATE, Math.min(deltaTime, 0.1));
+          return Math.abs(next) < 1e-4 ? 0 : next;
+        };
+        cabinHeadStore.set({ headYaw: settle(headYaw), headPitch: settle(headPitch) });
       }
 
+      // The one place the Street View POV is set in car mode: derived from
+      // carHeading + head pose, written to povStore, forwarded to Maps by
+      // useStreetView (which honours hold-pause).
+      povSyncRef.current.sync();
+
+      const head = cabinHeadStore.get();
       updateCarMode(
-        pov.carHeading,
-        headYawOffset,
-        headPitch,
+        povStore.get().carHeading,
+        head.headYaw,
+        head.headPitch,
         carSpeedRef.current,
         nightIntensity,
         headlightsOn,
         domeLightOn,
-        pov.heading,
       );
+      // The cabin for this display frame is drawn: release the road frame's
+      // tail (late latch, renderer/reproject/frameTail.ts) to present with it.
+      if (frameTime !== undefined) frameTailScheduler.producerDone(frameTime);
 
       setCarSteering(steeringInputRef.current);
 
@@ -275,12 +308,16 @@ export function useCarDashboardBridge({
       carSpeedRef.current = telem.speedKmh;
       applyVehicleTelemetry(telem, { updateCluster: updateCarGauges });
       publishCameraSpeed(telem.speedKmh);
-      cabinAudioRef.current?.update(telem, {
-        openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
-        // The cabin IR is per-vehicle, so the audio follows the vehicle
-        // picker the same way the interior does.
-        vehicle: getCurrentVehicleType(),
-      });
+      cabinAudioRef.current?.update(
+        telem,
+        {
+          openness: isRoofOpen || isConvertibleOpen() ? 1 : 0,
+          // The cabin IR is per-vehicle, so the audio follows the vehicle
+          // picker the same way the interior does.
+          vehicle: getCurrentVehicleType(),
+        },
+        readCabinEnvironment(cabinWeatherRef.current),
+      );
 
       if (now - lastTelemetryPushRef.current > 150) {
         lastTelemetryPushRef.current = now;
@@ -294,54 +331,21 @@ export function useCarDashboardBridge({
         }
       }
 
-      if (controlMode === 'carSteer') {
-        const targetRoll = steeringInputRef.current * 0.04;
-        bodyRollRef.current = rollSpringRef.current.update(deltaTime, targetRoll);
-        const targetPitch = pitchImpulseRef.current + (carSpeedRef.current > 0 ? -0.5 : 0);
-        bodyPitchRef.current = pitchSpringRef.current.update(deltaTime, targetPitch);
-        pitchImpulseRef.current *= 0.92;
-        bodyPitchRef.current = Math.max(-8, Math.min(8, bodyPitchRef.current));
-      } else {
-        // Free-look must not yaw or lean the chassis (#171).
-        bodyRollRef.current = rollSpringRef.current.update(deltaTime, 0);
-        bodyPitchRef.current = pitchSpringRef.current.update(deltaTime, 0);
-        pitchImpulseRef.current = 0;
-      }
-
-      if (carModeStateRef.current) {
-        carModeStateRef.current.interior.setCarOrientation(
-          povStore.get().carHeading,
-          bodyPitchRef.current,
-          bodyRollRef.current,
-        );
-      }
-
-      rafId = requestAnimationFrame(animate);
+      rafId = requestFrame(animate);
     };
 
-    rafId = requestAnimationFrame(animate);
+    // The window's rAF, or the WebXR session's while it presents (#331).
+    rafId = requestFrame(animate);
     return () => {
       active = false;
-      cancelAnimationFrame(rafId);
+      cancelFrame(rafId);
     };
-  }, [panorama, nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen, gearRef]);
+  }, [nightIntensity, headlightsOn, domeLightOn, controlMode, isRoofOpen, gearRef]);
 
-  useEffect(() => {
-    if (controlMode === 'freeLook') {
-      dynamicsRef.current?.stop();
-      resetCameraSpeed();
-      carSpeedRef.current = 0;
-      pitchImpulseRef.current = 0;
-      steeringInputRef.current = 0;
-      bodyPitchRef.current = 0;
-      bodyRollRef.current = 0;
-      rollSpringRef.current.reset(0);
-      pitchSpringRef.current.reset(0);
-    }
-  }, [controlMode]);
-
-  const isSteeringWheelAtPoint = useCallback((x: number, y: number): boolean => {
-    return isCarSteeringWheelHit(x, y);
+  // A UI_INTERACT click on the centre display is handled by `handleDisplayClick`;
+  // it must not also grab the pointer.
+  const isDashboardControlAtPoint = useCallback((x: number, y: number): boolean => {
+    return isCarCenterDisplayHit(x, y);
   }, []);
 
   const handleDisplayMouseDown = useCallback((e: React.MouseEvent) => {
@@ -351,21 +355,20 @@ export function useCarDashboardBridge({
   const handleDisplayClick = useCallback((e: React.MouseEvent) => {
     const press = displayPressRef.current;
     displayPressRef.current = null;
-    if (!press) return;
+    // Locked modes have no cursor: a click there is driving, not a display tap.
+    if (!press || controlMode !== 'UI_INTERACT') return;
     const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
     if (moved > 6) return;
     if (isCarCenterDisplayHit(e.clientX, e.clientY)) {
       cycleCarDisplayPage();
     }
-  }, []);
+  }, [controlMode]);
 
   const handleThrust = useCallback((direction: 'forward' | 'backward') => {
-    if (controlMode === 'freeLook') return;
     if (gearHopCount(gearRef.current) === 0) return;
-    pitchImpulseRef.current = direction === 'forward' ? -2 : 1;
     dynamicsRef.current?.noteThrust(direction);
     triggerCarInteriorPress(direction === 'forward' ? 'gasPedal' : 'brakePedal');
-  }, [controlMode, gearRef]);
+  }, [gearRef]);
 
   const handleSteeringDelta = useCallback((delta: number) => {
     steeringInputRef.current = Math.max(-90, Math.min(90, steeringInputRef.current + delta));
@@ -374,7 +377,7 @@ export function useCarDashboardBridge({
   return {
     telemetry,
     steeringInputRef,
-    isSteeringWheelAtPoint,
+    isDashboardControlAtPoint,
     handleDisplayMouseDown,
     handleDisplayClick,
     handleThrust,

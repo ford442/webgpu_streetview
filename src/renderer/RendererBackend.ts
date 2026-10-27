@@ -84,7 +84,12 @@ export interface StreetViewRenderer {
     isInTransition(): boolean;
     getTransitionDuration(mode?: string): number;
     captureCurrentFrame(): void;
-    beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement): void;
+    /**
+     * `travelHeading` (degrees) is the link heading of the hop being made, when
+     * there is one — the release dolly moves the held frame along it. Teleports
+     * pass nothing and keep the plain crossfade.
+     */
+    beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement, travelHeading?: number): void;
     endHoldTransition(): void;
     isHoldActive(): boolean;
     setTransitionProgress(progress: number): void;
@@ -98,6 +103,16 @@ export interface StreetViewRenderer {
         zoom?: number
     ): void;
     setDebugOptions?(options: Partial<RendererDebugOptions>): void;
+    /**
+     * WebGPU only (#331) — the split frame's tail: late latch / stereo.
+     * `livePov` is read when the tail encodes, after the car loop.
+     */
+    setPresentTail?(
+        options: import('./reproject/presentTail').PresentTailOptions,
+        livePov?: () => import('./reproject/reprojectMath').PovSample,
+    ): void;
+    /** WebGPU only (#331) — this display frame's rAF timestamp, before the render call. */
+    beginFrame?(frameTime: number): void;
     /** WebGPU only — returns which weather post-process pipeline is active. */
     getWeatherPostProcessMode?(): WeatherPostProcessMode;
     /** WebGPU only — updates panorama sampler anisotropy from the active quality preset. */
@@ -105,6 +120,8 @@ export interface StreetViewRenderer {
     /** #216 gpu-chores — shared-device hist/downsample, or WASM/JS. */
     getGpuChores?(): import('./gpuChores/GpuChores').GpuChores | null;
     samplePanoramaStats?(opts?: PanoramaStatsOptions): void;
+    /** Scene depth (#320), every frame — see `depth/DepthController.ts`. WebGPU only. */
+    setSceneDepth?(options: import('./depth/sceneDepthOptions').SceneDepthOptions): void;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into

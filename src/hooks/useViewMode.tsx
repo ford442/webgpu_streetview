@@ -2,11 +2,18 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { loadCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
 import { currentSearch } from '../config/flags';
 import { povStore } from '../state/povStore';
+import {
+  INITIAL_CABIN_INPUT,
+  cabinInputMode,
+  transitionCabinInput,
+  type CabinInputEvent,
+  type CabinInputTransition,
+  type ControlMode,
+} from '../car/input/cabinInputMachine';
 
 // Types
 export type ViewMode = 'freelook' | 'car';
-export type ControlMode = 'freeLook' | 'uiMouse' | 'carSteer';
-export type HeadCoupling = 'rigid' | 'free';
+export type { ControlMode };
 
 export interface ViewModeState {
   // Main mode
@@ -14,20 +21,17 @@ export interface ViewModeState {
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
   
-  // Car control mode
+  // Car control mode — derived from the cabin input machine
+  // (`car/input/cabinInputMachine.ts`). Changes only on discrete events
+  // (lock, right button, F, Tab), never per mouse move.
   controlMode: ControlMode;
-  setControlMode: (mode: ControlMode) => void;
-  toggleControlMode: () => void;
-  
-  // Head coupling (how head moves with car steering)
-  headCoupling: HeadCoupling;
-  setHeadCoupling: (coupling: HeadCoupling) => void;
-  
-  // Temporary mode switch (steering wheel click)
-  isTempSteerMode: boolean;
-  startTempSteerMode: () => void;
-  endTempSteerMode: () => void;
-  
+  /**
+   * Feed an input event to the machine. Returns the transition: its
+   * pointer-lock `effect` the caller must run *inside the same event handler*
+   * (`applyPointerLockEffect`), and any `steerDeg` to apply (a WebXR stick).
+   */
+  dispatchCabinInput: (event: CabinInputEvent) => CabinInputTransition;
+
   // Car body heading (separate from head-look heading in useStreetView)
   setCarHeading: (heading: number | ((prev: number) => number)) => void;
 
@@ -62,15 +66,16 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   const [viewMode, setViewModeState] = useState<ViewMode>(initialMode);
   const [prevViewMode, setPrevViewMode] = useState<ViewMode | null>(null);
   
-  // Car control sub-mode
-  const [controlMode, setControlMode] = useState<ControlMode>('freeLook');
-  const previousControlModeRef = useRef<ControlMode>('freeLook');
-  
-  // Head coupling
-  const [headCoupling, setHeadCoupling] = useState<HeadCoupling>('free');
-  
-  // Temporary steering mode (steering wheel click)
-  const [isTempSteerMode, setIsTempSteerMode] = useState(false);
+  // Car control sub-mode: the machine state lives in a ref (it must be read
+  // synchronously inside gesture handlers); React sees only the derived mode.
+  const cabinInputRef = useRef(INITIAL_CABIN_INPUT);
+  const [controlMode, setControlMode] = useState<ControlMode>(cabinInputMode(INITIAL_CABIN_INPUT));
+  const dispatchCabinInput = useCallback((event: CabinInputEvent): CabinInputTransition => {
+    const transition = transitionCabinInput(cabinInputRef.current, event);
+    cabinInputRef.current = transition.state;
+    setControlMode(cabinInputMode(transition.state));
+    return transition;
+  }, []);
 
   // Car body heading (independent of head-look heading)
   // (lives in the external povStore — it changes while steering and must not
@@ -81,15 +86,6 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   // Car mode state (Three.js)
   const carModeStateRef = useRef<CarModeState | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
-  
-  // Auto-set head coupling based on control mode
-  useEffect(() => {
-    if (controlMode === 'carSteer') {
-      setHeadCoupling('rigid');
-    } else {
-      setHeadCoupling('free');
-    }
-  }, [controlMode]);
   
   // Handle view mode switching with cleanup
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -157,9 +153,6 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
 
       if (viewMode === 'car' && carModeStateRef.current && containerRef.current) {
         toggleCarMode(true);
-        setIsTempSteerMode(false);
-        setControlMode('freeLook');
-        previousControlModeRef.current = 'freeLook';
       }
     });
   }, [viewMode, prevViewMode]);
@@ -176,45 +169,6 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     };
   }, []);
   
-  // Control mode switching
-  const clearTempSteerMode = useCallback(() => {
-    setIsTempSteerMode(false);
-  }, []);
-
-  const setControlModeWithTracking = useCallback((mode: ControlMode) => {
-    clearTempSteerMode();
-    previousControlModeRef.current = controlMode;
-    setControlMode(mode);
-  }, [controlMode, clearTempSteerMode]);
-
-  const toggleControlMode = useCallback(() => {
-    clearTempSteerMode();
-    setControlMode(prev => {
-      const next = prev === 'freeLook' ? 'uiMouse' : prev === 'uiMouse' ? 'carSteer' : 'freeLook';
-      previousControlModeRef.current = prev;
-      return next;
-    });
-  }, [clearTempSteerMode]);
-  
-  // Temporary steering mode (steering wheel click)
-  const startTempSteerMode = useCallback(() => {
-    if (controlMode !== 'carSteer') {
-      previousControlModeRef.current = controlMode;
-      setIsTempSteerMode(true);
-      setControlMode('carSteer');
-      setHeadCoupling('rigid');
-    }
-  }, [controlMode]);
-  
-  const endTempSteerMode = useCallback(() => {
-    if (isTempSteerMode) {
-      const prevMode = previousControlModeRef.current;
-      setControlMode(prevMode);
-      setHeadCoupling(prevMode === 'carSteer' ? 'rigid' : 'free');
-      setIsTempSteerMode(false);
-    }
-  }, [isTempSteerMode]);
-  
   // Memoized so consumers re-render only on real mode changes. `carModeState` is a
   // snapshot of the ref taken when another field changes (nothing reads it reactively).
   const value = useMemo<ViewModeState>(() => ({
@@ -222,20 +176,13 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
     setViewMode,
     toggleViewMode,
     controlMode,
-    setControlMode: setControlModeWithTracking,
-    toggleControlMode,
-    headCoupling,
-    setHeadCoupling,
-    isTempSteerMode,
-    startTempSteerMode,
-    endTempSteerMode,
+    dispatchCabinInput,
     setCarHeading,
     carModeState: carModeStateRef.current,
     initCarModeForContainer,
     registerCarModeState,
   }), [
-    viewMode, setViewMode, toggleViewMode, controlMode, setControlModeWithTracking,
-    toggleControlMode, headCoupling, isTempSteerMode, startTempSteerMode, endTempSteerMode,
+    viewMode, setViewMode, toggleViewMode, controlMode, dispatchCabinInput,
     setCarHeading, initCarModeForContainer, registerCarModeState,
   ]);
   

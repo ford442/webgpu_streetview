@@ -99,8 +99,8 @@
 
 .stationNameActive {
   composes: stationName;
-  color: var(--accent, #00d4ff);
-  text-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  color: var(--accent, #4caf50);
+  text-shadow: 0 0 6px var(--ambient-glow, rgba(76, 175, 80, 0.45));
 }
 
 .stationNameInactive {
@@ -141,10 +141,10 @@
   gap: 2px;
   width: 60px;
   height: 54px;
-  background: rgba(0, 180, 255, 0.08);
-  border: 1px solid rgba(0, 212, 255, 0.25);
+  background: color-mix(in srgb, var(--accent, #4caf50) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #4caf50) 28%, transparent);
   border-radius: 10px;
-  color: rgba(0, 212, 255, 0.85);
+  color: color-mix(in srgb, var(--accent, #4caf50) 85%, white);
   cursor: pointer;
   font-size: 8px;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
@@ -157,12 +157,12 @@
 
 .padBtn:hover,
 .padBtnHover {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: color-mix(in srgb, var(--accent, #4caf50) 16%, transparent);
+  color: var(--accent, #4caf50);
 }
 
 .padBtn:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--accent, #4caf50);
   outline-offset: 2px;
 }
 
@@ -172,8 +172,8 @@
 
 .padBtnActive {
   composes: padBtn;
-  background: rgba(0, 212, 255, 0.22);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+  background: color-mix(in srgb, var(--accent, #4caf50) 20%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent, #4caf50) 35%, transparent);
 }
 
 /* --------------------------------------------------------------------------
@@ -213,7 +213,7 @@
 
 .timeSelect:hover,
 .timeSelect:focus {
-  border-color: rgba(0, 212, 255, 0.3);
+  border-color: color-mix(in srgb, var(--accent, #4caf50) 35%, transparent);
 }
 
 /* --------------------------------------------------------------------------

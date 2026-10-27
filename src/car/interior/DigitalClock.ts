@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { PanoLocationInfo } from '../../utils/panoLocation';
+import { CONTENT_MAP_EMISSIVE } from './cabinLightingRamps';
 import { getZonedClock } from '../../utils/localTime';
 import { preloadTimeZoneLookup, resolveTimeZone } from '../../utils/panoTimeZone';
 
@@ -51,11 +52,13 @@ export class DigitalClock {
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.anisotropy = gpuProfileName === 'high' ? 8 : 4;
     this.texture.generateMipmaps = true;
+    this.texture.colorSpace = THREE.SRGBColorSpace;
 
-    const accentHex = parseInt(this.accent.replace('#', '0x')) || 0x00ffcc;
+    // Glyphs are already painted in the accent colour. A second accent
+    // emissive multiplies that paint and the clock goes dim.
     this.material = new THREE.MeshStandardMaterial({
       map: this.texture,
-      emissive: new THREE.Color(accentHex),
+      emissive: new THREE.Color(CONTENT_MAP_EMISSIVE),
       emissiveIntensity: 0.75,
       emissiveMap: this.texture,
       roughness: 0.25,

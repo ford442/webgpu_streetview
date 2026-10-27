@@ -5,7 +5,6 @@ import {
     FrustumCuller,
 } from '../../utils/performance';
 import { VehicleType, VehicleConfig, getVehicleConfig } from '../VehicleManager';
-import { resolveCameraFov } from '../vehicleLayout';
 import { CarInteriorBuilder } from './CarInteriorBuilder';
 import { CarInteriorGauges } from './CarInteriorGauges';
 import { LocationPanel } from './LocationPanel';
@@ -102,7 +101,7 @@ export interface CarInteriorAssemblyHost {
     isRoofOpen: boolean;
     roofTargetY: number;
     seatOffset: number;
-    driverSeatGroup: THREE.Group;
+    headPivot: THREE.Group;
     applySeatPosition: () => void;
     emitterGlowSprites?: CabinGlowSprite[];
     proceduralCabinGroup?: THREE.Group;
@@ -231,7 +230,6 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
         rearGlassMesh: host.rearGlassMesh,
         clinical: host.vehicleConfig.theme === 'clinical',
         emitterGlows: host.emitterGlowSprites,
-        dashLightColor: parseInt(host.vehicleConfig.accentColor.replace('#', '0x')),
     });
 
     if (host.vehicleConfig.hasDashboard && host.quality !== 'low') {
@@ -344,14 +342,13 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
     host.proceduralCabinGroup = undefined;
     host.gltfCabinGroup = undefined;
     host.gltfInteriorApplied = false;
-    host.interiorGroup.add(host.driverSeatGroup);
+    host.interiorGroup.add(host.headPivot);
     host.lightingManager?.attachCabinLights(host.interiorGroup);
 
     host.digitalClock?.dispose();
     host.digitalClock = null;
 
     host.applySeatPosition();
-    host.rendererDelegate?.setCameraFov(resolveCameraFov(host.vehicleConfig));
 
     const mats = createMaterials(host.vehicleConfig, host.gpuProfile as import('../../utils/performance').GPUPerformanceProfile);
     host.dashboardMaterial = mats.dashboard;

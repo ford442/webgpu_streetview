@@ -6,6 +6,7 @@
 import type { RendererBackendPreference, WeatherPostProcessMode } from './RendererBackend';
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 import { getPassStatuses, type PassStatusRecord } from './passStatus';
+import type { AppliedRenderScale } from './renderScale';
 
 export type WebGpuProbeStage =
   | 'navigator'
@@ -16,6 +17,8 @@ export type WebGpuProbeStage =
   | 'compute'
   /** A required pass (pass 1, or weather with no present fallback) failed validation. */
   | 'pipeline'
+  /** public/wasm/streetview-wasm.wasm did not fetch or instantiate — no JS twin to fall back to. */
+  | 'wasm'
   | 'ok';
 
 export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';
@@ -56,6 +59,11 @@ export interface WebGpuProbeRecord {
    * pass is disabled and listed here while `ok` stays true.
    */
   passes: PassStatusRecord;
+  /**
+   * The road render scale the last frame used (#329, `renderScale.ts`).
+   * Absent until the renderer has encoded a frame.
+   */
+  renderScale?: AppliedRenderScale;
   updatedAt: number;
 }
 
@@ -126,6 +134,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
     capabilityMatrix: options.capabilityMatrix ?? previous?.capabilityMatrix,
     weatherDegrade: options.weatherDegrade ?? previous?.weatherDegrade,
     passes: getPassStatuses(),
+    renderScale: previous?.renderScale,
     updatedAt: options.now ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()),
   };
 

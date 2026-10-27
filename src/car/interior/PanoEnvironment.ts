@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type CabinRenderer } from './createCabinRenderer';
 import { createCabinPmrem, type CabinEnvTarget, type CabinPmrem } from './cabinPmrem';
+import { carRelativeBearing } from '../carSpatialModel';
 
 /**
  * PanoEnvironment
@@ -12,7 +13,9 @@ import { createCabinPmrem, type CabinEnvTarget, type CabinPmrem } from './cabinP
  * - The PMREM render target from the previous pano is disposed on every swap.
  * - Heading alignment is `scene.environmentRotation` (Y), not a pixel blit of
  *   the equirect: three samples equirect maps with u=0.5 at world +X, and the
- *   source image has `centerHeading` at u=0.5.
+ *   source image has `centerHeading` at u=0.5. The scene is the car's frame
+ *   (it never yaws), so the bearing used is relative to the car's nose
+ *   (`setCarHeading`).
  * - Night dim is `scene.environmentIntensity`. Note that on both backends the
  *   *scene* environment ignores a material's authored `envMapIntensity`
  *   entirely (WebGLRenderer overwrites that uniform with
@@ -25,6 +28,8 @@ export class PanoEnvironment {
     private pmrem: CabinPmrem | null = null;
     private currentRT: CabinEnvTarget | null = null;
     private intensity = 1;
+    private centerHeading = 0;
+    private carHeading = 0;
 
     constructor(
         private readonly renderer: CabinRenderer,
@@ -57,7 +62,8 @@ export class PanoEnvironment {
 
         const oldEnv = this.scene.environment;
         this.scene.environment = newRT.texture;
-        this.scene.environmentRotation.y = headingRotationY(centerHeading);
+        this.centerHeading = centerHeading;
+        this.applyRotation();
         // Dispose the previous pano's render target; the very first swap
         // replaces the static studio env texture from LightingBuilder instead.
         if (this.currentRT) this.currentRT.dispose();
@@ -67,6 +73,22 @@ export class PanoEnvironment {
         // Re-assert the current dim level in case it was set before the first
         // pano arrived (a fresh scene defaults to 1).
         this.scene.environmentIntensity = this.intensity;
+    }
+
+    /**
+     * Car compass heading (degrees). The cabin scene is the car's frame, so the
+     * IBL is turned to the pano's bearing *relative to the car's nose*.
+     */
+    public setCarHeading(carHeading: number): void {
+        if (carHeading === this.carHeading) return;
+        this.carHeading = carHeading;
+        if (this.currentRT) this.applyRotation();
+    }
+
+    private applyRotation(): void {
+        this.scene.environmentRotation.y = headingRotationY(
+            carRelativeBearing(this.centerHeading, this.carHeading),
+        );
     }
 
     /**

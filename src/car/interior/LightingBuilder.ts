@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleConfig } from '../VehicleManager';
+import { DASH_SPILL_COLOR } from './cabinLightingRamps';
 import { type CabinRenderer } from './createCabinRenderer';
 import { createCabinPmrem } from './cabinPmrem';
 
@@ -90,36 +91,43 @@ export function buildInteriorLighting(
   scene: THREE.Scene,
   interiorGroup: THREE.Group,
   renderer: CabinRenderer,
-  config: VehicleConfig,
+  _config: VehicleConfig,
   options: InteriorLightingOptions = {},
 ): InteriorLights {
   const quality = options.quality ?? 'high';
 
   void installStudioEnvironmentFallback(scene, renderer);
 
-  const hemisphereLight = new THREE.HemisphereLight(0xfff5e0, 0x1a1a28, 0.16);
+  const hemisphereLight = new THREE.HemisphereLight(0xfff5e0, 0x1a1a28, 0.12);
   scene.add(hemisphereLight);
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.035);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.022);
   scene.add(ambientLight);
 
-  const dashColor = parseInt(config.accentColor.replace('#', '0x'));
-  const dashLight = new THREE.PointLight(dashColor, 0, 1.7, 2);
-  dashLight.position.set(0, 0.86, -0.78);
+  // Warm instrument spill, not the vehicle accent. Accent stays on emissive
+  // trim; a coloured point light here paints the wheel and the seat. Parked
+  // at lap level behind the wheel (wheel centre -0.35, 0.86, -0.52). Two
+  // traps bound the position: inside the dash block (z -1.25…-0.75, y 0.6–1.0)
+  // it lights nothing it is meant to, and up near the dash top / header it
+  // paints the headliner and mirrors as a hard dot in the glass. Down here it
+  // washes the dash face, wheel underside and knees from ~0.4 m (decay 2 turns
+  // anything closer into a hot ring).
+  const dashLight = new THREE.PointLight(DASH_SPILL_COLOR, 0, 1.9, 2);
+  dashLight.position.set(-0.25, 0.68, -0.34);
   interiorGroup.add(dashLight);
 
-  const overheadLight = new THREE.DirectionalLight(0xfff8f0, 0.2);
+  const overheadLight = new THREE.DirectionalLight(0xfff8f0, 0.09);
   overheadLight.position.set(0.15, 1.7, -0.2);
   interiorGroup.add(overheadLight);
 
   let leftWindowLight: THREE.PointLight | undefined;
   let rightWindowLight: THREE.PointLight | undefined;
   if (quality !== 'low') {
-    leftWindowLight = new THREE.PointLight(0xfff0dc, 0.13, 2.6, 2);
+    leftWindowLight = new THREE.PointLight(0xfff0dc, 0.1, 2.6, 2);
     leftWindowLight.position.set(-0.9, 1.05, -0.1);
     interiorGroup.add(leftWindowLight);
 
-    rightWindowLight = new THREE.PointLight(0xfff0dc, 0.09, 2.6, 2);
+    rightWindowLight = new THREE.PointLight(0xfff0dc, 0.07, 2.6, 2);
     rightWindowLight.position.set(0.9, 1.05, -0.1);
     interiorGroup.add(rightWindowLight);
   }
@@ -130,11 +138,14 @@ export function buildInteriorLighting(
   interiorGroup.add(headlightsLight);
   interiorGroup.add(headlightsLight.target);
 
-  const interiorBounceLight = new THREE.PointLight(0xffc080, 0, 1.4, 2);
-  interiorBounceLight.position.set(0, 0.52, -0.7);
+  // Headlight / wet-road bounce. Low between the knees, ~0.45 m clear of the
+  // dash block: at the old (0, 0.52, -0.7) it sat 5 cm off the lower dash face
+  // and painted a cream hot ring beside the column, brighter than the cluster.
+  const interiorBounceLight = new THREE.PointLight(0xffc080, 0, 1.6, 2);
+  interiorBounceLight.position.set(0, 0.42, -0.3);
   interiorGroup.add(interiorBounceLight);
 
-  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.2, 2);
+  const domeLightSource = new THREE.PointLight(0xffe8b0, 0, 2.8, 2);
   domeLightSource.position.set(0, 1.72, 0.3);
   interiorGroup.add(domeLightSource);
 

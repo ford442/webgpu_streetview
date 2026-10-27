@@ -29,7 +29,9 @@
  * `fs_main` that dominate the look (grade, night, vignette, rain darkening, ACES)
  * from the same packed weather values the road used (`RoadLook`). Fog, haze,
  * dust, headlights and named-look LUTs are not mirrored: a known, small delta
- * inside lenses (see `docs/RENDERER_FALLBACK.md`).
+ * inside lenses (see `docs/RENDERER_FALLBACK.md`). Scene depth (#320) reaches
+ * the road only through fog, precipitation and DOF, so it adds nothing to the
+ * mirror — `windshieldPortal.parity.test.ts` fails if that ever changes.
  *
  * ### Screen mapping
  *
@@ -455,13 +457,12 @@ export function createWindshieldPortalTslMaterial(
  * re-projected to world space every time matrices update.
  *
  * three reads a clipping group's planes as **world** planes, projecting them
- * with the camera's view matrix during `_projectObject`. The cabin body rotates
- * every frame, so world planes set at build time would be stale from the second
- * tick — and refreshing them from a per-frame `update()` would still trail
- * `setCarOrientation`, which the car runtime calls *after* the interior update.
+ * with the camera's view matrix during `_projectObject`. The car rig sits at
+ * identity today, but anything that moves the glass's ancestors (a glTF swap,
+ * a parent transform) would leave world planes set at build time stale.
  * `updateMatrixWorld` runs inside `scene.updateMatrixWorld()`, i.e. after every
- * rotation this tick and before three projects the planes, so this is always
- * current with no ordering contract on the caller.
+ * transform change this tick and before three projects the planes, so this is
+ * always current with no ordering contract on the caller.
  */
 export class WorldPlaneClippingGroup extends ClippingGroup {
     private readonly localPlanes: THREE.Plane[];

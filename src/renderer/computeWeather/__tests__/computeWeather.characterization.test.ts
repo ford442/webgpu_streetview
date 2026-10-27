@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
     createFakeGpu,
     installGpuGlobals,
@@ -6,9 +8,11 @@ import {
     bindingTexture,
     bindingBuffer,
     type FakeGpu,
+    type RecordedBindGroup,
 } from './fakeGpu';
 import { ComputeWeatherPostProcessor } from '../../ComputeWeatherPostProcessor';
 import { WeatherParamIndex, WEATHER_PARAMS_FLOAT_COUNT } from '../../weatherUniformLayout';
+import { COMPUTE_WEATHER_OUTPUT_FORMAT } from '../constants';
 
 /**
  * Characterization tests for the compute weather post-process path.
@@ -44,10 +48,23 @@ function intermediateView(gpu: FakeGpu): GPUTextureView {
     return (tex as unknown as { createView: () => GPUTextureView }).createView();
 }
 
+/** Every 13-entry compute bind group created so far (the weather ones, not LUT/particles). */
+function weatherBindGroups(gpu: FakeGpu) {
+    return gpu.bindGroups.filter((g) => g.entries.size === 13);
+}
+
 /** The most recent 13-entry compute bind group (the weather one, not LUT/particles). */
 function lastWeatherBindGroup(gpu: FakeGpu) {
-    const groups = gpu.bindGroups.filter((g) => g.entries.size === 13);
+    const groups = weatherBindGroups(gpu);
     return groups[groups.length - 1]!;
+}
+
+/** The group the most recent weather (`main`) dispatch actually bound at index 0. */
+function boundWeatherBindGroup(gpu: FakeGpu): RecordedBindGroup {
+    const main = new Set(gpu.computePipelines.filter((p) => p.entryPoint === 'main').map((p) => p.id));
+    const passes = gpu.allPasses().filter((p) => main.has((p.pipeline as { id: number } | null)?.id ?? -1));
+    const pass = passes[passes.length - 1]!;
+    return pass.bindGroups.find((b) => b.index === 0)!.group as RecordedBindGroup;
 }
 
 function seedParticles(proc: ComputeWeatherPostProcessor, gridW = 4, gridH = 4): void {
@@ -108,6 +125,18 @@ describe('compute weather — pipeline setup', () => {
     });
 });
 
+describe('compute weather — the output format the WGSL declares', () => {
+    it('binding 2 in weather-post-compute.wgsl is COMPUTE_WEATHER_OUTPUT_FORMAT', () => {
+        const wgsl = readFileSync(
+            join(__dirname, '..', '..', '..', '..', 'public', 'shaders', 'weather-post-compute.wgsl'),
+            'utf8',
+        );
+        expect(wgsl).toContain(
+            `@group(0) @binding(2) var writeTexture: texture_storage_2d<${COMPUTE_WEATHER_OUTPUT_FORMAT}, write>;`,
+        );
+    });
+});
+
 describe('compute weather — bind group wiring', () => {
     it('binds all 13 image_video_effects slots on the weather group', async () => {
         const proc = await makeProcessor(gpu);
@@ -125,7 +154,9 @@ describe('compute weather — bind group wiring', () => {
 
         const bg = lastWeatherBindGroup(gpu);
         const write = bindingTexture(bg.entries.get(2))!;
-        expect(write.descriptor.format).toBe('rgba32float');
+        // Half float (#320): half the bandwidth of the old rgba32float target.
+        expect(write.descriptor.format).toBe('rgba16float');
+        expect(COMPUTE_WEATHER_OUTPUT_FORMAT).toBe('rgba16float');
         expect(write.descriptor.size).toEqual([W, H]);
         // Binding 1 is the caller's view, passed straight through.
         expect(bg.entries.get(1)).toBe(view);
@@ -187,15 +218,15 @@ describe('compute weather — ping-pong', () => {
         const proc = await makeProcessor(gpu);
         proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
 
-        const before = lastWeatherBindGroup(gpu);
-        const read0 = bindingTexture(before.entries.get(4))!.id;
-        const write0 = bindingTexture(before.entries.get(6))!.id;
+        proc.renderPass(gpu.createCommandEncoder());
+        const first = boundWeatherBindGroup(gpu);
+        const read0 = bindingTexture(first.entries.get(4))!.id;
+        const write0 = bindingTexture(first.entries.get(6))!.id;
 
         proc.renderPass(gpu.createCommandEncoder());
-
-        const after = lastWeatherBindGroup(gpu);
-        const read1 = bindingTexture(after.entries.get(4))!.id;
-        const write1 = bindingTexture(after.entries.get(6))!.id;
+        const second = boundWeatherBindGroup(gpu);
+        const read1 = bindingTexture(second.entries.get(4))!.id;
+        const write1 = bindingTexture(second.entries.get(6))!.id;
 
         // Swapped, not reallocated.
         expect(read1).toBe(write0);
@@ -207,9 +238,10 @@ describe('compute weather — ping-pong', () => {
         proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
         seedParticles(proc);
 
-        const before = bindingTexture(lastWeatherBindGroup(gpu).entries.get(8))!.id;
         proc.renderPass(gpu.createCommandEncoder()); // rain is 0 -> particles skipped
-        const after = bindingTexture(lastWeatherBindGroup(gpu).entries.get(8))!.id;
+        const before = bindingTexture(boundWeatherBindGroup(gpu).entries.get(8))!.id;
+        proc.renderPass(gpu.createCommandEncoder());
+        const after = bindingTexture(boundWeatherBindGroup(gpu).entries.get(8))!.id;
 
         expect(after).toBe(before);
     });
@@ -220,11 +252,67 @@ describe('compute weather — ping-pong', () => {
         seedParticles(proc);
         withPrecipitation(proc);
 
-        const before = bindingTexture(lastWeatherBindGroup(gpu).entries.get(8))!.id;
         proc.renderPass(gpu.createCommandEncoder());
-        const after = bindingTexture(lastWeatherBindGroup(gpu).entries.get(8))!.id;
+        const before = bindingTexture(boundWeatherBindGroup(gpu).entries.get(8))!.id;
+        proc.renderPass(gpu.createCommandEncoder());
+        const after = bindingTexture(boundWeatherBindGroup(gpu).entries.get(8))!.id;
 
         expect(after).not.toBe(before);
+    });
+});
+
+describe('compute weather — bind groups are built per size, not per frame', () => {
+    it('builds the two depth ping-pong groups once, then reuses them every frame', async () => {
+        const proc = await makeProcessor(gpu);
+        proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
+
+        for (let i = 0; i < 10; i++) proc.renderPass(gpu.createCommandEncoder());
+
+        expect(weatherBindGroups(gpu)).toHaveLength(2);
+    });
+
+    it('with particles running, every depth × state parity is built once (at most four groups)', async () => {
+        const proc = await makeProcessor(gpu);
+        proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
+        seedParticles(proc);
+        withPrecipitation(proc);
+        const afterSeeding = weatherBindGroups(gpu).length;
+        const particleGroupsBefore = gpu.bindGroups.filter((g) => g.entries.size === 4).length;
+
+        for (let i = 0; i < 10; i++) proc.renderPass(gpu.createCommandEncoder());
+
+        expect(weatherBindGroups(gpu).length - afterSeeding).toBeLessThanOrEqual(4);
+        // clear / integrate / splat × two read indices, then reused.
+        expect(gpu.bindGroups.filter((g) => g.entries.size === 4).length - particleGroupsBefore).toBe(6);
+    });
+
+    it('a resize builds fresh groups bound to the new targets', async () => {
+        const proc = await makeProcessor(gpu);
+        proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
+        proc.renderPass(gpu.createCommandEncoder());
+        const oldWrite = bindingTexture(boundWeatherBindGroup(gpu).entries.get(2))!;
+
+        proc.updateWeatherBindGroup(intermediateView(gpu), W * 2, H * 2);
+        proc.renderPass(gpu.createCommandEncoder());
+        const newWrite = bindingTexture(boundWeatherBindGroup(gpu).entries.get(2))!;
+
+        expect(newWrite.id).not.toBe(oldWrite.id);
+        expect(newWrite.descriptor.size).toEqual([W * 2, H * 2]);
+        expect(oldWrite.destroyed).toBe(true);
+    });
+
+    it('re-uploads the particle uniforms from one reused array', async () => {
+        const proc = await makeProcessor(gpu);
+        proc.updateWeatherBindGroup(intermediateView(gpu), W, H);
+        seedParticles(proc);
+        withPrecipitation(proc);
+
+        proc.renderPass(gpu.createCommandEncoder());
+        proc.renderPass(gpu.createCommandEncoder());
+
+        const particleUniformWrites = gpu.writeBufferCalls.filter((c) => c.buffer.descriptor.size === 32);
+        expect(particleUniformWrites).toHaveLength(2);
+        expect(particleUniformWrites[0]!.data).toBe(particleUniformWrites[1]!.data);
     });
 });
 
@@ -309,7 +397,8 @@ describe('compute weather — temporal history', () => {
         expect(copies[0]!.size).toEqual([W, H]);
 
         // After the first copy, history is live and stops being the 1x1 dummy.
-        const bg = lastWeatherBindGroup(gpu);
+        proc.renderPass(gpu.createCommandEncoder());
+        const bg = boundWeatherBindGroup(gpu);
         expect(bindingTexture(bg.entries.get(9))!.descriptor.size).toEqual([W, H]);
     });
 });

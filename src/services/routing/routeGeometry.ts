@@ -5,12 +5,11 @@
  * for look-ahead / prefetch, and each step's along-track position.
  *
  * All geometry goes through the WASM kernels (`polyline_resample`,
- * `polyline_project`, `batch_haversine`, `initial_bearing`) or their JS twin
- * when the binary has not loaded — never a TypeScript re-derivation.
+ * `polyline_project`, `batch_haversine`, `initial_bearing`) — never a
+ * TypeScript re-derivation.
  */
 
-import { getWasmModule, type StreetViewWasmAPI } from '../../wasm';
-import { JS_FALLBACK } from '../../wasm/jsFallback';
+import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
 import type { LatLng, Route, RouteStep } from './RouteProvider';
 
 /** Resample spacing; Street View panoramas sit ~5–15 m apart on a road. */
@@ -49,7 +48,7 @@ export interface RouteProjection {
 }
 
 function geo(): StreetViewWasmAPI {
-  return getWasmModule() ?? JS_FALLBACK;
+  return requireWasm();
 }
 
 function flatten(points: readonly LatLng[]): Float64Array {

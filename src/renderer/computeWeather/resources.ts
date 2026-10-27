@@ -1,5 +1,6 @@
 import {
     COMPUTE_UNIFORMS_BYTE_SIZE,
+    COMPUTE_WEATHER_OUTPUT_FORMAT,
     NOISE_BUFFER_BYTES,
 } from './constants';
 import { WEATHER_PARAMS_BYTE_SIZE } from '../weatherUniformLayout';
@@ -127,13 +128,14 @@ export class ComputeWeatherResources {
         const size: [number, number] = [Math.max(1, width), Math.max(1, height)];
         this.writeTexture = createTrackedTexture(this.device, {
             size,
-            format: 'rgba32float',
+            format: COMPUTE_WEATHER_OUTPUT_FORMAT,
             usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
         }, 'cw-writeTexture');
         destroyTracked(this.colorHistoryTexture);
+        // Same format as the write texture: `copyTextureToTexture` needs it.
         this.colorHistoryTexture = createTrackedTexture(this.device, {
             size,
-            format: 'rgba32float',
+            format: COMPUTE_WEATHER_OUTPUT_FORMAT,
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         }, 'cw-colorHistoryTexture');
         this.historyReady = false;
@@ -143,6 +145,11 @@ export class ComputeWeatherResources {
         this.depthReadIndex = 0;
         this.depthWriteIndex = 1;
         return true;
+    }
+
+    /** Which half of the depth ping-pong is read this dispatch — part of the bind-group cache key. */
+    public getDepthParity(): 0 | 1 {
+        return this.depthReadIndex;
     }
 
     public getDepthReadTexture(): GPUTexture | null {

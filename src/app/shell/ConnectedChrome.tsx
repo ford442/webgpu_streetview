@@ -26,6 +26,7 @@ import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor'
 import type { MemoryStats } from '../../utils/memoryProfiler';
 import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
+import type { AppliedRenderScale } from '../../renderer/renderScale';
 import type { AutoExposureStatus } from '../../renderer/autoExposure';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
@@ -166,6 +167,7 @@ export interface ConnectedChromeOverlays {
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
   autoExposureStatus?: AutoExposureStatus;
+  renderScale?: AppliedRenderScale;
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
@@ -296,6 +298,7 @@ export function ConnectedChrome({
           gpuPassTimings={overlays.gpuPassTimings}
           gpuChoresStats={overlays.gpuChoresStats}
           autoExposureStatus={overlays.autoExposureStatus}
+          renderScale={overlays.renderScale}
           position="top-left"
           visible={true}
           showMemory={true}

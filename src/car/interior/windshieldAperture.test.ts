@@ -1,6 +1,6 @@
 /**
  * The glass aperture as clip planes, and the clipping group that keeps them in
- * world space while the cabin body rotates every frame.
+ * world space while the glass's ancestors move.
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';

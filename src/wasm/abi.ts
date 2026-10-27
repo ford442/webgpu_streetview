@@ -1,15 +1,101 @@
 /**
  * src/wasm/abi.ts
  * The public TypeScript contract for the streetview-wasm module — one method
- * per WASM export. Implemented by both the compiled binary (the marshalling
- * wrappers built in src/wasm/index.ts) and the pure-JS fallback
- * (src/wasm/jsFallback.ts). Keeping the interface in its own file means the
- * ABI shape can be read/reviewed without wading through either
- * implementation.
+ * per WASM export, implemented by the marshalling wrappers src/wasm/index.ts
+ * builds around the compiled binary (the only implementation). Keeping the
+ * interface in its own file means the ABI shape can be read/reviewed without
+ * wading through the loader.
  */
 import type { LumaReduce } from '../renderer/gpuChores/lumaMath';
 
 export type { LumaReduce };
+
+/** {@link StreetViewWasmAPI.lumaAnalyze} output: the histogram plus an exact reduce. */
+export interface LumaAnalysis extends LumaReduce {
+  bins: Uint32Array;
+}
+
+/**
+ * Carried between scene-depth inferences ({@link StreetViewWasmAPI.depthNormalize});
+ * reset when the scene or view changes.
+ */
+export interface DepthNormalizeState {
+  lo: number;
+  hi: number;
+  /** Proxy-scale depth of the nearest disparity (`q` in `depth = q / n`). */
+  nearDepth: number;
+  /** Last normalised map, for the per-texel EMA when the next one is aligned with it. */
+  previous: Float32Array | null;
+}
+
+export interface DepthNormalizeOptions {
+  /** Same pano and same view as the previous map: blend texel-wise. */
+  aligned: boolean;
+  /** Same pano (any view): blend the range and scale, so the map does not pump. */
+  sameScene: boolean;
+  width: number;
+  height: number;
+  /** Top-origin screen Y of the pitch horizon the map was inferred at. */
+  horizonY: number;
+}
+
+/**
+ * Targets for the cabin engine (`dsp_set_params`). The engine glides to them
+ * with a ~40 ms one-pole per parameter, smoothed per sample, so they can be
+ * posted at any cadence. Out-of-range values clamp.
+ */
+export interface CabinDspParams {
+  /** Engine RPM [0, 12000]. */
+  rpm: number;
+  /** Throttle/load [0, 1]. */
+  load: number;
+  /** Road speed in m/s [0, 120]; 40 m/s is full road and wind noise. */
+  speedMps: number;
+  /** 0 = sealed, 1 = roof/windows open. */
+  openness: number;
+  /** Voicing index in `CABIN_IR_VEHICLE_INDEX` order, clamped [0, 4]. */
+  vehicle: number;
+  /** 0 = dry, 1 = soaked: tyre hiss and arch spray. */
+  wetRoad: number;
+  /** Rain on the roof [0, 1]. */
+  rain: number;
+  /** Ambient wind in m/s [0, 60]. */
+  windMps: number;
+  /** Radio level into the cabin [0, 2]. */
+  radioGain: number;
+  /** Wipers running (they thump while rain > 0.02). Non-zero numbers count as on. */
+  wipers: boolean | number;
+}
+
+/**
+ * One cabin engine instance (`dsp_*`): engine, road, wind, rain, wiper and
+ * radio, placed by the head-shadow model and run through the cabin FIR.
+ * Production runs the WASM build of this inside the AudioWorklet
+ * (src/car/audio/cabinWorkletSource.ts); this interface is the same engine on
+ * the main thread, for tests and tooling.
+ */
+export interface CabinDsp {
+  setParams(params: CabinDspParams): void;
+  /**
+   * Replace the cabin IR (`count` taps, default `taps.length`; more than
+   * `dsp_max_ir_taps()` truncates; null is the identity). Crossfades over
+   * 256 samples.
+   */
+  setIr(taps: Float32Array | null, count?: number): void;
+  /**
+   * Render `frames` stereo samples. Null radio inputs are silence; null
+   * outputs are discarded. Output is clamped to [-1, 1].
+   */
+  render(
+    radioL: Float32Array | null,
+    radioR: Float32Array | null,
+    outL: Float32Array | null,
+    outR: Float32Array | null,
+    frames: number,
+  ): void;
+  /** Free the instance (WASM heap); the object must not be used afterwards. */
+  destroy(): void;
+}
 
 /** All functions exposed by the streetview-wasm module. */
 export interface StreetViewWasmAPI {
@@ -237,6 +323,44 @@ export interface StreetViewWasmAPI {
     height: number,
   ): LumaReduce;
 
+  /**
+   * Fused luma chore: box-downsample onto `dstW x dstH` (pass the source size
+   * to analyse as-is), histogram and reduce in one pass with one copy-in.
+   * `bins` equals {@link downsample2d} then {@link lumaHistogramBt709}; the
+   * mean/min/max come from integer luma (2126 r + 7152 g + 722 b) summed
+   * exactly, so a flat frame's mean is its colour's luma.
+   */
+  lumaAnalyze(
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+    dstW: number,
+    dstH: number,
+  ): LumaAnalysis;
+
+  /**
+   * A new cabin engine at `sampleRate` (<= 1 falls back to 44100). Null when
+   * the WASM heap cannot allocate one.
+   */
+  createCabinDsp(sampleRate: number): CabinDsp | null;
+
+  /** `[lo, hi]` disparity at the given percentiles (0-1) of a strided subsample. */
+  depthPercentiles(disparity: Float32Array, lowPct: number, highPct: number): [number, number];
+
+  /** Proxy-scale depth of the nearest disparity, calibrated on the ground band. */
+  depthNearDepth(nearness: Float32Array, width: number, height: number, horizonY: number): number;
+
+  /**
+   * Relative inverse depth → the `viewDepthProxy` scale, eased across
+   * inferences through `state` (updated in place; `state.previous` becomes `out`).
+   */
+  depthNormalize(
+    disparity: Float32Array,
+    state: DepthNormalizeState,
+    options: DepthNormalizeOptions,
+    out: Float32Array,
+  ): Float32Array;
+
   /** Integer box-filter downsample of packed RGBA8. */
   downsample2d(
     src: Uint8Array | Uint8ClampedArray,
@@ -245,7 +369,4 @@ export interface StreetViewWasmAPI {
     dstW: number,
     dstH: number,
   ): Uint8Array;
-
-  /** True when backed by the compiled WASM binary; false for JS fallback. */
-  isWasm: boolean;
 }

@@ -33,6 +33,42 @@ export interface CabinRampInput {
   domeLightOn: boolean;
   /** Science-lab clinical theme: cooler, slightly brighter day fill. */
   clinical?: boolean;
+  /**
+   * -1…1 lateral sun position in the car's frame (`sunSideFromBearing`):
+   * +1 = sun low off the passenger (right) window, -1 = low off the driver's
+   * window, 0 = overhead, dead ahead/behind, or below the horizon. Shifts the
+   * day window fill toward the sun side so the cabin reads as lit from one
+   * window. Omitted = balanced.
+   */
+  sunSide?: number;
+}
+
+/**
+ * Lateral sun component in the car's frame. `bearingRad` is the car-relative
+ * sun bearing (0 = ahead, +π/2 = right); the horizontal x-component is
+ * `sin(bearing) · cos(altitude)`, weighted by a second `cos(altitude)` so a
+ * high sun pours through the windscreen/roofline evenly while a low sun
+ * (golden hour) lands on one side. Below the horizon there is no direct sun
+ * to take a side.
+ */
+export function sunSideFromBearing(bearingRad: number, altitudeRad: number): number {
+  if (altitudeRad <= 0) return 0;
+  const cosAlt = Math.cos(altitudeRad);
+  const side = Math.sin(bearingRad) * cosAlt * cosAlt;
+  return Math.max(-1, Math.min(1, side));
+}
+
+/**
+ * Left/right multipliers for the day window fills. They average to 1 so the
+ * total daylight entering the cabin does not change with heading — it just
+ * moves to the sun side. Rain/overcast diffuses the skylight and flattens
+ * the split back toward even.
+ */
+export function windowFillBalance(sunSide: number, rain: number): { left: number; right: number } {
+  const side = Math.max(-1, Math.min(1, sunSide));
+  const r = Math.max(0, Math.min(1, rain));
+  const split = side * 0.6 * (1 - r);
+  return { left: 1 - split, right: 1 + split };
 }
 
 /** Below-horizon night factor; fully night by nautical twilight (~-12°). */
@@ -46,14 +82,38 @@ export function sunStrengthFromAltitude(altitudeRad: number): number {
   return Math.max(0, Math.min(1, Math.sin(altitudeRad) / 0.25));
 }
 
+/**
+ * Emitter colours. Intensities live in the ramps below; these are the
+ * colours those intensities multiply.
+ *
+ * Content maps (dials, clock, location panel) must emit white. Three.js
+ * does `emissive * emissiveMap`, so a dark or accent tint crushes the
+ * painted glyphs — the old dial well (`0x002211`) left the cluster dark
+ * while the backplate carried a flat accent slab.
+ */
+export const CONTENT_MAP_EMISSIVE = 0xffffff;
+
+/** Recess behind the dials. Dark enough that the cluster ramp cannot turn it into a slab. */
+export const CLUSTER_WELL_EMISSIVE = 0x10120e;
+
+/** Housing behind the infotainment screen. The live screen is the emitter. */
+export const DISPLAY_HOUSING_EMISSIVE = 0x0e1012;
+
+/**
+ * Dash point-light spill. Warm instrument bounce, not `accentColor`:
+ * a green point light paints the wheel and the leather.
+ */
+export const DASH_SPILL_COLOR = 0xffe6c2;
+
 /** Daytime sun directional intensity before weather attenuation. */
 export function sunBaseIntensityFromStrength(strength: number): number {
   return strength * 1.55;
 }
 
-/** Sun after rain/overcast: same 0.75 direct-light cut as the window fills. */
-export function sunIntensityUnderWeather(base: number, rain: number): number {
-  return base * (1 - Math.max(0, Math.min(1, rain)) * 0.75);
+/** Preset night must dim the real sun too, even when SunCalc still reports daylight. */
+export function sunIntensityUnderWeather(base: number, rain: number, effectiveNight: number): number {
+  const day = 1 - Math.max(0, Math.min(1, effectiveNight));
+  return base * (1 - Math.max(0, Math.min(1, rain)) * 0.75) * day;
 }
 
 /** Pano IBL contribution: keep enough by day for leather/dash, dim hard at night. */
@@ -84,22 +144,32 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
   const diffuse = 1 - rain * 0.3;
   const clinical = input.clinical ? 1.35 : 1;
 
-  const hemi = (0.16 * day * clinical + 0.008 * night) * diffuse;
-  const ambient = (0.035 * day * clinical + 0.002 * night) * diffuse;
-  const overhead = 0.2 * day * direct * clinical;
-  const leftWindow = (0.13 * day * clinical + 0.008 * night) * diffuse;
-  const rightWindow = (0.09 * day * clinical + 0.006 * night) * diffuse;
+  // Day fill is a soft base. The sun directional (up to ~1.55) and the pano
+  // IBL are what model leather and the dash; a stronger hemi/overhead pair
+  // flattens them into grey plastic.
+  const hemi = (0.12 * day * clinical + 0.008 * night) * diffuse;
+  const ambient = (0.022 * day * clinical + 0.002 * night) * diffuse;
+  const overhead = 0.09 * day * direct * clinical;
+  // Window fills: the day term follows the sun side (a low sun off the
+  // driver's window lights the driver's side), the night term is a flat
+  // streetlight hint. The driver-side bias in the base values stays.
+  const balance = windowFillBalance(input.sunSide ?? 0, rain);
+  const leftWindow = (0.1 * day * clinical * balance.left + 0.008 * night) * diffuse;
+  const rightWindow = (0.07 * day * clinical * balance.right + 0.006 * night) * diffuse;
 
   // Headlights: a little dash bounce, not a cabin flood. Rain adds bounce
   // (wet road scatter) instead of extra ambient.
   const bounce =
-    (input.headlightsOn ? night * 0.2 : 0) +
+    (input.headlightsOn ? night * 0.14 : 0) +
     rain * 0.1 * (0.3 + day * 0.7);
+  // The spill sits ~0.4 m off the dash face, so it lands as a patch above the
+  // cluster. At the old 0.22 + 0.1 that patch out-shone the cluster at night;
+  // half that keeps it a glow around the instruments.
   const dash =
-    night * 0.22 +
-    (input.headlightsOn ? night * 0.1 : 0) +
-    (input.domeLightOn ? 0.04 : 0);
-  const dome = input.domeLightOn ? 0.92 : 0;
+    night * 0.11 +
+    (input.headlightsOn ? night * 0.05 : 0) +
+    (input.domeLightOn ? 0.02 : 0);
+  const dome = input.domeLightOn ? 1.3 : 0;
   const headlights = input.headlightsOn ? 0.2 : 0;
 
   return {
@@ -126,9 +196,10 @@ export function cabinEmitterTargets(input: CabinRampInput): CabinEmitterTargets 
     cluster: 0.03 + night * 0.09 + hl * 0.5,
     centerDisplay: 0.24 + night * 0.42 + hl * 0.5,
     clock: 0.28 + night * 0.48,
-    // Fixture emissive 0xffe8b0: above ~1.1 the WebGPU cabin (NoToneMapping)
-    // clips it to a flat white disc; 1.1 stays a warm lit diffuser.
-    domeFixture: input.domeLightOn ? 1.1 : 0.015,
+    // Fixture emissive 0xffe8b0. Above ~0.9 the red channel clips under
+    // NoToneMapping and the disc goes white; 0.85 stays a warm diffuser.
+    // The point light is on another layer so it cannot blast this mesh.
+    domeFixture: input.domeLightOn ? 0.85 : 0.015,
     domeSwitch: input.domeLightOn ? 0.45 : 0,
   };
 }

@@ -199,3 +199,38 @@ describe('vignette and rain darkening', () => {
         );
     });
 });
+
+describe('scene depth (#320) never reaches a stage the mirror repeats', () => {
+    // `createRoadDisplay` mirrors grade → night → vignette → rain darkening →
+    // ACES. Depth reaches the road only through fog, precipitation and DOF —
+    // already outside the mirror (a known, documented delta inside lenses). If
+    // depth ever leaks into a mirrored stage, the mirror must learn about it:
+    // this fails first.
+    const DEPTH_READS = /sceneDepth|depthParams|sceneDepthTex/;
+
+    it('no mirrored stage reads the depth map', () => {
+        for (const name of [
+            'applyVibrance',
+            'applySaturation',
+            'applyContrast',
+            'applyTemperatureTint',
+            'applyExposure',
+            'applyNight',
+            'applyVignette',
+            'aces_tonemap',
+        ]) {
+            expect(fnBody(WEATHER, name), name).not.toMatch(DEPTH_READS);
+        }
+        // The rain darkening the mirror repeats is a global multiply, not depth-weighted.
+        expect(FS_MAIN).toContain('col = col * (1.0 - p.rainIntensity * mix(0.22, 0.10, p.nightIntensity));');
+    });
+
+    it('depth enters only through fog, rain/snow and DOF', () => {
+        const readers = [...WEATHER.matchAll(/fn (\w+)\(/g)]
+            .map((m) => m[1]!)
+            .filter((name) => name !== 'sceneDepth' && name !== 'sampleSceneDepthMap')
+            .filter((name) => /sceneDepth\(/.test(fnBody(WEATHER, name)));
+        expect(readers.sort()).toEqual(['applyCameraFX', 'fogAmountAt', 'rain', 'snow']);
+    });
+});
+

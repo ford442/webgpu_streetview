@@ -28,6 +28,8 @@ vi.mock('./cabinPmrem', () => ({
     })),
 }));
 
+import { DASH_SPILL_COLOR } from './cabinLightingRamps';
+import { DASH } from './CarInteriorDashboardBuilder';
 import { buildInteriorLighting } from './LightingBuilder';
 import { createCabinPmrem } from './cabinPmrem';
 
@@ -100,5 +102,24 @@ describe('LightingBuilder — studio IBL ownership', () => {
         expect(lights.sunLight).toBeInstanceOf(THREE.DirectionalLight);
         expect(lights.domeLightSource).toBeInstanceOf(THREE.PointLight);
         expect(scene.environment).toBeNull();
+        // Accent stays on emissive trim. The dash point is a warm spill for
+        // every vehicle, including the green sedan.
+        expect(lights.dashLight.color.getHex()).toBe(DASH_SPILL_COLOR);
+        expect(lights.dashLight.color.getHex()).not.toBe(
+            parseInt(VEHICLES.sedan.accentColor.replace('#', ''), 16),
+        );
+    });
+
+    it('keeps the dash spill and bounce lights clear of the dash block', () => {
+        // Decay-2 point lights inverse-square any surface they sit next to into
+        // a hot ring. The bounce used to sit 5 cm off the lower dash face.
+        const lights = buildInteriorLighting(new THREE.Scene(), new THREE.Group(), RENDERER, VEHICLES.sedan);
+        const dashBlock = new THREE.Box3(
+            new THREE.Vector3(-DASH.halfW, DASH.bottom, DASH.face - DASH.depth),
+            new THREE.Vector3(DASH.halfW, DASH.top, DASH.face),
+        );
+        for (const light of [lights.dashLight, lights.interiorBounceLight]) {
+            expect(dashBlock.distanceToPoint(light.position)).toBeGreaterThanOrEqual(0.4);
+        }
     });
 });

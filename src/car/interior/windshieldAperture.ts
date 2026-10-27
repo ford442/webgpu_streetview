@@ -17,8 +17,8 @@ import * as THREE from 'three';
  * Planes here are kept in the **parent's local space** (the frame the windshield
  * mesh's own `matrix` lives in) and are static. The world-space copy three's
  * `ClippingGroup` needs is produced per frame from the group's `matrixWorld` —
- * the cabin body rotates every frame (`CarInteriorAnimator.setCarOrientation`),
- * so a world plane cached at build time would be wrong on the second tick.
+ * the car rig is at identity today, but a glTF swap, seat move or a parent
+ * transform would leave a world plane cached at build time stale.
  */
 
 /** Inset from the geometry's edge, in the mesh's local units — about a seal's width. */

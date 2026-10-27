@@ -103,10 +103,11 @@ jobs:
           cmake --build cpp/build-host -j"$(nproc)"
           ctest --test-dir cpp/build-host --output-on-failure
 
-      # Advisory: cpp/.clang-tidy has WarningsAsErrors empty, so findings
-      # print but do not fail the job. Missing clang-tidy or a missing
-      # compilation database *does* fail so the step cannot silently skip.
-      - name: clang-tidy (advisory)
+      # Gating: cpp/.clang-tidy sets WarningsAsErrors to bugprone-*, so any
+      # bugprone finding fails the job (modernize-* still only prints).
+      # Missing clang-tidy or a missing compilation database fails too, so
+      # the step cannot silently skip.
+      - name: clang-tidy (bugprone-* gating)
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-tidy
@@ -169,8 +170,8 @@ jobs:
           node scripts/gen-wasm-goldens.mjs
           git diff --exit-code cpp/tests/goldens.json cpp/tests/goldens_generated.h
 
-  # Rebuild the WASM module through the C++/Emscripten ship path and prove the
-  # committed public/wasm/streetview-wasm.wasm matches this pinned emcc.
+  # Rebuild the WASM modules through the C++/Emscripten ship path and prove the
+  # committed public/wasm/streetview-wasm{,.simd}.wasm match this pinned emcc.
   build-wasm-emscripten:
     runs-on: ubuntu-latest
     steps:
@@ -196,17 +197,19 @@ jobs:
       - name: Verify Emscripten build exports the full ABI
         run: node scripts/check-wasm-abi.mjs
 
-      - name: Committed wasm matches this emcc
-        run: git diff --exit-code public/wasm/streetview-wasm.wasm public/wasm/streetview-wasm.wasm.sha256
-
-      - name: SIMD128 goldens stay bit-identical (not shipped)
+      - name: Committed wasm (scalar + SIMD) matches this emcc
         run: |
-          cp public/wasm/streetview-wasm.wasm /tmp/scalar-streetview-wasm.wasm
-          cp public/wasm/streetview-wasm.wasm.sha256 /tmp/scalar-streetview-wasm.wasm.sha256
-          STREETVIEW_WASM_SIMD=ON npm run build:wasm
-          node scripts/gen-wasm-goldens.mjs --compare
-          cp /tmp/scalar-streetview-wasm.wasm public/wasm/streetview-wasm.wasm
-          cp /tmp/scalar-streetview-wasm.wasm.sha256 public/wasm/streetview-wasm.wasm.sha256
+          git diff --exit-code public/wasm/streetview-wasm.wasm \
+            public/wasm/streetview-wasm.simd.wasm public/wasm/streetview-wasm.wasm.sha256
+
+      # The SIMD128 binary ships (the AudioWorklet's cabin DSP runs its
+      # hand-vectorised FIR), so it must reproduce every golden the scalar
+      # binary captured — the cabin DSP scripts included — bit for bit.
+      - name: SIMD128 binary reproduces the scalar goldens bit for bit
+        run: node scripts/gen-wasm-goldens.mjs --compare --wasm public/wasm/streetview-wasm.simd.wasm
+
+      - name: Cabin DSP render budget (advisory)
+        run: node scripts/bench-cabin-dsp.mjs --quanta 1500
 
   e2e-smoke:
     runs-on: ubuntu-latest
@@ -222,6 +225,17 @@ jobs:
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+
+      # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
+      # not in git: fetch the pinned, SHA-256-checked ones, cached on the pins.
+      - name: Cache the scene-depth model
+        uses: actions/cache@v4
+        with:
+          path: public/models/depth
+          key: depth-model-${{ hashFiles('src/renderer/depth/depthModel.manifest.json') }}
+
+      - name: Fetch the scene-depth model
+        run: npm run fetch:depth-model
 
       - name: E2E smoke (keyless)
         run: npm run test:e2e:smoke

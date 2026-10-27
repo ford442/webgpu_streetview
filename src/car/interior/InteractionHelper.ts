@@ -28,4 +28,17 @@ export class InteractionHelper {
     target.updateWorldMatrix(true, true);
     return this.raycaster.intersectObject(target, recursive).length > 0;
   }
+
+  /** Distance along a world-space ray to `target`, or null on a miss (a WebXR controller, #331). */
+  public rayDistance(
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+    target: THREE.Object3D,
+    recursive = true
+  ): number | null {
+    this.raycaster.set(origin, direction);
+    target.updateWorldMatrix(true, true);
+    const hit = this.raycaster.intersectObject(target, recursive)[0];
+    return hit ? hit.distance : null;
+  }
 }

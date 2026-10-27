@@ -6,6 +6,8 @@ import {
 } from '../passStatus';
 import type { TextureLifecycle } from '../textureLifecycle';
 import type { FramePassTimings } from '../frameLoop';
+import type { FrameAux } from '../depth/sceneDepthBinding';
+import type { RenderScaleFrame } from '../renderScale';
 
 /** What every pass may read while it encodes one frame. Built once per frame by `Renderer`. */
 export interface FrameContext {
@@ -13,6 +15,48 @@ export interface FrameContext {
     timings: FramePassTimings;
     /** This frame's swap-chain view, for passes that load what weather stored. */
     getSwapChainView: () => GPUTextureView | null;
+    /** The road's render scale and sizes this frame (`renderScale.ts`). */
+    renderScale: RenderScaleFrame;
+    /**
+     * Where the weather pass writes: undefined for the swap chain (scale 1),
+     * else the upscale pass's road target at the intermediate's size.
+     */
+    roadTarget: GPUTextureView | undefined;
+    /**
+     * Auxiliary textures produced outside the road frame (today: scene depth,
+     * `depth/`). Every entry is optional — a consumer binds its fallback when
+     * one is missing, so a pass that failed or is off never stalls the frame.
+     */
+    aux: FrameAux;
+    /**
+     * Which half of the frame this encode is (#331). A frame with a **tail**
+     * (late latch, stereo, WebXR) is split: `main` renders the road into the
+     * reproject pass's present source, `tail` — encoded later in the same
+     * display frame by `reproject/frameTail.ts` — presents it. Without a tail
+     * there is only `main`, and it is the pre-#331 frame.
+     */
+    phase: FramePhase;
+    hasTail: boolean;
+    /**
+     * Where the last road stage (weather at scale 1, else the upscale) writes:
+     * the reproject pass's present source when the frame has a tail, else
+     * undefined for the swap chain.
+     */
+    presentTarget: GPUTextureView | undefined;
+}
+
+export type FramePhase = 'main' | 'tail';
+
+/**
+ * When a pass encodes: `main` (the default) with the road; `tail` only in a
+ * split frame's tail; `last` in the tail when there is one, else at the end of
+ * `main` — the cabin composite, which must land on whatever presents.
+ */
+export type FramePassPhase = 'main' | 'tail' | 'last';
+
+function encodesIn(passPhase: FramePassPhase, frame: Pick<FrameContext, 'phase' | 'hasTail'>): boolean {
+    if (passPhase === 'last') return frame.hasTail ? frame.phase === 'tail' : frame.phase === 'main';
+    return passPhase === frame.phase;
 }
 
 /**
@@ -35,6 +79,8 @@ export interface FramePass {
     readonly required?: boolean;
     /** Not initialised by `initAll` — the owner calls `initPass` when it is needed. */
     readonly lazy?: boolean;
+    /** Which part of a split frame encodes it (`FramePassPhase`); `main` when unset. */
+    readonly phase?: FramePassPhase;
     init(): Promise<void>;
     /** Whether this frame needs the pass at all (cheap; called every frame). */
     enabled(frame: FrameContext): boolean;
@@ -51,7 +97,8 @@ export class RequiredPassError extends Error {
 
 /**
  * The frame as an ordered list of passes: `streetview → [historical-wipe] →
- * weather | present-fallback → cabin-composite`.
+ * weather | present-fallback → [upscale] → [reproject] → cabin-composite`
+ * (`reproject` and, in a split frame, the cabin composite in the tail).
  *
  * Boot builds every non-lazy pass concurrently (their WGSL fetches and pipeline
  * compiles overlap). Per frame, only passes that are ready *and* enabled are
@@ -131,10 +178,11 @@ export class FramePassRegistry {
         reportPassReady(id);
     }
 
-    /** Encode every ready, enabled pass in order. Returns the ids it encoded. */
+    /** Encode every ready, enabled pass of `frame.phase`, in order. Returns the ids it encoded. */
     public encode(encoder: GPUCommandEncoder, frame: FrameContext): FramePassId[] {
         const encoded: FramePassId[] = [];
         for (const pass of this.passes) {
+            if (!encodesIn(pass.phase ?? 'main', frame)) continue;
             if (!this.ready.has(pass.id) || isPassFailed(pass.id)) continue;
             if (!pass.enabled(frame)) continue;
             if (pass.required) {

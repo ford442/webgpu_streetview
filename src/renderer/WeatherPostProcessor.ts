@@ -27,6 +27,12 @@ import {
 import { OPTIONAL_DEVICE_FEATURES } from './deviceCapabilities';
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 import {
+    getSceneDepthBindGroupLayout,
+    getSceneDepthFallback,
+    WEATHER_SCENE_DEPTH_GROUP,
+    type AuxDepth,
+} from './depth/sceneDepthBinding';
+import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
     fetchShaderSource,
@@ -51,6 +57,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private lutTexture: GPUTexture | null = null;
     private lutBindGroupLayout: GPUBindGroupLayout | null = null;
     private lutBindGroup: GPUBindGroup | null = null;
+    /** Group 2: the published scene depth, or null for the per-device zero fallback. */
+    private sceneDepth: AuxDepth | null = null;
     private weatherParams: Float32Array<ArrayBuffer> = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -151,7 +159,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.lutBindGroupLayout = createLutBindGroupLayout(this.device, GPUShaderStage.FRAGMENT);
         const pipelineLayout = this.device.createPipelineLayout({
             label: 'weather-post-pipeline-layout',
-            bindGroupLayouts: [bindGroupLayout, this.lutBindGroupLayout],
+            bindGroupLayouts: [bindGroupLayout, this.lutBindGroupLayout, getSceneDepthBindGroupLayout(this.device)],
         });
 
         this.weatherPipeline = await createRenderPipelineChecked(this.device, {
@@ -228,6 +236,14 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         // TAA/DOF history is compute-only.
     }
 
+    public setSceneDepth(depth: AuxDepth | null): void {
+        this.sceneDepth = depth;
+    }
+
+    private sceneDepthBindGroup(): GPUBindGroup {
+        return this.sceneDepth?.bindGroup ?? getSceneDepthFallback(this.device);
+    }
+
     public setShaderEffects(enabled: boolean): void {
         this.shaderEffectsEnabled = enabled;
         if (this.weatherParamsBuffer && this.device) {
@@ -289,6 +305,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     public renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void {
         if (!this.device || !this.weatherPipeline || !this.weatherBindGroup) return;
 
@@ -308,7 +325,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             });
             clearPass.end();
 
-            const finalTextureView = this.context.getCurrentTexture().createView();
+            const finalTextureView = target ?? this.context.getCurrentTexture().createView();
             const postPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
                     view: finalTextureView,
@@ -321,6 +338,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             postPass.setPipeline(this.weatherPipeline);
             postPass.setBindGroup(0, this.weatherBindGroup);
             if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
+            postPass.setBindGroup(WEATHER_SCENE_DEPTH_GROUP, this.sceneDepthBindGroup());
             postPass.draw(3, 1, 0, 0);
             postPass.end();
 
@@ -332,10 +350,14 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         }
     }
 
-    public renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void {
+    public renderPass(
+        commandEncoder: GPUCommandEncoder,
+        timing?: WeatherPassTimingContext,
+        target?: GPUTextureView,
+    ): void {
         if (!this.weatherPipeline || !this.weatherBindGroup) return;
         this.flushWeatherParams();
-        const finalTextureView = this.context.getCurrentTexture().createView();
+        const finalTextureView = target ?? this.context.getCurrentTexture().createView();
         const postPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
                 view: finalTextureView,
@@ -351,6 +373,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         postPass.setPipeline(this.weatherPipeline);
         postPass.setBindGroup(0, this.weatherBindGroup);
         if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
+        postPass.setBindGroup(WEATHER_SCENE_DEPTH_GROUP, this.sceneDepthBindGroup());
         postPass.draw(3, 1, 0, 0);
         if (timing) {
             timing.timer.markPassEnd(postPass, timing.weatherEndIndex);
@@ -377,5 +400,6 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.dummyLutTexture = null;
         this.lutBindGroup = null;
         this.lutBindGroupLayout = null;
+        this.sceneDepth = null;
     }
 }

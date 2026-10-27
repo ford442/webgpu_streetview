@@ -1,5 +1,5 @@
 import { CarInterior } from '../CarInterior';
-import { cabinCameraWorldYaw } from '../carSpatialModel';
+import { panoramaPovFromCabin } from '../carSpatialModel';
 import { RearviewMirror } from '../RearviewMirror';
 import { SelectivePostProcessing } from '../SelectivePostProcessing';
 import { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../variants';
@@ -8,6 +8,7 @@ import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
 import { notifyCabinFrameRendered } from './frameCapture';
 import { publishCabinOverlaySource } from '../../renderer/cabinOverlayRegistry';
 import { getState, setState, type CarModeState } from './state';
+import { cabinHeadOffsetStore } from '../../state/cabinHeadOffsetStore';
 import type { CabinRendererHandle } from '../interior/createCabinRenderer';
 
 /**
@@ -134,7 +135,6 @@ export function toggleCarMode(enabled: boolean): void {
     if (!state) return;
 
     state.isActive = enabled;
-    state.interior.setActive(enabled);
 
     // One-frame compositor: while car mode is on, hand the cabin texture to the
     // Street View renderer so it draws the cabin into the frame it presents
@@ -170,12 +170,13 @@ export function toggleCarMode(enabled: boolean): void {
  * Update and render car mode elements each frame.
  * Should be called within the existing animation loop.
  *
- * @param carHeading - Car body heading in degrees (stays level with ground)
- * @param viewHeading - Current view heading in degrees (carHeading + headYawOffset)
- * @param headPitch - Current head pitch in degrees (up/down look)
+ * @param carHeading - Car compass heading in degrees. Re-aims world-anchored
+ *   lighting only; no cabin transform rotates with it (`carSpatialModel.ts`).
+ * @param headYaw - Car-local head yaw in radians (+ = look left)
+ * @param headPitch - Car-local head pitch in radians (+ = look up)
  * @param carSpeed - Current car speed for wind effects in convertible mode (km/h)
  */
-export function updateCarMode(carHeading: number, headYawOffset: number, headPitch: number, carSpeed: number = 0, nightIntensity: number = 0, headlightsOn: boolean = false, domeLightOn: boolean = false, mirrorHeading?: number): void {
+export function updateCarMode(carHeading: number, headYaw: number, headPitch: number, carSpeed: number = 0, nightIntensity: number = 0, headlightsOn: boolean = false, domeLightOn: boolean = false): void {
     const state = getState();
     if (!state || !state.isActive) return;
 
@@ -195,22 +196,21 @@ export function updateCarMode(carHeading: number, headYawOffset: number, headPit
     state.limoAtmosphere.update(deltaTime);
     state.labAtmosphere.update(deltaTime);
 
-    // Chassis yaw is carHeading only — free-look must not spin the overlay.
-    // The camera sits on the scene root, so it takes world look heading
-    // (carHeading + offset), matching the Street View panorama, not the
-    // car-relative offset (that misaligned the body by ~carHeading).
-    state.interior.setCarOrientation(carHeading);
-    state.interior.setHeadOrientation(
-      cabinCameraWorldYaw(carHeading, headYawOffset),
-      headPitch,
-    );
+    // The car rig never rotates: carHeading only re-aims world-anchored
+    // lighting, and the camera (under the head pivot) takes the car-local head
+    // pose. Never feed a world heading to the camera — it is parented to the
+    // rig, so that counts carHeading twice.
+    state.interior.setCarHeading(carHeading);
+    state.interior.setHeadOrientation(headYaw, headPitch);
+    state.interior.setHeadOffset(cabinHeadOffsetStore.get());
 
     // Re-register any bound rear sample against the *car body* heading — the
     // mirror lives in car-body space, so the head's view heading must not move
     // it (that was the epic #171 spatial bug).
     state.mirror.update(carHeading, true); // skipFrame = true for performance
 
-    state.interior.updateVanityMirror(mirrorHeading ?? carHeading, headPitch);
+    const view = panoramaPovFromCabin(carHeading, headYaw, headPitch);
+    state.interior.updateVanityMirror(view.heading, view.pitch);
 
     // Update interior lighting based on headlights, night intensity, and dome light
     state.interior.setInteriorLighting(headlightsOn, nightIntensity, domeLightOn);

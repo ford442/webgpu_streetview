@@ -9,7 +9,9 @@
  *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
  *   normalize_angle, signed_angle_diff, initial_bearing, polyline_resample,
  *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
- *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d
+ *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d, luma_analyze,
+ *   dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
+ *   dsp_max_ir_taps, depth_percentiles, depth_near_depth, depth_normalize
  *
  * This comment is a convenience copy — the SSOT for the export set is
  * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
@@ -23,16 +25,35 @@
  *                       initial_bearing / polyline_resample / polyline_project
  *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
  *   hrtf_module.cpp     fill_hrtf
- *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d
+ *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d /
+ *                       luma_analyze
+ *   cabin_dsp_module.cpp  dsp_* — the stateful cabin engine the AudioWorklet runs
+ *   depth_module.cpp    depth_* — scene-depth percentiles + proxy calibration
+ *
+ * audio_kernels.h holds the internal (unexported) pieces the audio domains
+ * share: the sample hash, the engine tone and the head-shadow coefficients.
  *
  * Build with Emscripten (standalone raw-WASM mode, no JS glue):
  *   emcmake cmake ... && emmake make
  *   Flags: -s STANDALONE_WASM=1 --no-entry (see CMakeLists.txt)
  */
 
+/*
+ * Every value-returning kernel is [[nodiscard]]: dropping a result (the
+ * resample count, the engine phase, a dsp instance) is always a bug.
+ */
+#ifdef __cplusplus
+#define SW_NODISCARD [[nodiscard]]
+#else
+#define SW_NODISCARD
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Opaque cabin DSP instance (cabin_dsp_module.cpp). */
+typedef struct sw_dsp sw_dsp;
 
 /**
  * Seed the internal permutation table used by noise functions.
@@ -47,7 +68,7 @@ void sw_seed(unsigned int seed);
  * @param y  World-space y coordinate.
  * @return   Value in [-1.0, 1.0].
  */
-float sw_noise2d(float x, float y);
+SW_NODISCARD float sw_noise2d(float x, float y);
 
 /**
  * Fill a Float32 buffer with 2-D noise samples.
@@ -73,7 +94,7 @@ void sw_fill_noise_buffer(float* buf, int width, int height,
  * @return           Value in [-1, 1] — the sum is divided by the accumulated
  *                   amplitude so the range is octave-count independent.
  */
-float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
+SW_NODISCARD float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
 
 /**
  * Fill a Float32 buffer with fBm samples.  Same tile layout as
@@ -98,7 +119,7 @@ void sw_fill_particle_seeds(float* buf, int count, unsigned int seed);
  * Haversine great-circle distance between two WGS-84 points.
  * @return Distance in metres.
  */
-double sw_haversine(double lat1, double lon1, double lat2, double lon2);
+SW_NODISCARD double sw_haversine(double lat1, double lon1, double lat2, double lon2);
 
 /**
  * Haversine distance for a whole polyline in one call.
@@ -109,7 +130,7 @@ double sw_haversine(double lat1, double lon1, double lat2, double lon2);
  *                the per-segment distances in metres.  Untouched when count < 2.
  * @return        Sum of the segment distances in metres (0 when count < 2).
  */
-double sw_batch_haversine(const double* points, int count, double* out);
+SW_NODISCARD double sw_batch_haversine(const double* points, int count, double* out);
 
 /**
  * Destination point from a WGS-84 start, a distance in metres and a bearing.
@@ -133,7 +154,7 @@ void sw_offset_latlng(double lat, double lng, double distance_meters,
  * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
  * @return Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
  */
-double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
+SW_NODISCARD double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
 
 /**
  * Resample a polyline to points evenly spaced along its great-circle length.
@@ -151,7 +172,7 @@ double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
  * @return        The number of points the full resample has — like snprintf,
  *                it can exceed `cap`, in which case only `cap` were written.
  */
-int sw_polyline_resample(const double* in, int n, double step_m,
+SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m,
                          double* out, int cap);
 
 /**
@@ -173,13 +194,13 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
 /**
  * Normalise an angle to [0, 360).
  */
-float sw_normalize_angle(float angle);
+SW_NODISCARD float sw_normalize_angle(float angle);
 
 /**
  * Smallest signed angle difference, result in [-180, 180).
  * Exactly-opposite inputs return -180, not +180.
  */
-float sw_signed_angle_diff(float from, float to);
+SW_NODISCARD float sw_signed_angle_diff(float from, float to);
 
 /**
  * Fill a mono PCM buffer with engine + road noise.
@@ -206,7 +227,7 @@ float sw_signed_angle_diff(float from, float to);
  * @return              Phase after the last sample, in [0, 1). `phase`
  *                      (wrapped) when count <= 0 or buf is null.
  */
-double sw_fill_engine_noise(float* buf, int count,
+SW_NODISCARD double sw_fill_engine_noise(float* buf, int count,
                             float rpm, float load, float speed_kmh,
                             double phase, double sample_index,
                             float sample_rate);
@@ -279,6 +300,98 @@ void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
  */
 void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
                       unsigned char* dst, int dst_w, int dst_h);
+
+/**
+ * Fused luma chore: box-downsample `rgba` (width x height) onto a
+ * dst_w x dst_h grid, bin every downsampled pixel into the 256-bin Rec.709
+ * histogram and reduce it, in one pass with one input buffer.
+ *
+ * `bins` is identical to sw_downsample_2d followed by sw_luma_histogram_bt709.
+ * `stats3` receives {mean, min, max} in [0, 1] from integer luma
+ * (2126 r + 7152 g + 722 b, a uint64 sum), so the mean of a flat frame is the
+ * exact luma of its colour and a full frame's sum cannot drift. Passing
+ * dst = source size analyses the buffer as-is. Bad arguments write zeros.
+ */
+void sw_luma_analyze(const unsigned char* rgba, int width, int height,
+                     int dst_w, int dst_h, unsigned int* bins, float* stats3);
+
+/**
+ * Create a cabin DSP instance: the whole car bed (engine, road, wind, rain,
+ * wiper, radio) rendered through the cabin FIR, at `sample_rate` (<= 1 falls
+ * back to 44100, > 192000 clamps). The state is malloc'd from the module heap;
+ * nothing is global. Returns nullptr when the allocation fails.
+ */
+SW_NODISCARD sw_dsp* sw_dsp_create(float sample_rate);
+
+/** Free an instance from sw_dsp_create (nullptr is a no-op). */
+void sw_dsp_destroy(sw_dsp* state);
+
+/**
+ * Set the targets the engine glides to (one one-pole per parameter, ~40 ms,
+ * smoothed per sample — post at any cadence). Out-of-range / NaN values clamp.
+ *
+ * @param rpm         Engine RPM [0, 12000].
+ * @param load        Throttle/load [0, 1].
+ * @param speed_mps   Road speed, m/s [0, 120]; 40 m/s is full road/wind noise.
+ * @param openness    0 = sealed, 1 = roof/windows open.
+ * @param vehicle     Voicing index, CABIN_IR_VEHICLE_INDEX order, clamped [0, 4].
+ * @param wet_road    0 = dry, 1 = soaked (tyre hiss).
+ * @param rain        Rain on the roof [0, 1].
+ * @param wind_mps    Ambient wind, m/s [0, 60].
+ * @param radio_gain  Radio level into the cabin [0, 2].
+ * @param wipers      Non-zero: wipers run (and thump) while rain > 0.02.
+ */
+void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
+                       float openness, int vehicle, float wet_road, float rain,
+                       float wind_mps, float radio_gain, int wipers);
+
+/**
+ * Replace the cabin IR (`count` taps; > sw_dsp_max_ir_taps() truncates,
+ * nullptr / <= 0 is the identity). Padded to whole 128-tap partitions; the
+ * swap crossfades over 256 samples. Non-finite taps become 0.
+ */
+void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
+
+/**
+ * Render `frames` stereo samples. `radio_in_*` may be nullptr (silence);
+ * `out_*` may be nullptr (discarded). Output is clamped to [-1, 1].
+ * Deterministic: the same parameter/IR/input script gives the same bits on
+ * the scalar and SIMD binaries, the host build and the JS twin.
+ */
+void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
+                   float* out_l, float* out_r, int frames);
+
+/** Longest IR sw_dsp_set_ir keeps (4096). */
+SW_NODISCARD int sw_dsp_max_ir_taps(void);
+
+/**
+ * `out2` = {lo, hi}: the disparity at `low_pct` / `high_pct` (0-1) of a
+ * strided subsample (at most 16384 texels), exact order statistics with
+ * non-finite texels skipped; {0, 0} when none is finite. `scratch` holds
+ * `count` floats and is overwritten.
+ */
+void sw_depth_percentiles(const float* disparity, int count, double low_pct,
+                          double high_pct, float* scratch, double* out2);
+
+/**
+ * Proxy-scale depth of the nearest disparity: the median of
+ * proxy(y) * nearness over the bottom-centre band of a width x height
+ * nearness map, clamped to [0.04, 0.3]; 0.1 when the horizon (`horizon_y`,
+ * top-origin screen Y) is too low for the band to be ground.
+ */
+SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int height, double horizon_y);
+
+/**
+ * Relative inverse depth -> the viewDepthProxy scale (0 = camera, 1 = horizon
+ * or beyond): percentile stretch to nearness n, depth = q / n with q from
+ * sw_depth_near_depth. `state3` = {lo, hi, nearDepth} is read and written:
+ * with `same_scene` (and a previous range) the range and q ease toward the
+ * new values by half. With `aligned` and a non-null `previous` (count floats)
+ * every texel eases too. `out` (count floats) must not alias the inputs.
+ */
+void sw_depth_normalize(const float* disparity, int count, int width, int height,
+                        double horizon_y, int aligned, int same_scene,
+                        double* state3, const float* previous, float* out);
 
 #ifdef __cplusplus
 } // extern "C"

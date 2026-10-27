@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
-import { useViewMode } from '../hooks/useViewMode';
+import { useViewMode, type ControlMode } from '../hooks/useViewMode';
+import { applyPointerLockEffect } from '../car/input/cabinInputMachine';
 import {
   useCarEnvSettings,
   useLightingSettings,
@@ -16,7 +17,10 @@ import {
   handleCarInteriorPointerDown,
   handleCarInteriorPointerMove,
   handleCarInteriorPointerUp,
+  pressCarInteriorAlongRay,
 } from '../car';
+import { XrCockpitButton } from './car/XrCockpitButton';
+import { getActiveXrCockpit } from '../xr/xrSession';
 import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
 import { povStore, usePovEffect } from '../state/povStore';
@@ -40,8 +44,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const sharedGpuDevice = renderer?.getSharedGpuDevice?.();
   const {
     controlMode,
-    setControlMode,
-    isTempSteerMode,
+    dispatchCabinInput,
     registerCarModeState,
   } = useViewMode();
 
@@ -121,7 +124,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   const {
     telemetry,
     steeringInputRef,
-    isSteeringWheelAtPoint,
+    isDashboardControlAtPoint,
     handleDisplayMouseDown,
     handleDisplayClick,
     handleThrust,
@@ -131,7 +134,6 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
     registerCarModeState,
     sharedGpuDevice,
     controlMode,
-    panorama,
     position,
     canvas,
     wipersEnabled,
@@ -164,6 +166,16 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
   // Steering changes the pose without re-rendering this view; notifyPose gates by movement.
   usePovEffect((p) => p.carHeading, pushRearPose, { immediate: false });
 
+  // Leaving the car view takes the headset off too (#331): the cockpit is this view.
+  useEffect(() => () => {
+    void getActiveXrCockpit()?.end();
+  }, []);
+
+  // HUD mode buttons: a click is a user gesture, so the lock request can run here.
+  const selectControlMode = useCallback((mode: ControlMode) => {
+    applyPointerLockEffect(dispatchCabinInput({ type: 'SELECT_MODE', mode }).effect, containerRef.current);
+  }, [dispatchCabinInput]);
+
   const handleToggleGPS = useCallback(() => {
     setIsMapOpen((prev) => !prev);
   }, []);
@@ -188,12 +200,13 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         overflow: 'hidden',
         backgroundColor: 'transparent',
         pointerEvents: 'auto',
-        cursor: controlMode === 'uiMouse' ? 'default' : controlMode === 'carSteer' ? 'ew-resize' : 'default',
+        // Locked modes hide the cursor anyway; UI_INTERACT shows a plain one.
+        cursor: 'default',
       }}
     >
       <CarInputHandler
         targetRef={containerRef}
-        isSteeringWheelAtPoint={isSteeringWheelAtPoint}
+        isDashboardControlAtPoint={isDashboardControlAtPoint}
         onThrust={handleThrust}
         onSteeringDelta={handleSteeringDelta}
         onHudKeyDown={handleHudKeyDown}
@@ -201,7 +214,6 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         onInteriorPointerDown={(x, y, edit) => handleCarInteriorPointerDown(x, y, edit)}
         onInteriorPointerMove={(x, y) => handleCarInteriorPointerMove(x, y)}
         onInteriorPointerUp={() => handleCarInteriorPointerUp()}
-        interiorEditMode={controlMode === 'uiMouse'}
       />
 
       <DashboardUI
@@ -283,12 +295,13 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
 
       <CarControlModeOverlay
         controlMode={controlMode}
-        isTempSteerMode={isTempSteerMode}
         hudMode={hudMode}
-        setControlMode={setControlMode}
+        selectControlMode={selectControlMode}
         setHudModeAndPersist={setHudModeAndPersist}
         toggleDashboard={toggleDashboard}
-      />
+      >
+        <XrCockpitButton device={sharedGpuDevice} pressAlongRay={pressCarInteriorAlongRay} />
+      </CarControlModeOverlay>
 
       <CarLeverFallbacks
         hudMode={hudMode}

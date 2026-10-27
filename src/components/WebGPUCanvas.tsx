@@ -13,7 +13,6 @@ import {
 } from '../hooks';
 import { getMemoryProfiler } from '../utils/memoryProfiler';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import { shouldBypassAdaptiveSkip, shouldRenderHeldFrameThisTick } from './holdRenderLoop';
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
 import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
@@ -21,6 +20,30 @@ import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } fr
 import { fetchLookLutVolume } from '../renderer/lut';
 import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
 import { getGpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
+import {
+    getGpuPassTimings,
+    roadGpuMs,
+    setGpuPassTimingsWanted,
+} from '../renderer/gpuPassTimingStore';
+import {
+    configureRenderScale,
+    getRenderScaleRequest,
+    resolveRenderScaleRequest,
+    setRequestedRenderScale,
+} from '../renderer/renderScale';
+import {
+    DEFAULT_FRAME_BUDGET,
+    createFrameBudgetState,
+    stepFrameBudget,
+    type FrameBudgetState,
+} from '../renderer/frameBudget';
+import { resolveSceneDepthOptions, type SceneDepthOptions } from '../renderer/depth/sceneDepthOptions';
+import { sceneDepthStore } from '../state/sceneDepthStore';
+import {
+    readPresentTailFlags,
+    resolvePresentTailOptions,
+    type PresentTailOptions,
+} from '../renderer/reproject/presentTail';
 import {
     AUTO_EXPOSURE_IDLE,
     resolveAutoExposureFrame,
@@ -33,6 +56,7 @@ import {
     type HorizonFrameState,
 } from '../renderer/gpuChores/horizonEstimate';
 import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 import {
     DEFAULT_MAX_TEXTURE_DIMENSION,
     dprCapForPixelRatio,
@@ -55,6 +79,11 @@ import {
  * 2. CRUISE PAUSE: While `isPanoramaUpdatePaused`, WebGPUCanvas calls
  *    `renderHeldFrame()` so the GPU snapshot is drawn without uploading the
  *    loading Google Maps canvas.
+ * 3. EVERY FRAME RENDERS: there is no frame skipping. When the GPU falls
+ *    behind, the frame-budget loop lowers the road's render scale
+ *    (`renderer/frameBudget.ts` → `renderer/renderScale.ts`) — in car mode the
+ *    road frame is the only thing presenting the cabin, so a skipped frame
+ *    would freeze the wipers and gauges.
  */
 
 interface WebGPUCanvasProps {
@@ -83,7 +112,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // Get street view state
     const {
         canvas: source,
-        isTransitioning: isStreetViewTransitioning,
         isPanoramaUpdatePaused,
         setRenderer,
     } = useStreetView();
@@ -99,11 +127,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     }));
     const canvasBoxRef = useRef<CanvasBoxSize | null>(null);
 
-    // Performance: Frame skipping state
     const frameCountRef = useRef<number>(0);
-    const lastSourceRef = useRef<CanvasImageSource | null | undefined>(undefined);
-    const sourceChangeFlagRef = useRef<boolean>(true);
-    const FRAME_SKIP = 2; // Render every 2nd frame (30fps base) when source unchanged, 60fps when changed
 
     // Performance: debounced resize — every backing-store change reallocates
     // the intermediate (and the compute weather targets), so a drag-resize
@@ -125,8 +149,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     const currentRendererRef = internalRendererRef;
 
-    // Performance monitoring
-    const { startMonitoring, stopMonitoring, shouldSkipFrame } = usePerformanceMonitor({
+    // Performance monitoring — its last rAF interval feeds the budget loop when
+    // the device has no GPU timestamps.
+    const { startMonitoring, stopMonitoring, getFrameTimeMs } = usePerformanceMonitor({
         targetFPS: 60,
         sampleSize: 60,
         warningThreshold: 45,
@@ -138,13 +163,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // reads the latest values without tearing down requestAnimationFrame.
     const sourceRef = useRef(source);
     const isPanoramaUpdatePausedRef = useRef(isPanoramaUpdatePaused);
-    const isTransitioningRef = useRef(isStreetViewTransitioning);
-    const shouldSkipFrameRef = useRef(shouldSkipFrame);
+    const getFrameTimeMsRef = useRef(getFrameTimeMs);
 
     sourceRef.current = source;
     isPanoramaUpdatePausedRef.current = isPanoramaUpdatePaused;
-    isTransitioningRef.current = isStreetViewTransitioning;
-    shouldSkipFrameRef.current = shouldSkipFrame;
+    getFrameTimeMsRef.current = getFrameTimeMs;
+
+    // Frame-budget loop (#329): the render scale the road asks for next. Its
+    // state lives here, its decisions in the pure `stepFrameBudget`.
+    const budgetStateRef = useRef<FrameBudgetState | null>(null);
+    const lastGpuTimingSeqRef = useRef(0);
 
     // Auto exposure (opt-in): eases the GpuChores luma hint into the exposure
     // uniform. Frozen through hold-pause; see renderer/autoExposure.ts.
@@ -157,6 +185,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // a row-luma estimate (preset weight; 0 = today's horizon). Frozen through
     // hold-pause; see renderer/gpuChores/horizonEstimate.ts.
     const horizonStateRef = useRef<HorizonFrameState>(HORIZON_IDLE);
+
+    // Scene depth (#320): opt-in × preset weight, handed to the renderer every
+    // frame (one reused object). See renderer/depth/DepthController.ts.
+    const sceneDepthOptionsRef = useRef<SceneDepthOptions>({ enabled: false, blend: 0, reducedMotion: false });
 
     // Memory profiling
     useEffect(() => {
@@ -355,15 +387,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         };
     }, [activeLookId, reinitCounter, rendererReadyTick]);
 
-    useEffect(() => {
-        // Ignore live canvas swaps while the outgoing frame is held — they are loading artifacts.
-        if (isPanoramaUpdatePaused) return;
-        if (source !== lastSourceRef.current) {
-            sourceChangeFlagRef.current = true;
-            lastSourceRef.current = source;
-        }
-    }, [source, isPanoramaUpdatePaused]);
-
     // Resize renderer when the backing store changes
     useEffect(() => {
         if (currentRendererRef.current) {
@@ -375,39 +398,28 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     useEffect(() => {
         let active = true;
-        const animate = () => {
+        // The preset's render-scale range, unless `?scale=` pinned one. In
+        // auto mode the budget loop wants GPU timestamps every frame it can get.
+        const scaleRequest = resolveRenderScaleRequest(qualityRef.current);
+        configureRenderScale(scaleRequest);
+        budgetStateRef.current = createFrameBudgetState(scaleRequest.scale);
+        if (scaleRequest.mode === 'auto') setGpuPassTimingsWanted(true, 'budget');
+
+        // #331: the URL's late latch / stereo, read once; reduced motion per frame.
+        const tailFlags = readPresentTailFlags();
+        const tailOptions: PresentTailOptions = resolvePresentTailOptions({ reducedMotion: false, ...tailFlags });
+        const livePov = () => povStore.get();
+
+        const animate = (frameTime: number = performance.now()) => {
             if (!active) return;
 
             const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
-            const isTransitioning = isTransitioningRef.current;
-            // In car mode the cabin is drawn into this frame rather than
-            // stacked over it in CSS (`renderer/cabinComposite.ts`), so a
-            // skipped road frame would also freeze the cabin.
-            const cabinComposited =
-                currentRendererRef.current?.isCabinCompositedInFrame?.() === true;
-            const skipFrame = shouldBypassAdaptiveSkip(
-                panoramaUpdatePaused,
-                isTransitioning,
-                cabinComposited,
-            )
-                ? false
-                : shouldSkipFrameRef.current();
 
             const pov = povStore.get();
             const renderHeading = pov.heading;
             const renderPitch = pov.pitch;
             const renderZoom = pov.zoom;
             const liveSource = sourceRef.current;
-
-            const shouldRender = shouldRenderHeldFrameThisTick({
-                panoramaUpdatePaused,
-                skipFrame,
-                isTransitioning,
-                sourceChanged: sourceChangeFlagRef.current,
-                frameCount: frameCountRef.current,
-                frameSkip: FRAME_SKIP,
-                cabinComposited,
-            });
 
             // Google Maps canvas already reflects heading/pitch via setPov — pass through
             // directly so the WebGPU view matches what you see through the windows.
@@ -446,15 +458,16 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 const nowMs = performance.now();
                 const dtMs = lastFrameMsRef.current == null ? 0 : nowMs - lastFrameMsRef.current;
                 lastFrameMsRef.current = nowMs;
+                const reducedMotion = reducedMotionRef.current
+                    || (typeof document !== 'undefined'
+                        && document.body.classList.contains('reduced-motion'));
                 const ae = resolveAutoExposureFrame({
                     enabled: autoExposureEnabledRef.current,
                     holdActive,
                     meanLuma: choresStats.meanLuma,
                     manualExposure: e.exposure,
                     dtMs,
-                    reducedMotion: reducedMotionRef.current
-                        || (typeof document !== 'undefined'
-                            && document.body.classList.contains('reduced-motion')),
+                    reducedMotion,
                 }, autoExposureStateRef.current);
                 autoExposureStateRef.current = ae.state;
                 if (ae.exposure != null) params[WeatherParamIndex.exposure] = ae.exposure;
@@ -466,6 +479,40 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
                 currentRendererRef.current.updateWeatherParams(params);
                 currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
+                currentRendererRef.current.setPresentTail?.(
+                    resolvePresentTailOptions({ reducedMotion, ...tailFlags }, tailOptions),
+                    livePov,
+                );
+                currentRendererRef.current.setSceneDepth?.(resolveSceneDepthOptions({
+                    quality: qualityRef.current,
+                    optedIn: sceneDepthStore.get().enabled,
+                    reducedMotion,
+                }, sceneDepthOptionsRef.current));
+
+                // Frame budget: frozen through a hold and under reduced motion
+                // (a resolution that pumps is motion too). A GPU sample counts
+                // only once, and only if it timed a frame at the current scale.
+                const request = getRenderScaleRequest();
+                if (request.mode === 'auto' && budgetStateRef.current) {
+                    const timings = getGpuPassTimings();
+                    const fresh = timings.seq !== lastGpuTimingSeqRef.current
+                        && timings.renderScale === request.scale;
+                    lastGpuTimingSeqRef.current = timings.seq;
+                    const budget = stepFrameBudget(budgetStateRef.current, {
+                        nowMs,
+                        gpuMs: fresh ? roadGpuMs(timings) : null,
+                        gpuAvailable: timings.available,
+                        frameMs: getFrameTimeMsRef.current(),
+                        frozen: holdActive || reducedMotion,
+                    }, { ...DEFAULT_FRAME_BUDGET, min: request.min, max: request.max });
+                    budgetStateRef.current = budget;
+                    if (budget.scale !== request.scale) {
+                        setRequestedRenderScale(
+                            budget.scale,
+                            budget.scale < request.scale ? 'over-budget' : 'under-budget',
+                        );
+                    }
+                }
 
                 if (wasmNoiseEnabledRef.current) {
                     const tile = noiseFeederRef.current.sampleTile(
@@ -497,8 +544,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 }
             }
 
-            if (shouldRender && currentRendererRef.current) {
+            if (currentRendererRef.current) {
                 const renderer = currentRendererRef.current;
+                renderer.beginFrame?.(frameTime);
                 const holding = panoramaUpdatePaused || renderer.isHoldActive();
                 if (holding) {
                     renderer.renderHeldFrame(renderHeading, renderPitch, renderZoom);
@@ -508,28 +556,24 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 } else {
                     renderer.renderWeatherOnly();
                 }
-                sourceChangeFlagRef.current = false;
                 if (!holding && frameCountRef.current % 8 === 0) {
                     renderer.samplePanoramaStats?.({
                         horizonRows: PRESETS[qualityRef.current].horizonEstimateBlend > 0,
                         pitch: (renderPitch + 90) / 180,
                     });
                 }
-            } else if (currentRendererRef.current) {
-                currentRendererRef.current.updateWeatherAnimation();
-                if (panoramaUpdatePaused || currentRendererRef.current.isHoldActive()) {
-                    currentRendererRef.current.renderHeldFrame(renderHeading, renderPitch, renderZoom);
-                    if (canvasRef.current) streetViewProbe.checkPixelDrift(canvasRef.current);
-                }
             }
 
             frameCountRef.current++;
-            animationFrameId.current = requestAnimationFrame(animate);
+            // The frame clock is the window's rAF — or a WebXR session's while
+            // one presents (#331), so the road packs inside the XR frame.
+            animationFrameId.current = requestFrame(animate);
         };
         animate();
         return () => {
             active = false;
-            cancelAnimationFrame(animationFrameId.current);
+            cancelFrame(animationFrameId.current);
+            setGpuPassTimingsWanted(false, 'budget');
         };
     }, [currentRendererRef]);
 

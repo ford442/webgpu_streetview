@@ -3,7 +3,7 @@ import {
   WasmParticleFeeder,
   getWasmParticlePreference,
 } from '../wasmParticleFeeder';
-import { _resetWasmModule, loadWasmModule } from '../index';
+import { loadWasmModule } from '../index';
 import { PARTICLE_SEED } from '../../renderer/weatherParticles';
 
 const setSearch = (search: string) => {
@@ -11,7 +11,6 @@ const setSearch = (search: string) => {
 };
 
 beforeEach(() => {
-  _resetWasmModule();
   setSearch('');
   localStorage.clear();
 });
@@ -106,11 +105,5 @@ describe('WasmParticleFeeder', () => {
     expect(feeder.sampleSeeds(4, true, PARTICLE_SEED)).not.toBeNull();
     expect(feeder.sampleSeeds(4, false, PARTICLE_SEED)).toBeNull();
     expect(feeder.sampleSeeds(4, true, PARTICLE_SEED)).not.toBeNull();
-  });
-
-  test('isWasm is false for the JS fallback used in Node tests', async () => {
-    const feeder = new WasmParticleFeeder();
-    await feeder.waitUntilLoaded();
-    expect(feeder.isWasm).toBe(false);
   });
 });

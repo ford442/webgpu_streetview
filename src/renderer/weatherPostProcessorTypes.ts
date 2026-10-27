@@ -4,6 +4,7 @@
  */
 import type { GpuPassTimer } from './gpuPassTimer';
 import type { CanvasToneMapping } from './shaderFeatureVariants';
+import type { AuxDepth } from './depth/sceneDepthBinding';
 
 export interface WeatherPassTimingContext {
     timer: GpuPassTimer;
@@ -58,6 +59,13 @@ export interface WeatherPostProcessorLike {
     setLookLut(volume: import('./lut').LutVolume | null): void;
     /** Compute-only 1-frame color history. No-op on fragment. */
     setTemporalHistoryEnabled(enabled: boolean): void;
+    /**
+     * This frame's scene depth (`FrameContext.aux.depth`), or null for the
+     * zero fallback — `sceneDepth()` then returns `viewDepthProxy` exactly.
+     * Remembered for `renderWeatherOnly` frames, which encode outside the
+     * pass registry. No-op on the present fallback.
+     */
+    setSceneDepth(depth: AuxDepth | null): void;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;
@@ -68,14 +76,21 @@ export interface WeatherPostProcessorLike {
     /**
      * Weather-only frame (no fresh panorama upload). Owns its own encoder and
      * submit, so `afterWeather` is the only place another pass can join the
-     * frame — `Renderer` uses it for the cabin composite, which has to land on
-     * the same swap-chain texture before it is presented.
+     * frame — `Renderer` uses it for the upscale and the cabin composite, which
+     * have to land on the same swap-chain texture before it is presented.
      */
     renderWeatherOnly(
         intermediateTextureView: GPUTextureView,
         afterWeather?: (commandEncoder: GPUCommandEncoder) => void,
+        target?: GPUTextureView,
     ): void;
-    renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext): void;
+    /**
+     * `target` is where the graded road frame goes: omitted, the swap chain
+     * (render scale 1 — the pre-#329 frame); below scale 1, the upscale pass's
+     * road target. It is always the intermediate's size — `fs_main` derives UV
+     * from `fragCoord / textureDimensions(sceneTex)` — and `presentationFormat`.
+     */
+    renderPass(commandEncoder: GPUCommandEncoder, timing?: WeatherPassTimingContext, target?: GPUTextureView): void;
     dispose(): void;
 }
 

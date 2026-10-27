@@ -43,6 +43,8 @@ declare global {
     webgpuProbe?: import('./renderer/webgpuBootProbe').WebGpuProbeRecord;
     /** Cabin overlay backend (PR 2 of #249). Set when car mode constructs a renderer. */
     __CABIN_RENDERER_PROBE__?: import('./car/interior/cabinRendererProbe').CabinRendererProbe;
+    /** Cabin audio engine (#321): the WASM DSP in the AudioWorklet, or its fallback. */
+    __CABIN_AUDIO_PROBE__?: import('./car/audio/cabinAudioProbe').CabinAudioProbe;
     streetViewRendererDebug?: {
       getBackend: () => {
         rendererType?: 'webgpu' | 'webgl';

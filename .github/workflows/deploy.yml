@@ -56,6 +56,11 @@ jobs:
       - name: Check for committed deploy secrets
         run: bash scripts/check-deploy-secrets.sh
 
+      # Scene depth (#320): the model ships under build/models/depth/ but is
+      # not in git — fetch the pinned, SHA-256-checked files before building.
+      - name: Fetch the scene-depth model
+        run: npm run fetch:depth-model
+
       - name: Build production bundle
         run: npm run build
         env:

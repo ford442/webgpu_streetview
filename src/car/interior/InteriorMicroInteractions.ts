@@ -150,6 +150,31 @@ export class InteriorMicroInteractions {
     return false;
   }
 
+  /**
+   * Press whatever control a world-space ray meets first (a WebXR controller's
+   * `select`, #331): a button presses, a lever taps one detent on (as a click
+   * without travel does). Knobs need a drag and are left to the mouse.
+   */
+  pressAlongRay(origin: THREE.Vector3, direction: THREE.Vector3): boolean {
+    let nearest: { item: InteriorInteractive; distance: number } | null = null;
+    for (const item of this.items) {
+      const distance = this.raycaster.rayDistance(origin, direction, item.mesh, false);
+      if (distance !== null && (!nearest || distance < nearest.distance)) nearest = { item, distance };
+    }
+    const hit = nearest?.item;
+    if (!hit) return false;
+    if (hit.kind === 'button') {
+      this.pressState.set(hit.mesh, 1);
+      hit.onPress?.();
+      return true;
+    }
+    if (hit.kind === 'lever' && hit.detents && hit.detents.length > 0) {
+      this.applyDetent(hit, ((this.leverIndex.get(hit.mesh) ?? 0) + 1) % hit.detents.length);
+      return true;
+    }
+    return false;
+  }
+
   handlePointerMove(clientX: number, clientY: number): boolean {
     const drag = this.activeDrag;
     if (!drag) return false;

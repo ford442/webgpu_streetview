@@ -7,7 +7,6 @@ import {
 } from '../../utils/performance';
 import { detectGPUProfile } from '../../utils/performance';
 import { VehicleType, VehicleConfig, getVehicleConfig } from '../VehicleManager';
-import { resolveCameraFov } from '../vehicleLayout';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
@@ -30,6 +29,8 @@ import {
     type CarInteriorAssemblyHost,
 } from './CarInteriorAssembly';
 import { createCabinRenderer, type CabinRenderer, type CabinRendererHandle } from './createCabinRenderer';
+import { createCabinRig } from './cabinRig';
+import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
 
 export interface CarInteriorBootstrapResult {
     scene: THREE.Scene;
@@ -40,7 +41,8 @@ export interface CarInteriorBootstrapResult {
     canvas: HTMLCanvasElement;
     interiorGroup: THREE.Group;
     roofGroup: THREE.Group;
-    driverSeatGroup: THREE.Group;
+    /** Driver eye point under the car rig; parent of `camera` (see `cabinRig.ts`). */
+    headPivot: THREE.Group;
     frustumCuller: FrustumCuller;
     lodConfig: VehicleLODConfig;
     reducedMotion: boolean;
@@ -105,16 +107,19 @@ export function bootstrapCarInterior(
         interiorDetails: true,
     };
 
-    const initialFov = resolveCameraFov(vehicleConfig);
+    // FOV matches the panorama (zoom 1 until the bridge pushes the store zoom),
+    // or the view outside slides against the window frames as the head turns.
+    const aspect = container.clientWidth / Math.max(1, container.clientHeight);
     const camera = new THREE.PerspectiveCamera(
-        initialFov.base,
-        container.clientWidth / container.clientHeight,
+        panoramaMatchedVerticalFov(1, aspect),
+        aspect,
         0.01,
         100,
     );
-    camera.position.set(0, 0, 0);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(0, 0, 0);
+    // See the dome diffuser, which lives on layer 1 so its own point light
+    // cannot blow it out. Everything else stays on layer 0. Position and
+    // rotation order are set when the camera is parented to `headPivot`.
+    camera.layers.enable(1);
 
     const cabinRenderer = readyHandle ?? createCabinRenderer({ gpuProfile, sharedDevice });
     const { renderer, isReady: isRendererReady } = cabinRenderer;
@@ -142,13 +147,12 @@ export function bootstrapCarInterior(
     canvas.style.visibility = 'visible';
     container.appendChild(canvas);
 
-    const interiorGroup = new THREE.Group();
-    interiorGroup.rotation.order = 'YXZ';
+    // `interiorGroup` is the car rig: identity rotation, always.
+    const { carRig: interiorGroup, headPivot } = createCabinRig(camera);
     const roofGroup = new THREE.Group();
     scene.add(interiorGroup);
     scene.add(roofGroup);
 
-    const driverSeatGroup = new THREE.Group();
     const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const interaction = new InteractionHelper();
     const geometryFactory = new GeometryFactory();
@@ -162,7 +166,7 @@ export function bootstrapCarInterior(
     host.canvas = canvas;
     host.interiorGroup = interiorGroup;
     host.roofGroup = roofGroup;
-    host.driverSeatGroup = driverSeatGroup;
+    host.headPivot = headPivot;
     host.frustumCuller = frustumCuller;
     host.lodConfig = lodConfig;
     host.reducedMotion = reducedMotion;
@@ -174,8 +178,6 @@ export function bootstrapCarInterior(
     host.vehicleConfig = vehicleConfig;
 
     applySeatPosition();
-    interiorGroup.add(driverSeatGroup);
-    driverSeatGroup.add(camera);
 
     const mats = createMaterials(vehicleConfig, gpuProfile);
 
@@ -257,7 +259,6 @@ export function bootstrapCarInterior(
         scene,
         postProcessing,
         canvas,
-        resolveCameraFov(vehicleConfig),
         isRendererReady,
     );
     rendererDelegate.setPostProcessingEnabled(postProcessingEnabled);
@@ -295,7 +296,7 @@ export function bootstrapCarInterior(
         canvas,
         interiorGroup,
         roofGroup,
-        driverSeatGroup,
+        headPivot,
         frustumCuller,
         lodConfig,
         reducedMotion,

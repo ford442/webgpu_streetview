@@ -61,7 +61,7 @@ describe('AppShell render isolation from hot POV state', () => {
     expect(shellRenders.count).toBe(baseline);
   });
 
-  it('a real head-look drag through CarInputHandler also leaves the shell untouched', async () => {
+  it('a real pointer-locked head look through CarInputHandler also leaves the shell untouched', async () => {
     await mountShell();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -88,24 +88,37 @@ describe('AppShell render isolation from hot POV state', () => {
         </AppProviders>,
       );
     });
+    // Grab the pointer and hold the right button: mode changes are discrete
+    // context updates, so they happen before the baselines are taken.
+    const { cabinHeadStore } = await import('../state/cabinHeadStore');
+    cabinHeadStore.reset();
+    Object.defineProperty(document, 'pointerLockElement', { configurable: true, value: container });
+    act(() => {
+      document.dispatchEvent(new Event('pointerlockchange'));
+    });
+    act(() => {
+      container.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2, buttons: 2 }));
+    });
     const probeBaseline = probeRenders;
-    const baseline = shellRenders.count; // after mounting settles; the drag must add nothing
-    const before = povStore.get().heading;
+    const baseline = shellRenders.count; // after mounting settles; the look must add nothing
+    const before = cabinHeadStore.get();
 
     act(() => {
-      container.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, buttons: 1 }));
       for (let i = 0; i < 100; i++) {
-        const e = new MouseEvent('mousemove', { bubbles: true, buttons: 1 });
+        const e = new MouseEvent('mousemove', { bubbles: true, buttons: 2 });
         Object.defineProperty(e, 'movementX', { value: 4 });
         Object.defineProperty(e, 'movementY', { value: 1 });
         window.dispatchEvent(e);
       }
-      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
     });
 
-    expect(povStore.get().heading).not.toBe(before); // the drag really moved the view
+    expect(cabinHeadStore.get()).not.toEqual(before); // the look really moved the head
     expect(probeRenders).toBe(probeBaseline);
     expect(shellRenders.count).toBe(baseline);
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 2 }));
+    });
+    delete (document as { pointerLockElement?: unknown }).pointerLockElement;
     container.remove();
   });
 });

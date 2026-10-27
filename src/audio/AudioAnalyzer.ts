@@ -3,7 +3,17 @@
  * Designed to work with remote audio streams and local Web Audio API.
  */
 
+import { acquireCarAudioGraph, releaseCarAudioGraph, type CarAudioGraph } from './carAudioGraph';
 import { createBrowserAudioContext } from './createAudioContext';
+
+export interface AudioAnalyzerOptions {
+  /**
+   * Play through the car's shared audio graph (`carAudioGraph.ts`) instead of
+   * a private AudioContext: the station then runs through the cabin engine
+   * whenever it is up, and the analyser taps the post-cabin mix.
+   */
+  carCabin?: boolean;
+}
 
 export interface AudioFrequencyData {
   bass: number;         // 0..1 (20Hz - 250Hz)
@@ -17,6 +27,8 @@ export interface AudioFrequencyData {
 
 export class AudioAnalyzer {
   private audioContext: AudioContext | null = null;
+  /** Set when playing through the car graph: the context is shared, never closed here. */
+  private carGraph: CarAudioGraph | null = null;
   private analyser: AnalyserNode | null = null;
   // correct DOM type for a media-element based audio source
   private mediaSource: MediaElementAudioSourceNode | null = null;
@@ -27,7 +39,9 @@ export class AudioAnalyzer {
   private audioElement: HTMLAudioElement | null = null;
   private stationName: string = '';
   private stationTags: string = '';
-  
+
+  constructor(private readonly options: AudioAnalyzerOptions = {}) {}
+
   // Public getters for accessing audio nodes
   public getAnalyser(): AnalyserNode | null {
     return this.analyser;
@@ -57,9 +71,13 @@ export class AudioAnalyzer {
    */
   async init(streamUrl: string): Promise<boolean> {
     try {
-      // Create an audio context if one doesn't exist
+      // Create (or join) an audio context if there isn't one yet
       if (!this.audioContext) {
-        this.audioContext = createBrowserAudioContext();
+        if (this.options.carCabin) {
+          this.carGraph = acquireCarAudioGraph();
+          if (this.carGraph) this.audioContext = this.carGraph.ctx;
+        }
+        if (!this.audioContext) this.audioContext = createBrowserAudioContext();
       }
 
       // Create hidden audio element
@@ -74,9 +92,9 @@ export class AudioAnalyzer {
       // Assign the stream to the audio element
       this.audioElement.src = streamUrl;
 
-      // Create analyser
+      // Create analyser (the car graph has its own post-cabin tap)
       if (!this.analyser) {
-        this.analyser = this.audioContext.createAnalyser();
+        this.analyser = this.carGraph ? this.carGraph.analyser : this.audioContext.createAnalyser();
         this.analyser.fftSize = 256; // trade-off between frequency resolution and performance
       }
 
@@ -86,8 +104,13 @@ export class AudioAnalyzer {
         this.mediaSource = this.audioContext.createMediaElementSource(this.audioElement);
         this.gain = this.audioContext.createGain();
         this.mediaSource.connect(this.gain);
-        this.gain.connect(this.analyser);
-        this.analyser.connect(this.audioContext.destination);
+        if (this.carGraph) {
+          // The bus routes to the cabin engine (or straight out) and feeds the tap.
+          this.gain.connect(this.carGraph.radioBus);
+        } else {
+          this.gain.connect(this.analyser);
+          this.analyser.connect(this.audioContext.destination);
+        }
       }
 
       // Allocate FFT output buffer
@@ -247,11 +270,24 @@ export class AudioAnalyzer {
       this.audioElement.parentNode.removeChild(this.audioElement);
       this.audioElement = null;
     }
+    if (this.carGraph) {
+      try {
+        this.gain?.disconnect();
+        this.mediaSource?.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+    }
     this.mediaSource = null;
     this.gain = null;
     this.analyser = null;
     this.dataArray = null;
-    if (this.audioContext && this.audioContext.state !== 'closed') {
+    if (this.carGraph) {
+      // Shared with the cabin engine: release, never close.
+      this.carGraph = null;
+      this.audioContext = null;
+      releaseCarAudioGraph();
+    } else if (this.audioContext && this.audioContext.state !== 'closed') {
       this.audioContext.close();
       this.audioContext = null;
     }

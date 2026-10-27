@@ -4,7 +4,7 @@
 
 // Core context hooks
 export { useStreetView, StreetViewProvider } from './useStreetView';
-export { useViewMode, ViewModeProvider, type ViewMode, type ControlMode, type HeadCoupling } from './useViewMode';
+export { useViewMode, ViewModeProvider, type ViewMode, type ControlMode } from './useViewMode';
 export {
   useEnvironmentSettings,
   useWeatherSettings,

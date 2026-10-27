@@ -12,6 +12,7 @@ import {
     collectOptionalDeviceFeatures,
     configureCanvasContext,
     describeAdapterSelection,
+    withXrCompatible,
     HDR_CANVAS_FORMAT,
     labelDevice,
     MAX_REQUESTED_TEXTURE_DIMENSION_2D,
@@ -298,9 +299,18 @@ describe('adapter request options v2', () => {
 
     it('describeAdapterSelection reports unknown featureLevel when it was not sent', () => {
         expect(describeAdapterSelection({ powerPreference: 'high-performance' }))
-            .toEqual({ featureLevel: 'unknown', forceFallbackAdapter: false });
+            .toEqual({ featureLevel: 'unknown', forceFallbackAdapter: false, xrCompatible: false });
         expect(describeAdapterSelection({ featureLevel: 'compatibility', forceFallbackAdapter: true } as GPURequestAdapterOptions))
-            .toEqual({ featureLevel: 'compatibility', forceFallbackAdapter: true });
+            .toEqual({ featureLevel: 'compatibility', forceFallbackAdapter: true, xrCompatible: false });
+    });
+
+    it('asks for an XR-compatible adapter only when a WebGPU-XR headset is there (#331), and reports it', () => {
+        const base: GPURequestAdapterOptions = { powerPreference: 'high-performance' };
+        expect(withXrCompatible(base, false)).toBe(base);
+        expect(withXrCompatible(base, true)).toEqual({ powerPreference: 'high-performance', xrCompatible: true });
+        expect(describeAdapterSelection(withXrCompatible(base, true)).xrCompatible).toBe(true);
+        expect(buildCapabilityMatrix('fragment', {}, [], { xrCompatible: true }).xrCompatible).toBe(true);
+        expect(buildCapabilityMatrix('fragment', {}, []).xrCompatible).toBe(false);
     });
 });
 
@@ -454,11 +464,18 @@ describe('uncaptured errors and labels', () => {
 });
 
 describe('single device contract', () => {
-    it('creates exactly one GPUDevice across the renderer sources (#216 chores share it)', async () => {
+    /**
+     * One device per thread. The road, its passes, the GPU chores and the WebGPU
+     * cabin all share `bootDevice.ts`'s device. The only other call site is the
+     * scene-depth Worker (#320): a `GPUDevice` cannot be posted into a Worker,
+     * so the depth model runs on a device of its own, which renders nothing and
+     * is handed to onnxruntime-web so the runtime never creates a third.
+     */
+    it('creates exactly one GPUDevice on the main thread, and one in the depth Worker', async () => {
         const { readdirSync, readFileSync } = await import('fs');
         const { join } = await import('path');
 
-        const roots = ['src/renderer', 'src/utils', 'src/hooks', 'src/components'];
+        const roots = ['src'];
         const hits: string[] = [];
         const walk = (dir: string) => {
             for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -472,6 +489,6 @@ describe('single device contract', () => {
         };
         for (const root of roots) walk(root);
 
-        expect(hits).toEqual(['src/renderer/bootDevice.ts']);
+        expect(hits.sort()).toEqual(['src/renderer/bootDevice.ts', 'src/renderer/depth/depthWorker.ts']);
     });
 });

@@ -284,7 +284,7 @@ fn applyCameraFX(col: vec3<f32>, uv: vec2<f32>, dof: f32, mblur: f32) -> vec3<f3
     if (dof < 0.001 && mblur < 0.001) { return col; }
 
     let horizonY = sceneHorizonY();
-    let depth = viewDepthProxy(uv, horizonY);
+    let depth = sceneDepth(uv, horizonY);
 
     // Circle of confusion: sharp at the focus plane, widening toward infinity.
     let coc = smoothstep(DOF_FOCUS_DEPTH, 1.0, depth) * dof;

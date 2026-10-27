@@ -251,9 +251,6 @@ webgpu_streetview/
 │   │   ├── LightingEffects.ts
 │   │   ├── WindAudio.ts             # Procedural wind audio
 │   │   └── index.ts
-│   ├── animation/
-│   │   ├── PhysicsAnimations.ts     # Spring physics for UI / camera
-│   │   └── index.ts
 │   ├── audio/
 │   │   ├── AudioAnalyzer.ts         # Radio stream Web Audio analysis
 │   │   └── index.ts
@@ -335,9 +332,7 @@ State is no longer owned solely by `App.tsx`. Three React Context providers (plu
 2. **`ViewModeProvider`** (`src/hooks/useViewMode.tsx`)
    - Owns `viewMode: 'freelook' | 'car'`.
    - Exposes `setCarHeading` (the value lives in `povStore.carHeading`, independent of head-look heading).
-   - Tracks `controlMode`: `freeLook` | `uiMouse` | `carSteer`.
-   - Tracks `headCoupling`: `rigid` (head turns with car) | `free` (head independent).
-   - Supports temporary steering mode (`startTempSteerMode` / `endTempSteerMode`) triggered by clicking the steering wheel.
+   - Exposes `controlMode`: `FREE_LOOK` | `STEER` | `UI_INTERACT`, derived from the pure cabin input machine (`src/car/input/cabinInputMachine.ts`, transition table `CABIN_INPUT_TRANSITIONS`), fed through `dispatchCabinInput(event)`. The returned pointer-lock effect must be run by the caller inside the same event handler (`applyPointerLockEffect`).
    - Initializes / toggles the Three.js car mode via `initCarMode()` from `src/car/index.ts`.
 
 3. **`EnvironmentSettingsProvider`** (`src/hooks/useEnvironmentSettings.tsx`)
@@ -383,10 +378,12 @@ the module that owns it, not to the façade:
 | Module | Owns |
 |---|---|
 | `deviceInit.ts` | adapter request options, limit checks, canvas output (HDR/P3) policy, capability matrix |
-| `bootDevice.ts` | the boot sequence and **the only `requestDevice` call site** (`deviceInit.test.ts` pins the path) |
+| `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
+| `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
 | `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
@@ -411,11 +408,83 @@ lost, the hold-pause guards, and the public renderer surface.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba32float` storage texture, followed by a `textureLoad` blit render pass to the swap-chain surface. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 `ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
+
+### Scene depth (`src/renderer/depth/`, #320)
+
+A monocular depth map of the road frame (Depth Anything V2 Small through
+onnxruntime-web's WebGPU EP) that fog, rain/snow, DOF and the hop-release dolly
+read through `sceneDepth()` instead of the screen-Y proxy. Opt-in (weather
+panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
+0.6 / 0.8). Full design: [`docs/SCENE_DEPTH.md`](docs/SCENE_DEPTH.md).
+
+- **Input**: the pass-1 intermediate only, via `gpuChores.downsampleTexture` —
+  never the Maps canvas or `videoTexture`, never while `holdActive` or a
+  transition runs (`depthScheduler.ts`: settle 150 ms, ≤ 5 Hz, one in flight).
+- **Runtime**: a module Worker (`depthWorker.ts`) imports ORT from a pinned
+  jsDelivr URL — no npm dependency, nothing in the bundle (bundle guard test +
+  `check-bundle-budget.sh`). It owns **its own `GPUDevice`** (a device cannot
+  enter a Worker, and a model fault must not take the road down); that is the
+  one `requestDevice` outside `bootDevice.ts`. `shader-f16` there selects the
+  `q4f16` model, else `q4`.
+- **Model**: Apache-2.0 Small only (Base/Large are CC-BY-NC). Not in git —
+  `npm run fetch:depth-model` puts the pinned, SHA-256-checked files into
+  `public/models/depth/` (deploy runs it); the Worker caches the verified file
+  in its own Cache API bucket. The SW never touches `/models/`.
+- **Output**: normalised + calibrated to the proxy's scale (`depth = q / n`,
+  `depthMath.ts`) → `r16float` → `FrameContext.aux.depth` → weather group 2,
+  pass-1 group 1 (`sceneDepthBinding.ts`). Params (`SceneDepthParams`, 48 B) live
+  in the pass's own uniform buffer — never weather slots.
+- **Weight 0 is bit-exact**: no map / off / Low–Medium bind an all-zero block and
+  every consumer takes its pre-depth branch. Keep those branches when editing
+  `sceneDepth`, `rain`, `snow` or `samplePrevForRelease`.
+- **Optional pass**: lazy, so absent from `webgpuProbe.passes` until switched on;
+  a failure (model missing, integrity, device lost, no chores readback) is
+  reported there and in `window.__SCENE_DEPTH__`, never on the road frame.
+
+### Split frame tail, stereo and the WebXR cockpit (`src/renderer/reproject/`, `src/xr/`, #331)
+
+The road frame can end with a **tail**: a second submit that runs
+`reproject.wgsl` and then the cabin composite (`framePasses` phase `tail` /
+`last`). It exists only with `?latelatch`, `?stereo=sbs|anaglyph` or a WebXR
+session presenting; otherwise the frame is exactly the pre-#331 frame.
+
+- **Why a tail**: `WebGPUCanvas`'s rAF packs the road before the car loop's rAF
+  derives this frame's POV (`cabinPovSync`) and renders the cabin. rAF
+  callbacks of one display frame share a timestamp and present together, so
+  the tail is **deferred until the car loop calls
+  `frameTailScheduler.producerDone(frameTime)`** — road and cabin then show the
+  same frame's POV. A tail the producer never releases is dropped (the canvas
+  repeats, never black).
+- **Late latch**: the tail turns the packed frame to the POV read *now* — an
+  exact rotation (`reprojectMath.latchRotation`; the shader takes a 3×3
+  `sourceFromOutput` plus the output's frustum). Delta 0 → mode `copy`
+  (`textureLoad`, bit-exact). Probe: `__STREETVIEW_PROBE__.getLateLatch()`.
+- **Stereo**: a gather warp along the row by depth (map blended with the
+  proxy), nearest-far-neighbour disocclusion fill + 3-tap blur. 64 mm IPD,
+  convergence 1 m on a flat display (the mono cabin sits at zero parallax),
+  infinity in a headset (each eye has its own frustum). The cabin renders two
+  eye cameras derived from the head camera (`car/interior/cabinStereo.ts`,
+  request via `renderer/cabinStereoRequest.ts`) into one side-by-side target.
+- **WebXR** (`xr/xrSession.ts`): `immersive-vr` + the WebXR/WebGPU binding on
+  the **one** device (requested `xrCompatible` in `bootDevice.ts` when
+  `xr/xrSupport.ts` finds a headset — reported as `capabilityMatrix.xrCompatible`).
+  Entered from the HUD's **Enter VR** button (a user gesture). While presenting,
+  `xr/frameClock.ts` runs the road and car loops from the session's rAF, so the
+  tail draws each eye into the projection layer's sub-image *inside* the XR
+  callback (`renderer/xrPresentFrame.ts`). The head pose goes to
+  `cabinHeadStore` (clamped yaw/pitch) + `cabinHeadOffsetStore` (clamped lean,
+  `carSpatialModel.HEAD_OFFSET_LIMIT`); roll and the rest ride in each eye's
+  `eyeFromHead`. **The rig never moves.** The left stick steers via `XR_STICK`
+  rows in `CABIN_INPUT_TRANSITIONS` (STEER for the whole session); the right
+  trigger presses dash controls along its ray
+  (`car/runtime/interaction.pressCarInteriorAlongRay`). The release dolly is
+  capped in a headset (`depthParams.XR_RELEASE_DOLLY_SCALE`). Fallbacks:
+  `docs/RENDERER_FALLBACK.md` § WebXR fallback matrix.
 
 ### WebGL2 Fallback / Debug Renderer
 
@@ -517,10 +586,10 @@ Consequences worth knowing:
   reads `renderer.isCabinCompositedInFrame()`; when it is false the 2D latch in
   `car/runtime/frameCapture.ts` is not wired up at all. The latch stays for
   `?cabin=webgl` and every fallback — do not delete it.
-- **The road loop stops frame-skipping while compositing**
-  (`shouldRenderHeldFrameThisTick({ cabinComposited })`). The cabin no longer
-  has a canvas of its own to animate on, so a skipped road frame would freeze
-  the wipers and gauges.
+- **The road loop renders every frame.** The cabin has no canvas of its own
+  to animate on, so a skipped road frame would freeze the wipers and gauges.
+  There is no frame skipping at all since #329 — under load the road's render
+  scale drops instead (`WebGPUCanvas.frameLoop.test.tsx`).
 - **`cabinOverlayRegistry` must stay a single module instance.** It is written
   from the lazy car chunk and read from the eager renderer; a Rollup split that
   duplicated it would give each chunk its own state and break the handoff
@@ -577,12 +646,12 @@ sprite last.
 - `c` key → toggle car mode.
 - Guards against input when `document.activeElement` is an input/textarea.
 
-**CarInputHandler.tsx**:
-- Three control modes: `freeLook` (head look only), `uiMouse` (UI interaction, right-drag to steer), `carSteer` (mouse X steers car, A/D steer).
-- Temporary steering mode: clicking the steering wheel in `freeLook` enters `carSteer` temporarily; releasing ends it.
-- `h` key → toggle control mode.
-- `c` key → recenter head to car body, or toggle view mode if already centered.
-- `q` / `e` → snap steer ±45° in `carSteer` mode.
+**CarInputHandler.tsx** (pointer lock; modes from `cabinInputMachine.ts`):
+- `STEER` (locked, default on lock): mouse X → `carHeading` (rate-limited, `steerDeltaFromMouse`) + wheel; the head eases back to centre (`x·e^(−k·dt)`, in the bridge frame loop).
+- `FREE_LOOK` (locked): hold RMB (`contextmenu` is prevented) or latch with `F` → mouse moves `cabinHeadStore` (`headYaw` +left, `headPitch` +up, radians, clamped ±90° / ±45°). Car untouched.
+- `UI_INTERACT` (unlocked): cursor only; clicks raycast dashboard controls; a click on bare cabin requests the lock.
+- `Tab` toggles UI_INTERACT ↔ previous locked mode. Esc is the browser's: `pointerlockchange` (lock lost) lands in UI_INTERACT. The first mouse delta after any lock change is dropped.
+- `c` → recenter head, or toggle view mode if already centered. `q` / `e` → snap steer ±45° (not in FREE_LOOK). A/D steer, or turn the head in FREE_LOOK. W/S drive in every mode.
 
 Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `keydown`. Every UI overlay (panels, modals, inputs, dashboard buttons) **must** call `e.stopPropagation()` on mouse and keyboard events, or the panorama will spin when users type or click buttons.
 
@@ -599,13 +668,12 @@ Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `
 ### Performance & Adaptive Quality
 
 `WebGPUCanvas.tsx` implements:
-- **Adaptive frame skipping**: `shouldSkipFrame()` from `usePerformanceMonitor` can drop to 30fps.
-- **Source-change detection**: forces full 60fps when the scraped canvas changes.
-- **Transition boost**: forces full fps while `isTransitioning` is true.
+- **Every frame renders** — never skip one to keep up (car-mode gauges and wipers animate on the road's frame).
+- **Dynamic render scale (#329)**: the frame-budget loop (`renderer/frameBudget.ts`, fed GPU timestamps or the raw rAF interval) moves the road's render scale within the preset's range; `?scale=` pins it. Frozen through hold-pause and reduced motion. See `docs/GRAPHICS.md` §7.
 - **Debounced resize**: 150ms debounce on window resize.
 - **WebGPU device loss recovery**: reinitializes renderer on `device.lost`.
 
-`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps).
+`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps). Resolution is the first lever, a preset downgrade the last.
 
 ---
 
@@ -673,6 +741,12 @@ The live demo at `test.1ink.us/streetview` historically showed "This page can't 
 [42-43] padding
 ```
 
+Scene depth is **not** in this block: it is its own bind group
+(`depth/sceneDepthBinding.ts` — depth texture, sampler, 48-byte
+`SceneDepthParams`) at group 2 in both weather pipelines and group 1 in pass 1.
+`sceneDepthBinding.test.ts` checks the struct in all three shaders against
+`SceneDepthParamIndex`.
+
 The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
 ```
 [0-3]   time, zoom, panX, panY
@@ -714,13 +788,24 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 
 ### WASM numeric layer (`cpp/` + `src/wasm/`)
 
-The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, engine PCM,
-panorama luma hist/reduce/downsample)
-exists as three implementations — the shipping `public/wasm/streetview-wasm.wasm`,
-the C++ in `cpp/src/*_module.cpp` (one translation unit per domain: noise,
-geodesy, audio, hrtf, luma), and the pure-JS fallback in
-`src/wasm/jsFallback.ts`. They are pinned to **one set of golden vectors** captured
-from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
+The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
+audio engine, panorama luma analysis, scene-depth calibration) has **one
+implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth), shipped as the
+committed binaries (`public/wasm/streetview-wasm.wasm` and the SIMD128
+`streetview-wasm.simd.wasm`, same sources). There is **no JS twin**: the binary
+runs on the main thread, in the AudioWorklet and in Vitest (`src/setupTests.ts`
+instantiates the committed `.wasm` and installs it — never mock it).
+
+- **Boot**: `src/index.tsx` awaits `loadBootWasm()` (`renderer/bootWasm.ts`)
+  before rendering `<App />`, and `Renderer.init` awaits the same load beside
+  its pass inits. A failure is `webgpuProbe = { ok: false, stage: 'wasm' }`
+  plus the blocking WebGPU-failure overlay (`app/WasmBootFailure.tsx`,
+  `e2e/wasm-boot.spec.ts`). `loadWasmModule()` rejects (and retries on the next
+  call); kernel call sites use `requireWasm()`, which throws before the load.
+
+Everything is pinned to **one set of golden vectors** captured from the
+shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
@@ -730,13 +815,22 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
-  points at `build-host`. `npm run lint:cpp` runs advisory clang-tidy
-  (`WarningsAsErrors` empty) over `SOURCES` in `scripts/lint-cpp.sh`, which
+  points at `build-host`. `npm run lint:cpp` runs clang-tidy, **gating on
+  `bugprone-*`** (`cpp/.clang-tidy` `WarningsAsErrors`; modernize/readability
+  stay advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which
   must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
   host build. A new translation unit also goes in both CMake source lists and
   `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
-- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
-  the JS fallback (runs with `npm test`).
+- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — every golden, exactly,
+  on **both** committed binaries through the TS loader (runs with `npm test`),
+  including the `dsp_render` parameter scripts (FNV-1a checksums + excerpts),
+  `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
+  worklet source with the cabin goldens.
+- **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
+  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
+  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
+  change that moves a single golden bit is dropped, not re-baselined.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
@@ -745,13 +839,19 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
   stack and corrupted `batch_haversine` at |lat| > 45°.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
-  and `build-wasm-emscripten` (C++ → wasm via pinned emcc + ABI check + SIMD goldens). Both are
-  required.
+  and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
+  check + the SIMD binary against the goldens). Both are required.
+- **Cabin audio engine** (`cabin_dsp_module.cpp`, #321): runs inside the
+  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`). Never reintroduce a
+  main-thread PCM queue; post the binary's **bytes**, not a
+  `WebAssembly.Module` (Chromium drops it with `messageerror`). The car radio
+  shares `src/audio/carAudioGraph.ts`'s context so it can run through the
+  cabin. Probe: `window.__CABIN_AUDIO_PROBE__`; e2e: `e2e/cabin-audio.spec.ts`.
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
-application code — the JS fallback is a degrade/test twin, not a third place to
-invent behaviour. Geodesy in particular has exactly one copy per formula:
+application code, and never re-implement a kernel in TypeScript (not even for
+tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
 `haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
@@ -764,8 +864,9 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
-- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
-- `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
+- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released, render scale at arm and release), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
+- `src/components/WebGPUCanvas.frameLoop.test.tsx` — the real render loop renders every animation frame (live, weather-only, held) at any frame time; GPU load lowers the requested render scale; a hold freezes it.
+- `src/renderer/renderScale.test.ts`, `frameBudget.test.ts`, `upscale/UpscalePass.test.ts`, `Renderer.renderScale.test.ts` — render scale (#329): quantisation and the request/probe store; the budget loop on simulated timing traces (converges within 2 s, never oscillates by more than a step, backs off failed probes, learns a 50 Hz refresh, frozen holds); the EASU → RCAS / bilinear encode; and the real `Renderer` at scale 1 (no upscale built or encoded) vs 0.5 (scaled intermediate + road target), hold freeze, and a failing upscale.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts`, `src/renderer/webgpuBootProbe.test.ts` — Backend preference/debug-flag parsing, WebGPU-required hard-fail (no WebGL construct), and `webgpuProbe` brand/stage records.
 - `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
@@ -779,8 +880,9 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `src/car/interior/WindowWeatherOverlay.test.ts` — portal vs decal selection, the per-frame swap back to the decal when the road frame goes away, wiper phase as the single driver, texture ownership on dispose, and the probe.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
-- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
-- Both GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
+- `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~1 min per inference on SwiftShader.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1.
+- The GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
@@ -805,14 +907,14 @@ Run this after touching `WebGPUCanvas.tsx`, `Renderer.ts`, `useStreetView.tsx`, 
 ### Car Spatial Correctness Manual Checklist
 Run this after touching `RearviewMirror.ts`, `rearViewFeed.ts`, `useRearViewFeed.ts`, `CarInputHandler.tsx`, `CarInteriorAnimator.ts`, `carSpatialModel.ts`, `weather-post.wgsl`, `weather-post-compute.wgsl`, or `src/renderer/webgl/weatherReference.glsl.ts` (epic #171):
 
-**World model** (`src/car/carSpatialModel.ts`): car body yaw = `carHeading`; head look = Street View `heading`/`pitch`. Free-look pans the head only. Chassis steers only in `carSteer`, temp-steer (steering-wheel grab), or explicit steer keys.
+**World model** (`src/car/carSpatialModel.ts`): the cabin scene is the car's frame. `interiorGroup` (car rig) stays at identity; the camera hangs off `headPivot` and takes only the car-local head pose. Street View `heading`/`pitch` are derived once per frame (`car/input/cabinPovSync.ts`: `heading = carHeading − deg(headYaw)`), and the cabin FOV is the panorama's (`utils/streetViewFov.ts`). Only STEER moves `carHeading` from the mouse. Automated: `src/car/__tests__/cabinRig.acceptance.test.ts`.
 
 1. **Free-look vs chassis**
-   - Enter car mode (default control mode is free-look). Left-drag to look around the cabin and out the side windows.
-   - **Pass**: dashboard / A-pillars / steering wheel stay fixed; only the outside panorama and head camera move. `carHeading` must not change.
-   - **Fail**: chassis yaws while looking around; feeling of "fighting" the car body.
-   - Grab the steering wheel and drag — chassis may yaw (temp-steer). Release — back to head-only look.
-   - Press `H` into `carSteer`, drag — chassis yaws with mouse X. RMB/Shift in free-look must **not** steer.
+   - Enter car mode (starts in UI_INTERACT), click the cabin to grab the pointer (STEER). Hold RMB and look around the cabin and out the side windows.
+   - **Pass**: dashboard / A-pillars / steering wheel stay fixed; only the outside panorama and head camera move; the outside stays registered with the window frames (no sliding). `carHeading` must not change.
+   - **Fail**: chassis yaws while looking around; feeling of "fighting" the car body; scenery sliding against the frames.
+   - Release RMB — mouse X steers; turning right pans the outside leftward across the windshield, the cabin doesn't move, the head drifts back to centre.
+   - Tab / Esc → cursor visible, mouse wiggles change nothing, dashboard buttons click.
 
 2. **Rearview mirror — feed OFF (default)**
    - Look up at the interior rearview glass with the dashboard **Rear** button unlit.
@@ -855,6 +957,18 @@ Run this after touching `WindowWeatherOverlay.ts`, `WindshieldPortal.ts`, `cabin
 4. **Hold-pause.** Cruise with rain on for 10+ hops. During each hop the droplets refract the *held* frame (probe `portal.held: true`), and `window.__STREETVIEW_PROBE__.getWarnings()` stays empty. The portal must never cause a live Maps upload.
 5. **Resize.** Drag the window edge while rain is on. No flash to black in the glass, no `Destroyed texture … used in a submit` validation error in the console.
 6. **Night.** Night preset + rain: droplet interiors read as dark as the road around them, not as a bright daytime picture.
+
+### WebXR Cockpit Manual Checklist
+Run after touching `src/xr/`, `renderer/xrPresentFrame.ts`, the reproject tail, `cabinStereo.ts`, `cabinComposite.ts`'s formats or `bootDevice.ts`'s adapter options. Needs a WebGPU-XR browser and a headset (Chrome with `chrome://flags/#webxr-webgpu-binding` + a PC headset, Quest Browser with WebGPU-XR enabled, or visionOS Safari); the automated half is `xrSession.test.ts`, `Renderer.reproject.test.ts`, `cabinRig.acceptance.test.ts` and `e2e/gpu-foundation.spec.ts`'s split-frame tests.
+
+1. **Detection.** `window.rendererAdapterInfo.xrCompatible` is `true` and `__STREETVIEW_PROBE__.getXr().support.state === 'available'`. In a browser without the flag the car HUD shows a disabled **Enter VR** with "Needs WebGPU-XR …"; in Firefox there is no button.
+2. **Enter.** Car mode → **Enter VR**. The cabin surrounds you at the driver's seat, the road is outside the glass, the mode chip says **Steer**. `getXr().presenting` is `true` and `presentedFrames` climbs every frame. No `device lost` in the console.
+3. **Look.** Turn your head 90° left: the driver door, the road beyond it, no swim between cabin and road. Roll your head: the cabin and the road roll together. Lean toward the side window: the head moves a little (≤ 20 cm), then stops — you never leave the seat. The dash and the wheel stay put.
+4. **Steer.** Left stick right: the car turns right, the wheel turns, the road pans left across the windshield. Stick at rest: nothing drifts.
+5. **Press.** Point the right controller at the hazard / wiper stalk / gear lever and pull the trigger: the control acts as a click would.
+6. **Hop.** Cruise a few hops in the headset: the release dolly is gentle, never a lunge; `__STREETVIEW_PROBE__.getWarnings()` stays empty (no live Maps upload during a hold).
+7. **Exit.** Press **Exit VR** (or the headset's system button). The screen view returns at the zoom it had, the head is centred, Tab / click lock the pointer again, the mouse steers. No `device lost`, no validation errors. Enter and exit three times in a row.
+8. **Device loss.** With a session running, trigger a loss (`chrome://gpucrash` in a separate tab). The session ends, the 2D view recovers, and the button says the device was lost.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):
@@ -976,4 +1090,4 @@ Single-product Vite + React project; `npm install` / `npm ci` is the only depend
 
 ---
 
-*Last Updated: October 7, 2026*
+*Last Updated: October 14, 2026*

@@ -7,7 +7,7 @@
 #   cmake --build cpp/build-host
 #   ctest --test-dir cpp/build-host --output-on-failure
 
-add_executable(streetview_cpu_tests noise_module_test.cpp)
+add_executable(streetview_cpu_tests noise_module_test.cpp cabin_dsp_test.cpp depth_test.cpp)
 
 target_link_libraries(streetview_cpu_tests PRIVATE streetview_cpu)
 

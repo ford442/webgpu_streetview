@@ -43,7 +43,14 @@
  */
 export interface CabinOverlaySource {
     getTexture(): GPUTexture | null;
+    /**
+     * How the texture is laid out (#331): one view, or two eyes side by side
+     * (`renderer/cabinStereoRequest.ts`). Absent means `mono`.
+     */
+    getLayout?(): CabinOverlayLayout;
 }
+
+export type CabinOverlayLayout = 'mono' | 'sbs';
 
 /** The part of the renderer that capture needs, without importing the whole surface. */
 export interface CabinCompositeAwareRenderer {
@@ -76,6 +83,7 @@ import {
     createShaderModuleChecked,
     fetchShaderSource,
 } from './gpuPipelineFactory';
+import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 
 export const CABIN_COMPOSITE_SHADER_PATH = 'shaders/cabin-composite.wgsl';
 
@@ -84,14 +92,43 @@ export async function loadCabinCompositeShader(): Promise<string> {
     return fetchShaderSource(url, 'cabin-composite.wgsl');
 }
 
+/** A sub-rect of the target (one eye of a side-by-side frame). */
+export interface CabinCompositeViewport {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+/**
+ * Which part of the cabin texture a draw samples (#331): all of it, or one eye
+ * of a side-by-side stereo cabin.
+ */
+export type CabinCompositeRegion = 'full' | 'left' | 'right';
+
+/** `CabinRect` in the WGSL: offset.xy, scale.xy. */
+const REGION_RECTS: Record<CabinCompositeRegion, readonly number[]> = {
+    full: [0, 0, 1, 1],
+    left: [0, 0, 0.5, 1],
+    right: [0.5, 0, 0.5, 1],
+};
+
 export class CabinCompositePass {
     private pipeline: GPURenderPipeline | null = null;
+    /** The swap chain's format, and pipelines for other targets (a WebXR layer, #331). */
+    private presentationFormat: GPUTextureFormat | null = null;
+    private readonly formatPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
+    private readonly pendingFormats = new Map<GPUTextureFormat, Promise<void>>();
+    private module: GPUShaderModule | null = null;
+    private layout: GPUBindGroupLayout | null = null;
     private sampler: GPUSampler | null = null;
     private source: CabinOverlaySource | null = null;
+    /** One constant 16-byte rect per region, written once at init. */
+    private rects: Partial<Record<CabinCompositeRegion, GPUBuffer>> = {};
 
     /** Cached per texture identity — rebuilt when three reallocates the target. */
     private boundTexture: GPUTexture | null = null;
-    private bindGroup: GPUBindGroup | null = null;
+    private bindGroups: Partial<Record<CabinCompositeRegion, GPUBindGroup>> = {};
 
     private disposed = false;
 
@@ -109,17 +146,18 @@ export class CabinCompositePass {
             label: 'cabin-composite.wgsl',
             code,
         });
-        const pipeline = await createRenderPipelineChecked(this.device, {
-            label: 'cabin-composite-pipeline',
-            layout: 'auto',
-            vertex: { module, entryPoint: 'vs_main' },
-            fragment: {
-                module,
-                entryPoint: 'fs_main',
-                targets: [{ format: presentationFormat, blend: CABIN_COMPOSITE_BLEND }],
-            },
-            primitive: { topology: 'triangle-list' },
+        // An explicit layout so one bind group serves every format's pipeline.
+        const layout = this.device.createBindGroupLayout({
+            label: 'cabin-composite-bind-group-layout',
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+                { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+                { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 16 } },
+            ],
         });
+        this.module = module;
+        this.layout = layout;
+        const pipeline = await this.createPipeline(presentationFormat);
         if (this.disposed) return;
         this.sampler = this.device.createSampler({
             label: 'cabin-composite-sampler',
@@ -128,9 +166,60 @@ export class CabinCompositePass {
             addressModeU: 'clamp-to-edge',
             addressModeV: 'clamp-to-edge',
         });
+        for (const region of Object.keys(REGION_RECTS) as CabinCompositeRegion[]) {
+            const buffer = createTrackedBuffer(this.device, {
+                label: `cabin-composite-rect-${region}`,
+                size: 16,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            }, `cabin-composite-rect-${region}`);
+            this.device.queue.writeBuffer(buffer, 0, new Float32Array(REGION_RECTS[region]));
+            this.rects[region] = buffer;
+        }
         // Assigned last: `isReady()` (and so `isCabinCompositedInFrame()`) can
         // only turn true for a pipeline that passed validation.
+        this.presentationFormat = presentationFormat;
         this.pipeline = pipeline;
+    }
+
+    private createPipeline(format: GPUTextureFormat): Promise<GPURenderPipeline> {
+        return createRenderPipelineChecked(this.device, {
+            label: format === this.presentationFormat || this.presentationFormat === null
+                ? 'cabin-composite-pipeline'
+                : `cabin-composite-pipeline-${format}`,
+            layout: this.device.createPipelineLayout({
+                label: 'cabin-composite-pipeline-layout',
+                bindGroupLayouts: [this.layout!],
+            }),
+            vertex: { module: this.module!, entryPoint: 'vs_main' },
+            fragment: {
+                module: this.module!,
+                entryPoint: 'fs_main',
+                targets: [{ format, blend: CABIN_COMPOSITE_BLEND }],
+            },
+            primitive: { topology: 'triangle-list' },
+        });
+    }
+
+    /**
+     * Build the pipeline for another target format (a WebXR projection layer
+     * may not share the swap chain's). Resolves once it can be drawn with;
+     * rejects (and stays unavailable) when it fails validation.
+     */
+    public ensureFormat(format: GPUTextureFormat): Promise<void> {
+        if (!this.isReady()) return Promise.reject(new Error('cabin composite is not ready'));
+        if (format === this.presentationFormat || this.formatPipelines.has(format)) return Promise.resolve();
+        let pending = this.pendingFormats.get(format);
+        if (!pending) {
+            pending = this.createPipeline(format).then((pipeline) => {
+                if (!this.disposed) this.formatPipelines.set(format, pipeline);
+            });
+            this.pendingFormats.set(format, pending);
+        }
+        return pending;
+    }
+
+    public hasFormat(format: GPUTextureFormat): boolean {
+        return this.isReady() && (format === this.presentationFormat || this.formatPipelines.has(format));
     }
 
     public isReady(): boolean {
@@ -141,7 +230,16 @@ export class CabinCompositePass {
         if (this.source === source) return;
         this.source = source;
         this.boundTexture = null;
-        this.bindGroup = null;
+        this.bindGroups = {};
+    }
+
+    /** The source's layout this frame (`mono` when it does not say). */
+    public getLayout(): CabinOverlayLayout {
+        try {
+            return this.source?.getLayout?.() ?? 'mono';
+        } catch {
+            return 'mono';
+        }
     }
 
     public getSource(): CabinOverlaySource | null {
@@ -174,22 +272,32 @@ export class CabinCompositePass {
      * the weather pass just wrote — this loads it rather than clearing.
      * No-op when there is nothing to draw.
      */
-    public encode(commandEncoder: GPUCommandEncoder, targetView: GPUTextureView): boolean {
+    public encode(
+        commandEncoder: GPUCommandEncoder,
+        targetView: GPUTextureView,
+        viewport?: CabinCompositeViewport,
+        region: CabinCompositeRegion = 'full',
+        format?: GPUTextureFormat,
+    ): boolean {
         if (!this.isReady()) return false;
+        const pipeline = format && format !== this.presentationFormat ? this.formatPipelines.get(format) : this.pipeline;
+        if (!pipeline) return false;
         const texture = this.resolveTexture();
         if (!texture) return false;
 
-        if (this.boundTexture !== texture || !this.bindGroup) {
-            this.bindGroup = this.device.createBindGroup({
-                label: 'cabin-composite-bind-group',
-                layout: this.pipeline!.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: texture.createView() },
-                    { binding: 1, resource: this.sampler! },
-                ],
-            });
+        if (this.boundTexture !== texture) {
+            this.bindGroups = {};
             this.boundTexture = texture;
         }
+        const bindGroup = this.bindGroups[region] ??= this.device.createBindGroup({
+            label: `cabin-composite-bind-group-${region}`,
+            layout: this.layout!,
+            entries: [
+                { binding: 0, resource: texture.createView() },
+                { binding: 1, resource: this.sampler! },
+                { binding: 2, resource: { buffer: this.rects[region]! } },
+            ],
+        });
 
         const pass = commandEncoder.beginRenderPass({
             label: 'cabin-composite',
@@ -199,8 +307,9 @@ export class CabinCompositePass {
                 storeOp: 'store' as GPUStoreOp,
             }],
         });
-        pass.setPipeline(this.pipeline!);
-        pass.setBindGroup(0, this.bindGroup);
+        if (viewport) pass.setViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0, 1);
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
         pass.draw(3, 1, 0, 0);
         pass.end();
         return true;
@@ -208,10 +317,16 @@ export class CabinCompositePass {
 
     public dispose(): void {
         this.disposed = true;
+        for (const buffer of Object.values(this.rects)) destroyTracked(buffer);
+        this.rects = {};
         this.pipeline = null;
+        this.formatPipelines.clear();
+        this.pendingFormats.clear();
+        this.module = null;
+        this.layout = null;
         this.sampler = null;
         this.source = null;
         this.boundTexture = null;
-        this.bindGroup = null;
+        this.bindGroups = {};
     }
 }

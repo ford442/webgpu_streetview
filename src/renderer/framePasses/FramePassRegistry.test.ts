@@ -4,7 +4,7 @@ import { FramePassRegistry, RequiredPassError, type FrameContext, type FramePass
 import { getPassStatuses, resetPassStatuses, type FramePassId } from '../passStatus';
 import { GpuValidationError } from '../gpuPipelineFactory';
 
-const frame = {} as FrameContext;
+const frame = { phase: 'main', hasTail: false } as FrameContext;
 
 function pass(id: FramePassId, order: number, over: Partial<FramePass> = {}, log: string[] = []): FramePass {
     return {
@@ -131,5 +131,20 @@ describe('FramePassRegistry', () => {
         await r.initAll();
         expect(window.webgpuProbe?.passes?.weather?.state).toBe('failed');
         delete (window as unknown as { webgpuProbe?: object }).webgpuProbe;
+    });
+
+    it('splits a frame with a tail: the road in main, reproject and the cabin in the tail (#331)', async () => {
+        const log: string[] = [];
+        const r = new FramePassRegistry();
+        r.register(pass('streetview', 100, {}, log));
+        r.register(pass('weather', 300, {}, log));
+        r.register(pass('reproject', 380, { phase: 'tail' }, log));
+        r.register(pass('cabin-composite', 400, { phase: 'last' }, log));
+        await r.initAll();
+        const split = { phase: 'main', hasTail: true } as FrameContext;
+        expect(r.encode({} as GPUCommandEncoder, split)).toEqual(['streetview', 'weather']);
+        expect(r.encode({} as GPUCommandEncoder, { ...split, phase: 'tail' })).toEqual(['reproject', 'cabin-composite']);
+        // No tail: the pre-#331 frame — the cabin closes main, reproject never runs.
+        expect(r.encode({} as GPUCommandEncoder, frame)).toEqual(['streetview', 'weather', 'cabin-composite']);
     });
 });

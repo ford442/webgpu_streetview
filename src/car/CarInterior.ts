@@ -38,7 +38,7 @@ import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
 import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
-import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from './carSpatialModel';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y, type HeadOffset } from './carSpatialModel';
 import type { RouteGuidance } from '../services/routing/guidanceFormat';
 
 /**
@@ -51,7 +51,8 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public canvas!: HTMLCanvasElement;
     public interiorGroup!: THREE.Group;
     public roofGroup!: THREE.Group;
-    public driverSeatGroup!: THREE.Group;
+    /** Driver eye point under the car rig; the camera's parent (`cabinRig.ts`). */
+    public headPivot!: THREE.Group;
     public steeringWheelGroup!: THREE.Group;
     public wiperLeft!: THREE.Group;
     public wiperRight!: THREE.Group;
@@ -127,6 +128,9 @@ export class CarInterior implements CarInteriorAssemblyHost {
     public rendererDelegate!: CarInteriorRenderer;
     public lightingManager!: CarInteriorLightingManager;
   public seatOffset = 0;
+    /** Compass heading of the car (degrees) — for world-anchored lighting only. */
+    public carHeading = 0;
+    private resizeObserver: ResizeObserver | null = null;
 
     constructor(
         container: HTMLElement,
@@ -154,7 +158,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.canvas = boot.canvas;
         this.interiorGroup = boot.interiorGroup;
         this.roofGroup = boot.roofGroup;
-        this.driverSeatGroup = boot.driverSeatGroup;
+        this.headPivot = boot.headPivot;
         this.frustumCuller = boot.frustumCuller;
         this.lodConfig = boot.lodConfig;
         this.reducedMotion = boot.reducedMotion;
@@ -182,6 +186,15 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.gpuProfile = boot.gpuProfile;
         this.quality = boot.quality;
         this.postProcessingEnabled = boot.postProcessingEnabled;
+
+        // The cabin camera's aspect feeds the panorama-matched FOV, so it has to
+        // follow the container (it used to keep its first-mount aspect forever).
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.rendererDelegate.resize(container.clientWidth, container.clientHeight);
+            });
+            this.resizeObserver.observe(container);
+        }
     }
 
     public setEnvironmentFromPano(equirect: HTMLCanvasElement, centerHeading: number): void {
@@ -236,28 +249,36 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.centerDisplay?.update(deltaTime);
         this.digitalClock?.update();
         if (this.sunShafts) {
-            const carHeadingRad = -this.interiorGroup.rotation.y;
             this.sunShafts.update(
                 deltaTime,
                 this.lastSunAzimuth,
                 this.lastSunAltitude,
-                carHeadingRad,
+                THREE.MathUtils.degToRad(this.carHeading),
                 this.lightingManager?.getWeatherIntensity() ?? 0
             );
         }
     }
 
-    public setActive(active: boolean): void {
-        this.animator.setActive(active);
+    /**
+     * The car's compass heading (degrees). Moves no cabin geometry — the car rig
+     * is the scene's frame — only re-aims the world-anchored lighting (sun,
+     * pano IBL, sun shafts) relative to the car's nose.
+     */
+    public setCarHeading(carHeading: number): void {
+        this.carHeading = carHeading;
+        this.animator.setCarHeading(carHeading);
+        this.lightingManager.setCarHeading(carHeading);
+        this.panoEnvironment.setCarHeading(carHeading);
     }
 
-    public setCarOrientation(carHeading: number, bodyPitch = 0, bodyRoll = 0): void {
-        this.animator.setCarOrientation(carHeading, bodyPitch, bodyRoll);
-    }
-
+    /** Car-local head pose (radians; +yaw = left, +pitch = up). */
     public setHeadOrientation(headYaw: number, headPitch: number): void {
-        // World-space look (Street View heading/pitch); camera is not under the chassis.
         this.animator.setHeadOrientation(headYaw, headPitch);
+    }
+
+    /** A headset's lean within the head pivot (#331, metres, car frame); zero otherwise. */
+    public setHeadOffset(offset: HeadOffset): void {
+        this.animator.setHeadOffset(offset);
     }
 
     public setSteeringAngle(angle: number): void {
@@ -443,6 +464,19 @@ export class CarInterior implements CarInteriorAssemblyHost {
         this.microInteractions.handlePointerUp();
     }
 
+    /**
+     * Press the dash control a ray meets (#331, a WebXR controller). The ray is
+     * in the car frame relative to the driver's eye point — the `local`
+     * reference space `xr/xrSession.ts` aligns with it — so it goes through the
+     * head pivot, never through the (head-turned) camera.
+     */
+    public pressInteriorAlongRay(origin: THREE.Vector3, direction: THREE.Vector3): boolean {
+        this.headPivot.updateWorldMatrix(true, false);
+        const worldOrigin = this.headPivot.localToWorld(origin.clone());
+        const worldDirection = direction.clone().transformDirection(this.headPivot.matrixWorld);
+        return this.microInteractions.pressAlongRay(worldOrigin, worldDirection);
+    }
+
     public setPostProcessingEnabled(enabled: boolean): void {
         this.postProcessingEnabled = enabled;
         this.rendererDelegate.setPostProcessingEnabled(enabled);
@@ -458,7 +492,7 @@ export class CarInterior implements CarInteriorAssemblyHost {
 
     public applySeatPosition(): void {
         applyDriverSeatOffset(
-            this.driverSeatGroup,
+            this.headPivot,
             this.vehicleConfig?.cameraPosition,
             this.seatOffset,
         );
@@ -478,6 +512,8 @@ export class CarInterior implements CarInteriorAssemblyHost {
     }
 
     public dispose(): void {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
         disposeCarInteriorResources(this);
     }
 }

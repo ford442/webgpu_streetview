@@ -85,9 +85,9 @@ export function useTripBindings({
   announce,
   routePrefetch,
 }: UseTripBindingsParams): TripPanelBindings {
-  const { viewMode, headCoupling } = useViewMode();
-  const live = useRef({ viewMode, headCoupling, teleportToPanoSafe, announce, setIsCruiseMode });
-  live.current = { viewMode, headCoupling, teleportToPanoSafe, announce, setIsCruiseMode };
+  const { viewMode } = useViewMode();
+  const live = useRef({ viewMode, teleportToPanoSafe, announce, setIsCruiseMode });
+  live.current = { viewMode, teleportToPanoSafe, announce, setIsCruiseMode };
 
   const routing = useMemo(() => resolveRoutingConfig(), []);
   const provider = useMemo(() => createConfiguredRouteProvider(routing), [routing]);
@@ -104,11 +104,10 @@ export function useTripBindings({
       const start = povStore.get().carHeading;
       const delta = signedAngleDiff(target, start);
       if (Math.abs(delta) < 0.5) return;
-      const rigid = live.current.headCoupling === 'rigid';
-      const headStart = povStore.get().heading;
+      // The view follows on the next cabin frame: in car mode the Street View
+      // heading is derived from carHeading + the car-local head pose.
       const apply = (k: number): void => {
         povStore.setCarHeading(start + delta * k);
-        if (rigid) povStore.setHeading(headStart + delta * k);
       };
       cancelAnimationFrame(raf);
       if (prefersReducedMotion()) {
