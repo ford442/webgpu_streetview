@@ -29,8 +29,27 @@ function readLocalStorageJson<T>(key: string): T | null {
   }
 }
 
+const quotaWarned = new Set<string>();
+
+/**
+ * The localStorage copy is a convenience mirror; IndexedDB is the store. A quota
+ * (or disabled-storage) error must never fail a load or save, so it is logged
+ * once per key and the stale mirror is dropped so it cannot shadow IndexedDB.
+ */
 function writeLocalStorageJson(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    if (!quotaWarned.has(key)) {
+      quotaWarned.add(key);
+      console.warn(`[offline] localStorage mirror "${key}" skipped — relying on IndexedDB:`, error);
+    }
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Storage unavailable entirely — nothing to clean up.
+    }
+  }
 }
 
 /** Migrate localStorage blobs into IndexedDB (one-way, idempotent). */
