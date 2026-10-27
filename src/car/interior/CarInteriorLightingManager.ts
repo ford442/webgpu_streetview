@@ -254,7 +254,7 @@ export class CarInteriorLightingManager {
         const emit = cabinEmitterTargets(rampIn);
 
         if (this.sunLight) {
-            const sunTarget = sunIntensityUnderWeather(this.sunBaseIntensity, rain);
+            const sunTarget = sunIntensityUnderWeather(this.sunBaseIntensity, rain, effectiveNight);
             this.sunLight.intensity += (sunTarget - this.sunLight.intensity) * 0.05;
         }
         this.lerpIntensity(this.hemisphereLight, fill.hemi * (1 + breathe));

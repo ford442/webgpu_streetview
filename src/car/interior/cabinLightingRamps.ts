@@ -110,9 +110,10 @@ export function sunBaseIntensityFromStrength(strength: number): number {
   return strength * 1.55;
 }
 
-/** Sun after rain/overcast: same 0.75 direct-light cut as the window fills. */
-export function sunIntensityUnderWeather(base: number, rain: number): number {
-  return base * (1 - Math.max(0, Math.min(1, rain)) * 0.75);
+/** Preset night must dim the real sun too, even when SunCalc still reports daylight. */
+export function sunIntensityUnderWeather(base: number, rain: number, effectiveNight: number): number {
+  const day = 1 - Math.max(0, Math.min(1, effectiveNight));
+  return base * (1 - Math.max(0, Math.min(1, rain)) * 0.75) * day;
 }
 
 /** Pano IBL contribution: keep enough by day for leather/dash, dim hard at night. */
