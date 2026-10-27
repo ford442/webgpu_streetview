@@ -4,6 +4,8 @@ import { CarInteriorAnimator } from '../interior/CarInteriorAnimator';
 import { applyHeadPose, createCabinRig } from '../interior/cabinRig';
 import { panoramaPovFromCabin } from '../carSpatialModel';
 import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
+import { createEyeCameras, updateEyeCameras } from '../interior/cabinStereo';
+import { eyeFromHead, headOffsetFromPosition, headPoseFromOrientation } from '../../xr/xrPose';
 
 vi.mock('../../effects/WindAudio', () => ({
   getWindAudio: () => ({
@@ -149,5 +151,49 @@ describe('grounded cabin — acceptance', () => {
     cabin.animator.setHeadOrientation(deg(40), deg(12));
     expect(cabin.camera.rotation.z).toBe(0);
     expect(cabin.carRig.rotation.z).toBe(0);
+  });
+
+  it('a WebXR head pose (#331) — rolled, leaning, beyond the yaw clamp — moves only the eyes; interiorGroup is byte-identical', () => {
+    const cabin = makeCabin();
+    cabin.animator.setCarHeading(34);
+    cabin.animator.setHeadOrientation(0, 0);
+    cabin.animator.setHeadOffset({ x: 0, y: 0, z: 0 });
+    cabin.scene.updateMatrixWorld(true);
+    const shellBefore = matrixBytes(cabin.shell);
+    const rigBefore = matrixBytes(cabin.carRig);
+    const pivotBefore = matrixBytes(cabin.headPivot);
+
+    // The headset, in the car frame relative to the eye point: 130° left, 8° down, 12° roll, leaning out.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(deg(-8), deg(130), deg(12), 'YXZ'));
+    const xrHead = { position: { x: -0.35, y: 0.04, z: 0.1 }, orientation: { x: q.x, y: q.y, z: q.z, w: q.w } };
+    const origin = { x: 0, y: 0, z: 0 };
+    const head = headPoseFromOrientation(xrHead.orientation);
+    const offset = headOffsetFromPosition(xrHead.position, origin);
+    cabin.animator.setHeadOrientation(head.headYaw, head.headPitch);
+    cabin.animator.setHeadOffset(offset);
+    cabin.scene.updateMatrixWorld(true);
+
+    expect(matrixBytes(cabin.shell)).toEqual(shellBefore);
+    expect(matrixBytes(cabin.carRig)).toEqual(rigBefore);
+    expect(matrixBytes(cabin.headPivot)).toEqual(pivotBefore);
+    // The lean is clamped to the head box, and only the camera carries it.
+    expect(cabin.camera.position.x).toBeCloseTo(-0.2, 9);
+    expect(cabin.camera.rotation.z).toBe(0);
+
+    // The eye the cabin renders is exactly the headset's, roll and all.
+    const eyes = createEyeCameras();
+    const eyeView = { position: { x: -0.35 - 0.032, y: 0.04, z: 0.1 }, orientation: xrHead.orientation };
+    updateEyeCameras(eyes, cabin.camera, {
+      kind: 'views',
+      views: [
+        { eyeFromHead: eyeFromHead(head, offset, eyeView, origin), projection: new Float32Array(cabin.camera.projectionMatrix.elements) },
+        { eyeFromHead: eyeFromHead(head, offset, xrHead, origin), projection: new Float32Array(cabin.camera.projectionMatrix.elements) },
+      ],
+    }, THREE.WebGLCoordinateSystem);
+    const want = cabin.headPivot.matrixWorld.clone().multiply(new THREE.Matrix4().compose(
+      new THREE.Vector3(eyeView.position.x, eyeView.position.y, eyeView.position.z), q, new THREE.Vector3(1, 1, 1),
+    ));
+    eyes.left.matrixWorld.elements.forEach((v, i) => expect(v).toBeCloseTo(want.elements[i]!, 5));
+    expect(matrixBytes(cabin.carRig)).toEqual(rigBefore);
   });
 });

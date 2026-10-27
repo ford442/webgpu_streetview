@@ -72,7 +72,7 @@ export function AppShell() {
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
-  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats, autoExposureStatus } = useAppTelemetry();
+  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats, autoExposureStatus, renderScale } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
   const { audioRef, isRadioPlaying, setIsRadioPlaying, toggleRadio } = useRadioAudio();
@@ -322,6 +322,7 @@ export function AppShell() {
             gpuPassTimings,
             gpuChoresStats,
             autoExposureStatus,
+            renderScale,
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,

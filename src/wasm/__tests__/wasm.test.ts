@@ -1,30 +1,32 @@
 /**
  * src/wasm/__tests__/wasm.test.ts
- * Unit tests for the StreetView WASM wrapper and its JS fallback.
- *
- * These tests run against the pure-JS fallback only — no real WASM binary is
- * required in the Jest/Node environment.  The fallback mirrors the compiled
- * WASM algorithm exactly, so this validates the logic for both paths.
+ * Behavioural tests for the StreetView WASM wrapper, run against the committed
+ * binary (src/setupTests.ts installs public/wasm/streetview-wasm.wasm). The
+ * exact numbers are pinned by wasmGoldenParity.test.ts; these check the
+ * documented properties (ranges, symmetry, layout) through the marshalling
+ * wrappers, plus the loader's contract.
  */
 
-import { loadWasmModule, getWasmModule, _resetWasmModule } from '../index';
+import { vi } from 'vitest';
+import {
+  loadWasmModule,
+  requireWasm,
+  _installWasmModule,
+  _resetWasmModule,
+  type StreetViewWasmAPI,
+} from '../index';
 
-// ---- Setup: reset cached module before each test -------------------------
-beforeEach(() => {
-  _resetWasmModule();
-});
+const installed = requireWasm();
 
 // ---- Helpers ----------------------------------------------------------------
-async function getFallback() {
-  // Fetch will fail in Jest (no browser / no HTTP server), so loadWasmModule
-  // always returns the JS fallback in this environment.
+async function getModule(): Promise<StreetViewWasmAPI> {
   return loadWasmModule();
 }
 
 // ---- seed + noise2d ---------------------------------------------------------
 describe('noise2d', () => {
   test('returns a value in [-1, 1]', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(42);
     const testCoords = [
       [0, 0], [0.5, 0.5], [1.5, 2.5], [-3.7, 8.1], [100, 200],
@@ -37,7 +39,7 @@ describe('noise2d', () => {
   });
 
   test('is deterministic for the same seed', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(12345);
     const a = wasm.noise2d(3.14, 2.71);
     wasm.seed(12345);
@@ -46,7 +48,7 @@ describe('noise2d', () => {
   });
 
   test('produces different values for different seeds', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(1);
     const a = wasm.noise2d(0.5, 0.5);
     wasm.seed(2);
@@ -55,7 +57,7 @@ describe('noise2d', () => {
   });
 
   test('noise value changes smoothly (adjacent samples differ by < 1)', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(99);
     const n0 = wasm.noise2d(0, 0);
     const n1 = wasm.noise2d(0.01, 0);
@@ -66,7 +68,7 @@ describe('noise2d', () => {
 // ---- fillNoiseBuffer --------------------------------------------------------
 describe('fillNoiseBuffer', () => {
   test('fills buffer with values in [-1, 1]', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(7);
     const buf = new Float32Array(8 * 8);
     wasm.fillNoiseBuffer(buf, 8, 8, 50, 0, 0);
@@ -77,7 +79,7 @@ describe('fillNoiseBuffer', () => {
   });
 
   test('produces row-major layout matching noise2d calls', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(3);
     const w = 4;
     const h = 4;
@@ -96,7 +98,7 @@ describe('fillNoiseBuffer', () => {
 // ---- fbm2d ------------------------------------------------------------------
 describe('fbm2d', () => {
   test('stays in [-1, 1] for a range of octave counts', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(5);
     for (const octaves of [1, 2, 4, 6]) {
       for (const [x, y] of [[0, 0], [0.3, 1.7], [-4.2, 9.9], [50, 50]]) {
@@ -108,13 +110,13 @@ describe('fbm2d', () => {
   });
 
   test('one octave is exactly noise2d', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(11);
     expect(wasm.fbm2d(1.25, -3.5, 1, 2.0, 0.5)).toBeCloseTo(wasm.noise2d(1.25, -3.5), 6);
   });
 
   test('matches the explicit octave sum', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(23);
     const [x, y, lacunarity, gain] = [0.7, 1.3, 2.0, 0.5];
     let sum = 0;
@@ -131,14 +133,14 @@ describe('fbm2d', () => {
   });
 
   test('returns 0 for a non-positive octave count', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(3);
     expect(wasm.fbm2d(1, 1, 0, 2.0, 0.5)).toBe(0);
     expect(wasm.fbm2d(1, 1, -3, 2.0, 0.5)).toBe(0);
   });
 
   test('adds detail relative to a single octave', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(17);
     // Neighbouring samples of a 5-octave stack vary more than the base octave
     // because the high-frequency octaves contribute at short distances.
@@ -159,7 +161,7 @@ describe('fbm2d', () => {
 // ---- fillFbmBuffer ---------------------------------------------------------
 describe('fillFbmBuffer', () => {
   test('produces row-major layout matching fbm2d calls', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(31);
     const w = 5;
     const h = 4;
@@ -175,7 +177,7 @@ describe('fillFbmBuffer', () => {
   });
 
   test('honours the offsets', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(32);
     const scale = 8;
     const a = new Float32Array(4);
@@ -187,7 +189,7 @@ describe('fillFbmBuffer', () => {
   });
 
   test('fills the whole 64x64 tile inside [-1, 1]', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     wasm.seed(1);
     const buf = new Float32Array(64 * 64);
     wasm.fillFbmBuffer(buf, 64, 64, 12, 3.5, -1.2, 4, 2.0, 0.5);
@@ -201,7 +203,7 @@ describe('fillFbmBuffer', () => {
 // ---- fillParticleSeeds -----------------------------------------------------
 describe('fillParticleSeeds', () => {
   test('writes 4 floats per particle in their documented ranges', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const count = 128;
     const buf = new Float32Array(count * 4);
     wasm.fillParticleSeeds(buf, count, 2024);
@@ -219,7 +221,7 @@ describe('fillParticleSeeds', () => {
   });
 
   test('is deterministic per seed and differs across seeds', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const a = new Float32Array(16);
     const b = new Float32Array(16);
     const c = new Float32Array(16);
@@ -231,7 +233,7 @@ describe('fillParticleSeeds', () => {
   });
 
   test('a prefix of a longer run is identical (stream ordering is stable)', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const short = new Float32Array(8);
     const long = new Float32Array(40);
     wasm.fillParticleSeeds(short, 2, 7);
@@ -240,14 +242,14 @@ describe('fillParticleSeeds', () => {
   });
 
   test('is a no-op for a zero count', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const buf = new Float32Array(4);
     wasm.fillParticleSeeds(buf, 0, 5);
     expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
   });
 
   test('spreads positions across the unit square', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const count = 512;
     const buf = new Float32Array(count * 4);
     wasm.fillParticleSeeds(buf, count, 4242);
@@ -265,19 +267,19 @@ describe('fillParticleSeeds', () => {
 // ---- haversine --------------------------------------------------------------
 describe('haversine', () => {
   test('New York → London ≈ 5570 km', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const dist = wasm.haversine(40.7128, -74.006, 51.5074, -0.1278);
     // Approximately 5,570 km ± 50 km.
     expect(dist / 1000).toBeCloseTo(5570, -2);
   });
 
   test('returns 0 for same point', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     expect(wasm.haversine(48.8566, 2.3522, 48.8566, 2.3522)).toBe(0);
   });
 
   test('is symmetric', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const a = wasm.haversine(40.7, -74.0, 51.5, -0.1);
     const b = wasm.haversine(51.5, -0.1, 40.7, -74.0);
     expect(a).toBeCloseTo(b, 1);
@@ -287,7 +289,7 @@ describe('haversine', () => {
 // ---- batchHaversine ---------------------------------------------------------
 describe('batchHaversine', () => {
   test('segment distances match per-pair haversine calls and sum to the total', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const points = [
       [40.7128, -74.006],   // New York
       [51.5074, -0.1278],   // London
@@ -311,7 +313,7 @@ describe('batchHaversine', () => {
   });
 
   test('returns 0 and writes nothing for fewer than two points', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const segments = new Float64Array(2).fill(-1);
     expect(wasm.batchHaversine(new Float64Array([]), segments)).toBe(0);
     expect(wasm.batchHaversine(new Float64Array([1, 2]), segments)).toBe(0);
@@ -319,7 +321,7 @@ describe('batchHaversine', () => {
   });
 
   test('repeated points contribute zero-length segments', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const segments = new Float64Array(2);
     const total = wasm.batchHaversine(
       new Float64Array([10, 20, 10, 20, 10, 20]),
@@ -333,7 +335,7 @@ describe('batchHaversine', () => {
 // ---- offsetLatLng -----------------------------------------------------------
 describe('offsetLatLng', () => {
   test('lands exactly the requested distance away', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     for (let bearing = 0; bearing < 360; bearing += 45) {
       const out = wasm.offsetLatLng(40.7128, -74.006, 10, bearing);
       expect(wasm.haversine(40.7128, -74.006, out.lat, out.lng)).toBeCloseTo(10, 6);
@@ -341,14 +343,14 @@ describe('offsetLatLng', () => {
   });
 
   test('a zero-metre step returns the start point', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const out = wasm.offsetLatLng(51.5074, -0.1278, 0, 137);
     expect(out.lat).toBeCloseTo(51.5074, 12);
     expect(out.lng).toBeCloseTo(-0.1278, 12);
   });
 
   test('north/south move the latitude and leave the meridian alone', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const north = wasm.offsetLatLng(40.7128, -74.006, 100, 0);
     const south = wasm.offsetLatLng(40.7128, -74.006, 100, 180);
     expect(north.lat).toBeGreaterThan(40.7128);
@@ -358,7 +360,7 @@ describe('offsetLatLng', () => {
   });
 
   test('east/west move the longitude in opposite directions', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const east = wasm.offsetLatLng(40.7128, -74.006, 100, 90);
     const west = wasm.offsetLatLng(40.7128, -74.006, 100, 270);
     expect(east.lng).toBeGreaterThan(-74.006);
@@ -379,7 +381,7 @@ describe('normalizeAngle', () => {
   ];
 
   test.each(cases)('normalizeAngle(%f) = %f', async (input, expected) => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     expect(wasm.normalizeAngle(input)).toBeCloseTo(expected, 5);
   });
 });
@@ -397,7 +399,7 @@ describe('signedAngleDiff', () => {
   ];
 
   test.each(cases)('signedAngleDiff(%f, %f) = %f', async (from, to, expected) => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     expect(wasm.signedAngleDiff(from, to)).toBeCloseTo(expected, 4);
   });
 });
@@ -405,7 +407,7 @@ describe('signedAngleDiff', () => {
 // ---- fillEngineNoise --------------------------------------------------------
 describe('fillEngineNoise', () => {
   test('writes samples in [-1, 1]', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const buf = new Float32Array(256);
     wasm.fillEngineNoise(buf, 256, 2200, 0.6, 40, 0.5, 22050, 44100);
     for (let i = 0; i < buf.length; i++) {
@@ -415,7 +417,7 @@ describe('fillEngineNoise', () => {
   });
 
   test('is deterministic for the same inputs', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const a = new Float32Array(64);
     const b = new Float32Array(64);
     const pa = wasm.fillEngineNoise(a, 64, 1800, 0.4, 30, 0.25, 60000, 48000);
@@ -425,7 +427,7 @@ describe('fillEngineNoise', () => {
   });
 
   test('returns the next phase, wrapped into [0, 1)', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const buf = new Float32Array(480);
     // 6000 rpm = 100 Hz; 480 samples at 48 kHz is exactly one cycle.
     const next = wasm.fillEngineNoise(buf, 480, 6000, 0.5, 0, 0.25, 0, 48000);
@@ -435,7 +437,7 @@ describe('fillEngineNoise', () => {
   });
 
   test('is a no-op for a zero count', async () => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const buf = new Float32Array(4);
     expect(wasm.fillEngineNoise(buf, 0, 900, 0.2, 10, 1.75, 0, 44100)).toBe(0.75);
     expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
@@ -455,7 +457,7 @@ describe('fillCabinIr', () => {
   };
 
   const ir = async (vehicleType: number, openness: number): Promise<Float32Array> => {
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const out = new Float32Array(128);
     wasm.fillCabinIr(out, out.length, vehicleType, openness, 44100);
     return out;
@@ -484,38 +486,60 @@ describe('fillCabinIr', () => {
 
   test('is deterministic and a no-op for a zero count', async () => {
     expect(Array.from(await ir(2, 0.5))).toEqual(Array.from(await ir(2, 0.5)));
-    const wasm = await getFallback();
+    const wasm = await getModule();
     const buf = new Float32Array(4);
     wasm.fillCabinIr(buf, 0, 0, 0, 44100);
     expect(Array.from(buf)).toEqual([0, 0, 0, 0]);
   });
 });
 
-// ---- isWasm flag ------------------------------------------------------------
-describe('isWasm flag', () => {
-  test('JS fallback has isWasm = false', async () => {
-    const wasm = await getFallback();
-    expect(wasm.isWasm).toBe(false);
-  });
-});
-
-// ---- getWasmModule ----------------------------------------------------------
-describe('getWasmModule', () => {
-  test('returns null before loadWasmModule is called', () => {
-    expect(getWasmModule()).toBeNull();
+// ---- requireWasm / loadWasmModule -----------------------------------------
+describe('the loader', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    _installWasmModule(installed);
   });
 
-  test('returns the module after loading', async () => {
-    await loadWasmModule();
-    expect(getWasmModule()).not.toBeNull();
+  test('requireWasm throws until the binary has loaded', () => {
+    _resetWasmModule();
+    expect(() => requireWasm()).toThrow(/not loaded yet/);
   });
-});
 
-// ---- loadWasmModule caching -------------------------------------------------
-describe('loadWasmModule caching', () => {
-  test('returns the same instance on repeated calls', async () => {
-    const a = await loadWasmModule();
-    const b = await loadWasmModule();
+  test('a failed fetch rejects — there is no JS fallback — and is retried next call', async () => {
+    _resetWasmModule();
+    const fetchMock = vi.fn(async () => new Response('not found', { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(loadWasmModule()).rejects.toThrow(/HTTP 404/);
+    expect(() => requireWasm()).toThrow();
+    await expect(loadWasmModule()).rejects.toThrow(/HTTP 404/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('an HTML answer (SPA fallback) is rejected, not instantiated', async () => {
+    _resetWasmModule();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!DOCTYPE html>', { status: 200 })));
+    await expect(loadWasmModule()).rejects.toThrow(/not a valid module/);
+  });
+
+  test('loads the fetched binary once and caches it', async () => {
+    _resetWasmModule();
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    const bytes = readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.wasm'));
+    const fetchMock = vi.fn(async () => new Response(bytes));
+    vi.stubGlobal('fetch', fetchMock);
+    const [a, b] = await Promise.all([loadWasmModule(), loadWasmModule()]);
     expect(a).toBe(b);
+    expect(await loadWasmModule()).toBe(a);
+    expect(requireWasm()).toBe(a);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toMatch(/\/wasm\/streetview-wasm\.wasm$/);
+  });
+
+  test('returns the installed module without fetching', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await loadWasmModule()).toBe(installed);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

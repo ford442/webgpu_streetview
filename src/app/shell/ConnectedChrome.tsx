@@ -27,6 +27,7 @@ import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor'
 import type { MemoryStats } from '../../utils/memoryProfiler';
 import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
+import type { AppliedRenderScale } from '../../renderer/renderScale';
 import type { AutoExposureStatus } from '../../renderer/autoExposure';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
@@ -40,7 +41,6 @@ import {
   AccessibilityPanel,
   HistoricalTimeline,
   TourPanel,
-  TripPlannerPanel,
   SharedSessionPanel,
   PerformanceStatsOverlay,
   RendererBackendIndicator,
@@ -52,6 +52,8 @@ import GlobeReturnButton from '../../components/GlobeReturnButton';
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 /** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */
 const CoverageMap = lazy(() => import('../../components/CoverageMap'));
+/** Trip planner panel (routing, guidance, recordings, offline prefetch); lazy chunk. */
+const TripPlannerPanel = lazy(() => import('../../components/TripPlannerPanel'));
 
 /** GlobeView only needs the heading as its entry pose — keep it off the shell's render path. */
 function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>, 'currentHeading'>) {
@@ -167,6 +169,7 @@ export interface ConnectedChromeOverlays {
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
   autoExposureStatus?: AutoExposureStatus;
+  renderScale?: AppliedRenderScale;
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
@@ -297,6 +300,7 @@ export function ConnectedChrome({
           gpuPassTimings={overlays.gpuPassTimings}
           gpuChoresStats={overlays.gpuChoresStats}
           autoExposureStatus={overlays.autoExposureStatus}
+          renderScale={overlays.renderScale}
           position="top-left"
           visible={true}
           showMemory={true}
@@ -567,11 +571,13 @@ export function ConnectedChrome({
       )}
 
       {isTripPanelOpen && (
-        <TripPlannerPanel
-          isOpen={isTripPanelOpen}
-          onClose={() => setIsTripPanelOpen(false)}
-          {...tripPanelProps}
-        />
+        <Suspense fallback={null}>
+          <TripPlannerPanel
+            isOpen={isTripPanelOpen}
+            onClose={() => setIsTripPanelOpen(false)}
+            {...tripPanelProps}
+          />
+        </Suspense>
       )}
 
       {isMapOpen && !globeMode.isEngaged && (

@@ -131,6 +131,49 @@ export function steerDeltaFromMouse(movementX: number, dtS: number): number {
   return Math.max(-limit, Math.min(limit, movementX * STEER_DEG_PER_PX));
 }
 
+/** Thumbstick travel below this is rest (stick drift), not steering. */
+export const STICK_DEADZONE = 0.15;
+/** Full stick deflection turns the car at this rate (deg/s). */
+export const STICK_STEER_RATE_DPS = 60;
+
+/**
+ * Car heading change (degrees, + = right) from a WebXR thumbstick's X axis
+ * (−1 left … +1 right) held for `dtS` seconds (#331). Rescaled past the
+ * deadzone so steering starts from zero, never with a jump.
+ */
+export function steerDeltaFromStick(axisX: number, dtS: number): number {
+  const magnitude = Math.abs(axisX);
+  if (!Number.isFinite(axisX) || magnitude <= STICK_DEADZONE) return 0;
+  const dt = Math.min(0.1, Math.max(0, dtS));
+  const travel = (Math.min(1, magnitude) - STICK_DEADZONE) / (1 - STICK_DEADZONE);
+  return Math.sign(axisX) * travel * STICK_STEER_RATE_DPS * dt;
+}
+
+/**
+ * How far a headset may move the eye from the driver's eye point (#331),
+ * metres in the car frame (x right, y up, z back). Leaning, not walking: the
+ * car does not move with the head, and further than this the cabin would be
+ * entered from the inside of a pillar.
+ */
+export const HEAD_OFFSET_LIMIT = { x: 0.2, y: 0.12, z: 0.15 } as const;
+
+export interface HeadOffset {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+export const NO_HEAD_OFFSET: HeadOffset = { x: 0, y: 0, z: 0 };
+
+export function clampHeadOffset(offset: HeadOffset): HeadOffset {
+  const clamp = (v: number, limit: number) => (Number.isFinite(v) ? Math.max(-limit, Math.min(limit, v)) : 0);
+  return {
+    x: clamp(offset.x, HEAD_OFFSET_LIMIT.x),
+    y: clamp(offset.y, HEAD_OFFSET_LIMIT.y),
+    z: clamp(offset.z, HEAD_OFFSET_LIMIT.z),
+  };
+}
+
 /**
  * StereoPannerNode pan from signed head-vs-chassis yaw.
  * Looking right of the car body → positive (right ear). Clamped to [-1, 1].

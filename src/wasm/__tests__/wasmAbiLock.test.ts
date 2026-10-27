@@ -52,6 +52,9 @@ const EXPECTED_EXPORTS = [
   'dsp_set_ir',
   'dsp_render',
   'dsp_max_ir_taps',
+  'depth_percentiles',
+  'depth_near_depth',
+  'depth_normalize',
   'graph_astar',
   'graph_nearest',
 ] as const;
@@ -62,18 +65,21 @@ const EMSCRIPTEN_RUNTIME_EXPORTS = new Set([
   'free',
   '_initialize',
   'emscripten_stack_get_base',
+  'emscripten_stack_get_end',
   '_emscripten_stack_restore',
   'emscripten_stack_get_current',
 ]);
 
 /**
  * Runtime exports the loader depends on: `malloc`/`free` back the scratch
- * arena, `emscripten_stack_get_base` proves it sits above the stack, and
+ * arena, `emscripten_stack_get_base` proves it sits above the stack,
+ * `emscripten_stack_get_end` that the stack is the size the build pinned, and
  * `_initialize` must run before either (it is what sets the stack base).
  */
 const LOADER_RUNTIME_EXPORTS = [
   '_initialize',
   'emscripten_stack_get_base',
+  'emscripten_stack_get_end',
   'free',
   'malloc',
 ] as const;
@@ -133,6 +139,13 @@ describe('WASM ABI lock', () => {
     expect(sorted(runtime)).toEqual(sorted(LOADER_RUNTIME_EXPORTS));
   });
 
+  it('the loader expects the stack size CMake pins', async () => {
+    const cmake = read('cpp', 'CMakeLists.txt');
+    const pinned = Number(cmake.match(/-s STACK_SIZE=(\d+)/)?.[1]);
+    const { WASM_STACK_SIZE } = await import('../marshal');
+    expect(pinned).toBe(WASM_STACK_SIZE);
+  });
+
   it('CMake and the committed binary provide every runtime export the loader needs', async () => {
     const cmake = read('cpp', 'CMakeLists.txt');
     const list = cmake.match(/EXPORTED_FUNCTIONS=\[([^\]]*)\]/)![1]!;
@@ -189,8 +202,7 @@ describe('WASM ABI lock', () => {
   });
 
   it('every API method on the TS wrapper is backed by a documented export', async () => {
-    const { loadWasmModule, _resetWasmModule } = await import('../index');
-    _resetWasmModule();
+    const { loadWasmModule } = await import('../index');
     const api = await loadWasmModule();
     // createCabinDsp wraps the whole dsp_* family behind one instance object.
     const methodToExport: Record<string, readonly string[]> = {
@@ -218,6 +230,9 @@ describe('WASM ABI lock', () => {
       createCabinDsp: [
         'dsp_create', 'dsp_destroy', 'dsp_set_params', 'dsp_set_ir', 'dsp_render', 'dsp_max_ir_taps',
       ],
+      depthPercentiles: ['depth_percentiles'],
+      depthNearDepth: ['depth_near_depth'],
+      depthNormalize: ['depth_normalize'],
       graphAstar: ['graph_astar'],
       graphNearest: ['graph_nearest'],
     };
@@ -225,11 +240,8 @@ describe('WASM ABI lock', () => {
     for (const method of Object.keys(methodToExport)) {
       expect(typeof (api as unknown as Record<string, unknown>)[method]).toBe('function');
     }
-    const apiMethods = sorted(
-      Object.keys(api).filter((key) => key !== 'isWasm'),
-    );
+    const apiMethods = sorted(Object.keys(api));
     expect(apiMethods).toEqual(sorted(Object.keys(methodToExport)));
     expect(sorted(Object.values(methodToExport).flat())).toEqual(expectedSorted);
-    _resetWasmModule();
   });
 });

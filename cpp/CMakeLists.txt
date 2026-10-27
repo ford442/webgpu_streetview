@@ -75,7 +75,8 @@ if(EMSCRIPTEN)
     #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
     #       reduce_luma_bt709, downsample_2d, luma_analyze, dsp_create,
     #       dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
-    #       dsp_max_ir_taps, graph_astar, graph_nearest
+    #       dsp_max_ir_taps, depth_percentiles, depth_near_depth,
+    #       depth_normalize, graph_astar, graph_nearest
     #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
     #     bindings, and the TypeScript loader ever drift apart.
     #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
@@ -100,6 +101,7 @@ if(EMSCRIPTEN)
         src/hrtf_module.cpp
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
+        src/depth_module.cpp
         src/graph_module.cpp
         src/bindings.cpp
     )
@@ -110,23 +112,42 @@ if(EMSCRIPTEN)
     # Optimisation comes from CMAKE_BUILD_TYPE alone (Release: -O3 -DNDEBUG,
     # Debug: -g) — build-wasm.sh passes no CMAKE_CXX_FLAGS. The link step
     # needs its own level because it also drives wasm-opt.
+    # Release adds -flto (compile + link): with -ffp-contract=off and no
+    # -ffast-math, LTO may inline across the TUs but never re-associate or
+    # fuse float ops, so the binaries reproduce the goldens bit for bit (CI's
+    # `--compare` step and wasmGoldenParity.test.ts prove it on every build).
+    # Debug keeps runtime assertions instead; it is never shipped.
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(STREETVIEW_WASM_LINK_OPT "-O0" "-g")
+        set(STREETVIEW_WASM_LINK_OPT "-O0" "-g" "-s ASSERTIONS=1")
+        set(STREETVIEW_WASM_LTO "")
     else()
-        set(STREETVIEW_WASM_LINK_OPT "-O3" "-g0")
+        set(STREETVIEW_WASM_LINK_OPT "-O3" "-g0" "-flto" "-s ASSERTIONS=0")
+        set(STREETVIEW_WASM_LTO -flto)
     endif()
 
     set(EMSCRIPTEN_FLAGS
         ${STREETVIEW_WASM_LINK_OPT}
+        # STRICT: no deprecated settings or legacy defaults can creep in.
+        "-s STRICT=1"
         "-s WASM=1"
         "-s STANDALONE_WASM=1"
         "--no-entry"
-        # 16 MiB up front covers the largest tile the renderer asks for without
-        # a first-frame grow; growth stays on for the batch-geodesy paths.
+        # 16 MiB up front covers every per-frame buffer (noise tiles, the
+        # quarter-res luma chore, a 256² depth map) without a first-frame grow.
         "-s INITIAL_MEMORY=16777216"
         "-s ALLOW_MEMORY_GROWTH=1"
-        "-s ASSERTIONS=0"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_graph_astar','_graph_nearest','_malloc','_free','_emscripten_stack_get_base']"
+        # The largest buffer the app hands the module is a snapshot's output
+        # canvas (useAppCapture -> downsample_2d): CSS size x DPR (capped at 2),
+        # 32 MiB at a 4K backing store, 59 MiB at 5K. The scratch arena rounds
+        # to a power of two (src/wasm/marshal.ts), so 5K reserves 64 MiB on top
+        # of the initial heap: 128 MiB is the explicit ceiling, never unbounded.
+        "-s MAXIMUM_MEMORY=134217728"
+        # 64 KiB of shadow stack, explicitly: the loader checks it
+        # (emscripten_stack_get_base - emscripten_stack_get_end must equal
+        # WASM_STACK_SIZE in src/wasm/marshal.ts) and puts the scratch arena above
+        # it. #300's corruption was an assumption about exactly this number.
+        "-s STACK_SIZE=65536"
+        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_depth_percentiles','_depth_near_depth','_depth_normalize','_graph_astar','_graph_nearest','_malloc','_free','_emscripten_stack_get_base','_emscripten_stack_get_end']"
         "-s EXPORTED_RUNTIME_METHODS=[]"
     )
 
@@ -142,6 +163,7 @@ if(EMSCRIPTEN)
             # stray throw or dynamic_cast from silently pulling in the runtime.
             -fno-exceptions
             -fno-rtti
+            ${STREETVIEW_WASM_LTO}
         )
         set_target_properties(${target} PROPERTIES
             SUFFIX ".wasm"
@@ -155,6 +177,9 @@ if(EMSCRIPTEN)
     # compiler autovectorize the rest. WASM SIMD128 has no FMA and we never pass
     # -ffast-math, so every result stays bit-identical to the scalar goldens.
     target_compile_options(streetview-wasm-simd PRIVATE -msimd128)
+    # And at link time, so emcc runs wasm-opt with --enable-simd on this
+    # target explicitly (it only infers features from the objects otherwise).
+    target_link_options(streetview-wasm-simd PRIVATE -msimd128)
     set_target_properties(streetview-wasm-simd PROPERTIES OUTPUT_NAME "streetview-wasm.simd")
 else()
     # -----------------------------------------------------------------------
@@ -173,6 +198,7 @@ else()
         src/hrtf_module.cpp
         src/luma_module.cpp
         src/cabin_dsp_module.cpp
+        src/depth_module.cpp
         src/graph_module.cpp
         src/bindings.cpp
     )

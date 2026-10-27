@@ -8,6 +8,7 @@ import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
 import { notifyCabinFrameRendered } from './frameCapture';
 import { publishCabinOverlaySource } from '../../renderer/cabinOverlayRegistry';
 import { getState, setState, type CarModeState } from './state';
+import { cabinHeadOffsetStore } from '../../state/cabinHeadOffsetStore';
 import type { CabinRendererHandle } from '../interior/createCabinRenderer';
 
 /**
@@ -201,6 +202,7 @@ export function updateCarMode(carHeading: number, headYaw: number, headPitch: nu
     // rig, so that counts carHeading twice.
     state.interior.setCarHeading(carHeading);
     state.interior.setHeadOrientation(headYaw, headPitch);
+    state.interior.setHeadOffset(cabinHeadOffsetStore.get());
 
     // Re-register any bound rear sample against the *car body* heading — the
     // mirror lives in car-body space, so the head's view heading must not move

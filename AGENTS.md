@@ -381,7 +381,8 @@ the module that owns it, not to the façade:
 | `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth) |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
 | `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
@@ -444,6 +445,46 @@ panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
 - **Optional pass**: lazy, so absent from `webgpuProbe.passes` until switched on;
   a failure (model missing, integrity, device lost, no chores readback) is
   reported there and in `window.__SCENE_DEPTH__`, never on the road frame.
+
+### Split frame tail, stereo and the WebXR cockpit (`src/renderer/reproject/`, `src/xr/`, #331)
+
+The road frame can end with a **tail**: a second submit that runs
+`reproject.wgsl` and then the cabin composite (`framePasses` phase `tail` /
+`last`). It exists only with `?latelatch`, `?stereo=sbs|anaglyph` or a WebXR
+session presenting; otherwise the frame is exactly the pre-#331 frame.
+
+- **Why a tail**: `WebGPUCanvas`'s rAF packs the road before the car loop's rAF
+  derives this frame's POV (`cabinPovSync`) and renders the cabin. rAF
+  callbacks of one display frame share a timestamp and present together, so
+  the tail is **deferred until the car loop calls
+  `frameTailScheduler.producerDone(frameTime)`** — road and cabin then show the
+  same frame's POV. A tail the producer never releases is dropped (the canvas
+  repeats, never black).
+- **Late latch**: the tail turns the packed frame to the POV read *now* — an
+  exact rotation (`reprojectMath.latchRotation`; the shader takes a 3×3
+  `sourceFromOutput` plus the output's frustum). Delta 0 → mode `copy`
+  (`textureLoad`, bit-exact). Probe: `__STREETVIEW_PROBE__.getLateLatch()`.
+- **Stereo**: a gather warp along the row by depth (map blended with the
+  proxy), nearest-far-neighbour disocclusion fill + 3-tap blur. 64 mm IPD,
+  convergence 1 m on a flat display (the mono cabin sits at zero parallax),
+  infinity in a headset (each eye has its own frustum). The cabin renders two
+  eye cameras derived from the head camera (`car/interior/cabinStereo.ts`,
+  request via `renderer/cabinStereoRequest.ts`) into one side-by-side target.
+- **WebXR** (`xr/xrSession.ts`): `immersive-vr` + the WebXR/WebGPU binding on
+  the **one** device (requested `xrCompatible` in `bootDevice.ts` when
+  `xr/xrSupport.ts` finds a headset — reported as `capabilityMatrix.xrCompatible`).
+  Entered from the HUD's **Enter VR** button (a user gesture). While presenting,
+  `xr/frameClock.ts` runs the road and car loops from the session's rAF, so the
+  tail draws each eye into the projection layer's sub-image *inside* the XR
+  callback (`renderer/xrPresentFrame.ts`). The head pose goes to
+  `cabinHeadStore` (clamped yaw/pitch) + `cabinHeadOffsetStore` (clamped lean,
+  `carSpatialModel.HEAD_OFFSET_LIMIT`); roll and the rest ride in each eye's
+  `eyeFromHead`. **The rig never moves.** The left stick steers via `XR_STICK`
+  rows in `CABIN_INPUT_TRANSITIONS` (STEER for the whole session); the right
+  trigger presses dash controls along its ray
+  (`car/runtime/interaction.pressCarInteriorAlongRay`). The release dolly is
+  capped in a headset (`depthParams.XR_RELEASE_DOLLY_SCALE`). Fallbacks:
+  `docs/RENDERER_FALLBACK.md` § WebXR fallback matrix.
 
 ### WebGL2 Fallback / Debug Renderer
 
@@ -546,10 +587,10 @@ Consequences worth knowing:
   reads `renderer.isCabinCompositedInFrame()`; when it is false the 2D latch in
   `car/runtime/frameCapture.ts` is not wired up at all. The latch stays for
   `?cabin=webgl` and every fallback — do not delete it.
-- **The road loop stops frame-skipping while compositing**
-  (`shouldRenderHeldFrameThisTick({ cabinComposited })`). The cabin no longer
-  has a canvas of its own to animate on, so a skipped road frame would freeze
-  the wipers and gauges.
+- **The road loop renders every frame.** The cabin has no canvas of its own
+  to animate on, so a skipped road frame would freeze the wipers and gauges.
+  There is no frame skipping at all since #329 — under load the road's render
+  scale drops instead (`WebGPUCanvas.frameLoop.test.tsx`).
 - **`cabinOverlayRegistry` must stay a single module instance.** It is written
   from the lazy car chunk and read from the eager renderer; a Rollup split that
   duplicated it would give each chunk its own state and break the handoff
@@ -628,13 +669,12 @@ Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `
 ### Performance & Adaptive Quality
 
 `WebGPUCanvas.tsx` implements:
-- **Adaptive frame skipping**: `shouldSkipFrame()` from `usePerformanceMonitor` can drop to 30fps.
-- **Source-change detection**: forces full 60fps when the scraped canvas changes.
-- **Transition boost**: forces full fps while `isTransitioning` is true.
+- **Every frame renders** — never skip one to keep up (car-mode gauges and wipers animate on the road's frame).
+- **Dynamic render scale (#329)**: the frame-budget loop (`renderer/frameBudget.ts`, fed GPU timestamps or the raw rAF interval) moves the road's render scale within the preset's range; `?scale=` pins it. Frozen through hold-pause and reduced motion. See `docs/GRAPHICS.md` §7.
 - **Debounced resize**: 150ms debounce on window resize.
 - **WebGPU device loss recovery**: reinitializes renderer on `device.lost`.
 
-`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps).
+`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps). Resolution is the first lever, a preset downgrade the last.
 
 ---
 
@@ -750,14 +790,23 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 ### WASM numeric layer (`cpp/` + `src/wasm/`)
 
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
-audio engine, panorama luma analysis)
-exists as three implementations — the shipping binaries
-(`public/wasm/streetview-wasm.wasm` and its SIMD128 twin
-`streetview-wasm.simd.wasm`, same sources), the C++ in `cpp/src/*_module.cpp`
-(one translation unit per domain: noise, geodesy, audio, hrtf, luma, cabin
-dsp), and the pure-JS fallback in `src/wasm/jsFallback.ts` (the cabin engine's
-twin is `src/wasm/cabinDspTwin.ts`). They are pinned to **one set of golden vectors** captured
-from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
+audio engine, panorama luma analysis, scene-depth calibration) has **one
+implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth), shipped as the
+committed binaries (`public/wasm/streetview-wasm.wasm` and the SIMD128
+`streetview-wasm.simd.wasm`, same sources). There is **no JS twin**: the binary
+runs on the main thread, in the AudioWorklet and in Vitest (`src/setupTests.ts`
+instantiates the committed `.wasm` and installs it — never mock it).
+
+- **Boot**: `src/index.tsx` awaits `loadBootWasm()` (`renderer/bootWasm.ts`)
+  before rendering `<App />`, and `Renderer.init` awaits the same load beside
+  its pass inits. A failure is `webgpuProbe = { ok: false, stage: 'wasm' }`
+  plus the blocking WebGPU-failure overlay (`app/WasmBootFailure.tsx`,
+  `e2e/wasm-boot.spec.ts`). `loadWasmModule()` rejects (and retries on the next
+  call); kernel call sites use `requireWasm()`, which throws before the load.
+
+Everything is pinned to **one set of golden vectors** captured from the
+shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 - **`npm run test:cpp`** — CMake host target + doctest goldens, built with
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wdouble-promotion -Werror`
@@ -767,15 +816,22 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
-  points at `build-host`. `npm run lint:cpp` runs advisory clang-tidy
-  (`WarningsAsErrors` empty) over `SOURCES` in `scripts/lint-cpp.sh`, which
+  points at `build-host`. `npm run lint:cpp` runs clang-tidy, **gating on
+  `bugprone-*`** (`cpp/.clang-tidy` `WarningsAsErrors`; modernize/readability
+  stay advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which
   must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
   host build. A new translation unit also goes in both CMake source lists and
   `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
-- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — the same vectors against
-  the JS fallback (runs with `npm test`). **`cabinDspParity.test.ts`** runs the
-  `dsp_render` parameter scripts (FNV-1a checksums + excerpts) and
-  `luma_analyze` on the JS twin and **both** committed binaries.
+- **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — every golden, exactly,
+  on **both** committed binaries through the TS loader (runs with `npm test`),
+  including the `dsp_render` parameter scripts (FNV-1a checksums + excerpts),
+  `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
+  worklet source with the cabin goldens.
+- **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
+  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
+  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
+  change that moves a single golden bit is dropped, not re-baselined.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
   `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
@@ -795,8 +851,8 @@ from the shipping binary by `scripts/gen-wasm-goldens.mjs`:
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
-application code — the JS fallback is a degrade/test twin, not a third place to
-invent behaviour. Geodesy in particular has exactly one copy per formula:
+application code, and never re-implement a kernel in TypeScript (not even for
+tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
 `haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
@@ -809,8 +865,9 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `src/App.test.tsx` — CRA-era smoke test, retained (renders without crashing, welcome modal visible).
 - `src/utils/panoramaStability.test.ts` — Shared stability constants (tick/ms derivation) and `getCanvasFingerprint` (size floor, near-black rejection, dark-but-valid frames, change detection).
 - `src/utils/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
-- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
-- `src/components/holdRenderLoop.test.ts` — Render-loop policy for when held frames must render regardless of adaptive frame skipping.
+- `src/utils/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released, render scale at arm and release), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
+- `src/components/WebGPUCanvas.frameLoop.test.tsx` — the real render loop renders every animation frame (live, weather-only, held) at any frame time; GPU load lowers the requested render scale; a hold freezes it.
+- `src/renderer/renderScale.test.ts`, `frameBudget.test.ts`, `upscale/UpscalePass.test.ts`, `Renderer.renderScale.test.ts` — render scale (#329): quantisation and the request/probe store; the budget loop on simulated timing traces (converges within 2 s, never oscillates by more than a step, backs off failed probes, learns a 50 Hz refresh, frozen holds); the EASU → RCAS / bilinear encode; and the real `Renderer` at scale 1 (no upscale built or encoded) vs 0.5 (scaled intermediate + road target), hold freeze, and a failing upscale.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts`, `src/renderer/webgpuBootProbe.test.ts` — Backend preference/debug-flag parsing, WebGPU-required hard-fail (no WebGL construct), and `webgpuProbe` brand/stage records.
 - `src/app/sharedSessionSync.test.ts` — Pure host broadcast payload builder + guest teleport dedupe policy.
@@ -825,7 +882,7 @@ geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
 - `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~1 min per inference on SwiftShader.
-- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1.
 - The GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
@@ -901,6 +958,18 @@ Run this after touching `WindowWeatherOverlay.ts`, `WindshieldPortal.ts`, `cabin
 4. **Hold-pause.** Cruise with rain on for 10+ hops. During each hop the droplets refract the *held* frame (probe `portal.held: true`), and `window.__STREETVIEW_PROBE__.getWarnings()` stays empty. The portal must never cause a live Maps upload.
 5. **Resize.** Drag the window edge while rain is on. No flash to black in the glass, no `Destroyed texture … used in a submit` validation error in the console.
 6. **Night.** Night preset + rain: droplet interiors read as dark as the road around them, not as a bright daytime picture.
+
+### WebXR Cockpit Manual Checklist
+Run after touching `src/xr/`, `renderer/xrPresentFrame.ts`, the reproject tail, `cabinStereo.ts`, `cabinComposite.ts`'s formats or `bootDevice.ts`'s adapter options. Needs a WebGPU-XR browser and a headset (Chrome with `chrome://flags/#webxr-webgpu-binding` + a PC headset, Quest Browser with WebGPU-XR enabled, or visionOS Safari); the automated half is `xrSession.test.ts`, `Renderer.reproject.test.ts`, `cabinRig.acceptance.test.ts` and `e2e/gpu-foundation.spec.ts`'s split-frame tests.
+
+1. **Detection.** `window.rendererAdapterInfo.xrCompatible` is `true` and `__STREETVIEW_PROBE__.getXr().support.state === 'available'`. In a browser without the flag the car HUD shows a disabled **Enter VR** with "Needs WebGPU-XR …"; in Firefox there is no button.
+2. **Enter.** Car mode → **Enter VR**. The cabin surrounds you at the driver's seat, the road is outside the glass, the mode chip says **Steer**. `getXr().presenting` is `true` and `presentedFrames` climbs every frame. No `device lost` in the console.
+3. **Look.** Turn your head 90° left: the driver door, the road beyond it, no swim between cabin and road. Roll your head: the cabin and the road roll together. Lean toward the side window: the head moves a little (≤ 20 cm), then stops — you never leave the seat. The dash and the wheel stay put.
+4. **Steer.** Left stick right: the car turns right, the wheel turns, the road pans left across the windshield. Stick at rest: nothing drifts.
+5. **Press.** Point the right controller at the hazard / wiper stalk / gear lever and pull the trigger: the control acts as a click would.
+6. **Hop.** Cruise a few hops in the headset: the release dolly is gentle, never a lunge; `__STREETVIEW_PROBE__.getWarnings()` stays empty (no live Maps upload during a hold).
+7. **Exit.** Press **Exit VR** (or the headset's system button). The screen view returns at the zoom it had, the head is centred, Tab / click lock the pointer again, the mouse steers. No `device lost`, no validation errors. Enter and exit three times in a row.
+8. **Device loss.** With a session running, trigger a loss (`chrome://gpucrash` in a separate tab). The session ends, the 2D view recovers, and the button says the device was lost.
 
 ### Local Testing with Headless Chrome (GPU)
 When running in a headless GPU environment (e.g., Colab with NVIDIA T4):

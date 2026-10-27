@@ -38,6 +38,8 @@ const SHADERS = [
     ['streetview.wgsl', STREETVIEW_SCENE_DEPTH_GROUP],
     ['weather-post.wgsl', WEATHER_SCENE_DEPTH_GROUP],
     ['weather-post-compute.wgsl', WEATHER_SCENE_DEPTH_GROUP],
+    // The stereo tail reads depth at group 1 (`ReprojectPass`'s pipeline layout).
+    ['reproject.wgsl', 1],
 ] as const;
 
 describe('SceneDepthParams — one layout in TS and every WGSL consumer', () => {

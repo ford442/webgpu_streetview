@@ -18,6 +18,17 @@ export const LOOK_SCALE_V = 2.8;
 export const RELEASE_DOLLY = 0.35;
 /** Side-step parallax: near pixels slide by up to this many screen widths over one release. */
 export const RELEASE_DOLLY_LATERAL = 0.08;
+/**
+ * In a headset the dolly is capped (#331): a frame swelling toward the eyes
+ * the head did not move is vection, and in VR that is nausea, not a cue.
+ */
+export const XR_RELEASE_DOLLY_SCALE = 0.4;
+
+/** How much of the release dolly plays: none under reduced motion, capped in a headset. */
+export function releaseDollyScale(options: { reducedMotion: boolean; xr: boolean }): number {
+    if (options.reducedMotion) return 0;
+    return options.xr ? XR_RELEASE_DOLLY_SCALE : 1;
+}
 /** How fast trust in a fresh map ramps up (and down after a zoom), ms. */
 export const DEPTH_CONFIDENCE_TAU_MS = 160;
 

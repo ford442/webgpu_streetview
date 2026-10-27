@@ -3,25 +3,29 @@ import type { TextureLifecycle } from './textureLifecycle';
 import type { WeatherPassTimingContext } from './weatherPostProcessorTypes';
 import type { WeatherPostProcessMode } from './RendererBackend';
 import type { Pass1TimingContext } from './streetViewPass';
-import type { CabinCompositePass } from './cabinComposite';
+import type { CabinCompositePass, CabinCompositeRegion, CabinCompositeViewport } from './cabinComposite';
 import type { FrameContext, FramePassRegistry } from './framePasses/FramePassRegistry';
 import type { FramePassId } from './passStatus';
+import type { UpscaleTimingContext } from './upscale/UpscalePass';
 
 export interface FramePassTimings {
     pass1?: Pass1TimingContext;
     weather?: WeatherPassTimingContext;
+    upscale?: UpscaleTimingContext;
 }
 
 /**
  * Timestamp-query slots per pass id, fixed so the timing store can label the
  * spans it reads back. `present-fallback` stands in for weather and shares its
  * span; the blit span exists on the compute weather path only (the fragment
- * path writes the swap chain directly).
+ * path writes the swap chain directly), the upscale span below render scale 1
+ * only.
  */
 export const TIMESTAMP_SLOTS: Partial<Record<FramePassId, readonly [number, number]>> = {
     streetview: [0, 1],
     weather: [2, 3],
     'present-fallback': [2, 3],
+    upscale: [6, 7],
 };
 /** The compute weather path's blit-to-swap-chain span. */
 export const COMPUTE_BLIT_TIMESTAMP_SLOTS = [4, 5] as const;
@@ -34,8 +38,10 @@ export function buildFramePassTimings(
     const isCompute = weatherPostProcessMode === 'compute';
     const [pass1Start, pass1End] = TIMESTAMP_SLOTS.streetview!;
     const [weatherStart, weatherEnd] = TIMESTAMP_SLOTS.weather!;
+    const [upscaleStart, upscaleEnd] = TIMESTAMP_SLOTS.upscale!;
     return {
         pass1: { timer, startIndex: pass1Start, endIndex: pass1End },
+        upscale: { timer, startIndex: upscaleStart, endIndex: upscaleEnd },
         weather: {
             timer,
             weatherStartIndex: weatherStart,
@@ -81,14 +87,17 @@ export function packFrameUniforms(
 
 export interface EncodeFrameOptions {
     device: GPUDevice;
-    canvas: HTMLCanvasElement;
     textures: TextureLifecycle;
     uniformBuffer: GPUBuffer;
     uniforms: Float32Array<ArrayBuffer>;
     /** The frame's passes; only ready + enabled ones are encoded. */
     passes: FramePassRegistry;
-    /** Per-frame context handed to every pass (`textures` and `timings` are filled in here). */
-    frame: Omit<FrameContext, 'textures' | 'timings'>;
+    /**
+     * Per-frame context handed to every pass (`textures` and `timings` are
+     * filled in here, and `phase` is `main`). `frame.renderScale` sizes the
+     * intermediate.
+     */
+    frame: Omit<FrameContext, 'textures' | 'timings' | 'phase'>;
     /** Null unless the performance overlay wants timings this frame. */
     gpuPassTimer: GpuPassTimer | null;
     timings: FramePassTimings;
@@ -99,10 +108,11 @@ export interface EncodeFrameOptions {
  * resolve → submit**, on one encoder.
  *
  * The pass order lives in the registry (`framePasses/builtinPasses.ts`):
- * pass 1 → year-chip wipe → weather (or the present fallback) → cabin
- * composite. Weather reads the intermediate pass 1 just wrote; the cabin
- * composite loads the swap chain weather stored, which is what makes cinema and
- * snapshots one frame. The timestamp resolve must be the last thing encoded,
+ * pass 1 → year-chip wipe → weather (or the present fallback) → upscale (below
+ * render scale 1) → cabin composite. Weather reads the intermediate pass 1 just
+ * wrote, into the swap chain or — scaled — the upscale's road target; the cabin
+ * composite loads the swap chain, which is what makes cinema and snapshots one
+ * frame. The timestamp resolve must be the last thing encoded,
  * after every span it measures has been closed.
  *
  * Callers are responsible for the hold-pause guard — this function encodes
@@ -111,7 +121,6 @@ export interface EncodeFrameOptions {
 export function encodeAndSubmitFrame(options: EncodeFrameOptions): FramePassId[] {
     const {
         device,
-        canvas,
         textures,
         uniformBuffer,
         uniforms,
@@ -122,15 +131,32 @@ export function encodeAndSubmitFrame(options: EncodeFrameOptions): FramePassId[]
     } = options;
 
     device.queue.writeBuffer(uniformBuffer, 0, uniforms);
-    textures.ensureIntermediateTexture(canvas.width, canvas.height);
+    textures.ensureIntermediateTexture(frame.renderScale.width, frame.renderScale.height);
 
     const commandEncoder = device.createCommandEncoder({ label: 'streetview-frame' });
-    const encoded = passes.encode(commandEncoder, { ...frame, textures, timings });
+    const encoded = passes.encode(commandEncoder, { ...frame, textures, timings, phase: 'main' });
 
     if (gpuPassTimer) {
-        gpuPassTimer.resolveAndScheduleRead(commandEncoder);
+        gpuPassTimer.resolveAndScheduleRead(commandEncoder, frame.renderScale.scale);
     }
 
+    device.queue.submit([commandEncoder.finish()]);
+    return encoded;
+}
+
+/**
+ * Encode and submit a split frame's tail (#331): `reproject` and the cabin
+ * composite, on their own encoder, later in the same display frame
+ * (`reproject/frameTail.ts`). No timestamp spans — the overlay's road GPU time
+ * is the main encode.
+ */
+export function encodeAndSubmitTail(
+    device: GPUDevice,
+    passes: FramePassRegistry,
+    frame: Omit<FrameContext, 'timings' | 'phase'>,
+): FramePassId[] {
+    const commandEncoder = device.createCommandEncoder({ label: 'streetview-frame-tail' });
+    const encoded = passes.encode(commandEncoder, { ...frame, timings: {}, phase: 'tail' });
     device.queue.submit([commandEncoder.finish()]);
     return encoded;
 }
@@ -147,12 +173,14 @@ export function encodeCabinComposite(
     commandEncoder: GPUCommandEncoder,
     cabinComposite: CabinCompositePass | null | undefined,
     getSwapChainView: (() => GPUTextureView | null) | undefined,
+    viewport?: CabinCompositeViewport,
+    region?: CabinCompositeRegion,
 ): boolean {
     if (!cabinComposite || !getSwapChainView || !cabinComposite.isReady()) return false;
     try {
         const view = getSwapChainView();
         if (!view) return false;
-        return cabinComposite.encode(commandEncoder, view);
+        return cabinComposite.encode(commandEncoder, view, viewport, region);
     } catch (e) {
         console.warn('[frameLoop] cabin composite pass skipped this frame:', e);
         return false;

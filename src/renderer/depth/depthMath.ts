@@ -1,9 +1,11 @@
 /**
  * The CPU arithmetic around the depth network — pure, so it is unit-tested
- * rather than trusted: what goes in (sRGB pixels → ImageNet-normalised NCHW),
- * and what comes out (relative inverse depth → the `viewDepthProxy` scale,
- * stabilised across inferences, packed as half floats for `r16float`).
+ * rather than trusted: what goes in (sRGB pixels → ImageNet-normalised NCHW,
+ * here: it runs in the depth Worker), and what comes out (relative inverse
+ * depth → the `viewDepthProxy` scale, stabilised across inferences — the WASM
+ * kernels in cpp/src/depth_module.cpp — packed as half floats for `r16float`).
  */
+import { requireWasm, type DepthNormalizeOptions, type DepthNormalizeState } from '../../wasm';
 
 /** Depth Anything's preprocessor (DPTImageProcessor): ImageNet mean / std on [0, 1] RGB. */
 export const IMAGENET_MEAN = [0.485, 0.456, 0.406] as const;
@@ -58,72 +60,37 @@ export function rgbaToImageNetNchw(
 /** Percentiles the normalisation clamps to — robust against a stray hot pixel or a black border. */
 export const DISPARITY_LOW_PERCENTILE = 0.02;
 export const DISPARITY_HIGH_PERCENTILE = 0.98;
-/** Weight of the newest inference in the EMA (range and, when aligned, every texel). */
-export const DEPTH_EMA_ALPHA = 0.5;
-
-/** Percentiles are read from at most this many texels (a fixed stride) — ~1 ms to sort. */
-const PERCENTILE_SAMPLES = 16384;
 
 /**
- * `[lo, hi]` at the given percentiles, from a sorted strided subsample. Exact
- * order statistics, so one absurd texel cannot stretch the range the way it
- * would a min/max-scaled histogram.
+ * `[lo, hi]` at the given percentiles, from a sorted strided subsample (at
+ * most 16384 texels). Exact order statistics, so one absurd texel cannot
+ * stretch the range the way it would a min/max-scaled histogram.
+ * `depth_percentiles` in cpp/src/depth_module.cpp.
  */
 export function disparityPercentiles(
     disparity: Float32Array,
     lowPct: number = DISPARITY_LOW_PERCENTILE,
     highPct: number = DISPARITY_HIGH_PERCENTILE,
 ): [number, number] {
-    const stride = Math.max(1, Math.ceil(disparity.length / PERCENTILE_SAMPLES));
-    const sample = new Float32Array(Math.ceil(disparity.length / stride));
-    let n = 0;
-    for (let i = 0; i < disparity.length; i += stride) {
-        const v = disparity[i]!;
-        if (Number.isFinite(v)) sample[n++] = v;
-    }
-    if (n === 0) return [0, 0];
-    const sorted = sample.subarray(0, n).sort();
-    const at = (pct: number) => sorted[Math.min(n - 1, Math.max(0, Math.round(pct * (n - 1))))]!;
-    return [at(lowPct), at(highPct)];
+    return requireWasm().depthPercentiles(disparity, lowPct, highPct);
 }
 
 /**
  * The proxy's hyperbola: `viewDepthProxy` is 0.06 / (y − horizon) below the
- * horizon. Kept here so the map can be put on the same scale (see
- * `estimateNearDepth`). Must match `viewDepthProxy` in both weather shaders.
+ * horizon. The C++ calibration (`kProxyGroundK`) puts the map on the same
+ * scale. Must match `viewDepthProxy` in both weather shaders.
  */
 export const PROXY_GROUND_K = 0.06;
-/** Depth assigned to the nearest (98th-percentile) disparity when the ground cannot calibrate it. */
+
+/** Depth of the nearest disparity when the ground cannot calibrate it (`kDefaultNearDepth`). */
 export const DEFAULT_NEAR_DEPTH = 0.1;
-/** Calibrated near depth is clamped to this range — a car or wall filling the bottom must not run it away. */
+/** The calibration's clamp (`kNearDepthMin` / `kNearDepthMax`) — a car or wall filling the bottom must not run it away. */
 export const NEAR_DEPTH_RANGE: readonly [number, number] = [0.04, 0.3];
 
-/** Carried between inferences of the same scene; reset when the scene or view changes. */
-export interface DepthNormalizeState {
-    lo: number;
-    hi: number;
-    /** Proxy-scale depth of the nearest disparity (`q` in `depth = q / n`). */
-    nearDepth: number;
-    /** Last normalised map, for the per-texel EMA when the next one is aligned with it. */
-    previous: Float32Array | null;
-}
+export type { DepthNormalizeState } from '../../wasm';
 
 export function createDepthNormalizeState(): DepthNormalizeState {
     return { lo: 0, hi: 0, nearDepth: 0, previous: null };
-}
-
-export interface NormalizeOptions {
-    /** Same pano and same view as the previous map: blend texel-wise. */
-    aligned: boolean;
-    /** Same pano (any view): blend the range and scale, so the map does not pump. */
-    sameScene: boolean;
-    width: number;
-    height: number;
-    /**
-     * Screen Y (top-origin) of the pitch horizon the map was inferred at
-     * (`0.5 + (panY − 0.5) · 2`). The ground below it calibrates the scale.
-     */
-    horizonY: number;
 }
 
 /**
@@ -131,29 +98,11 @@ export interface NormalizeOptions {
  * the camera: in the bottom-centre band (rows 85–98 %, columns 30–70 %), where
  * a Street View frame looks at the road, `viewDepthProxy` is a fair metric
  * estimate — so `q = proxy(y) · n(x, y)` there (`n` = normalised disparity).
- * Median over the band, clamped to `NEAR_DEPTH_RANGE`. When the horizon is too
- * low for that band to be ground (looking up), the default.
+ * Median over the band, clamped to [0.04, 0.3]. When the horizon is too low
+ * for that band to be ground (looking up), 0.1. `depth_near_depth` in C++.
  */
 export function estimateNearDepth(nearness: Float32Array, width: number, height: number, horizonY: number): number {
-    const y0 = Math.floor(height * 0.85);
-    const y1 = Math.floor(height * 0.98);
-    if (horizonY > 0.7 || y1 <= y0) return DEFAULT_NEAR_DEPTH;
-    const x0 = Math.floor(width * 0.3);
-    const x1 = Math.ceil(width * 0.7);
-    const samples: number[] = [];
-    for (let y = y0; y < y1; y++) {
-        const below = (y + 0.5) / height - horizonY;
-        if (below <= 0) continue;
-        const proxy = Math.min(1, PROXY_GROUND_K / Math.max(below, 0.0025));
-        for (let x = x0; x < x1; x += 2) {
-            const n = nearness[y * width + x]!;
-            if (n > 0.02) samples.push(proxy * n);
-        }
-    }
-    if (samples.length < 8) return DEFAULT_NEAR_DEPTH;
-    samples.sort((a, b) => a - b);
-    const median = samples[samples.length >> 1]!;
-    return Math.min(NEAR_DEPTH_RANGE[1], Math.max(NEAR_DEPTH_RANGE[0], median));
+    return requireWasm().depthNearDepth(nearness, width, height, horizonY);
 }
 
 /**
@@ -168,41 +117,16 @@ export function estimateNearDepth(nearness: Float32Array, width: number, height:
  * ground in front of the camera (`estimateNearDepth`), so blending the two
  * never shifts the scale. A linear `1 − n` would not: it compresses everything
  * beyond the nearest object toward "far" and fogs the road under the camera.
- * Range, scale and texels are eased across inferences of the same scene.
+ * Range, scale and texels are eased (by half) across inferences of the same
+ * scene. The arithmetic is `depth_normalize` in cpp/src/depth_module.cpp.
  */
 export function normalizeDisparity(
     disparity: Float32Array,
     state: DepthNormalizeState,
-    options: NormalizeOptions,
+    options: DepthNormalizeOptions,
     out: Float32Array = new Float32Array(disparity.length),
 ): Float32Array {
-    let [lo, hi] = disparityPercentiles(disparity);
-    const ease = options.sameScene && state.hi > state.lo;
-    if (ease) {
-        lo = state.lo + (lo - state.lo) * DEPTH_EMA_ALPHA;
-        hi = state.hi + (hi - state.hi) * DEPTH_EMA_ALPHA;
-    }
-    state.lo = lo;
-    state.hi = hi;
-    const range = hi - lo;
-    const inv = range > 1e-6 ? 1 / range : 0;
-    const nearness = new Float32Array(disparity.length);
-    for (let i = 0; i < disparity.length; i++) {
-        const d = disparity[i]!;
-        nearness[i] = inv > 0 && Number.isFinite(d) ? Math.min(1, Math.max(0, (d - lo) * inv)) : 0;
-    }
-    let q = estimateNearDepth(nearness, options.width, options.height, options.horizonY);
-    if (ease && state.nearDepth > 0) q = state.nearDepth + (q - state.nearDepth) * DEPTH_EMA_ALPHA;
-    state.nearDepth = q;
-
-    const prev = options.aligned && state.previous?.length === disparity.length ? state.previous : null;
-    for (let i = 0; i < disparity.length; i++) {
-        const n = nearness[i]!;
-        const depth = n > q ? q / n : 1;
-        out[i] = prev ? prev[i]! + (depth - prev[i]!) * DEPTH_EMA_ALPHA : depth;
-    }
-    state.previous = out;
-    return out;
+    return requireWasm().depthNormalize(disparity, state, options, out);
 }
 
 const f32 = new Float32Array(1);

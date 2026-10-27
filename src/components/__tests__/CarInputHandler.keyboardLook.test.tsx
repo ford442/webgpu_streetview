@@ -2,6 +2,7 @@
 import React, { useRef } from 'react';
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INITIAL_CABIN_INPUT } from '../../car/input/cabinInputMachine';
 import CarInputHandler from '../CarInputHandler';
 import { povStore } from '../../state/povStore';
 import { cabinHeadStore } from '../../state/cabinHeadStore';
@@ -20,7 +21,7 @@ vi.mock('../../hooks/useViewMode', () => ({
   useViewMode: () => ({
     toggleViewMode: vi.fn(),
     controlMode,
-    dispatchCabinInput: vi.fn(() => null),
+    dispatchCabinInput: vi.fn(() => ({ state: INITIAL_CABIN_INPUT, effect: null })),
   }),
 }));
 

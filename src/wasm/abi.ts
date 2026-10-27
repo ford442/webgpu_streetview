@@ -1,11 +1,10 @@
 /**
  * src/wasm/abi.ts
  * The public TypeScript contract for the streetview-wasm module — one method
- * per WASM export. Implemented by both the compiled binary (the marshalling
- * wrappers built in src/wasm/index.ts) and the pure-JS fallback
- * (src/wasm/jsFallback.ts). Keeping the interface in its own file means the
- * ABI shape can be read/reviewed without wading through either
- * implementation.
+ * per WASM export, implemented by the marshalling wrappers src/wasm/index.ts
+ * builds around the compiled binary (the only implementation). Keeping the
+ * interface in its own file means the ABI shape can be read/reviewed without
+ * wading through the loader.
  */
 import type { LumaReduce } from '../renderer/gpuChores/lumaMath';
 
@@ -27,6 +26,30 @@ export interface CsrGraph {
   offsets: Int32Array;
   neighbors: Int32Array;
   coords: Float64Array;
+}
+
+/**
+ * Carried between scene-depth inferences ({@link StreetViewWasmAPI.depthNormalize});
+ * reset when the scene or view changes.
+ */
+export interface DepthNormalizeState {
+  lo: number;
+  hi: number;
+  /** Proxy-scale depth of the nearest disparity (`q` in `depth = q / n`). */
+  nearDepth: number;
+  /** Last normalised map, for the per-texel EMA when the next one is aligned with it. */
+  previous: Float32Array | null;
+}
+
+export interface DepthNormalizeOptions {
+  /** Same pano and same view as the previous map: blend texel-wise. */
+  aligned: boolean;
+  /** Same pano (any view): blend the range and scale, so the map does not pump. */
+  sameScene: boolean;
+  width: number;
+  height: number;
+  /** Top-origin screen Y of the pitch horizon the map was inferred at. */
+  horizonY: number;
 }
 
 /**
@@ -334,6 +357,23 @@ export interface StreetViewWasmAPI {
    */
   createCabinDsp(sampleRate: number): CabinDsp | null;
 
+  /** `[lo, hi]` disparity at the given percentiles (0-1) of a strided subsample. */
+  depthPercentiles(disparity: Float32Array, lowPct: number, highPct: number): [number, number];
+
+  /** Proxy-scale depth of the nearest disparity, calibrated on the ground band. */
+  depthNearDepth(nearness: Float32Array, width: number, height: number, horizonY: number): number;
+
+  /**
+   * Relative inverse depth → the `viewDepthProxy` scale, eased across
+   * inferences through `state` (updated in place; `state.previous` becomes `out`).
+   */
+  depthNormalize(
+    disparity: Float32Array,
+    state: DepthNormalizeState,
+    options: DepthNormalizeOptions,
+    out: Float32Array,
+  ): Float32Array;
+
   /** Integer box-filter downsample of packed RGBA8. */
   downsample2d(
     src: Uint8Array | Uint8ClampedArray,
@@ -342,7 +382,6 @@ export interface StreetViewWasmAPI {
     dstW: number,
     dstH: number,
   ): Uint8Array;
-
   /**
    * Shortest path (A*, haversine edge cost and heuristic) from node `from` to
    * node `to`. Ties break on the lower node index, so the path is identical on
@@ -354,7 +393,4 @@ export interface StreetViewWasmAPI {
 
   /** Index of the node nearest to [lat, lng] (ties: the lower index); -1 when empty. */
   graphNearest(graph: CsrGraph, lat: number, lng: number): number;
-
-  /** True when backed by the compiled WASM binary; false for JS fallback. */
-  isWasm: boolean;
 }

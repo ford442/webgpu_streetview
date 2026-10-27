@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Advisory clang-tidy over the host C++ sources. WarningsAsErrors is empty in
-# cpp/.clang-tidy, so findings print but do not fail the job. Missing tidy or a
-# missing compilation database *does* fail — otherwise CI would silently skip.
+# clang-tidy over the host C++ sources. cpp/.clang-tidy makes bugprone-*
+# findings errors (the job fails); modernize-* findings only print. Missing
+# tidy or a missing compilation database fails too — otherwise CI would
+# silently skip.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,6 +16,7 @@ SOURCES=(
   "${ROOT}/cpp/src/hrtf_module.cpp"
   "${ROOT}/cpp/src/luma_module.cpp"
   "${ROOT}/cpp/src/cabin_dsp_module.cpp"
+  "${ROOT}/cpp/src/depth_module.cpp"
   "${ROOT}/cpp/src/graph_module.cpp"
   "${ROOT}/cpp/src/bindings.cpp"
 )

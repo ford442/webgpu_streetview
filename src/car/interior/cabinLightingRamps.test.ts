@@ -329,10 +329,26 @@ describe('cabinLightingRamps', () => {
   });
 
   it('rain cuts the sun by at most 75% and clamps out-of-range rain', () => {
-    expect(sunIntensityUnderWeather(1.55, 0)).toBeCloseTo(1.55);
-    expect(sunIntensityUnderWeather(1.55, 1)).toBeCloseTo(1.55 * 0.25);
-    expect(sunIntensityUnderWeather(1.55, 2)).toBeCloseTo(1.55 * 0.25);
-    expect(sunIntensityUnderWeather(1.55, -1)).toBeCloseTo(1.55);
+    expect(sunIntensityUnderWeather(1.55, 0, 0)).toBeCloseTo(1.55);
+    expect(sunIntensityUnderWeather(1.55, 1, 0)).toBeCloseTo(1.55 * 0.25);
+    expect(sunIntensityUnderWeather(1.55, 2, 0)).toBeCloseTo(1.55 * 0.25);
+    expect(sunIntensityUnderWeather(1.55, -1, 0)).toBeCloseTo(1.55);
+  });
+
+  it.each([0, 0.5, 1])('fades direct sun to zero through the night ramp at rain=%s', (rain) => {
+    const day = 1.55 * (1 - rain * 0.75);
+    for (const night of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(sunIntensityUnderWeather(1.55, rain, night)).toBeCloseTo(day * (1 - night), 6);
+    }
+    expect(sunIntensityUnderWeather(1.55, rain, 1)).toBe(0);
+  });
+
+  it('clamps night without adding sun below the horizon or inverting the light', () => {
+    expect(sunIntensityUnderWeather(1.55, 0, -1)).toBe(1.55);
+    expect(sunIntensityUnderWeather(1.55, 0, 2)).toBe(0);
+    for (const night of [0, 0.5, 1]) {
+      expect(sunIntensityUnderWeather(0, 0, night)).toBe(0);
+    }
   });
 
   it('sun side: low sun off one window takes a side, noon / ahead / below horizon do not', () => {

@@ -18,15 +18,22 @@ import { join } from 'path';
 
 import type { StreetViewWasmAPI } from '../abi';
 import { instantiateStreetViewWasm } from '../index';
-import { JS_FALLBACK } from '../jsFallback';
 import { createScratchArena, SCRATCH_INITIAL_BYTES } from '../marshal';
 
 const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
 
 let wasm: StreetViewWasmAPI;
+/**
+ * A second instance whose arena is grown past every input below before any
+ * test runs, so its kernels never relocate: the reference the relocating
+ * instance must reproduce exactly.
+ */
+let settled: StreetViewWasmAPI;
 
 beforeAll(async () => {
   wasm = await instantiateStreetViewWasm(readFileSync(WASM_PATH));
+  settled = await instantiateStreetViewWasm(readFileSync(WASM_PATH));
+  settled.fillNoiseBuffer(new Float32Array(1024 * 1024), 1024, 1024, 1, 0, 0);
 });
 
 function route(points: number, lat: number): Float64Array {
@@ -39,32 +46,31 @@ function route(points: number, lat: number): Float64Array {
 }
 
 describe('WASM scratch arena (compiled binary through the loader)', () => {
-  test('instantiates the committed binary as the WASM backend', () => {
-    expect(wasm.isWasm).toBe(true);
-  });
-
   test.each([
     [1000, 60],
     [1000, 52],
     [340, 52],
     [5000, -67.5],
-  ])('batchHaversine: %i points at lat %f match the JS fallback within 1e-6 m', (n, lat) => {
+  ])('batchHaversine: %i points at lat %f match per-pair haversine within 1e-6 m', (n, lat) => {
+    // haversine() takes scalars, so it never touches the arena.
     const pts = route(n, lat);
-    const segsWasm = new Float64Array(n - 1);
-    const segsJs = new Float64Array(n - 1);
-    const totalWasm = wasm.batchHaversine(pts, segsWasm);
-    const totalJs = JS_FALLBACK.batchHaversine(pts, segsJs);
-    expect(Math.abs(totalWasm - totalJs)).toBeLessThanOrEqual(1e-6);
+    const segs = new Float64Array(n - 1);
+    const total = wasm.batchHaversine(pts, segs);
+    let sum = 0;
     let worst = 0;
-    for (let i = 0; i < n - 1; i++) worst = Math.max(worst, Math.abs(segsWasm[i]! - segsJs[i]!));
+    for (let i = 0; i < n - 1; i++) {
+      const d = wasm.haversine(pts[i * 2]!, pts[i * 2 + 1]!, pts[i * 2 + 2]!, pts[i * 2 + 3]!);
+      sum += d;
+      worst = Math.max(worst, Math.abs(segs[i]! - d));
+    }
     expect(worst).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(total - sum)).toBeLessThanOrEqual(1e-6);
   });
 
   test('a tile larger than the initial arena grows it and still round-trips', () => {
     // 512² f32 = 1 MiB, well past SCRATCH_INITIAL_BYTES; forces free + malloc.
     expect(512 * 512 * 4).toBeGreaterThan(SCRATCH_INITIAL_BYTES);
     wasm.seed(42);
-    JS_FALLBACK.seed(42);
     const big = new Float32Array(512 * 512);
     wasm.fillNoiseBuffer(big, 512, 512, 37.5, 3, -5);
     // Spot-check against per-sample noise2d through the (now relocated) arena.
@@ -78,27 +84,24 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     // And a geodesy call after the move still lands in valid scratch.
     const pts = route(1000, 60);
     const segs = new Float64Array(999);
-    expect(Math.abs(wasm.batchHaversine(pts, segs) - JS_FALLBACK.batchHaversine(pts, new Float64Array(999))))
-      .toBeLessThanOrEqual(1e-6);
+    expect(wasm.batchHaversine(pts, segs)).toBe(settled.batchHaversine(pts, new Float64Array(999)));
   });
 
   test.each([
     [1000, 60, 25],
     [5000, -67.5, 10],
     [300, 70, 1],
-  ])('polylineResample: %i points at lat %f, step %f m, matches the JS fallback', (n, lat, step) => {
+  ])('polylineResample: %i points at lat %f, step %f m, matches an instance that never relocates', (n, lat, step) => {
     // The sizing call reserves the input alone, the fill call input + output —
     // the second reserve can relocate the arena (5000 pts at 10 m outgrows 64 KiB).
     const pts = route(n, lat);
     const a = wasm.polylineResample(pts, step);
-    const b = JS_FALLBACK.polylineResample(pts, step);
-    expect(a.length).toBe(b.length);
-    let worst = 0;
-    for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i]! - b[i]!));
-    expect(worst).toBeLessThanOrEqual(1e-9);
+    const b = settled.polylineResample(pts, step);
+    expect(a.length).toBeGreaterThan(0);
+    expect(Array.from(a)).toEqual(Array.from(b));
   });
 
-  test('graphAstar on a 5000-node grid (arena regrow) matches the JS fallback', () => {
+  test('graphAstar on a 5000-node grid (arena regrow) matches an instance that never relocates', () => {
     // 100 x 50 grid, every street two-way except each tenth row eastbound only.
     const cols = 100;
     const rows = 50;
@@ -129,22 +132,20 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     const graph = { nodeCount: n, offsets, neighbors: Int32Array.from(flat), coords };
     for (const [from, to] of [[0, n - 1], [n - 1, 0], [cols - 1, (rows - 1) * cols], [1234, 4321]] as const) {
       const a = wasm.graphAstar(graph, from, to);
-      const b = JS_FALLBACK.graphAstar(graph, from, to);
+      const b = settled.graphAstar(graph, from, to);
       expect(a).not.toBeNull();
       expect(Array.from(a!)).toEqual(Array.from(b!));
     }
-    expect(wasm.graphNearest(graph, 60.0075, 10.025)).toBe(JS_FALLBACK.graphNearest(graph, 60.0075, 10.025));
+    expect(wasm.graphNearest(graph, 60.0075, 10.025)).toBe(settled.graphNearest(graph, 60.0075, 10.025));
     expect(wasm.graphAstar({ ...graph, offsets: offsets.subarray(0, 3) }, 0, 1)).toBeNull();
   });
 
-  test('polylineProject on a 5000-point high-latitude route matches the JS fallback', () => {
+  test('polylineProject on a 5000-point high-latitude route matches an instance that never relocates', () => {
     const pts = route(5000, -67.5);
     for (const [dLat, dLng] of [[0.1, 0.1002], [0.25, 0.2497], [0.4999, 0.4999]] as const) {
       const a = wasm.polylineProject(pts, -67.5 + dLat, -1 + dLng);
-      const b = JS_FALLBACK.polylineProject(pts, -67.5 + dLat, -1 + dLng);
-      expect(a.segment).toBe(b.segment);
-      expect(Math.abs(a.alongMeters - b.alongMeters)).toBeLessThanOrEqual(1e-6);
-      expect(Math.abs(a.crossMeters - b.crossMeters)).toBeLessThanOrEqual(1e-6);
+      const b = settled.polylineProject(pts, -67.5 + dLat, -1 + dLng);
+      expect(a).toEqual(b);
     }
   });
 
@@ -165,16 +166,6 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     // ~3.5 s alone (172 M samples); the default 5 s flaked once the cabin DSP
     // parity suite ran beside it.
   }, 20_000);
-
-  test('fillEngineNoise: the JS twin agrees bit-for-bit an hour into the drive', () => {
-    const a = new Float32Array(1024);
-    const b = new Float32Array(1024);
-    const at = 3600 * 48000;
-    const pa = wasm.fillEngineNoise(a, 1024, 2500, 0.6, 90, 0.123456789, at, 48000);
-    const pb = JS_FALLBACK.fillEngineNoise(b, 1024, 2500, 0.6, 90, 0.123456789, at, 48000);
-    expect(pa).toBe(pb);
-    expect(Array.from(a)).toEqual(Array.from(b));
-  });
 });
 
 describe('createScratchArena', () => {

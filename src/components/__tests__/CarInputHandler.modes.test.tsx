@@ -6,6 +6,7 @@ import CarInputHandler from '../CarInputHandler';
 import { ViewModeProvider, useViewMode } from '../../hooks/useViewMode';
 import { povStore } from '../../state/povStore';
 import { cabinHeadStore } from '../../state/cabinHeadStore';
+import { emitXrCabinInput } from '../../xr/xrCabinInput';
 
 vi.mock('../../hooks/useStreetView', () => ({
   useStreetView: () => ({ setZoom: povStore.setZoom, advance: vi.fn() }),
@@ -215,5 +216,36 @@ describe('CarInputHandler — FREE_LOOK | STEER | UI_INTERACT', () => {
     setLock(screen.getByTestId('cabin'));
     unmount();
     expect(exitPointerLock).toHaveBeenCalled();
+  });
+
+  it('a WebXR session (#331): STEER for its length, the left stick steers through the machine, clicks do nothing', () => {
+    const { unmount } = render(<Harness />);
+    const cabin = screen.getByTestId('cabin');
+    setLock(cabin);
+    act(() => {
+      expect(emitXrCabinInput({ type: 'XR_ENTER' })).toBe(true);
+    });
+    expect(mode()).toBe('STEER');
+    expect(exitPointerLock).toHaveBeenCalled(); // the headset takes over from the mouse
+
+    act(() => {
+      emitXrCabinInput({ type: 'XR_STICK', axisX: 1, dtS: 0.1 });
+    });
+    expect(povStore.get().carHeading).toBeCloseTo(34 + 6, 6); // full right for 0.1 s at 60°/s
+    act(() => {
+      emitXrCabinInput({ type: 'XR_STICK', axisX: 0.05, dtS: 0.1 }); // deadzone
+    });
+    expect(povStore.get().carHeading).toBeCloseTo(40, 6);
+
+    requestPointerLock.mockClear();
+    mouse('mousedown', cabin, 0);
+    expect(requestPointerLock).not.toHaveBeenCalled();
+
+    act(() => {
+      emitXrCabinInput({ type: 'XR_EXIT' });
+    });
+    expect(mode()).toBe('UI_INTERACT');
+    unmount();
+    expect(emitXrCabinInput({ type: 'XR_STICK', axisX: 1, dtS: 0.1 })).toBe(false);
   });
 });

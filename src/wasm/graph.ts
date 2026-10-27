@@ -12,8 +12,7 @@
 
 import type { RouteGraphNode } from '../offline/offlineStore';
 import type { CsrGraph } from './abi';
-import { getWasmModule } from './index';
-import { JS_FALLBACK } from './jsFallback';
+import { requireWasm } from './index';
 
 export interface LinkGraph {
   csr: CsrGraph;
@@ -78,21 +77,17 @@ export function forgetLinkGraph(routeId?: string): void {
   else cache.delete(routeId);
 }
 
-function kernels() {
-  return getWasmModule() ?? JS_FALLBACK;
-}
-
 /** Shortest path between two panos as pano ids (`from` first), or null. */
 export function shortestPanoPath(graph: LinkGraph, fromPanoId: string, toPanoId: string): string[] | null {
   const from = graph.indexOf.get(fromPanoId);
   const to = graph.indexOf.get(toPanoId);
   if (from === undefined || to === undefined) return null;
-  const path = kernels().graphAstar(graph.csr, from, to);
+  const path = requireWasm().graphAstar(graph.csr, from, to);
   return path ? Array.from(path, (i) => graph.panoIds[i]!) : null;
 }
 
 /** The graph pano nearest to a coordinate, or null for an empty graph. */
 export function nearestPano(graph: LinkGraph, lat: number, lng: number): string | null {
-  const i = kernels().graphNearest(graph.csr, lat, lng);
+  const i = requireWasm().graphNearest(graph.csr, lat, lng);
   return i >= 0 ? graph.panoIds[i]! : null;
 }

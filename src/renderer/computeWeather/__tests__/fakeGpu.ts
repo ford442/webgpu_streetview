@@ -63,6 +63,14 @@ export interface RecordedPass {
      * that takes the pass-descriptor path.
      */
     writeTimestampCalls: Array<{ querySet: unknown; index: number }>;
+    /** The descriptor's `label`, when it had one. */
+    label?: string;
+    /** Render passes: each colour attachment's view, in order. */
+    targets: unknown[];
+    /** `setViewport(x, y, w, h)` calls, in order. */
+    viewports: Array<[number, number, number, number]>;
+    /** Dynamic offsets handed to `setBindGroup`, per call (empty when none). */
+    dynamicOffsets: number[][];
 }
 
 export interface RecordedBindGroup {
@@ -133,8 +141,8 @@ export interface FakeGpu {
     encoders: RecordedEncoder[];
     querySets: RecordedQuerySet[];
     computePipelines: Array<{ id: number; entryPoint: string }>;
-    renderPipelines: Array<{ id: number }>;
-    writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }>;
+    renderPipelines: Array<{ id: number; label?: string }>;
+    writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView; offset?: number }>;
     writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }>;
     submits: number;
     /**
@@ -196,8 +204,8 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
     const encoders: RecordedEncoder[] = [];
     const querySets: RecordedQuerySet[] = [];
     const computePipelines: Array<{ id: number; entryPoint: string }> = [];
-    const renderPipelines: Array<{ id: number }> = [];
-    const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView }> = [];
+    const renderPipelines: Array<{ id: number; label?: string }> = [];
+    const writeBufferCalls: Array<{ buffer: FakeBuffer; data: ArrayBufferView; offset?: number }> = [];
     const writeTextureCalls: Array<{ texture: FakeTexture; size: unknown }> = [];
     const state = { submits: 0 };
     const submitErrors: string[] = [];
@@ -221,10 +229,13 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
      * One object is both the recording and the pass API, so a `setPipeline`
      * call made through the encoder is visible on the object tests inspect.
      */
-    function makePass(
-        type: 'compute' | 'render',
-        descriptor?: { timestampWrites?: RecordedPass['timestampWrites'] },
-    ): RecordedPass {
+    type PassDescriptor = {
+        label?: string;
+        timestampWrites?: RecordedPass['timestampWrites'];
+        colorAttachments?: Iterable<{ view: unknown } | null>;
+    };
+
+    function makePass(type: 'compute' | 'render', descriptor?: PassDescriptor): RecordedPass {
         if (options.rejectPassDescriptorTimestampWrites && descriptor?.timestampWrites) {
             throw new TypeError('timestampWrites is not supported on this pass descriptor');
         }
@@ -237,10 +248,18 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             ended: false,
             timestampWrites: descriptor?.timestampWrites,
             writeTimestampCalls: [],
+            label: descriptor?.label,
+            targets: [...(descriptor?.colorAttachments ?? [])].map((a) => a?.view),
+            viewports: [],
+            dynamicOffsets: [],
         };
         return Object.assign(pass, {
             setPipeline: (p: unknown) => { pass.pipeline = p; },
-            setBindGroup: (index: number, group: unknown) => { pass.bindGroups.push({ index, group }); },
+            setBindGroup: (index: number, group: unknown, offsets?: number[]) => {
+                pass.bindGroups.push({ index, group });
+                pass.dynamicOffsets.push([...(offsets ?? [])]);
+            },
+            setViewport: (x: number, y: number, w: number, h: number) => { pass.viewports.push([x, y, w, h]); },
             dispatchWorkgroups: (x: number, y: number) => { pass.dispatches.push([x, y]); },
             draw: (n: number) => { pass.draws.push(n); },
             end: () => { pass.ended = true; },
@@ -254,12 +273,12 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         const rec: RecordedEncoder = { passes: [], copies: [], querySetResolves: [], bufferCopies: [] };
         encoders.push(rec);
         return {
-            beginComputePass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+            beginComputePass: (d?: PassDescriptor) => {
                 const p = makePass('compute', d);
                 rec.passes.push(p);
                 return p;
             },
-            beginRenderPass: (d?: { timestampWrites?: RecordedPass['timestampWrites'] }) => {
+            beginRenderPass: (d?: PassDescriptor) => {
                 const p = makePass('render', d);
                 rec.passes.push(p);
                 return p;
@@ -342,9 +361,9 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
             computePipelines.push({ id: p.id, entryPoint });
             return p;
         },
-        createRenderPipeline: (_d: GPURenderPipelineDescriptor) => {
+        createRenderPipeline: (d: GPURenderPipelineDescriptor) => {
             const p = { kind: 'renderPipeline', id: nextId++, getBindGroupLayout: (i: number) => ({ kind: 'bgl', group: i }) };
-            renderPipelines.push({ id: p.id });
+            renderPipelines.push({ id: p.id, label: d.label });
             return p;
         },
         createBindGroup: (d: GPUBindGroupDescriptor) => {
@@ -358,8 +377,8 @@ export function createFakeGpu(options: FakeGpuOptions = {}): FakeGpu {
         },
         createCommandEncoder,
         queue: {
-            writeBuffer: (buffer: FakeBuffer, _offset: number, data: ArrayBufferView) => {
-                writeBufferCalls.push({ buffer, data });
+            writeBuffer: (buffer: FakeBuffer, offset: number, data: ArrayBufferView) => {
+                writeBufferCalls.push({ buffer, data, offset });
             },
             writeTexture: (dst: { texture: FakeTexture }, _data: unknown, _layout: unknown, size: unknown) => {
                 writeTextureCalls.push({ texture: dst.texture, size });

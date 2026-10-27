@@ -12,7 +12,7 @@
  *     a few meters from the newest one along the same stretch of road).
  *
  * The ring geometry is not computed here: `offsetLatLng` delegates to the
- * WASM `offset_latlng` export (or its JS fallback twin), the same way
+ * WASM `offset_latlng` export, the same way
  * `haversineDistance` in navigation.ts delegates to `haversine`. See
  * docs/WASM_BRIDGE.md — the app keeps one copy of each geodesy formula.
  *
@@ -22,14 +22,8 @@
  * archive — most locations will only ever yield 1-2 distinct dates.
  */
 
-import { getWasmModule, loadWasmModule } from '../wasm';
-import { JS_FALLBACK as jsFallback } from '../wasm/jsFallback';
+import { requireWasm } from '../wasm';
 import { getMapsCallBudget } from '../services/maps/callBudget';
-
-// Warm the module at import time; `offsetLatLng` below stays synchronous (the
-// crawl builds its ring before the first await), so it reads the JS twin until
-// this resolves — same shape as src/utils/navigation.ts.
-void loadWasmModule();
 
 export interface HistoricalPanoEntry {
   panoId: string;
@@ -70,9 +64,8 @@ const DEFAULT_OPTIONS: Required<CrawlOptions> = {
  * Offsets a lat/lng by `distanceMeters` along `bearingDeg` (0 = north,
  * clockwise).
  *
- * The formula itself lives in `cpp/src/geodesy_module.cpp` (`sw_offset_latlng`)
- * with a bit-compatible twin in `src/wasm/jsFallback.ts`; this is a thin
- * dispatch so the timeline crawl and the C++ numeric layer can never drift.
+ * The formula itself lives in `cpp/src/geodesy_module.cpp` (`sw_offset_latlng`);
+ * this is a thin dispatch so the timeline crawl and the C++ numeric layer can never drift.
  */
 export function offsetLatLng(
   lat: number,
@@ -80,7 +73,7 @@ export function offsetLatLng(
   distanceMeters: number,
   bearingDeg: number
 ): { lat: number; lng: number } {
-  return (getWasmModule() ?? jsFallback).offsetLatLng(lat, lng, distanceMeters, bearingDeg);
+  return requireWasm().offsetLatLng(lat, lng, distanceMeters, bearingDeg);
 }
 
 /** Builds the ring of sample points (center first) used by the crawl. */
