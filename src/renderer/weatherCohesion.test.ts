@@ -44,7 +44,7 @@ describe('resolveWeatherCohesion', () => {
         expect(dry.dustIntensity).toBeCloseTo(0.3);
     });
 
-    it('keeps dust at zero when the WASM noise tile is unavailable', () => {
+    it('keeps dust at zero when the noise tile is unavailable', () => {
         expect(resolveWeatherCohesion(baseInput()).dustIntensity).toBe(0);
     });
 

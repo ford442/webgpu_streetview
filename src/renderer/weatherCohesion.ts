@@ -30,7 +30,7 @@ export interface WeatherCohesionInput {
     sunAltitude: number;
     /** 0 = day, 1 = full night. */
     nightIntensity: number;
-    /** True while the WASM noise tile is uploading usable data. */
+    /** True while the dust noise tile is uploading usable data. */
     wasmNoiseActive: boolean;
 }
 

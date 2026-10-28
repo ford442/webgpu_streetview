@@ -61,8 +61,8 @@ import {
 } from './weatherParticles';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
 import { streetViewProbe } from '../utils/streetViewProbe';
-import type { WasmNoiseFeeder } from '../wasm/wasmNoiseFeeder';
-import type { WasmParticleFeeder } from '../wasm/wasmParticleFeeder';
+import type { NoiseTileFeeder } from './weatherNoiseTile';
+import type { ParticleSeedFeeder } from './weatherParticleSeeds';
 
 /** What the shell hands the driver once, at construction. */
 export interface FrameDriverOptions {
@@ -71,9 +71,9 @@ export interface FrameDriverOptions {
     bootReducedMotion: boolean;
     /** The presented canvas — for the hold-pause pixel-drift probe. */
     outputCanvas: () => HTMLCanvasElement | null;
-    noiseFeeder: WasmNoiseFeeder;
+    noiseFeeder: NoiseTileFeeder;
     wasmNoiseEnabled: boolean;
-    particleFeeder: WasmParticleFeeder;
+    particleFeeder: ParticleSeedFeeder;
     wasmParticlesEnabled: boolean;
     /** Defaults to the shared meter publishing to `perfStore`. */
     meter?: FrameRateMeter;
@@ -197,7 +197,7 @@ export class FrameDriver {
         weatherPitch: number,
     ): void {
         const { quality, bootReducedMotion } = this.options;
-        const wasmNoiseActive = this.options.wasmNoiseEnabled && this.options.noiseFeeder.isReady;
+        const wasmNoiseActive = this.options.wasmNoiseEnabled;
         const holdActive = panoramaUpdatePaused || renderer.isHoldActive();
         const choresStats = getGpuChoresStats();
         const horizon = resolveHorizonFrame({

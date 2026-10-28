@@ -43,5 +43,5 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?trip` | string | `base64url(gzip(.svtrip JSON))` | — | Shared trip recording (`trip/tripFile.ts`). Plans the recording's route and opens it in the Trip panel ready to replay; every replayed hop is a metered pano lookup. |
 | `?liveWeather` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). |
 | `?depth` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality. |
-| `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM-driven noise effect. `off` disables it; unset defers to localStorage, then on. |
-| `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM GPU particle field. `off` disables it; unset defers to localStorage, then on. |
+| `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Dust-turbulence noise tile (CPU, uploaded every 30 frames). `off` disables it; unset defers to localStorage, then on. |
+| `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | GPU particle precipitation field (compute weather). `off` disables it; unset defers to localStorage, then on. |

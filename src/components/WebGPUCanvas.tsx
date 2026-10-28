@@ -7,8 +7,8 @@ import {
     useGradeSettings,
     useStreetView,
 } from '../hooks';
-import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
-import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
+import { NoiseTileFeeder, getNoiseTilePreference } from '../renderer/weatherNoiseTile';
+import { ParticleSeedFeeder, getParticleSeedPreference } from '../renderer/weatherParticleSeeds';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
 import { prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
 import { fetchLookLutVolume } from '../renderer/lut';
@@ -83,10 +83,10 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // settles before it is applied. The first observation applies at once.
     const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // WASM-driven ambient dust turbulence (see src/wasm/wasmNoiseFeeder.ts).
+    // Ambient dust turbulence tile (see src/renderer/weatherNoiseTile.ts).
     // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
-    const noiseFeederRef = useRef<WasmNoiseFeeder>(new WasmNoiseFeeder());
-    const particleFeederRef = useRef<WasmParticleFeeder>(new WasmParticleFeeder());
+    const noiseFeederRef = useRef<NoiseTileFeeder>(new NoiseTileFeeder());
+    const particleFeederRef = useRef<ParticleSeedFeeder>(new ParticleSeedFeeder());
 
     // Cinematic camera FX gate (DOF + motion blur). Quality and the reduced-motion
     // preference are read once — both require a reload to change — while speed is
@@ -104,9 +104,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             bootReducedMotion: reducedMotionRef.current,
             outputCanvas: () => canvasRef.current,
             noiseFeeder: noiseFeederRef.current,
-            wasmNoiseEnabled: getWasmNoisePreference(),
+            wasmNoiseEnabled: getNoiseTilePreference(),
             particleFeeder: particleFeederRef.current,
-            wasmParticlesEnabled: getWasmParticlePreference(),
+            wasmParticlesEnabled: getParticleSeedPreference(),
         });
     }
     const driver = driverRef.current;
@@ -240,9 +240,9 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 internalRendererRef.current = result.renderer;
                 driver.renderer = result.renderer;
                 setRendererReadyTick((tick) => tick + 1);
-                // The compute weather path gets the fBm turbulence tile
-                // (WASM fill_fbm_buffer); the fragment default keeps the
-                // single-octave tile so its output is unchanged.
+                // The compute weather path gets the fBm turbulence tile; the
+                // fragment default keeps the single-octave tile so its output
+                // is unchanged.
                 noiseFeederRef.current.setDetail(
                     result.renderer.getWeatherPostProcessMode?.() === 'compute' ? 'fbm' : 'classic'
                 );
