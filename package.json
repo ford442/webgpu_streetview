@@ -42,6 +42,7 @@
     "test:watch": "vitest",
     "pretypecheck": "node scripts/check-install.mjs",
     "typecheck": "tsc -b",
+    "typecheck:strict-optional": "node scripts/check-strict-optional.mjs",
     "knip": "knip --no-progress",
     "verify": "node scripts/verify.mjs",
     "hooks:install": "git config core.hooksPath scripts/hooks",

@@ -41,7 +41,7 @@ export interface RendererInitOptions {
 export interface StreetViewRenderer {
     readonly canvas: HTMLCanvasElement;
     readonly backendType: RendererBackendType;
-    readonly fallbackReason?: string;
+    readonly fallbackReason?: string | undefined;
 
     init(options?: RendererInitOptions): Promise<boolean>;
     resize(width: number, height: number): void;

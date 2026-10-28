@@ -150,7 +150,7 @@ function wrapUnit(v: number): number {
  */
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
-    private _fallbackReason?: string;
+    private _fallbackReason?: string | undefined;
     public get fallbackReason(): string | undefined {
         return this._fallbackReason;
     }
@@ -224,7 +224,7 @@ export class Renderer implements StreetViewRenderer {
     /** `FrameContext.aux`, refilled every frame (one object, no per-frame allocation). */
     private readonly frameAux: FrameAux = {};
 
-    private onLostCallback?: (info: GPUDeviceLostInfo) => void;
+    private onLostCallback?: ((info: GPUDeviceLostInfo) => void) | undefined;
     /**
      * Set before *we* destroy the device. Its `lost` promise then resolves with
      * `reason: 'destroyed'`, and forwarding that is what turned one failed boot

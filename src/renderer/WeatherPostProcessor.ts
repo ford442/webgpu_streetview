@@ -38,6 +38,7 @@ import {
     fetchShaderSource,
 } from './gpuPipelineFactory';
 import { PUBLIC_URL } from '../config/publicUrl';
+import { timestampWritesField } from './gpuPassTimer';
 
 // Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
@@ -366,7 +367,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
                 loadOp: 'clear' as GPULoadOp,
                 storeOp: 'store' as GPUStoreOp,
             }],
-            timestampWrites: weatherPassTimestampWrites(timing),
+            ...timestampWritesField(weatherPassTimestampWrites(timing)),
         });
         if (timing) {
             timing.timer.markPassStart(postPass, timing.weatherStartIndex);

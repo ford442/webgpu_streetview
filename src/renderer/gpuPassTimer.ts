@@ -50,6 +50,15 @@ function supportsPassDescriptorTimestampWrites(device: GPUDevice, querySet: GPUQ
 }
 
 /**
+ * `{ timestampWrites }` when the pass is timed, else `{}`: a pass descriptor
+ * never carries an explicit `timestampWrites: undefined`
+ * (`exactOptionalPropertyTypes`). The two are the same to WebGPU.
+ */
+export function timestampWritesField<T>(writes: T | undefined): { timestampWrites?: T } {
+    return writes ? { timestampWrites: writes } : {};
+}
+
+/**
  * Pick the stamping path for this device. `timestamp-query` gates everything;
  * `timestamp-query-inside-passes` is consulted only as the fallback.
  */

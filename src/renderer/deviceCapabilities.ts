@@ -99,7 +99,7 @@ export interface DeviceCapabilityMatrix {
     /** Which optional features are consumed by a production shader this boot. */
     shaderFeatureUses: ShaderFeatureUses;
     /** Reason the requested HDR/P3 configure was rejected and re-configured as SDR sRGB. */
-    canvasDowngradeReason?: string;
+    canvasDowngradeReason?: string | undefined;
     uncapturedErrorCount: number;
     lastUncapturedError?: string;
     /** #216 gpu-chores workgroup (histogram / downsample). Independent of weather 16×16. */
@@ -112,12 +112,12 @@ export interface DeviceCapabilityMatrix {
      */
     gpuChoresGpuEligible: boolean;
     /** Which adapter limit kept chores off the GPU, when `gpuChoresGpuEligible` is false. */
-    gpuChoresIneligibleReason?: string;
+    gpuChoresIneligibleReason?: string | undefined;
 }
 
 export interface AdapterCapabilitySummary {
-    powerPreference?: GPUPowerPreference;
-    weatherMode?: WeatherPostProcessMode;
+    powerPreference?: GPUPowerPreference | undefined;
+    weatherMode?: WeatherPostProcessMode | undefined;
     vendor: string;
     architecture: string;
     device: string;
@@ -131,5 +131,5 @@ export interface AdapterCapabilitySummary {
         maxComputeInvocationsPerWorkgroup: number;
     };
     enabledFeatures: GPUFeatureName[];
-    capabilityMatrix?: DeviceCapabilityMatrix;
+    capabilityMatrix?: DeviceCapabilityMatrix | undefined;
 }

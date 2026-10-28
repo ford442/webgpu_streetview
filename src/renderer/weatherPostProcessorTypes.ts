@@ -10,8 +10,8 @@ export interface WeatherPassTimingContext {
     timer: GpuPassTimer;
     weatherStartIndex: number;
     weatherEndIndex: number;
-    blitStartIndex?: number;
-    blitEndIndex?: number;
+    blitStartIndex?: number | undefined;
+    blitEndIndex?: number | undefined;
 }
 
 /**

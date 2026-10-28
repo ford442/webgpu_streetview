@@ -4,6 +4,7 @@ import {
 } from '../weatherPostProcessorTypes';
 import { WORKGROUP_SIZE } from './constants';
 import { WEATHER_SCENE_DEPTH_GROUP } from '../depth/sceneDepthBinding';
+import { timestampWritesField } from '../gpuPassTimer';
 
 /**
  * Command recording for the compute weather pass. Pure with respect to GPU
@@ -28,10 +29,10 @@ export function recordWeatherPass(
     { pipeline, bindGroup, lutBindGroup, sceneDepthBindGroup, width, height, timing }: WeatherPassArgs,
 ): void {
     const computePass = commandEncoder.beginComputePass({
-        timestampWrites: timing?.timer.computePassTimestampWrites(
+        ...timestampWritesField(timing?.timer.computePassTimestampWrites(
             timing.weatherStartIndex,
             timing.weatherEndIndex,
-        ),
+        )),
     });
     if (timing) {
         timing.timer.markPassStart(computePass, timing.weatherStartIndex);
@@ -69,7 +70,7 @@ export function recordBlitPass(
             loadOp: 'clear' as GPULoadOp,
             storeOp: 'store' as GPUStoreOp,
         }],
-        timestampWrites: blitPassTimestampWrites(timing),
+        ...timestampWritesField(blitPassTimestampWrites(timing)),
     });
     const timed = timing?.blitStartIndex !== undefined && timing.blitEndIndex !== undefined;
     if (timed) {

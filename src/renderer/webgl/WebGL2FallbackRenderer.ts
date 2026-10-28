@@ -71,7 +71,7 @@ function createProgram(gl: WebGL2RenderingContext): WebGLProgram {
 export class WebGL2FallbackRenderer implements StreetViewRenderer {
     public readonly canvas: HTMLCanvasElement;
     public readonly backendType = 'webgl' as const;
-    public readonly fallbackReason?: string;
+    public readonly fallbackReason?: string | undefined;
 
     private gl: WebGL2RenderingContext | null = null;
     private program: WebGLProgram | null = null;

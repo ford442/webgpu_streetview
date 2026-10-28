@@ -33,11 +33,11 @@ declare global {
     CESIUM_ION_TOKEN?: string;
     /** OSRM-compatible route endpoint (config.js); unset = public demo, '' = off. */
     ROUTING_ENDPOINT?: string;
-    rendererType?: 'webgpu' | 'webgl';
-    usingWebGPU?: boolean;
-    usingWebGL?: boolean;
-    rendererFallbackReason?: string;
-    weatherPostProcessMode?: WeatherPostProcessMode;
+    rendererType?: 'webgpu' | 'webgl' | undefined;
+    usingWebGPU?: boolean | undefined;
+    usingWebGL?: boolean | undefined;
+    rendererFallbackReason?: string | undefined;
+    weatherPostProcessMode?: WeatherPostProcessMode | undefined;
   }
 }
 

@@ -296,7 +296,7 @@ webgpu_streetview/
 ├── .env.example                     # Build-time env template (real values: untracked .env.local)
 ├── .env.deploy.example              # deploy.py environment template
 ├── knip.json                        # Unused file / dependency policy (CI)
-├── tsconfig.{base,app,test,node,scripts}.json # + e2e/tsconfig.json; root tsconfig.json is the tsc -b solution
+├── tsconfig.{base,app,test,node,scripts,strict-optional}.json # + e2e/tsconfig.json; root tsconfig.json is the tsc -b solution
 ├── CLAUDE.md                        # AI quick-reference (danger zones)
 ├── docs/
 │   ├── DEVELOPER_CONTEXT.md         # Architecture deep-dive

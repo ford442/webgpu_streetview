@@ -205,7 +205,7 @@ function buildGoldenGraph() {
       coords.push(38.7 + r * 0.0003 + (rand() - 0.5) * 0.00008, -9.15 + c * 0.0004 + (rand() - 0.5) * 0.00008);
     }
   }
-  const adj = Array.from({ length: n }, () => []);
+  const adj = Array.from({ length: n }, () => /** @type {number[]} */ ([]));
   const link = (a, b) => {
     if (rand() < 1 / 7) return;
     const oneWay = rand() < 0.2;
@@ -674,6 +674,7 @@ const DEPTH_PERCENTILE_CASES = [
   { label: 'map-2-98', values: depthMap(3, 0.5, 0), low: 0.02, high: 0.98 },
   { label: 'map-10-90', values: depthMap(3, 0.5, 0), low: 0.1, high: 0.9 },
 ];
+/** @type {Array<{ label: string, values: number[] | null, low: number, high: number, expected: number[] }>} */
 const depthPercentiles = DEPTH_PERCENTILE_CASES.map((c) => {
   writeDepthMap(c.values);
   const n = c.values.length;

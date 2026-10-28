@@ -27,6 +27,7 @@ const haveCpp = has('cmake') && (has('g++') || has('clang++') || has('c++'));
 const steps = [
   { name: 'install is complete', cmd: 'node', args: ['scripts/check-install.mjs'] },
   { name: 'typecheck (tsc -b)', cmd: 'npx', args: ['--no-install', 'tsc', '-b'] },
+  { name: 'exactOptionalPropertyTypes ratchet (renderer/, state/)', cmd: 'node', args: ['scripts/check-strict-optional.mjs'] },
   {
     name: 'lint',
     cmd: 'npx',

@@ -34,7 +34,7 @@ export interface AuxDepth {
 
 /** Auxiliary textures passes may read — filled by `Renderer` before the frame encodes. */
 export interface FrameAux {
-    depth?: AuxDepth;
+    depth?: AuxDepth | undefined;
 }
 
 export const SCENE_DEPTH_FORMAT: GPUTextureFormat = 'r16float';

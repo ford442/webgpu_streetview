@@ -34,7 +34,7 @@ type CapabilityMatrix = ReturnType<typeof buildCapabilityMatrix>;
 export interface BootDeviceOptions {
     canvas: HTMLCanvasElement;
     weatherPostProcessMode: WeatherPostProcessMode;
-    initOptions?: RendererInitOptions;
+    initOptions?: RendererInitOptions | undefined;
     /**
      * Registered on `device.lost` before anything else can touch the device.
      * Never called for a device this function destroyed itself on a failure
@@ -66,8 +66,8 @@ interface BootDeviceFailure {
 export interface BootProbeContext {
     preference: ReturnType<typeof getRendererPreference>;
     webglPreferenceDeferred: boolean;
-    adapter?: WebGpuProbeAdapterInfo;
-    capabilityMatrix?: CapabilityMatrix;
+    adapter?: WebGpuProbeAdapterInfo | undefined;
+    capabilityMatrix?: CapabilityMatrix | undefined;
 }
 
 export type BootDeviceResult = BootDeviceSuccess | BootDeviceFailure;
@@ -157,7 +157,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         device = await adapter.requestDevice({
             label: DEVICE_LABELS.device,
             requiredFeatures,
-            requiredLimits: limitCheck.requiredLimits,
+            ...(limitCheck.requiredLimits ? { requiredLimits: limitCheck.requiredLimits } : {}),
         });
     } catch (deviceError) {
         const reason = deviceError instanceof Error ? deviceError.message : String(deviceError);

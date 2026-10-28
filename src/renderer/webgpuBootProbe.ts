@@ -51,10 +51,10 @@ export interface WebGpuProbeRecord {
   preference: RendererBackendPreference;
   /** True when URL/localStorage asked for webgl; there is no live GL weather backend. */
   webglPreferenceDeferred: boolean;
-  adapter?: WebGpuProbeAdapterInfo;
-  capabilityMatrix?: DeviceCapabilityMatrix;
+  adapter?: WebGpuProbeAdapterInfo | undefined;
+  capabilityMatrix?: DeviceCapabilityMatrix | undefined;
   /** Present only when the boot degraded the preset's weather mode. */
-  weatherDegrade?: WebGpuProbeWeatherDegrade;
+  weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
   /**
    * Per-pass `ready | failed(reason)` — see `passStatus.ts`. A failed optional
    * pass is disabled and listed here while `ok` stays true.
@@ -64,7 +64,7 @@ export interface WebGpuProbeRecord {
    * The road render scale the last frame used (#329, `renderScale.ts`).
    * Absent until the renderer has encoded a frame.
    */
-  renderScale?: AppliedRenderScale;
+  renderScale?: AppliedRenderScale | undefined;
   /** The cabin renderer choice, mirrored by `publishCabinRendererProbe`. */
   cabin?: CabinRendererProbe;
   updatedAt: number;
@@ -111,9 +111,9 @@ export interface PublishWebGpuProbeOptions {
   reason?: string;
   preference?: RendererBackendPreference;
   webglPreferenceDeferred?: boolean;
-  adapter?: WebGpuProbeAdapterInfo;
-  capabilityMatrix?: DeviceCapabilityMatrix;
-  weatherDegrade?: WebGpuProbeWeatherDegrade;
+  adapter?: WebGpuProbeAdapterInfo | undefined;
+  capabilityMatrix?: DeviceCapabilityMatrix | undefined;
+  weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
   browserBrand?: BrowserBrand;
   now?: number;
 }

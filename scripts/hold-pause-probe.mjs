@@ -147,6 +147,7 @@ async function main() {
   });
 
   let failed = false;
+  /** @type {{ url: string, hops: Array<Record<string, unknown>>, summary: Record<string, unknown> }} */
   const report = { url: args.url, hops: [], summary: {} };
 
   try {

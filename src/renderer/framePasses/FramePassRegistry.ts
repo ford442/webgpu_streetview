@@ -78,7 +78,7 @@ export interface FramePass {
      */
     readonly required?: boolean;
     /** Not initialised by `initAll` — the owner calls `initPass` when it is needed. */
-    readonly lazy?: boolean;
+    readonly lazy?: boolean | undefined;
     /** Which part of a split frame encodes it (`FramePassPhase`); `main` when unset. */
     readonly phase?: FramePassPhase;
     init(): Promise<void>;

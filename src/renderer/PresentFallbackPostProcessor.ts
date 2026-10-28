@@ -4,6 +4,7 @@ import {
     type WeatherPostProcessorLike,
 } from './weatherPostProcessorTypes';
 import { createRenderPipelineChecked, createShaderModuleChecked } from './gpuPipelineFactory';
+import { timestampWritesField } from './gpuPassTimer';
 
 /**
  * Pass 1's HDR intermediate → swap chain, ACES-tonemapped, nothing else.
@@ -111,7 +112,7 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
-            timestampWrites: weatherPassTimestampWrites(timing),
+            ...timestampWritesField(weatherPassTimestampWrites(timing)),
         });
         if (timing) timing.timer.markPassStart(pass, timing.weatherStartIndex);
         pass.setPipeline(this.pipeline);

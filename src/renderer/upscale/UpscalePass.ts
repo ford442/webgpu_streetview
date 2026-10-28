@@ -27,7 +27,7 @@ import {
     fetchShaderSource,
 } from '../gpuPipelineFactory';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
-import type { GpuPassTimer } from '../gpuPassTimer';
+import { timestampWritesField, type GpuPassTimer } from '../gpuPassTimer';
 
 export type UpscaleMode = 'fsr' | 'bilinear';
 
@@ -296,10 +296,10 @@ export class UpscalePass {
                 loadOp: 'clear' as GPULoadOp,
                 storeOp: 'store' as GPUStoreOp,
             }],
-            timestampWrites: timing?.timer.renderPassTimestampWrites(
+            ...timestampWritesField(timing?.timer.renderPassTimestampWrites(
                 opensSpan ? timing.startIndex : undefined,
                 closesSpan ? timing.endIndex : undefined,
-            ),
+            )),
         });
         if (timing && opensSpan) timing.timer.markPassStart(pass, timing.startIndex);
         pass.setPipeline(pipeline);

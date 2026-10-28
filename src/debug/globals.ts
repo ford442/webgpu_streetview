@@ -39,10 +39,10 @@ import type { PlaceSearchBudgetStats } from '../search/placeSearchBudget';
 /** `window.streetViewRendererDebug` — read-only always, mutators only with `?debug`. */
 export interface RendererDebugHandle {
     getBackend: () => {
-        rendererType?: 'webgpu' | 'webgl';
-        usingWebGPU?: boolean;
-        usingWebGL?: boolean;
-        rendererFallbackReason?: string;
+        rendererType?: 'webgpu' | 'webgl' | undefined;
+        usingWebGPU?: boolean | undefined;
+        usingWebGL?: boolean | undefined;
+        rendererFallbackReason?: string | undefined;
     };
     getDebugOptions: () => { effectIsolation: RendererEffectIsolation; wireframe: boolean };
     getWeatherMode: () => WeatherPostProcessMode;

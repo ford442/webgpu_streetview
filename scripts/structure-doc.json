@@ -689,7 +689,7 @@
     "note": "Unused file / dependency policy (CI)"
   },
   {
-    "path": "tsconfig.{base,app,test,node,scripts}.json",
+    "path": "tsconfig.{base,app,test,node,scripts,strict-optional}.json",
     "note": "+ e2e/tsconfig.json; root tsconfig.json is the tsc -b solution"
   },
   {

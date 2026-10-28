@@ -30,7 +30,7 @@ export interface PresentTailInput {
     /** `?latelatch`; unset = off. */
     latch?: boolean;
     /** `?stereo`; unset = off. */
-    stereo?: StereoMode;
+    stereo?: StereoMode | undefined;
 }
 
 /** Fill a reusable options object — `WebGPUCanvas` calls this every frame. */

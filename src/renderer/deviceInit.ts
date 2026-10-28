@@ -40,7 +40,7 @@ export interface CollectOptionalFeaturesOptions {
      * Skip `core-features-and-limits` when the adapter was requested in
      * compatibility mode (`?gpu=compat`) so we do not undo that knob.
      */
-    featureLevel?: AdapterFeatureLevel | 'unknown';
+    featureLevel?: AdapterFeatureLevel | 'unknown' | undefined;
 }
 
 /**

@@ -17,7 +17,7 @@ export function readNoGpuComputeFlag(search: string = currentSearch()): boolean 
 
 export interface GpuChoresLimitsVerdict {
   ok: boolean;
-  reason?: string;
+  reason?: string | undefined;
 }
 
 /**
@@ -40,7 +40,7 @@ export interface GpuChoresEligibility {
   probeOk: boolean;
   /** Adapter limits can run the 8×8 chores pipelines. */
   limitsOk: boolean;
-  limitsReason?: string;
+  limitsReason?: string | undefined;
   /** True when a shared Renderer device may be used for chores compute. */
   gpuEligible: boolean;
 }
