@@ -19,6 +19,7 @@ import { join } from 'path';
 import type { StreetViewWasmAPI } from '../abi';
 import { instantiateStreetViewWasm } from '../index';
 import { createScratchArena, SCRATCH_INITIAL_BYTES } from '../marshal';
+import { haversineMeters } from '../../utils/navigation';
 
 const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
 
@@ -51,15 +52,15 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     [1000, 52],
     [340, 52],
     [5000, -67.5],
-  ])('batchHaversine: %i points at lat %f match per-pair haversine within 1e-6 m', (n, lat) => {
-    // haversine() takes scalars, so it never touches the arena.
+  ])('batchHaversine: %i points at lat %f match the per-pair TS haversine within 1e-6 m', (n, lat) => {
+    // haversineMeters is f64 TS, so it never touches the arena.
     const pts = route(n, lat);
     const segs = new Float64Array(n - 1);
     const total = wasm.batchHaversine(pts, segs);
     let sum = 0;
     let worst = 0;
     for (let i = 0; i < n - 1; i++) {
-      const d = wasm.haversine(pts[i * 2]!, pts[i * 2 + 1]!, pts[i * 2 + 2]!, pts[i * 2 + 3]!);
+      const d = haversineMeters(pts[i * 2]!, pts[i * 2 + 1]!, pts[i * 2 + 2]!, pts[i * 2 + 3]!);
       sum += d;
       worst = Math.max(worst, Math.abs(segs[i]! - d));
     }

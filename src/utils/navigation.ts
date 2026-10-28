@@ -1,8 +1,10 @@
 import { requireWasm } from '../wasm';
 
-// normalizeAngle/signedAngleDiff/haversineDistance below must stay synchronous
-// (callers include per-frame audio panning). The binary is loaded before the
-// first React render (src/index.tsx), so they call it through requireWasm().
+// normalizeAngle / signedAngleDiff / haversineMeters are one-line f64 maths and
+// stay in TypeScript: callers include per-frame audio panning and boot-time UI,
+// and a WASM round trip would both throw before the binary loads and (for the
+// f32 angle exports) round f64 headings. Batch geometry — polylines, route
+// lengths, bearings and offsets — goes through the WASM kernels (#341).
 
 /**
  * Default half-angle of the cone a link must fall in to count as "this way".
@@ -60,16 +62,31 @@ export function findBestLink(
 }
 
 /**
- * Calculate the shortest signed angular difference [-180, 180]
- * Positive means rotate clockwise, negative means rotate counter-clockwise
+ * Normalise an angle in degrees to [0, 360). An angle already in range comes
+ * back unchanged (no `+ 360` round trip through a coarser exponent).
+ */
+export function normalizeAngle(angle: number): number {
+    const r = angle % 360;
+    if (r >= 0) return r + 0; // + 0 folds -0 into 0
+    const wrapped = r + 360;
+    // A tiny negative remainder rounds up to 360, which is 0.
+    return wrapped < 360 ? wrapped : 0;
+}
+
+/**
+ * Shortest signed angular difference `target - current`, in [-180, 180).
+ * Positive means rotate clockwise, negative counter-clockwise; exactly
+ * opposite headings give -180 (never +180).
  *
- * Delegates to the WASM `signed_angle_diff` export instead of a second copy of the formula — see docs/WASM_BRIDGE.md. Note the
- * argument order: this function is (target, current) = target - current,
- * while the WASM `signedAngleDiff` is (from, to) = to - from, so the
- * call below swaps them.
+ * JS `%` keeps the dividend's sign (like C `fmod`), so the remainder is in
+ * (-360, 360) and takes at most one ±360 correction. A difference already in
+ * range is returned exactly — no `+ 180` offset to round it.
  */
 export function signedAngleDiff(target: number, current: number): number {
-    return requireWasm().signedAngleDiff(current, target);
+    const diff = (target - current) % 360;
+    if (diff >= 180) return diff - 360;
+    if (diff < -180) return diff + 360;
+    return diff;
 }
 
 /**
@@ -81,9 +98,29 @@ export function absoluteAngleDiff(a: number, b: number): number {
     return Math.min(diff, 360 - diff);
 }
 
-/** Approximate Earth radius per unit — matches the WASM `haversine`'s R=6371000m. */
+/** Approximate Earth radius per unit; metres match the WASM geodesy kernels' R. */
 const EARTH_RADIUS_BY_UNIT = { km: 6371, mi: 3959, nm: 3440 } as const;
 const EARTH_RADIUS_METERS = 6371000;
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * Haversine great-circle distance in metres (R = 6371000 m) — the same formula
+ * as `sw_haversine` in cpp/src/geodesy_module.cpp, which the batch kernels
+ * (`batchHaversine`, `polylineProject`, …) use per segment. Identical points
+ * give exactly 0.
+ */
+export function haversineMeters(
+    lat1: number, lon1: number,
+    lat2: number, lon2: number,
+): number {
+    const dLat = (lat2 - lat1) * DEG_TO_RAD;
+    const dLon = (lon2 - lon1) * DEG_TO_RAD;
+    const sinLat = Math.sin(dLat * 0.5);
+    const sinLon = Math.sin(dLon * 0.5);
+    const a = sinLat * sinLat
+        + Math.cos(lat1 * DEG_TO_RAD) * Math.cos(lat2 * DEG_TO_RAD) * sinLon * sinLon;
+    return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 /**
  * Calculate great-circle distance between two lat/lng points using the haversine formula
@@ -94,17 +131,14 @@ const EARTH_RADIUS_METERS = 6371000;
  * @param unit - Unit for result: 'km' (default), 'mi' (miles), or 'nm' (nautical miles)
  * @returns Distance in specified unit
  *
- * Delegates to the WASM `haversine` export for the actual great-circle
- * computation instead of a second copy of the formula —
- * see docs/WASM_BRIDGE.md. The unit conversion below reproduces the original
- * per-unit Earth radii exactly, as a ratio against the metres result.
+ * {@link haversineMeters} scaled by the per-unit Earth radius.
  */
 export function haversineDistance(
     lat1: number, lon1: number,
     lat2: number, lon2: number,
     unit: 'km' | 'mi' | 'nm' = 'km'
 ): number {
-    const meters = requireWasm().haversine(lat1, lon1, lat2, lon2);
+    const meters = haversineMeters(lat1, lon1, lat2, lon2);
     return meters * (EARTH_RADIUS_BY_UNIT[unit] / EARTH_RADIUS_METERS);
 }
 

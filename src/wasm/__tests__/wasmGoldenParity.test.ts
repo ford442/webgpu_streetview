@@ -70,7 +70,6 @@ interface Goldens {
     octaves: number; lacunarity: number; gain: number; expected: number[];
   };
   particleSeeds: { count: number; seed: number; expected: number[] };
-  haversine: { lat1: number; lon1: number; lat2: number; lon2: number; expected: number }[];
   batchHaversine: { points: number[]; expectedSegments: number[]; expectedTotal: number };
   offsetLatLng: {
     lat: number; lng: number; distanceMeters: number; bearingDeg: number;
@@ -82,8 +81,6 @@ interface Goldens {
     label: string; points: number[]; lat: number; lng: number;
     expectedSegment: number; expectedAlong: number; expectedCross: number;
   }[];
-  normalizeAngle: { angle: number; expected: number }[];
-  signedAngleDiff: { from: number; to: number; expected: number }[];
   engineNoise: {
     label: string; count: number; rpm: number; load: number;
     speedKmh: number; phase: number; sampleIndex: number; sampleRate: number;
@@ -286,14 +283,6 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     });
   });
 
-  it('haversine matches the goldens', () => {
-    goldens.haversine.forEach(({ lat1, lon1, lat2, lon2, expected }, i) => {
-      expectExact(api.haversine(lat1, lon1, lat2, lon2),
-        expected, `haversine[${i}]`,
-      );
-    });
-  });
-
   it('batchHaversine matches the goldens', () => {
     const { points, expectedSegments, expectedTotal } = goldens.batchHaversine;
     const input = Float64Array.from(points);
@@ -359,23 +348,6 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     for (const c of goldens.graphNearest) {
       expect(api.graphNearest(graph, c.lat, c.lng), `graphNearest ${c.lat},${c.lng}`).toBe(c.expected);
     }
-  });
-
-  it('normalizeAngle matches the goldens', () => {
-    goldens.normalizeAngle.forEach(({ angle, expected }, i) => {
-      expectExact(api.normalizeAngle(angle), expected, `normalizeAngle[${i}] (${angle})`);
-    });
-  });
-
-  it('signedAngleDiff matches the goldens', () => {
-    // This is the case that used to disagree between the C++ source and every
-    // other implementation: fmodf keeps the dividend's sign, so a negative
-    // difference needs an explicit +360 correction.
-    goldens.signedAngleDiff.forEach(({ from, to, expected }, i) => {
-      expectExact(api.signedAngleDiff(from, to),
-        expected, `signedAngleDiff[${i}] (${from} -> ${to})`,
-      );
-    });
   });
 
   it('fillEngineNoise matches the goldens', () => {

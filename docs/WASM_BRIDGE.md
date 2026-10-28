@@ -210,9 +210,9 @@ engine's `dsp_*` family is in §3a):
 | `fbm2d(x, y, octaves, lacunarity, gain) → f32` | `fbm2d` | normalised by accumulated amplitude, so `[-1, 1]` for any octave count |
 | `fill_fbm_buffer(ptr, w, h, scale, ox, oy, octaves, lacunarity, gain)` | `fillFbmBuffer` | fBm tile |
 | `fill_particle_seeds(ptr, count, seed)` | `fillParticleSeeds` | 4 floats/particle: x, y, speed, phase |
-| `normalize_angle(f32) → f32` | `normalizeAngle` | `[0, 360)` |
-| `signed_angle_diff(f32, f32) → f32` | `signedAngleDiff` | `[-180, 180)` — exactly-opposite inputs give -180 |
-| `haversine(f64 ×4) → f64` | `haversine` | metres |
+| `normalize_angle(f32) → f32` | — | no TS caller (#341): `normalizeAngle` is f64 TS in `utils/navigation.ts`; export pending removal |
+| `signed_angle_diff(f32, f32) → f32` | — | no TS caller (#341): `signedAngleDiff` is f64 TS in `utils/navigation.ts` (the f32 export rounded headings); export pending removal |
+| `haversine(f64 ×4) → f64` | — | no TS caller (#341): one pair is `haversineMeters` (f64 TS, same formula, `utils/navigation.ts`); export pending removal |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `offset_latlng(lat, lng, metres, bearing, out2) → void` | `offsetLatLng` | destination point; writes `{lat, lng}` degrees. The only copy of the formula — `historicalImagery.ts` builds its sample ring with it |
 | `initial_bearing(f64 ×4) → f64` | `initialBearing` | forward azimuth `[0, 360)`; identical points give 0. `navigation.ts#initialBearing`, cruise and route following dispatch onto it |

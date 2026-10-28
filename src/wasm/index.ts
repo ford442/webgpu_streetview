@@ -8,7 +8,7 @@
  *   const wasm = await loadWasmModule();
  *   wasm.seed(42);
  *   const n = wasm.noise2d(1.2, 3.4); // value in [-1, 1]
- *   const dist = wasm.haversine(40.7128, -74.006, 51.5074, -0.1278);
+ *   const total = wasm.batchHaversine(points, segmentsOut); // metres
  *
  * The binary is the only implementation of every kernel — there is no JS
  * twin. The app loads it before the first React render (src/index.tsx) and
@@ -171,11 +171,6 @@ export async function instantiateStreetViewWasm(
   const fill_particle_seeds = exp['fill_particle_seeds'] as (
     ptr: number, count: number, seed: number
   ) => void;
-  const normalize_angle = exp['normalize_angle'] as (a: number) => number;
-  const signed_angle_diff = exp['signed_angle_diff'] as (f: number, t: number) => number;
-  const haversine_wasm = exp['haversine'] as (
-    lat1: number, lon1: number, lat2: number, lon2: number
-  ) => number;
   const fbm2d_wasm = exp['fbm2d'] as (
     x: number, y: number, octaves: number, lacunarity: number, gain: number
   ) => number;
@@ -699,11 +694,8 @@ export async function instantiateStreetViewWasm(
     fbm2d: fbm2d_wasm,
     fillFbmBuffer,
     fillParticleSeeds,
-    haversine: haversine_wasm,
     batchHaversine,
     offsetLatLng,
-    normalizeAngle: normalize_angle,
-    signedAngleDiff: signed_angle_diff,
     initialBearing: initial_bearing,
     polylineResample,
     polylineProject,

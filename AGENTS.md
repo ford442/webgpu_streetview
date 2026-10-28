@@ -850,10 +850,13 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code, and never re-implement a kernel in TypeScript (not even for
 tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
-`haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
+`initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
-`polyline_project`. Full detail: `docs/WASM_BRIDGE.md`.
+`polyline_project`. One-line maths is the exception (#341): `normalizeAngle`,
+`signedAngleDiff` and a single-pair `haversineMeters` are f64 TypeScript in
+`navigation.ts` — boot-time UI never calls `requireWasm` for them, and the
+batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

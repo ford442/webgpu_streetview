@@ -31,7 +31,7 @@
  * keeps sky readable via NIGHT_SKY_FLOOR, and lets headlights/dome lift the road.
  */
 
-import { signedAngleDiff } from '../utils/navigation';
+import { normalizeAngle, signedAngleDiff } from '../utils/navigation';
 
 /** Minimum scene luminance scale at full night (was ~0.03 — crushed black). */
 export const NIGHT_BASE_FLOOR = 0.14;
@@ -53,8 +53,6 @@ const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
 const WIPER_PARK_ANGLE = Math.PI / 6;
 
 const DEG = Math.PI / 180;
-
-const normalize360 = (deg: number): number => ((deg % 360) + 360) % 360;
 
 /** Head yaw clamp: ±90° (radians). */
 export const HEAD_YAW_LIMIT = Math.PI / 2;
@@ -83,7 +81,7 @@ export function panoramaPovFromCabin(
   headPitch: number,
 ): { heading: number; pitch: number } {
   return {
-    heading: normalize360(carHeading - headYaw / DEG),
+    heading: normalizeAngle(carHeading - headYaw / DEG),
     pitch: headPitch / DEG,
   };
 }
@@ -94,7 +92,7 @@ export function panoramaPovFromCabin(
  * because the scene is the car's frame and never yaws itself.
  */
 export function carRelativeBearing(compassBearing: number, carHeading: number): number {
-  return normalize360(compassBearing - carHeading);
+  return normalizeAngle(compassBearing - carHeading);
 }
 
 /** Frame-rate-independent exponential decay toward 0: `x · e^(−k·dt)`. */
