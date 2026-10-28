@@ -1,4 +1,4 @@
-import type { CabinRendererBackend } from '../../utils/performance';
+import type { CabinRendererBackend } from './performance';
 import { currentSearch, readFlag } from '../../config/flags';
 
 /**

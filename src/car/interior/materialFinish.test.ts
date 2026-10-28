@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VEHICLES } from '../VehicleManager';
-import { GPU_PROFILES } from '../../utils/performance';
+import { GPU_PROFILES } from './performance';
 import { createMaterials } from './MaterialFactory';
 
 describe('cabin material finish', () => {

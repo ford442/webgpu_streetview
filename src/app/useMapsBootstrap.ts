@@ -147,7 +147,9 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
     });
   }, []);
 
-  // Reactive key poller / listener: recovers from config.js race (#84).
+  // Key listener: recovers from the config.js race (#84). index.html fires
+  // `maps-api-key-ready` once config.js loads; until a key is in hand a 120 ms
+  // poll backs that up, and once one is found only the event is listened to.
   useEffect(() => {
     let stopped = false;
     const syncKey = () => {
@@ -166,13 +168,13 @@ export function useMapsBootstrap(options: UseMapsBootstrapOptions = {}): MapsBoo
         setShowAuthFailedBanner(false);
       }
     };
-    const iv = setInterval(syncKey, 120);
+    const iv = effectiveMapsKey ? null : setInterval(syncKey, 120);
     const onKeyReady = () => syncKey();
     window.addEventListener('maps-api-key-ready', onKeyReady);
     syncKey();
     return () => {
       stopped = true;
-      clearInterval(iv);
+      if (iv !== null) clearInterval(iv);
       window.removeEventListener('maps-api-key-ready', onKeyReady);
     };
   }, [effectiveMapsKey, mapsAuthFailed]);

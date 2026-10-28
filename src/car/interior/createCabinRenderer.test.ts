@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { GPUPerformanceProfile } from '../../utils/performance';
+import type { GPUPerformanceProfile } from './performance';
 import * as THREE from 'three';
 
 const webglInstances: Array<Record<string, unknown>> = [];

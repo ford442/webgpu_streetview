@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CarInteriorAnimator } from '../interior/CarInteriorAnimator';
 import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
 
-vi.mock('../../effects/WindAudio', () => ({
+vi.mock('../../audio/WindAudio', () => ({
   getWindAudio: () => ({
     isPlaying: () => false,
     init: async () => false,

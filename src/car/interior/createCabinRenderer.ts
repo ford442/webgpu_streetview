@@ -4,7 +4,7 @@ import type {
     CabinCapableRenderer,
     CabinRendererBackend,
     GPUPerformanceProfile,
-} from '../../utils/performance';
+} from './performance';
 import { isWebGpuProbeOk } from '../../renderer/webgpuBootProbe';
 import { currentSearch, readFlag } from '../../config/flags';
 import { setCabinMaterialBackend } from './cabinMaterialBackend';

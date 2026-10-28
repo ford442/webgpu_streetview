@@ -28,7 +28,7 @@ import { computeTempMult } from '/src/car/interior/portalGrade';
 import { RoadFrameBinding } from '/src/car/interior/roadFrameBinding';
 import { CabinFrameTarget } from '/src/car/interior/cabinFrameTarget';
 import { createCabinRendererAsync, preloadWebGPUCabinRenderer } from '/src/car/interior/createCabinRenderer';
-import { GPU_PROFILES } from '/src/utils/performance';
+import { GPU_PROFILES } from '/src/car/interior/performance';
 
 // The app fetches `./shaders/...` relative to its own page; this page lives deeper.
 const realFetch = window.fetch.bind(window);

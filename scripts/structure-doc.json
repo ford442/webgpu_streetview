@@ -1,0 +1,715 @@
+[
+  {
+    "path": "public/",
+    "note": "Static assets (not bundled by Vite)"
+  },
+  {
+    "path": "public/images/",
+    "note": "Static images"
+  },
+  {
+    "path": "public/shaders/",
+    "note": "WGSL shader files loaded at runtime via fetch()"
+  },
+  {
+    "path": "public/shaders/streetview.wgsl",
+    "note": "Pass 1: panorama → HDR intermediate"
+  },
+  {
+    "path": "public/shaders/weather-post.wgsl",
+    "note": "Pass 2: HDR + weather/color grading → screen (GENERATED, see below)"
+  },
+  {
+    "path": "public/shaders/cabin-composite.wgsl",
+    "note": "Pass 3: car-mode cabin texture over the road frame"
+  },
+  {
+    "path": "public/shaders/weather-post/",
+    "note": "Source fragments for weather-post.wgsl (edit these, not the generated file)"
+  },
+  {
+    "path": "public/shaders/weather-post-compute.wgsl",
+    "note": "Compute pipeline variant of weather post-process"
+  },
+  {
+    "path": "public/shaders/carview.wgsl",
+    "note": "Car windshield post-process"
+  },
+  {
+    "path": "public/shaders/texture.wgsl",
+    "note": "Debug passthrough"
+  },
+  {
+    "path": "public/shaders/transition-*.wgsl",
+    "note": "GPU panorama transitions (fade, zoom, zoom-blur, zoom-chromatic)"
+  },
+  {
+    "path": "src/"
+  },
+  {
+    "path": "src/App.tsx",
+    "note": "Thin root: AppProviders + AppShell (<200 LOC)"
+  },
+  {
+    "path": "src/app/",
+    "note": "App composition layer (extracted from App.tsx)"
+  },
+  {
+    "path": "src/app/AppProviders.tsx",
+    "note": "StreetView + ViewMode + Environment provider stack"
+  },
+  {
+    "path": "src/app/AppShell.tsx",
+    "note": "Layout + mount composition only (≤~350 LOC)"
+  },
+  {
+    "path": "src/app/unhandledRejection.ts",
+    "note": "Counts unhandled rejections onto __SV__.errors + backend chip"
+  },
+  {
+    "path": "src/app/shell/",
+    "note": "Colocated chrome / stage UI modules"
+  },
+  {
+    "path": "src/app/shell/ConnectedChrome.tsx",
+    "note": "Toolbar + feature panels + globe (when connected)"
+  },
+  {
+    "path": "src/app/shell/OfflineStatusToast.tsx"
+  },
+  {
+    "path": "src/app/shell/StreetViewStage.tsx",
+    "note": "Scraper + WebGPU + MainView + loading overlay"
+  },
+  {
+    "path": "src/app/useAppPanels.ts",
+    "note": "Panel open/close state"
+  },
+  {
+    "path": "src/app/useAppTelemetry.ts",
+    "note": "Performance overlay + memory profiler (sampled only while open)"
+  },
+  {
+    "path": "src/app/useMapsBootstrap.ts",
+    "note": "Maps key resolution, auth recovery, gm-err suppressor"
+  },
+  {
+    "path": "src/app/useSharedSessionSync.ts",
+    "note": "Host 10Hz broadcast + guest teleport/POV apply"
+  },
+  {
+    "path": "src/app/useRadioAudio.ts",
+    "note": "Free-look radio Audio + Web Audio graph"
+  },
+  {
+    "path": "src/app/useHistoricalExperience.ts",
+    "note": "Timeline + comparison wiring"
+  },
+  {
+    "path": "src/app/useTourBindings.ts",
+    "note": "getCurrentPOV + TourPanel prop bag"
+  },
+  {
+    "path": "src/app/useAppAccessibility.ts",
+    "note": "A11y settings + body class toggles"
+  },
+  {
+    "path": "src/app/useAppConnection.ts",
+    "note": "Welcome/connected + canvas/WebGPU readiness"
+  },
+  {
+    "path": "src/app/sharedSessionSync.ts",
+    "note": "Pure host snapshot / guest-apply helpers"
+  },
+  {
+    "path": "src/app/historicalExperience.ts",
+    "note": "Pure historical after-label helper"
+  },
+  {
+    "path": "src/app/mapsKeyUtils.ts",
+    "note": "Pure Maps key normalization / resolution helpers"
+  },
+  {
+    "path": "src/app/mapsLoadingOverlay.ts",
+    "note": "Pure LoadingOverlay state derivation"
+  },
+  {
+    "path": "src/app/index.ts",
+    "note": "Barrel exports"
+  },
+  {
+    "path": "src/offline/",
+    "note": "PWA shell + IndexedDB metadata (Phase 1–3 offline mode)"
+  },
+  {
+    "path": "src/offline/serviceWorkerRegistration.ts"
+  },
+  {
+    "path": "src/offline/swPolicy.ts",
+    "note": "Cache rules (never cache Google imagery); cache-name prefixes"
+  },
+  {
+    "path": "src/offline/offlineStore.ts",
+    "note": "IndexedDB stores"
+  },
+  {
+    "path": "src/offline/offlinePersistence.ts",
+    "note": "localStorage ↔ IndexedDB mirror"
+  },
+  {
+    "path": "src/offline/storageEstimate.ts",
+    "note": "navigator.storage.estimate helpers"
+  },
+  {
+    "path": "src/offline/routePrefetch.ts",
+    "note": "Phase 3 route graph scaffold"
+  },
+  {
+    "path": "src/offline/index.ts"
+  },
+  {
+    "path": "src/index.tsx",
+    "note": "React 18+ createRoot entry point"
+  },
+  {
+    "path": "src/style.css",
+    "note": "Global styles"
+  },
+  {
+    "path": "src/views/",
+    "note": "Top-level view routing"
+  },
+  {
+    "path": "src/views/MainView.tsx",
+    "note": "Switches FreeLookView ↔ CarModeView based on viewMode"
+  },
+  {
+    "path": "src/views/FreeLookView.tsx",
+    "note": "Free-look street view mode"
+  },
+  {
+    "path": "src/views/CarModeView.tsx",
+    "note": "Car interior mode"
+  },
+  {
+    "path": "src/components/",
+    "note": "React components"
+  },
+  {
+    "path": "src/components/StreetView.tsx",
+    "note": "Google Maps loader + canvas scraper (promotes via mapsCanvasSource)"
+  },
+  {
+    "path": "src/components/WebGPUCanvas.tsx",
+    "note": "Mount/unmount shell for the renderer + FrameDriver (no rAF)"
+  },
+  {
+    "path": "src/components/FreeLookInputHandler.tsx",
+    "note": "Window-level mouse/keyboard for free look"
+  },
+  {
+    "path": "src/components/CarInputHandler.tsx",
+    "note": "Window-level input for car mode (3 control modes)"
+  },
+  {
+    "path": "src/components/Compass.tsx",
+    "note": "Cardinal direction overlay"
+  },
+  {
+    "path": "src/components/WelcomeModal.tsx",
+    "note": "Startup welcome modal"
+  },
+  {
+    "path": "src/components/LoadingOverlay.tsx",
+    "note": "Granular loading states UI"
+  },
+  {
+    "path": "src/components/BookmarkPanel.tsx",
+    "note": "Saved locations panel with cloud sync"
+  },
+  {
+    "path": "src/components/HistoryPanel.tsx",
+    "note": "Breadcrumb location history"
+  },
+  {
+    "path": "src/components/SnapshotGallery.tsx",
+    "note": "Canvas capture gallery"
+  },
+  {
+    "path": "src/components/ColorGradingPanel.tsx",
+    "note": "HDR uniform sliders"
+  },
+  {
+    "path": "src/components/WeatherPanel.tsx",
+    "note": "Rain/snow/wind/fog/time-of-day controls"
+  },
+  {
+    "path": "src/components/AccessibilityPanel.tsx",
+    "note": "A11y settings panel"
+  },
+  {
+    "path": "src/components/PerformanceStatsOverlay.tsx",
+    "note": "Live FPS (perfStore) / GPU pass timings"
+  },
+  {
+    "path": "src/components/GlobeView.tsx",
+    "note": "Cesium globe mount + viewer lifecycle"
+  },
+  {
+    "path": "src/components/CoverageMap.tsx",
+    "note": "Street View coverage map (Google / Cesium toggle), lazy; billing in BILLING_SAFETY_CHECKLIST.md"
+  },
+  {
+    "path": "src/components/coverageMap/",
+    "note": "Google top-down map + Cesium pano-graph scene"
+  },
+  {
+    "path": "src/components/globe/",
+    "note": "Camera flights, input, journey, POI/autopilot"
+  },
+  {
+    "path": "src/components/ScoutCard.tsx",
+    "note": "Location scout UI"
+  },
+  {
+    "path": "src/renderer/"
+  },
+  {
+    "path": "src/renderer/Renderer.ts",
+    "note": "WebGPU orchestrator: device, dual-pass pipeline, transitions"
+  },
+  {
+    "path": "src/renderer/frameDriver.ts",
+    "note": "The frame loop (xr/frameClock), weather packing, render-scale budget"
+  },
+  {
+    "path": "src/renderer/frameSource/",
+    "note": "FrameSource + MapsCanvasSource: the one canvas change detector / fingerprint"
+  },
+  {
+    "path": "src/renderer/perfStore.ts",
+    "note": "FPS / frame-time external store (FrameRateMeter)"
+  },
+  {
+    "path": "src/renderer/framePasses/",
+    "note": "Ordered FramePass registry (one uniform buffer per pass)"
+  },
+  {
+    "path": "src/renderer/gpuPipelineFactory.ts",
+    "note": "The only shader-module / pipeline constructor"
+  },
+  {
+    "path": "src/renderer/types.ts",
+    "note": "RenderMode type"
+  },
+  {
+    "path": "src/car/",
+    "note": "Three.js car interior system"
+  },
+  {
+    "path": "src/car/index.ts",
+    "note": "Public car mode API (init/toggle/update/dispose)"
+  },
+  {
+    "path": "src/car/carModeRuntime.ts",
+    "note": "Façade — re-exports runtime/ by name (the API contract)"
+  },
+  {
+    "path": "src/car/runtime/",
+    "note": "Car-mode singleton, split by what it touches"
+  },
+  {
+    "path": "src/car/runtime/state.ts",
+    "note": "The ONE owner of carModeState / leverHandlers"
+  },
+  {
+    "path": "src/car/runtime/lifecycle.ts",
+    "note": "init / toggle / per-frame update / dispose"
+  },
+  {
+    "path": "src/car/runtime/cabinControls.ts",
+    "note": "Wiper stalk, gear, steering, seat, zoom FOV"
+  },
+  {
+    "path": "src/car/runtime/vehicleSwitch.ts",
+    "note": "Vehicle type + convertible roof/wind/tint"
+  },
+  {
+    "path": "src/car/runtime/telemetryBridge.ts",
+    "note": "App → cabin feeds (location, weather, gauges, lamps)"
+  },
+  {
+    "path": "src/car/runtime/mirror.ts",
+    "note": "Rearview / vanity glass (billable imagery)"
+  },
+  {
+    "path": "src/car/runtime/interaction.ts",
+    "note": "Pointer hit-testing against cabin meshes"
+  },
+  {
+    "path": "src/car/CarInterior.ts",
+    "note": "Procedural interior geometry"
+  },
+  {
+    "path": "src/car/DashboardUI.tsx",
+    "note": "React dashboard overlay"
+  },
+  {
+    "path": "src/car/DashboardLayout.tsx",
+    "note": "Dashboard zone layout primitives"
+  },
+  {
+    "path": "src/car/Controls.tsx",
+    "note": "Dashboard buttons / sliders"
+  },
+  {
+    "path": "src/car/RearviewMirror.ts",
+    "note": "Rear-view glass (true Static feed, else honest unavailable)"
+  },
+  {
+    "path": "src/car/rearViewFeed.ts",
+    "note": "Throttled/budgeted Street View Static rear imagery (billable)"
+  },
+  {
+    "path": "src/car/SelectivePostProcessing.ts",
+    "note": "Post-process settings manager"
+  },
+  {
+    "path": "src/car/VehicleManager.ts",
+    "note": "Vehicle configs (sedan, convertible, science-lab, limousine)"
+  },
+  {
+    "path": "src/car/theme.ts",
+    "note": "Car interior theme tokens"
+  },
+  {
+    "path": "src/car/interior/",
+    "note": "Low-level interior building blocks"
+  },
+  {
+    "path": "src/car/interior/GeometryFactory.ts"
+  },
+  {
+    "path": "src/car/interior/MaterialFactory.ts"
+  },
+  {
+    "path": "src/car/interior/LightingBuilder.ts"
+  },
+  {
+    "path": "src/car/interior/LODManager.ts"
+  },
+  {
+    "path": "src/car/interior/performance.ts",
+    "note": "Cabin GPU profiles, LOD, texture optimisation (applyPerformanceProfile)"
+  },
+  {
+    "path": "src/car/interior/InteractionHelper.ts"
+  },
+  {
+    "path": "src/car/interior/DigitalClock.ts",
+    "note": "Dash clock: pano-local HH:MM:SS, upload-gated"
+  },
+  {
+    "path": "src/car/interior/PostProcessingManager.ts"
+  },
+  {
+    "path": "src/car/interior/RainSystem.ts"
+  },
+  {
+    "path": "src/car/interior/PerformanceProfiler.ts"
+  },
+  {
+    "path": "src/car/ui/",
+    "note": "Reusable car dashboard UI primitives"
+  },
+  {
+    "path": "src/car/ui/AudioVisualizer.tsx"
+  },
+  {
+    "path": "src/car/ui/icons.ts"
+  },
+  {
+    "path": "src/car/variants/",
+    "note": "Vehicle-specific scene plugins (share interiorGroup — never a second renderer)"
+  },
+  {
+    "path": "src/car/variants/ConvertibleMode.ts"
+  },
+  {
+    "path": "src/car/variants/convertible/WindParticleSystem.ts"
+  },
+  {
+    "path": "src/car/variants/limousine/LimoAtmospherePlugin.ts"
+  },
+  {
+    "path": "src/car/variants/scienceLab/ScienceLabAtmosphere.ts"
+  },
+  {
+    "path": "src/car/variants/index.ts"
+  },
+  {
+    "path": "src/hooks/",
+    "note": "Custom React hooks + providers"
+  },
+  {
+    "path": "src/hooks/index.ts",
+    "note": "Barrel export"
+  },
+  {
+    "path": "src/hooks/useStreetView.tsx",
+    "note": "StreetViewProvider: panorama, heading, pitch, zoom, advance, isTransitioning"
+  },
+  {
+    "path": "src/hooks/useViewMode.tsx",
+    "note": "ViewModeProvider: viewMode (freelook/car), carHeading, controlMode"
+  },
+  {
+    "path": "src/hooks/useEnvironmentSettings.tsx",
+    "note": "EnvironmentSettingsProvider: weather, color grading, time of day"
+  },
+  {
+    "path": "src/hooks/useKeyboardShortcuts.tsx",
+    "note": "Global shortcuts + accessibility helpers (useAnnouncer, useFocusTrap, SkipLink)"
+  },
+  {
+    "path": "src/hooks/useBookmarks.ts",
+    "note": "localStorage + cloud bookmark sync"
+  },
+  {
+    "path": "src/hooks/useLocationHistory.ts",
+    "note": "Visited panorama trail"
+  },
+  {
+    "path": "src/hooks/useSnapshots.ts",
+    "note": "Canvas snapshot management"
+  },
+  {
+    "path": "src/hooks/useVehicleSettings.ts",
+    "note": "Vehicle preference persistence"
+  },
+  {
+    "path": "src/hooks/useTransition.ts",
+    "note": "Animation / easing utilities"
+  },
+  {
+    "path": "src/hooks/useDeviceDetection.ts",
+    "note": "Mobile / capability detection"
+  },
+  {
+    "path": "src/hooks/useGlobeMode.ts",
+    "note": "Cesium globe state"
+  },
+  {
+    "path": "src/hooks/useAutoNight.ts",
+    "note": "Real-clock sun/moon → nightIntensity (mounted by app/AutoNightDriver.tsx)"
+  },
+  {
+    "path": "src/hooks/useAdvanceSafe.ts",
+    "note": "Safe navigation with panorama-ready guards"
+  },
+  {
+    "path": "src/hooks/usePanoramaCache.ts",
+    "note": "Panorama pre-fetch cache"
+  },
+  {
+    "path": "src/hooks/__tests__/",
+    "note": "Hook tests (mobile.test.tsx)"
+  },
+  {
+    "path": "src/audio/"
+  },
+  {
+    "path": "src/audio/AudioAnalyzer.ts",
+    "note": "Radio stream Web Audio analysis"
+  },
+  {
+    "path": "src/audio/WindAudio.ts",
+    "note": "Procedural wind audio (off while the cabin engine runs)"
+  },
+  {
+    "path": "src/audio/carAudioGraph.ts",
+    "note": "The car's shared AudioContext graph"
+  },
+  {
+    "path": "src/shaders/",
+    "note": "GLSL shaders inlined for Three.js"
+  },
+  {
+    "path": "src/shaders/dashboardGlow.ts"
+  },
+  {
+    "path": "src/state/",
+    "note": "External stores (createStore + useStore): pov, cabin head, trip, depth, …"
+  },
+  {
+    "path": "src/state/createStore.ts",
+    "note": "get/set/subscribe + useStore via useSyncExternalStore"
+  },
+  {
+    "path": "src/debug/",
+    "note": "Typed window globals"
+  },
+  {
+    "path": "src/debug/globals.ts",
+    "note": "window.__SV__ + every probe global; the only `window as` cast"
+  },
+  {
+    "path": "src/config/"
+  },
+  {
+    "path": "src/config/visualPresets.ts",
+    "note": "Low/Medium/High/Ultra quality + auto-detect"
+  },
+  {
+    "path": "src/config/flags.ts",
+    "note": "Typed URL-flag registry + the only query-string parser"
+  },
+  {
+    "path": "src/config/lookPacks.ts",
+    "note": "Named looks"
+  },
+  {
+    "path": "src/services/"
+  },
+  {
+    "path": "src/services/routing/",
+    "note": "Routed road trip (see *Routed Road Trips*)"
+  },
+  {
+    "path": "src/services/routing/RouteProvider.ts",
+    "note": "Provider interface + honest RouteError kinds"
+  },
+  {
+    "path": "src/services/routing/osrmProvider.ts",
+    "note": "Default OSRM-compatible provider (GeoJSON, steps)"
+  },
+  {
+    "path": "src/services/routing/routingConfig.ts",
+    "note": "window.ROUTING_ENDPOINT → provider"
+  },
+  {
+    "path": "src/services/routing/routeGeometry.ts",
+    "note": "ActiveRoute: resample, projection, step along-track (WASM)"
+  },
+  {
+    "path": "src/services/routing/routeFollow.ts",
+    "note": "Pure per-hop decisions: follow / re-snap / arrived"
+  },
+  {
+    "path": "src/services/routing/tripController.ts",
+    "note": "plan → drive → arrive; the cruise route guide"
+  },
+  {
+    "path": "src/services/routing/routeLink.ts",
+    "note": "?route= encode/decode"
+  },
+  {
+    "path": "src/services/maps/callBudget.ts",
+    "note": "Session call meter (every getPanorama / place search)"
+  },
+  {
+    "path": "src/services/conditions/openMeteo.ts",
+    "note": "Live local conditions (opt-in)"
+  },
+  {
+    "path": "src/services/radio/tripRadio.ts",
+    "note": "When the cabin radio follows the trip"
+  },
+  {
+    "path": "src/services/radioBrowserService.ts",
+    "note": "Radio station lookup (geo search first)"
+  },
+  {
+    "path": "src/services/storageApi.ts",
+    "note": "Cloud storage API client"
+  },
+  {
+    "path": "src/utils/"
+  },
+  {
+    "path": "src/utils/navigation.ts",
+    "note": "findBestLink() + angle math + haversine"
+  },
+  {
+    "path": "src/utils/navigation.test.ts",
+    "note": "Unit tests for navigation math"
+  },
+  {
+    "path": "src/utils/routeStats.ts",
+    "note": "Route length stats via WASM batch_haversine"
+  },
+  {
+    "path": "src/utils/geoTimeUtils.ts",
+    "note": "Sun/moon position, time-of-day colors"
+  },
+  {
+    "path": "src/utils/localTime.ts",
+    "note": "HH:MM:SS in an IANA zone (Intl, DST-correct)"
+  },
+  {
+    "path": "src/utils/panoTimeZone.ts",
+    "note": "Offline lat/lng → IANA zone (lazy tz-lookup chunk)"
+  },
+  {
+    "path": "src/utils/cesiumImagery.ts",
+    "note": "Globe imagery/terrain resolution (Ion token → CartoCDN fallback)"
+  },
+  {
+    "path": "src/utils/memoryProfiler.ts",
+    "note": "Heap usage tracking (performance overlay)"
+  },
+  {
+    "path": "build/",
+    "note": "Production build output"
+  },
+  {
+    "path": "deploy.py",
+    "note": "Contabo bundle deploy (reads DEPLOY_TOKEN from env)"
+  },
+  {
+    "path": "package.json"
+  },
+  {
+    "path": "tsconfig.json"
+  },
+  {
+    "path": ".env.example",
+    "note": "Build-time env template (real values: untracked .env.local)"
+  },
+  {
+    "path": ".env.deploy.example",
+    "note": "deploy.py environment template"
+  },
+  {
+    "path": "knip.json",
+    "note": "Unused file / dependency policy (CI)"
+  },
+  {
+    "path": "tsconfig.{base,app,test,node,scripts}.json",
+    "note": "+ e2e/tsconfig.json; root tsconfig.json is the tsc -b solution"
+  },
+  {
+    "path": "CLAUDE.md",
+    "note": "AI quick-reference (danger zones)"
+  },
+  {
+    "path": "docs/DEVELOPER_CONTEXT.md",
+    "note": "Architecture deep-dive"
+  },
+  {
+    "path": "docs/FLAGS.md",
+    "note": "Generated URL flag table"
+  },
+  {
+    "path": "docs/GRAPHICS.md",
+    "note": "Graphics pipeline documentation"
+  },
+  {
+    "path": "docs/archive/",
+    "note": "Historical plans / task specs / PR bodies (not current)"
+  },
+  {
+    "path": "README.md",
+    "note": "Human-facing README"
+  }
+]

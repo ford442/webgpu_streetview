@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
-import { type GPUPerformanceProfile } from '../../utils/performance';
+import { type GPUPerformanceProfile } from './performance';
 import { cabinGlowScale } from './cabinLightingRamps';
 
 export interface MaterialSet {

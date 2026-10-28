@@ -28,7 +28,7 @@ import { CabinFrameTarget } from '/src/car/interior/cabinFrameTarget';
 import { CabinCompositePass } from '/src/renderer/cabinComposite';
 import { CarInteriorGlazingBuilder } from '/src/car/interior/CarInteriorGlazingBuilder';
 import { WindowWeatherOverlay } from '/src/car/interior/WindowWeatherOverlay';
-import { GPU_PROFILES } from '/src/utils/performance';
+import { GPU_PROFILES } from '/src/car/interior/performance';
 
 // The app fetches `./shaders/...` relative to its own page; this page lives deeper.
 const realFetch = window.fetch.bind(window);

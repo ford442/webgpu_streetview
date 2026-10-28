@@ -3,7 +3,7 @@
  * Creates procedural wind noise that varies with car speed
  */
 
-import { createBrowserAudioContext } from '../audio/createAudioContext';
+import { createBrowserAudioContext } from './createAudioContext';
 import { cabinAudioPanFromHeadYaw } from '../car/carSpatialModel';
 import { signedAngleDiff } from '../utils/navigation';
 import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';

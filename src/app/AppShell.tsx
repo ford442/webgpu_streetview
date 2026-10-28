@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
-import { getWindAudio } from '../effects/WindAudio';
+import { getWindAudio } from '../audio/WindAudio';
 import { usePovEffect } from '../state/povStore';
 import {
   useStreetView,

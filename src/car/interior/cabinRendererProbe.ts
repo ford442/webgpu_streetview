@@ -1,4 +1,4 @@
-import type { CabinRendererBackend } from '../../utils/performance';
+import type { CabinRendererBackend } from './performance';
 
 /**
  * State of the windshield portal (`WindshieldPortal.ts`) — the WebGPU cabin's

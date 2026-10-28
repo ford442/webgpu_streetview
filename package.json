@@ -28,6 +28,7 @@
     "gen:weather-shader": "node scripts/gen-weather-post-shader.mjs",
     "gen:look-luts": "node scripts/gen-look-luts.mjs",
     "gen:flags-doc": "node scripts/gen-flags-doc.mjs",
+    "gen:structure-doc": "node scripts/gen-structure-doc.mjs",
     "fetch:depth-model": "node scripts/fetch-depth-model.mjs",
     "gen:hero-cabin": "node scripts/author-sedan-cabin.mjs",
     "capture:look-goldens": "node scripts/capture-look-goldens.mjs",

@@ -111,7 +111,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
             resolveCabinRendererPreference,
             createCabinRendererAsync,
           } = await import('../car/interior/createCabinRenderer');
-          const { detectGPUProfile } = await import('../utils/performance');
+          const { detectGPUProfile } = await import('../car/interior/performance');
           let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
           if (resolveCabinRendererPreference(currentSearch()) === 'webgpu') {
             await preloadWebGPUCabinRenderer().catch((err) => {

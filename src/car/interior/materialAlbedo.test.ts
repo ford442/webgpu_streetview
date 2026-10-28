@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as THREE from 'three';
 import { VEHICLES, type VehicleType } from '../VehicleManager';
-import { GPU_PROFILES } from '../../utils/performance';
+import { GPU_PROFILES } from './performance';
 import { createMaterials } from './MaterialFactory';
 
 /**

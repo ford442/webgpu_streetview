@@ -33,7 +33,7 @@ import {
   preloadWebGPUCabinRenderer,
   resolveCabinRendererPreference,
 } from '../../car/interior/createCabinRenderer';
-import { detectGPUProfile } from '../../utils/performance';
+import { detectGPUProfile } from '../../car/interior/performance';
 import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect } from '../../state/povStore';
 import { cabinHeadStore } from '../../state/cabinHeadStore';

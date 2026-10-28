@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { type VehicleType, type VehicleConfig, getVehicleConfig } from './VehicleManager';
-import { type FrustumCuller, type VehicleLODConfig, detectGPUProfile } from '../utils/performance';
+import { type FrustumCuller, type VehicleLODConfig, detectGPUProfile } from './interior/performance';
 import { type PanoLocationInfo } from '../utils/panoLocation';
 import { type CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { type CarInteriorRenderer } from './interior/CarInteriorRenderer';

@@ -7,7 +7,7 @@ import {
     resolvePixelRatio,
     GPU_PROFILES,
     type GPUPerformanceProfile,
-} from './performance';
+} from '../car/interior/performance';
 
 /**
  * #258: these run on both cabin backends. The WebGL path must stay byte-for-byte
