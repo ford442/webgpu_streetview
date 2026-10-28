@@ -9,8 +9,7 @@
  * - Multiple visual variants
  */
 
-import React, { useEffect, useState } from 'react';
-import { type LoadingType, loadingStateManager } from '../store/loadingState';
+import React, { useEffect } from 'react';
 import { useFadeTransition, easings } from '../hooks/useTransition';
 
 export interface LoadingOverlayProps {
@@ -32,10 +31,6 @@ export interface LoadingOverlayProps {
   retryable?: boolean;
   /** Callback when retry is clicked */
   onRetry?: () => void;
-  /** Loading type for state management integration */
-  type?: LoadingType;
-  /** Auto-connect to loading state manager */
-  autoConnect?: boolean;
 }
 
 /**
@@ -261,17 +256,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   error,
   retryable = false,
   onRetry,
-  type,
-  autoConnect = false,
 }) => {
-  const [managedState, setManagedState] = useState<{
-    isLoading: boolean;
-    message: string;
-    progress?: number;
-    error?: string;
-    retryable?: boolean;
-  } | null>(null);
-
   const fadeTransition = useFadeTransition({
     duration: 300,
     easing: easings.easeInOut,
@@ -279,27 +264,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   const fadeOpacity = fadeTransition.opacity;
   const toggleFade = fadeTransition.toggle;
 
-  // Auto-connect to loading state manager if type is provided
-  useEffect(() => {
-    if (!autoConnect || !type) return;
-
-    const unsubscribe = loadingStateManager.subscribe((states) => {
-      const state = states[type];
-      setManagedState(state);
-    });
-
-    return unsubscribe;
-  }, [autoConnect, type]);
-
-  // Use managed state or props
-  const displayState = autoConnect && managedState ? {
-    isVisible: managedState.isLoading || Boolean(managedState.error),
-    message: managedState.message,
-    progress: managedState.progress,
-    error: managedState.error,
-    retryable: managedState.retryable,
-    onRetry: () => loadingStateManager.retry(type!),
-  } : {
+  const displayState = {
     isVisible,
     message,
     progress,

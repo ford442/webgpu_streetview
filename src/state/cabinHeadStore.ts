@@ -11,6 +11,7 @@
  * the panorama POV while the cabin is up.
  */
 import { clampHeadPitch, clampHeadYaw } from '../car/carSpatialModel';
+import { createStore } from './createStore';
 
 interface CabinHead {
   readonly headYaw: number;
@@ -32,25 +33,13 @@ function createCabinHeadStore(initial: Partial<CabinHead> = {}): CabinHeadStore 
     headYaw: clampHeadYaw(h.headYaw),
     headPitch: clampHeadPitch(h.headPitch),
   });
-  let state = normalize({ ...CENTERED_HEAD, ...initial });
-  const listeners = new Set<() => void>();
-
-  const commit = (next: CabinHead): void => {
-    const n = normalize(next);
-    if (n.headYaw === state.headYaw && n.headPitch === state.headPitch) return;
-    state = n;
-    for (const l of Array.from(listeners)) l();
-  };
+  const store = createStore<CabinHead>(normalize({ ...CENTERED_HEAD, ...initial }));
+  const commit = (next: CabinHead): void => store.set(normalize(next));
 
   return {
-    get: () => state,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    set: (next) => commit({ ...state, ...next }),
+    get: store.get,
+    subscribe: store.subscribe,
+    set: (next) => commit({ ...store.get(), ...next }),
     reset: (next = {}) => commit({ ...CENTERED_HEAD, ...next }),
   };
 }

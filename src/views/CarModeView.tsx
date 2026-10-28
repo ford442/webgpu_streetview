@@ -24,7 +24,7 @@ import { getActiveXrCockpit } from '../xr/xrSession';
 import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
 import { povStore, usePovEffect } from '../state/povStore';
-import { useCruiseFlag } from '../hooks/CruiseFlagContext';
+import { useCruiseFlag } from '../state/cruiseFlagStore';
 import { useGearHopAdvance } from './car/useGearHopAdvance';
 import { useCabinRadioBinding } from './car/useCabinRadioBinding';
 import { useCarDashboardBridge } from './car/useCarDashboardBridge';

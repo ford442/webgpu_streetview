@@ -4,7 +4,7 @@
  * only by `DepthController`; an external store, so a 5 Hz stats update never
  * re-renders anything that is not subscribed to it.
  */
-import { useSyncExternalStore } from 'react';
+import { createStore, useStore } from '../../state/createStore';
 import type { DepthModelVariant } from './depthModel';
 
 type SceneDepthState =
@@ -61,43 +61,28 @@ const INITIAL: SceneDepthStats = {
     generation: 0,
 };
 
-let current: SceneDepthStats = { ...INITIAL };
-const listeners = new Set<() => void>();
+const store = createStore<SceneDepthStats>({ ...INITIAL });
 
-function publish(): void {
+function publishToWindow(): void {
     if (typeof window !== 'undefined') {
-        (window as Window & { __SCENE_DEPTH__?: SceneDepthStats }).__SCENE_DEPTH__ = current;
+        (window as Window & { __SCENE_DEPTH__?: SceneDepthStats }).__SCENE_DEPTH__ = store.get();
     }
-    for (const l of Array.from(listeners)) l();
 }
+store.subscribe(publishToWindow);
 
 export function getSceneDepthStats(): SceneDepthStats {
-    return current;
+    return store.get();
 }
 
 export function setSceneDepthStats(patch: Partial<SceneDepthStats>): void {
-    const keys = Object.keys(patch) as (keyof SceneDepthStats)[];
-    if (keys.every((k) => current[k] === patch[k])) return;
-    current = { ...current, ...patch };
-    publish();
+    store.set((current) => ({ ...current, ...patch }));
 }
 
 export function resetSceneDepthStats(): void {
-    current = { ...INITIAL };
-    publish();
-}
-
-function subscribeSceneDepthStats(listener: () => void): () => void {
-    listeners.add(listener);
-    return () => {
-        listeners.delete(listener);
-    };
+    store.set({ ...INITIAL });
+    publishToWindow();
 }
 
 export function useSceneDepthStats<T>(selector: (s: SceneDepthStats) => T): T {
-    return useSyncExternalStore(
-        subscribeSceneDepthStats,
-        () => selector(current),
-        () => selector(current),
-    );
+    return useStore(store, selector);
 }

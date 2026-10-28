@@ -17,7 +17,7 @@ import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useAnnouncer } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
-import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
+import { publishCruiseFlag } from '../state/cruiseFlagStore';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
 import { vehicleManager, type VehicleType } from '../car/VehicleManager';
 import { useAutopilot } from '../hooks/useAutopilot';
