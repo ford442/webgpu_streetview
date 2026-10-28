@@ -16,7 +16,8 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
+#include "streetview/geodesy.h"
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -223,24 +224,6 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
     out[0] = static_cast<double>(best_seg);
     out[1] = best_along;
     out[2] = best_cross;
-}
-
-float sw_normalize_angle(float angle) {
-    return fmodf(fmodf(angle, 360.0f) + 360.0f, 360.0f);
-}
-
-float sw_signed_angle_diff(float from, float to) {
-    float diff = fmodf((to - from + 180.0f), 360.0f) - 180.0f;
-    // fmodf keeps the sign of the dividend, so a negative (to - from + 180)
-    // lands the result below -180 (e.g. to-from = -183 yields -183 instead of
-    // +177). The correction below is what the JS fallback in
-    // src/wasm/jsFallback.ts and signedAngleDiff() in src/utils/navigation.ts
-    // all do; without it this function silently disagreed with every other
-    // implementation for negative differences.
-    if (diff < -180.0f) diff += 360.0f;
-    // Exactly-opposite inputs still return -180 (not +180), matching the other
-    // implementations.
-    return diff;
 }
 
 } // extern "C"

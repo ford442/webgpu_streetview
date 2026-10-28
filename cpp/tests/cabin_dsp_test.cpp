@@ -14,7 +14,7 @@
 
 #include "doctest.h"
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
 #include "goldens_generated.h"
 
 #include <cmath>

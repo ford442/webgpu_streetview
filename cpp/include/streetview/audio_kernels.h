@@ -1,6 +1,6 @@
 #pragma once
 /**
- * audio_kernels.h
+ * streetview/audio_kernels.h
  * Internal (not exported) scalar building blocks shared by the audio domains:
  * audio_module.cpp (fill_engine_noise / fill_cabin_ir), hrtf_module.cpp
  * (fill_hrtf) and cabin_dsp_module.cpp (the stateful dsp_* engine that runs

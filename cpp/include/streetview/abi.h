@@ -1,44 +1,48 @@
 #pragma once
 /**
- * streetview_wasm.h
- * Public API for the WebGPU StreetView WASM module (internal sw_* names).
+ * streetview/abi.h
+ * The WASM ABI: every function the binaries export, declared once.
  *
- * The canonical external ABI (exported from the Emscripten STANDALONE_WASM
- * build) uses plain names without the sw_ prefix:
- *   seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
- *   fill_particle_seeds, haversine, batch_haversine, offset_latlng,
- *   normalize_angle, signed_angle_diff, initial_bearing, polyline_resample,
- *   polyline_project, fill_engine_noise, fill_cabin_ir, fill_hrtf,
- *   luma_histogram_bt709, reduce_luma_bt709, downsample_2d, luma_analyze,
- *   dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
- *   dsp_max_ir_taps, depth_percentiles, depth_near_depth, depth_normalize,
- *   graph_astar, graph_nearest
+ * `SV_EXPORT(name)` on a declaration exports that sw_* function from the
+ * emcc build under the plain `name` (wasm `export_name`, see platform.h) — no
+ * renaming layer, no hand-kept EXPORTED_FUNCTIONS list. This header is the
+ * single source of the ABI:
  *
- * This comment is a convenience copy — the SSOT for the export set is
- * `src/wasm/__tests__/wasmAbiLock.test.ts`, which cross-checks bindings.cpp,
- * CMakeLists.txt, the TS loader, this header, and the committed binary.
+ *   scripts/gen-wasm-abi.mjs     parses it into src/wasm/abi.generated.ts
+ *                                (wasm param/result types per export, and the
+ *                                TypeScript signature the loader binds)
+ *   scripts/check-wasm-abi.mjs   decodes each binary's type section and fails
+ *                                on any export whose signature differs
+ *   wasmAbiLock.test.ts          fails `npm run verify` when the generated
+ *                                table is stale or the committed binaries drift
  *
- * Thin wrappers in bindings.cpp alias these internal sw_* functions to the
- * canonical names for Emscripten EXPORTED_FUNCTIONS. The implementations are
- * split one translation unit per domain:
+ * So the parser stays trivial, keep every SV_EXPORT declaration to the plain
+ * C types it understands: void, int, unsigned int, float, double, size_t,
+ * uintptr_t, and pointers (wasm32 i32).
+ *
+ * The implementations are split one translation unit per domain:
  *   noise_module.cpp    seed / noise2d / fbm2d / fill_* tiles / particle seeds
- *   geodesy_module.cpp  haversine / batch_haversine / offset_latlng / angles /
- *                       initial_bearing / polyline_resample / polyline_project
+ *   geodesy_module.cpp  batch_haversine / offset_latlng / initial_bearing /
+ *                       polyline_resample / polyline_project
  *   audio_module.cpp    fill_engine_noise / fill_cabin_ir
  *   hrtf_module.cpp     fill_hrtf
  *   luma_module.cpp     luma_histogram_bt709 / reduce_luma_bt709 / downsample_2d /
  *                       luma_analyze
  *   cabin_dsp_module.cpp  dsp_* — the stateful cabin engine the AudioWorklet runs
+ *                         (also the whole of streetview-dsp.simd.wasm)
  *   depth_module.cpp      depth_* — scene-depth percentiles + proxy calibration
  *   graph_module.cpp      graph_astar / graph_nearest over the cached link graph
+ *   runtime.cpp           sv_malloc / sv_free / sv_stack_base / sv_stack_end —
+ *                         what the loader's scratch arena and stack check use
  *
  * audio_kernels.h holds the internal (unexported) pieces the audio domains
- * share: the sample hash, the engine tone and the head-shadow coefficients.
- *
- * Build with Emscripten (standalone raw-WASM mode, no JS glue):
- *   emcmake cmake ... && emmake make
- *   Flags: -s STANDALONE_WASM=1 --no-entry (see CMakeLists.txt)
+ * share; geodesy.h the internal sw_haversine.
  */
+
+#include "streetview/platform.h"
+
+#include <stddef.h>
+#include <stdint.h>
 
 /*
  * Every value-returning kernel is [[nodiscard]]: dropping a result (the
@@ -62,6 +66,7 @@ typedef struct sw_dsp sw_dsp;
  * Call once before using any noise or particle functions.
  * @param seed  Any non-zero 32-bit integer.
  */
+SV_EXPORT(seed)
 void sw_seed(unsigned int seed);
 
 /**
@@ -70,6 +75,7 @@ void sw_seed(unsigned int seed);
  * @param y  World-space y coordinate.
  * @return   Value in [-1.0, 1.0].
  */
+SV_EXPORT(noise2d)
 SW_NODISCARD float sw_noise2d(float x, float y);
 
 /**
@@ -84,6 +90,7 @@ SW_NODISCARD float sw_noise2d(float x, float y);
  * @param offsetY World-space Y offset.
  * No-op when buf is null or width/height <= 0.
  */
+SV_EXPORT(fill_noise_buffer)
 void sw_fill_noise_buffer(float* buf, int width, int height,
                           float scale, float offsetX, float offsetY);
 
@@ -96,6 +103,7 @@ void sw_fill_noise_buffer(float* buf, int width, int height,
  * @return           Value in [-1, 1] — the sum is divided by the accumulated
  *                   amplitude so the range is octave-count independent.
  */
+SV_EXPORT(fbm2d)
 SW_NODISCARD float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain);
 
 /**
@@ -103,6 +111,7 @@ SW_NODISCARD float sw_fbm2d(float x, float y, int octaves, float lacunarity, flo
  * sw_fill_noise_buffer; every sample is an fBm stack instead of one octave.
  * No-op when buf is null or width/height <= 0.
  */
+SV_EXPORT(fill_fbm_buffer)
 void sw_fill_fbm_buffer(float* buf, int width, int height,
                         float scale, float offsetX, float offsetY,
                         int octaves, float lacunarity, float gain);
@@ -115,13 +124,8 @@ void sw_fill_fbm_buffer(float* buf, int width, int height,
  * @param count  Number of particles.
  * @param seed   Any 32-bit integer; the same seed always yields the same set.
  */
+SV_EXPORT(fill_particle_seeds)
 void sw_fill_particle_seeds(float* buf, int count, unsigned int seed);
-
-/**
- * Haversine great-circle distance between two WGS-84 points.
- * @return Distance in metres.
- */
-SW_NODISCARD double sw_haversine(double lat1, double lon1, double lat2, double lon2);
 
 /**
  * Haversine distance for a whole polyline in one call.
@@ -132,6 +136,7 @@ SW_NODISCARD double sw_haversine(double lat1, double lon1, double lat2, double l
  *                the per-segment distances in metres.  Untouched when count < 2.
  * @return        Sum of the segment distances in metres (0 when count < 2).
  */
+SV_EXPORT(batch_haversine)
 SW_NODISCARD double sw_batch_haversine(const double* points, int count, double* out);
 
 /**
@@ -149,6 +154,7 @@ SW_NODISCARD double sw_batch_haversine(const double* points, int count, double* 
  *                         {latitude, longitude} in degrees. Longitude is not
  *                         re-wrapped to [-180, 180]. nullptr is a no-op.
  */
+SV_EXPORT(offset_latlng)
 void sw_offset_latlng(double lat, double lng, double distance_meters,
                       double bearing_deg, double* out2);
 
@@ -156,6 +162,7 @@ void sw_offset_latlng(double lat, double lng, double distance_meters,
  * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
  * @return Degrees in [0, 360), 0 = north, clockwise. Identical points give 0.
  */
+SV_EXPORT(initial_bearing)
 SW_NODISCARD double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2);
 
 /**
@@ -174,6 +181,7 @@ SW_NODISCARD double sw_initial_bearing(double lat1, double lng1, double lat2, do
  * @return        The number of points the full resample has — like snprintf,
  *                it can exceed `cap`, in which case only `cap` were written.
  */
+SV_EXPORT(polyline_resample)
 SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m,
                          double* out, int cap);
 
@@ -190,6 +198,7 @@ SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m,
  *              n <= 0 writes {-1, 0, 0}; n == 1 writes {0, 0, distance}.
  *              nullptr is a no-op.
  */
+SV_EXPORT(polyline_project)
 void sw_polyline_project(const double* poly, int n, double lat, double lng,
                          double* out3);
 
@@ -213,6 +222,7 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
  *                   `max_len` — 1 when from == to, -1 when `to` is unreachable
  *                   or the input is invalid.
  */
+SV_EXPORT(graph_astar)
 SW_NODISCARD int sw_graph_astar(const int* offsets, const int* neighbors, const double* coords,
                    int node_count, int edge_count, int from, int to,
                    void* work, int* out_path, int max_len);
@@ -222,18 +232,8 @@ SW_NODISCARD int sw_graph_astar(const int* offsets, const int* neighbors, const 
  * @param coords  node_count [lat, lng] pairs in degrees.
  * @return        -1 for an empty graph or nullptr.
  */
+SV_EXPORT(graph_nearest)
 SW_NODISCARD int sw_graph_nearest(const double* coords, int node_count, double lat, double lng);
-
-/**
- * Normalise an angle to [0, 360).
- */
-SW_NODISCARD float sw_normalize_angle(float angle);
-
-/**
- * Smallest signed angle difference, result in [-180, 180).
- * Exactly-opposite inputs return -180, not +180.
- */
-SW_NODISCARD float sw_signed_angle_diff(float from, float to);
 
 /**
  * Fill a mono PCM buffer with engine + road noise.
@@ -260,6 +260,7 @@ SW_NODISCARD float sw_signed_angle_diff(float from, float to);
  * @return              Phase after the last sample, in [0, 1). `phase`
  *                      (wrapped) when count <= 0 or buf is null.
  */
+SV_EXPORT(fill_engine_noise)
 SW_NODISCARD double sw_fill_engine_noise(float* buf, int count,
                             float rpm, float load, float speed_kmh,
                             double phase, double sample_index,
@@ -290,6 +291,7 @@ SW_NODISCARD double sw_fill_engine_noise(float* buf, int count,
  *                      transfer, i.e. less muffling.
  * @param sample_rate   Audio sample rate (Hz). Values <= 1 fall back to 44100.
  */
+SV_EXPORT(fill_cabin_ir)
 void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
                       float openness, float sample_rate);
 
@@ -311,6 +313,7 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
  *                    to [-90, 90]. Positive = toward the right ear.
  * @param sample_rate Audio sample rate (Hz). Values <= 1 fall back to 44100.
  */
+SV_EXPORT(fill_hrtf)
 void sw_fill_hrtf(float* left, float* right, int count,
                   float azimuth_deg, float sample_rate);
 
@@ -318,6 +321,7 @@ void sw_fill_hrtf(float* left, float* right, int count,
  * 256-bin Rec.709 luma histogram of packed RGBA8 (row-major, 4 bytes/pixel).
  * `bins` is 256 uint32 counts; zeroed then filled. No-op when width/height <= 0.
  */
+SV_EXPORT(luma_histogram_bt709)
 void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
                              unsigned int* bins);
 
@@ -325,12 +329,14 @@ void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
  * Rec.709 luma reduce: writes three f32 values {mean, min, max} in [0, 1].
  * Empty input writes zeros.
  */
+SV_EXPORT(reduce_luma_bt709)
 void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
                           float* out3);
 
 /**
  * Integer box-filter downsample of packed RGBA8 into packed RGBA8.
  */
+SV_EXPORT(downsample_2d)
 void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
                       unsigned char* dst, int dst_w, int dst_h);
 
@@ -345,6 +351,7 @@ void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
  * exact luma of its colour and a full frame's sum cannot drift. Passing
  * dst = source size analyses the buffer as-is. Bad arguments write zeros.
  */
+SV_EXPORT(luma_analyze)
 void sw_luma_analyze(const unsigned char* rgba, int width, int height,
                      int dst_w, int dst_h, unsigned int* bins, float* stats3);
 
@@ -354,9 +361,11 @@ void sw_luma_analyze(const unsigned char* rgba, int width, int height,
  * back to 44100, > 192000 clamps). The state is malloc'd from the module heap;
  * nothing is global. Returns nullptr when the allocation fails.
  */
+SV_EXPORT(dsp_create)
 SW_NODISCARD sw_dsp* sw_dsp_create(float sample_rate);
 
 /** Free an instance from sw_dsp_create (nullptr is a no-op). */
+SV_EXPORT(dsp_destroy)
 void sw_dsp_destroy(sw_dsp* state);
 
 /**
@@ -374,6 +383,7 @@ void sw_dsp_destroy(sw_dsp* state);
  * @param radio_gain  Radio level into the cabin [0, 2].
  * @param wipers      Non-zero: wipers run (and thump) while rain > 0.02.
  */
+SV_EXPORT(dsp_set_params)
 void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
                        float openness, int vehicle, float wet_road, float rain,
                        float wind_mps, float radio_gain, int wipers);
@@ -383,6 +393,7 @@ void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
  * nullptr / <= 0 is the identity). Padded to whole 128-tap partitions; the
  * swap crossfades over 256 samples. Non-finite taps become 0.
  */
+SV_EXPORT(dsp_set_ir)
 void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
 
 /**
@@ -391,10 +402,12 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
  * Deterministic: the same parameter/IR/input script gives the same bits on
  * the scalar and SIMD binaries, the host build and the JS twin.
  */
+SV_EXPORT(dsp_render)
 void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
                    float* out_l, float* out_r, int frames);
 
 /** Longest IR sw_dsp_set_ir keeps (4096). */
+SV_EXPORT(dsp_max_ir_taps)
 SW_NODISCARD int sw_dsp_max_ir_taps(void);
 
 /**
@@ -403,6 +416,7 @@ SW_NODISCARD int sw_dsp_max_ir_taps(void);
  * non-finite texels skipped; {0, 0} when none is finite. `scratch` holds
  * `count` floats and is overwritten.
  */
+SV_EXPORT(depth_percentiles)
 void sw_depth_percentiles(const float* disparity, int count, double low_pct,
                           double high_pct, float* scratch, double* out2);
 
@@ -412,6 +426,7 @@ void sw_depth_percentiles(const float* disparity, int count, double low_pct,
  * nearness map, clamped to [0.04, 0.3]; 0.1 when the horizon (`horizon_y`,
  * top-origin screen Y) is too low for the band to be ground.
  */
+SV_EXPORT(depth_near_depth)
 SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int height, double horizon_y);
 
 /**
@@ -422,9 +437,34 @@ SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int he
  * new values by half. With `aligned` and a non-null `previous` (count floats)
  * every texel eases too. `out` (count floats) must not alias the inputs.
  */
+SV_EXPORT(depth_normalize)
 void sw_depth_normalize(const float* disparity, int count, int width, int height,
                         double horizon_y, int aligned, int same_scene,
                         double* state3, const float* previous, float* out);
+
+/*
+ * Runtime (runtime.cpp). The loader's scratch arena and every caller-owned
+ * block (the cabin worklet's I/O, the golden generator's scratch) come from
+ * sv_malloc, so they sit in the heap above the shadow stack; the loader
+ * checks that against sv_stack_base and that sv_stack_base - sv_stack_end is
+ * the -s STACK_SIZE CMake pins (WASM_STACK_SIZE in src/wasm/marshal.ts).
+ */
+
+/** malloc, 8-byte aligned. nullptr when the heap is exhausted. */
+SV_EXPORT(sv_malloc)
+SW_NODISCARD void* sv_malloc(size_t bytes);
+
+/** free (nullptr is a no-op). */
+SV_EXPORT(sv_free)
+void sv_free(void* ptr);
+
+/** Highest shadow-stack address (the stack grows down from here); 0 on the host. */
+SV_EXPORT(sv_stack_base)
+SW_NODISCARD uintptr_t sv_stack_base(void);
+
+/** Lowest shadow-stack address; 0 on the host. */
+SV_EXPORT(sv_stack_end)
+SW_NODISCARD uintptr_t sv_stack_end(void);
 
 #ifdef __cplusplus
 } // extern "C"

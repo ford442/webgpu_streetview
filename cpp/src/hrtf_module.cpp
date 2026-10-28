@@ -23,8 +23,8 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
-#include "audio_kernels.h"
+#include "streetview/abi.h"
+#include "streetview/audio_kernels.h"
 #include <cstddef>
 #include <span>
 

@@ -25,7 +25,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
+#include "streetview/geodesy.h"
 #include "goldens_generated.h"
 
 #include <algorithm>
@@ -465,42 +466,6 @@ TEST_CASE("polyline_project: sign follows the side of travel; degenerate input i
     sw_polyline_project(nullptr, 2, 1.0, 1.0, out);
     CHECK(out[0] == -1.0);
     sw_polyline_project(line, 2, 1.0, 1.0, nullptr); // must not crash
-}
-
-TEST_CASE("normalize_angle matches the shipping WASM goldens") {
-    for (int i = 0; i < goldens::kNormalizeAngleCount; ++i) {
-        INFO(at(i));
-        CHECK(bit_equal(sw_normalize_angle(goldens::kNormalizeAngleIn[i]),
-                        goldens::kNormalizeAngleExpected[i]));
-    }
-}
-
-TEST_CASE("normalize_angle always lands in [0, 360)") {
-    for (int i = -2000; i <= 2000; ++i) {
-        const float a = static_cast<float>(i) * 0.73f;
-        const float n = sw_normalize_angle(a);
-        INFO(at(i));
-        CHECK(n >= 0.0f);
-        CHECK(n < 360.0f);
-    }
-}
-
-TEST_CASE("signed_angle_diff matches the shipping WASM goldens") {
-    for (int i = 0; i < goldens::kSignedAngleCount; ++i) {
-        INFO(at(i));
-        CHECK(bit_equal(sw_signed_angle_diff(goldens::kSignedAngleFrom[i],
-                                             goldens::kSignedAngleTo[i]),
-                        goldens::kSignedAngleExpected[i]));
-    }
-}
-
-TEST_CASE("signed_angle_diff stays within [-180, 180]") {
-    for (int i = -720; i <= 720; i += 3) {
-        const float d = sw_signed_angle_diff(0.0f, static_cast<float>(i));
-        INFO(at(i));
-        CHECK(d >= -180.0f);
-        CHECK(d <= 180.0f);
-    }
 }
 
 TEST_CASE("fill_engine_noise matches the shipping WASM goldens") {

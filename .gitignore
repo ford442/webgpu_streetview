@@ -30,6 +30,7 @@ cpp/build-host/
 cpp/build-asan/
 cpp/build-clang/
 cpp/build-clang-v3/
+cpp/build-wasm-tests/
 cpp/compile_commands.json
 node_modules/
 public/wasm/*.js

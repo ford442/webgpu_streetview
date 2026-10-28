@@ -18,7 +18,7 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>

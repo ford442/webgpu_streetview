@@ -14,12 +14,33 @@
  *   wiper thump (resonator) ───────────────────────────────────────────────┤
  *   radio L/R (HRTF -30° / +30°, the dash speakers) ───────────────────────┤
  *                                                                          ▼
- *            cabin FIR (uniformly partitioned, 128-tap partitions, ≤ 4096 taps)
+ *       cabin convolver (≤ 16384 taps, zero added latency, see below)
  *                                  ─► DC blocker ─► clamp ─► out L/R
  *
  * The convolution and the head shadow are both linear and time-invariant, so
  * placing each source first and then running one stereo cabin FIR is the
  * same room as convolving every source, at a fraction of the cost.
+ *
+ * The cabin convolver is uniformly partitioned overlap-save (UPOLS):
+ *   - partition = the 128-frame render quantum; the IR splits into K of them;
+ *   - partition 0 (lags 0..127) runs direct-form, per sample, so the output
+ *     has no latency beyond the room itself;
+ *   - partitions 1..K-1 run in the frequency domain: at every partition
+ *     boundary one 256-point FFT of the last two input blocks — L and R packed
+ *     as one complex signal, xL + i xR, which a real IR convolves channel by
+ *     channel — goes into a frequency-domain delay line (FDL) of K-1 spectra;
+ *     the next block's tail is IFFT(sum_k H_k * FDL[k-1]), last 128 samples:
+ *     real part L, imaginary part R.
+ *   At 2048 taps that is 128 direct MACs plus ~1 FFT-bin MAC per partition
+ *   per sample, instead of 2048 MACs (scripts/bench-cabin-dsp.mjs; WASM.md).
+ *
+ * IR swaps cost no more than steady state. Each FDL slot remembers the IR
+ * that was current when its input arrived, so input before a swap keeps
+ * ringing through the old room's tail and input after it goes through the new
+ * one — one convolution, never two. The direct partition (the loud, early
+ * part) glides from the old taps to the new over kGlideFrames. A
+ * swap that lands while slots still reference the IR before the previous one
+ * hands their remaining tail to the previous IR (both buffers are needed).
  *
  * Determinism contract (what the goldens pin):
  *   - Only add/sub/mul/div, comparisons, and floor on the f64 phases. No
@@ -27,32 +48,34 @@
  *     the thump resonator a Taylor cosine.
  *   - Noise is a hash of a 32-bit sample counter (sv_audio::hash_u32), so the
  *     output does not depend on how the caller splits blocks.
- *   - The FIR dot product has one canonical summation order: four lane
- *     accumulators over j mod 4 in increasing j, then (a0 + a1) + (a2 + a3).
- *     The scalar build spells that out; the SIMD build (-msimd128) does the
- *     same adds in f32x4 lanes. WASM SIMD has no FMA and we never pass
- *     -ffast-math, so both binaries and the JS twin (src/wasm/cabinDspTwin.ts)
- *     agree to the last bit.
+ *   - The direct partition's dot product has one canonical summation order:
+ *     four lane accumulators over j mod 4 in increasing j, then
+ *     (a0 + a1) + (a2 + a3). The FFT (streetview/fft256.h), the spectral MAC
+ *     (partitions in increasing k, per bin) and the tail add are written once
+ *     over sv_simd::f4 (streetview/simd.h): f32x4 lanes on the SIMD builds, a
+ *     struct of four floats on the scalar reference — the same IEEE ops in the
+ *     same order. WASM SIMD has no FMA and we never pass -ffast-math, so every
+ *     binary and host build agrees to the last bit.
  *
- * Memory: dsp_create mallocs the state from the module's own heap (the same
- * allocator behind the loader's scratch arena, above the shadow stack). There
- * are no globals; every instance is independent. dsp_render never allocates.
+ * Memory: dsp_create mallocs the state (~800 KiB: two IRs' spectra and the
+ * FDL at the 16384-tap ceiling) from the module's own heap. In the worklet
+ * binary that heap is fixed (1 MiB, no memory.grow). There are no mutable
+ * globals; every instance is independent. dsp_render and dsp_set_ir never
+ * allocate.
  *
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
-#include "audio_kernels.h"
+#include "streetview/abi.h"
+#include "streetview/audio_kernels.h"
+#include "streetview/fft256.h"
+#include "streetview/simd.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <span>
-
-#ifdef __wasm_simd128__
-#include <wasm_simd128.h>
-#endif
 
 namespace {
 
@@ -62,20 +85,36 @@ using sv_audio::hash_unit;
 // ---------------------------------------------------------------------------
 // Sizes
 // ---------------------------------------------------------------------------
-/** FIR partition == the Web Audio render quantum. */
+/** Partition == the Web Audio render quantum. */
 constexpr int kQuantum = 128;
-/** Longest IR dsp_set_ir accepts (85 ms at 48 kHz). */
-constexpr int kMaxIrTaps = 4096;
-/** History slot of the first sample of the current block. */
-constexpr int kHistoryOffset = kMaxIrTaps - 1;
-constexpr int kHistoryLen = kHistoryOffset + kQuantum;
+/** Longest IR dsp_set_ir accepts (341 ms at 48 kHz). */
+constexpr int kMaxIrTaps = 16384;
+constexpr int kMaxParts = kMaxIrTaps / kQuantum;
+/** FFT size of one overlap-save step: two blocks. */
+constexpr int kFft = sv_fft::kN;
+/** FDL ring (power of two >= the kMaxParts - 1 tail partitions). */
+constexpr int kFdlSlots = kMaxParts;
+constexpr int kFdlMask = kFdlSlots - 1;
+/**
+ * The direct partition glides to a new IR over kGlideFrames (~21 ms at
+ * 48 kHz), re-interpolating its 128 taps every kGlideStep frames: 64 steps of
+ * 1/64th, which a stepped-per-quantum glide (1/8th) made audible as a click.
+ * That is 128 lerps per 16 frames (~6 % of the direct partition), only while
+ * gliding. Steps are keyed to the absolute glide position, so how the caller
+ * splits blocks still never changes a bit.
+ */
+constexpr int kGlideFrames = 1024;
+constexpr int kGlideStep = 16;
+constexpr float kInvGlideSteps = static_cast<float>(kGlideStep) / static_cast<float>(kGlideFrames);
+static_assert(kGlideFrames % kGlideStep == 0 && kGlideStep % 4 == 0, "whole fir_dot4 groups per step");
+/** H_k spectra are pre-scaled by 1/kFft (exact) so the inverse FFT needs no scale. */
+constexpr float kInvFft = 1.0f / static_cast<float>(kFft);
 // The worklet (CABIN_QUANTUM in src/car/audio/cabinWorkletSource.ts) and the
 // loader's createCabinDsp pack their I/O block as 4 x 128 floats + the IR.
 static_assert(kQuantum == 128, "the Web Audio render quantum; the TS I/O blocks are sized from it");
+static_assert(kFft == 2 * kQuantum, "overlap-save: FFT of the previous and the current block");
 static_assert(kMaxIrTaps % kQuantum == 0, "IRs pad to whole partitions");
-/** IR swaps crossfade over two quanta (~5 ms) instead of clicking. */
-constexpr int kXfadeFrames = 256;
-constexpr float kInvXfadeFrames = 1.0f / 256.0f;
+static_assert((kFdlSlots & kFdlMask) == 0 && kFdlSlots >= kMaxParts - 1, "FDL ring");
 /** Power of two above the longest ITD (127 taps at 192 kHz). */
 constexpr int kItdRing = 256;
 constexpr int kItdMask = kItdRing - 1;
@@ -200,17 +239,36 @@ struct DspState {
     float dc_x_l, dc_y_l, dc_x_r, dc_y_r;
     HrtfVoice wind_voice, radio_l_voice, radio_r_voice;
 
-    // Cabin FIR: IRs are stored time-reversed and zero-padded to whole
-    // partitions, so y[n] is one contiguous dot product against the history.
+    // --- cabin convolver (see the file header) --------------------------
+    // Input: [previous block | current block] per channel; `fill` samples of
+    // the current block are written. The direct partition reads 128 back.
+    float xin_l[kFft];
+    float xin_r[kFft];
+    int fill;
+    // Tail (partitions 1..K-1) of the current block, from the last boundary.
+    float tail_l[kQuantum];
+    float tail_r[kQuantum];
+    // Two IR buffers: `ir_cur` is current, the other is the previous one (or
+    // idle). Direct taps time-reversed; tail spectra H_1..H_{K-1}, 1/256-scaled.
     int ir_cur;
-    int ir_len;
-    int prev_ir_len;
-    int xfade_pos;
-    float ir[2][kMaxIrTaps];
-    float hist_l[kHistoryLen];
-    float hist_r[kHistoryLen];
-    // FIR output of the current (wet) and outgoing (old) IR for one block.
-    float wet_l[kQuantum], wet_r[kQuantum], old_l[kQuantum], old_r[kQuantum];
+    int ir_parts[2];
+    float ir_direct[2][kQuantum];
+    float h_re[2][kMaxParts - 1][kFft];
+    float h_im[2][kMaxParts - 1][kFft];
+    // Direct partition actually in use, gliding from `direct_from` to the
+    // current IR's taps; `glide_pos` frames into the glide (kGlideFrames = done).
+    float direct[kQuantum];
+    float direct_from[kQuantum];
+    int glide_pos;
+    // FDL: the spectrum of each past block pair, newest at `fdl_head`, and
+    // which IR buffer (0/1) convolves it; -1 = no tail (identity-length IR).
+    float fdl_re[kFdlSlots][kFft];
+    float fdl_im[kFdlSlots][kFft];
+    int fdl_ir[kFdlSlots];
+    int fdl_head;
+    // FFT work.
+    float acc_re[kFft], acc_im[kFft], tmp_re[kFft], tmp_im[kFft];
+    float y_l[kQuantum], y_r[kQuantum];
 };
 
 inline float clampf(float v, float lo, float hi) {
@@ -256,68 +314,42 @@ inline void hrtf_voice_step(HrtfVoice& v, float x, float& l, float& r) {
     }
 }
 
-#ifdef __wasm_simd128__
-inline float lane_sum(v128_t acc) {
-    return (wasm_f32x4_extract_lane(acc, 0) + wasm_f32x4_extract_lane(acc, 1))
-         + (wasm_f32x4_extract_lane(acc, 2) + wasm_f32x4_extract_lane(acc, 3));
-}
-#endif
-
 /**
- * The canonical FIR dot product (see the file header). `n` is a multiple of
- * 4 — IRs are padded to whole 128-tap partitions.
+ * The canonical direct-partition dot product (see the file header): four lane
+ * accumulators over j mod 4, then (a0 + a1) + (a2 + a3). `n` is a multiple of 4.
  */
 inline float fir_dot(const float* hr, const float* x, int n) {
-#ifdef __wasm_simd128__
-    v128_t acc = wasm_f32x4_splat(0.0f);
-    for (int j = 0; j < n; j += 4) {
-        acc = wasm_f32x4_add(acc, wasm_f32x4_mul(wasm_v128_load(hr + j), wasm_v128_load(x + j)));
-    }
-    return lane_sum(acc);
-#else
-    float a0 = 0.0f;
-    float a1 = 0.0f;
-    float a2 = 0.0f;
-    float a3 = 0.0f;
-    for (int j = 0; j < n; j += 4) {
-        a0 += hr[j] * x[j];
-        a1 += hr[j + 1] * x[j + 1];
-        a2 += hr[j + 2] * x[j + 2];
-        a3 += hr[j + 3] * x[j + 3];
-    }
-    return (a0 + a1) + (a2 + a3);
-#endif
+    using namespace sv_simd;
+    f4 acc = splat(0.0f);
+    for (int j = 0; j < n; j += 4) acc = add(acc, mul(load(hr + j), load(x + j)));
+    return hsum(acc);
 }
 
 /**
  * fir_dot for four consecutive outputs (x, x + 1, x + 2, x + 3). Each output
  * keeps its own four-lane accumulator, so the sums are bit-identical to four
- * fir_dot calls; the SIMD build just loads each IR vector once instead of
- * four times.
+ * fir_dot calls; each tap vector is just loaded once instead of four times.
  */
 inline void fir_dot4(const float* hr, const float* x, int n, float out[4]) {
-#ifdef __wasm_simd128__
-    v128_t a0 = wasm_f32x4_splat(0.0f);
-    v128_t a1 = a0;
-    v128_t a2 = a0;
-    v128_t a3 = a0;
+    using namespace sv_simd;
+    f4 a0 = splat(0.0f);
+    f4 a1 = a0;
+    f4 a2 = a0;
+    f4 a3 = a0;
     for (int j = 0; j < n; j += 4) {
-        const v128_t h = wasm_v128_load(hr + j);
-        a0 = wasm_f32x4_add(a0, wasm_f32x4_mul(h, wasm_v128_load(x + j)));
-        a1 = wasm_f32x4_add(a1, wasm_f32x4_mul(h, wasm_v128_load(x + j + 1)));
-        a2 = wasm_f32x4_add(a2, wasm_f32x4_mul(h, wasm_v128_load(x + j + 2)));
-        a3 = wasm_f32x4_add(a3, wasm_f32x4_mul(h, wasm_v128_load(x + j + 3)));
+        const f4 h = load(hr + j);
+        a0 = add(a0, mul(h, load(x + j)));
+        a1 = add(a1, mul(h, load(x + j + 1)));
+        a2 = add(a2, mul(h, load(x + j + 2)));
+        a3 = add(a3, mul(h, load(x + j + 3)));
     }
-    out[0] = lane_sum(a0);
-    out[1] = lane_sum(a1);
-    out[2] = lane_sum(a2);
-    out[3] = lane_sum(a3);
-#else
-    for (int m = 0; m < 4; ++m) out[m] = fir_dot(hr, x + m, n);
-#endif
+    out[0] = hsum(a0);
+    out[1] = hsum(a1);
+    out[2] = hsum(a2);
+    out[3] = hsum(a3);
 }
 
-/** The cabin FIR over one block of `frames` outputs into y. */
+/** The direct partition over `frames` outputs into y. */
 inline void fir_block(const float* hr, const float* x, int len, int frames, float* y) {
     int n = 0;
     for (; n + 4 <= frames; n += 4) fir_dot4(hr, x + n, len, y + n);
@@ -325,8 +357,103 @@ inline void fir_block(const float* hr, const float* x, int len, int frames, floa
 }
 
 /**
- * Render one chunk of at most a quantum (`frames`). An empty input span is
- * silence and an empty output span is discarded — the extern "C" nullptrs.
+ * direct = from + (to - from) * g for the glide step containing `glide_pos`
+ * (g = (step + 1) / 64), or exactly the current IR's taps once it is over.
+ */
+void update_direct(DspState& s) {
+    using namespace sv_simd;
+    const float* to = s.ir_direct[s.ir_cur];
+    if (s.glide_pos >= kGlideFrames) {
+        for (int j = 0; j < kQuantum; ++j) s.direct[j] = to[j];
+        return;
+    }
+    const f4 g = splat(static_cast<float>(s.glide_pos / kGlideStep + 1) * kInvGlideSteps);
+    for (int j = 0; j < kQuantum; j += 4) {
+        const f4 from = load(s.direct_from + j);
+        store(s.direct + j, add(from, mul(sub(load(to + j), from), g)));
+    }
+}
+
+/** Is FDL slot `age` (0 = newest) still inside the tail of the IR it is tagged with? */
+inline bool slot_live(const DspState& s, int age) {
+    const int tag = s.fdl_ir[(s.fdl_head - age) & kFdlMask];
+    return tag >= 0 && age + 1 < s.ir_parts[tag];
+}
+
+/**
+ * A partition boundary: the current block is complete. Push its block pair
+ * into the FDL, compute the next block's tail, and start the next block.
+ */
+void partition_boundary(DspState& s) {
+    using namespace sv_simd;
+    s.fdl_head = (s.fdl_head + 1) & kFdlMask;
+    const int head = s.fdl_head;
+    const int tag = s.ir_parts[s.ir_cur] > 1 ? s.ir_cur : -1;
+    s.fdl_ir[head] = tag;
+    if (tag >= 0) {
+        float* re = s.fdl_re[head];
+        float* im = s.fdl_im[head];
+        for (int n = 0; n < kFft; n += 4) {
+            store(re + n, load(s.xin_l + n));
+            store(im + n, load(s.xin_r + n));
+        }
+        sv_fft::fft256(re, im, s.tmp_re, s.tmp_im);
+    }
+
+    // Tail of the next block: partition k = age + 1 of each live slot's IR,
+    // accumulated in increasing k per bin.
+    const int ages = (s.ir_parts[0] > s.ir_parts[1] ? s.ir_parts[0] : s.ir_parts[1]) - 1;
+    bool any = false;
+    for (int age = 0; age < ages; ++age) {
+        if (!slot_live(s, age)) continue;
+        const int slot = (head - age) & kFdlMask;
+        const int t = s.fdl_ir[slot];
+        const float* hr = s.h_re[t][age];
+        const float* hi = s.h_im[t][age];
+        const float* xr = s.fdl_re[slot];
+        const float* xi = s.fdl_im[slot];
+        if (!any) {
+            for (int n = 0; n < kFft; n += 4) {
+                const f4 a = load(hr + n), b = load(hi + n), c = load(xr + n), d = load(xi + n);
+                store(s.acc_re + n, sub(mul(a, c), mul(b, d)));
+                store(s.acc_im + n, add(mul(a, d), mul(b, c)));
+            }
+            any = true;
+        } else {
+            for (int n = 0; n < kFft; n += 4) {
+                const f4 a = load(hr + n), b = load(hi + n), c = load(xr + n), d = load(xi + n);
+                store(s.acc_re + n, add(load(s.acc_re + n), sub(mul(a, c), mul(b, d))));
+                store(s.acc_im + n, add(load(s.acc_im + n), add(mul(a, d), mul(b, c))));
+            }
+        }
+    }
+    if (any) {
+        // Inverse via swapped re/im: the transform's re output is the
+        // inverse's imaginary part (R), its im output the real part (L).
+        sv_fft::fft256(s.acc_im, s.acc_re, s.tmp_re, s.tmp_im);
+        for (int n = 0; n < kQuantum; n += 4) {
+            store(s.tail_l + n, load(s.acc_re + kQuantum + n));
+            store(s.tail_r + n, load(s.acc_im + kQuantum + n));
+        }
+    } else {
+        for (int n = 0; n < kQuantum; ++n) {
+            s.tail_l[n] = 0.0f;
+            s.tail_r[n] = 0.0f;
+        }
+    }
+
+    // The current block becomes the previous one.
+    for (int n = 0; n < kQuantum; n += 4) {
+        store(s.xin_l + n, load(s.xin_l + kQuantum + n));
+        store(s.xin_r + n, load(s.xin_r + kQuantum + n));
+    }
+    s.fill = 0;
+}
+
+/**
+ * Render one chunk that ends at or before the next partition boundary
+ * (`frames` <= kQuantum - fill). An empty input span is silence and an empty
+ * output span is discarded — the extern "C" nullptrs.
  */
 void render_block(DspState& s, std::span<const float> in_l, std::span<const float> in_r,
                   std::span<float> out_l, std::span<float> out_r, int frames) {
@@ -444,31 +571,31 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         hrtf_voice_step(s.radio_l_voice, rl, radio_l, radio_r);
         hrtf_voice_step(s.radio_r_voice, rr, radio_l, radio_r);
 
-        s.hist_l[kHistoryOffset + i] = ((s.occ_l + rain_l) + thump_out) + radio_l;
-        s.hist_r[kHistoryOffset + i] = ((s.occ_r + rain_r) + thump_out) + radio_r;
+        s.xin_l[kQuantum + s.fill + i] = ((s.occ_l + rain_l) + thump_out) + radio_l;
+        s.xin_r[kQuantum + s.fill + i] = ((s.occ_r + rain_r) + thump_out) + radio_r;
         ++s.sample;
     }
 
-    // --- cabin FIR, crossfading from the previous IR after a swap -------
-    const int len = s.ir_len;
-    fir_block(s.ir[s.ir_cur], s.hist_l + (kHistoryOffset - (len - 1)), len, frames, s.wet_l);
-    fir_block(s.ir[s.ir_cur], s.hist_r + (kHistoryOffset - (len - 1)), len, frames, s.wet_r);
-    if (s.xfade_pos < kXfadeFrames) {
-        const int plen = s.prev_ir_len;
-        fir_block(s.ir[1 - s.ir_cur], s.hist_l + (kHistoryOffset - (plen - 1)), plen, frames, s.old_l);
-        fir_block(s.ir[1 - s.ir_cur], s.hist_r + (kHistoryOffset - (plen - 1)), plen, frames, s.old_r);
+    // --- cabin convolver: direct partition + the tail from the last boundary
+    const int at = s.fill;
+    for (int done = 0; done < frames;) {
+        // While gliding, one run per glide step (the taps change between runs).
+        int run = frames - done;
+        if (s.glide_pos < kGlideFrames) {
+            const int left_in_step = kGlideStep - s.glide_pos % kGlideStep;
+            if (run > left_in_step) run = left_in_step;
+        }
+        fir_block(s.direct, s.xin_l + at + done + 1, kQuantum, run, s.y_l + done);
+        fir_block(s.direct, s.xin_r + at + done + 1, kQuantum, run, s.y_r + done);
+        done += run;
+        if (s.glide_pos < kGlideFrames) {
+            s.glide_pos += run;
+            if (s.glide_pos % kGlideStep == 0) update_direct(s);
+        }
     }
     for (int n = 0; n < frames; ++n) {
-        float yl = s.wet_l[n];
-        float yr = s.wet_r[n];
-        if (s.xfade_pos < kXfadeFrames) {
-            const float ol = s.old_l[n];
-            const float orr = s.old_r[n];
-            const float g = static_cast<float>(s.xfade_pos + 1) * kInvXfadeFrames;
-            yl = ol + (yl - ol) * g;
-            yr = orr + (yr - orr) * g;
-            ++s.xfade_pos;
-        }
+        const float yl = s.y_l[n] + s.tail_l[at + n];
+        const float yr = s.y_r[n] + s.tail_r[at + n];
         const float dl = (yl - s.dc_x_l) + (s.dc_r * s.dc_y_l);
         const float dr = (yr - s.dc_x_r) + (s.dc_r * s.dc_y_r);
         s.dc_x_l = yl;
@@ -479,8 +606,8 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         if (!out_r.empty()) out_r[static_cast<size_t>(n)] = clampf(dr, -1.0f, 1.0f);
     }
 
-    std::memmove(s.hist_l, s.hist_l + frames, sizeof(float) * static_cast<size_t>(kHistoryOffset));
-    std::memmove(s.hist_r, s.hist_r + frames, sizeof(float) * static_cast<size_t>(kHistoryOffset));
+    s.fill += frames;
+    if (s.fill == kQuantum) partition_boundary(s);
 }
 
 } // namespace
@@ -533,13 +660,16 @@ sw_dsp* sw_dsp_create(float sample_rate) {
     hrtf_voice_init(s.radio_r_voice, kSpeakerAzimuth, sr);
 
     // Start on an identity IR (one partition, unit tap at lag 0), already
-    // settled: the first dsp_set_ir crossfades from it into the cabin.
+    // settled: the first dsp_set_ir glides from it into the cabin. Nothing in
+    // the FDL yet (-1: no tail).
     s.ir_cur = 0;
-    s.ir_len = kQuantum;
-    s.prev_ir_len = kQuantum;
-    s.ir[0][kQuantum - 1] = 1.0f;
-    s.ir[1][kQuantum - 1] = 1.0f;
-    s.xfade_pos = kXfadeFrames;
+    for (int b = 0; b < 2; ++b) {
+        s.ir_parts[b] = 1;
+        s.ir_direct[b][kQuantum - 1] = 1.0f;
+    }
+    for (int slot = 0; slot < kFdlSlots; ++slot) s.fdl_ir[slot] = -1;
+    s.glide_pos = kGlideFrames;
+    update_direct(s);
     return static_cast<sw_dsp*>(mem);
 }
 
@@ -576,25 +706,42 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count) {
     const bool identity = taps == nullptr || count <= 0;
     int n = identity ? 1 : count;
     if (n > kMaxIrTaps) n = kMaxIrTaps;
-    const int len = ((n + kQuantum - 1) / kQuantum) * kQuantum;
-
-    // Write into the idle buffer, then fade from the current one. A swap
-    // that lands mid-fade restarts the fade from the IR that was fading in.
-    const int next = 1 - s.ir_cur;
-    const std::span<float> hr(s.ir[next], static_cast<size_t>(len));
+    const int parts = (n + kQuantum - 1) / kQuantum;
     const std::span<const float> in = identity
         ? std::span<const float>{}
         : std::span<const float>(taps, static_cast<size_t>(n));
-    for (float& tap : hr) tap = 0.0f;
-    for (int t = 0; t < n; ++t) {
-        float v = identity ? 1.0f : in[static_cast<size_t>(t)];
-        if (!(v >= -16.0f && v <= 16.0f)) v = 0.0f;
-        hr[static_cast<size_t>(len - 1 - t)] = v;
+    const auto tap = [&](int t) {
+        if (t >= n) return 0.0f;
+        const float v = identity ? 1.0f : in[static_cast<size_t>(t)];
+        return v >= -16.0f && v <= 16.0f ? v : 0.0f;
+    };
+
+    // Write into the idle buffer. Slots that still convolve with it (input
+    // from before the previous swap) hand their remaining tail to the
+    // current IR; everything else keeps its room.
+    const int next = 1 - s.ir_cur;
+    for (int slot = 0; slot < kFdlSlots; ++slot) {
+        if (s.fdl_ir[slot] == next) s.fdl_ir[slot] = s.ir_cur;
     }
-    s.prev_ir_len = s.ir_len;
+    for (int j = 0; j < kQuantum; ++j) s.ir_direct[next][kQuantum - 1 - j] = tap(j);
+    for (int k = 1; k < parts; ++k) {
+        float* re = s.h_re[next][k - 1];
+        float* im = s.h_im[next][k - 1];
+        for (int j = 0; j < kQuantum; ++j) {
+            re[j] = tap(k * kQuantum + j) * kInvFft;
+            re[kQuantum + j] = 0.0f;
+        }
+        for (int j = 0; j < kFft; ++j) im[j] = 0.0f;
+        sv_fft::fft256(re, im, s.tmp_re, s.tmp_im);
+    }
+    s.ir_parts[next] = parts;
+
+    // The direct partition glides from whatever it is now (mid-glide too)
+    // to the new taps; its first step lands immediately.
+    for (int j = 0; j < kQuantum; ++j) s.direct_from[j] = s.direct[j];
     s.ir_cur = next;
-    s.ir_len = len;
-    s.xfade_pos = 0;
+    s.glide_pos = 0;
+    update_direct(s);
 }
 
 void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
@@ -617,7 +764,10 @@ void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in
     };
     int done = 0;
     while (done < frames) {
-        const int chunk = frames - done < kQuantum ? frames - done : kQuantum;
+        // Chunks end at partition boundaries (absolute, every 128 samples of
+        // the stream), so how the caller splits blocks never changes a bit.
+        const int room = kQuantum - s.fill;
+        const int chunk = frames - done < room ? frames - done : room;
         const size_t at = static_cast<size_t>(done);
         const size_t count = static_cast<size_t>(chunk);
         render_block(s, chunk_of(in_l, at, count), chunk_of(in_r, at, count),

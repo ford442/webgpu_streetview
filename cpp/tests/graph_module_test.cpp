@@ -13,7 +13,8 @@
 
 #include "doctest.h"
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
+#include "streetview/geodesy.h"
 #include "goldens_generated.h"
 
 #include <cmath>

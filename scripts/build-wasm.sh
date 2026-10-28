@@ -5,15 +5,20 @@
 # Prerequisites:
 #   source /path/to/emsdk/emsdk_env.sh    # activate emcc (pin: cpp/emsdk.version)
 #
-# Output:
-#   public/wasm/streetview-wasm.wasm      – standalone WASM (no JS glue), scalar
-#   public/wasm/streetview-wasm.simd.wasm – the same sources with -msimd128
-#                                           (the AudioWorklet's cabin DSP)
-#   public/wasm/streetview-wasm.wasm.sha256 – SHA-256 of the C++ inputs (both
-#                                           binaries come from the same inputs)
+# Output (cpp/build-emscripten/out/ — never the tracked tree):
+#   streetview-wasm.wasm       scalar reference: CI golden-tests it, never deployed
+#   streetview-wasm.simd.wasm  SIMD128 — every main-thread kernel
+#   streetview-dsp.simd.wasm   SIMD128 cabin engine, fixed memory — the AudioWorklet
+#
+# With --update (CI and explicit local runs only) the two shipped binaries are
+# copied into public/wasm/ together with streetview-wasm.wasm.sha256 (SHA-256
+# of the C++ inputs, which verify-build.sh checks). Without it nothing tracked
+# changes: the script only reports whether public/wasm/ matches this build.
 #
 # Usage:
-#   bash scripts/build-wasm.sh [--release|--debug]
+#   bash scripts/build-wasm.sh [--release|--debug] [--update]
+#   npm run build:wasm            # build + compare
+#   npm run build:wasm:update     # build + copy into public/wasm/
 #
 # Env:
 #   CI=true                   fail if emcc is missing (do not reuse a stale binary)
@@ -41,19 +46,21 @@ activate_emsdk
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$REPO_ROOT/cpp"
-OUT_DIR="$REPO_ROOT/public/wasm"
-WASM_OUT="$OUT_DIR/streetview-wasm.wasm"
-SIMD_OUT="$OUT_DIR/streetview-wasm.simd.wasm"
-HASH_OUT="$OUT_DIR/streetview-wasm.wasm.sha256"
-GLUE_JS="$OUT_DIR/streetview-wasm.js"
-
-mkdir -p "$OUT_DIR"
+PUBLIC_DIR="$REPO_ROOT/public/wasm"
+BUILD_DIR="$CPP_DIR/build-emscripten"
+OUT_DIR="$BUILD_DIR/out"
+# Shipped (copied by --update) and reference-only binaries.
+SHIPPED=(streetview-wasm.simd.wasm streetview-dsp.simd.wasm)
+REFERENCE=(streetview-wasm.wasm)
+HASH_OUT="$PUBLIC_DIR/streetview-wasm.wasm.sha256"
 
 BUILD_TYPE="Release"
+UPDATE=0
 for arg in "$@"; do
   case "$arg" in
     --release) BUILD_TYPE="Release" ;;
     --debug)   BUILD_TYPE="Debug" ;;
+    --update)  UPDATE=1 ;;
     --wat-only)
       echo "ERROR: --wat-only is retired. The shipped module is built from C++ with emcc." >&2
       echo "       See docs/WASM_BRIDGE.md." >&2
@@ -70,8 +77,8 @@ if ! command -v emcc &>/dev/null; then
     echo "       (see WASM.md / mymindstorm/setup-emsdk)." >&2
     exit 1
   fi
-  if [ -f "$WASM_OUT" ] && [ -f "$SIMD_OUT" ] && [ -f "$HASH_OUT" ] && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
-    echo "==> emcc not found; C++ source hash matches committed wasm — skipping rebuild."
+  if [ "$UPDATE" = "0" ] && [ -f "$HASH_OUT" ] && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
+    echo "==> emcc not found; C++ source hash matches the committed wasm — nothing to build."
     exit 0
   fi
   echo "ERROR: emcc not found and the C++ sources do not match public/wasm/streetview-wasm.wasm.sha256." >&2
@@ -99,7 +106,6 @@ fi
 echo "==> Emscripten detected ($(emcc --version | head -1))"
 echo "==> Building C++ → WASM via Emscripten …"
 
-BUILD_DIR="$CPP_DIR/build-emscripten"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -112,21 +118,34 @@ emcmake cmake "$CPP_DIR" \
 
 emmake make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
-# STANDALONE_WASM must not emit JS glue. A leftover embind .js would be copied
-# into build/ by Vite and precached by the service worker.
-rm -f "$GLUE_JS"
-
-for out in "$WASM_OUT" "$SIMD_OUT"; do
-  if [ ! -f "$out" ] || [ ! -s "$out" ]; then
-    echo "ERROR: expected non-empty $out after emcc link." >&2
+for name in "${SHIPPED[@]}" "${REFERENCE[@]}"; do
+  if [ ! -s "$OUT_DIR/$name" ]; then
+    echo "ERROR: expected non-empty $OUT_DIR/$name after emcc link." >&2
     exit 1
   fi
+  echo "    $name ($(wc -c < "$OUT_DIR/$name") bytes)"
 done
 
-# Record the C++ source hash so verify-build.sh can detect staleness.
-printf '%s\n' "$SOURCE_HASH" > "$HASH_OUT"
-echo "==> C++ source hash written: $SOURCE_HASH"
-
+if [ "$UPDATE" = "1" ]; then
+  mkdir -p "$PUBLIC_DIR"
+  for name in "${SHIPPED[@]}"; do cp "$OUT_DIR/$name" "$PUBLIC_DIR/$name"; done
+  # The scalar binary is the reference, not an artifact: never deployed.
+  rm -f "$PUBLIC_DIR/streetview-wasm.wasm" "$PUBLIC_DIR/streetview-wasm.js"
+  # Record the C++ source hash so verify-build.sh can detect staleness.
+  printf '%s\n' "$SOURCE_HASH" > "$HASH_OUT"
+  echo "==> Copied ${SHIPPED[*]} into public/wasm/ (source hash $SOURCE_HASH)."
+else
+  stale=0
+  for name in "${SHIPPED[@]}"; do
+    if ! cmp -s "$OUT_DIR/$name" "$PUBLIC_DIR/$name"; then
+      echo "==> public/wasm/$name differs from this build." >&2
+      stale=1
+    fi
+  done
+  if [ "$stale" = "1" ]; then
+    echo "    Run 'npm run build:wasm:update' to copy it (then gen:wasm-goldens if the C++ changed)." >&2
+  else
+    echo "==> public/wasm/ matches this build."
+  fi
+fi
 echo "==> Emscripten build done."
-echo "    WASM: $WASM_OUT ($(wc -c < "$WASM_OUT") bytes)"
-echo "    SIMD: $SIMD_OUT ($(wc -c < "$SIMD_OUT") bytes)"
