@@ -30,7 +30,7 @@ import type {
   StreetViewWasmAPI,
 } from './abi';
 import { PUBLIC_URL } from '../config/publicUrl';
-import { createScratchArena, WASM_STACK_SIZE } from './marshal';
+import { createScratchArena, WASM_STACK_SIZE, type ScratchArena, type ScratchClock } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
 export type {
@@ -134,10 +134,12 @@ export function loadWasmModule(): Promise<StreetViewWasmAPI> {
  * Instantiate the compiled binary and wrap its exports in the
  * {@link StreetViewWasmAPI} marshalling layer. Throws on any ABI or
  * memory-layout mismatch. Exported so tests can drive the real wrappers with
- * the committed binaries (src/setupTests.ts installs the scalar one).
+ * the committed binaries (src/setupTests.ts installs the scalar one);
+ * `scratchClock` drives the arena's idle shrink (tests only).
  */
 export async function instantiateStreetViewWasm(
   bytes: BufferSource,
+  options: { scratchClock?: ScratchClock } = {},
 ): Promise<StreetViewWasmAPI> {
   // Emscripten STANDALONE_WASM links libm statically; the binary's only
   // import is the ALLOW_MEMORY_GROWTH notification. Anything else it imports
@@ -292,6 +294,7 @@ export async function instantiateStreetViewWasm(
     malloc as (bytes: number) => number,
     free as (ptr: number) => void,
     stackBase,
+    options.scratchClock,
   );
 
   const fillNoiseBuffer = (
@@ -687,7 +690,7 @@ export async function instantiateStreetViewWasm(
     };
   };
 
-  return {
+  const api: StreetViewWasmAPI = {
     seed,
     noise2d,
     fillNoiseBuffer,
@@ -713,6 +716,19 @@ export async function instantiateStreetViewWasm(
     graphAstar,
     graphNearest,
   };
+  _scratchArenas.set(api, scratch);
+  return api;
+}
+
+const _scratchArenas = new WeakMap<StreetViewWasmAPI, ScratchArena>();
+
+/**
+ * The scratch arena behind an instantiated module — its `capacity` and
+ * `highWaterBytes` (tests and probes).
+ * @internal
+ */
+export function _scratchArenaOf(api: StreetViewWasmAPI): Readonly<ScratchArena> | undefined {
+  return _scratchArenas.get(api);
 }
 
 /**

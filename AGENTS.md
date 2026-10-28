@@ -835,7 +835,9 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   marshalling wrappers over the committed binary. Kernel buffers live in a
   `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
   kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
-  stack and corrupted `batch_haversine` at |lat| > 45°.
+  stack and corrupted `batch_haversine` at |lat| > 45°. The arena shrinks back
+  to 64 KiB after an idle second (#341); the test asserts that and a ≤ 1 MiB
+  high-water mark for a normal frame's kernels.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
   and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
   check + the SIMD binary against the goldens). Both are required.

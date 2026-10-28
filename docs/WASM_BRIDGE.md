@@ -281,7 +281,13 @@ allocates once with the exported `malloc`, so it always sits in the heap above
 both. `reserve(bytes)` returns the 8-byte-aligned base, replacing the block
 (`free` + a larger `malloc`) when a call needs more; there is no `malloc` per
 call. A `reserve` can grow — and so detach — `memory.buffer`: create typed-array
-views only after it returns. At load the loader checks the arena against
+views only after it returns. The arena also shrinks (#341): after
+`SCRATCH_IDLE_SHRINK_MS` (1 s) with no reservation above the 64 KiB default it
+frees the big block and re-mallocs the default (`shrinkTo`), driven by one
+`setTimeout` armed only while it is large. Wasm memory itself never shrinks —
+the region just goes back to the allocator. `capacity` / `highWaterBytes` are
+exposed for tests (`_scratchArenaOf(api)`); `wasmScratchArena.test.ts` asserts
+the idle shrink and that a normal frame's kernels stay ≤ 1 MiB. At load the loader checks the arena against
 `emscripten_stack_get_base()` and rejects the binary if it is ever below it. `scripts/gen-wasm-goldens.mjs` uses the same `malloc` path.
 
 Never pass a kernel a fixed offset. Scratch used to live at 64 KiB, inside the
