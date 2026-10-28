@@ -72,7 +72,7 @@
   },
   {
     "path": "src/app/shell/ConnectedChrome.tsx",
-    "note": "Toolbar + feature panels + globe (when connected)"
+    "note": "Toolbar + feature panels + globe; reads panels/env/view mode itself"
   },
   {
     "path": "src/app/shell/OfflineStatusToast.tsx"
@@ -83,7 +83,7 @@
   },
   {
     "path": "src/app/useAppPanels.ts",
-    "note": "Panel open/close state"
+    "note": "Live / snapshot views of state/panelsStore"
   },
   {
     "path": "src/app/useAppTelemetry.ts",
@@ -544,6 +544,10 @@
   {
     "path": "src/state/createStore.ts",
     "note": "get/set/subscribe + useStore via useSyncExternalStore"
+  },
+  {
+    "path": "src/state/panelsStore.ts",
+    "note": "Which chrome panels are open (toolbar, shortcuts, panels subscribe)"
   },
   {
     "path": "src/debug/",

@@ -124,10 +124,10 @@ webgpu_streetview/
 │   │   ├── AppShell.tsx             # Layout + mount composition only (≤~350 LOC)
 │   │   ├── unhandledRejection.ts    # Counts unhandled rejections onto __SV__.errors + backend chip
 │   │   ├── shell/                   # Colocated chrome / stage UI modules
-│   │   │   ├── ConnectedChrome.tsx  # Toolbar + feature panels + globe (when connected)
+│   │   │   ├── ConnectedChrome.tsx  # Toolbar + feature panels + globe; reads panels/env/view mode itself
 │   │   │   ├── OfflineStatusToast.tsx
 │   │   │   └── StreetViewStage.tsx  # Scraper + WebGPU + MainView + loading overlay
-│   │   ├── useAppPanels.ts          # Panel open/close state
+│   │   ├── useAppPanels.ts          # Live / snapshot views of state/panelsStore
 │   │   ├── useAppTelemetry.ts       # Performance overlay + memory profiler (sampled only while open)
 │   │   ├── useMapsBootstrap.ts      # Maps key resolution, auth recovery, gm-err suppressor
 │   │   ├── useSharedSessionSync.ts  # Host 10Hz broadcast + guest teleport/POV apply
@@ -250,7 +250,8 @@ webgpu_streetview/
 │   ├── shaders/                     # GLSL shaders inlined for Three.js
 │   │   └── dashboardGlow.ts
 │   ├── state/                       # External stores (createStore + useStore): pov, cabin head, trip, depth, …
-│   │   └── createStore.ts           # get/set/subscribe + useStore via useSyncExternalStore
+│   │   ├── createStore.ts           # get/set/subscribe + useStore via useSyncExternalStore
+│   │   └── panelsStore.ts           # Which chrome panels are open (toolbar, shortcuts, panels subscribe)
 │   ├── debug/                       # Typed window globals
 │   │   └── globals.ts               # window.__SV__ + every probe global; the only `window as` cast
 │   ├── config/

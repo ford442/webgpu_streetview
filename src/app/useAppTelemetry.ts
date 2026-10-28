@@ -10,8 +10,6 @@ import { getAutoExposureStatus, type AutoExposureStatus } from '../renderer/auto
 import { getAppliedRenderScale, type AppliedRenderScale } from '../renderer/renderScale';
 
 export interface AppTelemetry {
-  showPerformanceStats: boolean;
-  setShowPerformanceStats: (show: boolean) => void;
   memoryStats: MemoryStats | null;
   gpuPassTimings: GpuPassTimings;
   gpuChoresStats: GpuChoresStats;
@@ -19,9 +17,13 @@ export interface AppTelemetry {
   renderScale: AppliedRenderScale;
 }
 
-/** Performance overlay + memory profiler sampling for the stats panel. */
+/**
+ * What the performance overlay shows besides frame rate (which it reads from
+ * `perfStore`): memory, GPU pass timings, chores, exposure, render scale.
+ * Sampled at 1 Hz, and GPU timestamp queries run, only while the overlay
+ * calling it is mounted.
+ */
 export function useAppTelemetry(): AppTelemetry {
-  const [showPerformanceStats, setShowPerformanceStats] = useState(false);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [gpuPassTimings, setGpuPassTimingsState] = useState<GpuPassTimings>(() => getGpuPassTimings());
   const [gpuChoresStats, setGpuChoresStatsState] = useState<GpuChoresStats>(() => getGpuChoresStats());
@@ -34,14 +36,12 @@ export function useAppTelemetry(): AppTelemetry {
 
   // GPU timestamp queries run only while the overlay is open to read them.
   useEffect(() => {
-    setGpuPassTimingsWanted(showPerformanceStats);
+    setGpuPassTimingsWanted(true);
     return () => setGpuPassTimingsWanted(false);
-  }, [showPerformanceStats]);
+  }, []);
 
-  // The memory profiler samples only while the overlay is open (frame rate
-  // comes from `perfStore`, which the overlay reads itself).
+  // Frame rate comes from `perfStore`, which the overlay reads itself.
   useEffect(() => {
-    if (!showPerformanceStats) return;
     const memoryProfiler = getMemoryProfiler();
     const interval = setInterval(() => {
       memoryProfiler.snapshot();
@@ -52,11 +52,9 @@ export function useAppTelemetry(): AppTelemetry {
       setRenderScaleState({ ...getAppliedRenderScale() });
     }, 1000);
     return () => clearInterval(interval);
-  }, [showPerformanceStats]);
+  }, []);
 
   return {
-    showPerformanceStats,
-    setShowPerformanceStats,
     memoryStats,
     gpuPassTimings,
     gpuChoresStats,

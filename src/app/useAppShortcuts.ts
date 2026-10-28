@@ -2,11 +2,9 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
 import type { EnvironmentSettingsState } from '../hooks/useEnvironmentSettings';
 import type { GlobeModeControls } from '../hooks/useGlobeMode';
-import type { AppPanels } from './useAppPanels';
+import { usePanelsSnapshot } from './useAppPanels';
 
 export interface UseAppShortcutsOptions {
-  /** Panel open/close bag — a superset of the panels the shortcuts drive. */
-  panels: AppPanels;
   env: EnvironmentSettingsState;
   globeMode: GlobeModeControls;
   viewMode: 'freelook' | 'car';
@@ -18,8 +16,6 @@ export interface UseAppShortcutsOptions {
   exitCinemaMode: () => void;
   isRadioPlaying: boolean;
   toggleRadio: () => void;
-  showPerformanceStats: boolean;
-  setShowPerformanceStats: (v: boolean) => void;
   announce: (msg: string) => void;
   /** Shortcuts are armed only once the app is live and not in cinema mode. */
   enabled: boolean;
@@ -29,13 +25,14 @@ export interface UseAppShortcutsOptions {
  * Arms the global keyboard shortcut bag.
  *
  * `buildAppKeyboardShortcuts` stays the SSOT for what each key does; this hook
- * exists so the shell hands over whole state bags (`panels`, `env`,
- * `globeMode`) instead of re-listing forty individual props every time a
- * shortcut is added.
+ * exists so the shell hands over whole state bags (`env`, `globeMode`) instead
+ * of re-listing forty individual props every time a shortcut is added. Panel
+ * state comes from `panelsStore`, so the shell mounts it as `<AppShortcuts>`:
+ * a panel toggle re-renders that null component, not the shell.
  */
-export function useAppShortcuts(options: UseAppShortcutsOptions): void {
+function useAppShortcuts(options: UseAppShortcutsOptions): void {
+  const panels = usePanelsSnapshot();
   const {
-    panels,
     env,
     globeMode,
     viewMode,
@@ -47,8 +44,6 @@ export function useAppShortcuts(options: UseAppShortcutsOptions): void {
     exitCinemaMode,
     isRadioPlaying,
     toggleRadio,
-    showPerformanceStats,
-    setShowPerformanceStats,
     announce,
     enabled,
   } = options;
@@ -65,8 +60,6 @@ export function useAppShortcuts(options: UseAppShortcutsOptions): void {
       toggleDomeLight: env.toggleDomeLight,
       isRoofOpen: env.isRoofOpen,
       toggleRoof: env.toggleRoof,
-      showPerformanceStats,
-      setShowPerformanceStats,
       isRadioPlaying,
       toggleRadio,
       isCinemaMode,
@@ -81,4 +74,10 @@ export function useAppShortcuts(options: UseAppShortcutsOptions): void {
     }),
     enabled,
   );
+}
+
+/** `useAppShortcuts` as a component, so its panel subscription stays out of the shell. */
+export function AppShortcuts(props: UseAppShortcutsOptions): null {
+  useAppShortcuts(props);
+  return null;
 }

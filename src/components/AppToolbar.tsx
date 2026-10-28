@@ -1,6 +1,7 @@
 import React from 'react';
 import PlaceSearchBar from './PlaceSearchBar';
 import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
+import { usePanelsSnapshot } from '../app/useAppPanels';
 
 interface AppToolbarProps {
   isCruiseMode: boolean;
@@ -8,34 +9,8 @@ interface AppToolbarProps {
   isPanoramaReady: boolean;
   isRadioPlaying: boolean;
   toggleRadio: () => void;
-  isSnapshotGalleryOpen: boolean;
-  setIsSnapshotGalleryOpen: (v: boolean) => void;
   onTakeSnapshot: () => void;
-  isBookmarkPanelOpen: boolean;
-  setIsBookmarkPanelOpen: (v: boolean) => void;
-  isHistoryPanelOpen: boolean;
-  setIsHistoryPanelOpen: (v: boolean) => void;
-  isColorGradingPanelOpen: boolean;
-  setIsColorGradingPanelOpen: (v: boolean) => void;
-  isWeatherPanelOpen: boolean;
-  setIsWeatherPanelOpen: (v: boolean) => void;
-  isLooksPanelOpen: boolean;
-  setIsLooksPanelOpen: (v: boolean) => void;
-  isHistoricalTimelineOpen: boolean;
-  setIsHistoricalTimelineOpen: (v: boolean) => void;
-  isTourPanelOpen: boolean;
-  setIsTourPanelOpen: (v: boolean) => void;
-  /** Routed road trip planner (omit to hide the button). */
-  isTripPanelOpen?: boolean;
-  setIsTripPanelOpen?: (v: boolean) => void;
-  isSharedSessionPanelOpen: boolean;
-  setIsSharedSessionPanelOpen: (v: boolean) => void;
   isSharedSessionActive: boolean;
-  isStoragePanelOpen: boolean;
-  setIsStoragePanelOpen: (v: boolean) => void;
-  /** Street View coverage map (omit to hide the button). */
-  isMapOpen?: boolean;
-  setIsMapOpen?: (v: boolean) => void;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   onGlobeToggle: () => void;
@@ -49,38 +24,41 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
   isPanoramaReady,
   isRadioPlaying,
   toggleRadio,
-  isSnapshotGalleryOpen,
-  setIsSnapshotGalleryOpen,
   onTakeSnapshot,
-  isBookmarkPanelOpen,
-  setIsBookmarkPanelOpen,
-  isHistoryPanelOpen,
-  setIsHistoryPanelOpen,
-  isColorGradingPanelOpen,
-  setIsColorGradingPanelOpen,
-  isWeatherPanelOpen,
-  setIsWeatherPanelOpen,
-  isLooksPanelOpen,
-  setIsLooksPanelOpen,
-  isHistoricalTimelineOpen,
-  setIsHistoricalTimelineOpen,
-  isTourPanelOpen,
-  setIsTourPanelOpen,
-  isTripPanelOpen = false,
-  setIsTripPanelOpen,
-  isSharedSessionPanelOpen,
-  setIsSharedSessionPanelOpen,
   isSharedSessionActive,
-  isStoragePanelOpen,
-  setIsStoragePanelOpen,
-  isMapOpen = false,
-  setIsMapOpen,
   viewMode,
   toggleViewMode,
   onGlobeToggle,
   isGlobeEngaged = false,
   search,
 }) => {
+  // Panel state comes from `panelsStore` — the toolbar re-renders on a toggle, the shell does not.
+  const {
+    isSnapshotGalleryOpen,
+    setIsSnapshotGalleryOpen,
+    isBookmarkPanelOpen,
+    setIsBookmarkPanelOpen,
+    isHistoryPanelOpen,
+    setIsHistoryPanelOpen,
+    isColorGradingPanelOpen,
+    setIsColorGradingPanelOpen,
+    isWeatherPanelOpen,
+    setIsWeatherPanelOpen,
+    isLooksPanelOpen,
+    setIsLooksPanelOpen,
+    isHistoricalTimelineOpen,
+    setIsHistoricalTimelineOpen,
+    isTourPanelOpen,
+    setIsTourPanelOpen,
+    isTripPanelOpen,
+    setIsTripPanelOpen,
+    isSharedSessionPanelOpen,
+    setIsSharedSessionPanelOpen,
+    isStoragePanelOpen,
+    setIsStoragePanelOpen,
+    isMapOpen,
+    setIsMapOpen,
+  } = usePanelsSnapshot();
   return (
     <div
       style={{
