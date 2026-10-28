@@ -825,8 +825,8 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
   worklet source with the cabin goldens.
 - **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
-  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
-  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  `-s MAXIMUM_MEMORY` 128 MiB (sized when a 5K snapshot thumb reserved 64 MiB of
+  arena; since #341 the thumb is canvas-prescaled to ≤ 640×360 first), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
   must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
   change that moves a single golden bit is dropped, not re-baselined.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across

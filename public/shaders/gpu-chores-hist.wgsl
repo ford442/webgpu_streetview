@@ -1,6 +1,6 @@
 /**
  * gpu-chores histogram — BT.709 luma, 256 bins, 1/4-res samples, workgroup (8,8).
- * Matches src/renderer/gpuChores/lumaMath.ts / WASM `luma_histogram_bt709`.
+ * Matches the WASM `luma_histogram_bt709` (cpp/src/luma_module.cpp).
  */
 
 @group(0) @binding(0) var srcTex: texture_2d<f32>;

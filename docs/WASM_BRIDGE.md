@@ -111,7 +111,7 @@ commit `compile_commands.json`.
 |---|---|
 | `-s STRICT=1` | no deprecated settings or implicit defaults sneak in |
 | `-s STACK_SIZE=65536` | explicit; `WASM_STACK_SIZE` in `src/wasm/marshal.ts` must match — the loader checks `emscripten_stack_get_base() - emscripten_stack_get_end()` against it and rejects the binary otherwise, and `wasmAbiLock.test.ts` diffs the two numbers |
-| `-s MAXIMUM_MEMORY=134217728` (128 MiB) | caps growth. The largest tile is the snapshot path: `useAppCapture` → `downsample_2d` copies the whole output canvas in (32 MiB at a 4K backing store, 59 MiB at 5K) and the scratch arena rounds to a power of two, so 5K reserves 64 MiB on top of the 16 MiB initial heap. 64 MiB would fail 4K+ snapshots |
+| `-s MAXIMUM_MEMORY=134217728` (128 MiB) | caps growth. Sized for the old snapshot path, where `useAppCapture` → `downsample_2d` copied the whole output canvas in (59 MiB at 5K → a 64 MiB arena). Since #341 the picker thumb is canvas-prescaled to ≤ 640×360 (~0.9 MiB) before `downsample_2d` (`renderer/gpuChores/pickerThumb.ts`), so no kernel input is full-resolution |
 | `-flto` (Release only) | link-time optimisation; the goldens re-run on both binaries proved it bit-identical |
 | `-s ASSERTIONS=1` (Debug only) | a Debug binary imports `wasi_snapshot_preview1` for its messages, so it never loads in the app — host tests and ASan are the debug path |
 | `-msimd128` at link (SIMD target) | wasm-opt runs with `--enable-simd` explicitly |
