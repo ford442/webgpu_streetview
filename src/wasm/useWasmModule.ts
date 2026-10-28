@@ -5,17 +5,14 @@
  * Usage:
  *   const { wasm, loading } = useWasmModule();
  *   if (wasm) {
- *     wasm.seed(Date.now());
- *     const n = wasm.noise2d(x, y);
+ *     const total = wasm.batchHaversine(points, segmentsOut);
  *   }
  *
  * The hook is safe to call in multiple components – the module is
  * loaded only once and the same instance is shared across all consumers.
  *
  * @remarks `useWasmModule` backs the tour route-length labels in
- * src/components/TourPanel.tsx (via src/utils/routeStats.ts).  The render-loop
- * integration does not go through React at all — WasmNoiseFeeder
- * (src/wasm/wasmNoiseFeeder.ts) is driven imperatively from WebGPUCanvas.tsx.
+ * src/components/TourPanel.tsx (via src/utils/routeStats.ts).
  */
 
 import { useState, useEffect } from 'react';

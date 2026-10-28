@@ -9,7 +9,8 @@ pixels in WGSL, cabin geometry in Three.js.
 | UI, Maps, app state | TypeScript |
 | Per-pixel effects | WGSL |
 | Car interior | Three.js |
-| Noise tiles, particle seeds, batch geodesy, cabin DSP, luma, depth calibration | **C++ → WASM** |
+| Batch geodesy, cabin DSP, luma, depth calibration | **C++ → WASM** |
+| One-line maths: angles, a single haversine, the 64² dust-noise tile, particle seeds (#341) | TypeScript (`utils/navigation.ts`, `renderer/weatherNoiseTile.ts`, `renderer/weatherParticleSeeds.ts`) |
 
 The committed binary is the **only** implementation of these kernels — on the
 main thread, in the AudioWorklet and in Vitest. There is no JS twin:
@@ -41,8 +42,6 @@ load fails the boot (§4).
 | `src/renderer/bootWasm.ts` | boot-time load; failures become `WasmLoadError` → `webgpuProbe` stage `wasm` |
 | `src/wasm/marshal.ts` | malloc-backed scratch arena every kernel wrapper copies through |
 | `src/wasm/useWasmModule.ts` | React hook (`useWasmModule`) for React-side consumers |
-| `src/wasm/wasmNoiseFeeder.ts` | render-loop tile feeder |
-| `src/wasm/wasmParticleFeeder.ts` | render-loop particle-seed feeder (compute weather) |
 | `public/wasm/streetview-wasm.wasm` | committed binary (built from C++ with emcc) |
 
 One build path produces the binary:
@@ -112,7 +111,7 @@ commit `compile_commands.json`.
 |---|---|
 | `-s STRICT=1` | no deprecated settings or implicit defaults sneak in |
 | `-s STACK_SIZE=65536` | explicit; `WASM_STACK_SIZE` in `src/wasm/marshal.ts` must match — the loader checks `emscripten_stack_get_base() - emscripten_stack_get_end()` against it and rejects the binary otherwise, and `wasmAbiLock.test.ts` diffs the two numbers |
-| `-s MAXIMUM_MEMORY=134217728` (128 MiB) | caps growth. The largest tile is the snapshot path: `useAppCapture` → `downsample_2d` copies the whole output canvas in (32 MiB at a 4K backing store, 59 MiB at 5K) and the scratch arena rounds to a power of two, so 5K reserves 64 MiB on top of the 16 MiB initial heap. 64 MiB would fail 4K+ snapshots |
+| `-s MAXIMUM_MEMORY=134217728` (128 MiB) | caps growth. Sized for the old snapshot path, where `useAppCapture` → `downsample_2d` copied the whole output canvas in (59 MiB at 5K → a 64 MiB arena). Since #341 the picker thumb is canvas-prescaled to ≤ 640×360 (~0.9 MiB) before `downsample_2d` (`renderer/gpuChores/pickerThumb.ts`), so no kernel input is full-resolution |
 | `-flto` (Release only) | link-time optimisation; the goldens re-run on both binaries proved it bit-identical |
 | `-s ASSERTIONS=1` (Debug only) | a Debug binary imports `wasi_snapshot_preview1` for its messages, so it never loads in the app — host tests and ASan are the debug path |
 | `-msimd128` at link (SIMD target) | wasm-opt runs with `--enable-simd` explicitly |
@@ -210,9 +209,9 @@ engine's `dsp_*` family is in §3a):
 | `fbm2d(x, y, octaves, lacunarity, gain) → f32` | `fbm2d` | normalised by accumulated amplitude, so `[-1, 1]` for any octave count |
 | `fill_fbm_buffer(ptr, w, h, scale, ox, oy, octaves, lacunarity, gain)` | `fillFbmBuffer` | fBm tile |
 | `fill_particle_seeds(ptr, count, seed)` | `fillParticleSeeds` | 4 floats/particle: x, y, speed, phase |
-| `normalize_angle(f32) → f32` | `normalizeAngle` | `[0, 360)` |
-| `signed_angle_diff(f32, f32) → f32` | `signedAngleDiff` | `[-180, 180)` — exactly-opposite inputs give -180 |
-| `haversine(f64 ×4) → f64` | `haversine` | metres |
+| `normalize_angle(f32) → f32` | — | no TS caller (#341): `normalizeAngle` is f64 TS in `utils/navigation.ts`; export pending removal |
+| `signed_angle_diff(f32, f32) → f32` | — | no TS caller (#341): `signedAngleDiff` is f64 TS in `utils/navigation.ts` (the f32 export rounded headings); export pending removal |
+| `haversine(f64 ×4) → f64` | — | no TS caller (#341): one pair is `haversineMeters` (f64 TS, same formula, `utils/navigation.ts`); export pending removal |
 | `batch_haversine(ptr, count, out) → f64` | `batchHaversine` | whole polyline in one crossing |
 | `offset_latlng(lat, lng, metres, bearing, out2) → void` | `offsetLatLng` | destination point; writes `{lat, lng}` degrees. The only copy of the formula — `historicalImagery.ts` builds its sample ring with it |
 | `initial_bearing(f64 ×4) → f64` | `initialBearing` | forward azimuth `[0, 360)`; identical points give 0. `navigation.ts#initialBearing`, cruise and route following dispatch onto it |
@@ -282,7 +281,13 @@ allocates once with the exported `malloc`, so it always sits in the heap above
 both. `reserve(bytes)` returns the 8-byte-aligned base, replacing the block
 (`free` + a larger `malloc`) when a call needs more; there is no `malloc` per
 call. A `reserve` can grow — and so detach — `memory.buffer`: create typed-array
-views only after it returns. At load the loader checks the arena against
+views only after it returns. The arena also shrinks (#341): after
+`SCRATCH_IDLE_SHRINK_MS` (1 s) with no reservation above the 64 KiB default it
+frees the big block and re-mallocs the default (`shrinkTo`), driven by one
+`setTimeout` armed only while it is large. Wasm memory itself never shrinks —
+the region just goes back to the allocator. `capacity` / `highWaterBytes` are
+exposed for tests (`_scratchArenaOf(api)`); `wasmScratchArena.test.ts` asserts
+the idle shrink and that a normal frame's kernels stay ≤ 1 MiB. At load the loader checks the arena against
 `emscripten_stack_get_base()` and rejects the binary if it is ever below it. `scripts/gen-wasm-goldens.mjs` uses the same `malloc` path.
 
 Never pass a kernel a fixed offset. Scratch used to live at 64 KiB, inside the
@@ -298,9 +303,6 @@ binary to pin this.
 
 | Consumer | Export | What it does |
 |---|---|---|
-| `WasmNoiseFeeder` → `WeatherPostProcessor` (binding 3) | `fill_noise_buffer` | drifting dust turbulence on the fragment path |
-| `WasmNoiseFeeder` → `ComputeWeatherPostProcessor` (binding 12) | `fill_fbm_buffer` | same tile with fBm detail under `?weather=compute` |
-| `WasmParticleFeeder` → `ComputeWeatherPostProcessor` (bindings 7/8) | `fill_particle_seeds` | GPU rain/snow field under compute weather (High/Ultra) |
 | `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
 | cabin AudioWorklet (`cabinWorkletSource.ts`, car mode) | `dsp_create` / `dsp_set_params` / `dsp_set_ir` / `dsp_render` / `dsp_destroy` / `dsp_max_ir_taps` | the whole car bed + radio, rendered on the audio thread — see §3a |
 | `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR (1024–2048 taps) posted to the worklet; roof openness raises its high-frequency transfer and lets the late tail escape |
@@ -311,6 +313,16 @@ binary to pin this.
 `fill_engine_noise`, `luma_histogram_bt709` and `reduce_luma_bt709` keep their
 exports and goldens (the engine voice and the bin rule are shared with
 `dsp_render` / `luma_analyze` op for op) but have no production caller left.
+
+Neither do `seed` / `noise2d` / `fbm2d` / `fill_noise_buffer` /
+`fill_fbm_buffer` / `fill_particle_seeds` since #341: the 64² dust tile and the
+particle seeds are TypeScript (`renderer/weatherNoiseTile.ts`,
+`renderer/weatherParticleSeeds.ts`) — a tile every 30 frames and a few thousand
+LCG steps are not kernels, and the frame loop no longer waits on the binary to
+draw dust. Both reproduce these exports **bit for bit** (the tile rounds every
+op to f32 with `Math.fround`; the seeds are exact in f64), which
+`weatherNoiseTile.test.ts` / `weatherParticleSeeds.test.ts` assert against the
+committed binary, so the look did not move.
 
 ### 3a. The cabin engine (#321)
 
@@ -389,19 +401,8 @@ node into two `ConvolverNode`s (one per ear) recombined via a
 `signedAngleDiff(head, car)` has moved enough to matter. `StereoPannerNode`
 remains as the fallback if building the convolver graph throws.
 
-`WasmNoiseFeeder` has two detail modes. `'classic'` (single octave) is the
-default and is what the fragment path gets, so the default look is unchanged;
-`WebGPUCanvas` switches the feeder to `'fbm'` only when the renderer reports the
-compute weather path. `?wasmNoise=off` (or `localStorage streetview.wasmNoise=off`)
-disables the tile entirely for A/B comparison — the shader then falls back to
-uniform dust density.
-
-`fill_particle_seeds` is consumed by `WasmParticleFeeder` on the compute
-weather path: seeds are uploaded once (and on grid-size change or a dry→wet
-restart), then `weather-particles.wgsl` integrates and splats into storage
-textures 7/8. `?wasmParticles=off` (or stored
-`streetview.wasmParticles=off`) leaves 7/8 as 1×1 dummies so the procedural
-compute rain/snow is easy to A/B. The fragment path never calls the feeder.
+The dust-noise tile and particle seeds that used to live here are TypeScript
+since #341 — see `docs/GRAPHICS.md` (§ noise tile detail, GPU precipitation).
 
 ---
 

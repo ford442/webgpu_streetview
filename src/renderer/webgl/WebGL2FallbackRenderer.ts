@@ -203,7 +203,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
     }
 
     public updateNoiseBuffer(_tile: Float32Array): void {
-        // The WebGL fallback pipeline doesn't sample the WASM noise tile —
+        // The WebGL fallback pipeline doesn't sample the CPU noise tile —
         // it's a WebGPU-only enhancement layered on weather-post.wgsl.
     }
 

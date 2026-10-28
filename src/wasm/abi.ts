@@ -180,7 +180,8 @@ export interface StreetViewWasmAPI {
 
   /**
    * Haversine distance for a whole polyline in one call — one WASM boundary
-   * crossing instead of one per segment.
+   * crossing instead of one per segment. A single pair is the f64 TS
+   * `haversineMeters` (src/utils/navigation.ts), the same formula.
    *
    * @param points       `count * 2` doubles: lat, lon, lat, lon, …
    * @param segmentsOut  Receives the `count - 1` per-segment distances in

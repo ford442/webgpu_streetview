@@ -216,15 +216,16 @@ header. Status of each reserved surface:
 | Binding | Resource | Status |
 |---------|----------|--------|
 | 6 `writeDepthTexture` | full-res `r32float` | **real** — view-depth proxy, written every dispatch |
-| 12 `plasmaBuffer` | 64×64 WASM noise tile as 1024 `vec4`s | **real** — drives dust turbulence (fBm detail, see below) |
+| 12 `plasmaBuffer` | 64×64 CPU noise tile as 1024 `vec4`s | **real** — drives dust turbulence (fBm detail, see below) |
 | 4 `readDepthTexture` | full-res `r32float` | **real** — previous-frame depth ping-pong |
 | 7 `dataTextureA` | half-res `rgba32float` | **real** when GPU particles are on — density splat (readable) |
 | 8 `dataTextureB` | compact `rgba32float` grid | **real** when GPU particles are on — particle-state write target |
 | 9 `dataTextureC` | 1×1 `rgba8unorm` | dummy |
 
 GPU precipitation (`public/shaders/weather-particles.wgsl`) is gated to the
-compute weather path at High/Ultra. `WasmParticleFeeder` calls
-`fill_particle_seeds` once (and again on count change or a dry→wet restart);
+compute weather path at High/Ultra. `ParticleSeedFeeder`
+(`renderer/weatherParticleSeeds.ts`, TS since #341 and bit-identical to the old
+WASM `fill_particle_seeds`) seeds once (and again on count change or a dry→wet restart);
 a compute integrate pass advects with wind + gravity (`WEATHER_FALL_Y_SIGN`)
 and a splat pass writes density. The fragment path stays
 procedural. See `docs/WASM_BRIDGE.md`.
@@ -237,12 +238,15 @@ packing), but they are fed different tiles:
 
 | Path | Tile source | Why |
 |---|---|---|
-| fragment (default) | `fill_noise_buffer` — one Perlin octave | keeps the default look byte-identical |
-| compute (`?weather=compute`, Ultra preset) | `fill_fbm_buffer` — 4 octaves, lacunarity 2.0, gain 0.5 | dust clumps gain structure at several scales |
+| fragment (default) | one Perlin octave | keeps the default look byte-identical |
+| compute (`?weather=compute`, Ultra preset) | fBm — 4 octaves, lacunarity 2.0, gain 0.5 | dust clumps gain structure at several scales |
 
 `WebGPUCanvas` picks the mode from `renderer.getWeatherPostProcessMode()` and
-calls `WasmNoiseFeeder.setDetail()`; the tile still refreshes every 30 frames in
-both cases. `?wasmNoise=off` disables the upload entirely and the shader reverts
+calls `NoiseTileFeeder.setDetail()`; the tile still refreshes every 30 frames in
+both cases. The tile is TypeScript since #341 (`renderer/weatherNoiseTile.ts`):
+the C++ Perlin with every op rounded to f32, bit-identical to the old WASM
+`fill_noise_buffer` / `fill_fbm_buffer` tiles (`weatherNoiseTile.test.ts`), so
+neither look moved. Cost per refresh (Node, 64²): ~0.3 ms classic, ~1.3 ms fBm. `?wasmNoise=off` disables the upload entirely and the shader reverts
 to uniform dust density.
 
 ---

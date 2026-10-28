@@ -38,7 +38,7 @@ export interface PackWeatherParamsOptions {
     cameraHeading: number;
     /** Normalized camera pitch 0–1 (same as panY). */
     cameraPitch: number;
-    /** True when WASM noise tile is enabled and ready. */
+    /** True when the dust noise tile is enabled (`?wasmNoise`). */
     wasmNoiseActive: boolean;
     /**
      * Resolved depth-of-field / motion-blur strengths (uniforms 38-39). Omit
@@ -144,7 +144,7 @@ export function packWeatherParams(
     // [32]: Shader effects enabled flag
     params[I.shaderEffectsEnabled] = e.shaderEffectsEnabled ? 1.0 : 0.0;
 
-    // [33-35]: Camera params and WASM noise toggle
+    // [33-35]: Camera params and the noise-tile toggle
     params[I.cameraHeading] = cameraHeading;
     params[I.cameraPitch] = cameraPitch;
     params[I.wasmNoiseEnabled] = wasmNoiseActive ? 1.0 : 0.0;

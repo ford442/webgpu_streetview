@@ -51,7 +51,7 @@ export interface WeatherPostProcessorLike {
     updateWeatherBindGroup(intermediateTextureView: GPUTextureView, width?: number, height?: number): void;
     updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void;
     /**
-     * Upload WASM `fill_particle_seeds` output into compute-path storage
+     * Upload particle seeds (`weatherParticleSeeds.ts`) into compute-path storage
      * textures A/B. No-op on the fragment weather path.
      */
     updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void;

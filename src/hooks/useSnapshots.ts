@@ -24,7 +24,7 @@ export interface SnapshotMetadata {
     imageDate?: string;
     lookId?: string;
     vehicleType?: string;
-    /** Quarter-res JPEG from downsample_2d for the gallery picker. */
+    /** 160×90 picker JPEG (canvas prescale + WASM downsample_2d; see renderer/gpuChores/pickerThumb.ts). */
     thumbnailDataUrl?: string;
 }
 

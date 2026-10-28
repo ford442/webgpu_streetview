@@ -403,7 +403,7 @@ lost, the hold-pause guards, and the public renderer surface.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, the fBm dust tile from `renderer/weatherNoiseTile.ts`), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `renderer/weatherParticleSeeds.ts`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 `ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
@@ -825,8 +825,8 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
   worklet source with the cabin goldens.
 - **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
-  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
-  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  `-s MAXIMUM_MEMORY` 128 MiB (sized when a 5K snapshot thumb reserved 64 MiB of
+  arena; since #341 the thumb is canvas-prescaled to ≤ 640×360 first), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
   must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
   change that moves a single golden bit is dropped, not re-baselined.
 - **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
@@ -835,7 +835,9 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   marshalling wrappers over the committed binary. Kernel buffers live in a
   `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
   kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
-  stack and corrupted `batch_haversine` at |lat| > 45°.
+  stack and corrupted `batch_haversine` at |lat| > 45°. The arena shrinks back
+  to 64 KiB after an idle second (#341); the test asserts that and a ≤ 1 MiB
+  high-water mark for a normal frame's kernels.
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
   and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
   check + the SIMD binary against the goldens). Both are required.
@@ -850,10 +852,13 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code, and never re-implement a kernel in TypeScript (not even for
 tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
-`haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
+`initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
-`polyline_project`. Full detail: `docs/WASM_BRIDGE.md`.
+`polyline_project`. One-line maths is the exception (#341): `normalizeAngle`,
+`signedAngleDiff` and a single-pair `haversineMeters` are f64 TypeScript in
+`navigation.ts` — boot-time UI never calls `requireWasm` for them, and the
+batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

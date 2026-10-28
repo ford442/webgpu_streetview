@@ -148,7 +148,7 @@ export class WindAudio {
   /**
    * Resolves once the HRTF convolver upgrade started by init() has settled
    * (built, or fell back to the panner path). init()/setHeadingPan() never
-   * need this — it exists for tests/warmup, same as WasmNoiseFeeder.waitUntilLoaded().
+   * need this — it exists for tests/warmup.
    */
   async waitUntilHrtfReady(): Promise<void> {
     await this.hrtfUpgrade;

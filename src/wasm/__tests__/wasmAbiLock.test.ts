@@ -59,6 +59,13 @@ const EXPECTED_EXPORTS = [
   'graph_nearest',
 ] as const;
 
+/**
+ * Exports the binary still has but the TS wrapper no longer exposes: one-line
+ * maths moved back to f64 TypeScript (#341 slice 8 — utils/navigation.ts).
+ * Delete each entry together with its C++ export.
+ */
+const UNWRAPPED_EXPORTS = ['normalize_angle', 'signed_angle_diff', 'haversine'] as const;
+
 /** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
 const EMSCRIPTEN_RUNTIME_EXPORTS = new Set([
   'malloc',
@@ -135,7 +142,7 @@ describe('WASM ABI lock', () => {
       if (name === 'memory') continue;
       (EMSCRIPTEN_RUNTIME_EXPORTS.has(name) ? runtime : names).add(name);
     }
-    expect(sorted(names)).toEqual(expectedSorted);
+    expect(sorted([...names, ...UNWRAPPED_EXPORTS])).toEqual(expectedSorted);
     expect(sorted(runtime)).toEqual(sorted(LOADER_RUNTIME_EXPORTS));
   });
 
@@ -212,9 +219,6 @@ describe('WASM ABI lock', () => {
       fbm2d: ['fbm2d'],
       fillFbmBuffer: ['fill_fbm_buffer'],
       fillParticleSeeds: ['fill_particle_seeds'],
-      normalizeAngle: ['normalize_angle'],
-      signedAngleDiff: ['signed_angle_diff'],
-      haversine: ['haversine'],
       batchHaversine: ['batch_haversine'],
       offsetLatLng: ['offset_latlng'],
       initialBearing: ['initial_bearing'],
@@ -242,6 +246,6 @@ describe('WASM ABI lock', () => {
     }
     const apiMethods = sorted(Object.keys(api));
     expect(apiMethods).toEqual(sorted(Object.keys(methodToExport)));
-    expect(sorted(Object.values(methodToExport).flat())).toEqual(expectedSorted);
+    expect(sorted([...Object.values(methodToExport).flat(), ...UNWRAPPED_EXPORTS])).toEqual(expectedSorted);
   });
 });

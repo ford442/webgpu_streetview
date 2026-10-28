@@ -95,11 +95,6 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
     const position = panorama.getPosition();
     if (!position) return;
     const output = renderer.getOutputCanvas?.();
-    const chores = renderer.getGpuChores?.();
-    const downsample = chores
-      ? (rgba: Uint8ClampedArray, w: number, h: number, dw: number, dh: number) =>
-          chores.downsampleRgba(rgba, w, h, dw, dh)
-      : undefined;
     const { heading, pitch, zoom } = povStore.get();
     const meta = {
       name: locationName || `Snapshot ${new Date().toLocaleString()}`,
@@ -133,7 +128,8 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
       addSnapshot({
         ...meta,
         dataUrl: still.dataUrl,
-        thumbnailDataUrl: makePickerThumbDataUrl(still.canvas, downsample) ?? undefined,
+        // Canvas-prescaled first: the full-res still never reaches the WASM arena.
+        thumbnailDataUrl: makePickerThumbDataUrl(still.canvas) ?? undefined,
       });
     });
   }, [

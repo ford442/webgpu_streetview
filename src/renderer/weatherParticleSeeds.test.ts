@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
-import {
-  WasmParticleFeeder,
-  getWasmParticlePreference,
-} from '../wasmParticleFeeder';
-import { loadWasmModule } from '../index';
-import { PARTICLE_SEED } from '../../renderer/weatherParticles';
+import { requireWasm } from '../wasm';
+import { PARTICLE_SEED } from './weatherParticles';
+import { ParticleSeedFeeder, fillParticleSeeds, getParticleSeedPreference } from './weatherParticleSeeds';
 
 const setSearch = (search: string) => {
   window.history.pushState({}, '', `/${search}`);
@@ -15,49 +12,55 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe('getWasmParticlePreference', () => {
+describe('getParticleSeedPreference', () => {
   test('defaults to enabled with no params or storage', () => {
-    expect(getWasmParticlePreference()).toBe(true);
+    expect(getParticleSeedPreference()).toBe(true);
   });
 
   test('?wasmParticles=off disables it', () => {
     setSearch('?wasmParticles=off');
-    expect(getWasmParticlePreference()).toBe(false);
+    expect(getParticleSeedPreference()).toBe(false);
   });
 
   test('?wasmParticles=on re-enables it over a stored "off" preference', () => {
     localStorage.setItem('streetview.wasmParticles', 'off');
     setSearch('?wasmParticles=on');
-    expect(getWasmParticlePreference()).toBe(true);
+    expect(getParticleSeedPreference()).toBe(true);
   });
 
   test('a stored "off" preference disables it with no query param', () => {
     localStorage.setItem('streetview.wasmParticles', 'off');
-    expect(getWasmParticlePreference()).toBe(false);
+    expect(getParticleSeedPreference()).toBe(false);
   });
 
   test('?wasmNoise=off does not kill particles', () => {
     setSearch('?wasmNoise=off');
-    expect(getWasmParticlePreference()).toBe(true);
+    expect(getParticleSeedPreference()).toBe(true);
   });
 });
 
-describe('WasmParticleFeeder', () => {
-  test('is not ready until the module loads', () => {
-    const feeder = new WasmParticleFeeder();
-    expect(feeder.isReady).toBe(false);
+describe('fillParticleSeeds', () => {
+  test.each([0, 1, 777, PARTICLE_SEED, 0xffffffff, -5])('matches the WASM fill_particle_seeds bit for bit (seed %i)', (seed) => {
+    const count = 64 * 64;
+    const got = new Float32Array(count * 4);
+    fillParticleSeeds(got, count, seed);
+    const want = new Float32Array(count * 4);
+    requireWasm().fillParticleSeeds(want, count, seed);
+    expect(new Uint32Array(got.buffer)).toEqual(new Uint32Array(want.buffer));
   });
 
-  test('sampleSeeds returns null before the module has finished loading', () => {
-    const feeder = new WasmParticleFeeder();
-    expect(feeder.sampleSeeds(16, true, PARTICLE_SEED)).toBeNull();
+  test('writes nothing past a short output buffer', () => {
+    const out = new Float32Array(6).fill(-1);
+    fillParticleSeeds(out, 4, 1);
+    expect(out[3]).not.toBe(-1);
+    expect(Array.from(out.subarray(4))).toEqual([-1, -1]);
   });
+});
 
-  test('writes 4 floats per particle in the documented ranges', async () => {
-    const feeder = new WasmParticleFeeder();
-    await feeder.waitUntilLoaded();
+describe('ParticleSeedFeeder', () => {
+  test('writes 4 floats per particle in the documented ranges, with no load step', () => {
     const count = 8;
-    const seeds = feeder.sampleSeeds(count, true, PARTICLE_SEED);
+    const seeds = new ParticleSeedFeeder().sampleSeeds(count, true, PARTICLE_SEED);
     expect(seeds).not.toBeNull();
     expect(seeds!.length).toBe(count * 4);
     for (let i = 0; i < count; i++) {
@@ -76,20 +79,12 @@ describe('WasmParticleFeeder', () => {
     }
   });
 
-  test('matches fillParticleSeeds bit-for-bit (JS fallback path)', async () => {
-    const feeder = new WasmParticleFeeder();
-    await feeder.waitUntilLoaded();
-    const wasm = await loadWasmModule();
-    const count = 6;
-    const seeds = Float32Array.from(feeder.sampleSeeds(count, true, 777)!);
-    const expected = new Float32Array(count * 4);
-    wasm.fillParticleSeeds(expected, count, 777);
-    expect(Array.from(seeds)).toEqual(Array.from(expected));
+  test('returns null for a non-positive count', () => {
+    expect(new ParticleSeedFeeder().sampleSeeds(0, true, PARTICLE_SEED)).toBeNull();
   });
 
-  test('reuses the same buffer when count is unchanged', async () => {
-    const feeder = new WasmParticleFeeder();
-    await feeder.waitUntilLoaded();
+  test('reuses the same buffer when count is unchanged', () => {
+    const feeder = new ParticleSeedFeeder();
     const first = feeder.sampleSeeds(4, true, PARTICLE_SEED);
     const second = feeder.sampleSeeds(4, true, PARTICLE_SEED);
     expect(second).toBeNull();
@@ -99,9 +94,8 @@ describe('WasmParticleFeeder', () => {
     expect(first).not.toBe(third);
   });
 
-  test('reseeds when precipitation restarts after a dry spell', async () => {
-    const feeder = new WasmParticleFeeder();
-    await feeder.waitUntilLoaded();
+  test('reseeds when precipitation restarts after a dry spell', () => {
+    const feeder = new ParticleSeedFeeder();
     expect(feeder.sampleSeeds(4, true, PARTICLE_SEED)).not.toBeNull();
     expect(feeder.sampleSeeds(4, false, PARTICLE_SEED)).toBeNull();
     expect(feeder.sampleSeeds(4, true, PARTICLE_SEED)).not.toBeNull();

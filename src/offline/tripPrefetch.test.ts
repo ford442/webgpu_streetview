@@ -1,7 +1,7 @@
 import { MapsCallBudget } from '../services/maps/callBudget';
 import { L_ROUTE, ORIGIN, buildGraph, linksOf, type FakePano } from '../services/routing/__tests__/routeFixtures';
 import { buildActiveRoute } from '../services/routing/routeGeometry';
-import { requireWasm } from '../wasm';
+import { haversineMeters } from '../utils/navigation';
 import { buildLinkGraph } from '../wasm/graph';
 import type { RouteGraphNode } from './offlineStore';
 import type { PanoLinkSnapshot } from './routePrefetch';
@@ -35,7 +35,7 @@ function fakeService(graph: Map<string, FakePano>) {
       let best: FakePano | null = null;
       let bestD = request.radius ?? 50;
       for (const p of graph.values()) {
-        const d = requireWasm().haversine(p.pos.lat, p.pos.lng, request.location.lat, request.location.lng);
+        const d = haversineMeters(p.pos.lat, p.pos.lng, request.location.lat, request.location.lng);
         if (d <= bestD) {
           bestD = d;
           best = p;

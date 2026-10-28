@@ -8,7 +8,7 @@
  *   const wasm = await loadWasmModule();
  *   wasm.seed(42);
  *   const n = wasm.noise2d(1.2, 3.4); // value in [-1, 1]
- *   const dist = wasm.haversine(40.7128, -74.006, 51.5074, -0.1278);
+ *   const total = wasm.batchHaversine(points, segmentsOut); // metres
  *
  * The binary is the only implementation of every kernel — there is no JS
  * twin. The app loads it before the first React render (src/index.tsx) and
@@ -31,7 +31,7 @@ import type {
 } from './abi';
 import { PUBLIC_URL } from '../config/publicUrl';
 import { bindWasmExports } from './bindExports';
-import { createScratchArena, WASM_STACK_SIZE } from './marshal';
+import { createScratchArena, WASM_STACK_SIZE, type ScratchArena, type ScratchClock } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
 export type {
@@ -54,7 +54,7 @@ let _pendingModule: Promise<StreetViewWasmAPI> | null = null;
  */
 export type WasmBinary = 'main' | 'dsp';
 
-const WASM_BINARY_FILES: Record<WasmBinary, string> = {
+export const WASM_BINARY_FILES: Record<WasmBinary, string> = {
   main: 'streetview-wasm.simd.wasm',
   dsp: 'streetview-dsp.simd.wasm',
 };
@@ -76,7 +76,7 @@ const SIMD_PROBE_MODULE = new Uint8Array([
  * has SIMD128 (the floor is Chrome 91 / Firefox 89 / Safari 16.4), so this
  * only turns a load failure on an old engine into a readable message.
  */
-export function wasmSimdSupported(): boolean {
+function wasmSimdSupported(): boolean {
   try {
     return typeof WebAssembly !== 'undefined' && WebAssembly.validate(SIMD_PROBE_MODULE);
   } catch {
@@ -149,10 +149,12 @@ export function loadWasmModule(): Promise<StreetViewWasmAPI> {
  * Instantiate the compiled binary and wrap its exports in the
  * {@link StreetViewWasmAPI} marshalling layer. Throws on any ABI or
  * memory-layout mismatch. Exported so tests can drive the real wrappers with
- * the committed binaries (src/setupTests.ts installs the scalar one).
+ * the committed binaries (src/setupTests.ts installs the main one);
+ * `scratchClock` drives the arena's idle shrink (tests only).
  */
 export async function instantiateStreetViewWasm(
   bytes: BufferSource,
+  options: { scratchClock?: ScratchClock } = {},
 ): Promise<StreetViewWasmAPI> {
   // Emscripten STANDALONE_WASM links libm statically; the binary's only
   // import is the ALLOW_MEMORY_GROWTH notification. Anything else it imports
@@ -192,7 +194,7 @@ export async function instantiateStreetViewWasm(
    * Every kernel's inputs/outputs live in one malloc'd block above the
    * stack. `reserve` may grow memory: create views after it, never before.
    */
-  const scratch = createScratchArena(malloc, free, stackBase);
+  const scratch = createScratchArena(malloc, free, stackBase, options.scratchClock);
 
   const fillNoiseBuffer = (
     out: Float32Array,
@@ -471,11 +473,11 @@ export async function instantiateStreetViewWasm(
   ): [number, number] => {
     const n = disparity.length;
     if (n === 0) return [0, 0];
-    // [disparity n f32][scratch n f32][pad][out 2 f64]
-    const outRel = (n * 8 + 7) & ~7;
+    // [disparity n f32][pad][out 2 f64]
+    const outRel = (n * 4 + 7) & ~7;
     const ptr = scratch.reserve(outRel + 16);
     new Float32Array(wasmMemory.buffer, ptr, n).set(disparity);
-    depth_percentiles(ptr, n, lowPct, highPct, ptr + n * 4, ptr + outRel);
+    depth_percentiles(ptr, n, lowPct, highPct, ptr + outRel);
     const out = new Float64Array(wasmMemory.buffer, ptr + outRel, 2);
     return [out[0]!, out[1]!];
   };
@@ -587,7 +589,7 @@ export async function instantiateStreetViewWasm(
     };
   };
 
-  return {
+  const api: StreetViewWasmAPI = {
     seed,
     noise2d,
     fillNoiseBuffer,
@@ -613,6 +615,19 @@ export async function instantiateStreetViewWasm(
     graphAstar,
     graphNearest,
   };
+  _scratchArenas.set(api, scratch);
+  return api;
+}
+
+const _scratchArenas = new WeakMap<StreetViewWasmAPI, ScratchArena>();
+
+/**
+ * The scratch arena behind an instantiated module — its `capacity` and
+ * `highWaterBytes` (tests and probes).
+ * @internal
+ */
+export function _scratchArenaOf(api: StreetViewWasmAPI): Readonly<ScratchArena> | undefined {
+  return _scratchArenas.get(api);
 }
 
 /**

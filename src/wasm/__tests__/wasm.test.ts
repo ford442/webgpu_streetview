@@ -15,6 +15,7 @@ import {
   _resetWasmModule,
   type StreetViewWasmAPI,
 } from '../index';
+import { haversineMeters } from '../../utils/navigation';
 
 const installed = requireWasm();
 
@@ -264,31 +265,9 @@ describe('fillParticleSeeds', () => {
   });
 });
 
-// ---- haversine --------------------------------------------------------------
-describe('haversine', () => {
-  test('New York → London ≈ 5570 km', async () => {
-    const wasm = await getModule();
-    const dist = wasm.haversine(40.7128, -74.006, 51.5074, -0.1278);
-    // Approximately 5,570 km ± 50 km.
-    expect(dist / 1000).toBeCloseTo(5570, -2);
-  });
-
-  test('returns 0 for same point', async () => {
-    const wasm = await getModule();
-    expect(wasm.haversine(48.8566, 2.3522, 48.8566, 2.3522)).toBe(0);
-  });
-
-  test('is symmetric', async () => {
-    const wasm = await getModule();
-    const a = wasm.haversine(40.7, -74.0, 51.5, -0.1);
-    const b = wasm.haversine(51.5, -0.1, 40.7, -74.0);
-    expect(a).toBeCloseTo(b, 1);
-  });
-});
-
 // ---- batchHaversine ---------------------------------------------------------
 describe('batchHaversine', () => {
-  test('segment distances match per-pair haversine calls and sum to the total', async () => {
+  test('segment distances match the per-pair TS haversine and sum to the total', async () => {
     const wasm = await getModule();
     const points = [
       [40.7128, -74.006],   // New York
@@ -302,7 +281,7 @@ describe('batchHaversine', () => {
 
     let expectedTotal = 0;
     for (let i = 0; i < points.length - 1; i++) {
-      const expected = wasm.haversine(
+      const expected = haversineMeters(
         points[i]![0]!, points[i]![1]!,
         points[i + 1]![0]!, points[i + 1]![1]!,
       );
@@ -338,7 +317,7 @@ describe('offsetLatLng', () => {
     const wasm = await getModule();
     for (let bearing = 0; bearing < 360; bearing += 45) {
       const out = wasm.offsetLatLng(40.7128, -74.006, 10, bearing);
-      expect(wasm.haversine(40.7128, -74.006, out.lat, out.lng)).toBeCloseTo(10, 6);
+      expect(haversineMeters(40.7128, -74.006, out.lat, out.lng)).toBeCloseTo(10, 6);
     }
   });
 
@@ -365,42 +344,6 @@ describe('offsetLatLng', () => {
     const west = wasm.offsetLatLng(40.7128, -74.006, 100, 270);
     expect(east.lng).toBeGreaterThan(-74.006);
     expect(west.lng).toBeLessThan(-74.006);
-  });
-});
-
-// ---- normalizeAngle ---------------------------------------------------------
-describe('normalizeAngle', () => {
-  const cases: [number, number][] = [
-    [0, 0],
-    [360, 0],
-    [450, 90],
-    [-90, 270],
-    [-360, 0],
-    [720, 0],
-    [181, 181],
-  ];
-
-  test.each(cases)('normalizeAngle(%f) = %f', async (input, expected) => {
-    const wasm = await getModule();
-    expect(wasm.normalizeAngle(input)).toBeCloseTo(expected, 5);
-  });
-});
-
-// ---- signedAngleDiff --------------------------------------------------------
-describe('signedAngleDiff', () => {
-  const cases: [number, number, number][] = [
-    [0,   90,  90],
-    [0,  -90, -90],
-    [350,  10,  20],
-    [10,  350, -20],
-    [0,  180, -180],   // exactly opposite → -180 (convention matches navigation.ts)
-    [180,   0, -180],  // exactly opposite → -180
-    [45,  225, -180],  // exactly opposite → -180
-  ];
-
-  test.each(cases)('signedAngleDiff(%f, %f) = %f', async (from, to, expected) => {
-    const wasm = await getModule();
-    expect(wasm.signedAngleDiff(from, to)).toBeCloseTo(expected, 4);
   });
 });
 
