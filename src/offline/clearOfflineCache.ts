@@ -1,4 +1,4 @@
-import { CACHE_VERSION, isOfflineCacheName } from './swPolicy';
+import { isOfflineCacheName } from './swPolicy';
 import { offlineClearAll } from './offlineStore';
 
 export interface ClearOfflineCachesResult {
@@ -10,7 +10,7 @@ export async function clearOfflineCaches(): Promise<ClearOfflineCachesResult> {
     return { deletedCacheNames: [] };
   }
   const keys = await caches.keys();
-  const toDelete = keys.filter((name) => isOfflineCacheName(name) || name.startsWith(CACHE_VERSION));
+  const toDelete = keys.filter(isOfflineCacheName);
   await Promise.all(toDelete.map((name) => caches.delete(name)));
   return { deletedCacheNames: toDelete };
 }

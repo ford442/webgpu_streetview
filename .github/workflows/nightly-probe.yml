@@ -5,6 +5,10 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   hold-pause-probe:
     runs-on: ubuntu-latest
@@ -19,6 +23,18 @@ jobs:
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+
+      # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
+      # not in git: without them the dev server's SPA fallback serves its 404
+      # page and the spec fails the model's SHA-256 check. Same cache key as ci.yml.
+      - name: Cache the scene-depth model
+        uses: actions/cache@v4
+        with:
+          path: public/models/depth
+          key: depth-model-${{ hashFiles('src/renderer/depth/depthModel.manifest.json') }}
+
+      - name: Fetch the scene-depth model
+        run: npm run fetch:depth-model
 
       - name: Start dev server
         run: npm start &
@@ -65,3 +81,21 @@ jobs:
           name: hold-pause-probe-screenshots
           path: repro-screenshots/hold-pause-probe/
           retention-days: 14
+
+      # A red nightly must not be a badge nobody reads: open (or comment on) one
+      # issue per failing night-streak, deduped by title.
+      - name: Open a regression issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly hold-pause probe is failing"
+          gh label create regression --color B60205 --description "Something that worked is broken" 2>/dev/null || true
+          existing=$(gh issue list --state open --label regression --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Failed again on $(git rev-parse --short HEAD): $RUN_URL"
+          else
+            gh issue create --title "$title" --label regression \
+              --body "The nightly probe failed on $(git rev-parse --short HEAD): $RUN_URL"
+          fi

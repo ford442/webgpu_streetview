@@ -5,29 +5,32 @@
  *
  * Policy mirror: src/offline/swPolicy.ts (keep in sync when changing rules).
  */
-const CACHE_VERSION = 'streetview-v1';
+
+// `.wasm` / `.wgsl` are cache-first under unhashed names, so the cache name must
+// change whenever their bytes do. `scripts/stamp-sw.mjs` rewrites the two
+// `@sw-stamp` lines in build/service-worker.js (id = hash of the shipped wasm +
+// shaders + build version, list = the real shader set); these are dev defaults.
+// Not plain 'streetview-': the scene-depth model has its own bucket
+// ('streetview-depth-model-…') that activate must never delete.
+const CACHE_PREFIX = 'streetview-sw-';
+const LEGACY_CACHE_PREFIX = 'streetview-v1';
+const CACHE_ID = 'dev'; // @sw-stamp:cache-id
+const SHADER_URLS = []; // @sw-stamp:shaders
+const CACHE_VERSION = CACHE_PREFIX + CACHE_ID;
 const STATIC_CACHE = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
+// Keep the static part in sync with scripts/sw-manifest.mjs (STATIC_PRECACHE_URLS).
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
   './config.js',
-  './shaders/streetview.wgsl',
-  './shaders/weather-post.wgsl',
-  './shaders/weather-post-compute.wgsl',
-  './shaders/carview.wgsl',
-  './shaders/texture.wgsl',
-  './shaders/transition-fade.wgsl',
-  './shaders/transition-zoom.wgsl',
-  './shaders/transition-zoom-blur.wgsl',
-  './shaders/transition-zoom-chromatic.wgsl',
   './wasm/streetview-wasm.wasm',
   // The cabin AudioWorklet's engine (SIMD128 build of the same sources).
   './wasm/streetview-wasm.simd.wasm',
   './icons/icon.svg',
-];
+].concat(SHADER_URLS);
 
 const GOOGLE_HOST_RE = /(^|\.)google(?:apis)?\.com$|(^|\.)gstatic\.com$/;
 
@@ -110,7 +113,13 @@ self.addEventListener('install', function (event) {
     caches
       .open(STATIC_CACHE)
       .then(function (cache) {
-        return cache.addAll(PRECACHE_URLS);
+        // `reload`: bypass the HTTP cache so a new worker never precaches the
+        // previous deploy's wasm/shaders from it.
+        return cache.addAll(
+          PRECACHE_URLS.map(function (url) {
+            return new Request(url, { cache: 'reload' });
+          }),
+        );
       })
       .then(function () {
         return self.skipWaiting();
@@ -130,7 +139,8 @@ self.addEventListener('activate', function (event) {
         return Promise.all(
           keys
             .filter(function (key) {
-              return key.indexOf(CACHE_VERSION) === 0 && key !== STATIC_CACHE && key !== RUNTIME_CACHE;
+              var ours = key.indexOf(CACHE_PREFIX) === 0 || key.indexOf(LEGACY_CACHE_PREFIX) === 0;
+              return ours && key !== STATIC_CACHE && key !== RUNTIME_CACHE;
             })
             .map(function (key) {
               return caches.delete(key);

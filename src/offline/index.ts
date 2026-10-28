@@ -1,8 +1,6 @@
 export {
-  CACHE_VERSION,
-  STATIC_CACHE,
-  RUNTIME_CACHE,
-  PRECACHE_URLS,
+  CACHE_PREFIX,
+  LEGACY_CACHE_PREFIX,
   resolveSwFetchStrategy,
   isOfflineCacheName,
   type SwFetchStrategy,

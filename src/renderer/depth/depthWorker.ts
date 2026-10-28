@@ -19,8 +19,11 @@
  *
  * The runtime is imported from a pinned CDN URL handed in by the main thread —
  * there is no `onnxruntime-web` npm dependency and nothing of it in the bundle.
- * No threads / `SharedArrayBuffer`: the page is not cross-origin isolated
- * (COOP/COEP would break the Maps embed), so `numThreads` is pinned to 1.
+ * `numThreads` is pinned to 1. The page is cross-origin isolated in production
+ * (`public/.htaccess`: COOP same-origin + COEP credentialless) and in dev
+ * (`vite.config.ts`), so threads are possible; they are not used because the
+ * model is small and the CDN-hosted runtime's threaded build is a second,
+ * unmeasured artifact (see docs/SCENE_DEPTH.md).
  */
 import { loadDepthModel, sha256Hex } from './depthModelCache';
 import { pickDepthModelVariant } from './depthModel';

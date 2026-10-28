@@ -20,7 +20,7 @@
     "start": "vite",
     "dev": "vite",
     "prebuild": "node scripts/gen-weather-post-shader.mjs && node scripts/prebuild-env.mjs",
-    "build": "npm run build:wasm && vite build && ./scripts/verify-build.sh",
+    "build": "npm run build:wasm && vite build && node scripts/stamp-sw.mjs build && ./scripts/verify-build.sh",
     "build:wasm": "bash scripts/build-wasm.sh",
     "build:wasm:emscripten": "bash scripts/build-wasm.sh",
     "build:wasm:watch": "bash scripts/build-wasm.sh && echo 'Run npm run build:wasm to rebuild after C++ changes.'",
