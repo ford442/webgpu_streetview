@@ -148,4 +148,33 @@ describe('Renderer boot → GPU chores backend', () => {
         expect(getGpuChoresStats().backend).not.toBe('webgpu');
         renderer.destroy();
     });
+
+    it('a busy or missing GPU sample never falls back to reading the swap chain', async () => {
+        const gpu = createFakeGpu();
+        primeBoot(gpu.device, gpu.context);
+        const renderer = new Renderer(canvas());
+        expect(await renderer.init()).toBe(true);
+        await settle();
+        const chores = renderer.getGpuChores()!;
+        expect(chores.currentBackend()).toBe('webgpu');
+        const getImageData = vi.fn();
+        const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+            (() => ({ drawImage: vi.fn(), getImageData })) as unknown as HTMLCanvasElement['getContext'],
+        );
+        const cpu = vi.spyOn(chores, 'analyzePreparedRgba');
+
+        // No source texture yet.
+        renderer.samplePanoramaStats();
+        await settle();
+        // A readback still in flight.
+        (renderer as unknown as { textures: { videoTexture: unknown } }).textures.videoTexture = { width: 64, height: 36 };
+        vi.spyOn(chores, 'sampleTexture').mockResolvedValue('busy');
+        for (let i = 0; i < 5; i++) renderer.samplePanoramaStats();
+        await settle();
+
+        expect(getImageData).not.toHaveBeenCalled();
+        expect(cpu).not.toHaveBeenCalled();
+        getContext.mockRestore();
+        renderer.destroy();
+    });
 });

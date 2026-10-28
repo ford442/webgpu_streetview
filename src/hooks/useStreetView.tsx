@@ -4,9 +4,11 @@ import { type StreetViewRenderer } from '../renderer/RendererBackend';
 import {
   advancePanoramaStabilityTick,
   createPanoramaStabilityState,
-  getCanvasFingerprint,
+  isFingerprintable,
   STABILITY_POLL_INTERVAL_MS,
+  type PanoramaStabilityTickState,
 } from '../utils/panoramaStability';
+import { mapsCanvasSource } from '../renderer/frameSource/mapsCanvasSource';
 import { povStore } from '../state/povStore';
 import { streetViewZoomLevel } from '../utils/streetViewFov';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
@@ -118,7 +120,11 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   const isPanoramaReadyRef = useRef(true);
   const isTransitioningRef = useRef(false);
   const isPanoramaUpdatePausedRef = useRef(false);
-  const holdBaselineFingerprintRef = useRef('');
+  /**
+   * Fingerprint of the outgoing frame, snapshotted when the hold arms (the
+   * async read captures the canvas as it was at that call, before setPano).
+   */
+  const holdBaselineFingerprintRef = useRef<Promise<string>>(Promise.resolve(''));
   const readyPromiseRef = useRef<Set<() => void>>(new Set());
   const navigationIdlePromiseRef = useRef<Set<() => void>>(new Set());
   const [transitionSource, setTransitionSource] = useState<HTMLCanvasElement | null>(null);
@@ -238,8 +244,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     pendingRevealRef.current = null;
 
     holdBaselineFingerprintRef.current = currentCanvas
-      ? getCanvasFingerprint(currentCanvas)
-      : '';
+      ? mapsCanvasSource.fingerprint(currentCanvas)
+      : Promise.resolve('');
 
     if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
       try {
@@ -341,6 +347,15 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     if (!pano) return;
     
     let stabilityInterval: ReturnType<typeof setInterval> | null = null;
+    /** Flips when the gate it belongs to is stopped, so a late sample is dropped. */
+    let gateToken = { stopped: false };
+    const stopGate = () => {
+      gateToken.stopped = true;
+      if (stabilityInterval) {
+        clearInterval(stabilityInterval);
+        stabilityInterval = null;
+      }
+    };
     let lastHandledPanoId = pano.getPano() || '';
     
     const handlePanoChanged = () => {
@@ -370,29 +385,38 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
 
       // --- Canvas stability gate ---
-      if (stabilityInterval) {
-        clearInterval(stabilityInterval);
-        stabilityInterval = null;
-      }
+      // One sample per tick, through the shared Maps canvas source. A tick
+      // whose sample is still in flight is skipped, never double-counted.
+      stopGate();
+      const token = { stopped: false };
+      gateToken = token;
+      const baseline = holdBaselineFingerprintRef.current;
+      let stabilityState: PanoramaStabilityTickState | null = null;
+      let tickPending = false;
 
-      let stabilityState = createPanoramaStabilityState(holdBaselineFingerprintRef.current);
-
-      stabilityInterval = setInterval(() => {
+      const tick = async () => {
         const c = canvasRef.current;
+        const hasCanvas = !!(c && isFingerprintable(c.width, c.height));
+        const [baselineFingerprint, fingerprint] = await Promise.all([
+          baseline,
+          c && hasCanvas
+            ? mapsCanvasSource.fingerprint(c, { maxAgeMs: STABILITY_POLL_INTERVAL_MS / 2 })
+            : Promise.resolve(''),
+        ]);
+        if (token.stopped) return;
         const status = (pano as { getStatus?: () => string }).getStatus?.();
-        const fingerprint = c ? getCanvasFingerprint(c) : '';
+        stabilityState ??= createPanoramaStabilityState(baselineFingerprint);
 
         const { outcome, state } = advancePanoramaStabilityTick(stabilityState, {
           fingerprint,
-          holdBaselineFingerprint: holdBaselineFingerprintRef.current,
+          holdBaselineFingerprint: baselineFingerprint,
           panoStatus: status,
-          hasCanvas: !!(c && c.width >= 256 && c.height >= 256),
+          hasCanvas,
         });
         stabilityState = state;
 
         if (outcome.type === 'ready') {
-          clearInterval(stabilityInterval!);
-          stabilityInterval = null;
+          stopGate();
           console.log('[StreetView] Canvas stable, panorama ready');
           streetViewProbe.firstStable();
           isPanoramaReadyRef.current = true;
@@ -402,8 +426,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
         }
 
         if (outcome.type === 'force-ready') {
-          clearInterval(stabilityInterval!);
-          stabilityInterval = null;
+          stopGate();
           const reason =
             outcome.reason === 'status-error'
               ? `Panorama status not OK, forcing ready: ${status}`
@@ -420,6 +443,14 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
           isPanoramaUpdatePausedRef.current = false;
           setIsPanoramaReady(true);
         }
+      };
+
+      stabilityInterval = setInterval(() => {
+        if (tickPending) return;
+        tickPending = true;
+        void tick().finally(() => {
+          tickPending = false;
+        });
       }, STABILITY_POLL_INTERVAL_MS);
     };
     
@@ -427,9 +458,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     
     return () => {
       google.maps.event.removeListener(listener);
-      if (stabilityInterval) {
-        clearInterval(stabilityInterval);
-      }
+      stopGate();
     };
   }, [panorama]);
 
@@ -442,7 +471,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       isTransitioningRef.current = false;
       isPanoramaReadyRef.current = true;
       isPanoramaUpdatePausedRef.current = false;
-      holdBaselineFingerprintRef.current = '';
+      holdBaselineFingerprintRef.current = Promise.resolve('');
       setIsTransitioning(false);
       setTransitionSource(null);
       streetViewProbe.released();
@@ -463,7 +492,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       isTransitioningRef.current = false;
       isPanoramaReadyRef.current = true;
       isPanoramaUpdatePausedRef.current = false;
-      holdBaselineFingerprintRef.current = '';
+      holdBaselineFingerprintRef.current = Promise.resolve('');
       setIsTransitioning(false);
       setTransitionSource(null);
       console.log('[StreetView] Transition pause complete, ready for next advance');

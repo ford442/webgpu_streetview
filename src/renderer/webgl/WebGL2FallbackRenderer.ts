@@ -13,7 +13,7 @@ import {
     type RendererEffectIsolation,
     type StreetViewRenderer,
 } from '../RendererBackend';
-import { getCanvasFingerprint } from '../../utils/panoramaStability';
+import { mapsCanvasSource } from '../frameSource/mapsCanvasSource';
 import {
     WEATHER_PARAMS_FLOAT_COUNT,
     WeatherParamIndex,
@@ -324,7 +324,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
                         ? source.height
                         : 0;
 
-            const stable = !(source instanceof HTMLCanvasElement) || !!getCanvasFingerprint(source);
+            const stable = !(source instanceof HTMLCanvasElement) || mapsCanvasSource.isShowingImagery(source);
             if (width > 0 && height > 0 && stable) {
                 try {
                     gl.bindTexture(gl.TEXTURE_2D, this.texture);

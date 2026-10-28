@@ -1,18 +1,9 @@
-import { getCanvasFingerprint } from '../utils/panoramaStability';
+import { mapsCanvasSource } from './frameSource/mapsCanvasSource';
 import { streetViewProbe } from '../utils/streetViewProbe';
 import { type WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 import { createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
 import { clampTextureSize } from './deviceInit';
-
-/**
- * How often a canvas source that already proved stable is re-fingerprinted.
- * The fingerprint is a `drawImage` + `getImageData` of the Maps WebGL canvas —
- * a GPU→CPU sync point costlier than the upload it guards — so it runs only
- * while the source is not yet stable, after a source or size change, and on
- * this slow cadence; never per frame.
- */
-export const FINGERPRINT_INTERVAL_MS = 1000;
 
 export interface TextureLifecycleDeps {
     getDevice: () => GPUDevice;
@@ -22,6 +13,12 @@ export interface TextureLifecycleDeps {
     getTransitionPreviousFrame: () => GPUTexture | undefined;
     isHoldActive: () => boolean;
     getWeatherPostProcessor: () => WeatherPostProcessorLike | undefined;
+    /**
+     * Does a canvas source show imagery yet? Defaults to the shared Maps
+     * canvas verdict (`mapsCanvasSource.isShowingImagery`), which never reads
+     * back on the frame path.
+     */
+    isCanvasShowingImagery?: (canvas: HTMLCanvasElement) => boolean;
 }
 
 /**
@@ -39,13 +36,6 @@ export class TextureLifecycle {
     public intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT;
     public bindGroup!: GPUBindGroup;
 
-    private fingerprint = {
-        source: null as CanvasImageSource | null,
-        width: 0,
-        height: 0,
-        stable: false,
-        checkedAt: Number.NEGATIVE_INFINITY,
-    };
     /** Scratch 2D canvas for the rare source larger than `maxTextureDimension2D`. */
     private downscaleCanvas: HTMLCanvasElement | null = null;
 
@@ -171,7 +161,7 @@ export class TextureLifecycle {
         }
 
         const isCanvasSource = source instanceof HTMLCanvasElement;
-        if (isCanvasSource && !this.isCanvasSourceStable(source, srcWidth, srcHeight)) {
+        if (isCanvasSource && !this.canvasShowsImagery(source)) {
             return !!this.videoTexture;
         }
 
@@ -205,26 +195,9 @@ export class TextureLifecycle {
         return true;
     }
 
-    /**
-     * Fingerprint the canvas only when it can have changed meaningfully: not
-     * yet stable, a different canvas, a new backing size, or the 1 Hz cadence.
-     * Everything else reuses the last verdict — no readback on the steady path.
-     */
-    private isCanvasSourceStable(source: HTMLCanvasElement, width: number, height: number): boolean {
-        const fp = this.fingerprint;
-        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const due = !fp.stable
-            || fp.source !== source
-            || fp.width !== width
-            || fp.height !== height
-            || now - fp.checkedAt >= FINGERPRINT_INTERVAL_MS;
-        if (!due) return true;
-        fp.source = source;
-        fp.width = width;
-        fp.height = height;
-        fp.checkedAt = now;
-        fp.stable = !!getCanvasFingerprint(source);
-        return fp.stable;
+    private canvasShowsImagery(canvas: HTMLCanvasElement): boolean {
+        const custom = this.deps.isCanvasShowingImagery;
+        return custom ? custom(canvas) : mapsCanvasSource.isShowingImagery(canvas);
     }
 
     /** GPU-side 2D scale (no readback) into a reusable scratch canvas. */

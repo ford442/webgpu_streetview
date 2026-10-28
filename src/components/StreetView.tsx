@@ -2,10 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import { loadMapsApi, removeFailedBootstrap } from '../services/maps/loader';
 import {
   fingerprintSize,
-  getCanvasFingerprint,
   STABILITY_POLL_INTERVAL_MS,
   STABILITY_REQUIRED_STABLE_TICKS,
 } from '../utils/panoramaStability';
+import { mapsCanvasSource } from '../renderer/frameSource/mapsCanvasSource';
 import {
   createInitialScraperHealth,
   reduceScraperHealth,
@@ -30,6 +30,13 @@ export type MapsLoadStatus =
     | 'canvas-timeout'
     | 'rendering';
 
+/**
+ * A scan reuses a canvas sample at most this old: two scans one poll apart
+ * never share one (stability counts samples), but a scan and the hold gate in
+ * the same tick do.
+ */
+const SCAN_SAMPLE_MAX_AGE_MS = STABILITY_POLL_INTERVAL_MS / 2;
+
 interface StreetViewProps {
     onCanvasReady: (canvas: HTMLCanvasElement) => void;
     apiKey: string;
@@ -52,7 +59,6 @@ const StreetView: React.FC<StreetViewProps> = ({
 }) => {
     const panoRef = useRef<HTMLDivElement>(null);
     const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const isInitializedRef = useRef(false);
     const lastKeyRef = useRef<string>('');
     const lastFingerprintRef = useRef<string>('');
     const stableCountRef = useRef<number>(0);
@@ -134,16 +140,14 @@ const StreetView: React.FC<StreetViewProps> = ({
             onStatusChange?.('idle');
             return;
         }
-        if (isInitializedRef.current && lastKeyRef.current === trimmed) {
-            return;
-        }
+        // No "already initialized" guard: under <StrictMode> the effect runs
+        // setup → cleanup → setup, and a guard that survived the cleanup made
+        // the second setup return early while the first one's `isMounted =
+        // false` dropped the load — Street View never initialized in dev.
         if (trimmed !== lastKeyRef.current) {
-            isInitializedRef.current = false;
             removeFailedBootstrap();
         }
         lastKeyRef.current = trimmed;
-        if (isInitializedRef.current) return;
-        isInitializedRef.current = true;
         onStatusChange?.('loading-api');
         emitHealth({ type: 'reset' });
         everPromotedRef.current = false;
@@ -156,7 +160,6 @@ const StreetView: React.FC<StreetViewProps> = ({
 
         let isMounted = true;
         let cleanup: (() => void) | null = null;
-        let observer: MutationObserver | null = null;
 
         const initialize = () => {
             if (!isMounted || !panoRef.current) return null;
@@ -225,7 +228,28 @@ const StreetView: React.FC<StreetViewProps> = ({
                     } catch {}
                 };
 
+                // One scan at a time; a request during a scan reruns it once after.
+                let scanning = false;
+                let rescan = false;
                 const checkForCanvas = () => {
+                    if (!isMounted) return;
+                    if (scanning) {
+                        rescan = true;
+                        return;
+                    }
+                    scanning = true;
+                    void scanForCanvas().finally(() => {
+                        scanning = false;
+                        if (rescan) {
+                            rescan = false;
+                            checkForCanvas();
+                        }
+                    });
+                };
+                const sample = (canvas: HTMLCanvasElement) =>
+                    mapsCanvasSource.fingerprint(canvas, { maxAgeMs: SCAN_SAMPLE_MAX_AGE_MS });
+
+                const scanForCanvas = async () => {
                     if (!panoRef.current) return;
                     suppressErrorChrome();
 
@@ -240,7 +264,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                         active.isConnected &&
                         panoRef.current.contains(active)
                     );
-                    const activeFp = activeAttached && active ? getCanvasFingerprint(active) : '';
+                    const activeFp = activeAttached && active ? await sample(active) : '';
+                    if (!isMounted || !panoRef.current) return;
                     const { best, canvasCount, selectedArea } = selectSourceCanvas(
                         panoRef.current,
                         activeFp ? active : null,
@@ -290,7 +315,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     }
 
                     everSawCandidateRef.current = true;
-                    const fp = best === active && activeFp ? activeFp : getCanvasFingerprint(best);
+                    const fp = best === active && activeFp ? activeFp : await sample(best);
+                    if (!isMounted) return;
                     if (!fp) {
                         stableCountRef.current = 0;
                         lastFingerprintRef.current = '';
@@ -358,6 +384,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                             );
                             activeCanvasRef.current = best;
                             everPromotedRef.current = true;
+                            mapsCanvasSource.setElement(best);
                             onStatusChange?.('canvas-ready');
                             onCanvasReady(best);
                             emitHealth({ type: 'promoted', canvasCount, selectedArea });
@@ -365,6 +392,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                             console.log(
                                 `[StreetView] Canvas content restabilized: ${best.width}×${best.height}`
                             );
+                            mapsCanvasSource.setElement(best);
                             onCanvasReady(best);
                             emitHealth({ type: 'promoted', canvasCount, selectedArea });
                         }
@@ -396,7 +424,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                 if (onPanoramaReady) onPanoramaReady(panoInstance);
 
                 /** Lightweight idle self-check: Maps still painting + canvas still attached. */
-                const selfCheck = () => {
+                const selfCheck = async () => {
                     if (!panoRef.current) return;
                     const active = activeCanvasRef.current;
                     const { best, canvasCount, selectedArea } = selectSourceCanvas(
@@ -412,7 +440,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     );
                     let fingerprintChanged = false;
                     if (attached && active) {
-                        const fp = getCanvasFingerprint(active);
+                        const fp = await sample(active);
+                        if (!isMounted || !panoRef.current) return;
                         if (fp && lastFingerprintRef.current && fp !== lastFingerprintRef.current) {
                             fingerprintChanged = true;
                             lastFingerprintRef.current = fp;
@@ -439,7 +468,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                 let steadyInterval: ReturnType<typeof setInterval> | null = null;
                 const switchToSteady = setTimeout(() => {
                     clearInterval(retryInterval);
-                    steadyInterval = setInterval(selfCheck, 2000);
+                    steadyInterval = setInterval(() => void selfCheck(), 2000);
                 }, 6000);
 
                 const canvasTimeout = setTimeout(() => {
@@ -464,10 +493,10 @@ const StreetView: React.FC<StreetViewProps> = ({
                     }
                 }, 6500);
 
-                observer = new MutationObserver(() => {
-                    checkForCanvas();
-                });
-                observer.observe(panoRef.current, { childList: true, subtree: true });
+                // Canvas add/remove only, one delivery per frame (the source
+                // filters Maps' other DOM churn out before it costs a scan).
+                const stopObserving = mapsCanvasSource.observe(panoRef.current);
+                const stopStructure = mapsCanvasSource.onStructureChange(checkForCanvas);
 
                 const suppressGmErr = () => {
                     if (!panoRef.current) return;
@@ -493,10 +522,15 @@ const StreetView: React.FC<StreetViewProps> = ({
                     clearTimeout(switchToSteady);
                     if (steadyInterval) clearInterval(steadyInterval);
                     clearTimeout(canvasTimeout);
+                    stopStructure();
+                    stopObserving();
                     errObserver.disconnect();
                     document.removeEventListener('visibilitychange', onVisibilityOrFocus);
                     window.removeEventListener('focus', onVisibilityOrFocus);
                     panoInstanceRef.current = null;
+                    if (mapsCanvasSource.element() === activeCanvasRef.current) {
+                        mapsCanvasSource.setElement(null);
+                    }
                     if (mapDiv.parentElement) {
                         mapDiv.parentElement.removeChild(mapDiv);
                     }
@@ -530,9 +564,6 @@ const StreetView: React.FC<StreetViewProps> = ({
 
         return () => {
             isMounted = false;
-            if (observer) {
-                observer.disconnect();
-            }
             if (cleanup) {
                 cleanup();
             }
