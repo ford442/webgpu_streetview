@@ -14,7 +14,7 @@
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
-export function kelvinToRGB(kelvin: number): [number, number, number] {
+function kelvinToRGB(kelvin: number): [number, number, number] {
     let r = 255;
     let g = 255;
     let b = 255;

@@ -4,8 +4,8 @@ import {
     optimizeTextures,
     FrustumCuller,
     type VehicleLODConfig,
-} from '../../utils/performance';
-import { detectGPUProfile } from '../../utils/performance';
+} from './performance';
+import { detectGPUProfile } from './performance';
 import { type VehicleType, type VehicleConfig, getVehicleConfig } from '../VehicleManager';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';

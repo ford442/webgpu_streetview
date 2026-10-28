@@ -28,7 +28,7 @@ import { tripLibrary, type TripReplayState } from '../trip/tripLibrary';
 import type { ScraperHealth } from './scraperHealth';
 import { createInitialScraperHealth } from './scraperHealth';
 
-export interface HoldTimelineEntry {
+interface HoldTimelineEntry {
   armedAt: number;
   firstStableAt: number | null;
   releasedAt: number | null;
@@ -43,7 +43,7 @@ export interface HoldTimelineEntry {
   renderScaleReleased: number | null;
 }
 
-export interface ProbeWarning {
+interface ProbeWarning {
   at: number;
   message: string;
 }

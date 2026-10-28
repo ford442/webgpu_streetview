@@ -66,7 +66,7 @@ export class CarInteriorRenderer {
         }
         const frameTarget = this.frameTarget;
         if (!frameTarget || !frameTarget.isActive()) {
-            this.renderer.render(this.scene, this.camera);
+            void this.renderer.render(this.scene, this.camera);
             return;
         }
         frameTarget.beginFrame();
@@ -74,7 +74,7 @@ export class CarInteriorRenderer {
         if (stereo) {
             this.renderEyes(stereo);
         } else {
-            this.renderer.render(this.scene, this.camera);
+            void this.renderer.render(this.scene, this.camera);
         }
         frameTarget.setLayout(stereo ? 'sbs' : 'mono');
         // Latches the CSS-overlay fallback if the backend never handed over a
@@ -106,7 +106,7 @@ export class CarInteriorRenderer {
                 renderer.setViewport(viewport);
                 renderer.setScissor(viewport);
                 renderer.autoClear = i === 0 ? autoClear : false;
-                renderer.render(this.scene, eye);
+                void renderer.render(this.scene, eye);
             });
         } finally {
             renderer.autoClear = autoClear;

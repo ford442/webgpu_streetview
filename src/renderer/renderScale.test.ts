@@ -27,7 +27,7 @@ const frame = (scale: number, extra: Partial<RenderScaleFrame> = {}): RenderScal
 
 afterEach(() => {
     resetRenderScaleForTests();
-    delete (window as unknown as { webgpuProbe?: unknown }).webgpuProbe;
+    delete window.webgpuProbe;
 });
 
 describe('quantizeRenderScale', () => {
@@ -112,7 +112,7 @@ describe('publishAppliedRenderScale', () => {
     it('lands on window.webgpuProbe.renderScale once the probe exists', () => {
         publishAppliedRenderScale(frame(1));
         const probe = {} as { renderScale?: unknown };
-        (window as unknown as { webgpuProbe: unknown }).webgpuProbe = probe;
+        window.webgpuProbe = probe as unknown as NonNullable<Window['webgpuProbe']>;
         publishAppliedRenderScale(frame(0.5, { limitedBy: null }));
         expect(probe.renderScale).toBe(getAppliedRenderScale());
         expect(probe.renderScale).toMatchObject({ scale: 0.5, width: 960 });

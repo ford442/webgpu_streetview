@@ -23,7 +23,7 @@ import { tripStore, useTripSelector, type TripStop } from '../state/tripStore';
 import { signedAngleDiff } from '../utils/navigation';
 
 /** Drive with the cached graph planner: no network, or `?offline=1`. */
-export function isTripOffline(): boolean {
+function isTripOffline(): boolean {
   return readFlag('offline') === true || (typeof navigator !== 'undefined' && navigator.onLine === false);
 }
 
@@ -78,7 +78,7 @@ function getPanoramaAt(target: LatLng): Promise<string | null> {
       (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? data?.location?.pano ?? null : null);
       },
-    );
+    ).catch(() => {});
   });
 }
 

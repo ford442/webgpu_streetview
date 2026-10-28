@@ -79,7 +79,8 @@ export function domReads(source, fileName = 'spec.tsx') {
 
 export function hasPragma(source) {
   // Vitest only honours the pragma inside the leading comment block, before any code.
-  const lead = /^(?:\s*(?:\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/))*/.exec(source)[0];
+  // The pattern can match the empty string, so exec never returns null here.
+  const lead = /** @type {RegExpExecArray} */ (/^(?:\s*(?:\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/))*/.exec(source))[0];
   return PRAGMA.test(lead);
 }
 

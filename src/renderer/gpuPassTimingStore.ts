@@ -41,7 +41,7 @@ export function resetGpuPassTimings(): void {
 
 export function publishGpuPassTimingsToWindow(): void {
     if (typeof window === 'undefined') return;
-    (window as Window & { rendererGpuTimings?: GpuPassTimings }).rendererGpuTimings = current;
+    window.rendererGpuTimings = current;
 }
 
 /**

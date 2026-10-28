@@ -28,7 +28,7 @@ export type LookId =
   | 'neon-rain';
 
 /** Three-stop luminance/color curve approximated by the 6 grading uniforms. */
-export interface LookCurveNotes {
+interface LookCurveNotes {
   /** 0–1 luma target in the shadows, plus a short color note. */
   shadows: string;
   mids: string;

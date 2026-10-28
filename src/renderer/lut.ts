@@ -13,7 +13,7 @@ import type { QualityLevel } from '../config/visualPresets';
 import { PUBLIC_URL } from '../config/publicUrl';
 
 export const LUT_SIZE_DEFAULT = 32;
-export const LUT_SIZE_LOW = 16;
+const LUT_SIZE_LOW = 16;
 
 export interface LutVolume {
   size: number;
@@ -145,7 +145,7 @@ export function sliceHaldStrip(
   return { size, pixels, lookId };
 }
 
-export function lutSizeForQuality(quality: QualityLevel): number {
+function lutSizeForQuality(quality: QualityLevel): number {
   return quality === 'low' ? LUT_SIZE_LOW : LUT_SIZE_DEFAULT;
 }
 

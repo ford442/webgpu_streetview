@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { InteractionHelper } from './InteractionHelper';
 
-export type InteriorInteractiveKind = 'button' | 'knob' | 'lever';
+type InteriorInteractiveKind = 'button' | 'knob' | 'lever';
 
 export interface InteriorInteractive {
   mesh: THREE.Mesh;

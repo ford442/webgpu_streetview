@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, type ComponentProps } from 'react';
 import { useThrottledPov } from '../../state/povStore';
-import type { TimeOfDay } from '../../hooks';
-import { pickLookSnapshot, type LookId } from '../../config/lookPacks';
+import { useEnvironmentSettings, useStreetView, useViewMode, type TimeOfDay } from '../../hooks';
+import { pickLookSnapshot } from '../../config/lookPacks';
 import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
 import { nearbyPoisToGlobe } from '../../search/poiModel';
 import ScoutCard from '../../components/ScoutCard';
@@ -17,18 +17,12 @@ import type { TourPanelBindings } from '../useTourBindings';
 import type { TripPanelBindings } from '../useTripBindings';
 import type { TripRecordingBindings } from '../useTripRecording';
 import { tourWaypointsToStops } from '../../services/routing/routeExport';
-import type { AppPanels } from '../useAppPanels';
-export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
+import { usePanelsSnapshot } from '../useAppPanels';
+import { useAppTelemetry } from '../useAppTelemetry';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
 import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
-import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
-import type { MemoryStats } from '../../utils/memoryProfiler';
-import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
-import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
-import type { AppliedRenderScale } from '../../renderer/renderScale';
-import type { AutoExposureStatus } from '../../renderer/autoExposure';
 import type { RouteGraphSummary } from '../../offline';
 import AppToolbar from '../../components/AppToolbar';
 import {
@@ -48,6 +42,7 @@ import {
 } from '../../components';
 import StorageManagementPanel from '../../components/StorageManagementPanel';
 import GlobeReturnButton from '../../components/GlobeReturnButton';
+import { fireAndForget } from '../../utils/fireAndForget';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 /** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */
@@ -55,23 +50,36 @@ const CoverageMap = lazy(() => import('../../components/CoverageMap'));
 /** Trip planner panel (routing, guidance, recordings, offline prefetch); lazy chunk. */
 const TripPlannerPanel = lazy(() => import('../../components/TripPlannerPanel'));
 
+/** The stats overlay samples its own telemetry, and only while it is mounted. */
+function ConnectedPerformanceOverlay({ onClose }: { onClose: () => void }) {
+  const telemetry = useAppTelemetry();
+  return (
+    <PerformanceStatsOverlay
+      memoryStats={telemetry.memoryStats ?? undefined}
+      gpuPassTimings={telemetry.gpuPassTimings}
+      gpuChoresStats={telemetry.gpuChoresStats}
+      autoExposureStatus={telemetry.autoExposureStatus}
+      renderScale={telemetry.renderScale}
+      position="top-left"
+      visible={true}
+      showMemory={true}
+      onToggle={onClose}
+    />
+  );
+}
+
 /** GlobeView only needs the heading as its entry pose — keep it off the shell's render path. */
 function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>, 'currentHeading'>) {
   const heading = useThrottledPov((p) => p.heading, 2);
   return <GlobeView {...props} currentHeading={heading} />;
 }
 
-export interface ConnectedChromeSession {
-  viewMode: 'freelook' | 'car';
-  toggleViewMode: () => void;
+interface ConnectedChromeSession {
   isCruiseMode: boolean;
   setIsCruiseMode: React.Dispatch<React.SetStateAction<boolean>>;
-  isPanoramaReady: boolean;
   isRadioPlaying: boolean;
   toggleRadio: () => void;
   sharedSession: UseSharedSessionResult;
-  panorama: google.maps.StreetViewPanorama | null;
-  isTransitioning: boolean;
   teleportToPanoSafe: (panoId: string, options?: TeleportToPanoOptions) => Promise<void>;
 }
 
@@ -87,7 +95,7 @@ export interface ConnectedChromeBookmarks {
   syncAllToCloud: () => Promise<void>;
 }
 
-export interface ConnectedChromeHistory {
+interface ConnectedChromeHistory {
   history: HistoryEntry[];
   removeFromHistory: (id: string) => void;
   clearHistory: () => void;
@@ -107,81 +115,30 @@ export interface ConnectedChromeSnapshots {
   onTakeSnapshot: () => void;
 }
 
-export interface ConnectedChromeEnvironment {
-  vibrance: number;
-  saturation: number;
-  contrast: number;
-  exposure: number;
-  temperature: number;
-  tint: number;
-  headlightsOn: boolean;
-  shaderEffectsEnabled: boolean;
-  autoNightMode: boolean;
-  setAutoNightMode: (enabled: boolean) => void;
-  setVibrance: (v: number) => void;
-  setSaturation: (v: number) => void;
-  setContrast: (v: number) => void;
-  setExposure: (v: number) => void;
-  setTemperature: (v: number) => void;
-  setTint: (v: number) => void;
-  toggleHeadlights: () => void;
-  setShaderEffectsEnabled: (v: boolean) => void;
-  autoExposureEnabled: boolean;
-  setAutoExposureEnabled: (v: boolean) => void;
-  applyColorGradingPreset: (preset: string) => void;
-  applyLookPack: (id: string) => void;
-  activeLookId: LookId | null;
-  nightIntensity: number;
-  highBeam: boolean;
-  domeLightOn: boolean;
-  rainIntensity: number;
-  snowIntensity: number;
-  wind: number;
-  fogDensity: number;
-  wipersEnabled: boolean;
-  timeOfDay: TimeOfDay;
-  setRainIntensity: (v: number) => void;
-  setSnowIntensity: (v: number) => void;
-  setWind: (v: number) => void;
-  setFogDensity: (v: number) => void;
-  toggleWipers: () => void;
-  applyTimeOfDayPreset: (preset: TimeOfDay) => void;
-}
-
-export interface ConnectedChromeGlobe {
+interface ConnectedChromeGlobe {
   globeMode: GlobeModeControls;
   effectiveMapsKey: string;
   handleGlobeTeleport: (lat: number, lng: number) => void | Promise<void>;
   handleStartJourney: (waypoints: { lat: number; lng: number }[]) => void | Promise<void>;
 }
 
-export interface ConnectedChromeOfflineRoutes {
+interface ConnectedChromeOfflineRoutes {
   summaries: RouteGraphSummary[];
   onDelete: (routeId: string) => void;
   onRefresh: () => void;
 }
 
-export interface ConnectedChromeOverlays {
-  showPerformanceStats: boolean;
-  setShowPerformanceStats: (show: boolean) => void;
-  perfStats: PerformanceMonitorState;
-  memoryStats?: MemoryStats;
-  gpuPassTimings?: GpuPassTimings;
-  gpuChoresStats?: GpuChoresStats;
-  autoExposureStatus?: AutoExposureStatus;
-  renderScale?: AppliedRenderScale;
+interface ConnectedChromeOverlays {
   rendererBackendInfo: RendererBackendInfo | null;
   navPending: boolean;
   historicalAfterLabel: string;
 }
 
 export interface ConnectedChromeProps {
-  panels: AppPanels;
   session: ConnectedChromeSession;
   bookmarks: ConnectedChromeBookmarks;
   history: ConnectedChromeHistory;
   snapshots: ConnectedChromeSnapshots;
-  environment: ConnectedChromeEnvironment;
   historical: UseHistoricalExperienceResult;
   accessibilitySettings: AccessibilitySettings;
   setAccessibilitySettings: React.Dispatch<React.SetStateAction<AccessibilitySettings>>;
@@ -195,12 +152,10 @@ export interface ConnectedChromeProps {
 
 /** Toolbar + feature panels + globe, shown once the user is connected. */
 export function ConnectedChrome({
-  panels,
   session,
   bookmarks: bm,
   history: hist,
   snapshots: snaps,
-  environment: env,
   historical,
   accessibilitySettings,
   setAccessibilitySettings,
@@ -211,19 +166,12 @@ export function ConnectedChrome({
   offlineRoutes,
   search,
 }: ConnectedChromeProps) {
-  const {
-    viewMode,
-    toggleViewMode,
-    isCruiseMode,
-    setIsCruiseMode,
-    isPanoramaReady,
-    isRadioPlaying,
-    toggleRadio,
-    sharedSession,
-    panorama,
-    isTransitioning,
-    teleportToPanoSafe,
-  } = session;
+  const { isCruiseMode, setIsCruiseMode, isRadioPlaying, toggleRadio, sharedSession, teleportToPanoSafe } = session;
+  // Cold state the chrome reads for itself rather than through the shell.
+  const { viewMode, toggleViewMode } = useViewMode();
+  const { panorama, isTransitioning, isPanoramaReady } = useStreetView();
+  const env = useEnvironmentSettings();
+  const panels = usePanelsSnapshot();
   const { globeMode, effectiveMapsKey, handleGlobeTeleport, handleStartJourney } = globe;
 
   const selectedPoiThumb = useMemo(() => {
@@ -289,24 +237,13 @@ export function ConnectedChrome({
     setIsStoragePanelOpen,
     isMapOpen,
     setIsMapOpen,
+    showPerformanceStats,
+    setShowPerformanceStats,
   } = panels;
 
   return (
     <>
-      {overlays.showPerformanceStats && (
-        <PerformanceStatsOverlay
-          fpsStats={overlays.perfStats}
-          memoryStats={overlays.memoryStats}
-          gpuPassTimings={overlays.gpuPassTimings}
-          gpuChoresStats={overlays.gpuChoresStats}
-          autoExposureStatus={overlays.autoExposureStatus}
-          renderScale={overlays.renderScale}
-          position="top-left"
-          visible={true}
-          showMemory={true}
-          onToggle={() => overlays.setShowPerformanceStats(false)}
-        />
-      )}
+      {showPerformanceStats && <ConnectedPerformanceOverlay onClose={() => setShowPerformanceStats(false)} />}
 
       <RendererBackendIndicator backendInfo={overlays.rendererBackendInfo} />
 
@@ -346,32 +283,8 @@ export function ConnectedChrome({
         isPanoramaReady={isPanoramaReady}
         isRadioPlaying={isRadioPlaying}
         toggleRadio={toggleRadio}
-        isSnapshotGalleryOpen={isSnapshotGalleryOpen}
-        setIsSnapshotGalleryOpen={setIsSnapshotGalleryOpen}
         onTakeSnapshot={snaps.onTakeSnapshot}
-        isBookmarkPanelOpen={isBookmarkPanelOpen}
-        setIsBookmarkPanelOpen={setIsBookmarkPanelOpen}
-        isHistoryPanelOpen={isHistoryPanelOpen}
-        setIsHistoryPanelOpen={setIsHistoryPanelOpen}
-        isColorGradingPanelOpen={isColorGradingPanelOpen}
-        setIsColorGradingPanelOpen={setIsColorGradingPanelOpen}
-        isWeatherPanelOpen={isWeatherPanelOpen}
-        setIsWeatherPanelOpen={setIsWeatherPanelOpen}
-        isLooksPanelOpen={isLooksPanelOpen}
-        setIsLooksPanelOpen={setIsLooksPanelOpen}
-        isHistoricalTimelineOpen={isHistoricalTimelineOpen}
-        setIsHistoricalTimelineOpen={setIsHistoricalTimelineOpen}
-        isTourPanelOpen={isTourPanelOpen}
-        setIsTourPanelOpen={setIsTourPanelOpen}
-        isTripPanelOpen={isTripPanelOpen}
-        setIsTripPanelOpen={setIsTripPanelOpen}
-        isSharedSessionPanelOpen={isSharedSessionPanelOpen}
-        setIsSharedSessionPanelOpen={setIsSharedSessionPanelOpen}
         isSharedSessionActive={sharedSession.isConnected}
-        isStoragePanelOpen={isStoragePanelOpen}
-        setIsStoragePanelOpen={setIsStoragePanelOpen}
-        isMapOpen={isMapOpen}
-        setIsMapOpen={setIsMapOpen}
         viewMode={viewMode}
         toggleViewMode={toggleViewMode}
         onGlobeToggle={globeMode.toggle}
@@ -389,8 +302,8 @@ export function ConnectedChrome({
           roomCode={sharedSession.roomCode}
           participants={sharedSession.participants}
           isConnected={sharedSession.isConnected}
-          onCreateRoom={sharedSession.createRoom}
-          onJoinRoom={sharedSession.joinRoom}
+          onCreateRoom={fireAndForget('SharedSession', sharedSession.createRoom)}
+          onJoinRoom={fireAndForget('SharedSession', sharedSession.joinRoom)}
           onLeave={sharedSession.leaveSession}
         />
       )}
@@ -409,10 +322,10 @@ export function ConnectedChrome({
           isOpen={isBookmarkPanelOpen}
           isSyncing={bm.isBookmarkSyncing}
           syncError={bm.bookmarkSyncError}
-          onLoadCloudBookmarks={bm.loadCloudBookmarks}
-          onSaveBookmarkToCloud={bm.saveBookmarkToCloud}
-          onRemoveCloudBookmark={bm.removeCloudBookmark}
-          onSyncAllToCloud={bm.syncAllToCloud}
+          onLoadCloudBookmarks={fireAndForget('Bookmarks', bm.loadCloudBookmarks)}
+          onSaveBookmarkToCloud={fireAndForget('Bookmarks', bm.saveBookmarkToCloud)}
+          onRemoveCloudBookmark={fireAndForget('Bookmarks', bm.removeCloudBookmark)}
+          onSyncAllToCloud={fireAndForget('Bookmarks', bm.syncAllToCloud)}
         />
       )}
 
@@ -519,7 +432,7 @@ export function ConnectedChrome({
           hasTimeline={historical.hasHistoricalTimeline}
           currentIndex={historical.historicalCurrentIndex}
           isTransitioning={isTransitioning || historical.isCapturingComparison}
-          onSelectDate={(entry) => teleportToPanoSafe(entry.panoId, {
+          onSelectDate={(entry) => void teleportToPanoSafe(entry.panoId, {
             reveal: resolveYearChipReveal(
               historical.historicalEntries,
               historical.historicalCurrentIndex,
@@ -527,7 +440,7 @@ export function ConnectedChrome({
               accessibilitySettings.reducedMotion,
             ),
           })}
-          onCompare={historical.compareHistorical}
+          onCompare={fireAndForget('Historical', historical.compareHistorical)}
           isComparing={!!historical.historicalComparison}
           onExitCompare={historical.exitHistoricalCompare}
           compareScopeLabel={compareStillScopeLabel(historical.historicalComparison)}
@@ -637,11 +550,11 @@ export function ConnectedChrome({
             pois={globePois}
             bookmarks={globeBookmarks}
             mapsApiKey={effectiveMapsKey}
-            onTeleportRequest={handleGlobeTeleport}
+            onTeleportRequest={fireAndForget('Globe', handleGlobeTeleport)}
             onEnterComplete={globeMode.onEnterComplete}
             onExitComplete={globeMode.onExitComplete}
             onRequestExit={globeMode.cancel}
-            onStartJourney={handleStartJourney}
+            onStartJourney={fireAndForget('Autopilot', handleStartJourney)}
           />
         </Suspense>
       )}

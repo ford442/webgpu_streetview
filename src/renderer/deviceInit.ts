@@ -5,7 +5,6 @@ import {
     getCanvasOutputFlags,
     supportsAdapterFeatureLevel,
     type AdapterFeatureLevel,
-    type AdapterSelectionPolicy,
     type CanvasOutputFlags,
     type RendererInitOptions,
     type WeatherPostProcessMode,
@@ -41,7 +40,7 @@ export interface CollectOptionalFeaturesOptions {
      * Skip `core-features-and-limits` when the adapter was requested in
      * compatibility mode (`?gpu=compat`) so we do not undo that knob.
      */
-    featureLevel?: AdapterFeatureLevel | 'unknown';
+    featureLevel?: AdapterFeatureLevel | 'unknown' | undefined;
 }
 
 /**
@@ -125,7 +124,7 @@ export function checkGpuChoresLimits(limits: GPUSupportedLimits): GpuChoresLimit
 }
 
 /** Below this the panorama + HDR intermediate cannot fit a desktop window: boot fails. */
-export const MIN_TEXTURE_DIMENSION_2D = 4096;
+const MIN_TEXTURE_DIMENSION_2D = 4096;
 /** The largest 2D texture any pass allocates (DPR-scaled canvas, Maps canvas upload). */
 export const MAX_REQUESTED_TEXTURE_DIMENSION_2D = 8192;
 
@@ -349,7 +348,7 @@ export function logAdapterCapabilities(
 
     console.info('[Renderer] WebGPU adapter capabilities:', summary);
     if (typeof window !== 'undefined') {
-        (window as Window & { rendererAdapterInfo?: AdapterCapabilitySummary }).rendererAdapterInfo = summary;
+        window.rendererAdapterInfo = summary;
     }
 }
 
@@ -508,7 +507,7 @@ export function attachUncapturedErrorHandler(
         capabilityMatrix.lastUncapturedError = message;
         console.error('[Renderer] uncapturederror', error);
         if (typeof window !== 'undefined') {
-            const info = (window as Window & { rendererAdapterInfo?: AdapterCapabilitySummary }).rendererAdapterInfo;
+            const info = window.rendererAdapterInfo;
             if (info?.capabilityMatrix) {
                 info.capabilityMatrix.uncapturedErrorCount = capabilityMatrix.uncapturedErrorCount;
                 info.capabilityMatrix.lastUncapturedError = message;
@@ -528,4 +527,3 @@ export function labelDevice(device: GPUDevice): void {
 }
 
 export { getCanvasOutputFlags };
-export type { AdapterSelectionPolicy, CanvasOutputFlags };

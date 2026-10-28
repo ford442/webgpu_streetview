@@ -3,6 +3,7 @@ import {
   loadAccessibilitySettings,
   type AccessibilitySettings,
 } from '../hooks/useKeyboardShortcuts';
+import { setAppReducedMotion } from '../state/reducedMotionStore';
 
 export interface UseAppAccessibilityResult {
   accessibilitySettings: AccessibilitySettings;
@@ -18,6 +19,8 @@ export function useAppAccessibility(): UseAppAccessibilityResult {
   useEffect(() => {
     document.body.classList.toggle('high-contrast', accessibilitySettings.highContrast);
     document.body.classList.toggle('reduced-motion', accessibilitySettings.reducedMotion);
+    // The frame path reads this instead of the body class (no per-frame DOM read).
+    setAppReducedMotion(accessibilitySettings.reducedMotion);
     document.body.classList.toggle('large-text', accessibilitySettings.largeText);
     document.body.classList.toggle('keyboard-only-mode', accessibilitySettings.keyboardOnlyMode);
   }, [accessibilitySettings]);

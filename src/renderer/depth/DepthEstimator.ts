@@ -29,7 +29,7 @@ export type DepthWorkerFactory = () => DepthWorkerLike;
  * A module Worker, bundled by Vite as its own file. It imports the runtime
  * from the CDN at run time, so it stays a few KB.
  */
-export const createDepthWorker: DepthWorkerFactory = () =>
+const createDepthWorker: DepthWorkerFactory = () =>
     new Worker(new URL('./depthWorker.ts', import.meta.url), {
         type: 'module',
         name: 'scene-depth',

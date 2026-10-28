@@ -21,9 +21,10 @@ export const STATIC_PRECACHE_URLS = [
   './index.html',
   './manifest.json',
   './config.js',
-  './wasm/streetview-wasm.wasm',
-  // The cabin AudioWorklet's engine (SIMD128 build of the same sources).
+  // Every main-thread kernel (SIMD128; the scalar build is a CI oracle only).
   './wasm/streetview-wasm.simd.wasm',
+  // The cabin AudioWorklet's engine alone (fixed memory, < 32 KB).
+  './wasm/streetview-dsp.simd.wasm',
   './icons/icon.svg',
 ];
 
@@ -58,7 +59,11 @@ export function buildPrecacheUrls(root) {
   return [...STATIC_PRECACHE_URLS, ...listShaderUrls(root)];
 }
 
-/** 12 hex chars over every cached-by-name asset's bytes plus the build version. */
+/**
+ * 12 hex chars over every cached-by-name asset's bytes plus the build version:
+ * every shader and both shipped binaries (main + the worklet's
+ * streetview-dsp.simd.wasm), so a DSP-only rebuild still rolls the cache.
+ */
 export function swCacheId(root, buildVersion = '') {
   const hash = createHash('sha256');
   hash.update(`build:${buildVersion}\0`);

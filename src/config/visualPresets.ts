@@ -263,7 +263,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
 // Default Quality
 // ============================================================
 
-export const DEFAULT_QUALITY: QualityLevel = 'high';
+const DEFAULT_QUALITY: QualityLevel = 'high';
 
 // ============================================================
 // Preset Access & Customization
@@ -271,17 +271,6 @@ export const DEFAULT_QUALITY: QualityLevel = 'high';
 
 export function getPreset(level: QualityLevel): VisualPreset {
   return { ...PRESETS[level] };
-}
-
-export function createCustomPreset(
-  base: QualityLevel,
-  overrides: Partial<VisualPreset>,
-): VisualPreset {
-  return {
-    ...PRESETS[base],
-    ...overrides,
-    quality: overrides.quality ?? PRESETS[base].quality,
-  };
 }
 
 // ============================================================

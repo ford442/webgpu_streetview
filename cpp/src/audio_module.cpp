@@ -14,8 +14,8 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
-#include "audio_kernels.h"
+#include "streetview/abi.h"
+#include "streetview/audio_kernels.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -28,14 +28,14 @@
 // CABIN_IR_VEHICLE_INDEX in src/car/audio/cabinIr.ts. Times are milliseconds;
 // they are converted to taps with the caller's sample rate.
 struct CabinProfile {
-    float reflect_ms[3];    // early reflection arrival times
-    float reflect_gain[3];  // their level relative to the direct path
-    float tail_level;       // diffuse tail level at the first tap
-    float tail_ms;          // 1/e decay time of that tail
-    float damp_closed;      // one-pole brightness with the cabin sealed
-    float damp_open;        // ... and with the roof/windows fully open
-    float late_level;       // slow late reverberation level at the first tap
-    float late_ms;          // its 1/e decay time (RT60 is ~6.9x this)
+    float reflect_ms[3];   // early reflection arrival times
+    float reflect_gain[3]; // their level relative to the direct path
+    float tail_level;      // diffuse tail level at the first tap
+    float tail_ms;         // 1/e decay time of that tail
+    float damp_closed;     // one-pole brightness with the cabin sealed
+    float damp_open;       // ... and with the roof/windows fully open
+    float late_level;      // slow late reverberation level at the first tap
+    float late_ms;         // its 1/e decay time (RT60 is ~6.9x this)
 };
 
 static const CabinProfile cabin_profiles[] = {
@@ -51,18 +51,15 @@ static const CabinProfile cabin_profiles[] = {
     {{0.95f, 1.60f, 2.30f}, {0.38f, 0.24f, 0.15f}, 0.26f, 1.80f, 0.34f, 0.92f, 0.050f, 7.0f},
 };
 
-static const int cabin_profile_count =
-    (int)(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
+static const int cabin_profile_count = (int)(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 extern "C" {
 
-double sw_fill_engine_noise(float* buf, int count,
-                            float rpm, float load, float speed_kmh,
-                            double phase, double sample_index,
-                            float sample_rate) {
+double sw_fill_engine_noise(float* buf, int count, float rpm, float load, float speed_kmh,
+                            double phase, double sample_index, float sample_rate) {
     // The phase is a fraction of one fundamental cycle. Keeping it (and the
     // per-sample increment) in f64 and wrapping it every sample is what keeps
     // the waveform identical at minute 1 and minute 119: the old ABI took the
@@ -85,8 +82,8 @@ double sw_fill_engine_noise(float* buf, int count,
     // Road noise is a hash of the absolute sample index (mod 2^32), not a
     // running LCG: each sample depends only on where it sits in the stream,
     // so rendering 1x1024 or 4x256 gives the same bits.
-    const uint32_t index0 = static_cast<uint32_t>(
-        std::fmod(std::floor(sample_index), 4294967296.0));
+    const uint32_t index0 =
+        static_cast<uint32_t>(std::fmod(std::floor(sample_index), 4294967296.0));
     float spd = speed_kmh / 140.0f;
     if (spd > 1.0f) spd = 1.0f;
 
@@ -106,8 +103,7 @@ double sw_fill_engine_noise(float* buf, int count,
     return phase;
 }
 
-void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
-                      float openness, float sample_rate) {
+void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, float sample_rate) {
     if (count <= 0 || buf == nullptr) return;
     if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
     if (openness < 0.0f) openness = 0.0f;
@@ -160,7 +156,8 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
         // only ~128 taps a raw noise tail has a large random mean, which would
         // make the cabin's low-frequency gain a coin flip per vehicle.
         late_n += 0.35f * (n - late_n);
-        out[static_cast<size_t>(i)] += ((n - prev_n) * 0.5f * env) + ((late_n - prev_late_n) * late_env);
+        out[static_cast<size_t>(i)] +=
+            ((n - prev_n) * 0.5f * env) + ((late_n - prev_late_n) * late_env);
         prev_n = n;
         prev_late_n = late_n;
         env -= env * decay;

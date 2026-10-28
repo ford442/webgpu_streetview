@@ -18,13 +18,13 @@ export interface MemorySnapshot {
   details: MemoryDetails;
 }
 
-export interface MemoryDetails {
+interface MemoryDetails {
   geometries: GeometryInfo[];
   textures: TextureInfo[];
   materials: MaterialInfo[];
 }
 
-export interface GeometryInfo {
+interface GeometryInfo {
   name: string;
   uuid: string;
   vertexCount: number;
@@ -32,7 +32,7 @@ export interface GeometryInfo {
   estimatedBytes: number;
 }
 
-export interface TextureInfo {
+interface TextureInfo {
   name: string;
   uuid: string;
   width: number;
@@ -41,7 +41,7 @@ export interface TextureInfo {
   estimatedBytes: number;
 }
 
-export interface MaterialInfo {
+interface MaterialInfo {
   name: string;
   uuid: string;
   type: string;
@@ -66,12 +66,12 @@ export interface PotentialLeak {
 // Memory Profiler Class
 // ============================================================
 
-export const MATERIAL_TEXTURE_PROPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'] as const;
+const MATERIAL_TEXTURE_PROPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'] as const;
 
-export type MaterialTextureProp = (typeof MATERIAL_TEXTURE_PROPS)[number];
+type MaterialTextureProp = (typeof MATERIAL_TEXTURE_PROPS)[number];
 
 /** Read a named texture slot without `as any`. Missing slots are undefined. */
-export function readMaterialTexture(
+function readMaterialTexture(
   mat: THREE.Material,
   prop: MaterialTextureProp,
 ): THREE.Texture | undefined {
@@ -91,16 +91,11 @@ function isMesh(value: unknown): value is THREE.Mesh {
 export class MemoryProfiler {
   private snapshots: MemorySnapshot[] = [];
   private maxHistorySize = 60; // Keep last 60 snapshots
-  private lastSnapshotTime = 0;
-  private snapshotInterval = 1000; // ms
 
   // WebGPU specific
   private gpuBuffers = new Map<string, number>();
   private gpuTextures = new Map<string, number>();
-  
-  constructor() {
-    this.startAutoSnapshot();
-  }
+
   
   /**
    * Set GPU device for WebGPU memory tracking
@@ -235,7 +230,6 @@ export class MemoryProfiler {
       this.snapshots.shift();
     }
     
-    this.lastSnapshotTime = timestamp;
     return snapshot;
   }
   
@@ -310,17 +304,6 @@ export class MemoryProfiler {
   }
   
   /**
-   * Start automatic snapshotting
-   */
-  private startAutoSnapshot(): void {
-    setInterval(() => {
-      if (Date.now() - this.lastSnapshotTime > this.snapshotInterval) {
-        this.snapshot();
-      }
-    }, this.snapshotInterval);
-  }
-  
-  /**
    * Get formatted memory string
    */
   static formatBytes(bytes: number): string {
@@ -391,141 +374,3 @@ export function getMemoryProfiler(): MemoryProfiler {
 // ============================================================
 // Memory Optimization Utilities
 // ============================================================
-
-/**
- * Dispose of a Three.js object and all its children
- */
-export function deepDispose(object: THREE.Object3D): void {
-  object.traverse((child) => {
-    if (isMesh(child)) {
-      if (child.geometry) {
-        child.geometry.dispose();
-      }
-      
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(mat => {
-        if (mat) {
-          // Dispose textures
-          MATERIAL_TEXTURE_PROPS.forEach((prop) => {
-            const tex = readMaterialTexture(mat, prop);
-            if (tex) {
-              tex.dispose();
-            }
-          });
-          mat.dispose();
-        }
-      });
-    }
-  });
-}
-
-/**
- * Texture cache for reusing textures
- */
-export class TextureCache {
-  private cache = new Map<string, THREE.Texture>();
-  private maxSize: number;
-  
-  constructor(maxSize: number = 50) {
-    this.maxSize = maxSize;
-  }
-  
-  get(key: string): THREE.Texture | undefined {
-    return this.cache.get(key);
-  }
-  
-  set(key: string, texture: THREE.Texture): void {
-    if (this.cache.size >= this.maxSize) {
-      // Remove oldest entry
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.get(firstKey)?.dispose();
-        this.cache.delete(firstKey);
-      }
-    }
-    this.cache.set(key, texture);
-  }
-  
-  clear(): void {
-    this.cache.forEach(tex => tex.dispose());
-    this.cache.clear();
-  }
-  
-  get size(): number {
-    return this.cache.size;
-  }
-}
-
-/**
- * Geometry pool for reusing geometry data
- */
-export class GeometryPool {
-  private pool = new Map<string, THREE.BufferGeometry>();
-  private maxSize: number;
-  
-  constructor(maxSize: number = 20) {
-    this.maxSize = maxSize;
-  }
-  
-  get(key: string): THREE.BufferGeometry | undefined {
-    return this.pool.get(key);
-  }
-  
-  set(key: string, geometry: THREE.BufferGeometry): void {
-    if (this.pool.size >= this.maxSize) {
-      const firstKey = this.pool.keys().next().value;
-      if (firstKey !== undefined) {
-        this.pool.get(firstKey)?.dispose();
-        this.pool.delete(firstKey);
-      }
-    }
-    this.pool.set(key, geometry);
-  }
-  
-  clear(): void {
-    this.pool.forEach(geo => geo.dispose());
-    this.pool.clear();
-  }
-}
-
-/**
- * Monitor browser memory pressure
- */
-export function getMemoryPressure(): 'low' | 'normal' | 'high' | 'critical' {
-  if ('memory' in performance) {
-    const memory = (performance as Performance & {
-      memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
-    }).memory;
-    if (memory) {
-      const used = memory.usedJSHeapSize;
-      const limit = memory.jsHeapSizeLimit;
-      
-      const ratio = used / limit;
-      
-      if (ratio > 0.9) return 'critical';
-      if (ratio > 0.75) return 'high';
-      if (ratio > 0.5) return 'normal';
-    }
-  }
-  
-  return 'low';
-}
-
-/**
- * Request garbage collection hint (if available)
- */
-export function requestMemoryCleanup(): void {
-  // Clear any image caches
-  if ('caches' in window) {
-    // Note: This is just a hint, actual cleanup is browser-controlled
-  }
-  
-  // Trigger GC hint in some browsers
-  if (globalThis.gc) {
-    try {
-      globalThis.gc();
-    } catch {
-      // Ignore
-    }
-  }
-}

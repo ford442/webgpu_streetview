@@ -298,7 +298,7 @@ export async function captureCompositedStill(
 }
 
 /** Trigger a download of a recorded clip blob. */
-export function downloadClip(blob: Blob, mimeType: string, baseName = 'streetview-clip'): void {
+function downloadClip(blob: Blob, mimeType: string, baseName = 'streetview-clip'): void {
   const ext = mimeType.includes('webm') ? 'webm' : 'mp4';
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

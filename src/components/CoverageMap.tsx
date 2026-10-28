@@ -36,10 +36,10 @@ import { useTripLibrary } from '../trip/tripLibrary';
 import { createGoogleCoverageMap, type GoogleCoverageMap } from './coverageMap/googleCoverageMap';
 import { createCesiumCoverageScene, type CesiumCoverageScene } from './coverageMap/cesiumCoverageScene';
 
-export type CoverageMapMode = 'google' | 'cesium';
+type CoverageMapMode = 'google' | 'cesium';
 
 /** Snap radius for a click on empty map: generous enough to land on a nearby road. */
-export const COVERAGE_MAP_CLICK_SNAP_RADIUS_M = 60;
+const COVERAGE_MAP_CLICK_SNAP_RADIUS_M = 60;
 
 interface CoverageMapProps {
   panorama: google.maps.StreetViewPanorama | null;
@@ -149,7 +149,7 @@ const CoverageMap: React.FC<CoverageMapProps> = ({ panorama, pois, onTeleportPan
     cesiumStartedRef.current = true;
     const gen = ++cesiumGenRef.current;
     setCesiumState('loading');
-    (async () => {
+    void (async () => {
       try {
         await loadCesiumSDK();
         if (cesiumGenRef.current !== gen || !cesiumDivRef.current) return;
@@ -208,7 +208,7 @@ const CoverageMap: React.FC<CoverageMapProps> = ({ panorama, pois, onTeleportPan
     setGraphBusy(true);
     walkPanoGraph(panoId, createMeteredPanoFetcher(sv))
       .then((g) => { if (walkGenRef.current === gen) setGraph(g); })
-      .finally(() => { if (walkGenRef.current === gen) setGraphBusy(false); });
+      .finally(() => { if (walkGenRef.current === gen) setGraphBusy(false); }).catch((err: unknown) => console.warn('[CoverageMap] Link-graph walk failed', err));
   }, [showGraph, panoId, panoInGraph, getSv]);
 
   useEffect(() => {
@@ -222,7 +222,7 @@ const CoverageMap: React.FC<CoverageMapProps> = ({ panorama, pois, onTeleportPan
     let cancelled = false;
     classifyPoiCoverage(pois, createMeteredPoiCoverageLookup(sv), graph?.nodes).then((result) => {
       if (!cancelled) setPoiCoverage(result);
-    });
+    }).catch((err: unknown) => console.warn('[CoverageMap] POI coverage failed', err));
     return () => { cancelled = true; };
   }, [checkPois, pois, graph, getSv]);
 

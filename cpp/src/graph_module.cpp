@@ -21,7 +21,8 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
+#include "streetview/geodesy.h"
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -33,7 +34,9 @@ constexpr int kUnseen = -1;
 /** heap_pos value of a node whose shortest distance is final. */
 constexpr int kClosed = -2;
 
-size_t idx(int i) { return static_cast<size_t>(i); }
+size_t idx(int i) {
+    return static_cast<size_t>(i);
+}
 
 /**
  * Binary min-heap of node indices keyed on f = g + h, with decrease-key
@@ -104,8 +107,8 @@ struct OpenSet {
 };
 
 double node_distance(std::span<const double> coords, int a, int b) {
-    return sw_haversine(coords[idx(a) * 2], coords[idx(a) * 2 + 1],
-                        coords[idx(b) * 2], coords[idx(b) * 2 + 1]);
+    return sw_haversine(coords[idx(a) * 2], coords[idx(a) * 2 + 1], coords[idx(b) * 2],
+                        coords[idx(b) * 2 + 1]);
 }
 
 /** offsets must start at 0, never decrease and end at edge_count. */
@@ -124,9 +127,8 @@ bool valid_offsets(std::span<const int> offsets, int edge_count) {
 // ---------------------------------------------------------------------------
 extern "C" {
 
-int sw_graph_astar(const int* offsets, const int* neighbors, const double* coords,
-                   int node_count, int edge_count, int from, int to,
-                   void* work, int* out_path, int max_len) {
+int sw_graph_astar(const int* offsets, const int* neighbors, const double* coords, int node_count,
+                   int edge_count, int from, int to, void* work, int* out_path, int max_len) {
     if (offsets == nullptr || coords == nullptr || work == nullptr) return -1;
     if (node_count <= 0 || edge_count < 0 || (edge_count > 0 && neighbors == nullptr)) return -1;
     if (from < 0 || from >= node_count || to < 0 || to >= node_count) return -1;
@@ -142,7 +144,8 @@ int sw_graph_astar(const int* offsets, const int* neighbors, const double* coord
     auto* doubles = static_cast<double*>(work);
     const std::span<double> g(doubles, n);
     const std::span<double> f(doubles + n, n);
-    auto* ints = reinterpret_cast<int*>(doubles + n * 2); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto* ints = reinterpret_cast<int*>(
+        doubles + n * 2); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     const std::span<int> parent(ints, n);
     const std::span<int> pos(ints + n, n);
     const std::span<int> heap(ints + n * 2, n);
@@ -154,7 +157,7 @@ int sw_graph_astar(const int* offsets, const int* neighbors, const double* coord
         pos[i] = kUnseen;
     }
 
-    OpenSet open{ f, heap, pos };
+    OpenSet open{f, heap, pos};
     g[idx(from)] = 0.0;
     f[idx(from)] = node_distance(xy, from, to);
     open.push(from);

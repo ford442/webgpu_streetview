@@ -11,7 +11,7 @@ import {
     TACHO_DIAL_MAX_RPM,
 } from './CarInteriorGauges';
 import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
-import { getWindAudio } from '../../effects/WindAudio';
+import { getWindAudio } from '../../audio/WindAudio';
 import { isCabinEngineAttached } from '../../audio/carAudioGraph';
 import { panoramaPovFromCabin, wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
 import { applyHeadOffset, applyHeadPose } from './cabinRig';

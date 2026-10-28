@@ -1,22 +1,24 @@
 /**
  * src/wasm/__tests__/wasmGoldenParity.test.ts
  *
- * Pins both shipped binaries — public/wasm/streetview-wasm.wasm (scalar: the
- * main thread) and streetview-wasm.simd.wasm (the cabin AudioWorklet) —
+ * Pins the shipped main-thread binary, public/wasm/streetview-wasm.simd.wasm,
  * through the loader's real marshalling wrappers to the golden vectors the
  * native C++ tests use (cpp/tests/noise_module_test.cpp, cabin_dsp_test.cpp).
+ * The worklet binary (streetview-dsp.simd.wasm) renders the same cabin
+ * scripts in cabinWorklet.test.ts.
  *
- * The vectors in cpp/tests/goldens.json are captured from the scalar binary by
+ * The vectors in cpp/tests/goldens.json are captured from this binary by
  * scripts/gen-wasm-goldens.mjs, and the identical numbers are emitted to
  * cpp/tests/goldens_generated.h for the host `ctest` run:
  *
- *   emcc wasm  →  goldens  →  C++ (ctest)          ← native host CI
- *                    →  scalar + SIMD wasm (here)
+ *   emcc wasm  →  goldens  →  C++ (ctest, plain + SIMDe)   ← native host CI
+ *                    →  SIMD wasm (here)
+ *                    →  scalar wasm (CI only: gen-wasm-goldens --compare)
  *
- * Every comparison is exact: the binary is the only implementation, so the
- * scalar side is checking that the goldens were captured from the committed
- * bytes, and the SIMD side that -msimd128 (and the hand-vectorised FIR) did
- * not change a single bit.
+ * Every comparison is exact: the binary is the only implementation, so this
+ * checks that the goldens were captured from the committed bytes; the scalar
+ * oracle and the host builds checking the same numbers is what proves
+ * -msimd128 (the FIR, the FFT) did not change a single bit.
  */
 
 import { createHash } from 'crypto';
@@ -70,7 +72,6 @@ interface Goldens {
     octaves: number; lacunarity: number; gain: number; expected: number[];
   };
   particleSeeds: { count: number; seed: number; expected: number[] };
-  haversine: { lat1: number; lon1: number; lat2: number; lon2: number; expected: number }[];
   batchHaversine: { points: number[]; expectedSegments: number[]; expectedTotal: number };
   offsetLatLng: {
     lat: number; lng: number; distanceMeters: number; bearingDeg: number;
@@ -82,8 +83,6 @@ interface Goldens {
     label: string; points: number[]; lat: number; lng: number;
     expectedSegment: number; expectedAlong: number; expectedCross: number;
   }[];
-  normalizeAngle: { angle: number; expected: number }[];
-  signedAngleDiff: { from: number; to: number; expected: number }[];
   engineNoise: {
     label: string; count: number; rpm: number; load: number;
     speedKmh: number; phase: number; sampleIndex: number; sampleRate: number;
@@ -220,12 +219,12 @@ function depthInput(values: number[]): Float32Array {
 
 const f32Bits = (a: Float32Array): number[] => Array.from(new Uint32Array(a.buffer, a.byteOffset, a.length));
 
-const BINARIES = ['streetview-wasm.wasm', 'streetview-wasm.simd.wasm'] as const;
+const BINARIES = ['streetview-wasm.simd.wasm'] as const;
 
-it('the goldens were captured from the committed scalar binary', () => {
+it('the goldens were captured from the committed main binary', () => {
   // Regenerating the wasm without regenerating the goldens would leave both
   // the C++ and the TS side asserting against a stale contract.
-  const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
+  const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.simd.wasm'));
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   expect(sha256).toBe(goldens.wasmSha256);
 });
@@ -283,14 +282,6 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     api.fillParticleSeeds(out, count, seed);
     expected.forEach((want, i) => {
       expectExact(out[i]!, want, `particleSeeds[${i}]`);
-    });
-  });
-
-  it('haversine matches the goldens', () => {
-    goldens.haversine.forEach(({ lat1, lon1, lat2, lon2, expected }, i) => {
-      expectExact(api.haversine(lat1, lon1, lat2, lon2),
-        expected, `haversine[${i}]`,
-      );
     });
   });
 
@@ -359,23 +350,6 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     for (const c of goldens.graphNearest) {
       expect(api.graphNearest(graph, c.lat, c.lng), `graphNearest ${c.lat},${c.lng}`).toBe(c.expected);
     }
-  });
-
-  it('normalizeAngle matches the goldens', () => {
-    goldens.normalizeAngle.forEach(({ angle, expected }, i) => {
-      expectExact(api.normalizeAngle(angle), expected, `normalizeAngle[${i}] (${angle})`);
-    });
-  });
-
-  it('signedAngleDiff matches the goldens', () => {
-    // This is the case that used to disagree between the C++ source and every
-    // other implementation: fmodf keeps the dividend's sign, so a negative
-    // difference needs an explicit +360 correction.
-    goldens.signedAngleDiff.forEach(({ from, to, expected }, i) => {
-      expectExact(api.signedAngleDiff(from, to),
-        expected, `signedAngleDiff[${i}] (${from} -> ${to})`,
-      );
-    });
   });
 
   it('fillEngineNoise matches the goldens', () => {

@@ -37,7 +37,7 @@ export function createTrackedBuffer(
 }
 
 /** Drop the counter entry for a resource made by `createTracked*`. Idempotent. */
-export function untrackGpuResource(resource: GPUTexture | GPUBuffer | null | undefined): void {
+function untrackGpuResource(resource: GPUTexture | GPUBuffer | null | undefined): void {
     if (!resource) return;
     const entry = trackedIds.get(resource);
     if (!entry) return;

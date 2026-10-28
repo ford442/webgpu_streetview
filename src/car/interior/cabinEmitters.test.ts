@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { VEHICLES } from '../VehicleManager';
-import { FrustumCuller } from '../../utils/performance';
+import { FrustumCuller } from './performance';
 import { CarInteriorDashboardBuilder } from './CarInteriorDashboardBuilder';
 import { CarInteriorGauges } from './CarInteriorGauges';
 import { GeometryFactory } from './GeometryFactory';

@@ -75,10 +75,10 @@ const AUTH_FAILURE_IGNORE_WINDOW_MS = 1200;
 
 /** Fire auth listeners once when Maps reports quota/billing exhaustion. */
 function installOverQuotaGuard(): void {
-  if (overQuotaNotified || (window as unknown as { __mapsOverQuotaGuard?: boolean }).__mapsOverQuotaGuard) {
+  if (overQuotaNotified || window.__mapsOverQuotaGuard) {
     return;
   }
-  (window as unknown as { __mapsOverQuotaGuard?: boolean }).__mapsOverQuotaGuard = true;
+  window.__mapsOverQuotaGuard = true;
 
   const notifyOnce = () => {
     if (overQuotaNotified) return;
@@ -140,7 +140,7 @@ export function clearAuthFailure(forKey?: string): void {
   }
 }
 
-export function ignoreAuthFailuresFor(ms: number = AUTH_FAILURE_IGNORE_WINDOW_MS): void {
+function ignoreAuthFailuresFor(ms: number = AUTH_FAILURE_IGNORE_WINDOW_MS): void {
   ignoreAuthFailuresUntil = Math.max(ignoreAuthFailuresUntil, Date.now() + ms);
   if (window.__mapsApiLoadState) {
     window.__mapsApiLoadState.ignoreAuthFailuresUntil = ignoreAuthFailuresUntil;

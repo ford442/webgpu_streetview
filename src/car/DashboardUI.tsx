@@ -592,4 +592,3 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   );
 };
 
-export default DashboardUI;

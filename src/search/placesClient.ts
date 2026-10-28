@@ -110,7 +110,7 @@ export async function resolvePlaceId(placeId: string): Promise<ResolvedDestinati
 }
 
 /** Text search via Places API (New); used as a fallback when Geocoding is denied. */
-export async function searchPlaceByText(query: string): Promise<ResolvedDestination | null> {
+async function searchPlaceByText(query: string): Promise<ResolvedDestination | null> {
   const lib = await loadPlacesLibrary();
   if (!lib?.Place?.searchByText) return null;
   try {
@@ -159,7 +159,7 @@ export async function geocodeTextQuery(query: string): Promise<ResolvedDestinati
           resolve(null);
         }
       }
-    });
+    }).catch(() => {});
   });
 }
 
@@ -191,7 +191,7 @@ export function lookupStreetViewCoverage(lat: number, lng: number, panoId?: stri
         getPlaceSearchBudget().recordError('streetViewLookup');
         resolve({ ok: false, reason: 'no-coverage' });
       }
-    });
+    }).catch(() => {});
   });
 }
 

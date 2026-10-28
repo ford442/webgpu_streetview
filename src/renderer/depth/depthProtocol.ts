@@ -12,7 +12,7 @@ export interface DepthInitRequest {
     cachePrefix: string;
 }
 
-export interface DepthInferRequest {
+interface DepthInferRequest {
     type: 'infer';
     id: number;
     /** sRGB-encoded RGBA8, `width × height`, tightly packed. */
@@ -21,13 +21,13 @@ export interface DepthInferRequest {
     height: number;
 }
 
-export interface DepthDisposeRequest {
+interface DepthDisposeRequest {
     type: 'dispose';
 }
 
 export type DepthWorkerRequest = DepthInitRequest | DepthInferRequest | DepthDisposeRequest;
 
-export interface DepthProgressMessage {
+interface DepthProgressMessage {
     type: 'progress';
     loaded: number;
     total: number;
@@ -55,7 +55,7 @@ export interface DepthResultMessage {
     ms: number;
 }
 
-export interface DepthErrorMessage {
+interface DepthErrorMessage {
     type: 'error';
     /** Set when one inference failed; absent when loading failed. */
     id?: number;
@@ -63,7 +63,7 @@ export interface DepthErrorMessage {
 }
 
 /** The worker's own device was lost; it will not run again. */
-export interface DepthLostMessage {
+interface DepthLostMessage {
     type: 'lost';
     message: string;
 }

@@ -5,8 +5,6 @@ import { vi, type Mock } from 'vitest';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-// Test-only view of window for installing/removing globals without `any`.
-const win = window as unknown as Record<string, unknown>;
 
 const mockRendererInit = vi.fn();
 const mockRendererDestroy = vi.fn();
@@ -42,12 +40,12 @@ describe('createStreetViewRenderer (WebGPU-required hard-fail)', () => {
   beforeEach(() => {
     resetSearch();
     localStorage.clear();
-    delete win.rendererType;
-    delete win.streetViewRendererDebug;
-    delete win.webgpuProbe;
-    delete win.usingWebGL;
-    delete win.usingWebGPU;
-    delete win.rendererFallbackReason;
+    delete window.rendererType;
+    delete window.streetViewRendererDebug;
+    delete window.webgpuProbe;
+    delete window.usingWebGL;
+    delete window.usingWebGPU;
+    delete window.rendererFallbackReason;
     mockCallOrder.length = 0;
     mockWebgpuFallbackReason = undefined;
 

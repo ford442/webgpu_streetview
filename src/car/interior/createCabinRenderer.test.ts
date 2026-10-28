@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { GPUPerformanceProfile } from '../../utils/performance';
+import type { GPUPerformanceProfile } from './performance';
 import * as THREE from 'three';
 
 const webglInstances: Array<Record<string, unknown>> = [];
@@ -85,8 +85,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     resetWebGPUCabinRendererForTests();
     resetWindshieldPortalSupportForTests();
-    delete (window as Window & { webgpuProbe?: unknown }).webgpuProbe;
-    delete (window as Window & { __CABIN_RENDERER_PROBE__?: unknown }).__CABIN_RENDERER_PROBE__;
+    delete window.webgpuProbe;
+    delete window.__CABIN_RENDERER_PROBE__;
 });
 
 describe('resolveCabinRendererPreference', () => {

@@ -4,6 +4,7 @@ import {
     type WeatherPostProcessorLike,
 } from './weatherPostProcessorTypes';
 import { createRenderPipelineChecked, createShaderModuleChecked } from './gpuPipelineFactory';
+import { timestampWritesField } from './gpuPassTimer';
 
 /**
  * Pass 1's HDR intermediate → swap chain, ACES-tonemapped, nothing else.
@@ -13,6 +14,7 @@ import { createRenderPipelineChecked, createShaderModuleChecked } from './gpuPip
  * weather or grade on it. Inline (not a fetched `.wgsl`) on purpose: it is the
  * thing that must still compile when a shipped shader does not.
  */
+/** @public Read as text by `scripts/validate-shaders.mjs` (naga). */
 export const PRESENT_FALLBACK_WGSL = /* wgsl */ `
 @group(0) @binding(0) var hdrFrame: texture_2d<f32>;
 @group(0) @binding(1) var hdrSampler: sampler;
@@ -110,7 +112,7 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
-            timestampWrites: weatherPassTimestampWrites(timing),
+            ...timestampWritesField(weatherPassTimestampWrites(timing)),
         });
         if (timing) timing.timer.markPassStart(pass, timing.weatherStartIndex);
         pass.setPipeline(this.pipeline);

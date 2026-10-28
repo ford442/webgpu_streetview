@@ -38,8 +38,9 @@ import {
     fetchShaderSource,
 } from './gpuPipelineFactory';
 import { PUBLIC_URL } from '../config/publicUrl';
+import { timestampWritesField } from './gpuPassTimer';
 
-// Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the
+// Must match NOISE_TILE_SIZE in src/renderer/weatherNoiseTile.ts and the
 // `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
 const NOISE_TILE_SIZE = 64;
 const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
@@ -201,7 +202,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     }
 
     /**
-     * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts).
+     * Upload a CPU noise tile (see src/renderer/weatherNoiseTile.ts).
      * `tile` must be NOISE_TILE_SIZE * NOISE_TILE_SIZE elements, row-major.
      */
     public updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void {
@@ -281,7 +282,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         if (this.weatherParamsBuffer && this.device) {
-            this.weatherParams.set(params.slice(0, 6), 0);
+            this.weatherParams.set(params.subarray(0, 6), 0);
             this.weatherParamsDirty = true;
         }
     }
@@ -366,7 +367,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
                 loadOp: 'clear' as GPULoadOp,
                 storeOp: 'store' as GPUStoreOp,
             }],
-            timestampWrites: weatherPassTimestampWrites(timing),
+            ...timestampWritesField(weatherPassTimestampWrites(timing)),
         });
         if (timing) {
             timing.timer.markPassStart(postPass, timing.weatherStartIndex);

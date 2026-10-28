@@ -2,8 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { WasmBootFailure } from './app/WasmBootFailure';
+import { installUnhandledRejectionCounter } from './app/unhandledRejection';
+import { installSvGlobals } from './debug/globals';
 import { registerServiceWorker } from './offline/serviceWorkerRegistration';
 import { loadBootWasm } from './renderer/bootWasm';
+
+installUnhandledRejectionCounter();
+installSvGlobals();
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

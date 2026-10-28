@@ -4,7 +4,7 @@ import type { RouteGuidance } from '../../services/routing/guidanceFormat';
 import { nextStep, tripStore, type TripState } from '../../state/tripStore';
 
 /** The centre-display view of a trip, or null when no route is being driven. */
-export function toRouteGuidance(state: TripState): RouteGuidance | null {
+function toRouteGuidance(state: TripState): RouteGuidance | null {
   const { route, progress } = state;
   if (!route || !progress || (state.status !== 'driving' && state.status !== 'arrived')) return null;
   const step = nextStep(state);

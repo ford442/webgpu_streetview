@@ -19,15 +19,15 @@ export const HORIZON_ROWS_WIDTH = 16;
 export const HORIZON_ROWS_HEIGHT = 48;
 
 /** Reject frames whose row means span less than this (fog wall, flat grey). */
-export const HORIZON_FLAT_RANGE = 0.06;
+const HORIZON_FLAT_RANGE = 0.06;
 /** Reject frames darker than this overall (night, tunnel). */
-export const HORIZON_NIGHT_MEAN = 0.08;
+const HORIZON_NIGHT_MEAN = 0.08;
 /** Minimum sky-minus-ground luma step at the chosen split. */
-export const HORIZON_MIN_CONTRAST = 0.05;
+const HORIZON_MIN_CONTRAST = 0.05;
 /** Largest accepted offset from the pitch prediction, in screen heights. */
-export const HORIZON_MAX_BIAS = 0.35;
+const HORIZON_MAX_BIAS = 0.35;
 /** EMA weight given to each newly accepted sample. */
-export const HORIZON_SMOOTHING = 0.35;
+const HORIZON_SMOOTHING = 0.35;
 
 /** Shader-space horizon uniforms (WeatherParamIndex.horizonEstimateY / horizonBlend). */
 export interface HorizonUniforms {

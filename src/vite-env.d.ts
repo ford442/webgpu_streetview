@@ -1,11 +1,7 @@
 /// <reference types="vite/client" />
 /// <reference types="@webgpu/types" />
 
-import type {
-  RendererBackendPreference,
-  RendererEffectIsolation,
-  WeatherPostProcessMode,
-} from './renderer/RendererBackend';
+import type { WeatherPostProcessMode } from './renderer/RendererBackend';
 
 declare global {
   interface ImportMetaEnv {
@@ -31,42 +27,17 @@ declare global {
     readonly env: ImportMetaEnv;
   }
 
+  /** Config and backend flags. Debug / probe globals are typed in `debug/globals.ts`. */
   interface Window {
     MAPS_API_KEY?: string;
     CESIUM_ION_TOKEN?: string;
     /** OSRM-compatible route endpoint (config.js); unset = public demo, '' = off. */
     ROUTING_ENDPOINT?: string;
-    rendererType?: 'webgpu' | 'webgl';
-    usingWebGPU?: boolean;
-    usingWebGL?: boolean;
-    rendererFallbackReason?: string;
-    weatherPostProcessMode?: WeatherPostProcessMode;
-    rendererAdapterInfo?: import('./renderer/deviceCapabilities').AdapterCapabilitySummary;
-    /** Boot probe — set on WebGPU success and hard-fail (Chrome vs Edge brand + reason). */
-    webgpuProbe?: import('./renderer/webgpuBootProbe').WebGpuProbeRecord;
-    /** Cabin overlay backend (PR 2 of #249). Set when car mode constructs a renderer. */
-    __CABIN_RENDERER_PROBE__?: import('./car/interior/cabinRendererProbe').CabinRendererProbe;
-    /** Cabin audio engine (#321): the WASM DSP in the AudioWorklet, or its fallback. */
-    __CABIN_AUDIO_PROBE__?: import('./car/audio/cabinAudioProbe').CabinAudioProbe;
-    streetViewRendererDebug?: {
-      getBackend: () => {
-        rendererType?: 'webgpu' | 'webgl';
-        usingWebGPU?: boolean;
-        usingWebGL?: boolean;
-        rendererFallbackReason?: string;
-      };
-      setBackend: (backend: RendererBackendPreference) => void;
-      setEffectIsolation: (effect: RendererEffectIsolation) => void;
-      setWireframe: (enabled: boolean) => void;
-      getDebugOptions: () => {
-        effectIsolation: RendererEffectIsolation;
-        wireframe: boolean;
-      };
-      getWeatherMode: () => WeatherPostProcessMode;
-      setWeatherMode: (mode: WeatherPostProcessMode) => void;
-      getGpuChores: () => import('./renderer/gpuChores').GpuChoresBreadcrumbs | null;
-    };
-    __GPU_CHORES__?: import('./renderer/gpuChores').GpuChoresBreadcrumbs;
+    rendererType?: 'webgpu' | 'webgl' | undefined;
+    usingWebGPU?: boolean | undefined;
+    usingWebGL?: boolean | undefined;
+    rendererFallbackReason?: string | undefined;
+    weatherPostProcessMode?: WeatherPostProcessMode | undefined;
   }
 }
 

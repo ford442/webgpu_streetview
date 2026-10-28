@@ -155,4 +155,3 @@ export function useVehicleSettings(): UseVehicleSettingsReturn {
     };
 }
 
-export default useVehicleSettings;

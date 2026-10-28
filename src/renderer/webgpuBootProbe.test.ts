@@ -7,7 +7,7 @@ import {
 
 describe('webgpuBootProbe', () => {
   afterEach(() => {
-    delete (window as Window & { webgpuProbe?: unknown }).webgpuProbe;
+    delete window.webgpuProbe;
   });
 
   describe('detectBrowserBrand', () => {

@@ -1,5 +1,4 @@
-import type { CabinRendererBackend } from '../../utils/performance';
-import type { WebGpuProbeRecord } from '../../renderer/webgpuBootProbe';
+import type { CabinRendererBackend } from './performance';
 
 /**
  * State of the windshield portal (`WindshieldPortal.ts`) — the WebGPU cabin's
@@ -41,15 +40,12 @@ export interface CabinRendererProbe {
     updatedAt: number;
 }
 
-type ProbeWindow = Window & {
-    webgpuProbe?: WebGpuProbeRecord & { cabin?: CabinRendererProbe };
-    __CABIN_RENDERER_PROBE__?: CabinRendererProbe;
-};
+type ProbeWindow = Pick<Window, 'webgpuProbe' | '__CABIN_RENDERER_PROBE__'>;
 
 /** Surface the cabin renderer choice on the backend chip / `webgpuProbe`. */
 export function publishCabinRendererProbe(cabin: CabinRendererProbe): void {
     if (typeof window === 'undefined') return;
-    const win = window as ProbeWindow;
+    const win = window;
     win.__CABIN_RENDERER_PROBE__ = cabin;
     if (win.webgpuProbe) {
         win.webgpuProbe = { ...win.webgpuProbe, cabin };
@@ -66,7 +62,7 @@ export function publishCabinCompositeState(
     compositeReason?: string,
 ): void {
     if (typeof window === 'undefined') return;
-    const win = window as ProbeWindow;
+    const win = window;
     const current = readCabinRendererProbe(win);
     if (!current) return;
     publishCabinRendererProbe({
@@ -83,7 +79,7 @@ export function publishCabinCompositeState(
  */
 export function publishCabinPortalState(portal: CabinPortalProbe): void {
     if (typeof window === 'undefined') return;
-    const win = window as ProbeWindow;
+    const win = window;
     const current = readCabinRendererProbe(win);
     if (!current) return;
     publishCabinRendererProbe({
@@ -94,7 +90,7 @@ export function publishCabinPortalState(portal: CabinPortalProbe): void {
 }
 
 export function readCabinRendererProbe(
-    win: ProbeWindow | undefined = typeof window !== 'undefined' ? (window as ProbeWindow) : undefined,
+    win: ProbeWindow | undefined = typeof window !== 'undefined' ? window : undefined,
 ): CabinRendererProbe | undefined {
     return win?.__CABIN_RENDERER_PROBE__ ?? win?.webgpuProbe?.cabin;
 }

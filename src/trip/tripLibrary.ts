@@ -6,11 +6,11 @@
  * Recordings persist in the `tripRecordings` IndexedDB store, keyed by id.
  */
 
-import { useSyncExternalStore } from 'react';
+import { createStore, useStore } from '../state/createStore';
 import { offlineDelete, offlineGet, offlineListKeys, offlineSet } from '../offline/offlineStore';
 import { parseTripRecording, type TripRecording } from './tripRecording';
 
-export type TripReplayStatus = 'playing' | 'paused' | 'done' | 'stopped' | 'budget' | 'error';
+type TripReplayStatus = 'playing' | 'paused' | 'done' | 'stopped' | 'budget' | 'error';
 
 export interface TripReplayState {
   recordingId: string;
@@ -42,54 +42,41 @@ export interface TripLibraryState {
 
 const EMPTY: TripLibraryState = { recordings: [], recordingId: null, replay: null, albumId: null };
 
-let state: TripLibraryState = EMPTY;
-const listeners = new Set<() => void>();
-
-function commit(next: TripLibraryState): void {
-  state = next;
-  for (const l of Array.from(listeners)) l();
-}
+const store = createStore<TripLibraryState>(EMPTY);
 
 export const tripLibrary = {
-  get: (): TripLibraryState => state,
-  subscribe(listener: () => void): () => void {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  },
+  get: store.get,
+  subscribe: store.subscribe,
   update(patch: Partial<TripLibraryState>): void {
-    commit({ ...state, ...patch });
+    store.set((state) => ({ ...state, ...patch }));
   },
   updateReplay(patch: Partial<TripReplayState>): void {
-    if (state.replay) commit({ ...state, replay: { ...state.replay, ...patch } });
+    store.set((state) => (state.replay ? { ...state, replay: { ...state.replay, ...patch } } : state));
   },
   /** Insert or replace a recording in the list (newest first). */
   upsert(recording: TripRecording): void {
-    const rest = state.recordings.filter((r) => r.id !== recording.id);
-    commit({ ...state, recordings: [recording, ...rest].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) });
+    store.set((state) => {
+      const rest = state.recordings.filter((r) => r.id !== recording.id);
+      return { ...state, recordings: [recording, ...rest].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) };
+    });
   },
   remove(id: string): void {
-    commit({
+    store.set((state) => ({
       ...state,
       recordings: state.recordings.filter((r) => r.id !== id),
       albumId: state.albumId === id ? null : state.albumId,
-    });
+    }));
   },
   find(id: string | null): TripRecording | null {
-    return id ? state.recordings.find((r) => r.id === id) ?? null : null;
+    return id ? store.get().recordings.find((r) => r.id === id) ?? null : null;
   },
   resetForTests(): void {
-    commit(EMPTY);
+    store.set(EMPTY);
   },
 };
 
 export function useTripLibrary<T>(selector: (s: TripLibraryState) => T): T {
-  return useSyncExternalStore(
-    tripLibrary.subscribe,
-    () => selector(tripLibrary.get()),
-    () => selector(tripLibrary.get()),
-  );
+  return useStore(store, selector);
 }
 
 /** Load every saved recording into the library (invalid rows are skipped). */

@@ -1,5 +1,6 @@
 import { type RenderMode } from './types';
 import { readFlag } from '../config/flags';
+import { installSvGlobals, isDebugMode, type RendererDebugHandle } from '../debug/globals';
 
 export type RendererBackendType = 'webgpu' | 'webgl';
 export type RendererBackendPreference = RendererBackendType | 'auto';
@@ -40,7 +41,7 @@ export interface RendererInitOptions {
 export interface StreetViewRenderer {
     readonly canvas: HTMLCanvasElement;
     readonly backendType: RendererBackendType;
-    readonly fallbackReason?: string;
+    readonly fallbackReason?: string | undefined;
 
     init(options?: RendererInitOptions): Promise<boolean>;
     resize(width: number, height: number): void;
@@ -60,14 +61,14 @@ export interface StreetViewRenderer {
     updateCameraParams(heading: number, pitch: number): void;
     updateColorParams(params: Float32Array<ArrayBuffer>): void;
     /**
-     * Upload a WASM-computed noise tile (see src/wasm/wasmNoiseFeeder.ts) for
+     * Upload a CPU noise tile (see src/renderer/weatherNoiseTile.ts) for
      * shaders to sample as CPU-driven turbulence. `tile` must have
      * `NOISE_TILE_SIZE * NOISE_TILE_SIZE` elements, row-major. No-op on
      * backends that don't support it (fragment path without a noise sampler).
      */
     updateNoiseBuffer(tile: Float32Array<ArrayBuffer>): void;
     /**
-     * Upload WASM particle seeds for the compute weather path. No-op on
+     * Upload particle seeds (src/renderer/weatherParticleSeeds.ts) for the compute weather path. No-op on
      * backends that stay procedural (fragment WebGPU).
      */
     updateParticleSeeds(seeds: Float32Array<ArrayBuffer>, width: number, height: number): void;
@@ -241,7 +242,7 @@ export function buildAdapterRequestOptions(
     return requestOptions;
 }
 
-export type CanvasOutputFlag = 'on' | 'off' | 'auto';
+type CanvasOutputFlag = 'on' | 'off' | 'auto';
 
 export interface CanvasOutputFlags {
     /** `?hdr=1` — extended tone mapping + rgba16float swap-chain. */
@@ -298,7 +299,7 @@ export function getRendererDebugOptions(): RendererDebugOptions {
 }
 
 /** Where the resolved weather mode came from. Only `'preset'` may be degraded. */
-export type WeatherPostProcessModeSource = 'url' | 'storage' | 'preset';
+type WeatherPostProcessModeSource = 'url' | 'storage' | 'preset';
 
 export interface WeatherPostProcessModePolicy {
     mode: WeatherPostProcessMode;
@@ -348,49 +349,62 @@ export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean 
  * `setBackend('webgl')` still records the preference but forces a WebGPU probe —
  * there is no live GL weather class in the runtime module graph.
  */
-export const WEBGL_WEATHER_DEFERRED_MESSAGE =
+const WEBGL_WEATHER_DEFERRED_MESSAGE =
     'WebGL weather is a GLSL reference only; WebGPU is required. Preference ignored.';
 
+/** Persist a backend choice and reload (the backend chip's "WebGPU" button, `?debug`'s `setBackend`). */
+function persistBackendAndReload(backend: RendererBackendPreference): void {
+    if (!VALID_BACKENDS.has(backend)) return;
+    if (backend === 'webgl') {
+        console.warn(`[Renderer] ${WEBGL_WEATHER_DEFERRED_MESSAGE}`);
+        // Persist so a later wave can honor it, but boot still probes WebGPU only.
+    }
+    window.localStorage.setItem('streetview.renderer', backend);
+    window.location.reload();
+}
+
+export function retryWebGpuBackend(): void {
+    persistBackendAndReload('webgpu');
+}
+
+/**
+ * `window.streetViewRendererDebug` (also `__SV__.renderer`). The getters are
+ * always there; the mutators — which reload the page or change what renders —
+ * only with `?debug`.
+ */
 function installStreetViewRendererDebug(
     debugOptions: RendererDebugOptions,
     applyDebugOptions: (options: Partial<RendererDebugOptions>) => void,
 ): void {
-    window.streetViewRendererDebug = {
+    installSvGlobals();
+    const handle: RendererDebugHandle = {
         getBackend: () => ({
             rendererType: window.rendererType,
             usingWebGPU: window.usingWebGPU,
             usingWebGL: window.usingWebGL,
             rendererFallbackReason: window.rendererFallbackReason,
         }),
-        setBackend: (backend: RendererBackendPreference) => {
-            if (!VALID_BACKENDS.has(backend)) return;
-            if (backend === 'webgl') {
-                console.warn(`[Renderer] ${WEBGL_WEATHER_DEFERRED_MESSAGE}`);
-                // Persist so a later wave can honor it, but boot still probes WebGPU only.
-                window.localStorage.setItem('streetview.renderer', 'webgl');
-                window.location.reload();
-                return;
-            }
-            window.localStorage.setItem('streetview.renderer', backend);
-            window.location.reload();
-        },
-        setEffectIsolation: (effect: RendererEffectIsolation) => {
+        getDebugOptions: () => ({ ...debugOptions }),
+        getWeatherMode: () => window.weatherPostProcessMode || 'fragment',
+        getGpuChores: () => window.__GPU_CHORES__ ?? null,
+    };
+    if (isDebugMode()) {
+        handle.setBackend = persistBackendAndReload;
+        handle.setEffectIsolation = (effect: RendererEffectIsolation) => {
             if (!VALID_EFFECTS.has(effect)) return;
             window.localStorage.setItem('streetview.effect', effect);
             applyDebugOptions({ effectIsolation: effect });
-        },
-        setWireframe: (enabled: boolean) => {
+        };
+        handle.setWireframe = (enabled: boolean) => {
             applyDebugOptions({ wireframe: enabled });
-        },
-        getDebugOptions: () => ({ ...debugOptions }),
-        getWeatherMode: () => window.weatherPostProcessMode || 'fragment',
-        setWeatherMode: (mode: WeatherPostProcessMode) => {
+        };
+        handle.setWeatherMode = (mode: WeatherPostProcessMode) => {
             if (!VALID_WEATHER_MODES.has(mode)) return;
             window.localStorage.setItem('streetview.weatherMode', mode);
             window.location.reload();
-        },
-        getGpuChores: () => window.__GPU_CHORES__ ?? null,
-    };
+        };
+    }
+    window.streetViewRendererDebug = handle;
 }
 
 export function exposeRendererDebugGlobals(

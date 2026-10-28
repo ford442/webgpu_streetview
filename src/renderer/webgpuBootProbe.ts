@@ -7,6 +7,7 @@ import type { RendererBackendPreference, WeatherPostProcessMode } from './Render
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 import { getPassStatuses, type PassStatusRecord } from './passStatus';
 import type { AppliedRenderScale } from './renderScale';
+import type { CabinRendererProbe } from '../car/interior/cabinRendererProbe';
 
 export type WebGpuProbeStage =
   | 'navigator'
@@ -17,7 +18,7 @@ export type WebGpuProbeStage =
   | 'compute'
   /** A required pass (pass 1, or weather with no present fallback) failed validation. */
   | 'pipeline'
-  /** public/wasm/streetview-wasm.wasm did not fetch or instantiate — no JS twin to fall back to. */
+  /** public/wasm/streetview-wasm.simd.wasm did not fetch or instantiate — no JS twin to fall back to. */
   | 'wasm'
   | 'ok';
 
@@ -28,7 +29,7 @@ export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';
  * preset that quietly stopped running compute weather is visible in DevTools /
  * Playwright rather than silently lying about the preset.
  */
-export interface WebGpuProbeWeatherDegrade {
+interface WebGpuProbeWeatherDegrade {
   from: WeatherPostProcessMode;
   to: WeatherPostProcessMode;
   /** The adapter-limit reason the first boot attempt failed with. */
@@ -50,10 +51,10 @@ export interface WebGpuProbeRecord {
   preference: RendererBackendPreference;
   /** True when URL/localStorage asked for webgl; there is no live GL weather backend. */
   webglPreferenceDeferred: boolean;
-  adapter?: WebGpuProbeAdapterInfo;
-  capabilityMatrix?: DeviceCapabilityMatrix;
+  adapter?: WebGpuProbeAdapterInfo | undefined;
+  capabilityMatrix?: DeviceCapabilityMatrix | undefined;
   /** Present only when the boot degraded the preset's weather mode. */
-  weatherDegrade?: WebGpuProbeWeatherDegrade;
+  weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
   /**
    * Per-pass `ready | failed(reason)` — see `passStatus.ts`. A failed optional
    * pass is disabled and listed here while `ok` stays true.
@@ -63,7 +64,9 @@ export interface WebGpuProbeRecord {
    * The road render scale the last frame used (#329, `renderScale.ts`).
    * Absent until the renderer has encoded a frame.
    */
-  renderScale?: AppliedRenderScale;
+  renderScale?: AppliedRenderScale | undefined;
+  /** The cabin renderer choice, mirrored by `publishCabinRendererProbe`. */
+  cabin?: CabinRendererProbe;
   updatedAt: number;
 }
 
@@ -108,9 +111,9 @@ export interface PublishWebGpuProbeOptions {
   reason?: string;
   preference?: RendererBackendPreference;
   webglPreferenceDeferred?: boolean;
-  adapter?: WebGpuProbeAdapterInfo;
-  capabilityMatrix?: DeviceCapabilityMatrix;
-  weatherDegrade?: WebGpuProbeWeatherDegrade;
+  adapter?: WebGpuProbeAdapterInfo | undefined;
+  capabilityMatrix?: DeviceCapabilityMatrix | undefined;
+  weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
   browserBrand?: BrowserBrand;
   now?: number;
 }
@@ -119,7 +122,7 @@ export interface PublishWebGpuProbeOptions {
 export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuProbeRecord {
   const previous =
     typeof window !== 'undefined'
-      ? (window as Window & { webgpuProbe?: WebGpuProbeRecord }).webgpuProbe
+      ? window.webgpuProbe
       : undefined;
 
   const record: WebGpuProbeRecord = {
@@ -139,7 +142,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
   };
 
   if (typeof window !== 'undefined') {
-    (window as Window & { webgpuProbe?: WebGpuProbeRecord }).webgpuProbe = record;
+    window.webgpuProbe = record;
   }
   return record;
 }

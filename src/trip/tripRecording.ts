@@ -21,7 +21,7 @@ export const MAX_TRIP_HOPS = 5000;
 export const MAX_TRIP_STILLS = 50;
 
 /** The weather and light the user set — restored on replay. */
-export interface TripWeatherSnapshot {
+interface TripWeatherSnapshot {
   rain: number;
   snow: number;
   wind: number;

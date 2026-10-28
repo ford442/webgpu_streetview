@@ -46,7 +46,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <StreetViewProvider initialHeading={0} initialPitch={0}>{children}</StreetViewProvider>;
 }
 
-function hop(renderer: ReturnType<typeof makeRenderer>, reveal?: Parameters<ReturnType<typeof useStreetView>['teleportToPano']>[1]) {
+async function hop(renderer: ReturnType<typeof makeRenderer>, reveal?: Parameters<ReturnType<typeof useStreetView>['teleportToPano']>[1]) {
   const hook = renderHook(() => useStreetView(), { wrapper });
   act(() => {
     hook.result.current.setPanorama(mockPano);
@@ -56,10 +56,11 @@ function hop(renderer: ReturnType<typeof makeRenderer>, reveal?: Parameters<Retu
     hook.result.current.teleportToPano('year-2011', reveal);
   });
   expect(hook.result.current.isTransitioning).toBe(true);
-  // pano_changed → the first stability tick force-releases.
-  act(() => {
+  // pano_changed → the first stability tick force-releases (the tick awaits
+  // its canvas sample, so timers advance with microtasks flushed).
+  await act(async () => {
     panoChanged!();
-    vi.advanceTimersByTime(500);
+    await vi.advanceTimersByTimeAsync(500);
   });
   return hook;
 }
@@ -77,9 +78,9 @@ afterEach(() => {
 });
 
 describe('useStreetView release reveal', () => {
-  it('reduced-motion cut: releases at once with no shader and no crossfade', () => {
+  it('reduced-motion cut: releases at once with no shader and no crossfade', async () => {
     const renderer = makeRenderer();
-    const { result } = hop(renderer, { reveal: { kind: 'cut' } });
+    const { result } = await hop(renderer, { reveal: { kind: 'cut' } });
 
     expect(renderer.endHoldTransition).toHaveBeenCalled();
     expect(result.current.isTransitioning).toBe(false);
@@ -89,9 +90,9 @@ describe('useStreetView release reveal', () => {
     expect(renderer.setTransitionProgress.mock.calls.every(([p]) => p === 0)).toBe(true);
   });
 
-  it('year-chip wipe: ramps the wipe, not the crossfade, then ends it', () => {
+  it('year-chip wipe: ramps the wipe, not the crossfade, then ends it', async () => {
     const renderer = makeRenderer();
-    const { result } = hop(renderer, { reveal: { kind: 'wipe', direction: -1 } });
+    const { result } = await hop(renderer, { reveal: { kind: 'wipe', direction: -1 } });
 
     expect(renderer.beginHistoricalWipe).toHaveBeenCalledWith(-1);
     act(() => {
@@ -105,9 +106,9 @@ describe('useStreetView release reveal', () => {
     expect(result.current.isTransitioning).toBe(false);
   });
 
-  it('falls back to the crossfade when the renderer declines the wipe', () => {
+  it('falls back to the crossfade when the renderer declines the wipe', async () => {
     const renderer = makeRenderer({ wipe: false });
-    hop(renderer, { reveal: { kind: 'wipe', direction: 1 } });
+    await hop(renderer, { reveal: { kind: 'wipe', direction: 1 } });
     act(() => {
       vi.advanceTimersByTime(400);
     });
@@ -115,9 +116,9 @@ describe('useStreetView release reveal', () => {
     expect(renderer.setTransitionProgress.mock.calls.some(([p]) => p > 0 && p <= 1)).toBe(true);
   });
 
-  it('a plain hop keeps the crossfade', () => {
+  it('a plain hop keeps the crossfade', async () => {
     const renderer = makeRenderer();
-    hop(renderer);
+    await hop(renderer);
     act(() => {
       vi.advanceTimersByTime(400);
     });

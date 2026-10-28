@@ -9,7 +9,6 @@ import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
 import { isWebGpuProbeOk } from '../webgpuBootProbe';
 import {
   CHORES_WORKGROUP_SIZE,
-  downsample2d,
   HIST_BINS,
   histDownsampleSize,
   meanLumaFromHistogram,
@@ -220,16 +219,19 @@ export class GpuChores {
   }
 
   /**
-   * GPU hist on a panorama texture (1/4-res samples). Falls back to CPU if
-   * pipelines are not ready, a readback is in flight, or the probe/kill switch
-   * forbids GPU chores.
+   * GPU hist on a panorama texture (1/4-res samples).
+   *  - `'busy'`: the previous readback is still in flight — skip this sample
+   *    and keep the last value (the GPU path is fine, just not done yet).
+   *  - `null`: GPU chores are unavailable (pipelines failed, probe or kill
+   *    switch) — only then does a caller fall back to the CPU path.
    */
-  public async sampleTexture(texture: GPUTexture): Promise<ChoresSample | null> {
+  public async sampleTexture(texture: GPUTexture): Promise<ChoresSample | 'busy' | null> {
     await this.ensureReady();
     if (!this.gpuReady || !this.device || !this.histPipeline || !this.histBindLayout
-      || !this.binsBuffer || !this.binsReadback || this.inFlight) {
+      || !this.binsBuffer || !this.binsReadback) {
       return null;
     }
+    if (this.inFlight) return 'busy';
     this.inFlight = true;
     const started = performance.now();
     try {
@@ -401,6 +403,4 @@ function extremaFromBins(bins: Uint32Array): { min: number; max: number } {
   return { min: minBin / 255, max: maxBin / 255 };
 }
 
-export { meanLumaFromHistogram, downsample2d };
-export { lumaHistogramBt709, reduceLumaBt709 } from './lumaMath';
 export type { GpuChoresBackend };

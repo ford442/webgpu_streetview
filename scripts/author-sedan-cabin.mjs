@@ -729,7 +729,7 @@ for (const n of nodes) {
     const indexed = mergeVertices(merged, 1e-5);
     const posArr = new Float32Array(indexed.attributes.position.array);
     const nrmArr = new Float32Array(indexed.attributes.normal.array);
-    const idxSrc = indexed.index.array;
+    const idxSrc = /** @type {NonNullable<typeof indexed.index>} */ (indexed.index).array;
     const vcount = posArr.length / 3;
     const idxArr = vcount < 65536 ? Uint16Array.from(idxSrc) : Uint32Array.from(idxSrc);
     const attributes = {
@@ -765,7 +765,7 @@ for (const s of sockets) {
     problems.push(`missing socket ${s}`);
     continue;
   }
-  const prims = meshes[n.mesh].primitives.length;
+  const prims = meshes[/** @type {number} */ (n.mesh)].primitives.length;
   const wantsGroup = s === 'SteeringWheel' || s === 'WiperL' || s === 'WiperR';
   if (wantsGroup && prims < 2) problems.push(`${s} must have ≥2 primitives (loads as THREE.Group)`);
   if (!wantsGroup && prims !== 1) problems.push(`${s} must have exactly 1 primitive (loads as THREE.Mesh)`);

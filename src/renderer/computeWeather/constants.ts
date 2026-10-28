@@ -3,11 +3,11 @@
  * path. Split out of `ComputeWeatherPostProcessor.ts` — see `./index.ts`.
  */
 
-// Must match NOISE_TILE_SIZE in src/wasm/wasmNoiseFeeder.ts and the storage
+// Must match NOISE_TILE_SIZE in src/renderer/weatherNoiseTile.ts and the storage
 // buffer declared in weather-post.wgsl. The compute variant binds this tile at
 // binding 12 (the image_video_effects `plasmaBuffer` slot), where the shader
 // reads it as 1024 vec4s — 4096 floats, exactly one 64x64 tile.
-export const NOISE_TILE_SIZE = 64;
+const NOISE_TILE_SIZE = 64;
 export const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
 
 // image_video_effects-compatible Uniforms struct size:

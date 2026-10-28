@@ -6,13 +6,13 @@
  *   ?pano=...&look=noir&year=2012&vehicle=convertible
  */
 
-import { buildDeepLinkUrl, parseDeepLinkParams, type DeepLinkParams } from './deepLink';
+import { buildDeepLinkUrl, type DeepLinkParams } from './deepLink';
 import { LOOK_PARAM_KEYS, applyLookSearchParams } from './lookLink';
 import { isLookId, type LookId } from '../config/lookPacks';
 import { currentSearch, readSearchParams } from '../config/flags';
 import { isValidVehicleType, type VehicleType } from '../car/VehicleManager';
 
-export const STUDIO_PARAM_KEYS = {
+const STUDIO_PARAM_KEYS = {
   year: 'year',
   vehicle: 'vehicle',
 } as const;
@@ -55,16 +55,6 @@ export function parseStudioLinkParams(
   };
 }
 
-export function readBootStudio(
-  search: string = currentSearch(),
-): Pick<StudioLinkParams, 'lookId' | 'year' | 'vehicleType'> {
-  try {
-    return parseStudioLinkParams(search);
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Location deep link plus optional look / year / vehicle.
  * Unknown look or vehicle ids are omitted (same policy as session v2).
@@ -105,4 +95,3 @@ export function yearFromImageDate(imageDate: string | null | undefined): string 
 }
 
 /** Re-export for callers that also consume location params in one place. */
-export { parseDeepLinkParams };

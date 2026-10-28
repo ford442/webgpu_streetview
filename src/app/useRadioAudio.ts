@@ -26,7 +26,7 @@ export function useRadioAudio(streamUrl: string = DEFAULT_STREAM_URL): UseRadioA
       audioRef.current = el;
     }
     return () => {
-      audioCtxRef.current?.close();
+      audioCtxRef.current?.close().catch(() => {});
     };
   }, [streamUrl]);
 

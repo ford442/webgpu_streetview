@@ -1,6 +1,6 @@
 import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';
 import { computeRouteStats, formatDistanceMetric, toLatLonPairs } from './routeStats';
-import { haversineDistance } from './navigation';
+import { haversineDistance, haversineMeters } from './navigation';
 
 let wasm: StreetViewWasmAPI;
 
@@ -44,11 +44,11 @@ describe('computeRouteStats', () => {
 
         expect(stats.segmentMeters).toHaveLength(2);
         expect(stats.segmentMeters[0]).toBeCloseTo(
-            wasm.haversine(40.7128, -74.006, 51.5074, -0.1278),
+            haversineMeters(40.7128, -74.006, 51.5074, -0.1278),
             6,
         );
         expect(stats.segmentMeters[1]).toBeCloseTo(
-            wasm.haversine(51.5074, -0.1278, 48.8566, 2.3522),
+            haversineMeters(51.5074, -0.1278, 48.8566, 2.3522),
             6,
         );
         expect(stats.totalMeters).toBeCloseTo(
@@ -57,7 +57,7 @@ describe('computeRouteStats', () => {
         );
     });
 
-    it('agrees with navigation.ts haversineDistance (both call the same WASM/fallback haversine)', () => {
+    it('agrees with navigation.ts haversineDistance (the same haversine, in TS f64)', () => {
         const points = [
             { lat: 37.7749, lng: -122.4194 },
             { lat: 34.0522, lng: -118.2437 },
@@ -72,9 +72,8 @@ describe('computeRouteStats', () => {
                 'km',
             );
         }
-        // navigation.ts's haversineDistance converts the shared meters result
-        // to km via R=6371 (vs. the WASM module's R=6371000 for the raw
-        // meters call), so the two are equal only up to that unit conversion.
+        // haversineDistance converts metres to km via R=6371 (vs. the batch
+        // kernel's R=6371000 m), so the two agree up to that unit conversion.
         expect(stats.totalMeters / 1000).toBeCloseTo(expectedKm, 6);
     });
 

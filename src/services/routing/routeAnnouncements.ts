@@ -8,7 +8,7 @@
 import { nextStep, type TripState } from '../../state/tripStore';
 import { formatGuidanceDistance, maneuverInstruction } from './guidanceFormat';
 
-export const ANNOUNCE_THRESHOLDS_M = [200, 50] as const;
+const ANNOUNCE_THRESHOLDS_M = [200, 50] as const;
 
 export class RouteAnnouncer {
   private readonly announce: (message: string) => void;

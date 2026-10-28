@@ -16,6 +16,26 @@ export const WASM_STACK_SIZE = 64 * 1024;
 /** Initial arena size; grown on demand (a 512² noise tile is 1 MiB). */
 export const SCRATCH_INITIAL_BYTES = 64 * 1024;
 
+/**
+ * How long the arena may sit above {@link SCRATCH_INITIAL_BYTES} with no
+ * reservation that needs it before it shrinks back.
+ */
+export const SCRATCH_IDLE_SHRINK_MS = 1000;
+
+/** The clock the arena's idle shrink runs on — injectable for tests. */
+export interface ScratchClock {
+  now(): number;
+  setTimeout(callback: () => void, ms: number): void;
+}
+
+const defaultClock: ScratchClock = {
+  now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+  // Looked up per call, so a test's fake timers apply to arenas made before them.
+  setTimeout: (callback, ms) => {
+    globalThis.setTimeout(callback, ms);
+  },
+};
+
 /** A kernel scratch region allocated from the module's own heap. */
 export interface ScratchArena {
   /**
@@ -26,6 +46,17 @@ export interface ScratchArena {
    * create typed-array views only *after* this returns, never before.
    */
   reserve(bytes: number): number;
+  /**
+   * Free the block and re-malloc `bytes` when it is larger than that. WASM
+   * memory itself never shrinks; this hands the region back to the allocator
+   * so a one-off large input does not pin it. Runs on its own after
+   * {@link SCRATCH_IDLE_SHRINK_MS} without a reservation above the default.
+   */
+  shrinkTo(bytes: number): void;
+  /** Current block size in bytes. */
+  readonly capacity: number;
+  /** Largest reservation ever asked of this arena, in bytes. */
+  readonly highWaterBytes: number;
 }
 
 /**
@@ -38,6 +69,11 @@ export interface ScratchArena {
  * the top ~5 KiB of stack sat inside the scratch region and libm's sin/cos
  * frames corrupted batch_haversine inputs for routes at |lat| > 45°.
  *
+ * Growth is on demand (power-of-two steps from the default); a block above
+ * the default shrinks back after a second in which nothing needed more than
+ * the default. The hot path pays one clock read per oversized reserve; the
+ * check is a single `setTimeout` re-armed only while the arena is large.
+ *
  * @param stackBase  Highest stack address (`emscripten_stack_get_base()`), when
  *                   the binary exports it. The arena must start at or above it;
  *                   a layout where it does not throws (and the load rejects)
@@ -47,9 +83,14 @@ export function createScratchArena(
   malloc: (bytes: number) => number,
   free: (ptr: number) => void,
   stackBase?: number,
+  clock: ScratchClock = defaultClock,
 ): ScratchArena {
   let base = 0;
   let capacity = 0;
+  let highWater = 0;
+  /** Last time a reservation needed more than the default. */
+  let lastLargeAt = 0;
+  let shrinkArmed = false;
 
   const allocate = (bytes: number): void => {
     const ptr = malloc(bytes);
@@ -68,20 +109,62 @@ export function createScratchArena(
     capacity = bytes;
   };
 
+  const release = (): void => {
+    if (base !== 0) free(base);
+    base = 0;
+    capacity = 0;
+  };
+
+  const shrinkTo = (bytes: number): void => {
+    if (capacity <= bytes && base !== 0) return;
+    release();
+    try {
+      allocate(bytes);
+    } catch {
+      // Leave it empty: the next reserve() allocates (and throws there, on
+      // the caller's stack, if malloc really is failing).
+    }
+  };
+
+  const checkIdle = (): void => {
+    shrinkArmed = false;
+    if (capacity <= SCRATCH_INITIAL_BYTES) return;
+    const idle = clock.now() - lastLargeAt;
+    if (idle >= SCRATCH_IDLE_SHRINK_MS) {
+      shrinkTo(SCRATCH_INITIAL_BYTES);
+      return;
+    }
+    shrinkArmed = true;
+    clock.setTimeout(checkIdle, SCRATCH_IDLE_SHRINK_MS - idle);
+  };
+
   allocate(SCRATCH_INITIAL_BYTES);
 
   return {
     reserve(bytes: number): number {
-      if (bytes > capacity) {
+      if (bytes > highWater) highWater = bytes;
+      if (bytes > SCRATCH_INITIAL_BYTES) {
+        lastLargeAt = clock.now();
+      }
+      if (bytes > capacity || base === 0) {
         // Contents need not survive: every wrapper copies in after reserving.
-        free(base);
-        base = 0;
-        capacity = 0;
+        release();
         let next = SCRATCH_INITIAL_BYTES;
         while (next < bytes) next *= 2;
         allocate(next);
       }
+      if (capacity > SCRATCH_INITIAL_BYTES && !shrinkArmed) {
+        shrinkArmed = true;
+        clock.setTimeout(checkIdle, SCRATCH_IDLE_SHRINK_MS);
+      }
       return base;
+    },
+    shrinkTo,
+    get capacity() {
+      return capacity;
+    },
+    get highWaterBytes() {
+      return highWater;
     },
   };
 }

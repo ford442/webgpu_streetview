@@ -49,9 +49,9 @@ import { PUBLIC_URL } from '../config/publicUrl';
  *
  * Two of the image_video_effects storage surfaces carry real data: binding 6
  * receives a full-res view-depth proxy each dispatch, and binding 12 carries
- * the WASM noise tile (#128) that drives dust turbulence — an fBm tile on this
+ * the CPU noise tile (#128) that drives dust turbulence — an fBm tile on this
  * path, where the fragment path gets a single octave (see
- * src/wasm/wasmNoiseFeeder.ts and docs/WASM_BRIDGE.md). Bindings 7/8 hold
+ * src/renderer/weatherNoiseTile.ts and docs/GRAPHICS.md). Bindings 7/8 hold
  * GPU precipitation when `updateParticleSeeds` has run: 7 is a half-res
  * density splat (`texture_2d` read), 8 is the compact particle-state write
  * target. See docs/RENDERER_FALLBACK.md and docs/GRAPHICS.md.

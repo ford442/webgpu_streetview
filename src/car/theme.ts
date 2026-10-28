@@ -19,20 +19,6 @@ export interface Theme {
   '--night-intensity': string;
 }
 
-export const lightTheme: Theme = {
-  '--bg-primary': 'rgba(8,14,12,0.55)',
-  '--bg-glass': 'rgba(8,14,12,0.4)',
-  '--ambient-glow': 'rgba(70,210,130,0.28)',
-  '--accent': '#4CAF50',
-  '--accent-hover': 'rgba(76,175,80,0.22)',
-  '--accent-active': 'rgba(76,175,80,0.35)',
-  '--text-primary': '#fff',
-  '--text-muted': 'rgba(255,255,255,0.6)',
-  '--border-color': 'rgba(255,255,255,0.1)',
-  '--border-hover': 'rgba(76,175,80,0.3)',
-  '--night-intensity': '0',
-};
-
 export const darkTheme: Theme = {
   '--bg-primary': 'rgba(0,0,0,0.85)',
   '--bg-glass': 'rgba(0,0,0,0.6)',
@@ -44,20 +30,6 @@ export const darkTheme: Theme = {
   '--text-muted': 'rgba(255,255,255,0.5)',
   '--border-color': 'rgba(255,255,255,0.1)',
   '--border-hover': 'rgba(76,175,80,0.3)',
-  '--night-intensity': '0',
-};
-
-export const neonTheme: Theme = {
-  '--bg-primary': 'rgba(10,0,20,0.75)',
-  '--bg-glass': 'rgba(10,0,20,0.55)',
-  '--ambient-glow': 'rgba(212,0,255,0.55)',
-  '--accent': '#D400FF',
-  '--accent-hover': 'rgba(212,0,255,0.3)',
-  '--accent-active': 'rgba(212,0,255,0.45)',
-  '--text-primary': '#fff',
-  '--text-muted': 'rgba(255,255,255,0.5)',
-  '--border-color': 'rgba(255,255,255,0.1)',
-  '--border-hover': 'rgba(212,0,255,0.3)',
   '--night-intensity': '0',
 };
 
@@ -94,7 +66,7 @@ export function applyTheme(
 }
 
 /** Expand #abc / #aabbcc to a canonical 7-char hex. */
-export function normalizeHex(hex: string): string {
+function normalizeHex(hex: string): string {
   const h = hex.trim().replace(/^#/, '');
   if (h.length === 3) {
     return `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`.toUpperCase();
@@ -102,7 +74,7 @@ export function normalizeHex(hex: string): string {
   return `#${h}`.toUpperCase();
 }
 
-export function hexToRgba(hex: string, alpha: number): string {
+function hexToRgba(hex: string, alpha: number): string {
   const n = parseInt(normalizeHex(hex).slice(1), 16);
   const r = (n >> 16) & 255;
   const g = (n >> 8) & 255;

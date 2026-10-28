@@ -10,7 +10,6 @@ import {
 } from './limoAtmosphere';
 
 export type { LimoState };
-export { defaultLimoState };
 
 /**
  * Limousine rear-cabin extras — partition, mini bar, entertainment screens,
@@ -387,4 +386,3 @@ export class LimoAtmosphere {
     }
 }
 
-export default LimoAtmosphere;

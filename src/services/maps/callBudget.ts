@@ -20,7 +20,7 @@
 export type MapsCallKind = 'panorama' | 'placeSearch' | 'directions' | 'routing';
 
 /** `null` = counted here, capped by the kind's own family budget. */
-export const MAPS_CALL_BUDGET_CAPS: Readonly<Record<MapsCallKind, number | null>> = {
+const MAPS_CALL_BUDGET_CAPS: Readonly<Record<MapsCallKind, number | null>> = {
   // A runaway guard, not a pace limit: a teleport prefetch is one call, a
   // historical crawl twelve, a re-snap one. Route following on-route makes none.
   panorama: 2000,
@@ -29,7 +29,7 @@ export const MAPS_CALL_BUDGET_CAPS: Readonly<Record<MapsCallKind, number | null>
   routing: 40,
 };
 
-export interface MapsCallKindStats {
+interface MapsCallKindStats {
   used: number;
   cap: number | null;
   remaining: number | null;

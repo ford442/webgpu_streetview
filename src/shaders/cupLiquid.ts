@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const cupLiquidVertex = /* glsl */ `
+const cupLiquidVertex = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vWorldPos;
 void main() {
@@ -11,7 +11,7 @@ void main() {
 }
 `;
 
-export const cupLiquidFragment = /* glsl */ `
+const cupLiquidFragment = /* glsl */ `
 precision highp float;
 
 uniform float time;
@@ -42,7 +42,7 @@ export interface CupLiquidUniforms {
   slosh: { value: number };
 }
 
-export function createCupLiquidGlslMaterial(color: THREE.ColorRepresentation = 0x3a2010): THREE.ShaderMaterial {
+function createCupLiquidGlslMaterial(color: THREE.ColorRepresentation = 0x3a2010): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },

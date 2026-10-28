@@ -45,14 +45,14 @@ export interface FrameContext {
     presentTarget: GPUTextureView | undefined;
 }
 
-export type FramePhase = 'main' | 'tail';
+type FramePhase = 'main' | 'tail';
 
 /**
  * When a pass encodes: `main` (the default) with the road; `tail` only in a
  * split frame's tail; `last` in the tail when there is one, else at the end of
  * `main` — the cabin composite, which must land on whatever presents.
  */
-export type FramePassPhase = 'main' | 'tail' | 'last';
+type FramePassPhase = 'main' | 'tail' | 'last';
 
 function encodesIn(passPhase: FramePassPhase, frame: Pick<FrameContext, 'phase' | 'hasTail'>): boolean {
     if (passPhase === 'last') return frame.hasTail ? frame.phase === 'tail' : frame.phase === 'main';
@@ -78,7 +78,7 @@ export interface FramePass {
      */
     readonly required?: boolean;
     /** Not initialised by `initAll` — the owner calls `initPass` when it is needed. */
-    readonly lazy?: boolean;
+    readonly lazy?: boolean | undefined;
     /** Which part of a split frame encodes it (`FramePassPhase`); `main` when unset. */
     readonly phase?: FramePassPhase;
     init(): Promise<void>;

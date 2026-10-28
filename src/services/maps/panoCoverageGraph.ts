@@ -22,7 +22,7 @@ export interface PanoGraphNode {
   description?: string;
 }
 
-export interface PanoGraphEdge {
+interface PanoGraphEdge {
   from: string;
   to: string;
 }
@@ -159,7 +159,7 @@ export function nearestGraphNode(
 }
 
 /** Map `getPanorama` data onto a graph node; null when it carries no location. */
-export function panoNodeFromData(data: google.maps.StreetViewPanoramaData | null): PanoGraphNode | null {
+function panoNodeFromData(data: google.maps.StreetViewPanoramaData | null): PanoGraphNode | null {
   const loc = data?.location;
   const latLng = loc?.latLng;
   if (!loc?.pano || !latLng) return null;
@@ -179,7 +179,7 @@ export function createMeteredPanoFetcher(svc: google.maps.StreetViewService): Pa
     return new Promise((resolve) => {
       svc.getPanorama({ pano: panoId }, (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? panoNodeFromData(data) : null);
-      });
+      }).catch(() => {});
     });
   };
 }

@@ -6,6 +6,7 @@
  * freezes it. (Before #329 free-look rendered every other frame and adaptive
  * skipping dropped more; car-mode gauges stuttered with it.)
  */
+import { Profiler } from 'react';
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,14 +15,8 @@ const sv = vi.hoisted(() => ({
     isPanoramaUpdatePaused: false,
     setRenderer: () => undefined,
 }));
-const frameMs = vi.hoisted(() => ({ value: null as number | null }));
 
 vi.mock('../hooks', () => ({
-    usePerformanceMonitor: () => ({
-        startMonitoring: () => undefined,
-        stopMonitoring: () => undefined,
-        getFrameTimeMs: () => frameMs.value,
-    }),
     useWeatherSettings: () => ({ rainIntensity: 0, snowIntensity: 0, wind: 0, fogDensity: 0 }),
     useLightingSettings: () => ({
         nightIntensity: 0, headlightsOn: false, highBeam: false, domeLightOn: false,
@@ -61,6 +56,8 @@ vi.mock('../renderer/lut', () => ({ fetchLookLutVolume: async () => null }));
 import WebGPUCanvas from './WebGPUCanvas';
 import { getRenderScaleRequest, resetRenderScaleForTests } from '../renderer/renderScale';
 import { resetGpuPassTimings, setGpuPassTimings } from '../renderer/gpuPassTimingStore';
+import { perfStore, FRAME_RATE_IDLE } from '../renderer/perfStore';
+import { povStore } from '../state/povStore';
 
 let rafQueue: FrameRequestCallback[] = [];
 let now = 0;
@@ -86,7 +83,6 @@ async function mounted() {
 beforeEach(() => {
     now = 0;
     rafQueue = [];
-    frameMs.value = null;
     sv.canvas = null;
     sv.isPanoramaUpdatePaused = false;
     renderer.hold.active = false;
@@ -110,7 +106,7 @@ describe('WebGPUCanvas render loop', () => {
         await mounted();
         frames(30, 1000 / 60);
         expect(renderer.count('renderStreetView')).toBe(30);
-        frames(30, 50, () => { frameMs.value = 50; });
+        frames(30, 50);
         expect(renderer.count('renderStreetView')).toBe(60);
     });
 
@@ -149,5 +145,34 @@ describe('WebGPUCanvas render loop', () => {
         }));
         expect(renderer.count('renderHeldFrame')).toBe(60);
         expect(getRenderScaleRequest().scale).toBe(1);
+    });
+
+    it('commits nothing while idle-panning: the frame loop lives outside React', async () => {
+        sv.canvas = document.createElement('canvas');
+        const commits = vi.fn();
+        render(<Profiler id="canvas" onRender={commits}><WebGPUCanvas /></Profiler>);
+        await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+        frames(5, 1000 / 60);
+        const settled = commits.mock.calls.length;
+        // Two seconds of look-around at 60 fps.
+        frames(120, 1000 / 60, (i) => povStore.setView(i, (i % 20) - 10));
+        expect(renderer.count('renderStreetView')).toBeGreaterThanOrEqual(120);
+        expect(commits.mock.calls.length).toBe(settled);
+    });
+
+    it('publishes the real frame rate to perfStore at UI rate', async () => {
+        perfStore.set(FRAME_RATE_IDLE);
+        const publishes = vi.fn();
+        const stop = perfStore.subscribe(publishes);
+        await mounted();
+        frames(60, 1000 / 30);
+        expect(perfStore.get()).toMatchObject({ measured: true, fps: 30 });
+        expect(perfStore.get().frameTimeMs).toBeCloseTo(33.33, 1);
+        frames(120, 1000 / 60);
+        expect(perfStore.get().fps).toBe(60);
+        // 4 s of frames → ~8 windows of 500 ms, not 180 publishes.
+        expect(publishes.mock.calls.length).toBeGreaterThanOrEqual(7);
+        expect(publishes.mock.calls.length).toBeLessThanOrEqual(9);
+        stop();
     });
 });

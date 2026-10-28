@@ -1,4 +1,4 @@
-import type { GpuPassTimer } from './gpuPassTimer';
+import { timestampWritesField, type GpuPassTimer } from './gpuPassTimer';
 import { pass1TimestampWrites } from './streetViewPass';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
@@ -22,8 +22,8 @@ export class TransitionManager {
     // === TRANSITION SYSTEM ===
     private transitionPipelines: Map<string, GPURenderPipeline> = new Map();
     private transitionBindGroupLayout?: GPUBindGroupLayout;
-    private transitionUniformBuffer?: GPUBuffer;
-    private prevTexture?: GPUTexture;
+    private transitionUniformBuffer?: GPUBuffer | undefined;
+    private prevTexture?: GPUTexture | undefined;
     private activeTransition: string | null = null;
     private transitionProgress: number = 0.0;
 
@@ -35,7 +35,7 @@ export class TransitionManager {
     };
 
     // === INLINE TRANSITION SYSTEM ===
-    private previousFrameTexture?: GPUTexture;
+    private previousFrameTexture?: GPUTexture | undefined;
     private inlineTransitionProgress: number = 0.0;
     private legacyTransitionsEnabled: boolean = false;
     private intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT;
@@ -252,7 +252,7 @@ export class TransitionManager {
                     loadOp: 'clear' as GPULoadOp,
                     storeOp: 'store' as GPUStoreOp,
                 }],
-                timestampWrites: pass1TimestampWrites(pass1Timing),
+                ...timestampWritesField(pass1TimestampWrites(pass1Timing)),
             });
 
             const tBindGroup = this.device.createBindGroup({

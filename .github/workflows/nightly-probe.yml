@@ -99,3 +99,47 @@ jobs:
             gh issue create --title "$title" --label regression \
               --body "The nightly probe failed on $(git rev-parse --short HEAD): $RUN_URL"
           fi
+
+  # libFuzzer over the ABI (cpp/fuzz/: luma_analyze + downsample_2d,
+  # polyline_project, the cabin engine's set_ir/params/render, depth_*),
+  # clang + ASan/UBSan on the SIMDe path, 60 s per target. Corpora are cached
+  # across nights; a crash uploads its reproducer.
+  cpp-fuzz:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'ford442/webgpu_streetview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore fuzz corpora
+        uses: actions/cache@v4
+        with:
+          path: cpp/build-fuzz/corpus
+          key: cpp-fuzz-corpus-${{ github.run_id }}
+          restore-keys: cpp-fuzz-corpus-
+
+      - name: Fuzz every harness for 60 s
+        run: FUZZ_SECONDS=60 bash scripts/fuzz-cpp.sh
+
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-fuzz-artifacts
+          path: cpp/build-fuzz/artifacts/
+          retention-days: 30
+
+      - name: Open a regression issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly C++ fuzzing found a crash"
+          gh label create regression --color B60205 --description "Something that worked is broken" 2>/dev/null || true
+          existing=$(gh issue list --state open --label regression --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Again on $(git rev-parse --short HEAD): $RUN_URL"
+          else
+            gh issue create --title "$title" --label regression \
+              --body "A libFuzzer harness in cpp/fuzz/ crashed on $(git rev-parse --short HEAD): $RUN_URL (reproducers in the run's artifacts)"
+          fi

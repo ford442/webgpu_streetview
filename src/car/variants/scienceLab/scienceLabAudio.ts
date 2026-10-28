@@ -67,7 +67,7 @@ export class ScienceLabAudio {
             this.fanOscillator.stop();
         }
         if (this.audioContext) {
-            this.audioContext.close();
+            this.audioContext.close().catch(() => {});
         }
         this.fanOscillator = null;
         this.fanGain = null;

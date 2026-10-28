@@ -13,9 +13,3 @@
  */
 
 export const CORTIANICS_ACCENT = '#C9A227';
-export const CORTIANICS_NIGHT_STRIP = '#DC201C';
-
-export const CORTIANICS_REFERENCE = {
-  rearCabin: 'images/vehicles/cortianics/rear-cabin.jpg',
-  nightCockpit: 'images/vehicles/cortianics/night-cockpit.jpg',
-} as const;

@@ -1,10 +1,7 @@
 /** @fileoverview Performance statistics overlay component */
 import React from 'react';
-import { 
-  type PerformanceMonitorState, 
-  getPerformanceOverlayStyles, 
-  getFPSColor
-} from '../hooks/usePerformanceMonitor';
+import { useFrameRateStats } from '../renderer/perfStore';
+import { getActiveQualityLevel } from '../config/visualPresets';
 import { type MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
 import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
@@ -13,14 +10,83 @@ import type { AutoExposureStatus } from '../renderer/autoExposure';
 import { useSceneDepthStats } from '../renderer/depth/sceneDepthStatsStore';
 import type { AppliedRenderScale } from '../renderer/renderScale';
 
+type OverlayPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+function getPerformanceOverlayStyles(position: OverlayPosition = 'top-left'): React.CSSProperties {
+  const baseStyles: React.CSSProperties = {
+    position: 'fixed',
+    zIndex: 9999,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: '#00ff00',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+    padding: '10px',
+    borderRadius: '4px',
+    pointerEvents: 'none',
+    userSelect: 'none',
+    minWidth: '150px'
+  };
+  switch (position) {
+    case 'top-left':
+      return { ...baseStyles, top: '10px', left: '10px' };
+    case 'top-right':
+      return { ...baseStyles, top: '10px', right: '10px' };
+    case 'bottom-left':
+      return { ...baseStyles, bottom: '10px', left: '10px' };
+    case 'bottom-right':
+      return { ...baseStyles, bottom: '10px', right: '10px' };
+  }
+}
+
+function getFPSColor(fps: number, targetFPS: number = 60): string {
+  const ratio = fps / targetFPS;
+  if (ratio >= 0.9) return '#00ff00'; // Green
+  if (ratio >= 0.7) return '#ffff00'; // Yellow
+  if (ratio >= 0.5) return '#ff8800'; // Orange
+  return '#ff0000'; // Red
+}
+
+/**
+ * Frame rate rows. Subscribes to `perfStore` itself (published by the frame
+ * driver twice a second), so the rest of the overlay does not re-render with it.
+ */
+const FrameRateRows: React.FC = () => {
+  const measured = useFrameRateStats((s) => s.measured);
+  const fps = useFrameRateStats((s) => s.fps);
+  const fpsMin = useFrameRateStats((s) => s.fpsMin);
+  const fpsMax = useFrameRateStats((s) => s.fpsMax);
+  const frameTimeMs = useFrameRateStats((s) => s.frameTimeMs);
+  const slowFrames = useFrameRateStats((s) => s.slowFrames);
+  if (!measured) {
+    return <div style={{ marginBottom: '6px', color: '#888888' }}>FPS: —</div>;
+  }
+  return (
+    <>
+      <div style={{ marginBottom: '6px' }} data-testid="perf-fps">
+        <span style={{ color: getFPSColor(fps), fontWeight: 'bold' }}>
+          FPS: {fps}
+        </span>
+        <span style={{ color: '#888888', fontSize: '10px' }}>
+          {' '} [{fpsMin}-{fpsMax}]
+        </span>
+      </div>
+      <div style={{ marginBottom: '4px', color: '#cccccc' }}>
+        Frame: {frameTimeMs.toFixed(2)}ms
+      </div>
+      <div style={{ marginBottom: '8px', color: '#ff6666' }}>
+        Slow frames: {slowFrames}
+      </div>
+    </>
+  );
+};
+
 interface PerformanceStatsOverlayProps {
-  fpsStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
   autoExposureStatus?: AutoExposureStatus;
   renderScale?: AppliedRenderScale;
-  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  position?: OverlayPosition;
   visible?: boolean;
   showMemory?: boolean;
   onToggle?: () => void;
@@ -40,7 +106,7 @@ const UPSCALE_LABEL: Record<AppliedRenderScale['upscale'], string> = {
 };
 
 /** `0.75× auto · over-budget`, or `1.00× fixed · flag`. */
-export function formatRenderScale(s: AppliedRenderScale): string {
+function formatRenderScale(s: AppliedRenderScale): string {
   const why = s.frozen ? 'held' : s.limitedBy ?? s.reason;
   return `${s.scale.toFixed(2)}× ${s.mode} · ${why}`;
 }
@@ -98,10 +164,9 @@ const SceneDepthStatsRows: React.FC = () => {
 
 /**
  * Performance statistics overlay component
- * Displays FPS, frame times, quality level, and memory usage
+ * Displays FPS, frame times, the quality preset, and memory usage
  */
-export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
-  fpsStats,
+const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
   memoryStats,
   gpuPassTimings,
   gpuChoresStats,
@@ -115,7 +180,7 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
   if (!visible) return null;
   
   const styles = getPerformanceOverlayStyles(position);
-  const fpsColor = getFPSColor(fpsStats.fps.current);
+  const quality = getActiveQualityLevel();
   
   // Calculate memory info
   const memoryInfo = showMemory && memoryStats?.current
@@ -143,32 +208,10 @@ export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = (
         ⚡ Performance Stats
       </div>
       
-      <div style={{ marginBottom: '6px' }}>
-        <span style={{ color: fpsColor, fontWeight: 'bold' }}>
-          FPS: {fpsStats.fps.current}
-        </span>
-        <span style={{ color: '#888888', fontSize: '10px' }}>
-          {' '} [{fpsStats.fps.min}-{fpsStats.fps.max}]
-        </span>
-      </div>
-      
-      <div style={{ marginBottom: '4px', color: '#cccccc' }}>
-        Avg: {fpsStats.fps.average} | Frame: {fpsStats.fps.frameTime.toFixed(2)}ms
-      </div>
-      
-      <div style={{ marginBottom: '4px' }}>
-        Quality: {' '}
-        <span style={{ 
-          color: fpsStats.quality === 'high' ? '#00ff00' : 
-                fpsStats.quality === 'medium' ? '#ffff00' : '#ff0000',
-          fontWeight: 'bold'
-        }}>
-          {fpsStats.quality.toUpperCase()}
-        </span>
-      </div>
-      
-      <div style={{ marginBottom: '8px', color: '#ff6666' }}>
-        Dropped Frames: {fpsStats.droppedFrames}
+      <FrameRateRows />
+
+      <div style={{ marginBottom: '8px', color: '#cccccc' }}>
+        Quality: <span style={{ fontWeight: 'bold' }}>{quality}</span>
       </div>
 
       {gpuPassTimings?.available && (

@@ -1,4 +1,4 @@
-import type { CabinRendererBackend } from '../../utils/performance';
+import type { CabinRendererBackend } from './performance';
 import { currentSearch, readFlag } from '../../config/flags';
 
 /**
@@ -44,7 +44,7 @@ export interface ResolvePortalSupportInput {
     search?: string;
 }
 
-export const PORTAL_FLAG = 'portal';
+const PORTAL_FLAG = 'portal';
 
 /** `?portal=off` (also `0` / `false`) forces the hole + decal fallback. */
 export function isPortalDisabledByFlag(search: string): boolean {

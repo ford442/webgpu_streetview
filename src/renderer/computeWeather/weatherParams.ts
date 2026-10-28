@@ -65,7 +65,7 @@ export class WeatherParamBlock {
 
     /** The first six floats are the colour-grading chain. */
     public setColor(params: Float32Array): void {
-        this.values.set(params.slice(0, 6), 0);
+        this.values.set(params.subarray(0, 6), 0);
         this.dirty = true;
     }
 

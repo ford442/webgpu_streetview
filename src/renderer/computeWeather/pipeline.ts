@@ -23,7 +23,7 @@ import {
  */
 
 /** Binding indices for the weather compute group — the contract with the WGSL. */
-export const WeatherBinding = {
+const WeatherBinding = {
     filteringSampler: 0,
     intermediate: 1,
     writeTexture: 2,
@@ -39,11 +39,11 @@ export const WeatherBinding = {
     colorHistory: 9,
     weatherParams: 10,
     comparisonSampler: 11,
-    /** WASM fBm noise tile (#128). */
+    /** CPU fBm noise tile (#128, `weatherNoiseTile.ts`). */
     noiseTile: 12,
 } as const;
 
-export function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
         label: 'weather-compute-bind-group-layout',
         entries: [

@@ -150,7 +150,7 @@ function wrapUnit(v: number): number {
  */
 export class Renderer implements StreetViewRenderer {
     public readonly backendType = 'webgpu' as const;
-    private _fallbackReason?: string;
+    private _fallbackReason?: string | undefined;
     public get fallbackReason(): string | undefined {
         return this._fallbackReason;
     }
@@ -172,6 +172,9 @@ export class Renderer implements StreetViewRenderer {
     private weatherPostProcessMode: WeatherPostProcessMode = 'fragment';
     private gpuPassTimer: GpuPassTimer | null = null;
     private gpuChores: GpuChores | null = null;
+    /** Reused 2D scratch for the CPU stats fallback (chores unavailable only). */
+    private statsScratch: HTMLCanvasElement | null = null;
+    private statsScratchCtx: CanvasRenderingContext2D | null = null;
     private cabinComposite: CabinCompositePass | null = null;
     private historicalWipe: HistoricalWipePass | null = null;
     /** Render scale (#329): the lazy `upscale` pass, built on the first scale below 1. */
@@ -221,7 +224,7 @@ export class Renderer implements StreetViewRenderer {
     /** `FrameContext.aux`, refilled every frame (one object, no per-frame allocation). */
     private readonly frameAux: FrameAux = {};
 
-    private onLostCallback?: (info: GPUDeviceLostInfo) => void;
+    private onLostCallback?: ((info: GPUDeviceLostInfo) => void) | undefined;
     /**
      * Set before *we* destroy the device. Its `lost` promise then resolves with
      * `reason: 'destroyed'`, and forwarding that is what turned one failed boot
@@ -566,6 +569,8 @@ export class Renderer implements StreetViewRenderer {
         if (tex) {
             const sample = await chores.sampleTexture(tex);
             if (this.isDestroyed || this.holdTransition.isHoldActive()) return;
+            // In flight is not unavailable: skip, keep the last value.
+            if (sample === 'busy') return;
             if (sample) {
                 if (opts?.horizonRows) {
                     const rgba = await chores.downsampleTexture(tex, HORIZON_ROWS_WIDTH, HORIZON_ROWS_HEIGHT);
@@ -579,16 +584,24 @@ export class Renderer implements StreetViewRenderer {
                 return;
             }
         }
+        // No source texture yet, with the GPU path up: nothing to sample. The
+        // CPU path reads the graded swap chain, so it is for chores that are
+        // really unavailable — never a stand-in for a GPU sample.
+        if (chores.currentBackend() === 'webgpu') return;
         this.samplePanoramaStatsCpu(chores, opts);
     }
 
     private samplePanoramaStatsCpu(chores: GpuChores, opts?: PanoramaStatsOptions): void {
         if (typeof document === 'undefined' || this.canvas.width < 2 || this.canvas.height < 2) return;
         const q = histDownsampleSize(this.canvas.width, this.canvas.height);
-        const tmp = document.createElement('canvas');
-        tmp.width = q.width;
-        tmp.height = q.height;
-        const ctx = tmp.getContext('2d');
+        if (!this.statsScratch) {
+            this.statsScratch = document.createElement('canvas');
+            this.statsScratchCtx = this.statsScratch.getContext('2d', { willReadFrequently: true });
+        }
+        const tmp = this.statsScratch;
+        if (tmp.width !== q.width) tmp.width = q.width;
+        if (tmp.height !== q.height) tmp.height = q.height;
+        const ctx = this.statsScratchCtx;
         if (!ctx) return;
         try {
             ctx.drawImage(this.canvas, 0, 0, q.width, q.height);

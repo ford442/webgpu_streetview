@@ -12,10 +12,10 @@ import {
 } from '../car/input/cabinInputMachine';
 
 // Types
-export type ViewMode = 'freelook' | 'car';
+type ViewMode = 'freelook' | 'car';
 export type { ControlMode };
 
-export interface ViewModeState {
+interface ViewModeState {
   // Main mode
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
@@ -111,7 +111,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
             resolveCabinRendererPreference,
             createCabinRendererAsync,
           } = await import('../car/interior/createCabinRenderer');
-          const { detectGPUProfile } = await import('../utils/performance');
+          const { detectGPUProfile } = await import('../car/interior/performance');
           let readyHandle: Awaited<ReturnType<typeof createCabinRendererAsync>> | undefined;
           if (resolveCabinRendererPreference(currentSearch()) === 'webgpu') {
             await preloadWebGPUCabinRenderer().catch((err) => {
@@ -193,4 +193,3 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   );
 };
 
-export default ViewModeContext;

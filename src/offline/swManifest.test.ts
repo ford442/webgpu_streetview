@@ -62,12 +62,21 @@ describe('service worker precache + versioning', () => {
       expect(swCacheId(dir, 'abc1234')).toBe(base);
       expect(swCacheId(dir, 'def5678')).not.toBe(base);
 
-      const wasm = path.join(dir, 'wasm/streetview-wasm.wasm');
+      const wasm = path.join(dir, 'wasm/streetview-wasm.simd.wasm');
       const original = readFileSync(wasm);
       writeFileSync(wasm, Buffer.concat([original, Buffer.from([0])]));
       const afterWasm = swCacheId(dir, 'abc1234');
       expect(afterWasm).not.toBe(base);
       writeFileSync(wasm, original);
+
+      // The worklet's binary rolls the cache on its own, too.
+      const dsp = path.join(dir, 'wasm/streetview-dsp.simd.wasm');
+      const dspOriginal = readFileSync(dsp);
+      writeFileSync(dsp, Buffer.concat([dspOriginal, Buffer.from([0])]));
+      const afterDsp = swCacheId(dir, 'abc1234');
+      expect(afterDsp).not.toBe(base);
+      expect(afterDsp).not.toBe(afterWasm);
+      writeFileSync(dsp, dspOriginal);
 
       const shader = path.join(dir, 'shaders/streetview.wgsl');
       writeFileSync(shader, `${readFileSync(shader, 'utf8')}\n// edit`);

@@ -4,12 +4,14 @@
  * route following needs per hop — cumulative vertex distances, a 10 m resample
  * for look-ahead / prefetch, and each step's along-track position.
  *
- * All geometry goes through the WASM kernels (`polyline_resample`,
+ * All polyline geometry goes through the WASM kernels (`polyline_resample`,
  * `polyline_project`, `batch_haversine`, `initial_bearing`) — never a
- * TypeScript re-derivation.
+ * TypeScript re-derivation. A single point-to-point distance is the f64
+ * `haversineMeters` (utils/navigation.ts): one-line maths stays in TS (#341).
  */
 
 import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
+import { haversineMeters } from '../../utils/navigation';
 import type { LatLng, Route, RouteStep } from './RouteProvider';
 
 /** Resample spacing; Street View panoramas sit ~5–15 m apart on a road. */
@@ -61,7 +63,7 @@ function flatten(points: readonly LatLng[]): Float64Array {
 }
 
 /** Route id for a list of stops: 5-decimal (~1 m) coordinates, joined. */
-export function routeIdForStops(stops: readonly LatLng[]): string {
+function routeIdForStops(stops: readonly LatLng[]): string {
   return `route:${stops.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';')}`;
 }
 
@@ -82,7 +84,7 @@ function vertexAtOrBefore(cumulative: Float64Array, alongM: number): number {
  * window keeps progress monotone on routes that double back on themselves —
  * an out-and-back street would otherwise snap to whichever leg is nearer.
  */
-export function projectInWindow(
+function projectInWindow(
   route: Pick<ActiveRoute, 'flat' | 'cumulativeM'>,
   pos: LatLng,
   fromM: number,
@@ -125,7 +127,7 @@ export function bearingBetween(from: LatLng, to: LatLng): number {
 }
 
 export function distanceBetween(a: LatLng, b: LatLng): number {
-  return geo().haversine(a.lat, a.lng, b.lat, b.lng);
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng);
 }
 
 export function buildActiveRoute(route: Route, meta: { stops: LatLng[]; providerId: string }): ActiveRoute {

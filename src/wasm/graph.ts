@@ -71,12 +71,6 @@ export function linkGraphFor(routeId: string, nodes: readonly RouteGraphNode[]):
   return graph;
 }
 
-/** Drop a cached graph (after its route graph is deleted), or all of them. */
-export function forgetLinkGraph(routeId?: string): void {
-  if (routeId === undefined) cache.clear();
-  else cache.delete(routeId);
-}
-
 /** Shortest path between two panos as pano ids (`from` first), or null. */
 export function shortestPanoPath(graph: LinkGraph, fromPanoId: string, toPanoId: string): string[] | null {
   const from = graph.indexOf.get(fromPanoId);

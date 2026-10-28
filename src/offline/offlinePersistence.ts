@@ -5,7 +5,7 @@ import {
 } from './offlineStore';
 
 /** localStorage keys mirrored into IndexedDB for offline metadata (Phase 2). */
-export const LOCAL_STORAGE_MIRROR: Record<OfflineStoreName, string | null> = {
+const LOCAL_STORAGE_MIRROR: Record<OfflineStoreName, string | null> = {
   bookmarks: 'webgpu_streetview_bookmarks',
   history: 'webgpu_streetview_history',
   tours: 'webgpu_streetview_tours',
@@ -88,8 +88,4 @@ export async function saveMirroredJson<T>(store: OfflineStoreName, value: T): Pr
   await offlineSetJson(store, value);
   const lsKey = LOCAL_STORAGE_MIRROR[store];
   if (lsKey) writeLocalStorageJson(lsKey, value);
-}
-
-export function isIndexedDBAvailable(): boolean {
-  return typeof indexedDB !== 'undefined';
 }

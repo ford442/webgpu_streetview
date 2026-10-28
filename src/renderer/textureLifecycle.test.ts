@@ -1,24 +1,26 @@
 // @vitest-environment jsdom
 /**
- * The live upload path must not read the Maps canvas back every frame.
+ * The live upload path must not read the Maps canvas back on the frame path.
  *
- * `getCanvasFingerprint` is a `drawImage` + `getImageData` of the Maps WebGL
- * canvas — a GPU→CPU sync point costlier than the `copyExternalImageToTexture`
- * it guards. It runs only while the source is unproven, after a source or size
- * change, and on a 1 Hz cadence.
+ * The upload guard asks the shared Maps canvas source (`frameSource/
+ * mapsCanvasSource.ts`), which answers from its last sample and only starts a
+ * background readback for an unknown, resized or stale canvas.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fingerprint = vi.hoisted(() => ({ value: 'ok' as string, calls: 0 }));
-vi.mock('../utils/panoramaStability', () => ({
-    getCanvasFingerprint: () => {
+vi.mock('./frameSource/canvasFingerprint', () => ({
+    readCanvasFingerprint: (c: HTMLCanvasElement) => {
         fingerprint.calls += 1;
-        return fingerprint.value;
+        return Promise.resolve(fingerprint.value ? `${c.width}x${c.height}-${fingerprint.value}` : '');
     },
 }));
 
-import { FINGERPRINT_INTERVAL_MS, TextureLifecycle } from './textureLifecycle';
+import { TextureLifecycle } from './textureLifecycle';
+import { mapsCanvasSource, UPLOAD_VERDICT_MAX_AGE_MS } from './frameSource/mapsCanvasSource';
 import { installGpuGlobals } from './computeWeather/__tests__/fakeGpu';
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function setup(maxTextureDimension2D = 8192) {
     const copies: Array<{ source: unknown; size: number[] }> = [];
@@ -60,6 +62,7 @@ describe('TextureLifecycle live uploads', () => {
     let now = 0;
     beforeEach(() => {
         installGpuGlobals();
+        mapsCanvasSource.reset();
         fingerprint.value = 'ok';
         fingerprint.calls = 0;
         now = 1000;
@@ -69,9 +72,11 @@ describe('TextureLifecycle live uploads', () => {
         vi.restoreAllMocks();
     });
 
-    it('fingerprints once, then uploads every frame without reading back', () => {
+    it('waits for one background sample, then uploads every frame without reading back', async () => {
         const { lifecycle, copies } = setup();
         const source = canvas(1024, 512);
+        expect(lifecycle.uploadLiveSource(source)).toBe(false);
+        await flush();
         for (let frame = 0; frame < 60; frame++) {
             now += 16;
             expect(lifecycle.uploadLiveSource(source)).toBe(true);
@@ -81,43 +86,61 @@ describe('TextureLifecycle live uploads', () => {
         expect(fingerprint.calls).toBe(1);
     });
 
-    it('re-checks on the 1 Hz cadence, on a new canvas, and on a resize', () => {
+    it('re-samples a stale verdict, a new canvas, and a resize — in the background', async () => {
         const { lifecycle } = setup();
         const a = canvas(1024, 512);
         lifecycle.uploadLiveSource(a);
-        now += FINGERPRINT_INTERVAL_MS;
-        lifecycle.uploadLiveSource(a);
+        await flush();
+        now += UPLOAD_VERDICT_MAX_AGE_MS + 1;
+        // The stale verdict still answers this frame; a refresh starts behind it.
+        expect(lifecycle.uploadLiveSource(a)).toBe(true);
         expect(fingerprint.calls).toBe(2);
+        await flush();
 
         const b = canvas(1024, 512);
         lifecycle.uploadLiveSource(b);
         expect(fingerprint.calls).toBe(3);
+        await flush();
 
         b.width = 2048;
         lifecycle.uploadLiveSource(b);
         expect(fingerprint.calls).toBe(4);
     });
 
-    it('keeps checking every frame while the source is not yet stable, and uploads nothing', () => {
+    it('shares a sample another watcher (scan, hold gate) already took', async () => {
+        const { lifecycle } = setup();
+        const source = canvas(1024, 512);
+        await mapsCanvasSource.fingerprint(source);
+        expect(lifecycle.uploadLiveSource(source)).toBe(true);
+        expect(fingerprint.calls).toBe(1);
+    });
+
+    it('uploads nothing while the source shows no imagery, and one readback is in flight at a time', async () => {
         const { lifecycle, copies } = setup();
         const source = canvas(1024, 512);
         fingerprint.value = '';
         expect(lifecycle.uploadLiveSource(source)).toBe(false);
         expect(lifecycle.uploadLiveSource(source)).toBe(false);
-        expect(fingerprint.calls).toBe(2);
+        expect(fingerprint.calls).toBe(1);
+        await flush();
+        expect(lifecycle.uploadLiveSource(source)).toBe(false);
         expect(copies).toHaveLength(0);
         fingerprint.value = 'ok';
+        now += UPLOAD_VERDICT_MAX_AGE_MS + 1;
+        lifecycle.uploadLiveSource(source);
+        await flush();
         expect(lifecycle.uploadLiveSource(source)).toBe(true);
         expect(copies).toHaveLength(1);
     });
 
-    it('downscales a source above maxTextureDimension2D into the largest texture that fits', () => {
+    it('downscales a source above maxTextureDimension2D into the largest texture that fits', async () => {
         const drawImage = vi.fn();
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
             (() => ({ drawImage })) as unknown as HTMLCanvasElement['getContext'],
         );
         const { lifecycle, copies, textures } = setup(4096);
         const source = canvas(5120, 2880);
+        await mapsCanvasSource.fingerprint(source);
         expect(lifecycle.uploadLiveSource(source)).toBe(true);
         expect(textures.at(-1)!.size).toEqual([4096, 2304]);
         expect(copies[0]!.size).toEqual([4096, 2304]);

@@ -23,7 +23,7 @@ export interface FakeTexture {
     destroy: () => void;
 }
 
-export interface FakeTextureView {
+interface FakeTextureView {
     kind: 'view';
     /** The texture this view was taken from — how tests identify a binding. */
     texture: FakeTexture;
@@ -81,7 +81,7 @@ export interface RecordedBindGroup {
     entries: Map<number, unknown>;
 }
 
-export interface RecordedEncoder {
+interface RecordedEncoder {
     passes: RecordedPass[];
     copies: Array<{ src: unknown; dst: unknown; size: unknown }>;
     querySetResolves: Array<{ querySet: unknown; firstQuery: number; queryCount: number }>;
@@ -90,7 +90,7 @@ export interface RecordedEncoder {
 }
 
 /** A created query set, so timing tests can identify which one a pass named. */
-export interface RecordedQuerySet {
+interface RecordedQuerySet {
     kind: 'querySet';
     id: number;
     descriptor: GPUQuerySetDescriptor;
@@ -118,7 +118,7 @@ export interface FakeGpuOptions {
 }
 
 /** A created bind group *layout*, so tests can assert declared sample types. */
-export interface RecordedBindGroupLayout {
+interface RecordedBindGroupLayout {
     kind: 'bgl';
     id: number;
     entries: Array<{

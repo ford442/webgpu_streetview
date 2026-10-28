@@ -19,7 +19,7 @@ import { POI_COVERAGE_COLORS, type PoiCoverage } from '../../search/poiCoverage'
 import type { NearbyPoi } from '../../search/poiModel';
 
 /** Eye height for the top-down view (~a few city blocks across). */
-export const COVERAGE_MAP_CESIUM_ALTITUDE_M = 900;
+const COVERAGE_MAP_CESIUM_ALTITUDE_M = 900;
 
 const GRAPH_LINE_COLOR = '#1E90FF';
 const GRAPH_NODE_COLOR = '#4FC3F7';

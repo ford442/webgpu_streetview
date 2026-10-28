@@ -16,7 +16,7 @@ test('a .wasm that does not load fails the boot at stage "wasm" with the blockin
   page.on('console', (msg) => {
     if (msg.type() === 'error' && msg.text().includes('[wasm]')) wasmErrors.push(msg.text());
   });
-  await page.route('**/wasm/streetview-wasm.wasm', (route) => route.fulfill({ status: 404, body: 'not found' }));
+  await page.route('**/wasm/streetview-wasm.simd.wasm', (route) => route.fulfill({ status: 404, body: 'not found' }));
 
   // Not gotoApp: the overlay is fixed-position, so #root itself never reads as visible.
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });

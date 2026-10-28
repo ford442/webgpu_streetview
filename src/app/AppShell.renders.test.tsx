@@ -26,11 +26,13 @@ vi.mock('../components/BuildBadge', () => ({ default: () => null }));
 import { AppProviders } from './AppProviders';
 import { AppShell } from './AppShell';
 import { povStore } from '../state/povStore';
+import { isPanelOpen, resetPanelsForTests, setPanelOpen } from '../state/panelsStore';
 
 describe('AppShell render isolation from hot POV state', () => {
   beforeEach(() => {
     shellRenders.count = 0;
     povStore.reset();
+    resetPanelsForTests();
   });
 
   async function mountShell() {
@@ -58,6 +60,20 @@ describe('AppShell render isolation from hot POV state', () => {
     });
 
     expect(povStore.get().heading).toBeCloseTo(34 + 50, 5);
+    expect(shellRenders.count).toBe(baseline);
+  });
+
+  it('opening and closing panels re-renders the chrome, not the shell', async () => {
+    const baseline = await mountShell();
+    act(() => {
+      setPanelOpen('weather', true);
+      setPanelOpen('bookmarks', true);
+      setPanelOpen('performance', true);
+    });
+    act(() => {
+      setPanelOpen('weather', false);
+    });
+    expect(isPanelOpen('bookmarks')).toBe(true);
     expect(shellRenders.count).toBe(baseline);
   });
 

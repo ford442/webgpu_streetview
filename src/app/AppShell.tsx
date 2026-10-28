@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
-import { getWindAudio } from '../effects/WindAudio';
+import { getWindAudio } from '../audio/WindAudio';
 import { usePovEffect } from '../state/povStore';
 import {
   useStreetView,
@@ -17,7 +17,7 @@ import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useAnnouncer } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
-import { publishCruiseFlag } from '../hooks/CruiseFlagContext';
+import { publishCruiseFlag } from '../state/cruiseFlagStore';
 import { loadCarRuntime } from '../car/carRuntimeLoader';
 import { vehicleManager, type VehicleType } from '../car/VehicleManager';
 import { useAutopilot } from '../hooks/useAutopilot';
@@ -25,7 +25,6 @@ import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
 import BuildBadge from '../components/BuildBadge';
 import { getCarRuntime } from './carRuntimeCache';
 import { useAppPanels } from './useAppPanels';
-import { useAppTelemetry } from './useAppTelemetry';
 import { useMapsBootstrap } from './useMapsBootstrap';
 import { useAppSharedSession } from './useAppSharedSession';
 import { useRadioAudio } from './useRadioAudio';
@@ -37,7 +36,7 @@ import { useAppBookmarks } from './useAppBookmarks';
 import { useAppCapture } from './useAppCapture';
 import { useAppDirector } from './useAppDirector';
 import { useAppBootLinks } from './useAppBootLinks';
-import { useAppShortcuts } from './useAppShortcuts';
+import { AppShortcuts } from './useAppShortcuts';
 import { useTripBindings } from './useTripBindings';
 import { useTripRecording } from './useTripRecording';
 import { getActiveRouteGuide } from '../services/routing/tripController';
@@ -72,7 +71,6 @@ export function AppShell() {
   const env = useEnvironmentSettings();
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
-  const { showPerformanceStats, setShowPerformanceStats, memoryStats, perfStats, gpuPassTimings, gpuChoresStats, autoExposureStatus, renderScale } = useAppTelemetry();
   const { announce } = useAnnouncer();
   const { accessibilitySettings, setAccessibilitySettings } = useAppAccessibility();
   const { audioRef, isRadioPlaying, setIsRadioPlaying, toggleRadio } = useRadioAudio();
@@ -247,8 +245,7 @@ export function AppShell() {
     setNavPending: connection.setNavPending,
   });
 
-  useAppShortcuts({
-    panels,
+  const shortcuts = {
     env,
     globeMode,
     viewMode,
@@ -260,11 +257,9 @@ export function AppShell() {
     exitCinemaMode: cinema.exitCinemaMode,
     isRadioPlaying,
     toggleRadio,
-    showPerformanceStats,
-    setShowPerformanceStats,
     announce,
     enabled: connection.isConnected && !connection.showWelcome && !isCinemaMode,
-  });
+  };
 
   return (
     <div
@@ -279,30 +274,25 @@ export function AppShell() {
         backgroundColor: '#000',
       }}
     >
+      <AppShortcuts {...shortcuts} />
+
       <ShellNotices maps={maps} isConnected={connection.isConnected} isOnline={isOnline} />
 
       {connection.showWelcome && <WelcomeModal onStart={connection.handleStart} search={placeSearch} />}
 
       {connection.isConnected && !isCinemaMode && (
         <ConnectedChrome
-          panels={panels}
           session={{
-            viewMode,
-            toggleViewMode,
             isCruiseMode,
             setIsCruiseMode,
-            isPanoramaReady,
             isRadioPlaying,
             toggleRadio,
             sharedSession,
-            panorama,
-            isTransitioning,
             teleportToPanoSafe,
           }}
           bookmarks={bookmarks}
           history={{ history, removeFromHistory, clearHistory }}
           snapshots={{ ...capture.gallery, isOnline, hasServiceWorker }}
-          environment={env}
           historical={historical}
           accessibilitySettings={accessibilitySettings}
           setAccessibilitySettings={setAccessibilitySettings}
@@ -315,14 +305,6 @@ export function AppShell() {
             handleStartJourney,
           }}
           overlays={{
-            showPerformanceStats,
-            setShowPerformanceStats,
-            perfStats,
-            memoryStats: memoryStats || undefined,
-            gpuPassTimings,
-            gpuChoresStats,
-            autoExposureStatus,
-            renderScale,
             rendererBackendInfo: connection.rendererBackendInfo,
             navPending: connection.navPending,
             historicalAfterLabel: historical.historicalAfterLabel,

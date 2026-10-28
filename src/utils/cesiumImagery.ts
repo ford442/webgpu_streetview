@@ -13,7 +13,7 @@ import type { CesiumImageryLayer, CesiumNamespace, CesiumTerrainProvider } from 
 export const CARTO_VOYAGER_URL =
   'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
-export const CARTO_CREDIT = '© OpenStreetMap contributors, © CARTO';
+const CARTO_CREDIT = '© OpenStreetMap contributors, © CARTO';
 
 export type GlobeImagerySource = 'ion' | 'carto';
 
@@ -45,7 +45,7 @@ export function getConfiguredCesiumIonTokenFromEnv(
   );
 }
 
-export function getConfiguredCesiumIonToken(): string {
+function getConfiguredCesiumIonToken(): string {
   return getConfiguredCesiumIonTokenFromEnv(
     // Never a build-time value: the Ion token reaches the page only via public/config.js.
     undefined,

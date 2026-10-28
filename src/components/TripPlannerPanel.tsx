@@ -19,7 +19,7 @@ interface TripPlannerPanelProps extends TripPanelBindings {
 }
 
 /** Via-points between the origin and the destination. */
-export const MAX_VIA_POINTS = 3;
+const MAX_VIA_POINTS = 3;
 
 interface StopDraft {
   text: string;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
-export interface DeviceCapabilities {
+interface DeviceCapabilities {
   isMobile: boolean;
   isTablet: boolean;
   isDesktop: boolean;
@@ -17,7 +17,7 @@ export interface DeviceCapabilities {
   cpuCores: number;
 }
 
-export interface QualitySettings {
+interface QualitySettings {
   renderScale: number; // 0.5 - 1.0
   textureQuality: 'low' | 'medium' | 'high';
   shadowQuality: 'off' | 'low' | 'medium' | 'high';
@@ -225,7 +225,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
       }
     };
     
-    setupBatteryMonitoring();
+    void setupBatteryMonitoring();
   }, [quality.batterySaveMode, setBatterySaveMode]);
 
   const setCustomQuality = useCallback((settings: Partial<QualitySettings>) => {
@@ -255,4 +255,3 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
   };
 }
 
-export default useDeviceDetection;

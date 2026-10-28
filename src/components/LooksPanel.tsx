@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { LOOK_IDS, LOOK_PACKS, lookPackMatchesState, type LookEnvSnapshot, type LookId } from '../config/lookPacks';
 import { buildLookUrl } from '../utils/lookLink';
 
-export interface LooksPanelProps {
+interface LooksPanelProps {
   isOpen: boolean;
   onClose: () => void;
   activeLookId: LookId | null;

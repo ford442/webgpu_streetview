@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const dashboardGlowVertexShader = /* glsl */ `
+const dashboardGlowVertexShader = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vWorldPosition;
 
@@ -12,7 +12,7 @@ void main() {
 }
 `;
 
-export const dashboardGlowFragmentShader = /* glsl */ `
+const dashboardGlowFragmentShader = /* glsl */ `
 precision highp float;
 
 uniform float time;

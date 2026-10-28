@@ -1,4 +1,4 @@
-import type { CabinRendererBackend } from '../../utils/performance';
+import type { CabinRendererBackend } from './performance';
 
 /**
  * Process-wide cabin material backend. Set by `createCabinRenderer` before

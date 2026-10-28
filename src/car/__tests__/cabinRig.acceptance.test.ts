@@ -7,7 +7,7 @@ import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
 import { createEyeCameras, updateEyeCameras } from '../interior/cabinStereo';
 import { eyeFromHead, headOffsetFromPosition, headPoseFromOrientation } from '../../xr/xrPose';
 
-vi.mock('../../effects/WindAudio', () => ({
+vi.mock('../../audio/WindAudio', () => ({
   getWindAudio: () => ({
     isPlaying: () => false,
     init: async () => false,

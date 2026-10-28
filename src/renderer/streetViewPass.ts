@@ -1,4 +1,4 @@
-import type { GpuPassTimer } from './gpuPassTimer';
+import { timestampWritesField, type GpuPassTimer } from './gpuPassTimer';
 import { getSceneDepthBindGroupLayout, STREETVIEW_SCENE_DEPTH_GROUP } from './depth/sceneDepthBinding';
 import {
     createRenderPipelineChecked,
@@ -37,7 +37,7 @@ export function pass1TimestampWrites(
  * either side without the other produces a pipeline-create failure at boot,
  * not a visual glitch.
  */
-export function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
         label: 'streetview-bind-group-layout',
         entries: [
@@ -147,7 +147,7 @@ export function encodeStreetViewPass(
             loadOp: 'clear' as GPULoadOp,
             storeOp: 'store' as GPUStoreOp,
         }],
-        timestampWrites: pass1TimestampWrites(timing),
+        ...timestampWritesField(pass1TimestampWrites(timing)),
     });
     if (timing) {
         timing.timer.markPassStart(mainPass, timing.startIndex);

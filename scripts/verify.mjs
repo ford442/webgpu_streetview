@@ -27,7 +27,18 @@ const haveCpp = has('cmake') && (has('g++') || has('clang++') || has('c++'));
 const steps = [
   { name: 'install is complete', cmd: 'node', args: ['scripts/check-install.mjs'] },
   { name: 'typecheck (tsc -b)', cmd: 'npx', args: ['--no-install', 'tsc', '-b'] },
-  { name: 'lint', cmd: 'npx', args: ['--no-install', 'eslint', '.', '--max-warnings', '0'] },
+  { name: 'exactOptionalPropertyTypes ratchet (renderer/, state/)', cmd: 'node', args: ['scripts/check-strict-optional.mjs'] },
+  {
+    name: 'lint',
+    cmd: 'npx',
+    args: ['--no-install', 'eslint', '.', '--max-warnings', '0', '--cache', '--cache-strategy', 'content', '--cache-location', 'node_modules/.cache/eslint/'],
+  },
+  { name: 'AGENTS.md structure tree is current', cmd: 'node', args: ['scripts/gen-structure-doc.mjs', '--check'] },
+  {
+    name: 'WASM ABI (abi.generated.ts current; binaries match abi.h by signature)',
+    cmd: 'npm',
+    args: ['run', '--silent', 'check:wasm-abi'],
+  },
   { name: 'knip (unused files / deps)', cmd: 'npx', args: ['--no-install', 'knip', '--no-progress'] },
   { name: 'spec environments (DOM specs carry a jsdom pragma)', cmd: 'node', args: ['scripts/check-test-env.mjs'] },
   { name: 'committed secrets', cmd: 'bash', args: ['scripts/check-deploy-secrets.sh'] },

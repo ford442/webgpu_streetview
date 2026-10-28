@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGlassMaterial } from '../../materials/PBRMaterials';
+import { createGlassMaterial } from './glassMaterial';
 import type { CarInteriorMaterials } from './CarInteriorBuilder';
 
 export interface CarInteriorGlazingResult {

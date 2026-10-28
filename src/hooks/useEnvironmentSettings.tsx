@@ -11,7 +11,6 @@ import { nextAutoExposureEnabled, type AutoExposureEvent } from '../renderer/aut
 
 // Types
 export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
-export type { LookId };
 
 export interface EnvironmentSettingsState {
   // Weather settings

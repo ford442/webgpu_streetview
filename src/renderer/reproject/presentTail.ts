@@ -9,7 +9,7 @@ import { readFlag } from '../../config/flags';
 import type { LatchDelta, ReprojectMode } from './reprojectMath';
 import type { FrameTailStats } from './frameTail';
 
-export type StereoMode = 'off' | 'sbs' | 'anaglyph';
+type StereoMode = 'off' | 'sbs' | 'anaglyph';
 
 export interface PresentTailOptions {
     /** Re-aim the road at the POV read at tail time. */
@@ -30,7 +30,7 @@ export interface PresentTailInput {
     /** `?latelatch`; unset = off. */
     latch?: boolean;
     /** `?stereo`; unset = off. */
-    stereo?: StereoMode;
+    stereo?: StereoMode | undefined;
 }
 
 /** Fill a reusable options object — `WebGPUCanvas` calls this every frame. */

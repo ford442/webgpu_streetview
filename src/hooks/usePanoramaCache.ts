@@ -68,7 +68,7 @@ export function usePanoramaCache() {
           };
           set(pano);
           resolve(pano);
-        });
+        }).catch(() => {});
       });
     },
     [get, set]

@@ -20,7 +20,7 @@ import { WEBGL2_FALLBACK_ACTIVE_MESSAGE } from './webgl2FallbackMessages';
 export interface RendererCreateResult {
     renderer: StreetViewRenderer | null;
     backendType: RendererBackendType | null;
-    fallbackReason?: string;
+    fallbackReason?: string | undefined;
     debugOptions: RendererDebugOptions;
 }
 

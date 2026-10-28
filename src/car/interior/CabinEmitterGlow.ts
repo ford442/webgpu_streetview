@@ -26,7 +26,7 @@ export interface CabinGlowSprite {
 export const BASIC_GLOW_GAIN = 0.45;
 export const SHADER_GLOW_GAIN = 1.0;
 /** Breathing amplitude of the shader halo; 0 under reduced motion. */
-export const GLOW_PULSE_AMOUNT = 0.08;
+const GLOW_PULSE_AMOUNT = 0.08;
 
 /**
  * Radial white→black gradient for the Medium quad's alphaMap, so the additive

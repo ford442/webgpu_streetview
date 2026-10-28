@@ -7,9 +7,9 @@
  * Region comes from the stations' own metadata, so no reverse geocoding.
  */
 
-import { requireWasm } from '../../wasm';
+import { haversineMeters } from '../../utils/navigation';
 
-export const RADIO_REQUERY_DISTANCE_M = 50_000;
+const RADIO_REQUERY_DISTANCE_M = 50_000;
 
 export interface TunedStation {
   id: string;
@@ -26,7 +26,7 @@ export function shouldRequeryRadio(
   pinned: boolean,
 ): boolean {
   if (pinned || !tuned) return false;
-  return requireWasm().haversine(tuned.lat, tuned.lng, pos.lat, pos.lng) > RADIO_REQUERY_DISTANCE_M;
+  return haversineMeters(tuned.lat, tuned.lng, pos.lat, pos.lng) > RADIO_REQUERY_DISTANCE_M;
 }
 
 const norm = (s: string): string => s.trim().toLowerCase();

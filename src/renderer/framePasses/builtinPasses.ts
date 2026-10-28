@@ -25,7 +25,7 @@ import type { ReprojectPass } from '../reproject/ReprojectPass';
 import type { WeatherPostInitOptions, WeatherPostProcessorLike } from '../weatherPostProcessorTypes';
 import type { FramePass } from './FramePassRegistry';
 
-export const PASS_ORDER = {
+const PASS_ORDER = {
     streetview: 100,
     historicalWipe: 200,
     weather: 300,

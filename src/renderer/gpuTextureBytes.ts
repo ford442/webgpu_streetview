@@ -25,11 +25,11 @@ export function bytesPerTexel(format: GPUTextureFormat): number {
 
 export interface TextureExtent {
     width: number;
-    height?: number;
-    depthOrArrayLayers?: number;
+    height?: number | undefined;
+    depthOrArrayLayers?: number | undefined;
     format: GPUTextureFormat;
-    mipLevelCount?: number;
-    sampleCount?: number;
+    mipLevelCount?: number | undefined;
+    sampleCount?: number | undefined;
 }
 
 /** width × height × bpp × layers × samples, summed over the mip chain. */

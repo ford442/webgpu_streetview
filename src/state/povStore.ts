@@ -14,7 +14,8 @@
  * clamps to ±90°, zoom to [1, 3]. `get()` returns a stable snapshot object that
  * is replaced only when a field actually changes (safe for useSyncExternalStore).
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createStore, useStore } from './createStore';
 
 export interface Pov {
   readonly heading: number;
@@ -24,9 +25,9 @@ export interface Pov {
   readonly carHeading: number;
 }
 
-export type PovUpdate = number | ((prev: number) => number);
+type PovUpdate = number | ((prev: number) => number);
 
-export const DEFAULT_POV: Pov = { heading: 34, pitch: 10, zoom: 1, carHeading: 34 };
+const DEFAULT_POV: Pov = { heading: 34, pitch: 10, zoom: 1, carHeading: 34 };
 
 const wrap360 = (v: number): number => ((v % 360) + 360) % 360;
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
@@ -45,8 +46,8 @@ export interface PovStore {
 }
 
 export function createPovStore(initial: Partial<Pov> = {}): PovStore {
-  let state: Pov = normalize({ ...DEFAULT_POV, ...initial });
-  const listeners = new Set<() => void>();
+  // `createStore` skips a write whose fields all match (no notify).
+  const store = createStore<Pov>(normalize({ ...DEFAULT_POV, ...initial }));
 
   function normalize(p: Pov): Pov {
     return {
@@ -57,37 +58,20 @@ export function createPovStore(initial: Partial<Pov> = {}): PovStore {
     };
   }
 
-  function commit(next: Pov): void {
-    const n = normalize(next);
-    if (
-      n.heading === state.heading &&
-      n.pitch === state.pitch &&
-      n.zoom === state.zoom &&
-      n.carHeading === state.carHeading
-    ) {
-      return;
-    }
-    state = n;
-    // Copy so a listener that unsubscribes mid-notify cannot skip a peer.
-    for (const l of Array.from(listeners)) l();
-  }
+  const commit = (next: Pov): void => store.set(normalize(next));
 
   const resolve = (value: PovUpdate, prev: number): number =>
     typeof value === 'function' ? value(prev) : value;
 
+  const state = store.get;
   return {
-    get: () => state,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    setHeading: (v) => commit({ ...state, heading: resolve(v, state.heading) }),
-    setPitch: (v) => commit({ ...state, pitch: resolve(v, state.pitch) }),
-    setView: (heading, pitch) => commit({ ...state, heading, pitch }),
-    setZoom: (v) => commit({ ...state, zoom: resolve(v, state.zoom) }),
-    setCarHeading: (v) => commit({ ...state, carHeading: resolve(v, state.carHeading) }),
+    get: store.get,
+    subscribe: store.subscribe,
+    setHeading: (v) => commit({ ...state(), heading: resolve(v, state().heading) }),
+    setPitch: (v) => commit({ ...state(), pitch: resolve(v, state().pitch) }),
+    setView: (heading, pitch) => commit({ ...state(), heading, pitch }),
+    setZoom: (v) => commit({ ...state(), zoom: resolve(v, state().zoom) }),
+    setCarHeading: (v) => commit({ ...state(), carHeading: resolve(v, state().carHeading) }),
     reset: (next = {}) => commit({ ...DEFAULT_POV, ...next }),
   };
 }
@@ -97,11 +81,7 @@ export const povStore: PovStore = createPovStore();
 
 /** Subscribe a component to a derived slice. Re-renders only when the selected value changes (Object.is). */
 export function usePovSelector<T>(selector: (pov: Pov) => T, store: PovStore = povStore): T {
-  return useSyncExternalStore(
-    store.subscribe,
-    () => selector(store.get()),
-    () => selector(store.get()),
-  );
+  return useStore(store, selector);
 }
 
 /**

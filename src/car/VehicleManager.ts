@@ -5,8 +5,6 @@
 
 import type { CameraFovConfig, GaugeLayoutOverrides, SteeringWheelOverrides } from './vehicleLayout';
 
-export type { Vec3, GaugeLayoutOverrides, SteeringWheelOverrides } from './vehicleLayout';
-
 /**
  * Vehicle type definitions
  * Future additions: 'streetcar' | 'trolley' - for urban transit-style interiors
@@ -221,7 +219,7 @@ export function isValidVehicleType(type: string): type is VehicleType {
 /**
  * Get next vehicle in rotation
  */
-export function getNextVehicle(current: VehicleType): VehicleType {
+function getNextVehicle(current: VehicleType): VehicleType {
     const types = Object.keys(VEHICLES) as VehicleType[];
     const currentIndex = types.indexOf(current);
     const nextIndex = (currentIndex + 1) % types.length;
@@ -231,7 +229,7 @@ export function getNextVehicle(current: VehicleType): VehicleType {
 /**
  * Get previous vehicle in rotation
  */
-export function getPreviousVehicle(current: VehicleType): VehicleType {
+function getPreviousVehicle(current: VehicleType): VehicleType {
     const types = Object.keys(VEHICLES) as VehicleType[];
     const currentIndex = types.indexOf(current);
     const prevIndex = (currentIndex - 1 + types.length) % types.length;
@@ -241,7 +239,7 @@ export function getPreviousVehicle(current: VehicleType): VehicleType {
 /**
  * Vehicle manager class to handle vehicle state and transitions
  */
-export class VehicleManager {
+class VehicleManager {
     private currentVehicle: VehicleType = DEFAULT_VEHICLE;
     private listeners: Set<(vehicle: VehicleType) => void> = new Set();
     private transitionCallbacks: Set<(from: VehicleType, to: VehicleType) => void> = new Set();

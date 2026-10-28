@@ -13,13 +13,13 @@
  * 10 minutes); a jump of more than 25 km refetches, at most once a minute.
  */
 
-import { requireWasm } from '../../wasm';
+import { haversineMeters } from '../../utils/navigation';
 
-export const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
+const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
 
 export const CONDITIONS_REFRESH_MS = 10 * 60 * 1000;
-export const CONDITIONS_REFETCH_DISTANCE_M = 25_000;
-export const CONDITIONS_MIN_SPACING_MS = 60 * 1000;
+const CONDITIONS_REFETCH_DISTANCE_M = 25_000;
+const CONDITIONS_MIN_SPACING_MS = 60 * 1000;
 
 export interface LiveConditions {
   lat: number;
@@ -99,7 +99,7 @@ export function shouldFetchConditions(
   const elapsed = now - last.at;
   if (elapsed >= CONDITIONS_REFRESH_MS) return true;
   if (elapsed < CONDITIONS_MIN_SPACING_MS) return false;
-  const moved = requireWasm().haversine(last.lat, last.lng, pos.lat, pos.lng);
+  const moved = haversineMeters(last.lat, last.lng, pos.lat, pos.lng);
   return moved > CONDITIONS_REFETCH_DISTANCE_M;
 }
 

@@ -41,26 +41,3 @@ export function getColorPresetForTimeOfDay(preset: TimeOfDayPreset): string {
         default: return 'daylight';
     }
 }
-
-/**
- * Get approximate local solar time offset in hours from UTC.
- * This is a rough estimate based on longitude (15° per hour).
- */
-export function getSolarTimeOffset(lng: number): number {
-    return lng / 15;
-}
-
-/**
- * Get approximate local time at a location (solar time, not timezone-based).
- */
-export function getApproxLocalTime(lng: number): Date {
-    const now = new Date();
-    const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60;
-    const solarOffset = getSolarTimeOffset(lng);
-    const localHours = (utcHours + solarOffset + 24) % 24;
-    
-    const localDate = new Date(now);
-    localDate.setUTCHours(Math.floor(localHours));
-    localDate.setUTCMinutes((localHours % 1) * 60);
-    return localDate;
-}

@@ -5,7 +5,7 @@ interface Coords { lat: number; lng: number; }
 
 /** Sun moves ~0.25°/min — recomputing faster than this is imperceptible. */
 export const AUTO_NIGHT_RECOMPUTE_MS = 30_000;
-export const AUTO_NIGHT_SMOOTH_MS = 250;
+const AUTO_NIGHT_SMOOTH_MS = 250;
 
 /**
  * Drives nightIntensity and the sun/moon uniforms from the real clock at the

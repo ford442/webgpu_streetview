@@ -12,7 +12,7 @@
  *   it just left, and when the load drops it climbs straight back. A level the
  *   prediction got wrong (stepped up into, then over budget) is blocked like
  *   a frame-time probe.
- * - **Frame time** (`usePerformanceMonitor`'s last rAF interval), when there are no
+ * - **Frame time** (the frame driver's last rAF interval), when there are no
  *   timestamps. rAF is vsync-capped, so an unloaded frame reads as the budget
  *   and headroom is invisible: the loop probes one step up after holding at
  *   budget for a while, and a level that then overloads is blocked for a
@@ -83,7 +83,7 @@ export interface FrameBudgetInput {
     frozen: boolean;
 }
 
-export interface FrameBudgetBlock {
+interface FrameBudgetBlock {
     /** The level that overloaded; this and everything above it stay off-limits. */
     level: number;
     untilMs: number;

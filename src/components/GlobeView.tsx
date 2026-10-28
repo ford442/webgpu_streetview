@@ -42,8 +42,6 @@ import type {
   CesiumViewer,
 } from '../types/cesium';
 
-export type { GlobePOI, GlobeBookmark } from './globe/globeTypes';
-
 interface GlobeViewProps {
   transition: GlobeTransition;
   currentLat: number;
@@ -139,7 +137,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
     let cancelled = false;
 
-    (async () => {
+    void (async () => {
       let terrainProvider: CesiumTerrainProvider;
       let baseLayer: CesiumImageryLayer | false;
       try {

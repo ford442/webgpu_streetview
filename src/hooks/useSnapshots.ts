@@ -24,7 +24,7 @@ export interface SnapshotMetadata {
     imageDate?: string;
     lookId?: string;
     vehicleType?: string;
-    /** Quarter-res JPEG from downsample_2d for the gallery picker. */
+    /** 160×90 picker JPEG (canvas prescale + WASM downsample_2d; see renderer/gpuChores/pickerThumb.ts). */
     thumbnailDataUrl?: string;
 }
 
@@ -69,7 +69,7 @@ export function useSnapshots() {
     // Load snapshots from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+        void (async () => {
             try {
                 const stored = await loadMirroredJson<SnapshotMetadata[]>('snapshots');
                 if (!cancelled && Array.isArray(stored)) {
@@ -112,9 +112,9 @@ export function useSnapshots() {
 
             // Use requestIdleCallback to avoid blocking the main thread during heavy serialization
             if ('requestIdleCallback' in window) {
-                idleHandle = window.requestIdleCallback(saveOperation, { timeout: 2000 });
+                idleHandle = window.requestIdleCallback(() => void saveOperation(), { timeout: 2000 });
             } else {
-                saveOperation();
+                void saveOperation();
             }
         }, 1000);
 

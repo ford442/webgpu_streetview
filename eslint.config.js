@@ -83,6 +83,23 @@ export default tseslint.config(
         },
     },
 
+    // Type-aware promise rules (#340): what `tsc` cannot see. Scoped to src/ —
+    // type info costs a program build, so configs/scripts/e2e skip it.
+    {
+        files: ['src/**/*.{ts,tsx}'],
+        languageOptions: {
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
+        rules: {
+            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-misused-promises': 'error',
+            '@typescript-eslint/await-thenable': 'error',
+        },
+    },
+
     // Unit tests run in node/jsdom and may touch both worlds.
     {
         files: ['src/**/*.{test,spec}.{ts,tsx}', 'src/**/__tests__/**/*.{ts,tsx}', 'src/setupTests.ts'],

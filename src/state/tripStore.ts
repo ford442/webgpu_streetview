@@ -7,7 +7,7 @@
  * subscribe with `useTripSelector` (re-render only when their slice changes),
  * the cabin bridge reads `tripStore.get()` imperatively.
  */
-import { useSyncExternalStore } from 'react';
+import { createStore, useStore } from './createStore';
 import type { ActiveRoute, RoutedStep } from '../services/routing/routeGeometry';
 import type { LatLng } from '../services/routing/RouteProvider';
 
@@ -60,7 +60,7 @@ export interface TripState {
   readonly offlineDrive: OfflineDriveStats | null;
 }
 
-export const IDLE_TRIP: TripState = {
+const IDLE_TRIP: TripState = {
   status: 'idle',
   stops: [],
   route: null,
@@ -80,30 +80,15 @@ export interface TripStore {
 }
 
 export function createTripStore(initial: Partial<TripState> = {}): TripStore {
-  let state: TripState = { ...IDLE_TRIP, ...initial };
-  const listeners = new Set<() => void>();
-
-  const commit = (next: TripState): void => {
-    const keys = Object.keys(next) as (keyof TripState)[];
-    if (keys.every((k) => next[k] === state[k])) return;
-    state = next;
-    for (const l of Array.from(listeners)) l();
-  };
-
+  const store = createStore<TripState>({ ...IDLE_TRIP, ...initial });
   return {
-    get: () => state,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    get: store.get,
+    subscribe: store.subscribe,
     update(patch) {
-      const p = typeof patch === 'function' ? patch(state) : patch;
-      commit({ ...state, ...p });
+      store.set((state) => ({ ...state, ...(typeof patch === 'function' ? patch(state) : patch) }));
     },
     reset(next = {}) {
-      commit({ ...IDLE_TRIP, ...next });
+      store.set({ ...IDLE_TRIP, ...next });
     },
   };
 }
@@ -112,11 +97,7 @@ export const tripStore = createTripStore();
 
 /** Subscribe to a slice of the trip. The selector must return a stable value for an unchanged state. */
 export function useTripSelector<T>(selector: (s: TripState) => T, store: TripStore = tripStore): T {
-  return useSyncExternalStore(
-    store.subscribe,
-    () => selector(store.get()),
-    () => selector(store.get()),
-  );
+  return useStore(store, selector);
 }
 
 /** The next maneuver ahead, or null without a route / progress. */

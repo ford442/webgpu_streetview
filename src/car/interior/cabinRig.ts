@@ -27,7 +27,7 @@ export function createCabinRig(camera: THREE.PerspectiveCamera): CabinRig {
     return { carRig, headPivot };
 }
 
-export function attachCameraToHeadPivot(camera: THREE.PerspectiveCamera, headPivot: THREE.Group): void {
+function attachCameraToHeadPivot(camera: THREE.PerspectiveCamera, headPivot: THREE.Group): void {
     camera.position.set(0, 0, 0);
     camera.rotation.order = 'YXZ';
     headPivot.add(camera);

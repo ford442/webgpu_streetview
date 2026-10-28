@@ -103,14 +103,16 @@ jobs:
           cmake --build cpp/build-host -j"$(nproc)"
           ctest --test-dir cpp/build-host --output-on-failure
 
-      # Gating: cpp/.clang-tidy sets WarningsAsErrors to bugprone-*, so any
-      # bugprone finding fails the job (modernize-* still only prints).
-      # Missing clang-tidy or a missing compilation database fails too, so
-      # the step cannot silently skip.
-      - name: clang-tidy (bugprone-* gating)
+      # Gating: clang-format (cpp/.clang-format, checked — Ubuntu 24.04's
+      # clang-format 18, the version the tree is formatted with) and
+      # clang-tidy, whose WarningsAsErrors covers bugprone-*, clang-analyzer-*
+      # and performance-* (pro-bounds-* and modernize-* only print). Missing
+      # tools or a missing compilation database fail too, so the step cannot
+      # silently skip.
+      - name: clang-format + clang-tidy (gating)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-tidy
+          sudo apt-get install -y clang-tidy clang-format
           bash scripts/lint-cpp.sh
 
       # Two compilers because -Wconversion/-Wshadow diagnostics differ between
@@ -171,7 +173,7 @@ jobs:
           git diff --exit-code cpp/tests/goldens.json cpp/tests/goldens_generated.h
 
   # Rebuild the WASM modules through the C++/Emscripten ship path and prove the
-  # committed public/wasm/streetview-wasm{,.simd}.wasm match this pinned emcc.
+  # committed public/wasm/streetview-{wasm,dsp}.simd.wasm match this pinned emcc.
   build-wasm-emscripten:
     runs-on: ubuntu-latest
     steps:
@@ -191,25 +193,50 @@ jobs:
 
       - run: npm ci
 
-      - name: Build C++ → WASM via Emscripten
-        run: npm run build:wasm
+      - name: Build C++ → WASM via Emscripten (and copy the shipped binaries)
+        run: npm run build:wasm:update
 
-      - name: Verify Emscripten build exports the full ABI
-        run: node scripts/check-wasm-abi.mjs
-
-      - name: Committed wasm (scalar + SIMD) matches this emcc
+      - name: Committed wasm (main + worklet SIMD binaries) matches this emcc
         run: |
-          git diff --exit-code public/wasm/streetview-wasm.wasm \
-            public/wasm/streetview-wasm.simd.wasm public/wasm/streetview-wasm.wasm.sha256
+          git diff --exit-code public/wasm/
+          test ! -e public/wasm/streetview-wasm.wasm
 
-      # The SIMD128 binary ships (the AudioWorklet's cabin DSP runs its
-      # hand-vectorised FIR), so it must reproduce every golden the scalar
-      # binary captured — the cabin DSP scripts included — bit for bit.
-      - name: SIMD128 binary reproduces the scalar goldens bit for bit
-        run: node scripts/gen-wasm-goldens.mjs --compare --wasm public/wasm/streetview-wasm.simd.wasm
+      # Signatures from the type sections vs abi.h, for both shipped binaries
+      # and the scalar oracle; the worklet binary's no-grow/no-import/32 KB.
+      - name: Binaries match abi.h by signature
+        run: |
+          node scripts/gen-wasm-abi.mjs --check
+          node scripts/check-wasm-abi.mjs --main cpp/build-emscripten/out/streetview-wasm.wasm
+
+      # The goldens are captured from the shipped SIMD binary; the scalar
+      # build of the same sources (never deployed) must reproduce every one —
+      # the cabin convolver's FFT and FIR included — bit for bit.
+      - name: Scalar oracle reproduces the SIMD goldens bit for bit
+        run: node scripts/gen-wasm-goldens.mjs --compare --wasm cpp/build-emscripten/out/streetview-wasm.wasm
 
       - name: Cabin DSP render budget (advisory)
         run: node scripts/bench-cabin-dsp.mjs --quanta 1500
+
+  # The doctest suite (goldens included) as -msimd128 wasm with ASan + UBSan,
+  # run under node: the real wasm_simd128.h path, not SIMDe.
+  wasm-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned emsdk version
+        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: emcc -msimd128 -fsanitize=address,undefined test suite (node)
+        run: bash scripts/test-wasm-sanitizers.sh
 
   e2e-smoke:
     runs-on: ubuntu-latest

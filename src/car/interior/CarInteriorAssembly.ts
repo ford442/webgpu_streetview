@@ -3,7 +3,7 @@ import {
     setupVehicleInteriorLOD,
     type VehicleLODConfig,
     type FrustumCuller,
-} from '../../utils/performance';
+} from './performance';
 import { type VehicleType, type VehicleConfig, getVehicleConfig } from '../VehicleManager';
 import { CarInteriorBuilder } from './CarInteriorBuilder';
 import { CarInteriorGauges } from './CarInteriorGauges';
@@ -205,7 +205,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
             cabin,
             host.metalMaterial,
             host.vehicleConfig,
-            host.gpuProfile as import('../../utils/performance').GPUPerformanceProfile,
+            host.gpuProfile as import('./performance').GPUPerformanceProfile,
             host.quality
         );
         host.speedometerNeedle = gaugeResult.speedometerNeedle;
@@ -350,7 +350,7 @@ export function rebuildCarInteriorForVehicle(host: CarInteriorAssemblyHost, vehi
 
     host.applySeatPosition();
 
-    const mats = createMaterials(host.vehicleConfig, host.gpuProfile as import('../../utils/performance').GPUPerformanceProfile);
+    const mats = createMaterials(host.vehicleConfig, host.gpuProfile as import('./performance').GPUPerformanceProfile);
     host.dashboardMaterial = mats.dashboard;
     host.chromeMaterial = (mats as { chrome?: THREE.MeshStandardMaterial }).chrome;
     host.leatherMaterial = mats.leather;

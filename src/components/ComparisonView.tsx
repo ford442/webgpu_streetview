@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { formatImageDate, type HistoricalPanoEntry } from '../utils/historicalImagery';
 
-export interface ComparisonViewProps {
+interface ComparisonViewProps {
   beforeUrl: string;
   afterUrl: string;
   beforeEntry: HistoricalPanoEntry;

@@ -1,6 +1,6 @@
 /**
  * gpu-chores downsample_2d — integer box filter, workgroup (8,8).
- * Matches src/renderer/gpuChores/lumaMath.ts / WASM `downsample_2d`.
+ * Matches the WASM `downsample_2d` (cpp/src/luma_module.cpp).
  */
 
 @group(0) @binding(0) var srcTex: texture_2d<f32>;

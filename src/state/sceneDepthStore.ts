@@ -8,7 +8,7 @@
  * (loading, ready, failed, timings) lives in
  * `renderer/depth/sceneDepthStatsStore.ts`.
  */
-import { useSyncExternalStore } from 'react';
+import { createStore, useStore } from './createStore';
 import { readFlag } from '../config/flags';
 
 export interface SceneDepthOptIn {
@@ -32,20 +32,18 @@ function readInitial(): SceneDepthOptIn {
     }
 }
 
-let state: SceneDepthOptIn | null = null;
-const listeners = new Set<() => void>();
+/** null until first read: the URL / storage are read lazily, not at import. */
+const store = createStore<SceneDepthOptIn | null>(null);
 
 export const sceneDepthStore = {
     get(): SceneDepthOptIn {
-        if (!state) state = readInitial();
-        return state;
+        const current = store.get();
+        if (current) return current;
+        const initial = readInitial();
+        store.set(initial);
+        return initial;
     },
-    subscribe(listener: () => void): () => void {
-        listeners.add(listener);
-        return () => {
-            listeners.delete(listener);
-        };
-    },
+    subscribe: store.subscribe,
     /** The panel toggle: persists (best effort) and applies from the next frame. */
     setEnabled(enabled: boolean): void {
         const current = sceneDepthStore.get();
@@ -55,20 +53,14 @@ export const sceneDepthStore = {
             /* private mode: session-only */
         }
         if (current.enabled === enabled) return;
-        state = { ...current, enabled };
-        for (const l of Array.from(listeners)) l();
+        store.set({ ...current, enabled });
     },
     /** Test-only. */
     resetForTests(next?: SceneDepthOptIn): void {
-        state = next ?? null;
-        for (const l of Array.from(listeners)) l();
+        store.set(next ?? null);
     },
 };
 
 export function useSceneDepthOptIn<T>(selector: (s: SceneDepthOptIn) => T): T {
-    return useSyncExternalStore(
-        sceneDepthStore.subscribe,
-        () => selector(sceneDepthStore.get()),
-        () => selector(sceneDepthStore.get()),
-    );
+    return useStore(sceneDepthStore, selector);
 }

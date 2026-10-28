@@ -13,7 +13,7 @@ import {
     type RendererEffectIsolation,
     type StreetViewRenderer,
 } from '../RendererBackend';
-import { getCanvasFingerprint } from '../../utils/panoramaStability';
+import { mapsCanvasSource } from '../frameSource/mapsCanvasSource';
 import {
     WEATHER_PARAMS_FLOAT_COUNT,
     WeatherParamIndex,
@@ -71,7 +71,7 @@ function createProgram(gl: WebGL2RenderingContext): WebGLProgram {
 export class WebGL2FallbackRenderer implements StreetViewRenderer {
     public readonly canvas: HTMLCanvasElement;
     public readonly backendType = 'webgl' as const;
-    public readonly fallbackReason?: string;
+    public readonly fallbackReason?: string | undefined;
 
     private gl: WebGL2RenderingContext | null = null;
     private program: WebGLProgram | null = null;
@@ -203,7 +203,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
     }
 
     public updateNoiseBuffer(_tile: Float32Array): void {
-        // The WebGL fallback pipeline doesn't sample the WASM noise tile —
+        // The WebGL fallback pipeline doesn't sample the CPU noise tile —
         // it's a WebGPU-only enhancement layered on weather-post.wgsl.
     }
 
@@ -324,7 +324,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
                         ? source.height
                         : 0;
 
-            const stable = !(source instanceof HTMLCanvasElement) || !!getCanvasFingerprint(source);
+            const stable = !(source instanceof HTMLCanvasElement) || mapsCanvasSource.isShowingImagery(source);
             if (width > 0 && height > 0 && stable) {
                 try {
                     gl.bindTexture(gl.TEXTURE_2D, this.texture);

@@ -19,7 +19,7 @@ import { CabinCompositePass } from '/src/renderer/cabinComposite';
 import { collectOptionalDeviceFeatures } from '/src/renderer/deviceInit';
 import { initCarMode, toggleCarMode, updateCarMode } from '/src/car/runtime/lifecycle';
 import { getState } from '/src/car/runtime/state';
-import { GPU_PROFILES } from '/src/utils/performance';
+import { GPU_PROFILES } from '/src/car/interior/performance';
 import type { VehicleType } from '/src/car/VehicleManager';
 import * as THREE from 'three';
 

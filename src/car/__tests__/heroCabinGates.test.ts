@@ -9,7 +9,7 @@ const kitMocks = vi.hoisted(() => ({
 
 vi.mock('../gltfInteriorKit', () => kitMocks);
 
-vi.mock('../../effects/WindAudio', () => ({
+vi.mock('../../audio/WindAudio', () => ({
   getWindAudio: () => ({
     isPlaying: () => false,
     init: async () => false,

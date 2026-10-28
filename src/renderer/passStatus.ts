@@ -24,7 +24,7 @@ export type FramePassId =
     /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
     | 'depth';
 
-export type PassState = 'ready' | 'failed';
+type PassState = 'ready' | 'failed';
 
 export interface PassStatus {
     state: PassState;
@@ -38,11 +38,9 @@ export type PassStatusRecord = Partial<Record<FramePassId, PassStatus>>;
 
 let statuses: PassStatusRecord = {};
 
-type ProbeWindow = Window & { webgpuProbe?: { passes?: PassStatusRecord } };
-
 function publish(): void {
     if (typeof window === 'undefined') return;
-    const probe = (window as ProbeWindow).webgpuProbe;
+    const probe = window.webgpuProbe;
     if (probe) probe.passes = statuses;
 }
 

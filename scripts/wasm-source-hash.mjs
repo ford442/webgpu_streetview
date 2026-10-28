@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * SHA-256 of the C++ sources and build inputs that produce
- * public/wasm/streetview-wasm.wasm.
+ * SHA-256 of the C++ sources and build inputs every binary in public/wasm/ is
+ * built from, recorded in public/wasm/streetview-wasm.wasm.sha256.
  * Used by scripts/build-wasm.sh and scripts/verify-build.sh so a C++ edit
  * without a wasm rebuild fails loudly. Not a hash of the WAT text.
  *
@@ -22,9 +22,13 @@ export const WASM_SOURCE_FILES = [
   'cpp/src/cabin_dsp_module.cpp',
   'cpp/src/depth_module.cpp',
   'cpp/src/graph_module.cpp',
-  'cpp/src/bindings.cpp',
-  'cpp/include/streetview_wasm.h',
-  'cpp/include/audio_kernels.h',
+  'cpp/src/runtime.cpp',
+  'cpp/include/streetview/abi.h',
+  'cpp/include/streetview/audio_kernels.h',
+  'cpp/include/streetview/platform.h',
+  'cpp/include/streetview/geodesy.h',
+  'cpp/include/streetview/fft256.h',
+  'cpp/include/streetview/simd.h',
   'cpp/CMakeLists.txt',
   // Build inputs, not just sources: the flags/scripts and the pinned emcc
   // decide the bytes as much as the C++ does.

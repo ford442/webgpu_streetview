@@ -22,7 +22,7 @@ export type GearPosition = (typeof GEAR_POSITIONS)[number];
  * Panorama hops consumed per forward input (or cruise tick) in each gear.
  * P/N are parked, R reverses a single hop, D/2/3 step 1/2/3 panoramas.
  */
-export const GEAR_HOP_COUNTS: Record<GearPosition, number> = {
+const GEAR_HOP_COUNTS: Record<GearPosition, number> = {
     P: 0,
     R: 1,
     N: 0,

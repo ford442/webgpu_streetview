@@ -39,22 +39,27 @@ describe('C++ compile_commands contract', () => {
         expect(TRANSLATION_UNITS).toContain('luma_module.cpp');
         expect(TRANSLATION_UNITS).toContain('cabin_dsp_module.cpp');
         expect(TRANSLATION_UNITS).toContain('depth_module.cpp');
-        expect(TRANSLATION_UNITS).toContain('bindings.cpp');
+        expect(TRANSLATION_UNITS).toContain('runtime.cpp');
     });
 
-    it('puts every translation unit (bindings.cpp included) on the host target', () => {
-        const hostLib = cmake.match(/add_library\(streetview_cpu STATIC([\s\S]*?)\)/);
-        expect(hostLib).not.toBeNull();
-        expect(listedSources(hostLib![1]!)).toEqual(TRANSLATION_UNITS);
-    });
-
-    it('links every translation unit into both Emscripten targets (scalar + SIMD)', () => {
-        const sources = cmake.match(/set\(STREETVIEW_WASM_SOURCES([\s\S]*?)\)/);
+    it('lists every translation unit once, for the host and both main Emscripten targets', () => {
+        const sources = cmake.match(/set\(STREETVIEW_SOURCES([\s\S]*?)\)/);
         expect(sources).not.toBeNull();
         expect(listedSources(sources![1]!)).toEqual(TRANSLATION_UNITS);
+        // runtime.cpp (sv_malloc/sv_free/stack bounds) has no header twin to include it.
+        expect(listedSources(sources![1]!)).toContain('runtime.cpp');
         // Same sources, same flags but -msimd128: never a second source list.
-        expect(cmake).toMatch(/add_executable\(streetview-wasm \$\{STREETVIEW_WASM_SOURCES\}\)/);
-        expect(cmake).toMatch(/add_executable\(streetview-wasm-simd \$\{STREETVIEW_WASM_SOURCES\}\)/);
+        expect(cmake).toMatch(/add_library\(streetview_cpu STATIC \$\{STREETVIEW_SOURCES\}\)/);
+        expect(cmake).toMatch(/add_library\(streetview_cpu_simd STATIC \$\{STREETVIEW_SOURCES\}\)/);
+        expect(cmake).toMatch(/add_executable\(streetview-wasm \$\{STREETVIEW_SOURCES\}\)/);
+        expect(cmake).toMatch(/add_executable\(streetview-wasm-simd \$\{STREETVIEW_SOURCES\}\)/);
+    });
+
+    it('builds the worklet binary from the cabin engine and the runtime only', () => {
+        const dsp = cmake.match(/set\(STREETVIEW_DSP_SOURCES([\s\S]*?)\)/);
+        expect(dsp).not.toBeNull();
+        expect(listedSources(dsp![1]!)).toEqual(['cabin_dsp_module.cpp', 'runtime.cpp']);
+        expect(cmake).toMatch(/add_executable\(streetview-dsp-simd \$\{STREETVIEW_DSP_SOURCES\}\)/);
     });
 
     it('lints every translation unit in scripts/lint-cpp.sh', () => {
@@ -65,8 +70,8 @@ describe('C++ compile_commands contract', () => {
 
     it('hashes every public and internal header into the wasm staleness check', () => {
         const hashed = read('scripts', 'wasm-source-hash.mjs');
-        for (const header of readdirSync(join(ROOT, 'cpp', 'include')).filter((f) => f.endsWith('.h'))) {
-            expect(hashed).toContain(`cpp/include/${header}`);
+        for (const header of readdirSync(join(ROOT, 'cpp', 'include', 'streetview')).filter((f) => f.endsWith('.h'))) {
+            expect(hashed).toContain(`cpp/include/streetview/${header}`);
         }
     });
 
