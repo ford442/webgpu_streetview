@@ -6,22 +6,28 @@
  *
  * One C++ source (cpp/src/*_module.cpp), built two ways:
  *
- *   1. public/wasm/streetview-wasm{,.simd}.wasm  – what actually ships (emcc)
- *   2. the host build                            – native ctest, four compilers
+ *   1. public/wasm/streetview-wasm.simd.wasm  – what ships (emcc -msimd128);
+ *      streetview-dsp.simd.wasm, the worklet's engine, is the same
+ *      cabin_dsp_module.cpp
+ *   2. the scalar build (cpp/build-emscripten/out/streetview-wasm.wasm) – CI's
+ *      oracle, never deployed
+ *   3. the host builds – native ctest: g++, clang, x86-64-v3, ASan/UBSan, and
+ *      SIMDe (the SIMD128 source path on the host)
  *
- * The goldens are captured **from the shipping scalar binary** and then
- * asserted against (2) by the native host tests (cpp/tests/*_test.cpp) and
- * against both binaries, through the TS loader's wrappers, by
- * src/wasm/__tests__/wasmGoldenParity.test.ts. There is no JS twin: a
+ * The goldens are captured **from the shipping SIMD binary** and then
+ * asserted against (2) by `--compare --wasm` in CI, against (3) by the native
+ * host tests (cpp/tests/*_test.cpp), through the TS loader's wrappers by
+ * src/wasm/__tests__/wasmGoldenParity.test.ts, and through the worklet
+ * binary by src/car/audio/cabinWorklet.test.ts. There is no JS twin: a
  * compiler, flag or SIMD change that moves one bit shows up as a failure.
  *
  * Outputs (both committed):
- *   cpp/tests/goldens.json            – consumed by Vitest (both binaries)
+ *   cpp/tests/goldens.json            – consumed by Vitest
  *   cpp/tests/goldens_generated.h     – consumed by the native host tests
  *
  * Usage:
  *   npm run gen:wasm-goldens          # after a deliberate algorithm change
- *   node scripts/gen-wasm-goldens.mjs --compare   # SIMD CI: vectors must match
+ *   node scripts/gen-wasm-goldens.mjs --compare --wasm <scalar>   # CI oracle check
  *
  * Flags:
  *   --wasm <path>  --json-out <path>  --header-out <path>  --compare
@@ -668,14 +674,14 @@ const depthPercentiles = DEPTH_PERCENTILE_CASES.map((c) => {
   writeDepthMap(c.values);
   const n = c.values.length;
   const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
-  exp.depth_percentiles(depthBlock, n, c.low, c.high, depthBlock + n * 4, out);
+  exp.depth_percentiles(depthBlock, n, c.low, c.high, out);
   return { ...c, expected: Array.from(new Float64Array(memory.buffer, out, 2)) };
 });
 {
   const view = new Float32Array(memory.buffer, depthBlock, DEPTH_STRIDED_COUNT);
   for (let i = 0; i < DEPTH_STRIDED_COUNT; i++) view[i] = ((i * 7919) % 10007) / 10007;
   const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
-  exp.depth_percentiles(depthBlock, DEPTH_STRIDED_COUNT, 0.02, 0.98, depthBlock + DEPTH_STRIDED_COUNT * 4, out);
+  exp.depth_percentiles(depthBlock, DEPTH_STRIDED_COUNT, 0.02, 0.98, out);
   depthPercentiles.push({
     label: 'strided-20000', values: null, low: 0.02, high: 0.98,
     expected: Array.from(new Float64Array(memory.buffer, out, 2)),

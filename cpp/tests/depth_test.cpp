@@ -13,6 +13,8 @@
 #include "streetview/abi.h"
 #include "goldens_generated.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -37,8 +39,10 @@ constexpr int kDepthTexels = goldens::kDepthWidth * goldens::kDepthHeight;
 /** A golden map with the documented NaN / +Infinity texels poked in. */
 std::vector<float> depth_input(const float* values) {
     std::vector<float> map(values, values + kDepthTexels);
-    for (int i : goldens::kDepthNanIndices) map[static_cast<size_t>(i)] = std::numeric_limits<float>::quiet_NaN();
-    for (int i : goldens::kDepthInfIndices) map[static_cast<size_t>(i)] = std::numeric_limits<float>::infinity();
+    for (int i : goldens::kDepthNanIndices)
+        map[static_cast<size_t>(i)] = std::numeric_limits<float>::quiet_NaN();
+    for (int i : goldens::kDepthInfIndices)
+        map[static_cast<size_t>(i)] = std::numeric_limits<float>::infinity();
     return map;
 }
 
@@ -57,9 +61,8 @@ TEST_CASE("depth_percentiles matches the goldens bit for bit") {
                     static_cast<float>(static_cast<double>((i * 7919) % 10007) / 10007.0);
             }
         }
-        std::vector<float> scratch(in.size());
         double out[2] = {-1.0, -1.0};
-        sw_depth_percentiles(in.data(), static_cast<int>(in.size()), c.low, c.high, scratch.data(), out);
+        sw_depth_percentiles(in.data(), static_cast<int>(in.size()), c.low, c.high, out);
         CHECK(bits_of(out[0]) == bits_of(c.expected[0]));
         CHECK(bits_of(out[1]) == bits_of(c.expected[1]));
     }
@@ -68,11 +71,48 @@ TEST_CASE("depth_percentiles matches the goldens bit for bit") {
 TEST_CASE("depth_percentiles: nothing finite reads as an empty range") {
     const float nan = std::numeric_limits<float>::quiet_NaN();
     std::vector<float> in(64, nan);
-    std::vector<float> scratch(in.size());
     double out[2] = {-1.0, -1.0};
-    sw_depth_percentiles(in.data(), static_cast<int>(in.size()), 0.02, 0.98, scratch.data(), out);
+    sw_depth_percentiles(in.data(), static_cast<int>(in.size()), 0.02, 0.98, out);
     CHECK(out[0] == 0.0);
     CHECK(out[1] == 0.0);
+}
+
+TEST_CASE("depth_percentiles: the radix select reads what a sort would") {
+    // Negatives, duplicates, a tiny range and huge magnitudes: every byte of
+    // the order key gets exercised.
+    uint32_t rng = 0x9e3779b9U;
+    const auto next = [&rng] {
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        return rng;
+    };
+    for (int trial = 0; trial < 40; ++trial) {
+        CAPTURE(trial);
+        const size_t n = 1 + next() % 3000;
+        std::vector<float> in(n);
+        for (float& v : in) {
+            const uint32_t r = next();
+            switch (r % 4) {
+            case 0: v = static_cast<float>(static_cast<int>(r % 7) - 3); break;
+            case 1:
+                v = static_cast<float>(static_cast<double>(r) / 4294967296.0 * 2.0 - 1.0);
+                break;
+            case 2: v = static_cast<float>(static_cast<double>(r % 1000) * 1e30); break;
+            default: v = 1.0f + static_cast<float>(r % 16) * 1.1920929e-7f; break;
+            }
+        }
+        std::vector<float> sorted = in;
+        std::sort(sorted.begin(), sorted.end());
+        for (const double pct : {0.0, 0.02, 0.5, 0.98, 1.0}) {
+            const double last = static_cast<double>(n - 1);
+            const auto k =
+                static_cast<size_t>(std::min(last, std::max(0.0, std::round(pct * last))));
+            double out[2] = {-1.0, -1.0};
+            sw_depth_percentiles(in.data(), static_cast<int>(n), pct, pct, out);
+            CHECK(out[0] == static_cast<double>(sorted[k]));
+        }
+    }
 }
 
 TEST_CASE("depth_normalize walks the golden sequence bit for bit") {
@@ -98,8 +138,8 @@ TEST_CASE("depth_normalize stays on the proxy scale: [0, 1], non-finite texels f
     double state[3] = {0.0, 0.0, 0.0};
     const std::vector<float> in = depth_input(goldens::kDepthSteps[0].values);
     std::vector<float> out(static_cast<size_t>(kDepthTexels));
-    sw_depth_normalize(in.data(), kDepthTexels, goldens::kDepthWidth, goldens::kDepthHeight,
-                       0.45, 0, 0, state, nullptr, out.data());
+    sw_depth_normalize(in.data(), kDepthTexels, goldens::kDepthWidth, goldens::kDepthHeight, 0.45,
+                       0, 0, state, nullptr, out.data());
     for (float v : out) {
         CHECK(v >= 0.0f);
         CHECK(v <= 1.0f);

@@ -23,7 +23,13 @@
 #endif
 
 #if defined(__EMSCRIPTEN__) || defined(__wasm__)
+// Standard-attribute spelling in C++: it may precede [[nodiscard]] (a GNU
+// __attribute__ list there is an error before clang 2x).
+#ifdef __cplusplus
+#define SV_EXPORT(name) [[clang::export_name(#name), gnu::used]]
+#else
 #define SV_EXPORT(name) __attribute__((export_name(#name), used))
+#endif
 #else
 #define SV_EXPORT(name)
 #endif

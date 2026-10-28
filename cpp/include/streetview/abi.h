@@ -91,8 +91,8 @@ SW_NODISCARD float sw_noise2d(float x, float y);
  * No-op when buf is null or width/height <= 0.
  */
 SV_EXPORT(fill_noise_buffer)
-void sw_fill_noise_buffer(float* buf, int width, int height,
-                          float scale, float offsetX, float offsetY);
+void sw_fill_noise_buffer(float* buf, int width, int height, float scale, float offsetX,
+                          float offsetY);
 
 /**
  * Fractal Brownian motion over sw_noise2d.
@@ -112,9 +112,8 @@ SW_NODISCARD float sw_fbm2d(float x, float y, int octaves, float lacunarity, flo
  * No-op when buf is null or width/height <= 0.
  */
 SV_EXPORT(fill_fbm_buffer)
-void sw_fill_fbm_buffer(float* buf, int width, int height,
-                        float scale, float offsetX, float offsetY,
-                        int octaves, float lacunarity, float gain);
+void sw_fill_fbm_buffer(float* buf, int width, int height, float scale, float offsetX,
+                        float offsetY, int octaves, float lacunarity, float gain);
 
 /**
  * Generate deterministic particle spawn seeds: 4 floats per particle —
@@ -155,8 +154,8 @@ SW_NODISCARD double sw_batch_haversine(const double* points, int count, double* 
  *                         re-wrapped to [-180, 180]. nullptr is a no-op.
  */
 SV_EXPORT(offset_latlng)
-void sw_offset_latlng(double lat, double lng, double distance_meters,
-                      double bearing_deg, double* out2);
+void sw_offset_latlng(double lat, double lng, double distance_meters, double bearing_deg,
+                      double* out2);
 
 /**
  * Initial great-circle bearing (forward azimuth) from point 1 to point 2.
@@ -182,8 +181,7 @@ SW_NODISCARD double sw_initial_bearing(double lat1, double lng1, double lat2, do
  *                it can exceed `cap`, in which case only `cap` were written.
  */
 SV_EXPORT(polyline_resample)
-SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m,
-                         double* out, int cap);
+SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m, double* out, int cap);
 
 /**
  * Project a point onto a polyline: "where am I on the route, how far off it".
@@ -199,8 +197,7 @@ SW_NODISCARD int sw_polyline_resample(const double* in, int n, double step_m,
  *              nullptr is a no-op.
  */
 SV_EXPORT(polyline_project)
-void sw_polyline_project(const double* poly, int n, double lat, double lng,
-                         double* out3);
+void sw_polyline_project(const double* poly, int n, double lat, double lng, double* out3);
 
 /** Bytes of caller-owned `work` that sw_graph_astar needs per node. */
 #define SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE 32
@@ -224,8 +221,8 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
  */
 SV_EXPORT(graph_astar)
 SW_NODISCARD int sw_graph_astar(const int* offsets, const int* neighbors, const double* coords,
-                   int node_count, int edge_count, int from, int to,
-                   void* work, int* out_path, int max_len);
+                                int node_count, int edge_count, int from, int to, void* work,
+                                int* out_path, int max_len);
 
 /**
  * Index of the node nearest (haversine) to [lat, lng]; ties: the lower index.
@@ -261,10 +258,9 @@ SW_NODISCARD int sw_graph_nearest(const double* coords, int node_count, double l
  *                      (wrapped) when count <= 0 or buf is null.
  */
 SV_EXPORT(fill_engine_noise)
-SW_NODISCARD double sw_fill_engine_noise(float* buf, int count,
-                            float rpm, float load, float speed_kmh,
-                            double phase, double sample_index,
-                            float sample_rate);
+SW_NODISCARD double sw_fill_engine_noise(float* buf, int count, float rpm, float load,
+                                         float speed_kmh, double phase, double sample_index,
+                                         float sample_rate);
 
 /**
  * Fill a short cabin impulse response (mono, f32, `count` taps).
@@ -292,8 +288,7 @@ SW_NODISCARD double sw_fill_engine_noise(float* buf, int count,
  * @param sample_rate   Audio sample rate (Hz). Values <= 1 fall back to 44100.
  */
 SV_EXPORT(fill_cabin_ir)
-void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
-                      float openness, float sample_rate);
+void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, float sample_rate);
 
 /**
  * Fill a pair of short per-ear impulse responses modelling a heading-relative
@@ -314,31 +309,28 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type,
  * @param sample_rate Audio sample rate (Hz). Values <= 1 fall back to 44100.
  */
 SV_EXPORT(fill_hrtf)
-void sw_fill_hrtf(float* left, float* right, int count,
-                  float azimuth_deg, float sample_rate);
+void sw_fill_hrtf(float* left, float* right, int count, float azimuth_deg, float sample_rate);
 
 /**
  * 256-bin Rec.709 luma histogram of packed RGBA8 (row-major, 4 bytes/pixel).
  * `bins` is 256 uint32 counts; zeroed then filled. No-op when width/height <= 0.
  */
 SV_EXPORT(luma_histogram_bt709)
-void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height,
-                             unsigned int* bins);
+void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height, unsigned int* bins);
 
 /**
  * Rec.709 luma reduce: writes three f32 values {mean, min, max} in [0, 1].
  * Empty input writes zeros.
  */
 SV_EXPORT(reduce_luma_bt709)
-void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height,
-                          float* out3);
+void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height, float* out3);
 
 /**
  * Integer box-filter downsample of packed RGBA8 into packed RGBA8.
  */
 SV_EXPORT(downsample_2d)
-void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
-                      unsigned char* dst, int dst_w, int dst_h);
+void sw_downsample_2d(const unsigned char* src, int src_w, int src_h, unsigned char* dst, int dst_w,
+                      int dst_h);
 
 /**
  * Fused luma chore: box-downsample `rgba` (width x height) onto a
@@ -352,8 +344,8 @@ void sw_downsample_2d(const unsigned char* src, int src_w, int src_h,
  * dst = source size analyses the buffer as-is. Bad arguments write zeros.
  */
 SV_EXPORT(luma_analyze)
-void sw_luma_analyze(const unsigned char* rgba, int width, int height,
-                     int dst_w, int dst_h, unsigned int* bins, float* stats3);
+void sw_luma_analyze(const unsigned char* rgba, int width, int height, int dst_w, int dst_h,
+                     unsigned int* bins, float* stats3);
 
 /**
  * Create a cabin DSP instance: the whole car bed (engine, road, wind, rain,
@@ -384,14 +376,17 @@ void sw_dsp_destroy(sw_dsp* state);
  * @param wipers      Non-zero: wipers run (and thump) while rain > 0.02.
  */
 SV_EXPORT(dsp_set_params)
-void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
-                       float openness, int vehicle, float wet_road, float rain,
-                       float wind_mps, float radio_gain, int wipers);
+void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps, float openness,
+                       int vehicle, float wet_road, float rain, float wind_mps, float radio_gain,
+                       int wipers);
 
 /**
  * Replace the cabin IR (`count` taps; > sw_dsp_max_ir_taps() truncates,
- * nullptr / <= 0 is the identity). Padded to whole 128-tap partitions; the
- * swap crossfades over 256 samples. Non-finite taps become 0.
+ * nullptr / <= 0 is the identity). Taps are clamped to +-16, non-finite ones
+ * become 0. The swap convolves once, never twice: input already in the
+ * frequency-domain delay line keeps its old IR's tail, new input takes the
+ * new IR, and the direct (first) partition glides between the two over 1024
+ * frames — no parallel crossfade.
  */
 SV_EXPORT(dsp_set_ir)
 void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
@@ -403,22 +398,22 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count);
  * the scalar and SIMD binaries, the host build and the JS twin.
  */
 SV_EXPORT(dsp_render)
-void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
-                   float* out_l, float* out_r, int frames);
+void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r, float* out_l,
+                   float* out_r, int frames);
 
-/** Longest IR sw_dsp_set_ir keeps (4096). */
+/** Longest IR sw_dsp_set_ir keeps (16384: 1 direct + 127 FFT partitions of 128). */
 SV_EXPORT(dsp_max_ir_taps)
 SW_NODISCARD int sw_dsp_max_ir_taps(void);
 
 /**
  * `out2` = {lo, hi}: the disparity at `low_pct` / `high_pct` (0-1) of a
  * strided subsample (at most 16384 texels), exact order statistics with
- * non-finite texels skipped; {0, 0} when none is finite. `scratch` holds
- * `count` floats and is overwritten.
+ * non-finite texels skipped; {0, 0} when none is finite. O(n) radix
+ * select; needs no scratch.
  */
 SV_EXPORT(depth_percentiles)
-void sw_depth_percentiles(const float* disparity, int count, double low_pct,
-                          double high_pct, float* scratch, double* out2);
+void sw_depth_percentiles(const float* disparity, int count, double low_pct, double high_pct,
+                          double* out2);
 
 /**
  * Proxy-scale depth of the nearest disparity: the median of
@@ -427,7 +422,8 @@ void sw_depth_percentiles(const float* disparity, int count, double low_pct,
  * top-origin screen Y) is too low for the band to be ground.
  */
 SV_EXPORT(depth_near_depth)
-SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int height, double horizon_y);
+SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int height,
+                                        double horizon_y);
 
 /**
  * Relative inverse depth -> the viewDepthProxy scale (0 = camera, 1 = horizon
@@ -438,9 +434,9 @@ SW_NODISCARD double sw_depth_near_depth(const float* nearness, int width, int he
  * every texel eases too. `out` (count floats) must not alias the inputs.
  */
 SV_EXPORT(depth_normalize)
-void sw_depth_normalize(const float* disparity, int count, int width, int height,
-                        double horizon_y, int aligned, int same_scene,
-                        double* state3, const float* previous, float* out);
+void sw_depth_normalize(const float* disparity, int count, int width, int height, double horizon_y,
+                        int aligned, int same_scene, double* state3, const float* previous,
+                        float* out);
 
 /*
  * Runtime (runtime.cpp). The loader's scratch arena and every caller-owned

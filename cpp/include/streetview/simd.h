@@ -33,17 +33,29 @@ namespace sv_simd {
 #if SV_SIMD128
 using f4 = v128_t;
 
-inline f4 load(const float* p) { return wasm_v128_load(p); }
-inline void store(float* p, f4 v) { wasm_v128_store(p, v); }
-inline f4 splat(float x) { return wasm_f32x4_splat(x); }
-inline f4 add(f4 a, f4 b) { return wasm_f32x4_add(a, b); }
-inline f4 sub(f4 a, f4 b) { return wasm_f32x4_sub(a, b); }
-inline f4 mul(f4 a, f4 b) { return wasm_f32x4_mul(a, b); }
+inline f4 load(const float* p) {
+    return wasm_v128_load(p);
+}
+inline void store(float* p, f4 v) {
+    wasm_v128_store(p, v);
+}
+inline f4 splat(float x) {
+    return wasm_f32x4_splat(x);
+}
+inline f4 add(f4 a, f4 b) {
+    return wasm_f32x4_add(a, b);
+}
+inline f4 sub(f4 a, f4 b) {
+    return wasm_f32x4_sub(a, b);
+}
+inline f4 mul(f4 a, f4 b) {
+    return wasm_f32x4_mul(a, b);
+}
 
 /** (l0 + l1) + (l2 + l3) — the FIR's canonical lane reduction. */
 inline float hsum(f4 v) {
-    return (wasm_f32x4_extract_lane(v, 0) + wasm_f32x4_extract_lane(v, 1))
-         + (wasm_f32x4_extract_lane(v, 2) + wasm_f32x4_extract_lane(v, 3));
+    return (wasm_f32x4_extract_lane(v, 0) + wasm_f32x4_extract_lane(v, 1)) +
+           (wasm_f32x4_extract_lane(v, 2) + wasm_f32x4_extract_lane(v, 3));
 }
 
 /** In place: rows (a, b, c, d) become columns. */
@@ -62,19 +74,31 @@ struct f4 {
     float v[4];
 };
 
-inline f4 load(const float* p) { return {{p[0], p[1], p[2], p[3]}}; }
+inline f4 load(const float* p) {
+    return {{p[0], p[1], p[2], p[3]}};
+}
 inline void store(float* p, f4 x) {
     p[0] = x.v[0];
     p[1] = x.v[1];
     p[2] = x.v[2];
     p[3] = x.v[3];
 }
-inline f4 splat(float x) { return {{x, x, x, x}}; }
-inline f4 add(f4 a, f4 b) { return {{a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3]}}; }
-inline f4 sub(f4 a, f4 b) { return {{a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2], a.v[3] - b.v[3]}}; }
-inline f4 mul(f4 a, f4 b) { return {{a.v[0] * b.v[0], a.v[1] * b.v[1], a.v[2] * b.v[2], a.v[3] * b.v[3]}}; }
+inline f4 splat(float x) {
+    return {{x, x, x, x}};
+}
+inline f4 add(f4 a, f4 b) {
+    return {{a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3]}};
+}
+inline f4 sub(f4 a, f4 b) {
+    return {{a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2], a.v[3] - b.v[3]}};
+}
+inline f4 mul(f4 a, f4 b) {
+    return {{a.v[0] * b.v[0], a.v[1] * b.v[1], a.v[2] * b.v[2], a.v[3] * b.v[3]}};
+}
 
-inline float hsum(f4 v) { return (v.v[0] + v.v[1]) + (v.v[2] + v.v[3]); }
+inline float hsum(f4 v) {
+    return (v.v[0] + v.v[1]) + (v.v[2] + v.v[3]);
+}
 
 inline void transpose(f4& a, f4& b, f4& c, f4& d) {
     const f4 r0 = a;

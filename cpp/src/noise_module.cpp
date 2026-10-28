@@ -31,14 +31,14 @@ static uint8_t perm[512];
 // Diagonal vectors use 1/√2 ≈ 0.7071 for unit-length normalisation.
 static const float SQRT2_INV = 0.70710678f;
 static const float grad2[8][2] = {
-    { 1.0f,       0.0f      },
-    {-1.0f,       0.0f      },
-    { 0.0f,       1.0f      },
-    { 0.0f,      -1.0f      },
-    { SQRT2_INV,  SQRT2_INV },
-    {-SQRT2_INV,  SQRT2_INV },
-    { SQRT2_INV, -SQRT2_INV },
-    {-SQRT2_INV, -SQRT2_INV },
+    {1.0f, 0.0f},
+    {-1.0f, 0.0f},
+    {0.0f, 1.0f},
+    {0.0f, -1.0f},
+    {SQRT2_INV, SQRT2_INV},
+    {-SQRT2_INV, SQRT2_INV},
+    {SQRT2_INV, -SQRT2_INV},
+    {-SQRT2_INV, -SQRT2_INV},
 };
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,9 @@ void sw_seed(unsigned int seed) {
     for (int i = 255; i > 0; --i) {
         state = state * 1664525u + 1013904223u;
         int j = (int)((state >> 16) & 0x7FFF) % (i + 1);
-        uint8_t t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t;
+        uint8_t t = tmp[i];
+        tmp[i] = tmp[j];
+        tmp[j] = t;
     }
     memcpy(perm, tmp, 256);
     memcpy(perm + 256, tmp, 256);
@@ -110,16 +112,16 @@ float sw_noise2d(float x, float y) {
     const unsigned Y = static_cast<unsigned>(iy) & 255u;
 
     // Gradient values at four corners.
-    float n00 = grad2d(perm[perm[X    ] + Y    ], fx,       fy      );
-    float n10 = grad2d(perm[perm[X + 1] + Y    ], fx - 1.f, fy      );
-    float n01 = grad2d(perm[perm[X    ] + Y + 1], fx,       fy - 1.f);
+    float n00 = grad2d(perm[perm[X] + Y], fx, fy);
+    float n10 = grad2d(perm[perm[X + 1] + Y], fx - 1.f, fy);
+    float n01 = grad2d(perm[perm[X] + Y + 1], fx, fy - 1.f);
     float n11 = grad2d(perm[perm[X + 1] + Y + 1], fx - 1.f, fy - 1.f);
 
     return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
 }
 
-void sw_fill_noise_buffer(float* buf, int width, int height,
-                          float scale, float offsetX, float offsetY) {
+void sw_fill_noise_buffer(float* buf, int width, int height, float scale, float offsetX,
+                          float offsetY) {
     if (buf == nullptr || width <= 0 || height <= 0) return;
     const float inv_scale = 1.0f / scale;
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
@@ -127,7 +129,8 @@ void sw_fill_noise_buffer(float* buf, int width, int height,
         for (int col = 0; col < width; ++col) {
             float nx = ((float)col + offsetX) * inv_scale;
             float ny = ((float)row + offsetY) * inv_scale;
-            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] = sw_noise2d(nx, ny);
+            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] =
+                sw_noise2d(nx, ny);
         }
     }
 }
@@ -148,9 +151,8 @@ float sw_fbm2d(float x, float y, int octaves, float lacunarity, float gain) {
     return norm > 0.0f ? sum / norm : 0.0f;
 }
 
-void sw_fill_fbm_buffer(float* buf, int width, int height,
-                        float scale, float offsetX, float offsetY,
-                        int octaves, float lacunarity, float gain) {
+void sw_fill_fbm_buffer(float* buf, int width, int height, float scale, float offsetX,
+                        float offsetY, int octaves, float lacunarity, float gain) {
     if (buf == nullptr || width <= 0 || height <= 0) return;
     const float inv_scale = 1.0f / scale;
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
@@ -158,7 +160,8 @@ void sw_fill_fbm_buffer(float* buf, int width, int height,
         for (int col = 0; col < width; ++col) {
             float nx = ((float)col + offsetX) * inv_scale;
             float ny = ((float)row + offsetY) * inv_scale;
-            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] = sw_fbm2d(nx, ny, octaves, lacunarity, gain);
+            out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] =
+                sw_fbm2d(nx, ny, octaves, lacunarity, gain);
         }
     }
 }
@@ -176,10 +179,10 @@ void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
     const std::span<float> out(buf, static_cast<size_t>(count) * 4);
     for (int i = 0; i < count; ++i) {
         const std::span<float, 4> p = out.subspan(static_cast<size_t>(i) * 4).first<4>();
-        p[0] = next_unit();                    // x     [0, 1)
-        p[1] = next_unit();                    // y     [0, 1)
-        p[2] = 0.5f + next_unit();             // speed [0.5, 1.5)
-        p[3] = next_unit() * 6.2831853f;       // phase [0, 2π)
+        p[0] = next_unit();              // x     [0, 1)
+        p[1] = next_unit();              // y     [0, 1)
+        p[2] = 0.5f + next_unit();       // speed [0.5, 1.5)
+        p[3] = next_unit() * 6.2831853f; // phase [0, 2π)
     }
 }
 

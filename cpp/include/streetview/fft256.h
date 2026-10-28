@@ -75,7 +75,9 @@ constexpr double cos_k(int k) {
     }
 }
 
-constexpr double sin_k(int k) { return cos_k(k - 64); }
+constexpr double sin_k(int k) {
+    return cos_k(k - 64);
+}
 
 struct Twiddles {
     float cos[kN];
@@ -135,11 +137,11 @@ inline Bfly butterfly(f4 ar, f4 ai, f4 br, f4 bi, f4 cr, f4 ci, f4 dr, f4 di) {
     Bfly o{};
     o.r[0] = add(apc_r, bpd_r);
     o.i[0] = add(apc_i, bpd_i);
-    o.r[1] = add(amc_r, bmd_i);   // amc - j*bmd
+    o.r[1] = add(amc_r, bmd_i); // amc - j*bmd
     o.i[1] = sub(amc_i, bmd_r);
     o.r[2] = sub(apc_r, bpd_r);
     o.i[2] = sub(apc_i, bpd_i);
-    o.r[3] = sub(amc_r, bmd_i);   // amc + j*bmd
+    o.r[3] = sub(amc_r, bmd_i); // amc + j*bmd
     o.i[3] = add(amc_i, bmd_r);
     return o;
 }
@@ -186,11 +188,12 @@ inline void stage(int n, int s, const float* xr, const float* xi, float* yr, flo
             const int b = a + span;
             const int c = b + span;
             const int d = c + span;
-            Bfly o = butterfly(load(xr + a), load(xi + a), load(xr + b), load(xi + b),
-                               load(xr + c), load(xi + c), load(xr + d), load(xi + d));
+            Bfly o = butterfly(load(xr + a), load(xi + a), load(xr + b), load(xi + b), load(xr + c),
+                               load(xi + c), load(xr + d), load(xi + d));
             // p == 0 has unit twiddles: skipped on every build alike.
             if (p != 0) {
-                for (int m = 1; m < 4; ++m) cmul(o.r[m], o.i[m], wr[m - 1], wi[m - 1], o.r[m], o.i[m]);
+                for (int m = 1; m < 4; ++m)
+                    cmul(o.r[m], o.i[m], wr[m - 1], wi[m - 1], o.r[m], o.i[m]);
             }
             int out = q + s * 4 * p;
             for (int m = 0; m < 4; ++m, out += s) {
@@ -208,7 +211,7 @@ inline void stage(int n, int s, const float* xr, const float* xi, float* yr, flo
  * scratch. No allocation, no globals written.
  */
 inline void fft256(float* re, float* im, float* tmp_re, float* tmp_im) {
-    detail::stage_first(re, im, tmp_re, tmp_im);   // n = 256, s = 1
+    detail::stage_first(re, im, tmp_re, tmp_im); // n = 256, s = 1
     detail::stage(64, 4, tmp_re, tmp_im, re, im);
     detail::stage(16, 16, re, im, tmp_re, tmp_im);
     detail::stage(4, 64, tmp_re, tmp_im, re, im);

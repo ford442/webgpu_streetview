@@ -45,7 +45,9 @@ echo "ℹ️  Historical key check disabled (key is intentionally used with refe
 # ---------------------------------------------------------------------------
 # 1a. WASM binary: must exist, be non-empty, and not be stale vs C++ sources.
 # ---------------------------------------------------------------------------
-WASM_FILE="$BUILD_DIR/wasm/streetview-wasm.wasm"
+WASM_FILE="$BUILD_DIR/wasm/streetview-wasm.simd.wasm"
+DSP_FILE="$BUILD_DIR/wasm/streetview-dsp.simd.wasm"
+SCALAR_FILE="$BUILD_DIR/wasm/streetview-wasm.wasm"
 WASM_HASH_FILE="$SCRIPT_ROOT/public/wasm/streetview-wasm.wasm.sha256"
 GLUE_JS="$BUILD_DIR/wasm/streetview-wasm.js"
 
@@ -55,9 +57,15 @@ if [ -f "$GLUE_JS" ]; then
   ERRORS=$((ERRORS+1))
 fi
 
+# The scalar build is CI's golden oracle (cpp/build-emscripten/out/); it never ships.
+if [ -f "$SCALAR_FILE" ]; then
+  echo "❌ ERROR: $SCALAR_FILE is present. Only the SIMD128 binaries ship."
+  ERRORS=$((ERRORS+1))
+fi
+
 if [ ! -f "$WASM_FILE" ]; then
   echo "❌ ERROR: $WASM_FILE is missing."
-  echo "   Run 'npm run build:wasm' then 'vite build' (or simply 'npm run build')."
+  echo "   Run 'npm run build:wasm:update' then 'vite build' (or simply 'npm run build')."
   ERRORS=$((ERRORS+1))
 else
   WASM_BYTES=$(wc -c < "$WASM_FILE")
@@ -65,17 +73,26 @@ else
     echo "❌ ERROR: $WASM_FILE is empty (0 bytes). WASM build may have failed silently."
     ERRORS=$((ERRORS+1))
   else
-    echo "✅ build/wasm/streetview-wasm.wasm present (${WASM_BYTES} bytes)"
+    echo "✅ build/wasm/streetview-wasm.simd.wasm present (${WASM_BYTES} bytes)"
   fi
 
-  # The AudioWorklet's cabin DSP loads the SIMD128 twin (same sources).
-  SIMD_FILE="$BUILD_DIR/wasm/streetview-wasm.simd.wasm"
-  if [ ! -s "$SIMD_FILE" ]; then
-    echo "❌ ERROR: $SIMD_FILE is missing or empty."
-    echo "   Run 'npm run build:wasm' (it builds both binaries)."
+  # The AudioWorklet's cabin engine: its own binary (dsp_* + runtime only).
+  if [ ! -s "$DSP_FILE" ]; then
+    echo "❌ ERROR: $DSP_FILE is missing or empty."
+    echo "   Run 'npm run build:wasm:update' (it builds every binary)."
     ERRORS=$((ERRORS+1))
   else
-    echo "✅ build/wasm/streetview-wasm.simd.wasm present ($(wc -c < "$SIMD_FILE") bytes)"
+    echo "✅ build/wasm/streetview-dsp.simd.wasm present ($(wc -c < "$DSP_FILE") bytes)"
+  fi
+
+  # Type-section ABI check of both shipped binaries against abi.h (and the
+  # worklet binary's no-memory.grow / no-imports / < 32 KB budget).
+  if command -v node &>/dev/null; then
+    if node "$SCRIPT_ROOT/scripts/check-wasm-abi.mjs" --only --main "$WASM_FILE" --dsp "$DSP_FILE"; then
+      :
+    else
+      ERRORS=$((ERRORS+1))
+    fi
   fi
 
   # Staleness check: the C++ input hash recorded at the last emcc build vs the
@@ -86,14 +103,14 @@ else
     CURRENT_HASH=$(node "$SCRIPT_ROOT/scripts/wasm-source-hash.mjs")
     if [ "$RECORDED_HASH" != "$CURRENT_HASH" ]; then
       echo "❌ ERROR: C++ WASM sources have changed since the last emcc build."
-      echo "   Run 'npm run build:wasm' to regenerate the binary, then rebuild."
+      echo "   Run 'npm run build:wasm:update' to regenerate the binaries, then rebuild."
       ERRORS=$((ERRORS+1))
     else
       echo "✅ WASM binary is up-to-date with C++ sources (hash match)"
     fi
   elif [ ! -f "$WASM_HASH_FILE" ]; then
     echo "⚠️  WASM source hash file missing ($WASM_HASH_FILE)."
-    echo "   Run 'npm run build:wasm' to generate it."
+    echo "   Run 'npm run build:wasm:update' to generate it."
   fi
 fi
 

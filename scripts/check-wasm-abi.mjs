@@ -17,6 +17,7 @@
  *   node scripts/check-wasm-abi.mjs                     # public/wasm/*
  *   node scripts/check-wasm-abi.mjs --main <path> ...   # extra main-kind binary
  *                                                       # (CI: the scalar reference)
+ *   node scripts/check-wasm-abi.mjs --only --main <p> --dsp <p>   # just these
  */
 
 import { readFileSync } from 'fs';
@@ -86,6 +87,9 @@ if (process.argv[1] && resolve(process.argv[1]) === thisFile) {
     [join(repoRoot, 'public', 'wasm', 'streetview-dsp.simd.wasm'), 'dsp'],
   ];
   const argv = process.argv.slice(2);
+  // --only: check just the binaries named by --main / --dsp (verify-build.sh
+  // checks the copies in build/wasm/, not public/wasm/).
+  if (argv.includes('--only')) targets.length = 0;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flag === '--main' || flag === '--dsp') targets.push([resolve(argv[++i] ?? ''), flag === '--main' ? 'main' : 'dsp']);

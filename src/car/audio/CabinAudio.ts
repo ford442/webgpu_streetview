@@ -5,13 +5,14 @@
  * the car radio are rendered at audio rate by `dsp_render`
  * (cpp/src/cabin_dsp_module.cpp) inside the worklet, convolved with the
  * cabin IR of the current vehicle and roof (`fill_cabin_ir`) and placed by the
- * head-shadow model. This thread fetches the binary once
- * (`loadStreetViewWasmBytes`, SIMD128 when the browser validates it), posts a
- * copy of the bytes to the worklet, which instantiates them there, and from
- * then on only posts targets
- * (`params`, every frame) and IRs (when the room changes). There is no PCM
- * queue, so nothing this thread does — a Maps tile decode, a React commit —
- * can make the cabin click.
+ * head-shadow model. This thread fetches the worklet-only binary once
+ * (`loadStreetViewWasmBytes('dsp')`: the engine alone, fixed memory, < 32 KB),
+ * posts a copy of the bytes to the worklet, which instantiates them there, and
+ * from then on only writes targets every frame — into the shared seqlock of
+ * cabinParamRing.ts when the page is cross-origin isolated, else as `params`
+ * messages — and posts IRs when the room changes. There is no PCM queue, so
+ * nothing this thread does — a Maps tile decode, a React commit — can make
+ * the cabin click.
  *
  * Radio: `useCabinRadioBinding`'s `AudioAnalyzer` shares this context
  * (`audio/carAudioGraph.ts`); while the engine runs, the radio bus feeds the
@@ -34,15 +35,15 @@ import { readFlag } from '../../config/flags';
 import {
   loadStreetViewWasmBytes,
   loadWasmModule,
-  wasmSimdSupported,
+  WASM_BINARY_FILES,
   type CabinDspParams,
   type StreetViewWasmAPI,
-  type WasmBinaryVariant,
 } from '../../wasm';
 import type { VehicleTelemetry } from '../VehicleDynamics';
 import type { VehicleType } from '../VehicleManager';
 import { publishCabinAudioProbe } from './cabinAudioProbe';
 import { buildCabinIr, cabinIrTaps } from './cabinIr';
+import { cabinParamRingSupported, createCabinParamRing, type CabinParamRing } from './cabinParamRing';
 import { CALM_CABIN_ENVIRONMENT, cabinDspParams, type CabinEnvironment } from './cabinParams';
 import { CABIN_PROCESSOR_NAME, CABIN_WORKLET_SOURCE } from './cabinWorkletSource';
 
@@ -57,8 +58,8 @@ export interface CabinOcclusion {
 
 interface WorkletMessage {
   type?: string;
-  simd?: boolean;
   maxIrTaps?: number;
+  memoryBytes?: number;
   quanta?: number;
   rendered?: number;
   underruns?: number;
@@ -67,21 +68,13 @@ interface WorkletMessage {
   message?: string;
 }
 
-/** Which binary the worklet should run, from `?cabinDsp` and the SIMD probe. */
-export function resolveCabinDspVariant(
-  flag: 'auto' | 'scalar' | 'off' | undefined,
-  simdSupported: boolean,
-): WasmBinaryVariant | null {
-  if (flag === 'off') return null;
-  if (flag === 'scalar') return 'scalar';
-  return simdSupported ? 'simd' : 'scalar';
-}
-
 export class CabinAudio {
   private graph: CarAudioGraph | null = null;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private worklet: AudioWorkletNode | null = null;
+  /** The shared param seqlock, when the page is cross-origin isolated. */
+  private ring: CabinParamRing | null = null;
   private detachRadio: (() => void) | null = null;
   private cabinFilter: BiquadFilterNode | null = null;
   private oscA: OscillatorNode | null = null;
@@ -117,8 +110,7 @@ export class CabinAudio {
       // own compiled binary below.
       this.wasm = await loadWasmModule();
       if (this.disposed) return;
-      const variant = resolveCabinDspVariant(readFlag('cabinDsp'), wasmSimdSupported());
-      if (variant) await this.attachWorklet(variant);
+      if (readFlag('cabinDsp') !== 'off') await this.attachWorklet();
       if (this.disposed) return;
       if (!this.worklet) this.attachOscillatorFallback();
       if (this.ctx?.state === 'suspended') await this.ctx.resume();
@@ -132,7 +124,7 @@ export class CabinAudio {
     return this.worklet !== null;
   }
 
-  private async attachWorklet(variant: WasmBinaryVariant): Promise<void> {
+  private async attachWorklet(): Promise<void> {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
     if (typeof ctx.audioWorklet?.addModule !== 'function') return;
@@ -141,7 +133,7 @@ export class CabinAudio {
     let moduleUrl: string | null = null;
     let node: AudioWorkletNode | null = null;
     try {
-      const bytes = await loadStreetViewWasmBytes(variant);
+      const bytes = await loadStreetViewWasmBytes('dsp');
       // A Blob URL keeps the processor single-sourced with cabinWorkletSource.ts
       // instead of shipping a second entry point just to be addModule()-able.
       const blob = new Blob([CABIN_WORKLET_SOURCE], { type: 'application/javascript' });
@@ -163,13 +155,22 @@ export class CabinAudio {
       };
       // A copy, transferred: the loader keeps its cached bytes.
       const copy = bytes.slice(0);
-      node.port.postMessage({ type: 'module', bytes: copy, simd: variant === 'simd' }, [copy]);
+      node.port.postMessage({ type: 'module', bytes: copy }, [copy]);
+      const ring = cabinParamRingSupported() ? createCabinParamRing() : null;
+      if (ring) node.port.postMessage({ type: 'ring', buffer: ring.buffer });
       node.connect(this.master);
       this.worklet = node;
+      this.ring = ring;
       this.detachRadio = attachCabinEngine(node, node);
-      publishCabinAudioProbe({ mode: 'worklet-wasm', simd: variant === 'simd', ready: false, error: undefined });
+      publishCabinAudioProbe({
+        mode: 'worklet-wasm',
+        binary: WASM_BINARY_FILES.dsp,
+        paramTransport: ring ? 'shared-ring' : 'message',
+        ready: false,
+        error: undefined,
+      });
       this.pushIr(true);
-      if (this.params) node.port.postMessage({ type: 'params', ...this.params });
+      if (this.params) this.sendParams(this.params);
     } catch (err) {
       console.warn('[CabinAudio] cabin engine unavailable; using oscillators', err);
       if (node) {
@@ -185,7 +186,7 @@ export class CabinAudio {
   private onWorkletMessage(msg: WorkletMessage | null): void {
     if (!msg) return;
     if (msg.type === 'ready') {
-      publishCabinAudioProbe({ ready: true, simd: msg.simd === true });
+      publishCabinAudioProbe({ ready: true, memoryBytes: msg.memoryBytes ?? 0 });
     } else if (msg.type === 'stats') {
       publishCabinAudioProbe({
         quanta: msg.quanta ?? 0,
@@ -215,7 +216,14 @@ export class CabinAudio {
     this.detachRadio?.();
     this.detachRadio = null;
     this.worklet = null;
+    this.ring = null;
     publishCabinAudioProbe({ mode: 'off', ready: false });
+  }
+
+  /** This frame's targets: through the shared ring when there is one, else a message. */
+  private sendParams(params: CabinDspParams): void {
+    if (this.ring) this.ring.write(params);
+    else this.worklet?.port.postMessage({ type: 'params', ...params });
   }
 
   /** Rebuild and send the cabin IR when the room it models has changed. */
@@ -258,7 +266,7 @@ export class CabinAudio {
     this.oscGain.connect(this.cabinFilter);
     this.oscA.start();
     this.oscB.start();
-    publishCabinAudioProbe({ mode: 'oscillator', ready: true, simd: false });
+    publishCabinAudioProbe({ mode: 'oscillator', ready: true, binary: null, paramTransport: null });
   }
 
   update(
@@ -273,7 +281,7 @@ export class CabinAudio {
     if (this.worklet) {
       // Only re-sends when the roof or the vehicle actually changed.
       this.pushIr();
-      this.worklet.port.postMessage({ type: 'params', ...this.params });
+      this.sendParams(this.params);
       return;
     }
 

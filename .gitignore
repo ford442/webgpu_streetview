@@ -31,6 +31,7 @@ cpp/build-asan/
 cpp/build-clang/
 cpp/build-clang-v3/
 cpp/build-wasm-tests/
+cpp/build-fuzz/
 cpp/compile_commands.json
 node_modules/
 public/wasm/*.js

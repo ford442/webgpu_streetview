@@ -23,6 +23,7 @@ option(STREETVIEW_SANITIZERS "Build the host targets with ASan + UBSan" OFF)
 # CI's wasm-sanitizers job: emcmake cmake -DSTREETVIEW_WASM_TESTS=ON
 # -DSTREETVIEW_SANITIZERS=ON, so the code that ships is sanitized as wasm too.
 option(STREETVIEW_WASM_TESTS "emcc: build and run the doctest suite as SIMD wasm" OFF)
+option(STREETVIEW_FUZZ "host clang: build the libFuzzer harnesses in cpp/fuzz" OFF)
 
 # ---------------------------------------------------------------------------
 # Warning flags (applied to our sources only — never to cpp/third_party)
@@ -288,5 +289,8 @@ else()
     include(CTest)
     if(BUILD_TESTING)
         add_subdirectory(tests)
+    endif()
+    if(STREETVIEW_FUZZ AND NOT EMSCRIPTEN)
+        add_subdirectory(fuzz)
     endif()
 endif()

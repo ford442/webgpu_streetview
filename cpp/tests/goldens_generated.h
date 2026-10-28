@@ -16,7 +16,7 @@
 
 namespace goldens {
 
-inline constexpr const char* kWasmSha256 = "f1ba3f618ff85b29d8755eb990dbc33a1afd62e4b097680c8564cfee0b2c616d";
+inline constexpr const char* kWasmSha256 = "48d076f44117fd2506c1129bd3f754a21acdf4e391ee21bf1bd8d613e4110ff9";
 inline constexpr unsigned kNoiseSeed = 1337u;
 
 // --- noise2d -------------------------------------------------------------

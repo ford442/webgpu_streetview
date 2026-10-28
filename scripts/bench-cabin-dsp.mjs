@@ -8,11 +8,15 @@
  * `dsp_set_ir` itself — as ms and as a share of the quantum's real-time budget
  * (128 / sampleRate). With --before <binary> the same runs on an older build
  * (any binary exporting dsp_*; e.g. the pre-#341 direct-form FIR) and the
- * ratio is printed: #341's criterion is >= 8x fewer cycles per quantum at
- * 2048 taps, and a swap costing no more than steady state. Results are
- * recorded in WASM.md.
+ * ratios are printed: #341's criterion is >= 8x fewer cycles for the
+ * convolution at 2048 taps, and a swap costing no more than steady state.
+ * "conv" is the quantum minus the same engine with the identity IR (the bed
+ * synthesis — engine, road, wind, rain — is the rest of the quantum and the
+ * same code in both). Every figure is the fastest of --rounds runs, so a busy
+ * machine inflates nothing it does not inflate every round. Results are
+ * recorded in docs/WASM.md.
  *
- *   node scripts/bench-cabin-dsp.mjs [--rate 48000] [--quanta 3000] [--before old.wasm] [--check]
+ *   node scripts/bench-cabin-dsp.mjs [--rate 48000] [--quanta 3000] [--rounds 5] [--before old.wasm] [--check]
  *
  * --check exits non-zero when 2048 taps is over 10 % of the quantum. Timing is
  * machine-dependent, so this is a local / manual gate, not part of
@@ -32,11 +36,12 @@ const flag = (name, fallback) => {
 };
 const sampleRate = Number(flag('--rate', 48000));
 const quanta = Number(flag('--quanta', 3000));
+const rounds = Number(flag('--rounds', 5));
 const beforePath = flag('--before', null);
 const afterPath = flag('--after', join(repoRoot, 'public', 'wasm', 'streetview-dsp.simd.wasm'));
 const check = argv.includes('--check');
 const QUANTUM = 128;
-const TAPS = [128, 1024, 2048, 4096, 8192, 16384];
+const TAPS = [0, 128, 1024, 2048, 4096, 8192, 16384];
 const SWAP_QUANTA = 8; // the glide: 1024 frames
 const budgetMs = (QUANTUM / sampleRate) * 1000;
 
@@ -45,6 +50,7 @@ async function load(path) {
   const { instance } = await WebAssembly.instantiate(bytes, {
     env: { emscripten_notify_memory_growth: () => {} },
   });
+  /** @type {Record<string, any>} */
   const exp = instance.exports;
   if (typeof exp._initialize === 'function') exp._initialize();
   return {
@@ -66,7 +72,7 @@ function cabinIr(taps, openness) {
   return out;
 }
 
-function bench(bin, taps) {
+function benchOnce(bin, taps) {
   const { exp } = bin;
   const n = Math.min(taps, bin.maxTaps);
   const state = exp.dsp_create(sampleRate);
@@ -76,10 +82,11 @@ function bench(bin, taps) {
   const outL = inR + QUANTUM * 4;
   const outR = outL + QUANTUM * 4;
   const irOff = outR + QUANTUM * 4;
-  const irs = [cabinIr(n, 0), cabinIr(n, 1)];
+  const irs = n > 0 ? [cabinIr(n, 0), cabinIr(n, 1)] : [];
   const setIr = (which) => {
-    new Float32Array(exp.memory.buffer, irOff, n).set(irs[which]);
-    exp.dsp_set_ir(state, irOff, n);
+    // 0 taps: the identity IR, i.e. the bed alone.
+    if (n > 0) new Float32Array(exp.memory.buffer, irOff, n).set(irs[which]);
+    exp.dsp_set_ir(state, n > 0 ? irOff : 0, n);
   };
   setIr(0);
   // Everything audible at once: a wet, rainy, windy cruise with the radio on.
@@ -116,27 +123,42 @@ function bench(bin, taps) {
   return { steady, swap: swapMs / (swaps * SWAP_QUANTA), setIr: setIrMs / swaps };
 }
 
+/** Fastest of `rounds` runs, per figure. */
+function bench(bin, taps) {
+  let best = benchOnce(bin, taps);
+  for (let r = 1; r < rounds; r++) {
+    const b = benchOnce(bin, taps);
+    best = { steady: Math.min(best.steady, b.steady), swap: Math.min(best.swap, b.swap), setIr: Math.min(best.setIr, b.setIr) };
+  }
+  return best;
+}
+
 const pct = (ms) => `${((ms / budgetMs) * 100).toFixed(1).padStart(5)} %`;
 const after = await load(afterPath);
 const before = beforePath ? await load(beforePath) : null;
 
-console.log(`dsp_render, ${QUANTUM}-frame quantum at ${sampleRate} Hz (budget ${budgetMs.toFixed(3)} ms), node ${process.version}`);
+console.log(`dsp_render, ${QUANTUM}-frame quantum at ${sampleRate} Hz (budget ${budgetMs.toFixed(3)} ms), node ${process.version}, best of ${rounds}`);
 console.log(`after:  ${afterPath}${before ? `\nbefore: ${beforePath}` : ''}`);
-console.log('taps    steady ms (budget)   swap quanta ms (x steady)   set_ir ms'
-  + (before ? '   before: steady ms (budget)  swap quanta ms   steady speed-up' : ''));
+console.log('taps    steady ms (budget)   conv ms   swap quanta ms (x steady)   set_ir ms'
+  + (before ? '   | before steady ms  conv ms   | speed-up quantum  conv' : ''));
+const bedAfter = bench(after, 0).steady;
+const bedBefore = before ? bench(before, 0).steady : 0;
 let failed = false;
-for (const taps of TAPS) {
+for (const taps of TAPS.slice(1)) {
   const a = bench(after, taps);
-  let line = `${String(taps).padStart(5)}   ${a.steady.toFixed(4)} (${pct(a.steady)})   `
+  const convA = Math.max(0, a.steady - bedAfter);
+  let line = `${String(taps).padStart(5)}   ${a.steady.toFixed(4)} (${pct(a.steady)})   ${convA.toFixed(4)}    `
     + `${a.swap.toFixed(4)} (${(a.swap / a.steady).toFixed(2)}x)            ${a.setIr.toFixed(4)}`;
   if (before && taps <= before.maxTaps) {
     const b = bench(before, taps);
-    line += `      ${b.steady.toFixed(4)} (${pct(b.steady)})    ${b.swap.toFixed(4)}         `
-      + `${(b.steady / a.steady).toFixed(1)}x`;
+    const convB = Math.max(0, b.steady - bedBefore);
+    line += `     | ${b.steady.toFixed(4)}            ${convB.toFixed(4)}    | `
+      + `${(b.steady / a.steady).toFixed(1)}x              ${convA > 0 ? (convB / convA).toFixed(1) : '∞'}x`;
   }
   console.log(line);
   if (taps === 2048 && (a.steady / budgetMs) * 100 > 10) failed = true;
 }
+console.log(`bed alone (identity IR): after ${bedAfter.toFixed(4)} ms${before ? `, before ${bedBefore.toFixed(4)} ms` : ''}`);
 if (check && failed) {
   console.error('❌ the 2048-tap render is over 10 % of the quantum budget');
   process.exit(1);

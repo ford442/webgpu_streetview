@@ -140,7 +140,7 @@ export function generateAbiModule(root = repoRoot) {
   L.push(' */');
   L.push('');
   L.push("/** A wasm value type, as a binary's type section spells it. */");
-  L.push("export type WasmValType = 'i32' | 'i64' | 'f32' | 'f64';");
+  L.push("type WasmValType = 'i32' | 'i64' | 'f32' | 'f64';");
   L.push('');
   L.push("/** `main`: streetview-wasm.simd.wasm (and the scalar reference); `dsp`: streetview-dsp.simd.wasm. */");
   L.push("export type WasmBinaryKind = 'main' | 'dsp';");

@@ -26,9 +26,10 @@ const PRECACHE_URLS = [
   './index.html',
   './manifest.json',
   './config.js',
-  './wasm/streetview-wasm.wasm',
-  // The cabin AudioWorklet's engine (SIMD128 build of the same sources).
+  // Every main-thread kernel (SIMD128; the scalar build is a CI oracle only).
   './wasm/streetview-wasm.simd.wasm',
+  // The cabin AudioWorklet's engine alone (fixed memory, < 32 KB).
+  './wasm/streetview-dsp.simd.wasm',
   './icons/icon.svg',
 ].concat(SHADER_URLS);
 

@@ -24,7 +24,9 @@
 
 namespace {
 
-std::string at(int i) { return "case " + std::to_string(i); }
+std::string at(int i) {
+    return "case " + std::to_string(i);
+}
 
 struct Csr {
     std::vector<int> offsets;
@@ -43,7 +45,8 @@ Csr golden_graph() {
 }
 
 std::vector<double> work_for(int nodes) {
-    return std::vector<double>(static_cast<size_t>(nodes) * SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE / sizeof(double));
+    return std::vector<double>(static_cast<size_t>(nodes) * SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE /
+                               sizeof(double));
 }
 
 std::vector<int> astar(const Csr& g, int from, int to, int* length_out = nullptr) {
@@ -78,11 +81,13 @@ double dijkstra(const Csr& g, int from, int to) {
     for (size_t iter = 0; iter < n; ++iter) {
         int u = -1;
         for (size_t i = 0; i < n; ++i) {
-            if (!done[i] && (u < 0 || dist[i] < dist[static_cast<size_t>(u)])) u = static_cast<int>(i);
+            if (!done[i] && (u < 0 || dist[i] < dist[static_cast<size_t>(u)]))
+                u = static_cast<int>(i);
         }
         if (u < 0 || std::isinf(dist[static_cast<size_t>(u)])) break;
         done[static_cast<size_t>(u)] = true;
-        for (int e = g.offsets[static_cast<size_t>(u)]; e < g.offsets[static_cast<size_t>(u) + 1]; ++e) {
+        for (int e = g.offsets[static_cast<size_t>(u)]; e < g.offsets[static_cast<size_t>(u) + 1];
+             ++e) {
             const int v = g.neighbors[static_cast<size_t>(e)];
             const double d = dist[static_cast<size_t>(u)] + edge_cost(g, u, v);
             if (d < dist[static_cast<size_t>(v)]) dist[static_cast<size_t>(v)] = d;
@@ -92,7 +97,8 @@ double dijkstra(const Csr& g, int from, int to) {
 }
 
 bool has_edge(const Csr& g, int a, int b) {
-    for (int e = g.offsets[static_cast<size_t>(a)]; e < g.offsets[static_cast<size_t>(a) + 1]; ++e) {
+    for (int e = g.offsets[static_cast<size_t>(a)]; e < g.offsets[static_cast<size_t>(a) + 1];
+         ++e) {
         if (g.neighbors[static_cast<size_t>(e)] == b) return true;
     }
     return false;
@@ -139,13 +145,13 @@ TEST_CASE("graph_astar: a one-way loop is routed around, not into") {
     // 0 → 1 → 2 → 3 heads straight at the goal 4 but 3 only loops back to 1;
     // the way to 4 starts by turning away, 0 → 5 → 4.
     Csr g;
-    g.coords = { 0.0, 0.0,   0.0, 0.001,   0.0005, 0.0015,   -0.0005, 0.0015,   0.0, 0.003,   0.001, 0.0 };
-    g.offsets = { 0, 2, 3, 4, 5, 5, 6 };
-    g.neighbors = { 1, 5,   2,   3,   1,   4 };
+    g.coords = {0.0, 0.0, 0.0, 0.001, 0.0005, 0.0015, -0.0005, 0.0015, 0.0, 0.003, 0.001, 0.0};
+    g.offsets = {0, 2, 3, 4, 5, 5, 6};
+    g.neighbors = {1, 5, 2, 3, 1, 4};
     int len = 0;
     const std::vector<int> path = astar(g, 0, 4, &len);
     CHECK(len == 3);
-    CHECK(path == std::vector<int>{ 0, 5, 4 });
+    CHECK(path == std::vector<int>{0, 5, 4});
     // And the reverse direction does not exist at all.
     CHECK(astar(g, 4, 0).empty());
 }
@@ -158,8 +164,8 @@ TEST_CASE("graph_astar: snprintf-style sizing and a truncated buffer") {
                                    g.edges(), c.from, c.to, work.data(), nullptr, 0);
     CHECK(len == c.length);
     std::vector<int> head(3, -7);
-    CHECK(sw_graph_astar(g.offsets.data(), g.neighbors.data(), g.coords.data(), g.nodes(), g.edges(),
-                         c.from, c.to, work.data(), head.data(), 3) == c.length);
+    CHECK(sw_graph_astar(g.offsets.data(), g.neighbors.data(), g.coords.data(), g.nodes(),
+                         g.edges(), c.from, c.to, work.data(), head.data(), 3) == c.length);
     CHECK(head[0] == c.path[0]);
     CHECK(head[1] == c.path[1]);
     CHECK(head[2] == c.path[2]);
@@ -169,9 +175,10 @@ TEST_CASE("graph_astar: invalid input returns -1 and never reads out of bounds")
     const Csr g = golden_graph();
     std::vector<double> work = work_for(g.nodes());
     std::vector<int> path(static_cast<size_t>(g.nodes()));
-    const auto call = [&](const int* offsets, const int* neighbors, int nodes, int edges, int from, int to) {
-        return sw_graph_astar(offsets, neighbors, g.coords.data(), nodes, edges, from, to, work.data(),
-                              path.data(), g.nodes());
+    const auto call = [&](const int* offsets, const int* neighbors, int nodes, int edges, int from,
+                          int to) {
+        return sw_graph_astar(offsets, neighbors, g.coords.data(), nodes, edges, from, to,
+                              work.data(), path.data(), g.nodes());
     };
     CHECK(call(g.offsets.data(), g.neighbors.data(), g.nodes(), g.edges(), -1, 0) == -1);
     CHECK(call(g.offsets.data(), g.neighbors.data(), g.nodes(), g.edges(), 0, g.nodes()) == -1);
@@ -185,7 +192,7 @@ TEST_CASE("graph_astar: invalid input returns -1 and never reads out of bounds")
     bad[5] = bad[6] + 1;
     CHECK(call(bad.data(), g.neighbors.data(), g.nodes(), g.edges(), 0, 1) == -1);
     // Out-of-range neighbour ids are skipped, not followed.
-    const Csr tiny{ { 0, 2, 2 }, { 99, -3 }, { 0.0, 0.0, 0.0, 0.001 } };
+    const Csr tiny{{0, 2, 2}, {99, -3}, {0.0, 0.0, 0.0, 0.001}};
     std::vector<double> tiny_work = work_for(2);
     CHECK(sw_graph_astar(tiny.offsets.data(), tiny.neighbors.data(), tiny.coords.data(), 2, 2, 0, 1,
                          tiny_work.data(), nullptr, 0) == -1);
@@ -199,11 +206,12 @@ TEST_CASE("graph_nearest matches the shipping WASM goldens; empty graphs are -1"
     int idx = 0;
     for (const auto& c : goldens::kGraphNearest) {
         INFO(at(idx++));
-        CHECK(sw_graph_nearest(goldens::kGraphCoords, goldens::kGraphNodeCount, c.lat, c.lng) == c.expected);
+        CHECK(sw_graph_nearest(goldens::kGraphCoords, goldens::kGraphNodeCount, c.lat, c.lng) ==
+              c.expected);
     }
     CHECK(sw_graph_nearest(goldens::kGraphCoords, 0, 0.0, 0.0) == -1);
     CHECK(sw_graph_nearest(nullptr, 4, 0.0, 0.0) == -1);
     // Ties go to the lower index.
-    const double twins[4] = { 1.0, 2.0, 1.0, 2.0 };
+    const double twins[4] = {1.0, 2.0, 1.0, 2.0};
     CHECK(sw_graph_nearest(twins, 2, 1.0, 2.0) == 0);
 }

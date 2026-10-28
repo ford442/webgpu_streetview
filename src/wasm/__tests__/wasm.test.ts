@@ -1,7 +1,7 @@
 /**
  * src/wasm/__tests__/wasm.test.ts
  * Behavioural tests for the StreetView WASM wrapper, run against the committed
- * binary (src/setupTests.ts installs public/wasm/streetview-wasm.wasm). The
+ * binary (src/setupTests.ts installs public/wasm/streetview-wasm.simd.wasm). The
  * exact numbers are pinned by wasmGoldenParity.test.ts; these check the
  * documented properties (ranges, symmetry, layout) through the marshalling
  * wrappers, plus the loader's contract.
@@ -468,7 +468,7 @@ describe('the loader', () => {
     _resetWasmModule();
     const { readFileSync } = await import('fs');
     const { join } = await import('path');
-    const bytes = readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.wasm'));
+    const bytes = readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.simd.wasm'));
     const fetchMock = vi.fn(async () => new Response(bytes));
     vi.stubGlobal('fetch', fetchMock);
     const [a, b] = await Promise.all([loadWasmModule(), loadWasmModule()]);
@@ -476,7 +476,7 @@ describe('the loader', () => {
     expect(await loadWasmModule()).toBe(a);
     expect(requireWasm()).toBe(a);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toMatch(/\/wasm\/streetview-wasm\.wasm$/);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toMatch(/\/wasm\/streetview-wasm\.simd\.wasm$/);
   });
 
   test('returns the installed module without fetching', async () => {

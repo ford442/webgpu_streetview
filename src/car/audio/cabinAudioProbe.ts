@@ -19,8 +19,16 @@ export interface CabinAudioProbe {
   mode: CabinAudioMode;
   /** The worklet instantiated its binary and created the engine. */
   ready: boolean;
-  /** Which binary the worklet runs (SIMD128 when `WebAssembly.validate` accepts the probe module). */
-  simd: boolean;
+  /** The binary the worklet runs (`streetview-dsp.simd.wasm`); null off the WASM path. */
+  binary: string | null;
+  /**
+   * How targets reach the worklet: `shared-ring` is the SharedArrayBuffer
+   * seqlock (cabinParamRing.ts, cross-origin isolated pages), `message` the
+   * per-frame postMessage fallback.
+   */
+  paramTransport: 'shared-ring' | 'message' | null;
+  /** The worklet binary's linear memory, bytes — fixed (it has no memory.grow). */
+  memoryBytes: number;
   sampleRate: number;
   /** Taps of the cabin IR last sent (per vehicle; see `cabinIrTaps`). */
   irTaps: number;
@@ -45,7 +53,9 @@ function emptyCabinAudioProbe(): CabinAudioProbe {
   return {
     mode: 'off',
     ready: false,
-    simd: false,
+    binary: null,
+    paramTransport: null,
+    memoryBytes: 0,
     sampleRate: 0,
     irTaps: 0,
     quanta: 0,

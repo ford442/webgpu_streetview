@@ -79,8 +79,10 @@ struct HrtfShadow {
 
 /** `sample_rate` must already be sanitised (> 1). */
 inline HrtfShadow hrtf_shadow(float azimuth_deg, float sample_rate) {
-    if (azimuth_deg > 90.0f) azimuth_deg = 90.0f;
-    else if (azimuth_deg < -90.0f) azimuth_deg = -90.0f;
+    if (azimuth_deg > 90.0f)
+        azimuth_deg = 90.0f;
+    else if (azimuth_deg < -90.0f)
+        azimuth_deg = -90.0f;
 
     // Trig-free stand-in for the sine term in a physical (Woodworth) ITD
     // model: a smooth S-curve that saturates toward +-1 at the +-90 degree

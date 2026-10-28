@@ -106,7 +106,8 @@ constexpr int kFdlMask = kFdlSlots - 1;
 constexpr int kGlideFrames = 1024;
 constexpr int kGlideStep = 16;
 constexpr float kInvGlideSteps = static_cast<float>(kGlideStep) / static_cast<float>(kGlideFrames);
-static_assert(kGlideFrames % kGlideStep == 0 && kGlideStep % 4 == 0, "whole fir_dot4 groups per step");
+static_assert(kGlideFrames % kGlideStep == 0 && kGlideStep % 4 == 0,
+              "whole fir_dot4 groups per step");
 /** H_k spectra are pre-scaled by 1/kFft (exact) so the inverse FFT needs no scale. */
 constexpr float kInvFft = 1.0f / static_cast<float>(kFft);
 // The worklet (CABIN_QUANTUM in src/car/audio/cabinWorkletSource.ts) and the
@@ -124,21 +125,21 @@ constexpr int kItdMask = kItdRing - 1;
 // ---------------------------------------------------------------------------
 constexpr float kTwoPi = 6.2831855f;
 constexpr float kSmoothSeconds = 0.04f;
-constexpr float kInvSpeedFullMps = 0.025f;   // 40 m/s = full road / wind noise
+constexpr float kInvSpeedFullMps = 0.025f; // 40 m/s = full road / wind noise
 constexpr float kEngineGain = 0.42f;
 constexpr float kRumbleHz = 110.0f;
 constexpr float kRumbleGain = 2.6f;
-constexpr float kHissSplitHz = 2200.0f;      // wet hiss = white minus this low-pass
+constexpr float kHissSplitHz = 2200.0f; // wet hiss = white minus this low-pass
 constexpr float kDryHissGain = 0.02f;
 constexpr float kWetHissGain = 0.12f;
-constexpr float kSprayGain = 1.4f;           // wet-arch spray: the rumble..hiss band
-constexpr float kWindLoHz = 250.0f;          // band top at no wind ...
-constexpr float kWindHiHz = 1600.0f;         // ... and at full wind
-constexpr float kWindBaseHz = 90.0f;         // band bottom
+constexpr float kSprayGain = 1.4f;   // wet-arch spray: the rumble..hiss band
+constexpr float kWindLoHz = 250.0f;  // band top at no wind ...
+constexpr float kWindHiHz = 1600.0f; // ... and at full wind
+constexpr float kWindBaseHz = 90.0f; // band bottom
 constexpr float kWindGain = 0.9f;
 constexpr float kGustHz = 0.6f;
 constexpr float kGustScale = 18.0f;
-constexpr float kDropRatePerSec = 1400.0f;   // at rain = 1
+constexpr float kDropRatePerSec = 1400.0f; // at rain = 1
 constexpr float kDropDecaySeconds = 0.0025f;
 constexpr float kDrumHz = 400.0f;
 constexpr float kDrumGain = 0.55f;
@@ -146,19 +147,19 @@ constexpr float kTickGain = 0.10f;
 constexpr float kRainHissHz = 5000.0f;
 constexpr float kRainHissGain = 0.05f;
 constexpr float kWiperRainMin = 0.02f;
-constexpr float kWiperBaseHz = 0.6f;         // sweeps per second, light rain ...
-constexpr float kWiperRainHz = 0.6f;         // ... plus this much at rain = 1
+constexpr float kWiperBaseHz = 0.6f; // sweeps per second, light rain ...
+constexpr float kWiperRainHz = 0.6f; // ... plus this much at rain = 1
 constexpr float kThumpHz = 55.0f;
 constexpr float kThumpDecaySeconds = 0.06f;
 constexpr float kThumpGain = 0.25f;
-constexpr float kOccClosedHz = 700.0f;       // body occlusion, roof sealed ...
-constexpr float kOccOpenHz = 6000.0f;        // ... and fully open
+constexpr float kOccClosedHz = 700.0f; // body occlusion, roof sealed ...
+constexpr float kOccOpenHz = 6000.0f;  // ... and fully open
 constexpr float kDcHz = 20.0f;
 constexpr float kInv255 = 1.0f / 255.0f;
 constexpr float kInv24 = 1.0f / 24.0f;
-constexpr float kInputLimit = 8.0f;          // radio samples outside +-8 (or NaN) are dropped
-constexpr float kWindAzimuth = -55.0f;       // the driver's window
-constexpr float kSpeakerAzimuth = 30.0f;     // dash speakers at +-30 degrees
+constexpr float kInputLimit = 8.0f;      // radio samples outside +-8 (or NaN) are dropped
+constexpr float kWindAzimuth = -55.0f;   // the driver's window
+constexpr float kSpeakerAzimuth = 30.0f; // dash speakers at +-30 degrees
 
 // Per-stream hash seeds (golden-ratio multiples, so streams never coincide).
 constexpr uint32_t kSeedRoadL = 0x9E3779B9u;
@@ -171,7 +172,7 @@ constexpr uint32_t kSeedRainL = 0x5384540Fu;
 constexpr uint32_t kSeedRainR = 0xF1BBCDC8u;
 constexpr uint32_t kSeedPan = 0x8FF34781u;
 
-enum Param : int {
+enum Param : uint8_t {
     kRpm,
     kLoad,
     kSpeed,
@@ -194,11 +195,11 @@ struct VehicleVoice {
 };
 
 constexpr VehicleVoice kVehicleVoices[] = {
-    {1.00f, 1.00f, 1.00f},  // sedan
-    {1.05f, 1.10f, 1.30f},  // convertible — thin soft top
-    {0.90f, 1.20f, 0.90f},  // science-lab — boxy, loud tyres
-    {0.60f, 0.60f, 0.65f},  // limousine — heavy insulation
-    {1.35f, 1.05f, 1.10f},  // cortianics — sport exhaust
+    {1.00f, 1.00f, 1.00f}, // sedan
+    {1.05f, 1.10f, 1.30f}, // convertible — thin soft top
+    {0.90f, 1.20f, 0.90f}, // science-lab — boxy, loud tyres
+    {0.60f, 0.60f, 0.65f}, // limousine — heavy insulation
+    {1.35f, 1.05f, 1.10f}, // cortianics — sport exhaust
 };
 constexpr int kVehicleCount = static_cast<int>(sizeof(kVehicleVoices) / sizeof(kVehicleVoices[0]));
 
@@ -272,7 +273,7 @@ struct DspState {
 };
 
 inline float clampf(float v, float lo, float hi) {
-    if (!(v >= lo)) return lo;  // also catches NaN
+    if (!(v >= lo)) return lo; // also catches NaN
     if (v > hi) return hi;
     return v;
 }
@@ -302,7 +303,8 @@ inline void hrtf_voice_step(HrtfVoice& v, float x, float& l, float& r) {
     v.ring[v.pos] = x;
     // Ring indices wrap through unsigned (pos - delay is negative near 0).
     const unsigned mask = static_cast<unsigned>(kItdMask);
-    const float delayed = v.ring[(static_cast<unsigned>(v.pos) - static_cast<unsigned>(v.delay)) & mask];
+    const float delayed =
+        v.ring[(static_cast<unsigned>(v.pos) - static_cast<unsigned>(v.delay)) & mask];
     v.pos = static_cast<int>((static_cast<unsigned>(v.pos) + 1u) & mask);
     v.far_y += v.damp * ((v.far_gain * delayed) - v.far_y);
     if (v.right_is_near != 0) {
@@ -367,7 +369,8 @@ void update_direct(DspState& s) {
         for (int j = 0; j < kQuantum; ++j) s.direct[j] = to[j];
         return;
     }
-    const f4 g = splat(static_cast<float>(s.glide_pos / kGlideStep + 1) * kInvGlideSteps);
+    const int step = s.glide_pos / kGlideStep; // whole 16-frame steps: an integer on purpose
+    const f4 g = splat(static_cast<float>(step + 1) * kInvGlideSteps);
     for (int j = 0; j < kQuantum; j += 4) {
         const f4 from = load(s.direct_from + j);
         store(s.direct + j, add(from, mul(sub(load(to + j), from), g)));
@@ -470,8 +473,8 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
 
         // --- engine ------------------------------------------------------
         const float fund = c[kRpm] / 60.0f;
-        const float eng = sv_audio::engine_tone(s.engine_phase, 0.22f + 0.78f * c[kLoad])
-                        * (kEngineGain * c[kVehEngine]);
+        const float eng = sv_audio::engine_tone(s.engine_phase, 0.22f + 0.78f * c[kLoad]) *
+                          (kEngineGain * c[kVehEngine]);
         s.engine_phase += static_cast<double>(fund) * s.inv_sample_rate;
         s.engine_phase -= std::floor(s.engine_phase);
 
@@ -498,10 +501,14 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         s.hiss_lp_r += s.hiss_a * (w_road_r - s.hiss_lp_r);
         // Spray is the band between the rumble and hiss splits: mid
         // frequencies, which (unlike the hiss) survive a sealed cabin.
-        const float road_l = (((s.rumble_l * kRumbleGain) + ((w_road_l - s.hiss_lp_l) * hiss_gain))
-                             + ((s.hiss_lp_l - s.rumble_l) * spray_gain)) * road_gain;
-        const float road_r = (((s.rumble_r * kRumbleGain) + ((w_road_r - s.hiss_lp_r) * hiss_gain))
-                             + ((s.hiss_lp_r - s.rumble_r) * spray_gain)) * road_gain;
+        const float road_l =
+            (((s.rumble_l * kRumbleGain) + ((w_road_l - s.hiss_lp_l) * hiss_gain)) +
+             ((s.hiss_lp_l - s.rumble_l) * spray_gain)) *
+            road_gain;
+        const float road_r =
+            (((s.rumble_r * kRumbleGain) + ((w_road_r - s.hiss_lp_r) * hiss_gain)) +
+             ((s.hiss_lp_r - s.rumble_r) * spray_gain)) *
+            road_gain;
 
         // --- wind: a band of noise that widens and rises with airspeed ----
         float w = (c[kSpeed] + 0.5f * c[kWind]) * kInvSpeedFullMps;
@@ -511,8 +518,9 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         s.wind_lp2 += s.wind_base_a * (s.wind_lp1 - s.wind_lp2);
         s.gust += s.gust_a * (w_gust - s.gust);
         const float gust_amp = clampf(0.75f + s.gust * kGustScale, 0.25f, 1.25f);
-        const float wind_src = (((s.wind_lp1 - s.wind_lp2) * ((w * w) * (0.2f + 0.8f * open)))
-                               * (kWindGain * c[kVehWind])) * gust_amp;
+        const float wind_src = (((s.wind_lp1 - s.wind_lp2) * ((w * w) * (0.2f + 0.8f * open))) *
+                                (kWindGain * c[kVehWind])) *
+                               gust_amp;
 
         // --- rain on the roof: granular drops + diffuse hiss -------------
         if (hash_unit(h_drop) < rain * s.drop_p_scale) {
@@ -526,8 +534,8 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         s.rain_lp_l += s.rain_hiss_a * (w_rain_l - s.rain_lp_l);
         s.rain_lp_r += s.rain_hiss_a * (w_rain_r - s.rain_lp_r);
         // A sealed roof drums; an open one lets the splatter and hiss in.
-        const float drop = (s.drum_lp * (kDrumGain * (1.0f - open)))
-                         + (tick * (kTickGain * (0.3f + 0.7f * open)));
+        const float drop =
+            (s.drum_lp * (kDrumGain * (1.0f - open))) + (tick * (kTickGain * (0.3f + 0.7f * open)));
         const float hiss_amp = rain * (kRainHissGain * (0.4f + 0.6f * open));
         const float rain_l = (drop * (1.0f - s.drop_pan)) + (s.rain_lp_l * hiss_amp);
         const float rain_r = (drop * s.drop_pan) + (s.rain_lp_r * hiss_amp);
@@ -536,7 +544,8 @@ void render_block(DspState& s, std::span<const float> in_l, std::span<const floa
         float thump_in = 0.0f;
         if (s.wipers != 0 && rain > kWiperRainMin) {
             const double before = s.wiper_phase;
-            s.wiper_phase += static_cast<double>(kWiperBaseHz + kWiperRainHz * rain) * s.inv_sample_rate;
+            s.wiper_phase +=
+                static_cast<double>(kWiperBaseHz + kWiperRainHz * rain) * s.inv_sample_rate;
             if (before < 0.5 && s.wiper_phase >= 0.5) thump_in = s.thump_kick;
             if (s.wiper_phase >= 1.0) {
                 s.wiper_phase -= 1.0;
@@ -677,9 +686,9 @@ void sw_dsp_destroy(sw_dsp* state) {
     std::free(state);
 }
 
-void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps,
-                       float openness, int vehicle, float wet_road, float rain,
-                       float wind_mps, float radio_gain, int wipers) {
+void sw_dsp_set_params(sw_dsp* state, float rpm, float load, float speed_mps, float openness,
+                       int vehicle, float wet_road, float rain, float wind_mps, float radio_gain,
+                       int wipers) {
     if (state == nullptr) return;
     DspState& s = *reinterpret_cast<DspState*>(state);
     s.target[kRpm] = clampf(rpm, 0.0f, 12000.0f);
@@ -707,9 +716,8 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count) {
     int n = identity ? 1 : count;
     if (n > kMaxIrTaps) n = kMaxIrTaps;
     const int parts = (n + kQuantum - 1) / kQuantum;
-    const std::span<const float> in = identity
-        ? std::span<const float>{}
-        : std::span<const float>(taps, static_cast<size_t>(n));
+    const std::span<const float> in =
+        identity ? std::span<const float>{} : std::span<const float>(taps, static_cast<size_t>(n));
     const auto tap = [&](int t) {
         if (t >= n) return 0.0f;
         const float v = identity ? 1.0f : in[static_cast<size_t>(t)];
@@ -744,8 +752,8 @@ void sw_dsp_set_ir(sw_dsp* state, const float* taps, int count) {
     update_direct(s);
 }
 
-void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r,
-                   float* out_l, float* out_r, int frames) {
+void sw_dsp_render(sw_dsp* state, const float* radio_in_l, const float* radio_in_r, float* out_l,
+                   float* out_r, int frames) {
     if (state == nullptr || frames <= 0) return;
     DspState& s = *reinterpret_cast<DspState*>(state);
     const size_t total = static_cast<size_t>(frames);

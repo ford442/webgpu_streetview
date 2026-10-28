@@ -1,17 +1,24 @@
 ---
-# Gating on bugprone-*: WarningsAsErrors fails `npm run lint:cpp` and the
-# wasm-cpp-host CI job on any finding. modernize-* stays advisory (prints only).
-# Runs against cpp/build-host (never build-asan). A deliberately small set:
-# this is numeric, extern "C" ABI code, not idiomatic modern C++.
+# Gating on bugprone-*, clang-analyzer-* and performance-*: WarningsAsErrors
+# fails `npm run lint:cpp` and the wasm-cpp-host CI job on any finding.
+# modernize-* and cppcoreguidelines-pro-bounds-* stay advisory (print only):
+# the bounds checks flag every pointer walk over an extern "C" ABI buffer,
+# which is what this layer is; they are on so new code shows its count, and
+# gate once the kernels take std::span throughout.
+# Runs against cpp/build-host (never build-asan), and again against
+# cpp/build-emscripten (the -msimd128 wasm32 compile) when that exists.
 Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  performance-*,
+  cppcoreguidelines-pro-bounds-*,
   modernize-use-nullptr,
   modernize-use-using,
   modernize-deprecated-headers,
   modernize-macro-to-enum
-WarningsAsErrors: 'bugprone-*'
+WarningsAsErrors: 'bugprone-*,clang-analyzer-*,performance-*'
 CheckOptions:
   # `x >> 16`, `h & 0xFFFFFFu`: a non-negative literal operand is not the bug
   # this check is for. Signed *variables* in bitwise ops still fire.

@@ -29,7 +29,7 @@ import {
 } from '../marshal';
 import { haversineMeters } from '../../utils/navigation';
 
-const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
+const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.simd.wasm');
 
 let wasm: StreetViewWasmAPI;
 /**

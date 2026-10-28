@@ -6,7 +6,7 @@
  */
 
 /** A wasm value type, as a binary's type section spells it. */
-export type WasmValType = 'i32' | 'i64' | 'f32' | 'f64';
+type WasmValType = 'i32' | 'i64' | 'f32' | 'f64';
 
 /** `main`: streetview-wasm.simd.wasm (and the scalar reference); `dsp`: streetview-dsp.simd.wasm. */
 export type WasmBinaryKind = 'main' | 'dsp';
@@ -45,7 +45,7 @@ export const WASM_ABI = {
   dsp_set_ir: { params: ['i32', 'i32', 'i32'], results: [], binaries: ['main', 'dsp'] },
   dsp_render: { params: ['i32', 'i32', 'i32', 'i32', 'i32', 'i32'], results: [], binaries: ['main', 'dsp'] },
   dsp_max_ir_taps: { params: [], results: ['i32'], binaries: ['main', 'dsp'] },
-  depth_percentiles: { params: ['i32', 'i32', 'f64', 'f64', 'i32', 'i32'], results: [], binaries: ['main'] },
+  depth_percentiles: { params: ['i32', 'i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
   depth_near_depth: { params: ['i32', 'i32', 'i32', 'f64'], results: ['f64'], binaries: ['main'] },
   depth_normalize: { params: ['i32', 'i32', 'i32', 'i32', 'f64', 'i32', 'i32', 'i32', 'i32', 'i32'], results: [], binaries: ['main'] },
   sv_malloc: { params: ['i32'], results: ['i32'], binaries: ['main', 'dsp'] },
@@ -113,8 +113,8 @@ export interface StreetViewWasmExports {
   dsp_render(state: number, radioInL: number, radioInR: number, outL: number, outR: number, frames: number): void;
   /** `int sw_dsp_max_ir_taps(void)` (cabin_dsp_module.cpp) */
   dsp_max_ir_taps(): number;
-  /** `void sw_depth_percentiles(const float* disparity, int count, double low_pct, double high_pct, float* scratch, double* out2)` (depth_module.cpp) */
-  depth_percentiles(disparity: number, count: number, lowPct: number, highPct: number, scratch: number, out2: number): void;
+  /** `void sw_depth_percentiles(const float* disparity, int count, double low_pct, double high_pct, double* out2)` (depth_module.cpp) */
+  depth_percentiles(disparity: number, count: number, lowPct: number, highPct: number, out2: number): void;
   /** `double sw_depth_near_depth(const float* nearness, int width, int height, double horizon_y)` (depth_module.cpp) */
   depth_near_depth(nearness: number, width: number, height: number, horizonY: number): number;
   /** `void sw_depth_normalize(const float* disparity, int count, int width, int height, double horizon_y, int aligned, int same_scene, double* state3, const float* previous, float* out)` (depth_module.cpp) */

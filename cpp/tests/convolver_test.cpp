@@ -29,7 +29,9 @@ constexpr int kBlock = 128;
  */
 constexpr size_t kSettled = 6000;
 
-inline double d(float v) { return static_cast<double>(v); }
+inline double d(float v) {
+    return static_cast<double>(v);
+}
 
 /** Deterministic noise in [-1, 1). */
 float noise(uint32_t& state) {
@@ -52,8 +54,7 @@ struct Stereo {
  * Render `blocks` quanta of the bed with the radio as the only loud source
  * (a deterministic noise input), calling `at_block(b, dsp)` first each block.
  */
-template <typename F>
-Stereo render(int blocks, F&& at_block, float sample_rate = 48000.0f) {
+template <typename F> Stereo render(int blocks, F&& at_block, float sample_rate = 48000.0f) {
     sw_dsp* dsp = sw_dsp_create(sample_rate);
     REQUIRE(dsp != nullptr);
     // Radio only, at a fixed gain the smoother has reached before we compare.
@@ -151,8 +152,10 @@ TEST_CASE("fft256: the swapped transform inverts it") {
     sv_fft::fft256(re.data(), im.data(), tr.data(), ti.data());
     sv_fft::fft256(im.data(), re.data(), tr.data(), ti.data());
     for (int n = 0; n < kN; ++n) {
-        CHECK(d(re[static_cast<size_t>(n)]) / kN == doctest::Approx(d(x_re[static_cast<size_t>(n)])).epsilon(1e-5));
-        CHECK(d(im[static_cast<size_t>(n)]) / kN == doctest::Approx(d(x_im[static_cast<size_t>(n)])).epsilon(1e-5));
+        CHECK(d(re[static_cast<size_t>(n)]) / kN ==
+              doctest::Approx(d(x_re[static_cast<size_t>(n)])).epsilon(1e-5));
+        CHECK(d(im[static_cast<size_t>(n)]) / kN ==
+              doctest::Approx(d(x_im[static_cast<size_t>(n)])).epsilon(1e-5));
     }
 }
 
@@ -185,7 +188,8 @@ TEST_CASE("dsp convolver: UPOLS output is the direct convolution of the dry bed"
     }
 }
 
-TEST_CASE("dsp convolver: an IR swap convolves old input with the old room, new input with the new") {
+TEST_CASE(
+    "dsp convolver: an IR swap convolves old input with the old room, new input with the new") {
     const int taps = 1024;
     const std::vector<float> h1 = test_ir(taps, 1u);
     const std::vector<float> h2 = test_ir(taps, 2u);
@@ -232,7 +236,8 @@ TEST_CASE("dsp convolver: an IR swap does not click") {
         if (b == 20) sw_dsp_set_ir(dsp, bright.data(), taps);
         if (b == 100) sw_dsp_set_ir(dsp, dark.data(), taps);
         for (int i = 0; i < kBlock; ++i, ++k) {
-            in[static_cast<size_t>(i)] = static_cast<float>(0.5 * std::sin(0.05 * static_cast<double>(k)));
+            in[static_cast<size_t>(i)] =
+                static_cast<float>(0.5 * std::sin(0.05 * static_cast<double>(k)));
         }
         sw_dsp_render(dsp, in.data(), in.data(), l.data(), r.data(), kBlock);
         for (int i = 0; i < kBlock; ++i) {

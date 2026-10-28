@@ -1,0 +1,21 @@
+---
+# C++ formatting for cpp/ (src, include/streetview, tests, fuzz). Checked by
+# `npm run lint:cpp` (clang-format --dry-run --Werror); `npm run format:cpp`
+# rewrites in place. Vendored code (third_party/, tests/doctest.h) and the
+# generated goldens header are not formatted.
+BasedOnStyle: LLVM
+ColumnLimit: 100
+IndentWidth: 4
+PointerAlignment: Left
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+SpacesBeforeTrailingComments: 1
+IndentCaseLabels: false
+FixNamespaceComments: true
+SortIncludes: Never

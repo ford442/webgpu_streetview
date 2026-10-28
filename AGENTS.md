@@ -83,6 +83,9 @@ npm run test:e2e:smoke
 # C++ WASM algorithms — native host build + golden tests (no emcc, no browser)
 npm run test:cpp
 npm run test:cpp:asan       # same, with ASan + UBSan
+npm run lint:cpp            # clang-format check + clang-tidy
+npm run build:wasm:update   # rebuild with the pinned emcc and copy into public/wasm/
+npm run check:wasm-abi      # generated ABI current; binaries match abi.h by signature
 ```
 
 ### Deployment
@@ -789,11 +792,21 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
 audio engine, panorama luma analysis, scene-depth calibration) has **one
 implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
-domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth), shipped as the
-committed binaries (`public/wasm/streetview-wasm.wasm` and the SIMD128
-`streetview-wasm.simd.wasm`, same sources). There is **no JS twin**: the binary
-runs on the main thread, in the AudioWorklet and in Vitest (`src/setupTests.ts`
-instantiates the committed `.wasm` and installs it — never mock it).
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth, link graph), shipped
+as two committed SIMD128 binaries: `public/wasm/streetview-wasm.simd.wasm`
+(every kernel, main thread) and `streetview-dsp.simd.wasm` (the cabin engine
+alone, fixed memory, the AudioWorklet). The scalar build is CI's oracle and
+never ships; the browser floor is Chrome 91 / Firefox 89 / Safari 16.4. There
+is **no JS twin**: the binaries run on the main thread, in the AudioWorklet and
+in Vitest (`src/setupTests.ts` instantiates the committed `.wasm` and installs
+it — never mock it).
+
+- **The ABI** is `cpp/include/streetview/abi.h`: one `SV_EXPORT(name)`
+  declaration per export (`platform.h` — no `#ifdef __EMSCRIPTEN__` elsewhere).
+  `npm run gen:wasm-abi` writes `src/wasm/abi.generated.ts`; `npm run
+  check:wasm-abi` (in `verify`) fails a stale table or a binary whose wasm type
+  section differs from abi.h; the loader binds through `bindWasmExports`
+  (presence + arity). Never hand-edit the generated file.
 
 - **Boot**: `src/index.tsx` awaits `loadBootWasm()` (`renderer/bootWasm.ts`)
   before rendering `<App />`, and `Renderer.init` awaits the same load beside
@@ -813,24 +826,37 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
-  points at `build-host`. `npm run lint:cpp` runs clang-tidy, **gating on
-  `bugprone-*`** (`cpp/.clang-tidy` `WarningsAsErrors`; modernize/readability
-  stay advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which
-  must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
-  host build. A new translation unit also goes in both CMake source lists and
-  `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
+  points at `build-host`. `npm run lint:cpp` checks `cpp/.clang-format`
+  (`npm run format:cpp` fixes) and runs clang-tidy, **gating on `bugprone-*`,
+  `clang-analyzer-*` and `performance-*`** (`cpp/.clang-tidy`
+  `WarningsAsErrors`; `cppcoreguidelines-pro-bounds-*` and modernize stay
+  advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which must list every
+  `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++ host build. A new
+  translation unit also goes in CMake's `STREETVIEW_SOURCES` and
+  `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks them.
+  Every host build runs the suite twice: plain, and on the SIMD source path
+  through SIMDe (`streetview_simd_tests`). `npm run test:wasm:sanitizers`
+  runs it as `-msimd128` wasm under ASan/UBSan (CI `wasm-sanitizers`);
+  `npm run fuzz:cpp` runs the libFuzzer harnesses in `cpp/fuzz/` (nightly).
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — every golden, exactly,
-  on **both** committed binaries through the TS loader (runs with `npm test`),
+  on the committed main binary through the TS loader (runs with `npm test`),
   including the `dsp_render` parameter scripts (FNV-1a checksums + excerpts),
   `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
-  worklet source with the cabin goldens.
-- **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
+  worklet source on the DSP binary with the cabin goldens.
+- **Builds** go to `cpp/build-emscripten/out/`; `npm run build:wasm:update`
+  copies the shipped binaries into `public/wasm/` (plain `build:wasm` and
+  `npm run build` only compare, so a build leaves git clean).
+- **Build flags** (`cpp/CMakeLists.txt`): `-sSTRICT=1`, `-flto` (Release), the
+  pinned feature set `-msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext
+  -mmutable-globals` (never relaxed-simd); the DSP binary is 1 MiB fixed, no
+  growth, emmalloc (`check-wasm-abi`: no `memory.grow`, no imports, < 32 KB);
   `-s MAXIMUM_MEMORY` 128 MiB (sized when a 5K snapshot thumb reserved 64 MiB of
   arena; since #341 the thumb is canvas-prescaled to ≤ 640×360 first), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
   must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
   change that moves a single golden bit is dropped, not re-baselined.
-- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
-  `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
+- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — abi.h vs the generated table
+  vs both committed binaries' type sections, by signature (it narrows a param
+  in a scratch abi.h to prove the chain fails).
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
   marshalling wrappers over the committed binary. Kernel buffers live in a
   `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
@@ -838,13 +864,18 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   stack and corrupted `batch_haversine` at |lat| > 45°. The arena shrinks back
   to 64 KiB after an idle second (#341); the test asserts that and a ≤ 1 MiB
   high-water mark for a normal frame's kernels.
-- **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
-  and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
-  check + the SIMD binary against the goldens). Both are required.
+- **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility),
+  `build-wasm-emscripten` (C++ → the binaries via pinned emcc; the committed
+  ones must match; ABI check; the scalar oracle against the goldens) and
+  `wasm-sanitizers`. All are required.
 - **Cabin audio engine** (`cabin_dsp_module.cpp`, #321): runs inside the
-  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`). Never reintroduce a
-  main-thread PCM queue; post the binary's **bytes**, not a
-  `WebAssembly.Module` (Chromium drops it with `messageerror`). The car radio
+  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`) from
+  `streetview-dsp.simd.wasm`; its convolver is UPOLS (128-sample partitions,
+  in-house radix-4 FFT, up to 16384 taps — `docs/WASM_BRIDGE.md` §3a). Never
+  reintroduce a main-thread PCM queue; post the binary's **bytes**, not a
+  `WebAssembly.Module` (Chromium drops it with `messageerror`). Targets go
+  through the `SharedArrayBuffer` seqlock (`cabinParamRing.ts`) when
+  cross-origin isolated, else `params` messages. The car radio
   shares `src/audio/carAudioGraph.ts`'s context so it can run through the
   cabin. Probe: `window.__CABIN_AUDIO_PROBE__`; e2e: `e2e/cabin-audio.spec.ts`.
 
