@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 import { getMemoryProfiler, type MemoryStats } from '../utils/memoryProfiler';
 import {
   getGpuPassTimings,
@@ -14,7 +13,6 @@ export interface AppTelemetry {
   showPerformanceStats: boolean;
   setShowPerformanceStats: (show: boolean) => void;
   memoryStats: MemoryStats | null;
-  perfStats: ReturnType<typeof usePerformanceMonitor>['stats'];
   gpuPassTimings: GpuPassTimings;
   gpuChoresStats: GpuChoresStats;
   autoExposureStatus: AutoExposureStatus;
@@ -33,13 +31,6 @@ export function useAppTelemetry(): AppTelemetry {
   const [renderScale, setRenderScaleState] = useState<AppliedRenderScale>(
     () => ({ ...getAppliedRenderScale() }),
   );
-  const { stats: perfStats } = usePerformanceMonitor({
-    targetFPS: 60,
-    sampleSize: 60,
-    warningThreshold: 45,
-    criticalThreshold: 30,
-    enableAdaptiveQuality: true,
-  });
 
   // GPU timestamp queries run only while the overlay is open to read them.
   useEffect(() => {
@@ -47,6 +38,8 @@ export function useAppTelemetry(): AppTelemetry {
     return () => setGpuPassTimingsWanted(false);
   }, [showPerformanceStats]);
 
+  // The memory profiler samples only while the overlay is open (frame rate
+  // comes from `perfStore`, which the overlay reads itself).
   useEffect(() => {
     if (!showPerformanceStats) return;
     const memoryProfiler = getMemoryProfiler();
@@ -65,7 +58,6 @@ export function useAppTelemetry(): AppTelemetry {
     showPerformanceStats,
     setShowPerformanceStats,
     memoryStats,
-    perfStats,
     gpuPassTimings,
     gpuChoresStats,
     autoExposureStatus,

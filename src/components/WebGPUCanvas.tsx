@@ -1,62 +1,19 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { povStore } from '../state/povStore';
 import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
 import { type RendererBackendType, type StreetViewRenderer } from '../renderer/RendererBackend';
-import { packWeatherParams } from '../renderer/packWeatherParams';
-import { WeatherParamIndex } from '../renderer/weatherUniformLayout';
 import {
-    usePerformanceMonitor,
     useWeatherSettings,
     useLightingSettings,
     useGradeSettings,
     useStreetView,
 } from '../hooks';
-import { getMemoryProfiler } from '../utils/memoryProfiler';
-import { streetViewProbe } from '../utils/streetViewProbe';
 import { WasmNoiseFeeder, getWasmNoisePreference } from '../wasm/wasmNoiseFeeder';
 import { WasmParticleFeeder, getWasmParticlePreference } from '../wasm/wasmParticleFeeder';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
-import { resolveCinematicCameraFx, prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
+import { prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
 import { fetchLookLutVolume } from '../renderer/lut';
-import { getCameraSpeedNormalized } from '../renderer/cameraMotionSignal';
-import { getGpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
-import {
-    getGpuPassTimings,
-    roadGpuMs,
-    setGpuPassTimingsWanted,
-} from '../renderer/gpuPassTimingStore';
-import {
-    configureRenderScale,
-    getRenderScaleRequest,
-    resolveRenderScaleRequest,
-    setRequestedRenderScale,
-} from '../renderer/renderScale';
-import {
-    DEFAULT_FRAME_BUDGET,
-    createFrameBudgetState,
-    stepFrameBudget,
-    type FrameBudgetState,
-} from '../renderer/frameBudget';
-import { resolveSceneDepthOptions, type SceneDepthOptions } from '../renderer/depth/sceneDepthOptions';
-import { sceneDepthStore } from '../state/sceneDepthStore';
-import {
-    readPresentTailFlags,
-    resolvePresentTailOptions,
-    type PresentTailOptions,
-} from '../renderer/reproject/presentTail';
-import {
-    AUTO_EXPOSURE_IDLE,
-    resolveAutoExposureFrame,
-    setAutoExposureStatus,
-    type AutoExposureFrameState,
-} from '../renderer/autoExposure';
-import {
-    HORIZON_IDLE,
-    resolveHorizonFrame,
-    type HorizonFrameState,
-} from '../renderer/gpuChores/horizonEstimate';
+import { FrameDriver } from '../renderer/frameDriver';
 import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
 import {
     DEFAULT_MAX_TEXTURE_DIMENSION,
     dprCapForPixelRatio,
@@ -64,26 +21,21 @@ import {
     resolveBackingStoreSize,
     type CanvasBoxSize,
 } from './canvasBackingStore';
-import {
-    isParticlePrecipitationEnabled,
-    particleGridForQuality,
-    particleCountForGrid,
-    PARTICLE_SEED,
-} from '../renderer/weatherParticles';
 
 /**
  * ⚠️ CRITICAL INTEGRATION NOTES - DO NOT REMOVE ⚠️
- * 1. WEATHER SYNC: This canvas MUST actively read the environment slices (`useWeatherSettings()` etc.) 
- *    and pass values into `renderer.updateWeatherParams()` inside the render loop. 
- *    If disconnected, the UI sliders will move but shaders will not react.
- * 2. CRUISE PAUSE: While `isPanoramaUpdatePaused`, WebGPUCanvas calls
+ * The road's frame loop is `renderer/frameDriver.ts`; this component mounts
+ * the canvas, boots (and re-boots) the renderer, and keeps the driver's inputs
+ * current. It has no rAF of its own and does not re-render per frame.
+ * 1. WEATHER SYNC: This canvas MUST read the environment slices (`useWeatherSettings()` etc.)
+ *    and hand them to the driver (`driver.env`), which packs them into
+ *    `renderer.updateWeatherParams()` every frame. If disconnected, the UI
+ *    sliders will move but shaders will not react.
+ * 2. CRUISE PAUSE: While `isPanoramaUpdatePaused`, the driver calls
  *    `renderHeldFrame()` so the GPU snapshot is drawn without uploading the
- *    loading Google Maps canvas.
- * 3. EVERY FRAME RENDERS: there is no frame skipping. When the GPU falls
- *    behind, the frame-budget loop lowers the road's render scale
- *    (`renderer/frameBudget.ts` → `renderer/renderScale.ts`) — in car mode the
- *    road frame is the only thing presenting the cabin, so a skipped frame
- *    would freeze the wipers and gauges.
+ *    loading Google Maps canvas. The flag is written to the driver during
+ *    render, so the frame after the hold arms already sees it.
+ * 3. EVERY FRAME RENDERS: there is no frame skipping — see `frameDriver.ts`.
  */
 
 interface WebGPUCanvasProps {
@@ -94,14 +46,13 @@ interface WebGPUCanvasProps {
 const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendInfo }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const internalRendererRef = useRef<StreetViewRenderer | null>(null);
-    const animationFrameId = useRef<number>(0);
     
     // Environment slices (weather / lighting / grade) — the canvas has no use for
     // the car-only slice (wipers, roof), so toggling those does not re-render it.
     const { rainIntensity, snowIntensity, wind, fogDensity } = useWeatherSettings();
     const {
         nightIntensity, headlightsOn, highBeam, domeLightOn,
-        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
+        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude,
         timeOfDay,
     } = useLightingSettings();
     const {
@@ -127,8 +78,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     }));
     const canvasBoxRef = useRef<CanvasBoxSize | null>(null);
 
-    const frameCountRef = useRef<number>(0);
-
     // Performance: debounced resize — every backing-store change reallocates
     // the intermediate (and the compute weather targets), so a drag-resize
     // settles before it is applied. The first observation applies at once.
@@ -137,9 +86,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     // WASM-driven ambient dust turbulence (see src/wasm/wasmNoiseFeeder.ts).
     // ?wasmNoise=off (or a stored streetview.wasmNoise=off preference) disables it.
     const noiseFeederRef = useRef<WasmNoiseFeeder>(new WasmNoiseFeeder());
-    const wasmNoiseEnabledRef = useRef<boolean>(getWasmNoisePreference());
     const particleFeederRef = useRef<WasmParticleFeeder>(new WasmParticleFeeder());
-    const wasmParticlesEnabledRef = useRef<boolean>(getWasmParticlePreference());
 
     // Cinematic camera FX gate (DOF + motion blur). Quality and the reduced-motion
     // preference are read once — both require a reload to change — while speed is
@@ -149,56 +96,27 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     const currentRendererRef = internalRendererRef;
 
-    // Performance monitoring — its last rAF interval feeds the budget loop when
-    // the device has no GPU timestamps.
-    const { startMonitoring, stopMonitoring, getFrameTimeMs } = usePerformanceMonitor({
-        targetFPS: 60,
-        sampleSize: 60,
-        warningThreshold: 45,
-        criticalThreshold: 30,
-        enableAdaptiveQuality: true
-    });
+    // The frame loop. Created once; its inputs are written below on render.
+    const driverRef = useRef<FrameDriver | null>(null);
+    if (!driverRef.current) {
+        driverRef.current = new FrameDriver({
+            quality: qualityRef.current,
+            bootReducedMotion: reducedMotionRef.current,
+            outputCanvas: () => canvasRef.current,
+            noiseFeeder: noiseFeederRef.current,
+            wasmNoiseEnabled: getWasmNoisePreference(),
+            particleFeeder: particleFeederRef.current,
+            wasmParticlesEnabled: getWasmParticlePreference(),
+        });
+    }
+    const driver = driverRef.current;
 
-    // Dynamic inputs for the RAF loop — synced every render so animate() always
-    // reads the latest values without tearing down requestAnimationFrame.
+    // Live inputs, written on render so the next frame sees them without a
+    // commit round-trip (the hold flag especially — see note 2 above).
     const sourceRef = useRef(source);
-    const isPanoramaUpdatePausedRef = useRef(isPanoramaUpdatePaused);
-    const getFrameTimeMsRef = useRef(getFrameTimeMs);
-
     sourceRef.current = source;
-    isPanoramaUpdatePausedRef.current = isPanoramaUpdatePaused;
-    getFrameTimeMsRef.current = getFrameTimeMs;
-
-    // Frame-budget loop (#329): the render scale the road asks for next. Its
-    // state lives here, its decisions in the pure `stepFrameBudget`.
-    const budgetStateRef = useRef<FrameBudgetState | null>(null);
-    const lastGpuTimingSeqRef = useRef(0);
-
-    // Auto exposure (opt-in): eases the GpuChores luma hint into the exposure
-    // uniform. Frozen through hold-pause; see renderer/autoExposure.ts.
-    const autoExposureEnabledRef = useRef(autoExposureEnabled);
-    autoExposureEnabledRef.current = autoExposureEnabled;
-    const autoExposureStateRef = useRef<AutoExposureFrameState>(AUTO_EXPOSURE_IDLE);
-    const lastFrameMsRef = useRef<number | null>(null);
-
-    // Image-derived horizon: blends the pitch-only depth-proxy horizon toward
-    // a row-luma estimate (preset weight; 0 = today's horizon). Frozen through
-    // hold-pause; see renderer/gpuChores/horizonEstimate.ts.
-    const horizonStateRef = useRef<HorizonFrameState>(HORIZON_IDLE);
-
-    // Scene depth (#320): opt-in × preset weight, handed to the renderer every
-    // frame (one reused object). See renderer/depth/DepthController.ts.
-    const sceneDepthOptionsRef = useRef<SceneDepthOptions>({ enabled: false, blend: 0, reducedMotion: false });
-
-    // Memory profiling
-    useEffect(() => {
-        const memoryProfiler = getMemoryProfiler();
-        const interval = setInterval(() => {
-            memoryProfiler.snapshot();
-        }, 5000); // Snapshot every 5 seconds
-        
-        return () => clearInterval(interval);
-    }, []);
+    driver.panoramaUpdatePaused = isPanoramaUpdatePaused;
+    driver.autoExposureEnabled = autoExposureEnabled;
 
     // Device lost reinit counter
     const [reinitCounter, setReinitCounter] = useState(0);
@@ -254,42 +172,28 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         if (reinitTimerRef.current) clearTimeout(reinitTimerRef.current);
     }, []);
 
-    // Keep latest environment settings in a ref for the render loop
-    const envRef = useRef({
-        nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
-        vibrance, saturation, contrast, exposure, temperature, tint,
-        headlightsOn, highBeam, domeLightOn,
-        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled, timeOfDay
-    });
-
-    // Page-relative time to avoid f32 precision loss in shader sin()/hash()
-    const timeRef = useRef(Date.now());
+    // Latest environment settings for the frame driver.
     useEffect(() => {
-        envRef.current = {
+        driver.env = {
             nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
             vibrance, saturation, contrast, exposure, temperature, tint,
             headlightsOn, highBeam, domeLightOn,
-            sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
+            sunAzimuth, sunAltitude, moonAzimuth, moonAltitude,
             shaderEffectsEnabled, timeOfDay
         };
     }, [
         nightIntensity, rainIntensity, snowIntensity, wind, fogDensity,
         vibrance, saturation, contrast, exposure, temperature, tint,
         headlightsOn, highBeam, domeLightOn,
-        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude, moonIntensity,
-        shaderEffectsEnabled, timeOfDay
+        sunAzimuth, sunAltitude, moonAzimuth, moonAltitude,
+        shaderEffectsEnabled, timeOfDay, driver,
     ]);
 
     // Use refs for callbacks to avoid reinit when they change
     const onWebGPUStatusRef = useRef(onWebGPUStatus);
     const onBackendInfoRef = useRef(onBackendInfo);
-    const startMonitoringRef = useRef(startMonitoring);
-    const stopMonitoringRef = useRef(stopMonitoring);
     useEffect(() => { onWebGPUStatusRef.current = onWebGPUStatus; }, [onWebGPUStatus]);
     useEffect(() => { onBackendInfoRef.current = onBackendInfo; }, [onBackendInfo]);
-    useEffect(() => { startMonitoringRef.current = startMonitoring; }, [startMonitoring]);
-    useEffect(() => { stopMonitoringRef.current = stopMonitoring; }, [stopMonitoring]);
 
     useEffect(() => {
         if (!canvasRef.current) return;
@@ -334,6 +238,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 recovery.onBootSucceeded();
                 activeRenderer = result.renderer;
                 internalRendererRef.current = result.renderer;
+                driver.renderer = result.renderer;
                 setRendererReadyTick((tick) => tick + 1);
                 // The compute weather path gets the fBm turbulence tile
                 // (WASM fill_fbm_buffer); the fragment default keeps the
@@ -348,7 +253,6 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
                 );
                 onWebGPUStatusRef.current?.(true);
                 onBackendInfoRef.current?.({ backendType: result.backendType, fallbackReason: result.fallbackReason });
-                startMonitoringRef.current();
                 console.info(
                     `[Renderer] ${result.backendType} renderer active` +
                     (result.fallbackReason ? ` (${result.fallbackReason})` : '')
@@ -369,10 +273,11 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         return () => {
             isActive = false;
             setRenderer(null);  // Unregister from StreetView context
-            stopMonitoringRef.current();
+            if (driver.renderer === activeRenderer) driver.renderer = null;
+            if (internalRendererRef.current === activeRenderer) internalRendererRef.current = null;
             activeRenderer?.destroy();
         };
-    }, [reinitCounter, setRenderer]);
+    }, [reinitCounter, setRenderer, driver]);
 
     useEffect(() => {
         const renderer = internalRendererRef.current;
@@ -396,186 +301,13 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
 
     const stopEvent = (e: React.SyntheticEvent) => e.stopPropagation();
 
+    // The frame loop runs for the component's lifetime; renderer re-inits
+    // (device loss) swap `driver.renderer` underneath it.
     useEffect(() => {
-        let active = true;
-        // The preset's render-scale range, unless `?scale=` pinned one. In
-        // auto mode the budget loop wants GPU timestamps every frame it can get.
-        const scaleRequest = resolveRenderScaleRequest(qualityRef.current);
-        configureRenderScale(scaleRequest);
-        budgetStateRef.current = createFrameBudgetState(scaleRequest.scale);
-        if (scaleRequest.mode === 'auto') setGpuPassTimingsWanted(true, 'budget');
-
-        // #331: the URL's late latch / stereo, read once; reduced motion per frame.
-        const tailFlags = readPresentTailFlags();
-        const tailOptions: PresentTailOptions = resolvePresentTailOptions({ reducedMotion: false, ...tailFlags });
-        const livePov = () => povStore.get();
-
-        const animate = (frameTime: number = performance.now()) => {
-            if (!active) return;
-
-            const panoramaUpdatePaused = isPanoramaUpdatePausedRef.current;
-
-            const pov = povStore.get();
-            const renderHeading = pov.heading;
-            const renderPitch = pov.pitch;
-            const renderZoom = pov.zoom;
-            const liveSource = sourceRef.current;
-
-            // Google Maps canvas already reflects heading/pitch via setPov — pass through
-            // directly so the WebGPU view matches what you see through the windows.
-            const weatherHeading = (((renderHeading % 360) + 360) % 360) / 360;
-            const weatherPitch = (renderPitch + 90) / 180;
-
-            if (currentRendererRef.current) {
-                // Build and upload weather params every frame BEFORE rendering
-                const e = envRef.current;
-                const wasmNoiseActive = wasmNoiseEnabledRef.current && noiseFeederRef.current.isReady;
-                const holdActive = panoramaUpdatePaused || currentRendererRef.current.isHoldActive();
-                const choresStats = getGpuChoresStats();
-                const horizon = resolveHorizonFrame({
-                    weight: PRESETS[qualityRef.current].horizonEstimateBlend,
-                    holdActive,
-                    rows: choresStats.rowLuma,
-                    rowsPitch: choresStats.rowLumaPitch,
-                    rowsSeq: choresStats.rowLumaSeq,
-                    livePitch: weatherPitch,
-                }, horizonStateRef.current);
-                horizonStateRef.current = horizon.state;
-                const params = packWeatherParams({
-                    env: e,
-                    timeSeconds: (Date.now() - timeRef.current) / 1000.0,
-                    cameraHeading: weatherHeading,
-                    cameraPitch: weatherPitch,
-                    wasmNoiseActive,
-                    cinematic: resolveCinematicCameraFx({
-                        quality: qualityRef.current,
-                        reducedMotion: reducedMotionRef.current,
-                        speedNormalized: getCameraSpeedNormalized(),
-                    }),
-                    horizon: horizon.uniforms,
-                });
-
-                const nowMs = performance.now();
-                const dtMs = lastFrameMsRef.current == null ? 0 : nowMs - lastFrameMsRef.current;
-                lastFrameMsRef.current = nowMs;
-                const reducedMotion = reducedMotionRef.current
-                    || (typeof document !== 'undefined'
-                        && document.body.classList.contains('reduced-motion'));
-                const ae = resolveAutoExposureFrame({
-                    enabled: autoExposureEnabledRef.current,
-                    holdActive,
-                    meanLuma: choresStats.meanLuma,
-                    manualExposure: e.exposure,
-                    dtMs,
-                    reducedMotion,
-                }, autoExposureStateRef.current);
-                autoExposureStateRef.current = ae.state;
-                if (ae.exposure != null) params[WeatherParamIndex.exposure] = ae.exposure;
-                setAutoExposureStatus({
-                    enabled: autoExposureEnabledRef.current,
-                    appliedEv: ae.exposure,
-                    holdActive,
-                });
-
-                currentRendererRef.current.updateWeatherParams(params);
-                currentRendererRef.current.updateCameraParams(weatherHeading, weatherPitch);
-                currentRendererRef.current.setPresentTail?.(
-                    resolvePresentTailOptions({ reducedMotion, ...tailFlags }, tailOptions),
-                    livePov,
-                );
-                currentRendererRef.current.setSceneDepth?.(resolveSceneDepthOptions({
-                    quality: qualityRef.current,
-                    optedIn: sceneDepthStore.get().enabled,
-                    reducedMotion,
-                }, sceneDepthOptionsRef.current));
-
-                // Frame budget: frozen through a hold and under reduced motion
-                // (a resolution that pumps is motion too). A GPU sample counts
-                // only once, and only if it timed a frame at the current scale.
-                const request = getRenderScaleRequest();
-                if (request.mode === 'auto' && budgetStateRef.current) {
-                    const timings = getGpuPassTimings();
-                    const fresh = timings.seq !== lastGpuTimingSeqRef.current
-                        && timings.renderScale === request.scale;
-                    lastGpuTimingSeqRef.current = timings.seq;
-                    const budget = stepFrameBudget(budgetStateRef.current, {
-                        nowMs,
-                        gpuMs: fresh ? roadGpuMs(timings) : null,
-                        gpuAvailable: timings.available,
-                        frameMs: getFrameTimeMsRef.current(),
-                        frozen: holdActive || reducedMotion,
-                    }, { ...DEFAULT_FRAME_BUDGET, min: request.min, max: request.max });
-                    budgetStateRef.current = budget;
-                    if (budget.scale !== request.scale) {
-                        setRequestedRenderScale(
-                            budget.scale,
-                            budget.scale < request.scale ? 'over-budget' : 'under-budget',
-                        );
-                    }
-                }
-
-                if (wasmNoiseEnabledRef.current) {
-                    const tile = noiseFeederRef.current.sampleTile(
-                        frameCountRef.current,
-                        params[WeatherParamIndex.time]!
-                    );
-                    if (tile) currentRendererRef.current.updateNoiseBuffer(tile);
-                }
-
-                if (
-                    wasmParticlesEnabledRef.current
-                    && isParticlePrecipitationEnabled({
-                        weatherMode: currentRendererRef.current.getWeatherPostProcessMode?.() ?? 'fragment',
-                        quality: qualityRef.current,
-                        preference: true,
-                        reducedMotion: reducedMotionRef.current,
-                    })
-                ) {
-                    const grid = particleGridForQuality(qualityRef.current, reducedMotionRef.current);
-                    const precipActive = e.rainIntensity + e.snowIntensity > 0.001;
-                    const seeds = particleFeederRef.current.sampleSeeds(
-                        particleCountForGrid(grid),
-                        precipActive,
-                        PARTICLE_SEED,
-                    );
-                    if (seeds) {
-                        currentRendererRef.current.updateParticleSeeds(seeds, grid.width, grid.height);
-                    }
-                }
-            }
-
-            if (currentRendererRef.current) {
-                const renderer = currentRendererRef.current;
-                renderer.beginFrame?.(frameTime);
-                const holding = panoramaUpdatePaused || renderer.isHoldActive();
-                if (holding) {
-                    renderer.renderHeldFrame(renderHeading, renderPitch, renderZoom);
-                    if (canvasRef.current) streetViewProbe.checkPixelDrift(canvasRef.current);
-                } else if (liveSource) {
-                    renderer.renderStreetView('streetview', liveSource, renderHeading, renderPitch, renderZoom);
-                } else {
-                    renderer.renderWeatherOnly();
-                }
-                if (!holding && frameCountRef.current % 8 === 0) {
-                    renderer.samplePanoramaStats?.({
-                        horizonRows: PRESETS[qualityRef.current].horizonEstimateBlend > 0,
-                        pitch: (renderPitch + 90) / 180,
-                    });
-                }
-            }
-
-            frameCountRef.current++;
-            // The frame clock is the window's rAF — or a WebXR session's while
-            // one presents (#331), so the road packs inside the XR frame.
-            animationFrameId.current = requestFrame(animate);
-        };
-        animate();
-        return () => {
-            active = false;
-            cancelFrame(animationFrameId.current);
-            setGpuPassTimingsWanted(false, 'budget');
-        };
-    }, [currentRendererRef]);
+        driver.source = { element: () => sourceRef.current };
+        driver.start();
+        return () => driver.stop();
+    }, [driver]);
 
     return (
         <>

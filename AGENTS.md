@@ -668,13 +668,13 @@ Both handlers attach **global `window` listeners** for `mousemove`, `mouseup`, `
 
 ### Performance & Adaptive Quality
 
-`WebGPUCanvas.tsx` implements:
+The road's frame loop is `renderer/frameDriver.ts` (a plain class — `WebGPUCanvas.tsx` only mounts the canvas, boots the renderer and writes the driver's inputs; it has no rAF and does not re-render per frame). It implements:
 - **Every frame renders** — never skip one to keep up (car-mode gauges and wipers animate on the road's frame).
 - **Dynamic render scale (#329)**: the frame-budget loop (`renderer/frameBudget.ts`, fed GPU timestamps or the raw rAF interval) moves the road's render scale within the preset's range; `?scale=` pins it. Frozen through hold-pause and reduced motion. See `docs/GRAPHICS.md` §7.
 - **Debounced resize**: 150ms debounce on window resize.
 - **WebGPU device loss recovery**: reinitializes renderer on `device.lost`.
 
-`usePerformanceMonitor` tracks FPS, frame time, and can auto-degrade quality when below thresholds (warning: 45fps, critical: 30fps). Resolution is the first lever, a preset downgrade the last.
+The driver's `FrameRateMeter` publishes FPS and frame time to `renderer/perfStore.ts` twice a second; `PerformanceStatsOverlay` subscribes to it. There is no adaptive preset downgrade — the render scale is the lever.
 
 ---
 

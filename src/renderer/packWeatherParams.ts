@@ -69,14 +69,20 @@ export function createDefaultWeatherParams(): Float32Array<ArrayBuffer> {
 
 /**
  * Pack environment settings into the shared 44-float weather layout.
- * Preserves UI→shader scaling used by WebGPUCanvas (rain/snow /100*2, wind
+ * Preserves UI→shader scaling used by the frame driver (rain/snow /100*2, wind
  * /100*2-1). Atmospheric channels (fog, haze, dust, sun FX) are derived
  * together by resolveWeatherCohesion so presets tell one physical story —
  * see weatherCohesion.ts and docs/GRAPHICS.md.
+ *
+ * Pass `out` to reuse one array across frames (every slot is written, and the
+ * renderers copy it). The frame path does; omitting it allocates.
  */
-export function packWeatherParams(options: PackWeatherParamsOptions): Float32Array<ArrayBuffer> {
+export function packWeatherParams(
+    options: PackWeatherParamsOptions,
+    out: Float32Array<ArrayBuffer> = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT),
+): Float32Array<ArrayBuffer> {
     const { env: e, timeSeconds, cameraHeading, cameraPitch, wasmNoiseActive } = options;
-    const params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
+    const params = out;
     const I = WeatherParamIndex;
 
     const atmosphere = resolveWeatherCohesion({

@@ -281,7 +281,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     public updateColorParams(params: Float32Array<ArrayBuffer>): void {
         if (this.weatherParamsBuffer && this.device) {
-            this.weatherParams.set(params.slice(0, 6), 0);
+            this.weatherParams.set(params.subarray(0, 6), 0);
             this.weatherParamsDirty = true;
         }
     }

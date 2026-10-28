@@ -9,7 +9,7 @@ export type FrameSourceKind = 'maps-canvas';
 export interface FrameSource {
     readonly kind: FrameSourceKind;
     /** What the renderer uploads this frame, or null while there is nothing yet. */
-    element(): TexImageSource | null;
+    element(): CanvasImageSource | null;
     /** Bumps whenever `element()` or its content changed meaningfully. */
     version(): number;
     /** Called after every `version()` bump. Returns the unsubscribe. */

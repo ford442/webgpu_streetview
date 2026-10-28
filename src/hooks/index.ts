@@ -92,22 +92,3 @@ export {
   type UseSharedSessionResult,
 } from './useSharedSession';
 
-// Performance monitoring hook
-export {
-  usePerformanceMonitor,
-  type FPSStats,
-  type PerformanceMonitorConfig,
-  type PerformanceMonitorState,
-  type UsePerformanceMonitorReturn,
-  type PerformanceOverlayProps,
-  getPerformanceOverlayStyles,
-  getFPSColor,
-  formatPerformanceStats,
-  markPerformance,
-  measurePerformance,
-  throttleToFPS,
-  debounceFrame,
-  supportsPerformanceObserver,
-  createLongTaskObserver,
-  getNavigationTiming,
-} from './usePerformanceMonitor';

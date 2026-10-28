@@ -23,7 +23,6 @@ import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
 import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
 import type { RendererBackendInfo } from '../../components/RendererBackendIndicator';
-import type { PerformanceMonitorState } from '../../hooks/usePerformanceMonitor';
 import type { MemoryStats } from '../../utils/memoryProfiler';
 import type { GpuPassTimings } from '../../renderer/gpuPassTimingStore';
 import type { GpuChoresStats } from '../../renderer/gpuChores/gpuChoresStatsStore';
@@ -164,7 +163,6 @@ export interface ConnectedChromeOfflineRoutes {
 export interface ConnectedChromeOverlays {
   showPerformanceStats: boolean;
   setShowPerformanceStats: (show: boolean) => void;
-  perfStats: PerformanceMonitorState;
   memoryStats?: MemoryStats;
   gpuPassTimings?: GpuPassTimings;
   gpuChoresStats?: GpuChoresStats;
@@ -295,7 +293,6 @@ export function ConnectedChrome({
     <>
       {overlays.showPerformanceStats && (
         <PerformanceStatsOverlay
-          fpsStats={overlays.perfStats}
           memoryStats={overlays.memoryStats}
           gpuPassTimings={overlays.gpuPassTimings}
           gpuChoresStats={overlays.gpuChoresStats}

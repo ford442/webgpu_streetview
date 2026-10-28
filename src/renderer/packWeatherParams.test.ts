@@ -210,3 +210,38 @@ describe('packWeatherParams', () => {
         expect(params[WeatherParamIndex.nightIntensity]).toBe(0);
     });
 });
+
+describe('packWeatherParams into a reused array (the frame path)', () => {
+    const options = (t: number) => ({
+        env: baseEnv({ rainIntensity: 40, fogDensity: 20 }),
+        timeSeconds: t,
+        cameraHeading: 0.25,
+        cameraPitch: 0.5,
+        wasmNoiseActive: true,
+    });
+
+    it('writes every slot: a reused array equals a fresh pack, whatever it held before', () => {
+        const out = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT).fill(Number.NaN);
+        expect(packWeatherParams(options(3), out)).toBe(out);
+        expect(Array.from(out)).toEqual(Array.from(packWeatherParams(options(3))));
+    });
+
+    it('allocates no Float32Array across 100 packs', () => {
+        const out = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
+        const Real = Float32Array;
+        let constructed = 0;
+        const Counting = new Proxy(Real, {
+            construct(target, args) {
+                constructed += 1;
+                return Reflect.construct(target, args);
+            },
+        });
+        globalThis.Float32Array = Counting;
+        try {
+            for (let i = 0; i < 100; i++) packWeatherParams(options(i / 60), out);
+        } finally {
+            globalThis.Float32Array = Real;
+        }
+        expect(constructed).toBe(0);
+    });
+});

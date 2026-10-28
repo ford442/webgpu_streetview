@@ -91,16 +91,11 @@ function isMesh(value: unknown): value is THREE.Mesh {
 export class MemoryProfiler {
   private snapshots: MemorySnapshot[] = [];
   private maxHistorySize = 60; // Keep last 60 snapshots
-  private lastSnapshotTime = 0;
-  private snapshotInterval = 1000; // ms
 
   // WebGPU specific
   private gpuBuffers = new Map<string, number>();
   private gpuTextures = new Map<string, number>();
-  
-  constructor() {
-    this.startAutoSnapshot();
-  }
+
   
   /**
    * Set GPU device for WebGPU memory tracking
@@ -235,7 +230,6 @@ export class MemoryProfiler {
       this.snapshots.shift();
     }
     
-    this.lastSnapshotTime = timestamp;
     return snapshot;
   }
   
@@ -307,17 +301,6 @@ export class MemoryProfiler {
     }
     
     return leaks;
-  }
-  
-  /**
-   * Start automatic snapshotting
-   */
-  private startAutoSnapshot(): void {
-    setInterval(() => {
-      if (Date.now() - this.lastSnapshotTime > this.snapshotInterval) {
-        this.snapshot();
-      }
-    }, this.snapshotInterval);
   }
   
   /**
