@@ -168,9 +168,13 @@ export function AppShell() {
     setNavPending: connection.setNavPending,
     loadOfflineRouteGraphNodes: routePrefetch.loadAllCachedNodes,
     // In car mode the gearshift is the speed selector: P/N park cruise, D
-    // keeps the classic single hop, 2/3 chain extra hops per tick. Free-look
-    // has no gearbox, so it always cruises one hop at a time.
-    hopsPerTick: () => (viewModeRef.current === 'car' ? (getCarRuntime()?.getGearHopCount() ?? 1) : 1),
+    // keeps the classic single hop, 2/3 chain extra hops per tick.
+    // Free-look parks cruise (0 hops) so looking around does not advance the
+    // panorama; switching back to car resumes immediately with the current gear.
+    hopsPerTick: () =>
+      viewModeRef.current === 'car'
+        ? (getCarRuntime()?.getGearHopCount() ?? 1)
+        : 0,
     routeGuide: getActiveRouteGuide,
   });
   onAuthFailureRef.current = () => setIsCruiseMode(false);
