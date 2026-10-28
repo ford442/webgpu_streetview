@@ -179,14 +179,9 @@ export interface StreetViewWasmAPI {
   fillParticleSeeds(out: Float32Array, count: number, seed: number): void;
 
   /**
-   * Haversine great-circle distance between two WGS-84 coordinates.
-   * @returns Distance in metres.
-   */
-  haversine(lat1: number, lon1: number, lat2: number, lon2: number): number;
-
-  /**
    * Haversine distance for a whole polyline in one call — one WASM boundary
-   * crossing instead of one per segment.
+   * crossing instead of one per segment. A single pair is the f64 TS
+   * `haversineMeters` (src/utils/navigation.ts), the same formula.
    *
    * @param points       `count * 2` doubles: lat, lon, lat, lon, …
    * @param segmentsOut  Receives the `count - 1` per-segment distances in
@@ -244,12 +239,6 @@ export interface StreetViewWasmAPI {
     lat: number,
     lng: number,
   ): { segment: number; alongMeters: number; crossMeters: number };
-
-  /** Normalise an angle to [0, 360). */
-  normalizeAngle(angle: number): number;
-
-  /** Smallest signed angle difference; result in `[-180, 180)` — exactly-opposite inputs give -180. */
-  signedAngleDiff(from: number, to: number): number;
 
   /**
    * Fill a Float32Array with mono engine+road PCM in [-1, 1].

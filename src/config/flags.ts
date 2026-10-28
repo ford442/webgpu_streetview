@@ -142,8 +142,8 @@ export const FLAGS = {
     doc: 'Windshield portal. `?portal=off` forces the hole + decal overlay.',
   },
   cabinDsp: {
-    kind: 'enum', values: ['auto', 'scalar', 'off'], default: 'auto',
-    doc: 'Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback.',
+    kind: 'enum', values: ['auto', 'off'], default: 'auto',
+    doc: 'Cabin audio engine. `auto` runs the WASM DSP (`streetview-dsp.simd.wasm`) in the AudioWorklet; `off` uses the oscillator fallback.',
   },
   gltfInterior: {
     kind: 'bool',
@@ -171,14 +171,14 @@ export const FLAGS = {
     kind: 'bool',
     doc: 'Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality.',
   },
-  // ── WASM feeders ─────────────────────────────────────────────────────────
+  // ── Weather feeders (named for the WASM feeders they replaced, #341) ───────
   wasmNoise: {
     kind: 'bool',
-    doc: 'WASM-driven noise effect. `off` disables it; unset defers to localStorage, then on.',
+    doc: 'Dust-turbulence noise tile (CPU, uploaded every 30 frames). `off` disables it; unset defers to localStorage, then on.',
   },
   wasmParticles: {
     kind: 'bool',
-    doc: 'WASM GPU particle field. `off` disables it; unset defers to localStorage, then on.',
+    doc: 'GPU particle precipitation field (compute weather). `off` disables it; unset defers to localStorage, then on.',
   },
 } as const satisfies Record<string, FlagDef>;
 

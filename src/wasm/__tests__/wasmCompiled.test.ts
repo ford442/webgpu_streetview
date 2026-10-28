@@ -1,7 +1,7 @@
 /**
  * src/wasm/__tests__/wasmCompiled.test.ts
  *
- * Loads the compiled public/wasm/streetview-wasm.wasm binary directly with
+ * Loads the compiled public/wasm/streetview-wasm.simd.wasm binary directly with
  * WebAssembly.instantiate and drives its raw exports (pointers, linear
  * memory) — below the loader. The marshalling wrappers over the same binary
  * are exercised in wasm.test.ts and wasmScratchArena.test.ts; the exact
@@ -14,8 +14,8 @@ import { join } from 'path';
 interface CompiledExports {
   memory: WebAssembly.Memory;
   _initialize: () => void;
-  malloc: (bytes: number) => number;
-  emscripten_stack_get_base: () => number;
+  sv_malloc: (bytes: number) => number;
+  sv_stack_base: () => number;
   seed: (s: number) => void;
   noise2d: (x: number, y: number) => number;
   fill_noise_buffer: (ptr: number, w: number, h: number, scale: number, ox: number, oy: number) => void;
@@ -26,9 +26,6 @@ interface CompiledExports {
     octaves: number, lacunarity: number, gain: number
   ) => void;
   fill_particle_seeds: (ptr: number, count: number, seed: number) => void;
-  normalize_angle: (a: number) => number;
-  signed_angle_diff: (from: number, to: number) => number;
-  haversine: (lat1: number, lon1: number, lat2: number, lon2: number) => number;
   batch_haversine: (ptr: number, count: number, out: number) => number;
   offset_latlng: (
     lat: number, lng: number, distanceMeters: number,
@@ -69,7 +66,7 @@ let exp: CompiledExports;
 let SCRATCH = 0;
 
 beforeAll(async () => {
-  const wasmPath = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
+  const wasmPath = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.simd.wasm');
   const bytes = readFileSync(wasmPath);
   // Mirrors the import object instantiateStreetViewWasm() supplies in
   // src/wasm/index.ts: STANDALONE_WASM links libm statically, so the only
@@ -82,11 +79,18 @@ beforeAll(async () => {
   const { instance } = await WebAssembly.instantiate(bytes, importObject);
   exp = instance.exports as unknown as CompiledExports;
   exp._initialize();
-  SCRATCH = exp.malloc(1 << 20);
-  expect(SCRATCH).toBeGreaterThanOrEqual(exp.emscripten_stack_get_base());
+  SCRATCH = exp.sv_malloc(1 << 20);
+  expect(SCRATCH).toBeGreaterThanOrEqual(exp.sv_stack_base());
 });
 
-describe('compiled streetview-wasm.wasm binary', () => {
+/** One great-circle distance through batch_haversine (a two-point polyline). */
+function wasmHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const ptr = SCRATCH + 4096;
+  new Float64Array(exp.memory.buffer, ptr, 4).set([lat1, lon1, lat2, lon2]);
+  return exp.batch_haversine(ptr, 2, ptr + 32);
+}
+
+describe('compiled streetview-wasm.simd.wasm binary', () => {
   test('exports every function the TypeScript wrapper expects', () => {
     expect(typeof exp.seed).toBe('function');
     expect(typeof exp.noise2d).toBe('function');
@@ -94,9 +98,6 @@ describe('compiled streetview-wasm.wasm binary', () => {
     expect(typeof exp.fbm2d).toBe('function');
     expect(typeof exp.fill_fbm_buffer).toBe('function');
     expect(typeof exp.fill_particle_seeds).toBe('function');
-    expect(typeof exp.normalize_angle).toBe('function');
-    expect(typeof exp.signed_angle_diff).toBe('function');
-    expect(typeof exp.haversine).toBe('function');
     expect(typeof exp.batch_haversine).toBe('function');
     expect(typeof exp.fill_engine_noise).toBe('function');
     expect(typeof exp.fill_cabin_ir).toBe('function');
@@ -112,7 +113,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
       [-33.8688, 151.2093, 35.6762, 139.6503],
     ];
     for (const [lat1, lon1, lat2, lon2] of cases) {
-      expect(exp.haversine(lat1, lon1, lat2, lon2)).toBeCloseTo(
+      expect(wasmHaversine(lat1, lon1, lat2, lon2)).toBeCloseTo(
         jsHaversine(lat1, lon1, lat2, lon2),
         6
       );
@@ -120,12 +121,12 @@ describe('compiled streetview-wasm.wasm binary', () => {
   });
 
   test('haversine returns exactly 0 for identical points', () => {
-    expect(exp.haversine(48.8566, 2.3522, 48.8566, 2.3522)).toBe(0);
+    expect(wasmHaversine(48.8566, 2.3522, 48.8566, 2.3522)).toBe(0);
   });
 
   test('haversine is symmetric', () => {
-    const a = exp.haversine(40.7, -74.0, 51.5, -0.1);
-    const b = exp.haversine(51.5, -0.1, 40.7, -74.0);
+    const a = wasmHaversine(40.7, -74.0, 51.5, -0.1);
+    const b = wasmHaversine(51.5, -0.1, 40.7, -74.0);
     expect(a).toBe(b);
   });
 
@@ -274,7 +275,7 @@ describe('compiled streetview-wasm.wasm binary', () => {
     for (let bearing = 0; bearing < 360; bearing += 45) {
       exp.offset_latlng(40.7128, -74.006, 10, bearing, ptr);
       const out = new Float64Array(exp.memory.buffer, ptr, 2);
-      expect(exp.haversine(40.7128, -74.006, out[0]!, out[1]!)).toBeCloseTo(10, 6);
+      expect(wasmHaversine(40.7128, -74.006, out[0]!, out[1]!)).toBeCloseTo(10, 6);
     }
   });
 

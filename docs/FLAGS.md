@@ -36,12 +36,12 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?xr` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WebXR cockpit (#331). `off` hides the VR button and boots a non-XR-compatible adapter; unset follows what the browser supports (`xr/xrSupport.ts`). |
 | `?cabin` | enum | `webgl` \| `webgpu` | — | Cabin overlay backend. Default follows the WebGPU probe; `webgl` is the escape hatch. |
 | `?portal` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `true` | Windshield portal. `?portal=off` forces the hole + decal overlay. |
-| `?cabinDsp` | enum | `auto` \| `scalar` \| `off` | `auto` | Cabin audio engine. `auto` runs the WASM DSP in the AudioWorklet (SIMD128 binary when the browser validates it); `scalar` forces the non-SIMD binary; `off` uses the oscillator fallback. |
+| `?cabinDsp` | enum | `auto` \| `off` | `auto` | Cabin audio engine. `auto` runs the WASM DSP (`streetview-dsp.simd.wasm`) in the AudioWorklet; `off` uses the oscillator fallback. |
 | `?gltfInterior` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Use the authored glTF interior kit. Turning it on persists to localStorage. |
 | `?route` | string | `lat,lng;lat,lng[;…]` | — | Routed road trip link: origin, optional via-points, destination (`services/routing/routeLink.ts`). Plans the route on load; Drive starts it. |
 | `?offline` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Drive a routed trip with the offline graph planner (`offline/routeGraphNavigation.ts`) as if `navigator.onLine` were false. Needs a graph from "Save for offline" covering the current pano. |
 | `?trip` | string | `base64url(gzip(.svtrip JSON))` | — | Shared trip recording (`trip/tripFile.ts`). Plans the recording's route and opens it in the Trip panel ready to replay; every replayed hop is a metered pano lookup. |
 | `?liveWeather` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Live local conditions (Open-Meteo weather at the pano). `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). |
 | `?depth` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel's persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality. |
-| `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM-driven noise effect. `off` disables it; unset defers to localStorage, then on. |
-| `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | WASM GPU particle field. `off` disables it; unset defers to localStorage, then on. |
+| `?wasmNoise` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Dust-turbulence noise tile (CPU, uploaded every 30 frames). `off` disables it; unset defers to localStorage, then on. |
+| `?wasmParticles` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | GPU particle precipitation field (compute weather). `off` disables it; unset defers to localStorage, then on. |

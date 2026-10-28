@@ -3,8 +3,8 @@
  * CabinAudio's graph wiring, against a stub Web Audio implementation.
  *
  * Worth pinning here: the WASM engine in an AudioWorklet is the default path
- * (the compiled module is posted to it; no PCM ever is), the IR and params
- * protocol, the radio bus routed through the engine, the probe, and that every
+ * (the DSP binary's bytes are posted to it; no PCM ever is), the IR and params
+ * protocol (messages, or the shared seqlock when cross-origin isolated), the radio bus routed through the engine, the probe, and that every
  * degraded environment — no worklet, a binary that will not compile or
  * instantiate, `?cabinDsp=off`, no AudioContext — leaves the cabin on the
  * oscillator fallback or quiet instead of throwing into car mode.
@@ -14,7 +14,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const wasmMocks = vi.hoisted(() => ({
   compile: vi.fn(),
-  simd: vi.fn(),
 }));
 
 vi.mock('../../wasm', async (importOriginal) => {
@@ -23,11 +22,11 @@ vi.mock('../../wasm', async (importOriginal) => {
     ...actual,
     // loadWasmModule stays real: src/setupTests.ts installed the committed binary.
     loadStreetViewWasmBytes: wasmMocks.compile,
-    wasmSimdSupported: wasmMocks.simd,
   };
 });
 
-import { CabinAudio, resolveCabinDspVariant } from './CabinAudio';
+import { CabinAudio } from './CabinAudio';
+import { CABIN_RING_BYTES, CABIN_RING_FIELDS } from './cabinParamRing';
 import { CABIN_IR_TAPS } from './cabinIr';
 import { CABIN_PROCESSOR_NAME } from './cabinWorkletSource';
 import { isCabinEngineAttached, resetCarAudioGraphForTests } from '../../audio/carAudioGraph';
@@ -37,7 +36,6 @@ interface PortMessage {
   type: string;
   taps?: Float32Array;
   module?: unknown;
-  simd?: boolean;
   [key: string]: unknown;
 }
 
@@ -171,8 +169,6 @@ beforeEach(() => {
   StubAudioContext.addModule.mockImplementation(async () => {});
   wasmMocks.compile.mockReset();
   wasmMocks.compile.mockImplementation(async () => FAKE_BYTES);
-  wasmMocks.simd.mockReset();
-  wasmMocks.simd.mockReturnValue(true);
   install(StubAudioContext, StubWorkletNode);
   // jsdom's URL has no Blob-URL support; the module only needs a string back.
   scope.URL = Object.assign(function URL() {}, {
@@ -183,25 +179,16 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const [key, value] of Object.entries(saved)) scope[key] = value;
-});
-
-describe('resolveCabinDspVariant', () => {
-  it('runs the SIMD binary when it validates, the scalar one otherwise, nothing when off', () => {
-    expect(resolveCabinDspVariant('auto', true)).toBe('simd');
-    expect(resolveCabinDspVariant(undefined, true)).toBe('simd');
-    expect(resolveCabinDspVariant('auto', false)).toBe('scalar');
-    expect(resolveCabinDspVariant('scalar', true)).toBe('scalar');
-    expect(resolveCabinDspVariant('off', true)).toBeNull();
-  });
+  delete scope['crossOriginIsolated'];
 });
 
 describe('CabinAudio: worklet engine path', () => {
-  it('posts the SIMD binary to an AudioWorklet and never touches createScriptProcessor', async () => {
+  it('posts the worklet-only DSP binary to an AudioWorklet and never touches createScriptProcessor', async () => {
     const audio = new CabinAudio();
     await audio.start();
 
     expect(audio.isWorkletActive).toBe(true);
-    expect(wasmMocks.compile).toHaveBeenCalledWith('simd');
+    expect(wasmMocks.compile).toHaveBeenCalledWith('dsp');
     expect(StubAudioContext.addModule).toHaveBeenCalledWith('blob:cabin');
     expect(workletNodes).toHaveLength(1);
     const node = workletNodes[0]!;
@@ -213,28 +200,12 @@ describe('CabinAudio: worklet engine path', () => {
     expect(moduleMsg?.bytes).toBeInstanceOf(ArrayBuffer);
     expect(moduleMsg?.bytes).not.toBe(FAKE_BYTES);
     expect(new Uint8Array(moduleMsg!.bytes as ArrayBuffer)).toEqual(new Uint8Array(FAKE_BYTES));
-    expect(moduleMsg?.simd).toBe(true);
     // No PCM protocol any more: the engine renders in the worklet.
     expect(node.port.sent.some((m) => m.type === 'pcm')).toBe(false);
     expect(contexts[0]!.createScriptProcessor).not.toHaveBeenCalled();
     audio.dispose();
   });
 
-  it('compiles the scalar binary when SIMD does not validate, or when ?cabinDsp=scalar', async () => {
-    wasmMocks.simd.mockReturnValue(false);
-    const a = new CabinAudio();
-    await a.start();
-    expect(wasmMocks.compile).toHaveBeenLastCalledWith('scalar');
-    expect(workletNodes[0]!.port.sent.find((m) => m.type === 'module')?.simd).toBe(false);
-    a.dispose();
-
-    wasmMocks.simd.mockReturnValue(true);
-    setSearch('?cabinDsp=scalar');
-    const b = new CabinAudio();
-    await b.start();
-    expect(wasmMocks.compile).toHaveBeenLastCalledWith('scalar');
-    b.dispose();
-  });
 
   it('sends the vehicle\'s long IR up front, and re-sends it only when the room changes', async () => {
     const audio = new CabinAudio();
@@ -277,6 +248,40 @@ describe('CabinAudio: worklet engine path', () => {
     });
     // No environment: a calm, dry day.
     expect(params[1]).toMatchObject({ rain: 0, wetRoad: 0, windMps: 0, wipers: false });
+    expect(port.sent.some((m) => m.type === 'ring')).toBe(false);
+    expect(window.__CABIN_AUDIO_PROBE__?.paramTransport).toBe('message');
+    audio.dispose();
+  });
+
+  it('writes the targets into the shared seqlock instead when the page is cross-origin isolated', async () => {
+    scope['crossOriginIsolated'] = true;
+    const audio = new CabinAudio();
+    await audio.start();
+    const port = workletNodes[0]!.port;
+    const ringMsg = port.sent.find((m) => m.type === 'ring');
+    expect(ringMsg?.buffer).toBeInstanceOf(SharedArrayBuffer);
+    const buffer = ringMsg!.buffer as SharedArrayBuffer;
+    expect(buffer.byteLength).toBe(CABIN_RING_BYTES);
+    const seq = new Int32Array(buffer);
+    const f32 = new Float32Array(buffer);
+    expect(seq[0]).toBe(0);
+
+    audio.update(telemetry({ speedKmh: 72, rpm: 3100 }), { openness: 1, vehicle: 'cortianics' }, {
+      rainIntensity: 50, wind: -40, wipersEnabled: true,
+    });
+    // Settled (even) after one write; no per-frame message.
+    expect(seq[0]).toBe(2);
+    expect(port.sent.some((m) => m.type === 'params')).toBe(false);
+    const slot = (field: (typeof CABIN_RING_FIELDS)[number]): number => f32[CABIN_RING_FIELDS.indexOf(field) + 1]!;
+    expect(slot('rpm')).toBe(3100);
+    expect(slot('speedMps')).toBe(20);
+    expect(slot('vehicle')).toBe(4);
+    expect(slot('rain')).toBe(0.5);
+    expect(slot('wipers')).toBe(1);
+    audio.update(telemetry({ speedKmh: 72, rpm: 3100 }), { openness: 1, vehicle: 'cortianics' });
+    expect(seq[0]).toBe(4);
+    expect(slot('wipers')).toBe(0);
+    expect(window.__CABIN_AUDIO_PROBE__?.paramTransport).toBe('shared-ring');
     audio.dispose();
   });
 
@@ -295,11 +300,13 @@ describe('CabinAudio: worklet engine path', () => {
     const audio = new CabinAudio();
     await audio.start();
     const port = workletNodes[0]!.port;
-    expect(window.__CABIN_AUDIO_PROBE__).toMatchObject({ mode: 'worklet-wasm', ready: false, simd: true, sampleRate: 48000 });
-    port.fromWorklet({ type: 'ready', simd: true, maxIrTaps: 4096 });
+    expect(window.__CABIN_AUDIO_PROBE__).toMatchObject({
+      mode: 'worklet-wasm', ready: false, binary: 'streetview-dsp.simd.wasm', sampleRate: 48000,
+    });
+    port.fromWorklet({ type: 'ready', maxIrTaps: 16384, memoryBytes: 1 << 20 });
     port.fromWorklet({ type: 'stats', quanta: 750, rendered: 748, underruns: 0, renderMsAvg: 0.05, renderMsMax: 0.2 });
     expect(window.__CABIN_AUDIO_PROBE__).toMatchObject({
-      mode: 'worklet-wasm', ready: true, quanta: 750, rendered: 748, underruns: 0, renderMsAvg: 0.05,
+      mode: 'worklet-wasm', ready: true, memoryBytes: 1 << 20, quanta: 750, rendered: 748, underruns: 0, renderMsAvg: 0.05,
     });
     audio.dispose();
     expect(window.__CABIN_AUDIO_PROBE__).toMatchObject({ mode: 'off', ready: false });

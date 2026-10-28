@@ -14,7 +14,7 @@
 
 #include "doctest.h"
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
 #include "goldens_generated.h"
 
 #include <cmath>
@@ -73,8 +73,8 @@ Rendered run_script(const goldens::DspScript& script, const std::vector<int>& ch
     for (int b = 0; b < script.blocks; ++b) {
         if (k < script.keyframe_count && script.keyframes[k].block == b) {
             const goldens::DspKeyframe& f = script.keyframes[k];
-            sw_dsp_set_params(dsp, f.rpm, f.load, f.speed_mps, f.openness, f.vehicle,
-                              f.wet_road, f.rain, f.wind_mps, f.radio_gain, f.wipers);
+            sw_dsp_set_params(dsp, f.rpm, f.load, f.speed_mps, f.openness, f.vehicle, f.wet_road,
+                              f.rain, f.wind_mps, f.radio_gain, f.wipers);
             if (f.ir == 1) {
                 sw_fill_cabin_ir(ir.data(), script.ir_taps, f.ir_vehicle, f.ir_openness,
                                  script.sample_rate);
@@ -93,8 +93,8 @@ Rendered run_script(const goldens::DspScript& script, const std::vector<int>& ch
             int n = chunks[chunk_index % chunks.size()];
             ++chunk_index;
             if (n > block - done) n = block - done;
-            sw_dsp_render(dsp, in_l.data() + done, in_r.data() + done,
-                          out_l.data() + done, out_r.data() + done, n);
+            sw_dsp_render(dsp, in_l.data() + done, in_r.data() + done, out_l.data() + done,
+                          out_r.data() + done, n);
             done += n;
         }
         r.checksum = fnv1a(r.checksum, out_l, block);
@@ -120,8 +120,8 @@ struct Scene {
 };
 
 struct Levels {
-    double rms;   // broadband
-    double hf;    // RMS of the first difference — a crude high-frequency meter
+    double rms; // broadband
+    double hf;  // RMS of the first difference — a crude high-frequency meter
 };
 
 /**
@@ -133,8 +133,8 @@ Levels measure(const Scene& s, float seconds = 1.0f, float sample_rate = 48000.0
     std::vector<float> ir(static_cast<size_t>(s.ir_taps));
     sw_fill_cabin_ir(ir.data(), s.ir_taps, s.vehicle, s.open, sample_rate);
     sw_dsp_set_ir(dsp, ir.data(), s.ir_taps);
-    sw_dsp_set_params(dsp, s.rpm, s.load, s.speed, s.open, s.vehicle, s.wet, s.rain,
-                      s.wind, s.radio, s.wipers);
+    sw_dsp_set_params(dsp, s.rpm, s.load, s.speed, s.open, s.vehicle, s.wet, s.rain, s.wind,
+                      s.radio, s.wipers);
     std::vector<float> in_l(128), in_r(128), l(128), r(128);
     const int settle = static_cast<int>(sample_rate / 128.0f);
     const int blocks = static_cast<int>(seconds * sample_rate / 128.0f);
@@ -175,9 +175,11 @@ TEST_CASE("dsp_render matches the shipping WASM goldens") {
             int mismatches = 0;
             for (int i = 0; i < goldens::kDspBlock; ++i) {
                 if (!bits_equal(r.excerpt_l[static_cast<size_t>(e)][static_cast<size_t>(i)],
-                                script.excerpts[e].left[i])) ++mismatches;
+                                script.excerpts[e].left[i]))
+                    ++mismatches;
                 if (!bits_equal(r.excerpt_r[static_cast<size_t>(e)][static_cast<size_t>(i)],
-                                script.excerpts[e].right[i])) ++mismatches;
+                                script.excerpts[e].right[i]))
+                    ++mismatches;
             }
             CHECK(mismatches == 0);
         }
@@ -186,7 +188,7 @@ TEST_CASE("dsp_render matches the shipping WASM goldens") {
 }
 
 TEST_CASE("dsp_render: how a block is split does not change a bit") {
-    const goldens::DspScript& script = goldens::kDspScripts[1];  // 48 kHz, IR swaps
+    const goldens::DspScript& script = goldens::kDspScripts[1]; // 48 kHz, IR swaps
     const uint32_t whole = run_script(script).checksum;
     CHECK(run_script(script, {37, 91}).checksum == whole);
     CHECK(run_script(script, {1, 3, 124}).checksum == whole);
@@ -275,7 +277,8 @@ TEST_CASE("dsp_render: non-finite input never poisons the stream") {
     sw_dsp_set_ir(dsp, taps.data(), static_cast<int>(taps.size()));
     std::vector<float> bad(128, nan), l(128), r(128);
     bad[3] = inf;
-    for (int b = 0; b < 50; ++b) sw_dsp_render(dsp, bad.data(), bad.data(), l.data(), r.data(), 128);
+    for (int b = 0; b < 50; ++b)
+        sw_dsp_render(dsp, bad.data(), bad.data(), l.data(), r.data(), 128);
     for (int i = 0; i < 128; ++i) {
         CHECK(std::isfinite(l[static_cast<size_t>(i)]));
         CHECK(std::isfinite(r[static_cast<size_t>(i)]));
@@ -371,5 +374,5 @@ TEST_CASE("luma_analyze: degenerate arguments write zeros") {
     const unsigned char px[4] = {255, 255, 255, 255};
     sw_luma_analyze(px, 1, 1, 0, 1, bins.data(), stats);
     CHECK(stats[2] == 0.0f);
-    sw_luma_analyze(px, 1, 1, 1, 1, nullptr, stats);  // no crash
+    sw_luma_analyze(px, 1, 1, 1, 1, nullptr, stats); // no crash
 }

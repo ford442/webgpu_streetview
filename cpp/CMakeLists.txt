@@ -18,6 +18,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ---------------------------------------------------------------------------
 option(STREETVIEW_WERROR "Treat compiler warnings as errors" ON)
 option(STREETVIEW_SANITIZERS "Build the host targets with ASan + UBSan" OFF)
+# With emcmake: build the doctest suite itself as wasm (-msimd128, run under
+# node through CMAKE_CROSSCOMPILING_EMULATOR) instead of the shipped binaries.
+# CI's wasm-sanitizers job: emcmake cmake -DSTREETVIEW_WASM_TESTS=ON
+# -DSTREETVIEW_SANITIZERS=ON, so the code that ships is sanitized as wasm too.
+option(STREETVIEW_WASM_TESTS "emcc: build and run the doctest suite as SIMD wasm" OFF)
+option(STREETVIEW_FUZZ "host clang: build the libFuzzer harnesses in cpp/fuzz" OFF)
 
 # ---------------------------------------------------------------------------
 # Warning flags (applied to our sources only — never to cpp/third_party)
@@ -57,57 +63,63 @@ if(NOT MSVC)
     set(STREETVIEW_FP_FLAGS -ffp-contract=off)
 endif()
 
-if(EMSCRIPTEN)
+# ---------------------------------------------------------------------------
+# Sources — one list for the emcc binaries and the host library, so a new TU
+# cannot be linted/tested on one side and shipped untested on the other.
+# scripts/lint-cpp.sh and scripts/wasm-source-hash.mjs read nothing from here:
+# keep them in step when a TU is added (wasmAbiLock.test.ts checks all three).
+# ---------------------------------------------------------------------------
+set(STREETVIEW_SOURCES
+    src/noise_module.cpp
+    src/geodesy_module.cpp
+    src/audio_module.cpp
+    src/hrtf_module.cpp
+    src/luma_module.cpp
+    src/cabin_dsp_module.cpp
+    src/depth_module.cpp
+    src/graph_module.cpp
+    src/runtime.cpp
+)
+# The AudioWorklet's binary: the cabin engine and the heap, nothing else.
+set(STREETVIEW_DSP_SOURCES
+    src/cabin_dsp_module.cpp
+    src/runtime.cpp
+)
+
+if(EMSCRIPTEN AND NOT STREETVIEW_WASM_TESTS)
     # -----------------------------------------------------------------------
-    # WASM target (Emscripten)
+    # WASM targets (Emscripten)
     # -----------------------------------------------------------------------
     # The output WASM must be ABI-compatible with the TypeScript loader in
     # src/wasm/index.ts.  Key requirements:
     #
     #   - No MODULARIZE / EXPORT_ES6 / JS glue wrapper — the TS loader
     #     instantiates the .wasm binary directly via WebAssembly.instantiate().
-    #   - No embind (--bind) — raw C exports are used instead.
-    #   - Exported function names match bindings.cpp:
-    #       seed, noise2d, fill_noise_buffer, fbm2d, fill_fbm_buffer,
-    #       fill_particle_seeds, haversine, batch_haversine, offset_latlng,
-    #       normalize_angle, signed_angle_diff, initial_bearing,
-    #       polyline_resample, polyline_project, fill_engine_noise,
-    #       fill_cabin_ir, fill_hrtf, luma_histogram_bt709,
-    #       reduce_luma_bt709, downsample_2d, luma_analyze, dsp_create,
-    #       dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render,
-    #       dsp_max_ir_taps, depth_percentiles, depth_near_depth,
-    #       depth_normalize, graph_astar, graph_nearest
-    #     src/wasm/__tests__/wasmAbiLock.test.ts fails if this list, the
-    #     bindings, and the TypeScript loader ever drift apart.
-    #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically so the
-    #     binary's only import is env.emscripten_notify_memory_growth
-    #     (ALLOW_MEMORY_GROWTH). The loader calls `_initialize` when present.
-    #   - `malloc`/`free` back the loader's scratch arena; the arena must sit
-    #     above the shadow stack, which the loader checks against
-    #     `emscripten_stack_get_base`.
+    #   - No embind (--bind), no EXPORTED_FUNCTIONS: every export is declared
+    #     once with SV_EXPORT in include/streetview/abi.h (wasm export_name),
+    #     so a binary exports exactly the functions of the TUs it links.
+    #     scripts/check-wasm-abi.mjs compares each export's *signature* (the
+    #     type section) with src/wasm/abi.generated.ts.
+    #   - STANDALONE_WASM=1 links math (sin/cos/atan2) statically. The main
+    #     binaries' only import is env.emscripten_notify_memory_growth
+    #     (ALLOW_MEMORY_GROWTH); the DSP binary has none. The loaders call
+    #     `_initialize` when present.
     #
-    # Two binaries from the same sources and flags, differing only in
-    # -msimd128 (see STREETVIEW_WASM_TARGETS below):
-    #   streetview-wasm.wasm       scalar — the main-thread loader, and the
-    #                              worklet when SIMD128 does not validate
-    #   streetview-wasm.simd.wasm  SIMD128 — the AudioWorklet's cabin DSP,
-    #                              whose partitioned FIR is hand-vectorised
-    #                              under __wasm_simd128__
-    # Both must reproduce cpp/tests/goldens.json bit for bit.
-    set(STREETVIEW_WASM_SOURCES
-        src/noise_module.cpp
-        src/geodesy_module.cpp
-        src/audio_module.cpp
-        src/hrtf_module.cpp
-        src/luma_module.cpp
-        src/cabin_dsp_module.cpp
-        src/depth_module.cpp
-        src/graph_module.cpp
-        src/bindings.cpp
-    )
-    add_executable(streetview-wasm ${STREETVIEW_WASM_SOURCES})
-    add_executable(streetview-wasm-simd ${STREETVIEW_WASM_SOURCES})
-    set(STREETVIEW_WASM_TARGETS streetview-wasm streetview-wasm-simd)
+    # Three binaries:
+    #   streetview-wasm.wasm        scalar — never deployed; the reference CI
+    #                               builds and golden-tests (the oracle the
+    #                               goldens are generated from)
+    #   streetview-wasm.simd.wasm   SIMD128 — every main-thread kernel
+    #   streetview-dsp.simd.wasm    SIMD128, cabin_dsp_module.cpp only, fixed
+    #                               memory (no memory.grow on the real-time
+    #                               thread), emmalloc — the AudioWorklet
+    # All three must reproduce cpp/tests/goldens.json bit for bit.
+    # They land in ${CMAKE_BINARY_DIR}/out; scripts/build-wasm.sh --update
+    # copies the shipped ones into the tracked public/wasm/.
+    add_executable(streetview-wasm ${STREETVIEW_SOURCES})
+    add_executable(streetview-wasm-simd ${STREETVIEW_SOURCES})
+    add_executable(streetview-dsp-simd ${STREETVIEW_DSP_SOURCES})
+    set(STREETVIEW_WASM_TARGETS streetview-wasm streetview-wasm-simd streetview-dsp-simd)
 
     # Optimisation comes from CMAKE_BUILD_TYPE alone (Release: -O3 -DNDEBUG,
     # Debug: -g) — build-wasm.sh passes no CMAKE_CXX_FLAGS. The link step
@@ -118,41 +130,56 @@ if(EMSCRIPTEN)
     # `--compare` step and wasmGoldenParity.test.ts prove it on every build).
     # Debug keeps runtime assertions instead; it is never shipped.
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(STREETVIEW_WASM_LINK_OPT "-O0" "-g" "-s ASSERTIONS=1")
+        set(STREETVIEW_WASM_LINK_OPT "-O0" "-g" "-sASSERTIONS=1")
         set(STREETVIEW_WASM_LTO "")
     else()
-        set(STREETVIEW_WASM_LINK_OPT "-O3" "-g0" "-flto" "-s ASSERTIONS=0")
+        set(STREETVIEW_WASM_LINK_OPT "-O3" "-g0" "-flto" "-sASSERTIONS=0")
         set(STREETVIEW_WASM_LTO -flto)
     endif()
 
-    set(EMSCRIPTEN_FLAGS
+    set(STREETVIEW_WASM_COMMON_LINK
         ${STREETVIEW_WASM_LINK_OPT}
         # STRICT: no deprecated settings or legacy defaults can creep in.
-        "-s STRICT=1"
-        "-s WASM=1"
-        "-s STANDALONE_WASM=1"
+        "-sSTRICT=1"
+        "-sSTANDALONE_WASM=1"
         "--no-entry"
+        "-sEXPORTED_RUNTIME_METHODS=[]"
+    )
+    set(STREETVIEW_WASM_MAIN_LINK
         # 16 MiB up front covers every per-frame buffer (noise tiles, the
         # quarter-res luma chore, a 256² depth map) without a first-frame grow.
-        "-s INITIAL_MEMORY=16777216"
-        "-s ALLOW_MEMORY_GROWTH=1"
-        # The largest buffer the app hands the module is a snapshot's output
-        # canvas (useAppCapture -> downsample_2d): CSS size x DPR (capped at 2),
-        # 32 MiB at a 4K backing store, 59 MiB at 5K. The scratch arena rounds
-        # to a power of two (src/wasm/marshal.ts), so 5K reserves 64 MiB on top
-        # of the initial heap: 128 MiB is the explicit ceiling, never unbounded.
-        "-s MAXIMUM_MEMORY=134217728"
+        "-sINITIAL_MEMORY=16777216"
+        "-sALLOW_MEMORY_GROWTH=1"
+        # An explicit ceiling, never unbounded. The scratch arena shrinks back
+        # after an idle second (src/wasm/marshal.ts) and full-resolution
+        # snapshots are downsampled on the GPU, so nothing near this is live.
+        "-sMAXIMUM_MEMORY=134217728"
         # 64 KiB of shadow stack, explicitly: the loader checks it
-        # (emscripten_stack_get_base - emscripten_stack_get_end must equal
-        # WASM_STACK_SIZE in src/wasm/marshal.ts) and puts the scratch arena above
-        # it. #300's corruption was an assumption about exactly this number.
-        "-s STACK_SIZE=65536"
-        "-s EXPORTED_FUNCTIONS=['_seed','_noise2d','_fill_noise_buffer','_fbm2d','_fill_fbm_buffer','_fill_particle_seeds','_haversine','_batch_haversine','_offset_latlng','_normalize_angle','_signed_angle_diff','_initial_bearing','_polyline_resample','_polyline_project','_fill_engine_noise','_fill_cabin_ir','_fill_hrtf','_luma_histogram_bt709','_reduce_luma_bt709','_downsample_2d','_luma_analyze','_dsp_create','_dsp_destroy','_dsp_set_params','_dsp_set_ir','_dsp_render','_dsp_max_ir_taps','_depth_percentiles','_depth_near_depth','_depth_normalize','_graph_astar','_graph_nearest','_malloc','_free','_emscripten_stack_get_base','_emscripten_stack_get_end']"
-        "-s EXPORTED_RUNTIME_METHODS=[]"
+        # (sv_stack_base - sv_stack_end must equal WASM_STACK_SIZE in
+        # src/wasm/marshal.ts) and puts the scratch arena above it. #300's
+        # corruption was an assumption about exactly this number.
+        "-sSTACK_SIZE=65536"
     )
-
-    # Join list into a single string for linker flags.
-    string(JOIN " " EMSCRIPTEN_LINK_FLAGS ${EMSCRIPTEN_FLAGS})
+    set(STREETVIEW_WASM_DSP_LINK
+        # Fixed memory: the real-time thread can never grow (and so never
+        # detach its views or stall on a grow). 1 MiB holds one engine at
+        # 16384 taps (~530 KiB of IR spectra and FDL), its I/O block and the
+        # stack; check-wasm-abi.mjs asserts the binary has no memory.grow.
+        "-sINITIAL_MEMORY=1048576"
+        "-sALLOW_MEMORY_GROWTH=0"
+        "-sSTACK_SIZE=16384"
+        # A few hundred bytes instead of dlmalloc: the engine makes two
+        # allocations for the life of the node.
+        "-sMALLOC=emmalloc"
+    )
+    # The SIMD binaries pin every feature they use, on compile and link, so a
+    # change of emcc defaults cannot change what the shipped binary requires.
+    # Bulk memory and non-trapping float-to-int were already on implicitly
+    # (emsdk 6 defaults): the browser floor is SIMD128 + those, i.e. Safari
+    # 16.4 / Chrome 91 / Firefox 89 — every WebGPU-capable browser.
+    # Never -mrelaxed-simd: relaxed madd is FMA on some engines and not others.
+    set(STREETVIEW_WASM_SIMD_FEATURES
+        -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals)
 
     foreach(target IN LISTS STREETVIEW_WASM_TARGETS)
         target_include_directories(${target} PRIVATE include)
@@ -165,43 +192,38 @@ if(EMSCRIPTEN)
             -fno-rtti
             ${STREETVIEW_WASM_LTO}
         )
+        target_link_options(${target} PRIVATE ${STREETVIEW_WASM_COMMON_LINK})
         set_target_properties(${target} PROPERTIES
             SUFFIX ".wasm"
-            LINK_FLAGS "${EMSCRIPTEN_LINK_FLAGS}"
-            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../public/wasm"
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/out"
         )
     endforeach()
+    target_link_options(streetview-wasm PRIVATE ${STREETVIEW_WASM_MAIN_LINK})
+    target_link_options(streetview-wasm-simd PRIVATE ${STREETVIEW_WASM_MAIN_LINK})
+    target_link_options(streetview-dsp-simd PRIVATE ${STREETVIEW_WASM_DSP_LINK})
 
-    # SIMD128 for the second binary. -msimd128 defines __wasm_simd128__, which
-    # switches cabin_dsp_module.cpp's FIR to f32x4 intrinsics, and lets the
-    # compiler autovectorize the rest. WASM SIMD128 has no FMA and we never pass
-    # -ffast-math, so every result stays bit-identical to the scalar goldens.
-    target_compile_options(streetview-wasm-simd PRIVATE -msimd128)
-    # And at link time, so emcc runs wasm-opt with --enable-simd on this
-    # target explicitly (it only infers features from the objects otherwise).
-    target_link_options(streetview-wasm-simd PRIVATE -msimd128)
+    # SIMD128: -msimd128 defines __wasm_simd128__, which switches
+    # cabin_dsp_module.cpp's direct partition, FFT and spectral MAC to f32x4
+    # intrinsics, and lets the compiler autovectorize the rest. WASM SIMD128
+    # has no FMA and we never pass -ffast-math, so every result stays
+    # bit-identical to the scalar goldens. Linked with the same flags so emcc
+    # runs wasm-opt with exactly these features.
+    foreach(target IN ITEMS streetview-wasm-simd streetview-dsp-simd)
+        target_compile_options(${target} PRIVATE ${STREETVIEW_WASM_SIMD_FEATURES})
+        target_link_options(${target} PRIVATE ${STREETVIEW_WASM_SIMD_FEATURES})
+    endforeach()
     set_target_properties(streetview-wasm-simd PROPERTIES OUTPUT_NAME "streetview-wasm.simd")
+    set_target_properties(streetview-dsp-simd PROPERTIES OUTPUT_NAME "streetview-dsp.simd")
 else()
     # -----------------------------------------------------------------------
     # Host target (system compiler — no Emscripten, no browser)
     # -----------------------------------------------------------------------
-    # Same algorithms, compiled natively so `ctest` can assert them against the
-    # golden vectors captured from the shipping WASM binary.
-    # bindings.cpp is an empty TU on the host (#ifdef __EMSCRIPTEN__). Including
-    # it here puts it in compile_commands.json so `clang-tidy -p cpp/build-host`
-    # / `npm run lint:cpp` can see every algorithm source. Keep this list, the
-    # emcc list above and scripts/lint-cpp.sh SOURCES in step when a TU is added.
-    add_library(streetview_cpu STATIC
-        src/noise_module.cpp
-        src/geodesy_module.cpp
-        src/audio_module.cpp
-        src/hrtf_module.cpp
-        src/luma_module.cpp
-        src/cabin_dsp_module.cpp
-        src/depth_module.cpp
-        src/graph_module.cpp
-        src/bindings.cpp
-    )
+    # Same sources, compiled natively (or, with STREETVIEW_WASM_TESTS, as
+    # -msimd128 wasm run under node) so `ctest` can assert them against the
+    # golden vectors captured from the reference WASM binary. runtime.cpp
+    # included: nothing is behind #ifdef __EMSCRIPTEN__ any more, so the host
+    # -Werror builds, ASan/UBSan and clang-tidy see the whole ABI.
+    add_library(streetview_cpu STATIC ${STREETVIEW_SOURCES})
     target_include_directories(streetview_cpu PUBLIC include)
     target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
     # PUBLIC so the test executable (which links this) inherits it too.
@@ -225,18 +247,50 @@ else()
         )
     endif()
 
+    # The same sources again with SV_SIMDE: streetview/simd.h takes the
+    # wasm_simd128 intrinsics path through SIMDe (cpp/third_party/simde), so
+    # the SIMD code the binaries ship — the convolver's direct partition, FFT
+    # and spectral MAC — compiles natively and runs the whole doctest suite,
+    # goldens included, in every host job (ASan/UBSan too). SIMDe is SYSTEM:
+    # the -Werror wall is for our code.
+    add_library(streetview_cpu_simd STATIC ${STREETVIEW_SOURCES})
+    target_include_directories(streetview_cpu_simd PUBLIC include)
+    target_include_directories(streetview_cpu_simd SYSTEM PUBLIC third_party/simde)
+    target_compile_definitions(streetview_cpu_simd PUBLIC SV_SIMDE)
+    target_compile_options(streetview_cpu_simd PRIVATE ${STREETVIEW_HOST_WARNINGS})
+    target_compile_options(streetview_cpu_simd PUBLIC ${STREETVIEW_FP_FLAGS})
+
+    if(EMSCRIPTEN)
+        # The suite as wasm: the SIMD128 paths (SV_SIMDE is moot here — the
+        # real wasm_simd128.h wins in streetview/simd.h), exceptions off like
+        # the shipped binaries, enough memory for ASan's shadow.
+        set(STREETVIEW_WASM_SIMD_FEATURES
+            -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals)
+        foreach(lib IN ITEMS streetview_cpu streetview_cpu_simd)
+            target_compile_options(${lib} PUBLIC ${STREETVIEW_WASM_SIMD_FEATURES})
+            target_link_options(${lib} PUBLIC ${STREETVIEW_WASM_SIMD_FEATURES}
+                -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=1048576
+                -sEXIT_RUNTIME=1)
+        endforeach()
+    endif()
+
     if(STREETVIEW_SANITIZERS)
         if(MSVC)
             message(FATAL_ERROR "STREETVIEW_SANITIZERS is not supported with MSVC")
         endif()
-        target_compile_options(streetview_cpu PUBLIC
-            -fsanitize=address,undefined -fno-omit-frame-pointer)
-        target_link_options(streetview_cpu PUBLIC -fsanitize=address,undefined)
-        message(STATUS "streetview_cpu: ASan + UBSan ENABLED")
+        foreach(lib IN ITEMS streetview_cpu streetview_cpu_simd)
+            target_compile_options(${lib} PUBLIC
+                -fsanitize=address,undefined -fno-omit-frame-pointer)
+            target_link_options(${lib} PUBLIC -fsanitize=address,undefined)
+        endforeach()
+        message(STATUS "streetview_cpu{,_simd}: ASan + UBSan ENABLED")
     endif()
 
     include(CTest)
     if(BUILD_TESTING)
         add_subdirectory(tests)
+    endif()
+    if(STREETVIEW_FUZZ AND NOT EMSCRIPTEN)
+        add_subdirectory(fuzz)
     endif()
 endif()

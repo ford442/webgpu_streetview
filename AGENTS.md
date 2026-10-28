@@ -83,6 +83,9 @@ npm run test:e2e:smoke
 # C++ WASM algorithms — native host build + golden tests (no emcc, no browser)
 npm run test:cpp
 npm run test:cpp:asan       # same, with ASan + UBSan
+npm run lint:cpp            # clang-format check + clang-tidy
+npm run build:wasm:update   # rebuild with the pinned emcc and copy into public/wasm/
+npm run check:wasm-abi      # generated ABI current; binaries match abi.h by signature
 ```
 
 ### Deployment
@@ -403,7 +406,7 @@ lost, the hold-pause guards, and the public renderer surface.
 
 The intermediate HDR texture is lazily created and resized in `ensureIntermediateTexture()` when canvas dimensions change. Do not cache `GPUTextureView` across frames.
 
-**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, WASM fBm tile), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `fill_particle_seeds`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
+**Pass 2b (opt-in)** — `weather-post-compute.wgsl` via `ComputeWeatherPostProcessor.ts`, selected with `?weather=compute` or the `high` / `ultra` visual quality presets (Low and Medium stay fragment; a High preset that fails the compute limit gate degrades once to fragment and records it on `webgpuProbe.weatherDegrade`). Same effects as Pass 2, but as a `@workgroup_size(16,16,1)` compute shader writing an `rgba16float` storage texture (`COMPUTE_WEATHER_OUTPUT_FORMAT`; colour history matches it, particle state stays `rgba32float`), followed by a `textureLoad` blit render pass to the swap-chain surface. Its 13-entry bind group is built once per ping-pong parity and reused until a bound resource changes (resize, particle seeds, history) — never per frame. Uses an `extraBuffer` storage array (index 0–39) mapped to the same `WeatherParamIndex` layout as Pass 2, and exposes additional `image_video_effects`-compatible bindings for depth textures, data textures, and a `plasmaBuffer` storage array. Live resources: `writeDepthTexture` / `readDepthTexture` (bindings 6/4), `plasmaBuffer` (binding 12, the fBm dust tile from `renderer/weatherNoiseTile.ts`), and GPU precipitation on bindings 7/8 (`weather-particles.wgsl`, seeded by `renderer/weatherParticleSeeds.ts`) at High/Ultra. `dataTextureC` stays a 1x1 dummy. `src/renderer/weatherShaderParity.test.ts` is the WGSL parity guard for `applyNight`, `snow(...)` and the shared helper bodies (including the noise-tile sampler) between fragment and compute — the particle layer is compute-only. See "Weather Post-Process: Fragment vs Compute" in `docs/RENDERER_FALLBACK.md`.
 
 `ComputeWeatherPostProcessor.ts` is a **façade**; the moving parts live in `src/renderer/computeWeather/` — `constants.ts` (sizes, workgroup, blit shader), `resources.ts` (samplers, shared buffers, 1×1 dummies, write/depth/history textures), `particles.ts` (GPU precipitation: state ping-pong, density splat, the three pipelines), `lut.ts` (look-LUT swap, bind group 1), `weatherParams.ts` (the shared 44-float block), `pipeline.ts` (bind-group layouts + builders — **the binding indices**), `dispatch.ts` (pass recording and ordering). Add a new weather surface by extending the relevant module, not the façade.
 
@@ -789,11 +792,21 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
 audio engine, panorama luma analysis, scene-depth calibration) has **one
 implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
-domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth), shipped as the
-committed binaries (`public/wasm/streetview-wasm.wasm` and the SIMD128
-`streetview-wasm.simd.wasm`, same sources). There is **no JS twin**: the binary
-runs on the main thread, in the AudioWorklet and in Vitest (`src/setupTests.ts`
-instantiates the committed `.wasm` and installs it — never mock it).
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth, link graph), shipped
+as two committed SIMD128 binaries: `public/wasm/streetview-wasm.simd.wasm`
+(every kernel, main thread) and `streetview-dsp.simd.wasm` (the cabin engine
+alone, fixed memory, the AudioWorklet). The scalar build is CI's oracle and
+never ships; the browser floor is Chrome 91 / Firefox 89 / Safari 16.4. There
+is **no JS twin**: the binaries run on the main thread, in the AudioWorklet and
+in Vitest (`src/setupTests.ts` instantiates the committed `.wasm` and installs
+it — never mock it).
+
+- **The ABI** is `cpp/include/streetview/abi.h`: one `SV_EXPORT(name)`
+  declaration per export (`platform.h` — no `#ifdef __EMSCRIPTEN__` elsewhere).
+  `npm run gen:wasm-abi` writes `src/wasm/abi.generated.ts`; `npm run
+  check:wasm-abi` (in `verify`) fails a stale table or a binary whose wasm type
+  section differs from abi.h; the loader binds through `bindWasmExports`
+  (presence + arity). Never hand-edit the generated file.
 
 - **Boot**: `src/index.tsx` awaits `loadBootWasm()` (`renderer/bootWasm.ts`)
   before rendering `<App />`, and `Renderer.init` awaits the same load beside
@@ -813,36 +826,56 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   `npm run test:cpp:asan` adds ASan + UBSan. Configuring writes
   `cpp/build-host/compile_commands.json`. Only `build-host` copies that file
   to `cpp/compile_commands.json` (ASan must not clobber it). `cpp/.clangd`
-  points at `build-host`. `npm run lint:cpp` runs clang-tidy, **gating on
-  `bugprone-*`** (`cpp/.clang-tidy` `WarningsAsErrors`; modernize/readability
-  stay advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which
-  must list every `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++
-  host build. A new translation unit also goes in both CMake source lists and
-  `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks all four.
+  points at `build-host`. `npm run lint:cpp` checks `cpp/.clang-format`
+  (`npm run format:cpp` fixes) and runs clang-tidy, **gating on `bugprone-*`,
+  `clang-analyzer-*` and `performance-*`** (`cpp/.clang-tidy`
+  `WarningsAsErrors`; `cppcoreguidelines-pro-bounds-*` and modernize stay
+  advisory), over `SOURCES` in `scripts/lint-cpp.sh`, which must list every
+  `cpp/src/*.cpp`; CI `wasm-cpp-host` runs it after the g++ host build. A new
+  translation unit also goes in CMake's `STREETVIEW_SOURCES` and
+  `WASM_SOURCE_FILES` — `compileCommandsContract.test.ts` checks them.
+  Every host build runs the suite twice: plain, and on the SIMD source path
+  through SIMDe (`streetview_simd_tests`). `npm run test:wasm:sanitizers`
+  runs it as `-msimd128` wasm under ASan/UBSan (CI `wasm-sanitizers`);
+  `npm run fuzz:cpp` runs the libFuzzer harnesses in `cpp/fuzz/` (nightly).
 - **`src/wasm/__tests__/wasmGoldenParity.test.ts`** — every golden, exactly,
-  on **both** committed binaries through the TS loader (runs with `npm test`),
+  on the committed main binary through the TS loader (runs with `npm test`),
   including the `dsp_render` parameter scripts (FNV-1a checksums + excerpts),
   `luma_analyze` and the depth kernels. `cabinWorklet.test.ts` drives the real
-  worklet source with the cabin goldens.
-- **Build flags** (`cpp/CMakeLists.txt`): `-s STRICT=1`, `-flto` (Release),
-  `-s MAXIMUM_MEMORY` 128 MiB (a 5K snapshot `downsample_2d` reserves 64 MiB of
-  arena), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
+  worklet source on the DSP binary with the cabin goldens.
+- **Builds** go to `cpp/build-emscripten/out/`; `npm run build:wasm:update`
+  copies the shipped binaries into `public/wasm/` (plain `build:wasm` and
+  `npm run build` only compare, so a build leaves git clean).
+- **Build flags** (`cpp/CMakeLists.txt`): `-sSTRICT=1`, `-flto` (Release), the
+  pinned feature set `-msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext
+  -mmutable-globals` (never relaxed-simd); the DSP binary is 1 MiB fixed, no
+  growth, emmalloc (`check-wasm-abi`: no `memory.grow`, no imports, < 32 KB);
+  `-s MAXIMUM_MEMORY` 128 MiB (sized when a 5K snapshot thumb reserved 64 MiB of
+  arena; since #341 the thumb is canvas-prescaled to ≤ 640×360 first), `-s STACK_SIZE=65536` — `WASM_STACK_SIZE` in `src/wasm/marshal.ts`
   must match (the loader asserts it; `wasmAbiLock.test.ts` diffs it). A flag
   change that moves a single golden bit is dropped, not re-baselined.
-- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — export-name drift across
-  `bindings.cpp`, `CMakeLists.txt`, the TS loader, the header, and the committed binary.
+- **`src/wasm/__tests__/wasmAbiLock.test.ts`** — abi.h vs the generated table
+  vs both committed binaries' type sections, by signature (it narrows a param
+  in a scratch abi.h to prove the chain fails).
 - **`src/wasm/__tests__/wasmScratchArena.test.ts`** — the loader's real
   marshalling wrappers over the committed binary. Kernel buffers live in a
   `malloc`'d arena above the C++ stack (`src/wasm/marshal.ts`); **never** hand a
   kernel a fixed linear-memory offset — the old 64 KiB one overlapped the
-  stack and corrupted `batch_haversine` at |lat| > 45°.
-- **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility)
-  and `build-wasm-emscripten` (C++ → both wasm binaries via pinned emcc + ABI
-  check + the SIMD binary against the goldens). Both are required.
+  stack and corrupted `batch_haversine` at |lat| > 45°. The arena shrinks back
+  to 64 KiB after an idle second (#341); the test asserts that and a ≤ 1 MiB
+  high-water mark for a normal frame's kernels.
+- **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility),
+  `build-wasm-emscripten` (C++ → the binaries via pinned emcc; the committed
+  ones must match; ABI check; the scalar oracle against the goldens) and
+  `wasm-sanitizers`. All are required.
 - **Cabin audio engine** (`cabin_dsp_module.cpp`, #321): runs inside the
-  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`). Never reintroduce a
-  main-thread PCM queue; post the binary's **bytes**, not a
-  `WebAssembly.Module` (Chromium drops it with `messageerror`). The car radio
+  AudioWorklet (`src/car/audio/cabinWorkletSource.ts`) from
+  `streetview-dsp.simd.wasm`; its convolver is UPOLS (128-sample partitions,
+  in-house radix-4 FFT, up to 16384 taps — `docs/WASM_BRIDGE.md` §3a). Never
+  reintroduce a main-thread PCM queue; post the binary's **bytes**, not a
+  `WebAssembly.Module` (Chromium drops it with `messageerror`). Targets go
+  through the `SharedArrayBuffer` seqlock (`cabinParamRing.ts`) when
+  cross-origin isolated, else `params` messages. The car radio
   shares `src/audio/carAudioGraph.ts`'s context so it can run through the
   cabin. Probe: `window.__CABIN_AUDIO_PROBE__`; e2e: `e2e/cabin-audio.spec.ts`.
 
@@ -850,10 +883,13 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`
 application code, and never re-implement a kernel in TypeScript (not even for
 tests — Vitest runs the binary). Geodesy in particular has exactly one copy per formula:
-`haversineDistance` / `initialBearing` (`navigation.ts`) and `offsetLatLng`
+`initialBearing` (`navigation.ts`) and `offsetLatLng`
 (`historicalImagery.ts`) are thin dispatches onto the WASM exports, and route
 geometry (`services/routing/routeGeometry.ts`) wraps `polyline_resample` /
-`polyline_project`. Full detail: `docs/WASM_BRIDGE.md`.
+`polyline_project`. One-line maths is the exception (#341): `normalizeAngle`,
+`signedAngleDiff` and a single-pair `haversineMeters` are f64 TypeScript in
+`navigation.ts` — boot-time UI never calls `requireWasm` for them, and the
+batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - **Rule of thumb**: if a behavior can be expressed as pure functions or mocked-component state transitions, write a Vitest unit test. If it requires a real browser, Maps canvas, or visual crossfade timing, put it in `e2e/` (or the hold-pause probe) — don't try to fake a GPU in jsdom.
 
 ### Existing Tests

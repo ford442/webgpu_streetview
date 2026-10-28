@@ -1,191 +1,138 @@
 /**
  * src/wasm/__tests__/wasmAbiLock.test.ts
  *
- * Locks the WASM ABI across the places it is declared:
+ * Locks the WASM ABI to its one source, cpp/include/streetview/abi.h
+ * (`SV_EXPORT(name)` on every declaration):
  *
- *   1. cpp/src/bindings.cpp             – Emscripten C++ wrappers
- *   2. cpp/CMakeLists.txt               – EXPORTED_FUNCTIONS for the emcc link
- *   3. src/wasm/index.ts                – TypeScript loader (`exp['…']`)
- *   4. cpp/include/streetview_wasm.h    – sw_* twins of the exported names
- *
- * plus the committed binary in public/wasm and the C++ source hash that
- * scripts/verify-build.sh checks. Adding an export to one of them and
- * forgetting the others is the failure mode this file exists to catch.
+ *   - src/wasm/abi.generated.ts is what scripts/gen-wasm-abi.mjs makes of it
+ *     now (a param type changed without `npm run gen:wasm-abi` fails here);
+ *   - each committed binary's *type section* carries exactly those
+ *     signatures (scripts/check-wasm-abi.mjs — a C++ change without a rebuild
+ *     fails here), and the worklet binary has no memory.grow, no imports and
+ *     fits its 32 KB budget;
+ *   - the loader binds every export through the table (bindExports.ts), and
+ *     every TS API method is backed by one;
+ *   - the source hash, the goldens' binary SHA and the stack size agree with
+ *     CMake.
  */
 
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
+import { checkWasmBinary, DSP_MAX_BYTES } from '../../../scripts/check-wasm-abi.mjs';
+import { ABI_GENERATED, ABI_HEADER, generateAbiModule, parseAbiHeader } from '../../../scripts/gen-wasm-abi.mjs';
+import { WASM_SOURCE_FILES } from '../../../scripts/wasm-source-hash.mjs';
+import { WASM_ABI, DSP_EXPORT_NAMES } from '../abi.generated';
+import { abiExportNames, bindWasmExports } from '../bindExports';
 
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 
 const read = (...parts: string[]): string =>
   readFileSync(join(REPO_ROOT, ...parts), 'utf8');
+const binary = (file: string): Uint8Array<ArrayBuffer> =>
+  new Uint8Array(readFileSync(join(REPO_ROOT, 'public', 'wasm', file)));
 
-/** The ABI. Every list below must agree with this, in this exact set. */
-const EXPECTED_EXPORTS = [
-  'seed',
-  'noise2d',
-  'fill_noise_buffer',
-  'fbm2d',
-  'fill_fbm_buffer',
-  'fill_particle_seeds',
-  'normalize_angle',
-  'signed_angle_diff',
-  'haversine',
-  'batch_haversine',
-  'offset_latlng',
-  'initial_bearing',
-  'polyline_resample',
-  'polyline_project',
-  'fill_engine_noise',
-  'fill_cabin_ir',
-  'fill_hrtf',
-  'luma_histogram_bt709',
-  'reduce_luma_bt709',
-  'downsample_2d',
-  'luma_analyze',
-  'dsp_create',
-  'dsp_destroy',
-  'dsp_set_params',
-  'dsp_set_ir',
-  'dsp_render',
-  'dsp_max_ir_taps',
-  'depth_percentiles',
-  'depth_near_depth',
-  'depth_normalize',
-  'graph_astar',
-  'graph_nearest',
-] as const;
+const sorted = (names: Iterable<string>): string[] => Array.from(names).sort();
 
-/** Emscripten runtime / STANDALONE_WASM helpers — not part of our ABI. */
-const EMSCRIPTEN_RUNTIME_EXPORTS = new Set([
-  'malloc',
-  'free',
-  '_initialize',
-  'emscripten_stack_get_base',
-  'emscripten_stack_get_end',
-  '_emscripten_stack_restore',
-  'emscripten_stack_get_current',
-]);
-
-/**
- * Runtime exports the loader depends on: `malloc`/`free` back the scratch
- * arena, `emscripten_stack_get_base` proves it sits above the stack,
- * `emscripten_stack_get_end` that the stack is the size the build pinned, and
- * `_initialize` must run before either (it is what sets the stack base).
- */
-const LOADER_RUNTIME_EXPORTS = [
-  '_initialize',
-  'emscripten_stack_get_base',
-  'emscripten_stack_get_end',
-  'free',
-  'malloc',
-] as const;
-
-function sorted(names: Iterable<string>): string[] {
-  return Array.from(names).sort();
+/** The translation units CMake lists for a target (`set(NAME ...)`). */
+function cmakeList(name: string): string[] {
+  const body = read('cpp', 'CMakeLists.txt').match(new RegExp(`set\\(${name}\\s+([^)]*)\\)`))?.[1] ?? '';
+  return body.split(/\s+/).filter((s) => s.endsWith('.cpp'));
 }
 
-const expectedSorted = sorted(EXPECTED_EXPORTS);
-
 describe('WASM ABI lock', () => {
-  it('bindings.cpp defines a wrapper for every export', () => {
-    const bindings = read('cpp', 'src', 'bindings.cpp');
-    const names = new Set<string>();
-    for (const match of bindings.matchAll(
-      /EMSCRIPTEN_KEEPALIVE\s+[A-Za-z_][A-Za-z0-9_*\s]*?\s([A-Za-z0-9_]+)\s*\(/g,
-    )) {
-      names.add(match[1]!);
-    }
-    expect(sorted(names)).toEqual(expectedSorted);
+  it('abi.generated.ts is current with abi.h (npm run gen:wasm-abi)', () => {
+    expect(read(ABI_GENERATED)).toBe(generateAbiModule(REPO_ROOT));
   });
 
-  it('CMake EXPORTED_FUNCTIONS matches the expected set', () => {
+  it('a param type changed in abi.h without regenerating is caught twice', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'abi-lock-'));
+    try {
+      cpSync(join(REPO_ROOT, 'cpp', 'include'), join(dir, 'cpp', 'include'), { recursive: true });
+      cpSync(join(REPO_ROOT, 'cpp', 'src'), join(dir, 'cpp', 'src'), { recursive: true });
+      cpSync(join(REPO_ROOT, 'cpp', 'CMakeLists.txt'), join(dir, 'cpp', 'CMakeLists.txt'));
+      const header = read(ABI_HEADER);
+      const narrowed = header.replace('double phase, double sample_index', 'float phase, double sample_index');
+      expect(narrowed).not.toBe(header);
+      writeFileSync(join(dir, ABI_HEADER), narrowed);
+      // The committed table no longer matches what the generator makes…
+      expect(generateAbiModule(dir)).not.toBe(read(ABI_GENERATED));
+      // …and the committed binary's type section no longer matches abi.h.
+      const problems = checkWasmBinary(binary('streetview-wasm.simd.wasm'), 'main', parseAbiHeader(dir));
+      expect(problems.join('\n')).toMatch(/fill_engine_noise: binary .* ≠ abi\.h/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the shipped main binary matches abi.h signature for signature', () => {
+    expect(checkWasmBinary(binary('streetview-wasm.simd.wasm'), 'main', parseAbiHeader(REPO_ROOT))).toEqual([]);
+  });
+
+  it(`the worklet binary matches abi.h, never grows memory, imports nothing and is < ${DSP_MAX_BYTES} B`, () => {
+    const bytes = binary('streetview-dsp.simd.wasm');
+    expect(checkWasmBinary(bytes, 'dsp', parseAbiHeader(REPO_ROOT))).toEqual([]);
+    expect(bytes.length).toBeLessThan(DSP_MAX_BYTES);
+  });
+
+  it('the scalar build is a CI oracle only: it is not committed', () => {
+    expect(existsSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'))).toBe(false);
+  });
+
+  it('the worklet binary exports exactly the dsp_* engine and the runtime', () => {
+    expect(sorted(DSP_EXPORT_NAMES)).toEqual(sorted(abiExportNames('dsp')));
+    for (const name of DSP_EXPORT_NAMES) {
+      expect(name.startsWith('dsp_') || name.startsWith('sv_')).toBe(true);
+    }
+  });
+
+  it('every export is defined in a TU CMake links (and only dsp TUs reach the worklet)', () => {
+    const main = cmakeList('STREETVIEW_SOURCES');
+    const dsp = cmakeList('STREETVIEW_DSP_SOURCES');
+    expect(main.length).toBeGreaterThan(1);
+    expect(dsp.length).toBeGreaterThan(0);
+    for (const e of parseAbiHeader(REPO_ROOT)) {
+      expect(main.some((tu) => tu.endsWith(e.unit)), e.name).toBe(true);
+      expect(e.binaries.includes('dsp'), e.name).toBe(dsp.some((tu) => tu.endsWith(e.unit)));
+    }
+  });
+
+  it('the source hash covers every TU and every streetview/ header', () => {
+    const units = cmakeList('STREETVIEW_SOURCES').map((tu) => tu.replace(/^.*src\//, 'cpp/src/'));
+    for (const tu of units) expect(WASM_SOURCE_FILES).toContain(tu);
+    for (const header of ['abi.h', 'platform.h', 'geodesy.h', 'audio_kernels.h', 'fft256.h', 'simd.h']) {
+      expect(WASM_SOURCE_FILES).toContain(`cpp/include/streetview/${header}`);
+    }
+  });
+
+  it('the loader binds the main binary through the table, arity included', async () => {
+    const { instance } = await WebAssembly.instantiate(binary('streetview-wasm.simd.wasm'), {
+      env: { emscripten_notify_memory_growth: () => {} },
+    });
+    const { fns } = bindWasmExports(instance.exports, 'main');
+    expect(sorted(Object.keys(fns))).toEqual(sorted(abiExportNames('main')));
+    // A wrong arity is refused at load, in every browser.
+    const tampered = { ...instance.exports, dsp_set_ir: (a: number, b: number) => a + b };
+    expect(() => bindWasmExports(tampered, 'main')).toThrow(/dsp_set_ir takes 2 params, abi\.h declares 3/);
+  });
+
+  it('fill_engine_noise keeps the f64 phase signature', () => {
+    // Bug 2 was an f32 absolute-time argument; narrowing the phase or the
+    // sample index back to float must fail loudly here.
+    expect(WASM_ABI.fill_engine_noise.params.slice(5, 7)).toEqual(['f64', 'f64']);
+    expect(WASM_ABI.fill_engine_noise.results).toEqual(['f64']);
+  });
+
+  it('the loader expects the stack size CMake pins for the main binary', async () => {
     const cmake = read('cpp', 'CMakeLists.txt');
-    const listMatch = cmake.match(/EXPORTED_FUNCTIONS=\[([^\]]*)\]/);
-    expect(listMatch).not.toBeNull();
-    const names = new Set<string>();
-    for (const raw of listMatch![1]!.split(',')) {
-      const name = raw.trim().replace(/^'|'$/g, '');
-      if (!name) continue;
-      expect(name.startsWith('_')).toBe(true);
-      const stripped = name.slice(1);
-      if (!EMSCRIPTEN_RUNTIME_EXPORTS.has(stripped)) names.add(stripped);
-    }
-    expect(sorted(names)).toEqual(expectedSorted);
-  });
-
-  it('streetview_wasm.h declares a sw_* twin for every export', () => {
-    const header = read('cpp', 'include', 'streetview_wasm.h');
-    const declared = new Set<string>();
-    for (const match of header.matchAll(/\bsw_([A-Za-z0-9_]+)\s*\(/g)) {
-      declared.add(match[1]!);
-    }
-    expect(sorted(declared)).toEqual(expectedSorted);
-  });
-
-  it('the TypeScript loader reads exactly the expected exports', () => {
-    const loader = read('src', 'wasm', 'index.ts');
-    const names = new Set<string>();
-    const runtime = new Set<string>();
-    for (const match of loader.matchAll(/exp\['([A-Za-z0-9_]+)'\]/g)) {
-      const name = match[1]!;
-      if (name === 'memory') continue;
-      (EMSCRIPTEN_RUNTIME_EXPORTS.has(name) ? runtime : names).add(name);
-    }
-    expect(sorted(names)).toEqual(expectedSorted);
-    expect(sorted(runtime)).toEqual(sorted(LOADER_RUNTIME_EXPORTS));
-  });
-
-  it('the loader expects the stack size CMake pins', async () => {
-    const cmake = read('cpp', 'CMakeLists.txt');
-    const pinned = Number(cmake.match(/-s STACK_SIZE=(\d+)/)?.[1]);
+    const pinned = Number(cmake.match(/-sSTACK_SIZE=(\d+)/)?.[1]);
     const { WASM_STACK_SIZE } = await import('../marshal');
     expect(pinned).toBe(WASM_STACK_SIZE);
   });
 
-  it('CMake and the committed binary provide every runtime export the loader needs', async () => {
-    const cmake = read('cpp', 'CMakeLists.txt');
-    const list = cmake.match(/EXPORTED_FUNCTIONS=\[([^\]]*)\]/)![1]!;
-    const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
-    const exported = new Set(
-      WebAssembly.Module.exports(await WebAssembly.compile(bytes)).map((e) => e.name),
-    );
-    for (const name of LOADER_RUNTIME_EXPORTS) {
-      // _initialize is emitted by --no-entry itself, not via EXPORTED_FUNCTIONS.
-      if (name !== '_initialize') expect(list).toContain(`'_${name}'`);
-      expect(exported.has(name)).toBe(true);
-    }
-  });
-
-  it('fill_engine_noise keeps the f64 phase signature in bindings, header and loader', () => {
-    // Bug 2 was an f32 absolute-time argument; a refactor that narrows the
-    // phase or the sample index back to float must fail loudly here.
-    const squash = (text: string): string => text.replace(/\s+/g, ' ');
-    expect(squash(read('cpp', 'src', 'bindings.cpp'))).toContain(
-      'double fill_engine_noise(float* buf, int count, float rpm, float load, float speed_kmh, double phase, double sample_index, float sample_rate)',
-    );
-    expect(squash(read('cpp', 'include', 'streetview_wasm.h'))).toContain(
-      'double sw_fill_engine_noise(float* buf, int count, float rpm, float load, float speed_kmh, double phase, double sample_index, float sample_rate);',
-    );
-    expect(squash(read('src', 'wasm', 'index.ts'))).toContain(
-      'phase: number, sampleIndex: number, sampleRate: number, ) => number;',
-    );
-  });
-
-  it('the committed binary exports every expected function (runtime extras allowed)', async () => {
-    const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
-    const module = await WebAssembly.compile(bytes);
-    const names = new Set<string>();
-    for (const { name, kind } of WebAssembly.Module.exports(module)) {
-      if (kind === 'function' && !EMSCRIPTEN_RUNTIME_EXPORTS.has(name)) names.add(name);
-    }
-    expect(sorted(names)).toEqual(expectedSorted);
-  });
-
-  it('the committed binary is not stale relative to the C++ sources', () => {
+  it('the committed binaries are not stale relative to the C++ sources', () => {
     const recorded = read('public', 'wasm', 'streetview-wasm.wasm.sha256').trim();
     const actual = execFileSync('node', ['scripts/wasm-source-hash.mjs'], {
       cwd: REPO_ROOT,
@@ -194,14 +141,13 @@ describe('WASM ABI lock', () => {
     expect(actual).toBe(recorded);
   });
 
-  it('the committed binary SHA-256 matches the goldens record', () => {
-    const bytes = readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-wasm.wasm'));
-    const sha = createHash('sha256').update(bytes).digest('hex');
+  it('the goldens were captured from the committed main binary', () => {
+    const sha = createHash('sha256').update(binary('streetview-wasm.simd.wasm')).digest('hex');
     const goldens = JSON.parse(read('cpp', 'tests', 'goldens.json')) as { wasmSha256: string };
     expect(sha).toBe(goldens.wasmSha256);
   });
 
-  it('every API method on the TS wrapper is backed by a documented export', async () => {
+  it('every API method on the TS wrapper is backed by an export', async () => {
     const { loadWasmModule } = await import('../index');
     const api = await loadWasmModule();
     // createCabinDsp wraps the whole dsp_* family behind one instance object.
@@ -212,9 +158,6 @@ describe('WASM ABI lock', () => {
       fbm2d: ['fbm2d'],
       fillFbmBuffer: ['fill_fbm_buffer'],
       fillParticleSeeds: ['fill_particle_seeds'],
-      normalizeAngle: ['normalize_angle'],
-      signedAngleDiff: ['signed_angle_diff'],
-      haversine: ['haversine'],
       batchHaversine: ['batch_haversine'],
       offsetLatLng: ['offset_latlng'],
       initialBearing: ['initial_bearing'],
@@ -240,8 +183,8 @@ describe('WASM ABI lock', () => {
     for (const method of Object.keys(methodToExport)) {
       expect(typeof (api as unknown as Record<string, unknown>)[method]).toBe('function');
     }
-    const apiMethods = sorted(Object.keys(api));
-    expect(apiMethods).toEqual(sorted(Object.keys(methodToExport)));
-    expect(sorted(Object.values(methodToExport).flat())).toEqual(expectedSorted);
+    expect(sorted(Object.keys(api))).toEqual(sorted(Object.keys(methodToExport)));
+    const runtime = abiExportNames('main').filter((name) => name.startsWith('sv_'));
+    expect(sorted([...Object.values(methodToExport).flat(), ...runtime])).toEqual(sorted(abiExportNames('main')));
   });
 });

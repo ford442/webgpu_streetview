@@ -11,16 +11,25 @@
  *     the stack, and the loader refuses a layout where it would not be.
  *   - f32 engine time. fill_engine_noise used to take the absolute stream
  *     time as f32; an hour in, most consecutive samples were duplicates.
+ *
+ * plus the arena's size contract (#341): it returns to the default after an
+ * idle second, and a normal frame's kernels never grow it past 1 MiB.
  */
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import type { StreetViewWasmAPI } from '../abi';
-import { instantiateStreetViewWasm } from '../index';
-import { createScratchArena, SCRATCH_INITIAL_BYTES } from '../marshal';
+import { _scratchArenaOf, instantiateStreetViewWasm } from '../index';
+import {
+  createScratchArena,
+  SCRATCH_IDLE_SHRINK_MS,
+  SCRATCH_INITIAL_BYTES,
+  type ScratchClock,
+} from '../marshal';
+import { haversineMeters } from '../../utils/navigation';
 
-const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.wasm');
+const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.simd.wasm');
 
 let wasm: StreetViewWasmAPI;
 /**
@@ -32,9 +41,36 @@ let settled: StreetViewWasmAPI;
 
 beforeAll(async () => {
   wasm = await instantiateStreetViewWasm(readFileSync(WASM_PATH));
-  settled = await instantiateStreetViewWasm(readFileSync(WASM_PATH));
+  // Its idle shrink never fires, so it really never relocates.
+  settled = await instantiateStreetViewWasm(readFileSync(WASM_PATH), {
+    scratchClock: { now: () => 0, setTimeout: () => {} },
+  });
   settled.fillNoiseBuffer(new Float32Array(1024 * 1024), 1024, 1024, 1, 0, 0);
 });
+
+/** A clock the test advances by hand; due callbacks run on `advance`. */
+function manualClock(): ScratchClock & { advance(ms: number): void; pending(): number } {
+  let now = 0;
+  let timers: { at: number; callback: () => void }[] = [];
+  return {
+    now: () => now,
+    setTimeout: (callback, ms) => {
+      timers.push({ at: now + ms, callback });
+    },
+    advance(ms: number): void {
+      now += ms;
+      for (;;) {
+        const due = timers.filter((t) => t.at <= now);
+        if (due.length === 0) return;
+        timers = timers.filter((t) => t.at > now);
+        for (const t of due) t.callback();
+      }
+    },
+    pending: () => timers.length,
+  };
+}
+
+const MiB = 1024 * 1024;
 
 function route(points: number, lat: number): Float64Array {
   const p = new Float64Array(points * 2);
@@ -51,15 +87,15 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
     [1000, 52],
     [340, 52],
     [5000, -67.5],
-  ])('batchHaversine: %i points at lat %f match per-pair haversine within 1e-6 m', (n, lat) => {
-    // haversine() takes scalars, so it never touches the arena.
+  ])('batchHaversine: %i points at lat %f match the per-pair TS haversine within 1e-6 m', (n, lat) => {
+    // haversineMeters is f64 TS, so it never touches the arena.
     const pts = route(n, lat);
     const segs = new Float64Array(n - 1);
     const total = wasm.batchHaversine(pts, segs);
     let sum = 0;
     let worst = 0;
     for (let i = 0; i < n - 1; i++) {
-      const d = wasm.haversine(pts[i * 2]!, pts[i * 2 + 1]!, pts[i * 2 + 2]!, pts[i * 2 + 3]!);
+      const d = haversineMeters(pts[i * 2]!, pts[i * 2 + 1]!, pts[i * 2 + 2]!, pts[i * 2 + 3]!);
       sum += d;
       worst = Math.max(worst, Math.abs(segs[i]! - d));
     }
@@ -170,6 +206,75 @@ describe('WASM scratch arena (compiled binary through the loader)', () => {
   });
 });
 
+describe('WASM scratch arena size (compiled binary through the loader)', () => {
+  test('a big input grows the arena; an idle second returns it to the default and kernels still agree', async () => {
+    const clock = manualClock();
+    const api = await instantiateStreetViewWasm(readFileSync(WASM_PATH), { scratchClock: clock });
+    const arena = _scratchArenaOf(api)!;
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+
+    api.seed(42);
+    api.fillNoiseBuffer(new Float32Array(512 * 512), 512, 512, 37.5, 3, -5);
+    expect(arena.capacity).toBe(MiB);
+    expect(arena.highWaterBytes).toBe(MiB);
+
+    // Small kernels keep running inside the second: no shrink yet.
+    const pts = route(1000, 60);
+    clock.advance(SCRATCH_IDLE_SHRINK_MS - 1);
+    expect(api.batchHaversine(pts, new Float64Array(999))).toBe(settled.batchHaversine(pts, new Float64Array(999)));
+    expect(arena.capacity).toBe(MiB);
+
+    clock.advance(1);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+    expect(clock.pending()).toBe(0);
+    expect(arena.highWaterBytes).toBe(MiB);
+
+    // After the shrink, small and large kernels both still land in valid scratch.
+    expect(api.batchHaversine(pts, new Float64Array(999))).toBe(settled.batchHaversine(pts, new Float64Array(999)));
+    const big = route(5000, -67.5);
+    expect(Array.from(api.polylineResample(big, 10))).toEqual(Array.from(settled.polylineResample(big, 10)));
+    expect(arena.capacity).toBeGreaterThan(SCRATCH_INITIAL_BYTES);
+    clock.advance(SCRATCH_IDLE_SHRINK_MS);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+  });
+
+  test("a normal frame's kernels never grow the arena past 1 MiB", async () => {
+    const clock = manualClock();
+    const api = await instantiateStreetViewWasm(readFileSync(WASM_PATH), { scratchClock: clock });
+    const arena = _scratchArenaOf(api)!;
+
+    // Route following on a long route (5000 vertices), and a resample of it.
+    const pts = route(5000, 52);
+    api.polylineProject(pts, 52.25, -0.75);
+    api.batchHaversine(pts, new Float64Array(4999));
+    api.offsetLatLng(52, -1, 10, 45);
+    // Engine / IR / HRTF blocks.
+    api.fillEngineNoise(new Float32Array(1024), 1024, 2500, 0.6, 30, 0, 0, 48000);
+    api.fillCabinIr(new Float32Array(2048), 2048, 1, 0.2, 48000);
+    api.fillHrtf(new Float32Array(256), new Float32Array(256), 256, 30, 48000);
+    // Scene depth at its ≈252² input.
+    const n = 252 * 252;
+    const disparity = Float32Array.from({ length: n }, (_, i) => (i % 997) / 997);
+    const [lo, hi] = api.depthPercentiles(disparity, 2, 98);
+    api.depthNearDepth(disparity, 252, 252, 0.5);
+    api.depthNormalize(
+      disparity,
+      { lo, hi, nearDepth: 0.1, previous: null },
+      { width: 252, height: 252, horizonY: 0.5, aligned: true, sameScene: true },
+      new Float32Array(n),
+    );
+    // gpu-chores CPU gauge at quarter-res of a 1080p canvas, and the snapshot
+    // picker thumb's prescaled 640×360 intermediate.
+    api.lumaAnalyze(new Uint8Array(480 * 270 * 4), 480, 270, 480, 270);
+    api.downsample2d(new Uint8Array(640 * 360 * 4), 640, 360, 160, 90);
+
+    expect(arena.highWaterBytes).toBeLessThanOrEqual(MiB);
+    expect(arena.capacity).toBeLessThanOrEqual(MiB);
+    clock.advance(SCRATCH_IDLE_SHRINK_MS);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+  });
+});
+
 describe('createScratchArena', () => {
   function fakeHeap(start: number): {
     malloc: (n: number) => number;
@@ -212,5 +317,62 @@ describe('createScratchArena', () => {
   test('rejects a failed or misaligned malloc', () => {
     expect(() => createScratchArena(() => 0, () => {})).toThrow(/malloc/);
     expect(() => createScratchArena(() => 80004, () => {})).toThrow(/unaligned/);
+  });
+
+  test('shrinks back to the default after an idle second, not before, and re-arms while large', () => {
+    const heap = fakeHeap(80000);
+    const clock = manualClock();
+    const arena = createScratchArena(heap.malloc, heap.free, 70848, clock);
+    expect(clock.pending()).toBe(0);
+
+    arena.reserve(SCRATCH_INITIAL_BYTES * 3);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES * 4);
+    expect(clock.pending()).toBe(1);
+
+    // Another large reservation half-way through restarts the idle second.
+    clock.advance(SCRATCH_IDLE_SHRINK_MS / 2);
+    arena.reserve(SCRATCH_INITIAL_BYTES * 2);
+    expect(clock.pending()).toBe(1);
+    clock.advance(SCRATCH_IDLE_SHRINK_MS / 2);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES * 4);
+    expect(clock.pending()).toBe(1);
+
+    // Default-sized work does not keep it large.
+    arena.reserve(16);
+    clock.advance(SCRATCH_IDLE_SHRINK_MS / 2);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+    expect(clock.pending()).toBe(0);
+    expect(heap.live.size).toBe(1);
+    expect(arena.highWaterBytes).toBe(SCRATCH_INITIAL_BYTES * 3);
+  });
+
+  test('never arms a timer while the arena stays at the default', () => {
+    const heap = fakeHeap(80000);
+    const clock = manualClock();
+    const arena = createScratchArena(heap.malloc, heap.free, 70848, clock);
+    for (let i = 0; i < 100; i++) arena.reserve(SCRATCH_INITIAL_BYTES);
+    expect(clock.pending()).toBe(0);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+  });
+
+  test('shrinkTo frees the big block, keeps a smaller one, and recovers from a failed malloc', () => {
+    const heap = fakeHeap(80000);
+    const clock = manualClock();
+    let failNext = false;
+    const malloc = (n: number): number => (failNext ? 0 : heap.malloc(n));
+    const arena = createScratchArena(malloc, heap.free, 70848, clock);
+    arena.shrinkTo(SCRATCH_INITIAL_BYTES * 8);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+
+    arena.reserve(SCRATCH_INITIAL_BYTES * 8);
+    failNext = true;
+    arena.shrinkTo(SCRATCH_INITIAL_BYTES);
+    expect(arena.capacity).toBe(0);
+    expect(heap.live.size).toBe(0);
+    failNext = false;
+    const ptr = arena.reserve(8);
+    expect(ptr).not.toBe(0);
+    expect(arena.capacity).toBe(SCRATCH_INITIAL_BYTES);
+    expect(heap.live).toEqual(new Set([ptr]));
   });
 });

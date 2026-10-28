@@ -39,7 +39,7 @@ const WeatherBinding = {
     colorHistory: 9,
     weatherParams: 10,
     comparisonSampler: 11,
-    /** WASM fBm noise tile (#128). */
+    /** CPU fBm noise tile (#128, `weatherNoiseTile.ts`). */
     noiseTile: 12,
 } as const;
 

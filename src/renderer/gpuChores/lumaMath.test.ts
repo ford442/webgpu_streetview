@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { requireWasm } from '../../wasm';
 import {
-  bt709Bin,
-  downsample2d,
   exposureHintFromMeanLuma,
   histDownsampleSize,
-  lumaHistogramBt709,
   meanLumaFromHistogram,
-  reduceLumaBt709,
 } from './lumaMath';
+
+// The pixel kernels are WASM only (no TS twin): these drive the committed
+// binary through the loader at toy sizes; wasmGoldenParity pins the numbers.
+const { downsample2d, lumaHistogramBt709, reduceLumaBt709 } = requireWasm();
 
 function px(r: number, g: number, b: number, a = 255): number[] {
   return [r, g, b, a];
@@ -15,8 +16,9 @@ function px(r: number, g: number, b: number, a = 255): number[] {
 
 describe('lumaMath BT.709 chores', () => {
   it('bins black at 0 and white at 255', () => {
-    expect(bt709Bin(0, 0, 0)).toBe(0);
-    expect(bt709Bin(255, 255, 255)).toBe(255);
+    const bins = lumaHistogramBt709(Uint8Array.from([...px(0, 0, 0), ...px(255, 255, 255)]), 2, 1);
+    expect(bins[0]).toBe(1);
+    expect(bins[255]).toBe(1);
   });
 
   it('histogram counts a 2x2 checker', () => {

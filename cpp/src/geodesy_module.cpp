@@ -16,7 +16,8 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
+#include "streetview/abi.h"
+#include "streetview/geodesy.h"
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -46,9 +47,8 @@ extern "C" {
 double sw_haversine(double lat1, double lon1, double lat2, double lon2) {
     double dlat = (lat2 - lat1) * kDegToRad;
     double dlon = (lon2 - lon1) * kDegToRad;
-    double a = sin(dlat * 0.5) * sin(dlat * 0.5)
-             + cos(lat1 * kDegToRad) * cos(lat2 * kDegToRad)
-             * sin(dlon * 0.5) * sin(dlon * 0.5);
+    double a = sin(dlat * 0.5) * sin(dlat * 0.5) +
+               cos(lat1 * kDegToRad) * cos(lat2 * kDegToRad) * sin(dlon * 0.5) * sin(dlon * 0.5);
     return kEarthRadiusMeters * 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
 }
 
@@ -59,16 +59,15 @@ double sw_batch_haversine(const double* points, int count, double* out) {
     double total = 0.0;
     for (int i = 0; i < count - 1; ++i) {
         const size_t base = static_cast<size_t>(i) * 2;
-        double d = sw_haversine(pts[base], pts[base + 1],
-                                pts[base + 2], pts[base + 3]);
+        double d = sw_haversine(pts[base], pts[base + 1], pts[base + 2], pts[base + 3]);
         segs[static_cast<size_t>(i)] = d;
         total += d;
     }
     return total;
 }
 
-void sw_offset_latlng(double lat, double lng, double distance_meters,
-                      double bearing_deg, double* out2) {
+void sw_offset_latlng(double lat, double lng, double distance_meters, double bearing_deg,
+                      double* out2) {
     if (out2 == nullptr) return;
     const std::span<double, 2> out(out2, 2);
 
@@ -82,11 +81,9 @@ void sw_offset_latlng(double lat, double lng, double distance_meters,
     const double sin_ang = sin(angular);
     const double cos_ang = cos(angular);
 
-    const double new_lat_rad =
-        asin(sin_lat * cos_ang + cos_lat * sin_ang * cos(bearing));
+    const double new_lat_rad = asin(sin_lat * cos_ang + cos_lat * sin_ang * cos(bearing));
     const double new_lng_rad =
-        lng_rad + atan2(sin(bearing) * sin_ang * cos_lat,
-                        cos_ang - sin_lat * sin(new_lat_rad));
+        lng_rad + atan2(sin(bearing) * sin_ang * cos_lat, cos_ang - sin_lat * sin(new_lat_rad));
 
     out[0] = new_lat_rad * kRadToDeg;
     out[1] = new_lng_rad * kRadToDeg;
@@ -101,8 +98,7 @@ double sw_initial_bearing(double lat1, double lng1, double lat2, double lng2) {
     return fmod(atan2(y, x) * kRadToDeg + 360.0, 360.0);
 }
 
-int sw_polyline_resample(const double* in, int n, double step_m,
-                         double* out, int cap) {
+int sw_polyline_resample(const double* in, int n, double step_m, double* out, int cap) {
     if (in == nullptr || n <= 0) return 0;
     const std::span<const double> pts(in, static_cast<size_t>(n) * 2);
     const size_t cap_points = (out == nullptr || cap <= 0) ? 0 : static_cast<size_t>(cap);
@@ -143,7 +139,7 @@ int sw_polyline_resample(const double* in, int n, double step_m,
         const double bearing = sw_initial_bearing(lat1, lng1, lat2, lng2);
         double t = remaining;
         while (t < seg - eps) {
-            double p[2] = { 0.0, 0.0 };
+            double p[2] = {0.0, 0.0};
             sw_offset_latlng(lat1, lng1, t, bearing, p);
             emit(p[0], p[1]);
             t += step_m;
@@ -155,8 +151,7 @@ int sw_polyline_resample(const double* in, int n, double step_m,
     return static_cast<int>(written);
 }
 
-void sw_polyline_project(const double* poly, int n, double lat, double lng,
-                         double* out3) {
+void sw_polyline_project(const double* poly, int n, double lat, double lng, double* out3) {
     if (out3 == nullptr) return;
     const std::span<double, 3> out(out3, 3);
     out[0] = -1.0;
@@ -184,20 +179,19 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
         const double seg = sw_haversine(lat1, lng1, lat2, lng2);
         const double d13 = sw_haversine(lat1, lng1, lat, lng);
 
-        double along = 0.0;   // metres from this segment's start, clamped to [0, seg]
-        double cross = 0.0;   // signed: + is right of the direction of travel
-        double dist = d13;    // unsigned distance to the closest point on the segment
+        double along = 0.0; // metres from this segment's start, clamped to [0, seg]
+        double cross = 0.0; // signed: + is right of the direction of travel
+        double dist = d13;  // unsigned distance to the closest point on the segment
         if (seg > 0.0 && d13 > 0.0) {
             const double delta13 = d13 / kEarthRadiusMeters;
-            const double dtheta =
-                (sw_initial_bearing(lat1, lng1, lat, lng)
-                 - sw_initial_bearing(lat1, lng1, lat2, lng2)) * kDegToRad;
+            const double dtheta = (sw_initial_bearing(lat1, lng1, lat, lng) -
+                                   sw_initial_bearing(lat1, lng1, lat2, lng2)) *
+                                  kDegToRad;
             const double xt = asin(sin(delta13) * sin(dtheta));
             // Right spherical triangle: tan(at) = tan(d13) * cos(dtheta). The
             // atan2 form is signed and stays well conditioned at street scale,
             // where acos(cos d13 / cos xt) loses half its digits.
-            const double at =
-                atan2(sin(delta13) * cos(dtheta), cos(delta13)) * kEarthRadiusMeters;
+            const double at = atan2(sin(delta13) * cos(dtheta), cos(delta13)) * kEarthRadiusMeters;
             const double sign = xt < 0.0 ? -1.0 : 1.0;
             if (at <= 0.0) {
                 along = 0.0;
@@ -223,24 +217,6 @@ void sw_polyline_project(const double* poly, int n, double lat, double lng,
     out[0] = static_cast<double>(best_seg);
     out[1] = best_along;
     out[2] = best_cross;
-}
-
-float sw_normalize_angle(float angle) {
-    return fmodf(fmodf(angle, 360.0f) + 360.0f, 360.0f);
-}
-
-float sw_signed_angle_diff(float from, float to) {
-    float diff = fmodf((to - from + 180.0f), 360.0f) - 180.0f;
-    // fmodf keeps the sign of the dividend, so a negative (to - from + 180)
-    // lands the result below -180 (e.g. to-from = -183 yields -183 instead of
-    // +177). The correction below is what the JS fallback in
-    // src/wasm/jsFallback.ts and signedAngleDiff() in src/utils/navigation.ts
-    // all do; without it this function silently disagreed with every other
-    // implementation for negative differences.
-    if (diff < -180.0f) diff += 360.0f;
-    // Exactly-opposite inputs still return -180 (not +180), matching the other
-    // implementations.
-    return diff;
 }
 
 } // extern "C"

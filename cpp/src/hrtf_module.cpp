@@ -23,15 +23,14 @@
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
 
-#include "streetview_wasm.h"
-#include "audio_kernels.h"
+#include "streetview/abi.h"
+#include "streetview/audio_kernels.h"
 #include <cstddef>
 #include <span>
 
 extern "C" {
 
-void sw_fill_hrtf(float* left, float* right, int count,
-                  float azimuth_deg, float sample_rate) {
+void sw_fill_hrtf(float* left, float* right, int count, float azimuth_deg, float sample_rate) {
     if (count <= 0 || left == nullptr || right == nullptr) return;
     if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
     const std::span<float> l(left, static_cast<size_t>(count));

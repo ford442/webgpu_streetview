@@ -17,7 +17,7 @@ describe('swPolicy', () => {
     expect(resolveSwFetchStrategy(`${origin}/streetview/shaders/streetview.wgsl`, 'GET', origin)).toBe(
       'cache-first',
     );
-    expect(resolveSwFetchStrategy(`${origin}/streetview/wasm/streetview-wasm.wasm`, 'GET', origin)).toBe(
+    expect(resolveSwFetchStrategy(`${origin}/streetview/wasm/streetview-dsp.simd.wasm`, 'GET', origin)).toBe(
       'cache-first',
     );
     expect(resolveSwFetchStrategy(`${origin}/streetview/static/js/main.abc.js`, 'GET', origin)).toBe(

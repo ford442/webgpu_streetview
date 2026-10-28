@@ -18,5 +18,5 @@ Object.assign(globalThis, { TextDecoder, TextEncoder });
 // too: instantiate it (Node has no server for public/wasm/) and install it as
 // the module, the way src/index.tsx loads it before the app renders.
 _installWasmModule(
-  await instantiateStreetViewWasm(readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.wasm'))),
+  await instantiateStreetViewWasm(readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.simd.wasm'))),
 );

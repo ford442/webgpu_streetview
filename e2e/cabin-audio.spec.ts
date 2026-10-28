@@ -3,8 +3,9 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * The cabin audio engine (#321) in a real AudioContext.
  *
- * Unit tests run the worklet source and both binaries in Node; what only a
- * browser shows is that the binary really instantiates inside the AudioWorklet
+ * Unit tests run the worklet source and its binary in Node; what only a
+ * browser shows is that streetview-dsp.simd.wasm really instantiates inside
+ * the AudioWorklet
  * (Chromium drops a posted `WebAssembly.Module`, so the main thread posts the
  * bytes), the engine renders on the audio thread at the context's
  * own pace, the radio bus really runs through it, and — the point of the
@@ -24,7 +25,9 @@ const FIXTURE = '/e2e/fixtures/cabin-audio/engine.html';
 interface Probe {
   mode: string;
   ready: boolean;
-  simd: boolean;
+  binary: string | null;
+  paramTransport: 'shared-ring' | 'message' | null;
+  memoryBytes: number;
   sampleRate: number;
   irTaps: number;
   quanta: number;
@@ -56,15 +59,19 @@ async function statsAfter(page: Page, quanta: number): Promise<Probe> {
   return probe(page);
 }
 
-test('the WASM engine runs in the AudioWorklet, on the SIMD binary where SIMD validates', async ({ page }) => {
+test('the WASM engine runs in the AudioWorklet, on the worklet-only DSP binary', async ({ page }) => {
   const p = await startEngine(page);
   expect(p.error).toBeUndefined();
   expect(p.mode).toBe('worklet-wasm');
   expect(p.ready).toBe(true);
-  expect(p.simd).toBe(await page.evaluate(() => WebAssembly.validate(new Uint8Array([
-    0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 8, 1, 6, 0, 65, 0, 253, 15, 11,
-  ]))));
+  expect(p.binary).toBe('streetview-dsp.simd.wasm');
+  // Fixed memory: INITIAL_MEMORY, and the binary has no memory.grow.
+  expect(p.memoryBytes).toBe(1 << 20);
   expect(p.irTaps).toBe(1024);
+  // Dev serves COOP + COEP (vite.config.ts), so the page is cross-origin
+  // isolated and the targets go through the shared seqlock, not messages.
+  expect(await page.evaluate(() => globalThis.crossOriginIsolated)).toBe(true);
+  expect(p.paramTransport).toBe('shared-ring');
 
   await page.evaluate(() => window.__cabin!.drive({ speedKmh: 90, rpm: 2600 }));
   const s = await statsAfter(page, p.quanta + 200);
@@ -74,13 +81,6 @@ test('the WASM engine runs in the AudioWorklet, on the SIMD binary where SIMD va
   expect(level.rms).toBeGreaterThan(0.005);
 });
 
-test('?cabinDsp=scalar runs the scalar binary', async ({ page }) => {
-  const p = await startEngine(page, '?cabinDsp=scalar');
-  expect(p.mode).toBe('worklet-wasm');
-  expect(p.simd).toBe(false);
-  const s = await statsAfter(page, p.quanta + 100);
-  expect(s.underruns).toBe(0);
-});
 
 test('a 300 ms main-thread stall: the audio clock and the engine keep going, zero underruns', async ({ page }) => {
   await startEngine(page);

@@ -1,15 +1,16 @@
 /**
  * The cabin AudioWorklet processor, exercised outside an AudioContext — with
- * the real committed binaries.
+ * the real committed worklet binary, public/wasm/streetview-dsp.simd.wasm.
  *
  * `CABIN_WORKLET_SOURCE` is plain source text, so it can be evaluated here with
  * a stub `AudioWorkletProcessor`/`registerProcessor`/`sampleRate` and driven a
  * render quantum at a time, after posting it the binary's bytes as the main
- * thread does (a compiled `WebAssembly.Module` is accepted too). That covers what would otherwise
- * only run on a real audio thread: instantiating the engine, the pending
- * params/IR hand-off, rendering into the output channels (bit-identical to the
- * cabin DSP scripts in cpp/tests/goldens.json), the radio input, stats, failure
- * and stop.
+ * thread does (a compiled `WebAssembly.Module` is accepted too). That covers
+ * what would otherwise only run on a real audio thread: instantiating the
+ * engine and checking its ABI, the pending params/IR hand-off, the shared
+ * param seqlock, rendering into the output channels (bit-identical to the
+ * cabin DSP scripts in cpp/tests/goldens.json, which the main binary
+ * produced), the radio input, stats, failure and stop.
  */
 
 import { readFileSync } from 'fs';
@@ -23,6 +24,7 @@ import {
   CABIN_STATS_SECONDS,
   CABIN_WORKLET_SOURCE,
 } from './cabinWorkletSource';
+import { createCabinParamRing } from './cabinParamRing';
 
 const SAMPLE_RATE = 48000;
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -99,16 +101,12 @@ function instantiate(rate: number = SAMPLE_RATE): Processor {
   return new (ctor as new () => Processor)();
 }
 
-let scalarModule: WebAssembly.Module;
-let simdModule: WebAssembly.Module;
-let scalarBytes: Uint8Array<ArrayBuffer>;
+let dspModule: WebAssembly.Module;
+let dspBytes: Uint8Array<ArrayBuffer>;
 
 beforeAll(async () => {
-  const read = (file: string): Uint8Array<ArrayBuffer> =>
-    new Uint8Array(readFileSync(join(REPO_ROOT, 'public', 'wasm', file)));
-  scalarBytes = read('streetview-wasm.wasm');
-  scalarModule = await WebAssembly.compile(scalarBytes);
-  simdModule = await WebAssembly.compile(read('streetview-wasm.simd.wasm'));
+  dspBytes = new Uint8Array(readFileSync(join(REPO_ROOT, 'public', 'wasm', 'streetview-dsp.simd.wasm')));
+  dspModule = await WebAssembly.compile(dspBytes);
 });
 
 /** Let the worklet's async instantiate settle. */
@@ -121,13 +119,9 @@ async function untilMessage(port: StubPort, type: string): Promise<PortMessage> 
   throw new Error(`worklet never posted '${type}'`);
 }
 
-async function ready(
-  module: WebAssembly.Module = scalarModule,
-  simd = false,
-  rate: number = SAMPLE_RATE,
-): Promise<Processor> {
+async function ready(rate: number = SAMPLE_RATE): Promise<Processor> {
   const p = instantiate(rate);
-  p.port.deliver({ type: 'module', module, simd });
+  p.port.deliver({ type: 'module', module: dspModule });
   await untilMessage(p.port, 'ready');
   return p;
 }
@@ -183,9 +177,11 @@ describe('cabin worklet: start-up', () => {
 
   it('instantiates posted bytes — what CabinAudio sends — and reports ready', async () => {
     const p = instantiate();
-    p.port.deliver({ type: 'module', bytes: scalarBytes.slice().buffer, simd: false });
+    p.port.deliver({ type: 'module', bytes: dspBytes.slice().buffer });
     const msg = await untilMessage(p.port, 'ready');
-    expect(msg.simd).toBe(false);
+    expect(msg.maxIrTaps).toBe(16384);
+    // The binary's fixed memory: INITIAL_MEMORY, never grown.
+    expect(msg.memoryBytes).toBe(1 << 20);
     p.port.deliver({ type: 'params', ...DRIVE });
     expect(render(p, 4).left.some((s) => s !== 0)).toBe(true);
   });
@@ -197,17 +193,16 @@ describe('cabin worklet: start-up', () => {
   });
 
   it('instantiates a posted compiled module too, and reports ready', async () => {
-    const p = await ready(simdModule, true);
+    const p = await ready();
     const msg = p.port.sent.find((m) => m.type === 'ready')!;
-    expect(msg.simd).toBe(true);
-    expect(msg.maxIrTaps).toBe(4096);
+    expect(msg.maxIrTaps).toBe(16384);
   });
 
   it('applies params and an IR that arrived before the engine was up', async () => {
     const early = instantiate();
     early.port.deliver({ type: 'params', ...DRIVE });
     early.port.deliver({ type: 'ir', taps: irFor(0, 0) });
-    early.port.deliver({ type: 'module', module: scalarModule, simd: false });
+    early.port.deliver({ type: 'module', module: dspModule });
     await untilMessage(early.port, 'ready');
 
     const late = await ready();
@@ -221,18 +216,34 @@ describe('cabin worklet: start-up', () => {
     // A valid module with none of the dsp_* exports.
     const empty = await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
     const p = instantiate();
-    p.port.deliver({ type: 'module', module: empty, simd: false });
+    p.port.deliver({ type: 'module', module: empty });
     const err = await untilMessage(p.port, 'error');
-    expect(String(err.message)).toMatch(/dsp_create|not a function/);
+    expect(String(err.message)).toMatch(/ABI mismatch: dsp_create missing/);
     expect(render(p, 2).left.every((s) => s === 0)).toBe(true);
+  });
+
+  it('refuses a binary whose exports drifted from abi.h (arity), before creating an engine', async () => {
+    // (module (func (export "dsp_create") (param f32 f32) (result i32) i32.const 0) (memory (export "memory") 1))
+    const drifted = await WebAssembly.compile(new Uint8Array([
+      0, 97, 115, 109, 1, 0, 0, 0,
+      1, 7, 1, 96, 2, 125, 125, 1, 127,
+      3, 2, 1, 0,
+      5, 3, 1, 0, 1,
+      7, 23, 2, 10, 100, 115, 112, 95, 99, 114, 101, 97, 116, 101, 0, 0, 6, 109, 101, 109, 111, 114, 121, 2, 0,
+      10, 6, 1, 4, 0, 65, 0, 11,
+    ]));
+    const p = instantiate();
+    p.port.deliver({ type: 'module', module: drifted });
+    const err = await untilMessage(p.port, 'error');
+    expect(String(err.message)).toMatch(/dsp_create takes 2, abi\.h 1/);
   });
 });
 
 describe('cabin worklet: rendering', () => {
   for (const golden of DSP_GOLDENS.filter((g) => g.sampleRate > 0)) {
     it(`renders the "${golden.label}" golden script bit for bit`, async () => {
-      for (const [module, simd] of [[scalarModule, false], [simdModule, true]] as const) {
-        const p = await ready(module, simd, golden.sampleRate);
+      {
+        const p = await ready(golden.sampleRate);
         const byBlock = new Map(golden.keyframes.map((k) => [k.block, k]));
         const ir = new Float32Array(golden.irTaps);
         let checksum = 2166136261;
@@ -256,20 +267,50 @@ describe('cabin worklet: rendering', () => {
           checksum = fnv1a(checksum, got.left);
           checksum = fnv1a(checksum, got.right);
         }
-        expect(checksum, `${golden.label} (${simd ? 'SIMD' : 'scalar'})`).toBe(golden.expectedChecksum);
+        expect(checksum, golden.label).toBe(golden.expectedChecksum);
       }
     }, 60_000);
   }
 
-  it('the SIMD binary renders the same bits as the scalar one', async () => {
-    const a = await ready(scalarModule, false);
-    const b = await ready(simdModule, true);
-    for (const p of [a, b]) {
-      p.port.deliver({ type: 'params', ...DRIVE });
-      p.port.deliver({ type: 'ir', taps: irFor(0, 1, 1024) });
-    }
+  it('the shared seqlock delivers the same targets as params messages, bit for bit', async () => {
+    const viaMessage = await ready();
+    const viaRing = await ready();
+    const ring = createCabinParamRing();
+    viaRing.port.deliver({ type: 'ring', buffer: ring.buffer });
+    for (const p of [viaMessage, viaRing]) p.port.deliver({ type: 'ir', taps: irFor(0, 1, 1024) });
     const radio = radioBlock();
-    expect(Array.from(render(a, 30, radio).right)).toEqual(Array.from(render(b, 30, radio).right));
+    const a: number[] = [];
+    const b: number[] = [];
+    for (const step of [DRIVE, { ...DRIVE, rpm: 5200, load: 0.9, wipers: false }, { ...DRIVE, vehicle: 3 }]) {
+      viaMessage.port.deliver({ type: 'params', ...step });
+      ring.write(step);
+      a.push(...render(viaMessage, 10, radio).left);
+      b.push(...render(viaRing, 10, radio).left);
+    }
+    expect(b).toEqual(a);
+    // The ring path posts no per-frame messages back either.
+    expect(viaRing.port.sent.filter((m) => m.type === 'error')).toEqual([]);
+  });
+
+  it('a write in progress (odd sequence) is not applied until it settles', async () => {
+    const p = await ready();
+    const ring = createCabinParamRing();
+    p.port.deliver({ type: 'ring', buffer: ring.buffer });
+    const ref = await ready();
+    ring.write(DRIVE);
+    ref.port.deliver({ type: 'params', ...DRIVE });
+    render(p, 4);
+    render(ref, 4);
+    // Mid-write: the writer bumped the sequence and stored half a new set.
+    const seq = new Int32Array(ring.buffer);
+    const f32 = new Float32Array(ring.buffer);
+    Atomics.add(seq, 0, 1);
+    f32[1] = 9000;
+    // Both still render DRIVE.
+    expect(Array.from(render(p, 4).left)).toEqual(Array.from(render(ref, 4).left));
+    Atomics.add(seq, 0, 1);
+    ref.port.deliver({ type: 'params', ...DRIVE, rpm: 9000 });
+    expect(Array.from(render(p, 4).left)).toEqual(Array.from(render(ref, 4).left));
   });
 
   it('plays the radio input through the cabin: roof and vehicle change it', async () => {
@@ -332,7 +373,7 @@ describe('cabin worklet: rendering', () => {
 
   it('a stop that lands before the engine is up still frees it', async () => {
     const p = instantiate();
-    p.port.deliver({ type: 'module', module: scalarModule, simd: false });
+    p.port.deliver({ type: 'module', module: dspModule });
     p.port.deliver({ type: 'stop' });
     await new Promise((r) => setTimeout(r, 20));
     expect(p.port.sent.some((m) => m.type === 'ready')).toBe(false);
@@ -343,7 +384,7 @@ describe('cabin worklet: rendering', () => {
     const p = await ready();
     p.port.deliver({ type: 'params', ...DRIVE });
     p.port.deliver({ type: 'ir', taps: new Float32Array(0) });
-    p.port.deliver({ type: 'ir', taps: irFor(3, 0, 5000) });
+    p.port.deliver({ type: 'ir', taps: irFor(3, 0, 20000) });
     const { left } = render(p, 8);
     expect(left.every((s) => Number.isFinite(s) && Math.abs(s) <= 1)).toBe(true);
   });

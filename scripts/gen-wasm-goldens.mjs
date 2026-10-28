@@ -6,22 +6,28 @@
  *
  * One C++ source (cpp/src/*_module.cpp), built two ways:
  *
- *   1. public/wasm/streetview-wasm{,.simd}.wasm  – what actually ships (emcc)
- *   2. the host build                            – native ctest, four compilers
+ *   1. public/wasm/streetview-wasm.simd.wasm  – what ships (emcc -msimd128);
+ *      streetview-dsp.simd.wasm, the worklet's engine, is the same
+ *      cabin_dsp_module.cpp
+ *   2. the scalar build (cpp/build-emscripten/out/streetview-wasm.wasm) – CI's
+ *      oracle, never deployed
+ *   3. the host builds – native ctest: g++, clang, x86-64-v3, ASan/UBSan, and
+ *      SIMDe (the SIMD128 source path on the host)
  *
- * The goldens are captured **from the shipping scalar binary** and then
- * asserted against (2) by the native host tests (cpp/tests/*_test.cpp) and
- * against both binaries, through the TS loader's wrappers, by
- * src/wasm/__tests__/wasmGoldenParity.test.ts. There is no JS twin: a
+ * The goldens are captured **from the shipping SIMD binary** and then
+ * asserted against (2) by `--compare --wasm` in CI, against (3) by the native
+ * host tests (cpp/tests/*_test.cpp), through the TS loader's wrappers by
+ * src/wasm/__tests__/wasmGoldenParity.test.ts, and through the worklet
+ * binary by src/car/audio/cabinWorklet.test.ts. There is no JS twin: a
  * compiler, flag or SIMD change that moves one bit shows up as a failure.
  *
  * Outputs (both committed):
- *   cpp/tests/goldens.json            – consumed by Vitest (both binaries)
+ *   cpp/tests/goldens.json            – consumed by Vitest
  *   cpp/tests/goldens_generated.h     – consumed by the native host tests
  *
  * Usage:
  *   npm run gen:wasm-goldens          # after a deliberate algorithm change
- *   node scripts/gen-wasm-goldens.mjs --compare   # SIMD CI: vectors must match
+ *   node scripts/gen-wasm-goldens.mjs --compare --wasm <scalar>   # CI oracle check
  *
  * Flags:
  *   --wasm <path>  --json-out <path>  --header-out <path>  --compare
@@ -42,7 +48,7 @@ const flagValue = (flag) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const compareOnly = argv.includes('--compare');
-const wasmPath = flagValue('--wasm') || join(repoRoot, 'public', 'wasm', 'streetview-wasm.wasm');
+const wasmPath = flagValue('--wasm') || join(repoRoot, 'public', 'wasm', 'streetview-wasm.simd.wasm');
 const jsonOut = flagValue('--json-out') || join(repoRoot, 'cpp', 'tests', 'goldens.json');
 const headerOut = flagValue('--header-out') || join(repoRoot, 'cpp', 'tests', 'goldens_generated.h');
 
@@ -67,11 +73,10 @@ if (typeof exp._initialize === 'function') exp._initialize();
 // downward-growing C++ stack. Every fixture below is tiny; one block covers
 // them all, and reserve() refuses to silently overrun it.
 const SCRATCH_BYTES = 64 * 1024;
-const SCRATCH = exp.malloc(SCRATCH_BYTES);
-if (!SCRATCH || SCRATCH % 8 !== 0) throw new Error(`malloc(${SCRATCH_BYTES}) -> ${SCRATCH}`);
-if (typeof exp.emscripten_stack_get_base === 'function'
-  && SCRATCH < exp.emscripten_stack_get_base()) {
-  throw new Error(`scratch ${SCRATCH} is below the stack base ${exp.emscripten_stack_get_base()}`);
+const SCRATCH = exp.sv_malloc(SCRATCH_BYTES);
+if (!SCRATCH || SCRATCH % 8 !== 0) throw new Error(`sv_malloc(${SCRATCH_BYTES}) -> ${SCRATCH}`);
+if (SCRATCH < exp.sv_stack_base()) {
+  throw new Error(`scratch ${SCRATCH} is below the stack base ${exp.sv_stack_base()}`);
 }
 
 const reserve = (nbytes) => {
@@ -240,12 +245,6 @@ const GRAPH_NEAREST_POINTS = [
   [38.7, -9.15], [38.7015, -9.146], [38.7027, -9.1424], [38.65, -9.2], [38.70135, -9.14381],
 ];
 
-const ANGLES = [0, 0.5, 45, 180, 359.5, 360, 361, -1, -180, -359.5, -720.25, 1080.75];
-const ANGLE_PAIRS = [
-  [0, 90], [90, 0], [10, 350], [350, 10], [0, 180], [180, 0],
-  [-45, 45], [720, 45], [359, 1], [123.25, -456.5],
-];
-
 // `phase` is in fundamental cycles and `sampleIndex` is the absolute stream
 // position (hashed per sample for the road noise). 'hour-in' is one hour into
 // a 48 kHz drive — the f32-time ABI this replaced had turned it into a
@@ -295,10 +294,14 @@ reserve(PARTICLES.count * 16);
 exp.fill_particle_seeds(SCRATCH, PARTICLES.count, PARTICLES.seed);
 const particleSeeds = { ...PARTICLES, expected: readF32(PARTICLES.count * 4) };
 
-const haversine = HAVERSINE_PAIRS.map(([lat1, lon1, lat2, lon2]) => ({
-  lat1, lon1, lat2, lon2,
-  expected: exp.haversine(lat1, lon1, lat2, lon2),
-}));
+// The single-pair haversine is no longer exported (the app's one-off
+// distances are f64 TypeScript); a two-point batch_haversine is the same
+// sw_haversine call, so the host tests still pin it.
+const haversine = HAVERSINE_PAIRS.map(([lat1, lon1, lat2, lon2]) => {
+  reserve(40);
+  new Float64Array(memory.buffer, SCRATCH, 4).set([lat1, lon1, lat2, lon2]);
+  return { lat1, lon1, lat2, lon2, expected: exp.batch_haversine(SCRATCH, 2, SCRATCH + 32) };
+});
 
 const pointCount = POLYLINE.length;
 reserve(pointCount * 16 + (pointCount - 1) * 8);
@@ -359,14 +362,6 @@ const polylineProject = PROJECT_CASES.map((c) => {
     expectedCross: v[2],
   };
 });
-
-const normalizeAngle = ANGLES.map((angle) => ({
-  angle, expected: exp.normalize_angle(angle),
-}));
-
-const signedAngleDiff = ANGLE_PAIRS.map(([from, to]) => ({
-  from, to, expected: exp.signed_angle_diff(from, to),
-}));
 
 const engineNoise = ENGINE_CASES.map((c) => {
   reserve(c.count * 4);
@@ -662,8 +657,8 @@ const DEPTH_NAN = [5, 77, 300];
 const DEPTH_INF = [123];
 /** Strided percentile input, by formula: f32(((i * 7919) % 10007) / 10007) — longer than 16384, so the stride is 2. */
 const DEPTH_STRIDED_COUNT = 20000;
-const depthBlock = exp.malloc(DEPTH_STRIDED_COUNT * 8 + 4096);
-if (!depthBlock) throw new Error('malloc for the depth goldens failed');
+const depthBlock = exp.sv_malloc(DEPTH_STRIDED_COUNT * 8 + 4096);
+if (!depthBlock) throw new Error('sv_malloc for the depth goldens failed');
 const writeDepthMap = (values) => {
   const view = new Float32Array(memory.buffer, depthBlock, values.length);
   view.set(values);
@@ -679,14 +674,14 @@ const depthPercentiles = DEPTH_PERCENTILE_CASES.map((c) => {
   writeDepthMap(c.values);
   const n = c.values.length;
   const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
-  exp.depth_percentiles(depthBlock, n, c.low, c.high, depthBlock + n * 4, out);
+  exp.depth_percentiles(depthBlock, n, c.low, c.high, out);
   return { ...c, expected: Array.from(new Float64Array(memory.buffer, out, 2)) };
 });
 {
   const view = new Float32Array(memory.buffer, depthBlock, DEPTH_STRIDED_COUNT);
   for (let i = 0; i < DEPTH_STRIDED_COUNT; i++) view[i] = ((i * 7919) % 10007) / 10007;
   const out = depthBlock + DEPTH_STRIDED_COUNT * 8;
-  exp.depth_percentiles(depthBlock, DEPTH_STRIDED_COUNT, 0.02, 0.98, depthBlock + DEPTH_STRIDED_COUNT * 4, out);
+  exp.depth_percentiles(depthBlock, DEPTH_STRIDED_COUNT, 0.02, 0.98, out);
   depthPercentiles.push({
     label: 'strided-20000', values: null, low: 0.02, high: 0.98,
     expected: Array.from(new Float64Array(memory.buffer, out, 2)),
@@ -732,11 +727,11 @@ const depthNearDepth = DEPTH_NEAR_CASES.map((c) => {
   new Float32Array(memory.buffer, depthBlock, depthNearMap.length).set(depthNearMap);
   return { ...c, expected: exp.depth_near_depth(depthBlock, DEPTH_W, DEPTH_H, c.horizonY) };
 });
-exp.free(depthBlock);
+exp.sv_free(depthBlock);
 
 const goldens = {
   $comment:
-    'GENERATED by scripts/gen-wasm-goldens.mjs from public/wasm/streetview-wasm.wasm. '
+    'GENERATED by scripts/gen-wasm-goldens.mjs from public/wasm/streetview-wasm.simd.wasm. '
     + 'Do not hand-edit — run `npm run gen:wasm-goldens`.',
   wasmSha256,
   noiseSeed: NOISE_SEED,
@@ -752,8 +747,6 @@ const goldens = {
   initialBearing,
   polylineResample,
   polylineProject,
-  normalizeAngle,
-  signedAngleDiff,
   engineNoise,
   cabinIr,
   hrtf,
@@ -843,7 +836,7 @@ lines.push(' * cpp/tests/goldens_generated.h');
 lines.push(' *');
 lines.push(' * GENERATED FILE — do not hand-edit.');
 lines.push(' * Produced by scripts/gen-wasm-goldens.mjs from the shipping binary');
-lines.push(' * public/wasm/streetview-wasm.wasm. Regenerate with:');
+lines.push(' * public/wasm/streetview-wasm.simd.wasm. Regenerate with:');
 lines.push(' *');
 lines.push(' *     npm run gen:wasm-goldens');
 lines.push(' *');
@@ -976,19 +969,6 @@ polylineProject.forEach((_c, i) => {
   lines.push(`    { kProjectInCount${i}, kProjectIn${i}, kProjectLat${i}, kProjectLng${i}, kProjectExpected${i} },`);
 });
 lines.push('};');
-lines.push('');
-
-lines.push('// --- normalize_angle -----------------------------------------------------');
-lines.push(f32Array('kNormalizeAngleIn', normalizeAngle.map((a) => a.angle)));
-lines.push(f32Array('kNormalizeAngleExpected', normalizeAngle.map((a) => a.expected)));
-lines.push(`inline constexpr int kNormalizeAngleCount = ${normalizeAngle.length};`);
-lines.push('');
-
-lines.push('// --- signed_angle_diff ---------------------------------------------------');
-lines.push(f32Array('kSignedAngleFrom', signedAngleDiff.map((a) => a.from)));
-lines.push(f32Array('kSignedAngleTo', signedAngleDiff.map((a) => a.to)));
-lines.push(f32Array('kSignedAngleExpected', signedAngleDiff.map((a) => a.expected)));
-lines.push(`inline constexpr int kSignedAngleCount = ${signedAngleDiff.length};`);
 lines.push('');
 
 lines.push('// --- fill_engine_noise ---------------------------------------------------');
