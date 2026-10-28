@@ -116,7 +116,7 @@ describe('WindowWeatherOverlay: portal vs decal', () => {
   afterEach(() => {
     resetCabinMaterialBackendForTests();
     resetRoadFrameSourceForTests();
-    delete (window as unknown as { __CABIN_RENDERER_PROBE__?: unknown }).__CABIN_RENDERER_PROBE__;
+    delete window.__CABIN_RENDERER_PROBE__;
   });
 
   it('keeps the decal alone on the WebGL cabin, whatever the support object says', () => {

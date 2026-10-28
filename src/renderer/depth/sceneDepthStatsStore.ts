@@ -65,7 +65,7 @@ const store = createStore<SceneDepthStats>({ ...INITIAL });
 
 function publishToWindow(): void {
     if (typeof window !== 'undefined') {
-        (window as Window & { __SCENE_DEPTH__?: SceneDepthStats }).__SCENE_DEPTH__ = store.get();
+        window.__SCENE_DEPTH__ = store.get();
     }
 }
 store.subscribe(publishToWindow);

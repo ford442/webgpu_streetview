@@ -124,13 +124,13 @@ describe('FramePassRegistry', () => {
     });
 
     it('publishes statuses onto window.webgpuProbe.passes', async () => {
-        (window as unknown as { webgpuProbe: object }).webgpuProbe = { ok: true };
+        window.webgpuProbe = { ok: true } as unknown as NonNullable<Window['webgpuProbe']>;
         resetPassStatuses();
         const r = new FramePassRegistry();
         r.register(pass('weather', 300, { init: async () => { throw new Error('bad'); } }));
         await r.initAll();
         expect(window.webgpuProbe?.passes?.weather?.state).toBe('failed');
-        delete (window as unknown as { webgpuProbe?: object }).webgpuProbe;
+        delete window.webgpuProbe;
     });
 
     it('splits a frame with a tail: the road in main, reproject and the cabin in the tail (#331)', async () => {

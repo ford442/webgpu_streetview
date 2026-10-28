@@ -85,8 +85,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     resetWebGPUCabinRendererForTests();
     resetWindshieldPortalSupportForTests();
-    delete (window as Window & { webgpuProbe?: unknown }).webgpuProbe;
-    delete (window as Window & { __CABIN_RENDERER_PROBE__?: unknown }).__CABIN_RENDERER_PROBE__;
+    delete window.webgpuProbe;
+    delete window.__CABIN_RENDERER_PROBE__;
 });
 
 describe('resolveCabinRendererPreference', () => {

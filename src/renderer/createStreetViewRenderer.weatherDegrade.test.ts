@@ -4,8 +4,6 @@ import { createStreetViewRenderer } from './createStreetViewRenderer';
 import { Renderer } from './Renderer';
 import { publishWebGpuProbe } from './webgpuBootProbe';
 
-// Test-only view of window for installing/removing globals without `any`.
-const win = window as unknown as Record<string, unknown>;
 
 vi.mock('./Renderer', () => ({ Renderer: vi.fn() }));
 
@@ -53,9 +51,9 @@ describe('High-quality compute weather degrade policy', () => {
   beforeEach(() => {
     resetSearch();
     localStorage.clear();
-    delete win.webgpuProbe;
-    delete win.rendererType;
-    delete win.streetViewRendererDebug;
+    delete window.webgpuProbe;
+    delete window.rendererType;
+    delete window.streetViewRendererDebug;
     bootedModes = [];
     destroyCount = 0;
     vi.spyOn(console, 'warn').mockImplementation(() => {});

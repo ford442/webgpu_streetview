@@ -24,7 +24,7 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?weather` | enum | `fragment` \| `compute` | — | Weather post-process pipeline. Wins over the persisted choice and the quality preset. |
 | `?quality` | enum | `low` \| `medium` \| `high` \| `ultra` | — | Visual quality preset. Wins over the persisted choice and hardware auto-detection. |
 | `?effect` | enum | `all` \| `raw` \| `color` \| `weather` \| `fog` \| `night` \| `lighting` | — | Isolate a single post-process effect (debug). |
-| `?debug` | enum | `wireframe` | — | `?debug=wireframe` is an alias for `?wireframe`. |
+| `?debug` | enum | `wireframe` | — | Any `?debug` installs the renderer mutators on `window.__SV__.renderer` (`setBackend`, `setWeatherMode`, …); `?debug=wireframe` is also an alias for `?wireframe`. |
 | `?wireframe` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Wireframe overlay (debug). |
 | `?legacyTransitions` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Force the legacy CPU-timed panorama transition (on) or the GPU transition (off). |
 | `?no_gpu_compute` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Kill switch for GPU chores (luma/horizon compute). Weather rendering is unaffected. |

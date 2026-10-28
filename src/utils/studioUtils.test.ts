@@ -27,7 +27,7 @@ describe('weatherPresetSync', () => {
 describe('iceServers', () => {
   beforeEach(() => {
     vi.resetModules();
-    delete (window as Window & { TURN_URL?: string }).TURN_URL;
+    delete window.TURN_URL;
   });
 
   afterEach(() => {

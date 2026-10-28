@@ -497,7 +497,9 @@ session presenting; otherwise the frame is exactly the pre-#331 frame.
 ?webgl            # same
 ```
 
-Breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL` (always false), `window.rendererFallbackReason`, and `window.webgpuProbe` (`ok`, `stage`, `reason`, `browserBrand` Chrome vs Edge, `adapter`, capability matrix). DevTools: `window.streetViewRendererDebug.setBackend('webgpu' | 'auto')`; `setBackend('webgl')` reloads but does not start GL weather.
+Breadcrumbs: `window.rendererType`, `window.usingWebGPU`, `window.usingWebGL` (always false), `window.rendererFallbackReason`, and `window.webgpuProbe` (`ok`, `stage`, `reason`, `browserBrand` Chrome vs Edge, `adapter`, capability matrix). DevTools: with `?debug`, `window.__SV__.renderer.setBackend('webgpu' | 'auto')` (also `setWeatherMode`, `setEffectIsolation`, `setWireframe`); without `?debug` the handle is read-only. `setBackend('webgl')` reloads but does not start GL weather.
+
+**Debug globals** (`src/debug/globals.ts`): every probe / debug global is typed there, and `window.__SV__` reads them all — `probe`, `adapter`, `cabin`, `cabinAudio`, `gpuChores`, `gpuTimings`, `sceneDepth`, `streetView`, `renderer`, `placeSearch`, `rearViewFeed`, plus `frameSource` (Maps-canvas fingerprint stats), `perf` and `errors` (`app/unhandledRejection.ts`, also on the backend chip). The old top-level names stay for one release. It is the only file under `src/` that casts `window` (`debug/globals.test.ts` enforces it). The billing kill switches (`__PLACE_SEARCH__.kill`, `__REARVIEW_FEED__.kill`) are not gated on `?debug`.
 
 SDR GLSL lives in `src/renderer/webgl/weatherReference.glsl.ts` for `webglLookParity.test.ts`. Live uniform lockstep is layout + pack + both WGSL processors. See `docs/RENDERER_FALLBACK.md`.
 

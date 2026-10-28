@@ -13,9 +13,17 @@ import {
   getWeatherPostProcessModePolicy,
   type RendererDebugOptions,
 } from './RendererBackend';
+import type { RendererDebugHandle } from '../debug/globals';
 
-// Test-only view of window for installing/removing globals without `any`.
-const win = window as unknown as Record<string, unknown>;
+/** The debug handle with its `?debug` mutators, failing loudly when they are missing. */
+function debugHandle(): Required<RendererDebugHandle> {
+  const handle = window.streetViewRendererDebug;
+  if (!handle?.setBackend || !handle.setEffectIsolation || !handle.setWireframe || !handle.setWeatherMode) {
+    throw new Error('debug mutators not installed');
+  }
+  return handle as Required<RendererDebugHandle>;
+}
+
 
 const setSearch = (search: string) => {
   window.history.pushState({}, '', `/${search}`);
@@ -24,11 +32,11 @@ const setSearch = (search: string) => {
 const resetGlobals = () => {
   setSearch('');
   localStorage.clear();
-  delete win.rendererType;
-  delete win.usingWebGPU;
-  delete win.usingWebGL;
-  delete win.rendererFallbackReason;
-  delete win.streetViewRendererDebug;
+  delete window.rendererType;
+  delete window.usingWebGPU;
+  delete window.usingWebGL;
+  delete window.rendererFallbackReason;
+  delete window.streetViewRendererDebug;
 };
 
 describe('getRendererPreference', () => {
@@ -195,13 +203,27 @@ describe('exposeRendererDebugGlobals', () => {
     reloadSpy = jest.fn();
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { reload: reloadSpy },
+      value: { reload: reloadSpy, search: '?debug' },
     });
   });
 
   afterEach(() => {
     Object.defineProperty(window, 'location', originalLocationDescriptor);
     resetGlobals();
+  });
+
+  it('installs the mutators only with ?debug', () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { reload: reloadSpy, search: '' },
+    });
+    exposeRendererDebugGlobals('webgpu', undefined, { effectIsolation: 'all', wireframe: false }, jest.fn());
+    const handle = window.streetViewRendererDebug;
+    expect(handle?.getBackend().rendererType).toBe('webgpu');
+    expect(handle?.setBackend).toBeUndefined();
+    expect(handle?.setWeatherMode).toBeUndefined();
+    expect(handle?.setEffectIsolation).toBeUndefined();
+    expect(handle?.setWireframe).toBeUndefined();
   });
 
   it('sets the four window globals for the webgpu backend', () => {
@@ -232,14 +254,14 @@ describe('exposeRendererDebugGlobals', () => {
 
   it('setBackend persists the choice and reloads for a valid value', () => {
     exposeRendererDebugGlobals('webgpu', undefined, { effectIsolation: 'all', wireframe: false }, jest.fn());
-    window.streetViewRendererDebug?.setBackend('webgl');
+    debugHandle().setBackend('webgl');
     expect(localStorage.getItem('streetview.renderer')).toBe('webgl');
     expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 
   it('setBackend is a no-op for an invalid value', () => {
     exposeRendererDebugGlobals('webgpu', undefined, { effectIsolation: 'all', wireframe: false }, jest.fn());
-    window.streetViewRendererDebug?.setBackend('bogus' as never);
+    debugHandle().setBackend('bogus' as never);
     expect(localStorage.getItem('streetview.renderer')).toBeNull();
     expect(reloadSpy).not.toHaveBeenCalled();
   });
@@ -247,7 +269,7 @@ describe('exposeRendererDebugGlobals', () => {
   it('setEffectIsolation persists and applies live without reloading', () => {
     const applyDebugOptions = jest.fn();
     exposeRendererDebugGlobals('webgl', undefined, { effectIsolation: 'all', wireframe: false }, applyDebugOptions);
-    window.streetViewRendererDebug?.setEffectIsolation('fog');
+    debugHandle().setEffectIsolation('fog');
     expect(localStorage.getItem('streetview.effect')).toBe('fog');
     expect(applyDebugOptions).toHaveBeenCalledWith({ effectIsolation: 'fog' });
     expect(reloadSpy).not.toHaveBeenCalled();
@@ -256,14 +278,14 @@ describe('exposeRendererDebugGlobals', () => {
   it('setEffectIsolation is a no-op for an invalid value', () => {
     const applyDebugOptions = jest.fn();
     exposeRendererDebugGlobals('webgl', undefined, { effectIsolation: 'all', wireframe: false }, applyDebugOptions);
-    window.streetViewRendererDebug?.setEffectIsolation('bogus' as never);
+    debugHandle().setEffectIsolation('bogus' as never);
     expect(applyDebugOptions).not.toHaveBeenCalled();
   });
 
   it('setWireframe applies live without persisting or reloading', () => {
     const applyDebugOptions = jest.fn();
     exposeRendererDebugGlobals('webgl', undefined, { effectIsolation: 'all', wireframe: false }, applyDebugOptions);
-    window.streetViewRendererDebug?.setWireframe(true);
+    debugHandle().setWireframe(true);
     expect(applyDebugOptions).toHaveBeenCalledWith({ wireframe: true });
     expect(localStorage.getItem('streetview.wireframe')).toBeNull();
     expect(reloadSpy).not.toHaveBeenCalled();
@@ -275,7 +297,7 @@ describe('exposeRendererDebugGlobals', () => {
     exposeRendererDebugGlobals('webgl', undefined, debugOptions, applyDebugOptions);
 
     expect(window.streetViewRendererDebug?.getDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: false });
-    window.streetViewRendererDebug?.setWireframe(true);
+    debugHandle().setWireframe(true);
     expect(window.streetViewRendererDebug?.getDebugOptions()).toEqual({ effectIsolation: 'all', wireframe: true });
   });
 });

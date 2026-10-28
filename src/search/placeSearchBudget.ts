@@ -194,7 +194,7 @@ export function resetPlaceSearchBudgetForTests(budget?: PlaceSearchBudget): void
 
 export function installPlaceSearchKillSwitch(budget: PlaceSearchBudget = getPlaceSearchBudget()): void {
   if (typeof window === 'undefined') return;
-  (window as Window & { __PLACE_SEARCH__?: unknown }).__PLACE_SEARCH__ = {
+  window.__PLACE_SEARCH__ = {
     kill: () => budget.kill(),
     getStats: () => budget.getStats(),
   };

@@ -86,7 +86,7 @@ function publishGpuChoresBreadcrumbs(): GpuChoresBreadcrumbs {
     },
   };
   if (typeof window !== 'undefined') {
-    (window as Window & { __GPU_CHORES__?: GpuChoresBreadcrumbs }).__GPU_CHORES__ = crumbs;
+    window.__GPU_CHORES__ = crumbs;
   }
   return crumbs;
 }

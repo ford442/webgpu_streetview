@@ -8,6 +8,7 @@
 import { StrictMode } from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { writeWindowProperty } from '../debug/globals';
 
 const maps = vi.hoisted(() => ({ load: vi.fn(() => Promise.resolve()) }));
 vi.mock('../services/maps/loader', () => ({
@@ -34,7 +35,7 @@ beforeEach(() => {
             return 'OK';
         }
     }
-    (window as unknown as { google: unknown }).google = {
+    writeWindowProperty('google', {
         maps: {
             Map: class {
                 setStreetView() {}
@@ -42,12 +43,12 @@ beforeEach(() => {
             StreetViewPanorama: Panorama,
             StreetViewStatus: { OK: 'OK' },
         },
-    };
+    });
 });
 
 afterEach(() => {
     vi.restoreAllMocks();
-    delete (window as unknown as { google?: unknown }).google;
+    writeWindowProperty('google', undefined);
 });
 
 describe('StreetView under StrictMode', () => {

@@ -95,7 +95,10 @@ export const FLAGS = {
     kind: 'enum', values: ['all', 'raw', 'color', 'weather', 'fog', 'night', 'lighting'],
     doc: 'Isolate a single post-process effect (debug).',
   },
-  debug: { kind: 'enum', values: ['wireframe'], doc: '`?debug=wireframe` is an alias for `?wireframe`.' },
+  debug: {
+    kind: 'enum', values: ['wireframe'],
+    doc: 'Any `?debug` installs the renderer mutators on `window.__SV__.renderer` (`setBackend`, `setWeatherMode`, …); `?debug=wireframe` is also an alias for `?wireframe`.',
+  },
   wireframe: { kind: 'bool', default: false, doc: 'Wireframe overlay (debug).' },
   legacyTransitions: {
     kind: 'bool',

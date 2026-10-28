@@ -2,8 +2,6 @@
 import { installStreetViewProbe, streetViewProbe } from './streetViewProbe';
 import { publishAppliedRenderScale, resetRenderScaleForTests } from '../renderer/renderScale';
 
-// Test-only view of window for installing/removing globals without `any`.
-const win = window as unknown as Record<string, unknown>;
 
 function makeCanvas(width = 512, height = 512): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -191,7 +189,7 @@ describe('streetViewProbe.checkPixelDrift', () => {
 
 describe('installStreetViewProbe', () => {
   afterEach(() => {
-    delete win.__STREETVIEW_PROBE__;
+    delete window.__STREETVIEW_PROBE__;
   });
 
   it('exposes window.__STREETVIEW_PROBE__ backed by the shared probe instance', () => {

@@ -193,11 +193,9 @@ export function getAppliedRenderScale(): Readonly<AppliedRenderScale> {
     return applied;
 }
 
-type ProbeWindow = Window & { webgpuProbe?: { renderScale?: AppliedRenderScale } };
-
 function publishProbe(): void {
     if (typeof window === 'undefined') return;
-    const probe = (window as ProbeWindow).webgpuProbe;
+    const probe = window.webgpuProbe;
     if (probe && probe.renderScale !== applied) probe.renderScale = applied;
 }
 

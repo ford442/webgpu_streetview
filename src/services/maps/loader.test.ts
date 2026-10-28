@@ -1,17 +1,16 @@
 // @vitest-environment jsdom
 import { clearAuthFailure, loadMapsApi, onMapsAuthFailure } from './loader';
+import { writeWindowProperty } from '../../debug/globals';
 
-// Test-only view of window for installing/removing globals without `any`.
-const win = window as unknown as Record<string, unknown>;
 
 const resetMapsGlobals = () => {
   clearAuthFailure();
   document.head.innerHTML = '';
   document.body.innerHTML = '';
-  delete win.google;
-  delete win.gm_authFailure;
-  delete win.__mapsApiLoadState;
-  delete win.__initWebGpuStreetviewMaps;
+  writeWindowProperty('google', undefined);
+  delete window.gm_authFailure;
+  delete window.__mapsApiLoadState;
+  delete window.__initWebGpuStreetviewMaps;
 };
 
 describe('loadMapsApi', () => {
@@ -40,15 +39,15 @@ describe('loadMapsApi', () => {
     appendSpy.mockImplementation((node: Node) => {
       const script = node as HTMLScriptElement;
       setTimeout(() => {
-        win.google = {
+        writeWindowProperty('google', {
           maps: {
             importLibrary: jest.fn((libraryName: string) => {
               importedLibraries.push(libraryName);
               return Promise.resolve({});
             }),
           },
-        };
-        (win.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
+        });
+        (window.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
       }, 0);
       return script;
     });
@@ -127,14 +126,14 @@ describe('loadMapsApi', () => {
     appendSpy.mockImplementation((node: Node) => {
       const script = node as HTMLScriptElement;
       setTimeout(() => {
-        win.google = {
+        writeWindowProperty('google', {
           maps: {
             Map: function MockMap() {},
             StreetViewPanorama: function MockStreetViewPanorama() {},
             importLibrary: jest.fn(() => Promise.resolve({})),
           },
-        };
-        (win.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
+        });
+        (window.__initWebGpuStreetviewMaps as (() => void) | undefined)?.();
       }, 0);
       return script;
     });

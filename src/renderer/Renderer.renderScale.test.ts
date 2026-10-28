@@ -158,7 +158,7 @@ beforeEach(() => {
     resetRoadFrameSourceForTests();
     resetRenderScaleForTests(fixed(1));
     // The real boot publishes the probe; the mocked one does not.
-    (window as unknown as { webgpuProbe?: object }).webgpuProbe = {};
+    window.webgpuProbe = {} as unknown as NonNullable<Window['webgpuProbe']>;
     weatherCalls.renderPass.length = 0;
     weatherCalls.weatherOnly.length = 0;
     primeBoot();

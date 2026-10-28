@@ -92,7 +92,7 @@ beforeEach(() => {
     installGpuGlobals();
     installShaderFetch();
     resetGpuChoresStats();
-    delete (window as Window & { webgpuProbe?: unknown }).webgpuProbe;
+    delete window.webgpuProbe;
     window.history.replaceState(null, '', '/');
 });
 

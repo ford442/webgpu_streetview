@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { readWindowProperty } from '../debug/globals';
 
 export type GlobeTransition = 'inactive' | 'loading' | 'entering' | 'active' | 'exiting';
 
@@ -23,7 +24,7 @@ export function loadCesiumSDK(): Promise<void> {
         // Derive the global / JS filename from the build URL so main.js only
         // contains one SDK token (the URL itself).
         const sdkName = CESIUM_SDK_BUILD_URL.slice(CESIUM_SDK_BUILD_URL.lastIndexOf('/') + 1);
-        if ((window as unknown as Record<string, unknown>)[sdkName]) {
+        if (readWindowProperty(sdkName)) {
             resolve();
             return;
         }

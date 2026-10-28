@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { wantsGpuFeatureDump, type RendererBackendType } from '../renderer/RendererBackend';
+import { retryWebGpuBackend, wantsGpuFeatureDump, type RendererBackendType } from '../renderer/RendererBackend';
 import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
+import { useUnhandledErrors } from '../app/unhandledRejection';
+import { readCabinRendererProbe, type CabinRendererProbe } from '../car/interior/cabinRendererProbe';
 import { WEBGL2_FALLBACK_ACTIVE_MESSAGE, WEBGPU_REQUIRED_MESSAGE } from '../renderer/webgl2FallbackMessages';
 
 export interface RendererBackendInfo {
@@ -117,30 +119,8 @@ function readProbe(): WebGpuProbeRecord | null {
   return window.webgpuProbe ?? null;
 }
 
-function readCabinProbe(): {
-  backend: string;
-  preference: string;
-  ready: boolean;
-  initFailed?: boolean;
-  fallbackReason?: string;
-} | null {
-  const win = window as Window & {
-    __CABIN_RENDERER_PROBE__?: {
-      backend: string;
-      preference: string;
-      ready: boolean;
-      initFailed?: boolean;
-      fallbackReason?: string;
-    };
-    webgpuProbe?: { cabin?: {
-      backend: string;
-      preference: string;
-      ready: boolean;
-      initFailed?: boolean;
-      fallbackReason?: string;
-    } };
-  };
-  return win.__CABIN_RENDERER_PROBE__ ?? win.webgpuProbe?.cabin ?? null;
+function readCabinProbe(): CabinRendererProbe | null {
+  return readCabinRendererProbe() ?? null;
 }
 
 function chipLabel(info: RendererBackendInfo): string {
@@ -158,6 +138,8 @@ const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ bac
   const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics | null>(null);
   const [probe, setProbe] = useState<WebGpuProbeRecord | null>(null);
   const [cabinProbe, setCabinProbe] = useState<ReturnType<typeof readCabinProbe>>(null);
+  const unhandled = useUnhandledErrors();
+  const unhandledCount = unhandled.rejections + unhandled.errors;
 
   const isWebGPU = backendInfo?.backendType === 'webgpu';
   const isFailed = backendInfo != null && backendInfo.backendType !== 'webgpu';
@@ -201,7 +183,7 @@ const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ bac
           <div style={{ display: 'flex', marginBottom: '4px' }}>
             <button
               style={switchButtonStyle(backendInfo.backendType === 'webgpu')}
-              onClick={() => window.streetViewRendererDebug?.setBackend('webgpu')}
+              onClick={retryWebGpuBackend}
             >
               WebGPU
             </button>
@@ -245,6 +227,12 @@ const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ bac
                 {cabinProbe?.fallbackReason && (
                   <div style={{ color: '#ffcc66', wordBreak: 'break-word' }} title={cabinProbe.fallbackReason}>
                     cabin: {cabinProbe.fallbackReason}
+                  </div>
+                )}
+                {unhandledCount > 0 && (
+                  <div style={{ color: '#ff6666', wordBreak: 'break-word' }} title={unhandled.last ?? undefined}>
+                    unhandled: {unhandled.rejections} rejection{unhandled.rejections === 1 ? '' : 's'}, {unhandled.errors} error{unhandled.errors === 1 ? '' : 's'}
+                    {unhandled.last ? ` — ${unhandled.last}` : ''}
                   </div>
                 )}
                 {(probe?.reason || backendInfo.fallbackReason) && (
@@ -335,6 +323,11 @@ const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ bac
         title={backendInfo.fallbackReason || 'Click to toggle renderer backend controls'}
       >
         {chipLabel(backendInfo)}
+        {unhandledCount > 0 && (
+          <span data-testid="unhandled-error-count" style={{ color: '#ff6666' }} title={unhandled.last ?? undefined}>
+            {' '}· {unhandledCount} unhandled
+          </span>
+        )}
       </div>
     </>
   );

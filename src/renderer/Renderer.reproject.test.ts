@@ -182,7 +182,7 @@ beforeEach(() => {
     resetRoadFrameSourceForTests();
     resetRenderScaleForTests();
     frameTailScheduler.reset();
-    (window as unknown as { webgpuProbe?: object }).webgpuProbe = {};
+    window.webgpuProbe = {} as unknown as NonNullable<Window['webgpuProbe']>;
     weatherCalls.renderPass.length = 0;
     cabin.active = false;
     cabin.layout = 'mono';

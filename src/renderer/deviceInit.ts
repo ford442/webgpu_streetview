@@ -348,7 +348,7 @@ export function logAdapterCapabilities(
 
     console.info('[Renderer] WebGPU adapter capabilities:', summary);
     if (typeof window !== 'undefined') {
-        (window as Window & { rendererAdapterInfo?: AdapterCapabilitySummary }).rendererAdapterInfo = summary;
+        window.rendererAdapterInfo = summary;
     }
 }
 
@@ -507,7 +507,7 @@ export function attachUncapturedErrorHandler(
         capabilityMatrix.lastUncapturedError = message;
         console.error('[Renderer] uncapturederror', error);
         if (typeof window !== 'undefined') {
-            const info = (window as Window & { rendererAdapterInfo?: AdapterCapabilitySummary }).rendererAdapterInfo;
+            const info = window.rendererAdapterInfo;
             if (info?.capabilityMatrix) {
                 info.capabilityMatrix.uncapturedErrorCount = capabilityMatrix.uncapturedErrorCount;
                 info.capabilityMatrix.lastUncapturedError = message;

@@ -7,6 +7,7 @@ import type { RendererBackendPreference, WeatherPostProcessMode } from './Render
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 import { getPassStatuses, type PassStatusRecord } from './passStatus';
 import type { AppliedRenderScale } from './renderScale';
+import type { CabinRendererProbe } from '../car/interior/cabinRendererProbe';
 
 export type WebGpuProbeStage =
   | 'navigator'
@@ -64,6 +65,8 @@ export interface WebGpuProbeRecord {
    * Absent until the renderer has encoded a frame.
    */
   renderScale?: AppliedRenderScale;
+  /** The cabin renderer choice, mirrored by `publishCabinRendererProbe`. */
+  cabin?: CabinRendererProbe;
   updatedAt: number;
 }
 
@@ -119,7 +122,7 @@ export interface PublishWebGpuProbeOptions {
 export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuProbeRecord {
   const previous =
     typeof window !== 'undefined'
-      ? (window as Window & { webgpuProbe?: WebGpuProbeRecord }).webgpuProbe
+      ? window.webgpuProbe
       : undefined;
 
   const record: WebGpuProbeRecord = {
@@ -139,7 +142,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
   };
 
   if (typeof window !== 'undefined') {
-    (window as Window & { webgpuProbe?: WebGpuProbeRecord }).webgpuProbe = record;
+    window.webgpuProbe = record;
   }
   return record;
 }
