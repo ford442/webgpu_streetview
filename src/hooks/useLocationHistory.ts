@@ -20,7 +20,7 @@ export function useLocationHistory() {
     // Load history from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+        void (async () => {
             try {
                 const stored = await loadMirroredJson<HistoryEntry[]>('history');
                 if (!cancelled && Array.isArray(stored)) {

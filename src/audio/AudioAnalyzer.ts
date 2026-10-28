@@ -288,7 +288,7 @@ export class AudioAnalyzer {
       this.audioContext = null;
       releaseCarAudioGraph();
     } else if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close();
+      this.audioContext.close().catch(() => {});
       this.audioContext = null;
     }
   }

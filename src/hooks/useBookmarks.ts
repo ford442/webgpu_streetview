@@ -29,7 +29,7 @@ export function useBookmarks() {
     // Load bookmarks from IndexedDB (mirrors localStorage) on mount
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+        void (async () => {
             try {
                 const stored = await loadMirroredJson<Bookmark[]>('bookmarks');
                 if (!cancelled && Array.isArray(stored)) {

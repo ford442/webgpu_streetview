@@ -88,7 +88,7 @@ export function createMeteredPoiCoverageLookup(
             resolve(null);
           }
         },
-      );
+      ).catch(() => {});
     });
   };
 }

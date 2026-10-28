@@ -225,7 +225,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
       }
     };
     
-    setupBatteryMonitoring();
+    void setupBatteryMonitoring();
   }, [quality.batterySaveMode, setBatterySaveMode]);
 
   const setCustomQuality = useCallback((settings: Partial<QualitySettings>) => {

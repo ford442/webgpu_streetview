@@ -139,7 +139,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
 
     let cancelled = false;
 
-    (async () => {
+    void (async () => {
       let terrainProvider: CesiumTerrainProvider;
       let baseLayer: CesiumImageryLayer | false;
       try {

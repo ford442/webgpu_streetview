@@ -73,7 +73,7 @@ function reverseGeocode(latLng: google.maps.LatLng): Promise<string | null> {
       } else {
         resolve(null);
       }
-    });
+    }).catch(() => {});
   });
 }
 
@@ -87,7 +87,7 @@ function fetchImageDate(panoId: string): Promise<string | null> {
       } else {
         resolve(null);
       }
-    });
+    }).catch(() => {});
   });
 }
 

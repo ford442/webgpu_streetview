@@ -93,7 +93,7 @@ export function useTours() {
 
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+        void (async () => {
             try {
                 const stored = await loadMirroredJson<Tour[]>('tours');
                 if (!cancelled && Array.isArray(stored)) {

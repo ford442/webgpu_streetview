@@ -118,5 +118,5 @@ export function requestOrbitalDrop(opts: {
         opts.onNoStreetView();
       }
     },
-  );
+  ).catch(() => {});
 }

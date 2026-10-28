@@ -30,6 +30,7 @@ import { useCabinRadioBinding } from './car/useCabinRadioBinding';
 import { useCarDashboardBridge } from './car/useCarDashboardBridge';
 import { CarControlModeOverlay } from './car/CarControlModeOverlay';
 import { CarLeverFallbacks } from './car/CarLeverFallbacks';
+import { fireAndForget } from '../utils/fireAndForget';
 
 interface CarModeViewProps {
   mapsApiKey: string;
@@ -223,7 +224,7 @@ const CarModeView: React.FC<CarModeViewProps> = ({ mapsApiKey }) => {
         isMapOpen={isMapOpen}
         onNavigate={handleNavigate}
         onToggleGPS={handleToggleGPS}
-        onToggleRadio={handleToggleRadio}
+        onToggleRadio={fireAndForget('Radio', handleToggleRadio)}
         onRainIntensity={setRainIntensity}
         onSnowIntensity={setSnowIntensity}
         onWind={setWind}

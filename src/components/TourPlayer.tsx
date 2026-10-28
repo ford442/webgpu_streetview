@@ -139,7 +139,11 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
             }
             if (runTokenRef.current === token) setIsPlaying(false);
         };
-        run();
+        // A rejected teleport must not leave the player stuck in "playing".
+        run().catch((err: unknown) => {
+            console.warn('[TourPlayer] Playback stopped — a waypoint failed', err);
+            if (runTokenRef.current === token) setIsPlaying(false);
+        });
         return () => {
             runTokenRef.current = token + 1;
         };
@@ -154,7 +158,7 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
 
     const toggleFullscreen = () => {
         if (document.fullscreenElement) {
-            document.exitFullscreen();
+            document.exitFullscreen().catch(() => {});
         } else {
             containerRef.current?.requestFullscreen?.().catch(() => {});
         }
@@ -164,7 +168,7 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
         setIsPlaying(false);
         runTokenRef.current++;
         setCurrentIndex(index);
-        visitWaypoint(index);
+        visitWaypoint(index).catch((err: unknown) => console.warn('[TourPlayer] Scrub failed', err));
     };
 
     const waypointCount = tour.waypoints.length;

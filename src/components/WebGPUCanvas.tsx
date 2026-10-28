@@ -219,7 +219,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
             }, decision.delayMs);
         };
 
-        (async () => {
+        void (async () => {
             const result = await createStreetViewRenderer(canvas, {
                 // Only a loss we did not cause arrives here: the renderer
                 // suppresses the `lost` of a device it destroyed itself.

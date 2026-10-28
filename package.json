@@ -44,7 +44,7 @@
     "knip": "knip --no-progress",
     "verify": "node scripts/verify.mjs",
     "hooks:install": "git config core.hooksPath scripts/hooks",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/",
     "validate:maps-key": "node -e \"\nconst k=process.env.REACT_APP_MAPS_API_KEY||process.env.VITE_MAPS_API_KEY||''; const bad=!k||/placeholder|your_|replace/i.test(k);\nconsole.log(bad ? '❌ Key missing or placeholder' : '✅ Key looks configured ('+k.length+' chars)');\nprocess.exit(bad?1:0);\n\"",
     "validate:shaders": "node scripts/validate-shaders.mjs",
     "probe:hold-pause": "node scripts/hold-pause-probe.mjs",

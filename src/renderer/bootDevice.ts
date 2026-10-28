@@ -167,7 +167,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     labelDevice(device);
 
     let destroyedHere = false;
-    device.lost.then((info) => {
+    void device.lost.then((info) => {
         if (destroyedHere) return;
         onDeviceLost(info);
     });

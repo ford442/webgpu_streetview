@@ -78,7 +78,7 @@ function getPanoramaAt(target: LatLng): Promise<string | null> {
       (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? data?.location?.pano ?? null : null);
       },
-    );
+    ).catch(() => {});
   });
 }
 

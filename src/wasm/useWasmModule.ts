@@ -39,6 +39,9 @@ export function useWasmModule(): UseWasmModuleResult {
         setWasm(mod);
         setLoading(false);
       }
+    }).catch((err: unknown) => {
+      console.warn('[wasm] module load failed', err);
+      if (!cancelled) setLoading(false);
     });
     return () => {
       cancelled = true;

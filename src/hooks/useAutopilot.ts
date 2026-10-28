@@ -24,13 +24,15 @@ export function useAutopilot({
   const handleStartJourney = useCallback(async (waypoints: { lat: number; lng: number }[]) => {
     if (waypoints.length === 0) return;
 
-    waypoints.forEach(wp => panoCache.fetch(wp.lat, wp.lng).catch(() => {}));
+    waypoints.forEach((wp) => {
+      panoCache.fetch(wp.lat, wp.lng).catch(() => {});
+    });
 
     await handleGlobeTeleport(waypoints[0]!.lat, waypoints[0]!.lng);
 
     if (waypoints.length > 1) {
       let idx = 1;
-      autopilotRef.current = setInterval(async () => {
+      const step = async () => {
         if (idx >= waypoints.length) {
           if (autopilotRef.current) clearInterval(autopilotRef.current);
           autopilotRef.current = null;
@@ -50,7 +52,8 @@ export function useAutopilot({
           setNavPending(false);
         }
         idx++;
-      }, WAYPOINT_INTERVAL_MS);
+      };
+      autopilotRef.current = setInterval(() => void step(), WAYPOINT_INTERVAL_MS);
     }
   }, [handleGlobeTeleport, panoCache, teleportSafe, setNavPending]);
 

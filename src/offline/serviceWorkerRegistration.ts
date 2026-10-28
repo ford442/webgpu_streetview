@@ -37,9 +37,9 @@ function checkValidServiceWorker(swUrl: string, config?: ServiceWorkerConfig) {
     .then((response) => {
       const contentType = response.headers.get('content-type') ?? '';
       if (response.status === 404 || contentType.indexOf('javascript') === -1) {
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.unregister().then(() => window.location.reload());
-        });
+        void navigator.serviceWorker.ready
+          .then((registration) => registration.unregister())
+          .then(() => window.location.reload());
         return;
       }
       registerValidSW(swUrl, config);
@@ -75,6 +75,6 @@ export function registerServiceWorker(config?: ServiceWorkerConfig) {
 
 export function unregisterServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready.then((registration) => registration.unregister());
+    void navigator.serviceWorker.ready.then((registration) => registration.unregister());
   }
 }

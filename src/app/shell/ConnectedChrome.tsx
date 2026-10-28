@@ -47,6 +47,7 @@ import {
 } from '../../components';
 import StorageManagementPanel from '../../components/StorageManagementPanel';
 import GlobeReturnButton from '../../components/GlobeReturnButton';
+import { fireAndForget } from '../../utils/fireAndForget';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 /** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */
@@ -386,8 +387,8 @@ export function ConnectedChrome({
           roomCode={sharedSession.roomCode}
           participants={sharedSession.participants}
           isConnected={sharedSession.isConnected}
-          onCreateRoom={sharedSession.createRoom}
-          onJoinRoom={sharedSession.joinRoom}
+          onCreateRoom={fireAndForget('SharedSession', sharedSession.createRoom)}
+          onJoinRoom={fireAndForget('SharedSession', sharedSession.joinRoom)}
           onLeave={sharedSession.leaveSession}
         />
       )}
@@ -406,10 +407,10 @@ export function ConnectedChrome({
           isOpen={isBookmarkPanelOpen}
           isSyncing={bm.isBookmarkSyncing}
           syncError={bm.bookmarkSyncError}
-          onLoadCloudBookmarks={bm.loadCloudBookmarks}
-          onSaveBookmarkToCloud={bm.saveBookmarkToCloud}
-          onRemoveCloudBookmark={bm.removeCloudBookmark}
-          onSyncAllToCloud={bm.syncAllToCloud}
+          onLoadCloudBookmarks={fireAndForget('Bookmarks', bm.loadCloudBookmarks)}
+          onSaveBookmarkToCloud={fireAndForget('Bookmarks', bm.saveBookmarkToCloud)}
+          onRemoveCloudBookmark={fireAndForget('Bookmarks', bm.removeCloudBookmark)}
+          onSyncAllToCloud={fireAndForget('Bookmarks', bm.syncAllToCloud)}
         />
       )}
 
@@ -516,7 +517,7 @@ export function ConnectedChrome({
           hasTimeline={historical.hasHistoricalTimeline}
           currentIndex={historical.historicalCurrentIndex}
           isTransitioning={isTransitioning || historical.isCapturingComparison}
-          onSelectDate={(entry) => teleportToPanoSafe(entry.panoId, {
+          onSelectDate={(entry) => void teleportToPanoSafe(entry.panoId, {
             reveal: resolveYearChipReveal(
               historical.historicalEntries,
               historical.historicalCurrentIndex,
@@ -524,7 +525,7 @@ export function ConnectedChrome({
               accessibilitySettings.reducedMotion,
             ),
           })}
-          onCompare={historical.compareHistorical}
+          onCompare={fireAndForget('Historical', historical.compareHistorical)}
           isComparing={!!historical.historicalComparison}
           onExitCompare={historical.exitHistoricalCompare}
           compareScopeLabel={compareStillScopeLabel(historical.historicalComparison)}
@@ -634,11 +635,11 @@ export function ConnectedChrome({
             pois={globePois}
             bookmarks={globeBookmarks}
             mapsApiKey={effectiveMapsKey}
-            onTeleportRequest={handleGlobeTeleport}
+            onTeleportRequest={fireAndForget('Globe', handleGlobeTeleport)}
             onEnterComplete={globeMode.onEnterComplete}
             onExitComplete={globeMode.onExitComplete}
             onRequestExit={globeMode.cancel}
-            onStartJourney={handleStartJourney}
+            onStartJourney={fireAndForget('Autopilot', handleStartJourney)}
           />
         </Suspense>
       )}

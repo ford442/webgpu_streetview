@@ -179,7 +179,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 💾 Download
                             </button>
                             <button
-                                onClick={() => handleShare(selectedSnapshot)}
+                                onClick={() => void handleShare(selectedSnapshot)}
                                 style={{
                                     padding: '8px 16px',
                                     backgroundColor: '#9c27b0',
@@ -193,7 +193,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                 📤 Share
                             </button>
                             <button
-                                onClick={() => handleCopyLink(selectedSnapshot)}
+                                onClick={() => void handleCopyLink(selectedSnapshot)}
                                 style={{
                                     padding: '8px 16px',
                                     backgroundColor: '#607d8b',
@@ -432,7 +432,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                                 ⬇
                                             </button>
                                             <button
-                                                onClick={() => handleShare(snapshot)}
+                                                onClick={() => void handleShare(snapshot)}
                                                 title="Share"
                                                 style={{
                                                     padding: '2px 6px',
@@ -447,7 +447,7 @@ const SnapshotGallery: React.FC<SnapshotGalleryProps> = ({
                                                 📤
                                             </button>
                                             <button
-                                                onClick={() => handleCopyLink(snapshot)}
+                                                onClick={() => void handleCopyLink(snapshot)}
                                                 title="Copy link"
                                                 style={{
                                                     padding: '2px 6px',

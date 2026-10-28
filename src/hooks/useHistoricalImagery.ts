@@ -35,7 +35,7 @@ export function useHistoricalImagery(
     if (lat == null || lng == null) return;
 
     const requestId = ++requestIdRef.current;
-    const timer = setTimeout(async () => {
+    const load = async () => {
       setIsLoading(true);
       setError(null);
       try {
@@ -60,7 +60,8 @@ export function useHistoricalImagery(
       } finally {
         if (requestIdRef.current === requestId) setIsLoading(false);
       }
-    }, DEBOUNCE_MS);
+    };
+    const timer = setTimeout(() => void load(), DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
   }, [lat, lng, currentPanoId, currentImageDate]);

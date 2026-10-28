@@ -159,7 +159,7 @@ export async function geocodeTextQuery(query: string): Promise<ResolvedDestinati
           resolve(null);
         }
       }
-    });
+    }).catch(() => {});
   });
 }
 
@@ -191,7 +191,7 @@ export function lookupStreetViewCoverage(lat: number, lng: number, panoId?: stri
         getPlaceSearchBudget().recordError('streetViewLookup');
         resolve({ ok: false, reason: 'no-coverage' });
       }
-    });
+    }).catch(() => {});
   });
 }
 

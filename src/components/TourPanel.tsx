@@ -149,7 +149,7 @@ const TourPanel: React.FC<TourPanelProps> = ({
             } catch (err) {
                 setImportError(err instanceof Error ? err.message : 'Failed to import tour');
             }
-        });
+        }).catch((err: unknown) => setImportError(err instanceof Error ? err.message : 'Failed to read the tour file'));
     };
 
     return (

@@ -10,6 +10,7 @@ import type { VehicleType } from '../car/VehicleManager';
 import type { ConnectedChromeSnapshots } from './shell/ConnectedChrome';
 import { getCarRuntime } from './carRuntimeCache';
 import { povStore } from '../state/povStore';
+import { fireAndForget } from '../utils/fireAndForget';
 
 export interface UseAppCaptureOptions {
   panorama: google.maps.StreetViewPanorama | null;
@@ -173,11 +174,11 @@ export function useAppCapture(options: UseAppCaptureOptions): UseAppCaptureResul
       snapshots: snapshots.snapshots,
       removeSnapshot: snapshots.removeSnapshot,
       updateSnapshotName: snapshots.updateSnapshotName,
-      downloadSnapshot: snapshots.downloadSnapshot,
+      downloadSnapshot: fireAndForget('Snapshots', snapshots.downloadSnapshot),
       clearAllSnapshots: snapshots.clearAllSnapshots,
       getSnapshotDeepLink: snapshots.getSnapshotDeepLink,
       shareSnapshot: snapshots.shareSnapshot,
-      onTeleport: handleSnapshotTeleport,
+      onTeleport: fireAndForget('Snapshots', handleSnapshotTeleport),
       onTakeSnapshot: handleTakeSnapshot,
     },
   };

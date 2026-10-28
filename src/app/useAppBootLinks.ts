@@ -67,7 +67,7 @@ export function useAppBootLinks(options: UseAppBootLinksOptions): void {
     const params = parseDeepLinkParams();
     if (!params) return;
 
-    (async () => {
+    void (async () => {
       try {
         if (params.panoId) {
           await teleportToPanoSafe(params.panoId);

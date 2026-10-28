@@ -179,7 +179,7 @@ export function createMeteredPanoFetcher(svc: google.maps.StreetViewService): Pa
     return new Promise((resolve) => {
       svc.getPanorama({ pano: panoId }, (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? panoNodeFromData(data) : null);
-      });
+      }).catch(() => {});
     });
   };
 }

@@ -28,7 +28,7 @@ export function useCabinEnvironment(
       if (!cancelled && result) {
         setCarPanoEnvironment(result.canvas, result.centerHeading);
       }
-    });
+    }).catch((err: unknown) => console.warn('[CabinEnvironment] Equirect fetch failed', err));
 
     return () => { cancelled = true; };
   }, [panorama, position]);

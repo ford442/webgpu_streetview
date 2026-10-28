@@ -103,8 +103,8 @@ export class VanityMirror {
 
     const currentTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.renderTarget);
-    this.renderer.clear();
-    this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
+    void this.renderer.clear();
+    void this.renderer.render(this.mirrorScreenScene, this.mirrorCamera);
     // `getRenderTarget()`/`setRenderTarget()` round-trip the same renderer's own
     // value; the two `CabinRenderer` union members type this pair slightly
     // differently, so re-narrow rather than fight the union.

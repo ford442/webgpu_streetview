@@ -263,7 +263,12 @@ export function useCruiseMode({
             await new Promise(r => setTimeout(r, gearChainedHopIntervalMs(hops)));
             if (hopsPerTickRef.current && hopsPerTickRef.current() <= 0) break;
           }
-          const outcome = await singleHop();
+          // A rejected hop (teleport/advance threw) is a stuck hop: it must
+          // still reach the counter below, or cruise never auto-disables.
+          const outcome = await singleHop().catch((err: unknown) => {
+            console.warn('[CruiseMode] Hop failed', err);
+            return 'stuck' as const;
+          });
           if (outcome === 'arrived') {
             arrived = true;
             break;
@@ -293,7 +298,7 @@ export function useCruiseMode({
       }
     };
     void hop();
-    cruiseIntervalRef.current = setInterval(hop, 3000);
+    cruiseIntervalRef.current = setInterval(() => void hop(), 3000);
     return () => {
       if (cruiseIntervalRef.current) clearInterval(cruiseIntervalRef.current);
       cruiseIntervalRef.current = null;

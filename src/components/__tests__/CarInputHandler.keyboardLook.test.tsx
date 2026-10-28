@@ -61,9 +61,9 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
     for (const frameMs of [1000 / 120, 1000 / 60, 1000 / 30]) {
       cabinHeadStore.reset();
       const { unmount } = render(<Harness />);
-      act(() => key('keydown', 'd'));
+      act(() => { key('keydown', 'd'); });
       runFrames(500, frameMs);
-      act(() => key('keyup', 'd'));
+      act(() => { key('keyup', 'd'); });
       // 90°/s for ~0.5 s (frame quantisation ≤ one frame of drift)
       expect(Math.abs(yawDeg() + 45)).toBeLessThan(4);
       expect(povStore.get().carHeading).toBe(100);
@@ -73,19 +73,19 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
 
   it('is independent of OS key-repeat: repeated keydowns add nothing', () => {
     render(<Harness />);
-    act(() => key('keydown', 'd'));
-    for (let i = 0; i < 50; i++) act(() => key('keydown', 'd', true));
+    act(() => { key('keydown', 'd'); });
+    for (let i = 0; i < 50; i++) act(() => { key('keydown', 'd', true); });
     expect(yawDeg()).toBe(0); // no frame has elapsed → no turn from keydown spam
     runFrames(250, 1000 / 60);
-    act(() => key('keyup', 'd'));
+    act(() => { key('keyup', 'd'); });
     expect(Math.abs(yawDeg() + 22.5)).toBeLessThan(3);
   });
 
   it('A looks left, both cancel, release stops the loop; the head clamps at 90°', () => {
     render(<Harness />);
-    act(() => key('keydown', 'a'));
+    act(() => { key('keydown', 'a'); });
     runFrames(500, 1000 / 60);
-    act(() => key('keyup', 'a'));
+    act(() => { key('keyup', 'a'); });
     expect(yawDeg()).toBeGreaterThan(0);
 
     cabinHeadStore.reset();
@@ -100,9 +100,9 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
       key('keyup', 'd');
     });
 
-    act(() => key('keydown', 'a'));
+    act(() => { key('keydown', 'a'); });
     runFrames(3000, 1000 / 60);
-    act(() => key('keyup', 'a'));
+    act(() => { key('keyup', 'a'); });
     expect(yawDeg()).toBeCloseTo(90, 6);
   });
 
@@ -120,16 +120,16 @@ describe('CarInputHandler keyboard look (rAF, dt-based)', () => {
   it('steers the car (not the head) in STEER mode', () => {
     controlMode = 'STEER';
     render(<Harness />);
-    act(() => key('keydown', 'd'));
+    act(() => { key('keydown', 'd'); });
     runFrames(500, 1000 / 60);
-    act(() => key('keyup', 'd'));
+    act(() => { key('keyup', 'd'); });
     expect(povStore.get().carHeading).toBeGreaterThan(110); // 60°/s × 0.5 s ≈ 30°
     expect(cabinHeadStore.get().headYaw).toBe(0);
   });
 
   it('stops turning on window blur (no stuck key)', () => {
     render(<Harness />);
-    act(() => key('keydown', 'd'));
+    act(() => { key('keydown', 'd'); });
     runFrames(100, 1000 / 60);
     act(() => {
       window.dispatchEvent(new Event('blur'));

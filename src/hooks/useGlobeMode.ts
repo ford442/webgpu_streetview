@@ -115,7 +115,7 @@ export function useGlobeMode(): GlobeModeControls {
     }, [setT]);
 
     const toggle = useCallback(() => {
-        if (transitionRef.current === 'inactive') activate();
+        if (transitionRef.current === 'inactive') void activate();
         else cancel();
     }, [activate, cancel]);
 

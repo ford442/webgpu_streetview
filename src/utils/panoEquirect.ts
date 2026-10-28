@@ -49,7 +49,7 @@ function fetchTileData(panoId: string): Promise<google.maps.StreetViewTileData |
       } else {
         resolve(null);
       }
-    });
+    }).catch(() => {});
   });
 }
 

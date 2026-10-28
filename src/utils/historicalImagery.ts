@@ -137,7 +137,7 @@ function queryPanorama(
           copyright: panoData.copyright ?? null,
         });
       }
-    );
+    ).catch(() => {});
   });
 }
 
