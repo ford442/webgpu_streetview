@@ -48,7 +48,7 @@ import {
     type XrVec3,
 } from './xrPose';
 
-export type XrEndReason = 'user' | 'device-lost' | 'error';
+type XrEndReason = 'user' | 'device-lost' | 'error';
 
 export interface XrCockpitDeps {
     device: GPUDevice;

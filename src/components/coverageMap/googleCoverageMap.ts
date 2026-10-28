@@ -12,7 +12,7 @@
 import { POI_COVERAGE_COLORS, type PoiCoverage } from '../../search/poiCoverage';
 import type { NearbyPoi } from '../../search/poiModel';
 
-export const COVERAGE_MAP_GOOGLE_ZOOM = 17;
+const COVERAGE_MAP_GOOGLE_ZOOM = 17;
 
 export interface GoogleCoverageHandlers {
   onPickLatLng: (lat: number, lng: number) => void;
@@ -30,7 +30,7 @@ export interface GoogleCoverageMap {
   destroy(): void;
 }
 
-export interface CoverageTrip {
+interface CoverageTrip {
   path: readonly { lat: number; lng: number }[];
   stills: readonly { lat: number; lng: number; name: string; panoId: string | null }[];
 }

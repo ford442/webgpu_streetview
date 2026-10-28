@@ -72,9 +72,3 @@ export function registerServiceWorker(config?: ServiceWorkerConfig) {
     registerValidSW(swUrl, config);
   });
 }
-
-export function unregisterServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    void navigator.serviceWorker.ready.then((registration) => registration.unregister());
-  }
-}

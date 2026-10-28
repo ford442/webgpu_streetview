@@ -5,7 +5,6 @@ import {
     getCanvasOutputFlags,
     supportsAdapterFeatureLevel,
     type AdapterFeatureLevel,
-    type AdapterSelectionPolicy,
     type CanvasOutputFlags,
     type RendererInitOptions,
     type WeatherPostProcessMode,
@@ -125,7 +124,7 @@ export function checkGpuChoresLimits(limits: GPUSupportedLimits): GpuChoresLimit
 }
 
 /** Below this the panorama + HDR intermediate cannot fit a desktop window: boot fails. */
-export const MIN_TEXTURE_DIMENSION_2D = 4096;
+const MIN_TEXTURE_DIMENSION_2D = 4096;
 /** The largest 2D texture any pass allocates (DPR-scaled canvas, Maps canvas upload). */
 export const MAX_REQUESTED_TEXTURE_DIMENSION_2D = 8192;
 
@@ -528,4 +527,3 @@ export function labelDevice(device: GPUDevice): void {
 }
 
 export { getCanvasOutputFlags };
-export type { AdapterSelectionPolicy, CanvasOutputFlags };

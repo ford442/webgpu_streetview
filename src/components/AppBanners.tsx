@@ -1,6 +1,6 @@
 import React from 'react';
 
-export interface AppBannersProps {
+interface AppBannersProps {
   showMissingKeyBanner: boolean;
   setShowMissingKeyBanner: (v: boolean) => void;
   showAuthFailedBanner: boolean;

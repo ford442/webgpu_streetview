@@ -8,7 +8,7 @@ export interface CesiumCartesian2 {
   y: number;
 }
 
-export interface CesiumCartesian3 {
+interface CesiumCartesian3 {
   x: number;
   y: number;
   z: number;
@@ -19,7 +19,7 @@ export interface CesiumEntity {
   description?: unknown;
 }
 
-export interface CesiumEntityCollection {
+interface CesiumEntityCollection {
   add(options: Record<string, unknown>): CesiumEntity;
   remove(entity: CesiumEntity): boolean;
 }
@@ -28,7 +28,7 @@ export type CesiumImageryLayer = object;
 
 export type CesiumTerrainProvider = object;
 
-export interface CesiumViewerOptions {
+interface CesiumViewerOptions {
   animation?: boolean;
   baseLayerPicker?: boolean;
   fullscreenButton?: boolean;
@@ -46,7 +46,7 @@ export interface CesiumViewerOptions {
   baseLayer?: CesiumImageryLayer | false;
 }
 
-export interface CesiumCamera {
+interface CesiumCamera {
   setView(options: {
     destination: CesiumCartesian3;
     orientation?: { heading?: number; pitch?: number; roll?: number };
@@ -60,7 +60,7 @@ export interface CesiumCamera {
   pickEllipsoid(windowPosition: CesiumCartesian2, ellipsoid: unknown): CesiumCartesian3 | undefined;
 }
 
-export interface CesiumScene {
+interface CesiumScene {
   canvas: HTMLCanvasElement;
   globe: { ellipsoid: unknown };
   pick(windowPosition: CesiumCartesian2): { id?: CesiumEntity & { properties?: CesiumPropertyBag } } | undefined;

@@ -21,14 +21,14 @@ export interface FramePassTimings {
  * path writes the swap chain directly), the upscale span below render scale 1
  * only.
  */
-export const TIMESTAMP_SLOTS: Partial<Record<FramePassId, readonly [number, number]>> = {
+const TIMESTAMP_SLOTS: Partial<Record<FramePassId, readonly [number, number]>> = {
     streetview: [0, 1],
     weather: [2, 3],
     'present-fallback': [2, 3],
     upscale: [6, 7],
 };
 /** The compute weather path's blit-to-swap-chain span. */
-export const COMPUTE_BLIT_TIMESTAMP_SLOTS = [4, 5] as const;
+const COMPUTE_BLIT_TIMESTAMP_SLOTS = [4, 5] as const;
 
 export function buildFramePassTimings(
     timer: GpuPassTimer | null,

@@ -1,6 +1,6 @@
 export type ImageExportFormat = 'png' | 'jpeg' | 'webp';
 
-export const FORMAT_MIME: Record<ImageExportFormat, string> = {
+const FORMAT_MIME: Record<ImageExportFormat, string> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
@@ -15,7 +15,7 @@ export function formatExtension(format: ImageExportFormat): string {
   return format === 'jpeg' ? 'jpg' : format;
 }
 
-export function dataUrlToImage(dataUrl: string): Promise<HTMLImageElement> {
+function dataUrlToImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);

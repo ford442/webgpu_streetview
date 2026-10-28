@@ -50,7 +50,7 @@ const {
     vec4,
 } = TSL;
 
-export type UniformMaterial<U> = THREE.Material & { uniforms: U };
+type UniformMaterial<U> = THREE.Material & { uniforms: U };
 
 function withUniforms<U>(material: THREE.Material, uniforms: U): UniformMaterial<U> {
     Object.defineProperty(material, 'uniforms', { value: uniforms, enumerable: true });
@@ -75,7 +75,7 @@ function rearDummyTexture(): THREE.Texture {
     return dummyRearTex;
 }
 
-export function createVanityMirrorTslMaterial(
+function createVanityMirrorTslMaterial(
     map: THREE.Texture,
     warmthValue = 0.18,
 ): UniformMaterial<VanityMirrorUniforms> {
@@ -97,7 +97,7 @@ export function createVanityMirrorTslMaterial(
     });
 }
 
-export function createRearviewMirrorTslMaterial(): UniformMaterial<RearviewMirrorUniforms> {
+function createRearviewMirrorTslMaterial(): UniformMaterial<RearviewMirrorUniforms> {
     const nightMode = uniform(0);
     const rearAvailable = uniform(0);
     const timeU = uniform(0);
@@ -168,7 +168,7 @@ export function createRearviewMirrorTslMaterial(): UniformMaterial<RearviewMirro
     });
 }
 
-export function createWindowWeatherOverlayTslMaterial(): UniformMaterial<WindowWeatherOverlayUniforms> {
+function createWindowWeatherOverlayTslMaterial(): UniformMaterial<WindowWeatherOverlayUniforms> {
     const timeU = uniform(0);
     const rainIntensity = uniform(0);
     const condensation = uniform(0);
@@ -254,7 +254,7 @@ export function createWindowWeatherOverlayTslMaterial(): UniformMaterial<WindowW
     });
 }
 
-export function createCupLiquidTslMaterial(
+function createCupLiquidTslMaterial(
     color: THREE.ColorRepresentation = 0x3a2010,
 ): UniformMaterial<CupLiquidUniforms> {
     const timeU = uniform(0);
@@ -289,7 +289,7 @@ export function createCupLiquidTslMaterial(
     });
 }
 
-export function createDashboardGlowTslMaterial(
+function createDashboardGlowTslMaterial(
     uniforms: DashboardGlowUniforms,
 ): UniformMaterial<DashboardGlowUniforms> {
     const timeU = uniform(uniforms.time.value);
@@ -358,6 +358,7 @@ export interface CabinTslApi {
     createDashboardGlowMaterial: typeof createDashboardGlowTslMaterial;
 }
 
+/** @public Read off the dynamic `import()` in `createCabinRenderer.ts` (knip cannot see that). */
 export const cabinTslApi: CabinTslApi = {
     createVanityMirrorMaterial: createVanityMirrorTslMaterial,
     createRearviewMirrorMaterial: createRearviewMirrorTslMaterial,

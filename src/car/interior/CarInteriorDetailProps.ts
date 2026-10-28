@@ -21,7 +21,7 @@ export interface CabinLeverCallbacks {
   onGear?: (gear: GearPosition) => void;
 }
 
-export type CupLiquidMaterial = THREE.Material & { uniforms: CupLiquidUniforms };
+type CupLiquidMaterial = THREE.Material & { uniforms: CupLiquidUniforms };
 
 export interface CarInteriorDetailBuildResult {
   interactives: InteriorInteractive[];

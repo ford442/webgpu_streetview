@@ -24,9 +24,6 @@ import type { WindowWeatherOverlay } from './interior/WindowWeatherOverlay';
 import type { GaugeRig } from './interior/CarInteriorGauges';
 import { PUBLIC_URL } from '../config/publicUrl';
 
-export { GLTF_INTERIOR_ASSET, GLTF_INTERIOR_SOCKETS, GLTF_INTERIOR_STORAGE_KEY };
-export type { GltfInteriorSocket };
-
 export function isGltfInteriorEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   if (readFlag('gltfInterior') === true) {
@@ -41,16 +38,6 @@ export function isGltfInteriorEnabled(): boolean {
     return window.localStorage.getItem(GLTF_INTERIOR_STORAGE_KEY) === '1';
   } catch {
     return false;
-  }
-}
-
-export function setGltfInteriorEnabled(enabled: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (enabled) window.localStorage.setItem(GLTF_INTERIOR_STORAGE_KEY, '1');
-    else window.localStorage.removeItem(GLTF_INTERIOR_STORAGE_KEY);
-  } catch {
-    /* ignore */
   }
 }
 

@@ -36,10 +36,10 @@ import { useTripLibrary } from '../trip/tripLibrary';
 import { createGoogleCoverageMap, type GoogleCoverageMap } from './coverageMap/googleCoverageMap';
 import { createCesiumCoverageScene, type CesiumCoverageScene } from './coverageMap/cesiumCoverageScene';
 
-export type CoverageMapMode = 'google' | 'cesium';
+type CoverageMapMode = 'google' | 'cesium';
 
 /** Snap radius for a click on empty map: generous enough to land on a nearby road. */
-export const COVERAGE_MAP_CLICK_SNAP_RADIUS_M = 60;
+const COVERAGE_MAP_CLICK_SNAP_RADIUS_M = 60;
 
 interface CoverageMapProps {
   panorama: google.maps.StreetViewPanorama | null;

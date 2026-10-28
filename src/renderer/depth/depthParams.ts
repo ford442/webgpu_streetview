@@ -30,7 +30,7 @@ export function releaseDollyScale(options: { reducedMotion: boolean; xr: boolean
     return options.xr ? XR_RELEASE_DOLLY_SCALE : 1;
 }
 /** How fast trust in a fresh map ramps up (and down after a zoom), ms. */
-export const DEPTH_CONFIDENCE_TAU_MS = 160;
+const DEPTH_CONFIDENCE_TAU_MS = 160;
 
 /** Where and when the current depth map was inferred. */
 export interface DepthMapPose extends DepthPov {

@@ -138,7 +138,7 @@ export function transitionCabinInput(
 }
 
 /** Lock state after a row: held, released, or asked for (mode changes on `LOCK_ACQUIRED`). */
-export type LockColumn = 'locked' | 'unlocked' | 'request lock' | 'exit lock';
+type LockColumn = 'locked' | 'unlocked' | 'request lock' | 'exit lock';
 
 export interface CabinInputTransitionRow {
   from: string;

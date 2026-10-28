@@ -14,7 +14,7 @@ import {
   type CinemaSidecarSession,
 } from '../utils/cinemaSidecar';
 
-export interface CinemaOverlayProps {
+interface CinemaOverlayProps {
   visible: boolean;
   letterbox: boolean;
   onToggleLetterbox: () => void;

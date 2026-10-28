@@ -3,7 +3,7 @@
  * Samples the host film set; never fetches Street View Static imagery.
  */
 
-export interface CinemaSidecarSample {
+interface CinemaSidecarSample {
   tMs: number;
   panoId?: string;
   imageDate?: string;

@@ -1,6 +1,6 @@
-export const OFFLINE_DB_NAME = 'webgpu-streetview-offline';
+const OFFLINE_DB_NAME = 'webgpu-streetview-offline';
 /** v2 added `tripRecordings` (onupgradeneeded only creates stores that are missing). */
-export const OFFLINE_DB_VERSION = 2;
+const OFFLINE_DB_VERSION = 2;
 
 export type OfflineStoreName =
   | 'bookmarks'
@@ -10,15 +10,6 @@ export type OfflineStoreName =
   | 'panoMetadata'
   | 'routeGraph'
   | 'tripRecordings';
-
-export interface PanoMetadata {
-  panoId: string;
-  lat: number;
-  lng: number;
-  imageDate?: string;
-  heading?: number;
-  cachedAt: string;
-}
 
 export interface RouteGraphNode {
   panoId: string;
@@ -33,7 +24,7 @@ export interface RouteGraphNode {
   cachedAt: string;
 }
 
-export interface OfflineRecord<T = unknown> {
+interface OfflineRecord<T = unknown> {
   key: string;
   value: T;
   updatedAt: string;
@@ -111,7 +102,7 @@ export async function offlineDelete(storeName: OfflineStoreName, key: string): P
   });
 }
 
-export async function offlineClearStore(storeName: OfflineStoreName): Promise<void> {
+async function offlineClearStore(storeName: OfflineStoreName): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite');
@@ -149,7 +140,7 @@ export async function offlineListKeys(storeName: OfflineStoreName): Promise<stri
 }
 
 /** Primary blob key used for each metadata store (mirrors localStorage layout). */
-export const OFFLINE_JSON_BLOB_KEY = 'data';
+const OFFLINE_JSON_BLOB_KEY = 'data';
 
 export async function offlineGetJson<T>(storeName: OfflineStoreName): Promise<T | null> {
   return offlineGet<T>(storeName, OFFLINE_JSON_BLOB_KEY);
@@ -157,11 +148,6 @@ export async function offlineGetJson<T>(storeName: OfflineStoreName): Promise<T 
 
 export async function offlineSetJson<T>(storeName: OfflineStoreName, value: T): Promise<void> {
   return offlineSet(storeName, OFFLINE_JSON_BLOB_KEY, value);
-}
-
-export async function offlineUpsertPanoMetadata(entry: Omit<PanoMetadata, 'cachedAt'>): Promise<void> {
-  const record: PanoMetadata = { ...entry, cachedAt: new Date().toISOString() };
-  await offlineSet('panoMetadata', entry.panoId, record);
 }
 
 export async function offlineGetRouteGraph(routeId: string): Promise<RouteGraphNode[]> {

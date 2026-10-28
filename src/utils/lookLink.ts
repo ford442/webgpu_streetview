@@ -144,7 +144,7 @@ export function hasLookSearchParams(search: string = ''): boolean {
   return false;
 }
 
-export function lookUrlToOverrides(parsed: LookUrlParams): Partial<LookEnvPatch> {
+function lookUrlToOverrides(parsed: LookUrlParams): Partial<LookEnvPatch> {
   const o: Partial<LookEnvPatch> = {};
   if (parsed.tod) o.timeOfDay = parsed.tod;
   if (parsed.rain !== undefined) o.rainIntensity = parsed.rain;
@@ -243,7 +243,7 @@ export interface BuildLookUrlInput {
  * Encode the current look. If `lookId` matches a pack, emit `?look=id` plus
  * only the sliders that differ. Otherwise emit a full custom param set.
  */
-export function lookStateToUrlParams(input: BuildLookUrlInput): LookUrlParams {
+function lookStateToUrlParams(input: BuildLookUrlInput): LookUrlParams {
   const pack = getLookPack(input.lookId ?? null);
   if (pack) {
     return { look: pack.id, ...overridesToUrlParams(diffLookOverrides(pack, input.state)) };

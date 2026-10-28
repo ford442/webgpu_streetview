@@ -58,8 +58,8 @@ export function rgbaToImageNetNchw(
 }
 
 /** Percentiles the normalisation clamps to — robust against a stray hot pixel or a black border. */
-export const DISPARITY_LOW_PERCENTILE = 0.02;
-export const DISPARITY_HIGH_PERCENTILE = 0.98;
+const DISPARITY_LOW_PERCENTILE = 0.02;
+const DISPARITY_HIGH_PERCENTILE = 0.98;
 
 /**
  * `[lo, hi]` at the given percentiles, from a sorted strided subsample (at
@@ -91,18 +91,6 @@ export type { DepthNormalizeState } from '../../wasm';
 
 export function createDepthNormalizeState(): DepthNormalizeState {
     return { lo: 0, hi: 0, nearDepth: 0, previous: null };
-}
-
-/**
- * Proxy-scale depth of the nearest disparity, from the ground just in front of
- * the camera: in the bottom-centre band (rows 85–98 %, columns 30–70 %), where
- * a Street View frame looks at the road, `viewDepthProxy` is a fair metric
- * estimate — so `q = proxy(y) · n(x, y)` there (`n` = normalised disparity).
- * Median over the band, clamped to [0.04, 0.3]. When the horizon is too low
- * for that band to be ground (looking up), 0.1. `depth_near_depth` in C++.
- */
-export function estimateNearDepth(nearness: Float32Array, width: number, height: number, horizonY: number): number {
-    return requireWasm().depthNearDepth(nearness, width, height, horizonY);
 }
 
 /**

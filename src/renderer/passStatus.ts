@@ -24,7 +24,7 @@ export type FramePassId =
     /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
     | 'depth';
 
-export type PassState = 'ready' | 'failed';
+type PassState = 'ready' | 'failed';
 
 export interface PassStatus {
     state: PassState;

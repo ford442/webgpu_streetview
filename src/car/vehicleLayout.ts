@@ -1,5 +1,5 @@
 /** 3D position in driver-cabin local metres. */
-export interface Vec3 {
+interface Vec3 {
   x: number;
   y: number;
   z: number;
@@ -80,7 +80,7 @@ export const DEFAULT_STEERING_WHEEL: SteeringWheelConfig = {
   tilt: Math.PI * 0.35,
 };
 
-export const DEFAULT_CAMERA_FOV: CameraFovConfig = {
+const DEFAULT_CAMERA_FOV: CameraFovConfig = {
   base: 58,
   min: 30,
   max: 88,

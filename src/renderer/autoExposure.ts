@@ -13,7 +13,7 @@
 import { exposureHintFromMeanLuma } from './gpuChores/lumaMath';
 
 /** Ease time constant. Roughly 95% of a step lands in 3·τ ≈ 1 s. */
-export const AUTO_EXPOSURE_TAU_MS = 350;
+const AUTO_EXPOSURE_TAU_MS = 350;
 
 /** Same ±2 EV clamp as `exposureHintFromMeanLuma`. */
 export const AUTO_EXPOSURE_MAX_EV = 2;

@@ -44,7 +44,7 @@ export interface BootDeviceOptions {
     onDeviceLost: (info: GPUDeviceLostInfo) => void;
 }
 
-export interface BootDeviceSuccess {
+interface BootDeviceSuccess {
     ok: true;
     device: GPUDevice;
     context: GPUCanvasContext;
@@ -58,7 +58,7 @@ export interface BootDeviceSuccess {
     probe: BootProbeContext;
 }
 
-export interface BootDeviceFailure {
+interface BootDeviceFailure {
     ok: false;
     reason: string;
 }

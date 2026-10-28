@@ -63,7 +63,7 @@ export interface TripPrefetchProgress {
   nodes: number;
 }
 
-export type TripPrefetchStop =
+type TripPrefetchStop =
   /** Reached the destination. */
   | 'complete'
   /** The session call meter refused a lookup. */

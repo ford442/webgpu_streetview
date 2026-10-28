@@ -31,11 +31,11 @@ import type { GpuPassTimer } from '../gpuPassTimer';
 
 export type UpscaleMode = 'fsr' | 'bilinear';
 
-export const UPSCALE_SHADER_PATH = 'shaders/upscale.wgsl';
+const UPSCALE_SHADER_PATH = 'shaders/upscale.wgsl';
 /** EASU's output, RCAS's input: full output size, float so the 8-bit road is not requantised in between. */
 export const EASU_OUTPUT_FORMAT: GPUTextureFormat = 'rgba16float';
 /** `UpscaleUniforms` in `upscale.wgsl`: inputSize, outputSize, sharpness, peak, 2 pad. */
-export const UPSCALE_UNIFORM_FLOAT_COUNT = 8;
+const UPSCALE_UNIFORM_FLOAT_COUNT = 8;
 /** RCAS sharpness in stops below the maximum (0 = sharpest); FSR's sample default. */
 export const RCAS_SHARPNESS_STOPS = 0.2;
 

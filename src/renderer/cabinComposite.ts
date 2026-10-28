@@ -86,9 +86,9 @@ import {
 } from './gpuPipelineFactory';
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
 
-export const CABIN_COMPOSITE_SHADER_PATH = 'shaders/cabin-composite.wgsl';
+const CABIN_COMPOSITE_SHADER_PATH = 'shaders/cabin-composite.wgsl';
 
-export async function loadCabinCompositeShader(): Promise<string> {
+async function loadCabinCompositeShader(): Promise<string> {
     const url = `${PUBLIC_URL}/${CABIN_COMPOSITE_SHADER_PATH}`;
     return fetchShaderSource(url, 'cabin-composite.wgsl');
 }

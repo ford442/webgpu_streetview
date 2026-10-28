@@ -13,7 +13,7 @@ import { nearestGraphNode, type PanoGraphNode } from '../services/maps/panoCover
 import { PLACE_SEARCH_DEFAULTS } from './placeSearchBudget';
 import type { NearbyPoi } from './poiModel';
 
-export const POI_COVERAGE_RADIUS_M = 50;
+const POI_COVERAGE_RADIUS_M = 50;
 
 export type PoiCoverageStatus = 'covered' | 'none' | 'unknown';
 

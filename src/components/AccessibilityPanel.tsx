@@ -13,7 +13,7 @@ interface AccessibilityPanelProps {
     onSettingsChange: (settings: AccessibilitySettings) => void;
 }
 
-export const AccessibilityPanel: React.FC<AccessibilityPanelProps> = ({
+const AccessibilityPanel: React.FC<AccessibilityPanelProps> = ({
     isOpen,
     onClose,
     settings,

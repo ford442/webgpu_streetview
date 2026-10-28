@@ -19,7 +19,7 @@ export interface TeleportToPanoOptions {
   reveal?: HistoricalReveal;
 }
 
-export interface StreetViewState {
+interface StreetViewState {
   // Core panorama reference
   panorama: google.maps.StreetViewPanorama | null;
   canvas: HTMLCanvasElement | null;
@@ -598,4 +598,3 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
   );
 };
 
-export default StreetViewContext;

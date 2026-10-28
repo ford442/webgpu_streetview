@@ -94,10 +94,6 @@ export function stopReplay(): void {
   following = null;
 }
 
-export function activeReplay(): TripReplay | null {
-  return active;
-}
-
 /** The host's replay for `SessionState.replay`, read at send time; undefined when none (or too long for a link). */
 export function activeReplayBroadcast(): SessionReplay | undefined {
   const state = tripLibrary.get().replay;

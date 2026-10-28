@@ -40,7 +40,7 @@ export function noteGeocodeStatus(status: string): boolean {
   return true;
 }
 
-export function getGeocodeDeniedSnapshot(): boolean {
+function getGeocodeDeniedSnapshot(): boolean {
   return denied;
 }
 

@@ -58,6 +58,7 @@ export function resetGpuChoresStats(): void {
   publishGpuChoresBreadcrumbs();
 }
 
+/** @public Typed on `window.__GPU_CHORES__` in `vite-env.d.ts` (knip does not read .d.ts uses). */
 export interface GpuChoresBreadcrumbs {
   backend: GpuChoresStats['backend'];
   killSwitch: boolean;
@@ -71,7 +72,7 @@ export interface GpuChoresBreadcrumbs {
   };
 }
 
-export function publishGpuChoresBreadcrumbs(): GpuChoresBreadcrumbs {
+function publishGpuChoresBreadcrumbs(): GpuChoresBreadcrumbs {
   const crumbs: GpuChoresBreadcrumbs = {
     backend: current.backend,
     killSwitch: current.killSwitch,

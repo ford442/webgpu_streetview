@@ -32,7 +32,7 @@ export const DEPTH_RUNTIME_URL =
     `https://cdn.jsdelivr.net/npm/${manifest.runtime.package}@${manifest.runtime.version}/${manifest.runtime.entry}`;
 
 /** Approximate compressed size of the runtime's WebAssembly + glue (CDN, brotli). */
-export const DEPTH_RUNTIME_DOWNLOAD_BYTES = manifest.runtime.downloadBytes;
+const DEPTH_RUNTIME_DOWNLOAD_BYTES = manifest.runtime.downloadBytes;
 
 /**
  * Cache API bucket holding the model. Versioned so a new pin never reads a
@@ -46,9 +46,9 @@ export const DEPTH_MODEL_LICENSE = manifest.license;
 export const DEPTH_MODEL_NAME = manifest.model;
 
 /** The patch size of the ViT encoder: input sides must be multiples of it. */
-export const DEPTH_PATCH = 14;
+const DEPTH_PATCH = 14;
 /** ≈252² input pixels — the issue's "256²", rounded to the patch grid. */
-export const DEPTH_INPUT_PIXELS = 252 * 252;
+const DEPTH_INPUT_PIXELS = 252 * 252;
 
 /**
  * Input size for a canvas aspect: about `DEPTH_INPUT_PIXELS` pixels, both sides

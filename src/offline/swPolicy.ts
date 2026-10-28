@@ -5,7 +5,7 @@
  */
 export const CACHE_PREFIX = 'streetview-sw-';
 /** Pre-stamping builds named their caches `streetview-v1-static|runtime`. */
-export const LEGACY_CACHE_PREFIX = 'streetview-v1';
+const LEGACY_CACHE_PREFIX = 'streetview-v1';
 
 export type SwFetchStrategy = 'cache-first' | 'network-first' | 'network-only';
 

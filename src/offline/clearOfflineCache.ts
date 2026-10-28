@@ -29,7 +29,3 @@ export async function clearAllOfflineData(): Promise<void> {
     localStorage.removeItem(key);
   }
 }
-
-export function postSkipWaitingToServiceWorker(): void {
-  navigator.serviceWorker?.controller?.postMessage({ type: 'SKIP_WAITING' });
-}

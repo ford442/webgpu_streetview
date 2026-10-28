@@ -15,9 +15,9 @@
  * unit-testable with a plain in-memory fake instead of a real socket.
  */
 
-export type SignalingRole = 'host' | 'guest';
+type SignalingRole = 'host' | 'guest';
 
-export type SignalingMessageType = 'offer' | 'answer' | 'ice-candidate';
+type SignalingMessageType = 'offer' | 'answer' | 'ice-candidate';
 
 export interface SignalingMessage {
   type: SignalingMessageType;

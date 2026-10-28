@@ -20,7 +20,7 @@ export interface TransitionOptions {
   onStart?: () => void;
 }
 
-export interface TransitionState {
+interface TransitionState {
   isTransitioning: boolean;
   progress: number; // 0 to 1
   value: number;
@@ -56,7 +56,7 @@ export const easings = {
 /**
  * Hook for smooth value transitions
  */
-export function useTransition(options: TransitionOptions) {
+function useTransition(options: TransitionOptions) {
   const { duration, easing = easings.easeInOut, delay = 0, onComplete, onStart } = options;
   
   const [state, setState] = useState<TransitionState>({
@@ -186,138 +186,3 @@ export function useFadeTransition(options: Omit<TransitionOptions, 'easing'> & {
   };
 }
 
-/**
- * Hook for vehicle switching transitions
- */
-export function useVehicleTransition(duration: number = 400) {
-  const [isSwitching, setIsSwitching] = useState(false);
-  
-  const fadeOut = useFadeTransition({
-    duration: duration / 2,
-    easing: easings.easeOut,
-  });
-
-  const fadeIn = useFadeTransition({
-    duration: duration / 2,
-    easing: easings.easeIn,
-  });
-
-  const switchVehicle = useCallback(async (onSwitch: () => void) => {
-    if (isSwitching) return;
-    
-    setIsSwitching(true);
-    
-    // Fade out
-    fadeOut.start(1, 0);
-    
-    await new Promise(resolve => setTimeout(resolve, duration / 2));
-    
-    // Perform the switch
-    onSwitch();
-    
-    // Fade in
-    fadeIn.start(0, 1);
-    
-    await new Promise(resolve => setTimeout(resolve, duration / 2));
-    
-    setIsSwitching(false);
-  }, [isSwitching, fadeOut, fadeIn, duration]);
-
-  const opacity = fadeOut.isTransitioning ? fadeOut.opacity : fadeIn.opacity;
-
-  return {
-    isSwitching,
-    opacity,
-    switchVehicle,
-  };
-}
-
-/**
- * Hook for camera recentering animation
- */
-export function useCameraTransition(duration: number = 500) {
-  const headingTransition = useTransition({
-    duration,
-    easing: easings.easeOutCubic,
-  });
-
-  const pitchTransition = useTransition({
-    duration,
-    easing: easings.easeOutCubic,
-  });
-
-  const recenter = useCallback((
-    currentHeading: number,
-    currentPitch: number,
-    targetHeading: number = 0,
-    targetPitch: number = 0,
-    onUpdate?: (heading: number, pitch: number) => void
-  ) => {
-    // Handle heading wrap-around for shortest path
-    let headingDiff = targetHeading - currentHeading;
-    while (headingDiff > 180) headingDiff -= 360;
-    while (headingDiff < -180) headingDiff += 360;
-    
-    const actualTargetHeading = currentHeading + headingDiff;
-
-    headingTransition.start(currentHeading, actualTargetHeading);
-    pitchTransition.start(currentPitch, targetPitch);
-
-    const updateLoop = () => {
-      if (headingTransition.isTransitioning || pitchTransition.isTransitioning) {
-        // Normalize heading to 0-360 range
-        let normalizedHeading = headingTransition.value % 360;
-        if (normalizedHeading < 0) normalizedHeading += 360;
-        
-        onUpdate?.(normalizedHeading, pitchTransition.value);
-        requestAnimationFrame(updateLoop);
-      }
-    };
-
-    requestAnimationFrame(updateLoop);
-  }, [headingTransition, pitchTransition]);
-
-  return {
-    isRecentering: headingTransition.isTransitioning || pitchTransition.isTransitioning,
-    recenter,
-    headingProgress: headingTransition.progress,
-    pitchProgress: pitchTransition.progress,
-  };
-}
-
-/**
- * Hook for Street View panorama loading with progress simulation
- */
-export function usePanoramaLoading() {
-  const progressTransition = useTransition({
-    duration: 1500, // Typical Street View load time
-    easing: easings.easeInOut,
-  });
-
-  const opacityTransition = useFadeTransition({
-    duration: 400,
-    easing: easings.easeOut,
-  });
-
-  const startLoading = useCallback(() => {
-    opacityTransition.fadeIn();
-    progressTransition.start(0, 100);
-  }, [opacityTransition, progressTransition]);
-
-  const completeLoading = useCallback(() => {
-    progressTransition.stop();
-    setTimeout(() => {
-      opacityTransition.fadeOut();
-    }, 200);
-  }, [opacityTransition, progressTransition]);
-
-  return {
-    progress: progressTransition.value,
-    isLoading: progressTransition.isTransitioning,
-    opacity: opacityTransition.opacity,
-    startLoading,
-    completeLoading,
-  };
-}
-
-export default useTransition;

@@ -146,7 +146,7 @@ function queryPanorama(
  * distinct capture dates found, sorted chronologically. Never rejects —
  * network/quota failures for individual sample points are swallowed.
  */
-export async function crawlHistoricalImagery(
+async function crawlHistoricalImagery(
   centerLat: number,
   centerLng: number,
   opts: CrawlOptions = {}

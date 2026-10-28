@@ -22,7 +22,7 @@ import {
 import { buildDeepLinkUrl } from '../utils/deepLink';
 import { povStore } from '../state/povStore';
 
-export interface PlaceSearchApplyTarget {
+interface PlaceSearchApplyTarget {
   lat: number;
   lng: number;
   panoId?: string;

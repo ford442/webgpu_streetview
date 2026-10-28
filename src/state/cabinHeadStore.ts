@@ -12,12 +12,12 @@
  */
 import { clampHeadPitch, clampHeadYaw } from '../car/carSpatialModel';
 
-export interface CabinHead {
+interface CabinHead {
   readonly headYaw: number;
   readonly headPitch: number;
 }
 
-export const CENTERED_HEAD: CabinHead = { headYaw: 0, headPitch: 0 };
+const CENTERED_HEAD: CabinHead = { headYaw: 0, headPitch: 0 };
 
 export interface CabinHeadStore {
   get(): CabinHead;
@@ -27,7 +27,7 @@ export interface CabinHeadStore {
   reset(next?: Partial<CabinHead>): void;
 }
 
-export function createCabinHeadStore(initial: Partial<CabinHead> = {}): CabinHeadStore {
+function createCabinHeadStore(initial: Partial<CabinHead> = {}): CabinHeadStore {
   const normalize = (h: CabinHead): CabinHead => ({
     headYaw: clampHeadYaw(h.headYaw),
     headPitch: clampHeadPitch(h.headPitch),

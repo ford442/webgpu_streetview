@@ -14,7 +14,7 @@
  */
 
 /** Two eyes from the cabin camera: ±IPD/2 sideways, converged at `convergence` metres. */
-export interface CabinStereoSideBySide {
+interface CabinStereoSideBySide {
     readonly kind: 'sbs';
     readonly ipd: number;
     readonly convergence: number;
@@ -25,7 +25,7 @@ export interface CabinStereoSideBySide {
  * in the head's frame (`eyeFromHead`: the eye's pose relative to the viewer)
  * and WebXR's GL clip space for `projection` (the cabin converts to its own).
  */
-export interface CabinStereoViews {
+interface CabinStereoViews {
     readonly kind: 'views';
     readonly views: readonly [CabinEyeView, CabinEyeView];
 }

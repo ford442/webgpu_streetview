@@ -15,11 +15,11 @@
 
 import { requireWasm } from '../../wasm';
 
-export const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
+const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
 
 export const CONDITIONS_REFRESH_MS = 10 * 60 * 1000;
-export const CONDITIONS_REFETCH_DISTANCE_M = 25_000;
-export const CONDITIONS_MIN_SPACING_MS = 60 * 1000;
+const CONDITIONS_REFETCH_DISTANCE_M = 25_000;
+const CONDITIONS_MIN_SPACING_MS = 60 * 1000;
 
 export interface LiveConditions {
   lat: number;

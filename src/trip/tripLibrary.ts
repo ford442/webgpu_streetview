@@ -10,7 +10,7 @@ import { useSyncExternalStore } from 'react';
 import { offlineDelete, offlineGet, offlineListKeys, offlineSet } from '../offline/offlineStore';
 import { parseTripRecording, type TripRecording } from './tripRecording';
 
-export type TripReplayStatus = 'playing' | 'paused' | 'done' | 'stopped' | 'budget' | 'error';
+type TripReplayStatus = 'playing' | 'paused' | 'done' | 'stopped' | 'budget' | 'error';
 
 export interface TripReplayState {
   recordingId: string;

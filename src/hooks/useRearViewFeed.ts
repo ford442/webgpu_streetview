@@ -28,7 +28,7 @@ const REFETCH_DISTANCE_M = 12;
 /** Car rotation that justifies spending a new request, in degrees. */
 const REFETCH_HEADING_DEG = 20;
 
-export interface RearViewFeedPose {
+interface RearViewFeedPose {
     lat: number;
     lng: number;
     carHeading: number;

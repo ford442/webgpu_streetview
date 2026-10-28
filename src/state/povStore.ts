@@ -24,9 +24,9 @@ export interface Pov {
   readonly carHeading: number;
 }
 
-export type PovUpdate = number | ((prev: number) => number);
+type PovUpdate = number | ((prev: number) => number);
 
-export const DEFAULT_POV: Pov = { heading: 34, pitch: 10, zoom: 1, carHeading: 34 };
+const DEFAULT_POV: Pov = { heading: 34, pitch: 10, zoom: 1, carHeading: 34 };
 
 const wrap360 = (v: number): number => ((v % 360) + 360) % 360;
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));

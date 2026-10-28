@@ -1,7 +1,6 @@
 /** @fileoverview Performance optimization utilities including LOD, texture optimization, and frustum culling */
 import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { MATERIAL_TEXTURE_PROPS, readMaterialTexture } from './memoryProfiler';
 
 /**
  * Which Three.js backend the cabin is running on. Defined here rather than in
@@ -19,92 +18,6 @@ export type CabinCapableRenderer = THREE.WebGLRenderer | WebGPURenderer;
 // ============================================================
 // LOD (Level of Detail) System
 // ============================================================
-
-export interface LODConfig {
-  levels: LODLevel[];
-  distances: number[]; // Distance thresholds for each level
-}
-
-export interface LODLevel {
-  geometry: THREE.BufferGeometry;
-  material: THREE.Material | THREE.Material[];
-}
-
-export interface LODEntry {
-  mesh: THREE.LOD;
-  originalPosition: THREE.Vector3;
-  targetDistance: number;
-}
-
-/**
- * Setup LOD for a model group
- * Creates simplified versions of meshes for distance rendering
- */
-export function setupLOD(model: THREE.Group, config?: Partial<LODConfig>): THREE.LOD {
-  const lod = new THREE.LOD();
-  
-  // Add the main model as highest detail level
-  lod.addLevel(model, 0);
-  
-  // Create medium detail level (simplified geometry)
-  const mediumLOD = createSimplifiedLOD(model, 0.5); // 50% of vertices
-  lod.addLevel(mediumLOD, config?.distances?.[0] ?? 5);
-  
-  // Create low detail level (box proxy)
-  const lowLOD = createBoxProxy(model);
-  lod.addLevel(lowLOD, config?.distances?.[1] ?? 15);
-  
-  return lod;
-}
-
-/**
- * Create simplified geometry by reducing vertex count
- */
-function createSimplifiedLOD(model: THREE.Group, _ratio: number): THREE.Group {
-  const simplified = model.clone();
-  
-  simplified.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.geometry) {
-      const geo = child.geometry;
-      
-      // Create a simplified version using vertex decimation
-      const positions = geo.attributes.position?.array;
-      if (!positions) return;
-      
-      // Use simplified geometry - reduce to basic box for now
-      const box = new THREE.BoxGeometry(1, 1, 1);
-      child.geometry = box;
-    }
-  });
-  
-  return simplified;
-}
-
-/**
- * Create a box proxy for very distant objects
- */
-function createBoxProxy(model: THREE.Group): THREE.Group {
-  // Calculate bounding box
-  const box = new THREE.Box3().setFromObject(model);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-  box.getSize(size);
-  box.getCenter(center);
-  
-  // Create simple box mesh
-  const proxyGroup = new THREE.Group();
-  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
-  const material = new THREE.MeshBasicMaterial({ 
-    color: 0x333333,
-    transparent: true,
-    opacity: 0.5 
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(center);
-  proxyGroup.add(mesh);
-  
-  return proxyGroup;
-}
 
 // ============================================================
 // Vehicle Interior LOD System
@@ -333,78 +246,9 @@ export function optimizeTextures(
   };
 }
 
-/**
- * Resize a texture to target size while maintaining aspect ratio
- */
-export function resizeTexture(
-  texture: THREE.Texture,
-  maxSize: number
-): THREE.Texture {
-  const image = texture.image;
-  if (!image) return texture;
-  
-  const width = image.width || image.videoWidth || 0;
-  const height = image.height || image.videoHeight || 0;
-  
-  if (width <= maxSize && height <= maxSize) return texture;
-  
-  // Calculate new size maintaining aspect ratio
-  const ratio = Math.min(maxSize / width, maxSize / height);
-  const newWidth = Math.floor(width * ratio);
-  const newHeight = Math.floor(height * ratio);
-  
-  // Create canvas for resizing
-  const canvas = document.createElement('canvas');
-  canvas.width = newWidth;
-  canvas.height = newHeight;
-  const ctx = canvas.getContext('2d')!;
-  
-  ctx.drawImage(image, 0, 0, newWidth, newHeight);
-  
-  const newTexture = new THREE.CanvasTexture(canvas);
-  newTexture.colorSpace = texture.colorSpace;
-  newTexture.wrapS = texture.wrapS;
-  newTexture.wrapT = texture.wrapT;
-  newTexture.minFilter = texture.minFilter;
-  newTexture.magFilter = texture.magFilter;
-  
-  return newTexture;
-}
-
-/**
- * Get recommended texture format for current platform
- */
-export function getOptimalTextureFormat(): string {
-  const canvas = document.createElement('canvas');
-  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-  
-  if (!gl) return 'rgba8unorm';
-  
-  // Check for compressed formats
-  if (gl.getExtension('WEBGL_compressed_texture_s3tc')) {
-    return 'bc7'; // or 'bc1' for opaque textures
-  }
-  
-  if (gl.getExtension('WEBGL_compressed_texture_astc')) {
-    return 'astc-4x4';
-  }
-  
-  if (gl.getExtension('WEBGL_compressed_texture_etc')) {
-    return 'etc2-rgba8unorm';
-  }
-  
-  return 'rgba8unorm';
-}
-
 // ============================================================
 // Frustum Culling
 // ============================================================
-
-export interface FrustumCullConfig {
-  cullSkybox: boolean;
-  cullDistance: number;
-  margin: number;
-}
 
 /**
  * Frustum culling helper for optimizing skybox rendering
@@ -466,113 +310,9 @@ export class FrustumCuller {
   }
 }
 
-/**
- * Create optimized skybox with frustum culling
- * For Street View panoramas, we can optimize based on view direction
- */
-export function createOptimizedSkybox(
-  texture: THREE.Texture,
-  config?: Partial<FrustumCullConfig>
-): {
-  mesh: THREE.Mesh;
-  update: (camera: THREE.Camera) => void;
-} {
-  const fullConfig: FrustumCullConfig = {
-    cullSkybox: false, // Skybox is usually always visible
-    cullDistance: 1000,
-    margin: 0.1,
-    ...config
-  };
-  
-  // Create sphere geometry for skybox
-  const geometry = new THREE.SphereGeometry(100, 32, 16);
-  geometry.scale(-1, 1, 1); // Invert to see inside
-  
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    side: THREE.BackSide,
-    depthWrite: false,
-    depthTest: false
-  });
-  
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.frustumCulled = fullConfig.cullSkybox;
-  
-  const culler = new FrustumCuller();
-  
-  const update = (camera: THREE.Camera) => {
-    culler.update(camera);
-    
-    // Skybox always follows camera position
-    mesh.position.copy(camera.position);
-    
-    // Optional: cull skybox if camera is too far (not applicable for skybox)
-    // This is more useful for environment objects
-  };
-  
-  return { mesh, update };
-}
-
 // ============================================================
 // Performance Monitoring Helpers
 // ============================================================
-
-export interface PerformanceMetrics {
-  drawCalls: number;
-  triangleCount: number;
-  textureCount: number;
-  memoryMB: number;
-}
-
-/**
- * Get current rendering metrics from a Three.js scene
- */
-export function getSceneMetrics(scene: THREE.Scene): PerformanceMetrics {
-  let drawCalls = 0;
-  let triangleCount = 0;
-  const textures = new Set<THREE.Texture>();
-  
-  scene.traverse((obj) => {
-    if (obj instanceof THREE.Mesh) {
-      drawCalls++;
-      
-      if (obj.geometry) {
-        const geo = obj.geometry;
-        if (geo.index) {
-          triangleCount += geo.index.count / 3;
-        } else if (geo.attributes.position) {
-          triangleCount += geo.attributes.position.count / 3;
-        }
-      }
-      
-      // Count textures
-      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      materials.forEach((mat) => {
-        MATERIAL_TEXTURE_PROPS.forEach((prop) => {
-          const tex = readMaterialTexture(mat, prop);
-          if (tex) textures.add(tex);
-        });
-      });
-    }
-  });
-  
-  // Estimate memory usage (rough approximation)
-  let memoryMB = 0;
-  textures.forEach(tex => {
-    if (tex.image) {
-      const width = tex.image.width || tex.image.videoWidth || 0;
-      const height = tex.image.height || tex.image.videoHeight || 0;
-      memoryMB += (width * height * 4) / (1024 * 1024); // RGBA
-    }
-  });
-  
-  return {
-    drawCalls,
-    triangleCount: Math.floor(triangleCount),
-    textureCount: textures.size,
-    memoryMB: Math.round(memoryMB * 100) / 100
-  };
-}
 
 // ============================================================
 // GPU Performance Targeting

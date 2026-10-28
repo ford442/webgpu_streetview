@@ -61,7 +61,7 @@ function flatten(points: readonly LatLng[]): Float64Array {
 }
 
 /** Route id for a list of stops: 5-decimal (~1 m) coordinates, joined. */
-export function routeIdForStops(stops: readonly LatLng[]): string {
+function routeIdForStops(stops: readonly LatLng[]): string {
   return `route:${stops.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';')}`;
 }
 
@@ -82,7 +82,7 @@ function vertexAtOrBefore(cumulative: Float64Array, alongM: number): number {
  * window keeps progress monotone on routes that double back on themselves —
  * an out-and-back street would otherwise snap to whichever leg is nearer.
  */
-export function projectInWindow(
+function projectInWindow(
   route: Pick<ActiveRoute, 'flat' | 'cumulativeM'>,
   pos: LatLng,
   fromM: number,

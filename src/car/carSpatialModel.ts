@@ -39,12 +39,6 @@ export const NIGHT_BASE_FLOOR = 0.14;
 /** Minimum sky luminance scale at full night (was ~0.02). */
 export const NIGHT_SKY_FLOOR = 0.18;
 
-/** Desaturation amount at full night (0–1). */
-export const NIGHT_DESATURATE = 0.55;
-
-/** GLSL reference mix toward cool night tint at full night (SDR approximation). */
-export const NIGHT_WEBGL_TINT = { r: 0.42, g: 0.50, b: 0.64 } as const;
-
 /**
  * Particle fall direction in top-origin UV space (uv.y = 0 at top, 1 at bottom).
  * Negative Y velocity ⇒ flakes/streaks move downward on screen.
@@ -53,10 +47,10 @@ export const NIGHT_WEBGL_TINT = { r: 0.42, g: 0.50, b: 0.64 } as const;
 export const WEATHER_FALL_Y_SIGN = -1 as const;
 
 /** Static wiper blade angle (radians past park) used at low quality when "on". */
-export const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
+const WIPER_LOW_QUALITY_ON_OFFSET = Math.PI / 5;
 
 /** Parked wiper base angle (radians). */
-export const WIPER_PARK_ANGLE = Math.PI / 6;
+const WIPER_PARK_ANGLE = Math.PI / 6;
 
 const DEG = Math.PI / 180;
 
@@ -65,8 +59,8 @@ const normalize360 = (deg: number): number => ((deg % 360) + 360) % 360;
 /** Head yaw clamp: ±90° (radians). */
 export const HEAD_YAW_LIMIT = Math.PI / 2;
 /** Head pitch clamp: −45°..+45° (radians). */
-export const HEAD_PITCH_MIN = -Math.PI / 4;
-export const HEAD_PITCH_MAX = Math.PI / 4;
+const HEAD_PITCH_MIN = -Math.PI / 4;
+const HEAD_PITCH_MAX = Math.PI / 4;
 
 export function clampHeadYaw(yaw: number): number {
   return Math.max(-HEAD_YAW_LIMIT, Math.min(HEAD_YAW_LIMIT, yaw));
@@ -115,7 +109,7 @@ export const STEER_HEAD_RECENTER_RATE = 4;
 export const FREE_LOOK_RAD_PER_PX = 0.0025;
 
 /** Mouse steering sensitivity in STEER (degrees of carHeading per pixel). */
-export const STEER_DEG_PER_PX = 0.15;
+const STEER_DEG_PER_PX = 0.15;
 
 /** Fastest the chassis may yaw from mouse steering (degrees per second). */
 export const MAX_STEER_RATE_DPS = 180;
@@ -132,9 +126,9 @@ export function steerDeltaFromMouse(movementX: number, dtS: number): number {
 }
 
 /** Thumbstick travel below this is rest (stick drift), not steering. */
-export const STICK_DEADZONE = 0.15;
+const STICK_DEADZONE = 0.15;
 /** Full stick deflection turns the car at this rate (deg/s). */
-export const STICK_STEER_RATE_DPS = 60;
+const STICK_STEER_RATE_DPS = 60;
 
 /**
  * Car heading change (degrees, + = right) from a WebXR thumbstick's X axis
@@ -155,7 +149,7 @@ export function steerDeltaFromStick(axisX: number, dtS: number): number {
  * car does not move with the head, and further than this the cabin would be
  * entered from the inside of a pillar.
  */
-export const HEAD_OFFSET_LIMIT = { x: 0.2, y: 0.12, z: 0.15 } as const;
+const HEAD_OFFSET_LIMIT = { x: 0.2, y: 0.12, z: 0.15 } as const;
 
 export interface HeadOffset {
   readonly x: number;

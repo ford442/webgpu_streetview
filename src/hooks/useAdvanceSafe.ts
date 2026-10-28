@@ -2,20 +2,6 @@ import { useCallback } from 'react';
 import { useStreetView, type TeleportToPanoOptions } from './useStreetView';
 import { usePanoramaCache } from './usePanoramaCache';
 
-export interface AdvanceSafeOptions {
-  /** If provided, pre-fetch this target before advancing */
-  targetLatLng?: { lat: number; lng: number };
-  /** Heading to pass to the underlying advance call */
-  heading?: number;
-}
-
-export interface TeleportSafeOptions {
-  lat: number;
-  lng: number;
-  targetHeading?: number;
-  targetPitch?: number;
-}
-
 /**
  * Safe wrapper around `advance` and `teleport` that:
  *  - Waits for the *current* panorama to be ready.

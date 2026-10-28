@@ -6,7 +6,7 @@
  */
 import { createStore } from './createStore';
 
-export interface ReducedMotionState {
+interface ReducedMotionState {
     /** `(prefers-reduced-motion: reduce)` right now. */
     readonly os: boolean;
     /** The app's accessibility toggle. */
@@ -24,7 +24,7 @@ function mediaQuery(): MediaQueryList | null {
     }
 }
 
-export const reducedMotionStore = createStore<ReducedMotionState>({ os: false, app: false });
+const reducedMotionStore = createStore<ReducedMotionState>({ os: false, app: false });
 
 let listening = false;
 

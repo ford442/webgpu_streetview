@@ -26,7 +26,7 @@
  * lazy chunk and reaches the scheduler through this module, not a handle.
  */
 
-export type FrameTail = () => void;
+type FrameTail = () => void;
 
 export interface FrameTailStats {
     /** Tails run in the frame they belong to. */

@@ -3,7 +3,7 @@ import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
 import { NEARBY_CATEGORY_LABELS, NEARBY_POI_CATEGORIES } from '../search/poiModel';
 import { useGeocodeDenied } from '../search/geocodeAuth';
 
-export interface PlaceSearchBarProps {
+interface PlaceSearchBarProps {
   search: UsePlaceSearchResult;
   compact?: boolean;
 }

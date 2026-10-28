@@ -110,7 +110,7 @@ export async function resolvePlaceId(placeId: string): Promise<ResolvedDestinati
 }
 
 /** Text search via Places API (New); used as a fallback when Geocoding is denied. */
-export async function searchPlaceByText(query: string): Promise<ResolvedDestination | null> {
+async function searchPlaceByText(query: string): Promise<ResolvedDestination | null> {
   const lib = await loadPlacesLibrary();
   if (!lib?.Place?.searchByText) return null;
   try {

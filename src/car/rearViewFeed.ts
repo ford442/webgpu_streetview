@@ -93,7 +93,7 @@ export interface RearViewSample {
     fetchedAt: number;
 }
 
-export type RearViewResultStatus =
+type RearViewResultStatus =
     | 'blocked'
     | 'throttled'
     | 'pending'
@@ -122,7 +122,7 @@ export interface RearViewFeedStats {
     blockReason: RearViewBlockReason | null;
 }
 
-export type RearViewImageLoader = (
+type RearViewImageLoader = (
     url: string,
     signal: AbortSignal
 ) => Promise<RearViewImageSource>;

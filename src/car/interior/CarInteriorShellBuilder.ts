@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
-import { createGlassMaterial } from '../../materials/PBRMaterials';
+import { createGlassMaterial } from './glassMaterial';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 
 export interface CarInteriorShellResult {

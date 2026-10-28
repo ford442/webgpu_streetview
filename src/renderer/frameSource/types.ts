@@ -4,7 +4,7 @@
  * `.svtrip` (#338) plug in behind the same interface, so the frame loop and
  * its change detection never learn which one is live.
  */
-export type FrameSourceKind = 'maps-canvas';
+type FrameSourceKind = 'maps-canvas';
 
 export interface FrameSource {
     readonly kind: FrameSourceKind;

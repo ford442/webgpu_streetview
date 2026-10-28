@@ -241,7 +241,7 @@ export function buildAdapterRequestOptions(
     return requestOptions;
 }
 
-export type CanvasOutputFlag = 'on' | 'off' | 'auto';
+type CanvasOutputFlag = 'on' | 'off' | 'auto';
 
 export interface CanvasOutputFlags {
     /** `?hdr=1` — extended tone mapping + rgba16float swap-chain. */
@@ -298,7 +298,7 @@ export function getRendererDebugOptions(): RendererDebugOptions {
 }
 
 /** Where the resolved weather mode came from. Only `'preset'` may be degraded. */
-export type WeatherPostProcessModeSource = 'url' | 'storage' | 'preset';
+type WeatherPostProcessModeSource = 'url' | 'storage' | 'preset';
 
 export interface WeatherPostProcessModePolicy {
     mode: WeatherPostProcessMode;
@@ -348,7 +348,7 @@ export function getLegacyTransitionsEnabled(fallback: boolean = false): boolean 
  * `setBackend('webgl')` still records the preference but forces a WebGPU probe —
  * there is no live GL weather class in the runtime module graph.
  */
-export const WEBGL_WEATHER_DEFERRED_MESSAGE =
+const WEBGL_WEATHER_DEFERRED_MESSAGE =
     'WebGL weather is a GLSL reference only; WebGPU is required. Preference ignored.';
 
 function installStreetViewRendererDebug(

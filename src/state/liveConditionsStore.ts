@@ -10,7 +10,7 @@ import { useSyncExternalStore } from 'react';
 import { readFlag } from '../config/flags';
 import type { LiveConditions, WeatherTarget } from '../services/conditions/openMeteo';
 
-export type LiveConditionsStatus = 'off' | 'loading' | 'live' | 'overridden' | 'error';
+type LiveConditionsStatus = 'off' | 'loading' | 'live' | 'overridden' | 'error';
 
 export interface LiveConditionsState {
   readonly enabled: boolean;

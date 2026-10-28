@@ -192,4 +192,3 @@ export class ScienceLabAtmosphere {
     }
 }
 
-export default ScienceLabAtmosphere;

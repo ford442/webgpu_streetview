@@ -15,7 +15,13 @@
     "devDependencies",
     "unlisted",
     "binaries",
-    "unresolved"
+    "unresolved",
+    "exports",
+    "types",
+    "nsExports",
+    "nsTypes",
+    "enumMembers",
+    "duplicates"
   ],
   "ignoreBinaries": [
     "cmake",
@@ -25,8 +31,5 @@
   "ignoreDependencies": [
     "@types/google.maps",
     "@types/webxr"
-  ],
-  "ignoreUnresolved": [
-    "^/src/"
   ]
 }

@@ -41,7 +41,7 @@ export interface LoadingOverlayProps {
 /**
  * Loading Spinner Component with multiple variants
  */
-export const LoadingSpinner: React.FC<{ 
+const LoadingSpinner: React.FC<{ 
   variant?: LoadingOverlayProps['variant']; 
   size?: LoadingOverlayProps['size'];
   color?: string;
@@ -126,7 +126,7 @@ export const LoadingSpinner: React.FC<{
 /**
  * Progress Bar Component
  */
-export const ProgressBar: React.FC<{
+const ProgressBar: React.FC<{
   progress: number;
   showPercentage?: boolean;
   color?: string;
@@ -176,7 +176,7 @@ export const ProgressBar: React.FC<{
 /**
  * Error Display Component with Retry
  */
-export const ErrorDisplay: React.FC<{
+const ErrorDisplay: React.FC<{
   message: string;
   retryable?: boolean;
   onRetry?: () => void;
@@ -435,44 +435,3 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   );
 };
 
-/**
- * Hook for using loading overlay with automatic state management
- */
-export function useLoadingOverlay(type: LoadingType) {
-  const [state, setState] = useState({
-    isLoading: false,
-    message: '',
-    progress: undefined as number | undefined,
-    error: undefined as string | undefined,
-    retryable: false,
-  });
-
-  useEffect(() => {
-    const unsubscribe = loadingStateManager.subscribe((states) => {
-      const loadingState = states[type];
-      setState({
-        isLoading: loadingState.isLoading,
-        message: loadingState.message,
-        progress: loadingState.progress,
-        error: loadingState.error,
-        retryable: loadingState.retryable ?? false,
-      });
-    });
-
-    return unsubscribe;
-  }, [type]);
-
-  return {
-    ...state,
-    startLoading: (message: string, progress?: number) => 
-      loadingStateManager.startLoading(type, message, progress),
-    updateProgress: (progress: number, message?: string) => 
-      loadingStateManager.updateProgress(type, progress, message),
-    stopLoading: () => loadingStateManager.stopLoading(type),
-    setError: (error: string, retryable?: boolean, retryCallback?: () => void) => 
-      loadingStateManager.setError(type, error, retryable, retryCallback),
-    retry: () => loadingStateManager.retry(type),
-  };
-}
-
-export default LoadingOverlay;

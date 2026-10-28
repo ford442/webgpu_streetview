@@ -82,7 +82,7 @@ export function frustumFromProjection(p: ArrayLike<number>): OutputFrustum {
 }
 
 /** A car-frame rotation (three axes, −Z forward) in the road's x/y/z-forward axes. */
-export function toRoadFrame(q: XrQuat): Mat3 {
+function toRoadFrame(q: XrQuat): Mat3 {
     const m = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w)).elements;
     // C · R · C with C = diag(1, 1, −1): negate the entries that mix z with x or y.
     return [

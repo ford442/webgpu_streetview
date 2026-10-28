@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /** Screen-space rain streaks + condensation mist on the windshield plane. */
-export const windowWeatherOverlayVertex = /* glsl */ `
+const windowWeatherOverlayVertex = /* glsl */ `
 varying vec2 vUv;
 void main() {
   vUv = uv;

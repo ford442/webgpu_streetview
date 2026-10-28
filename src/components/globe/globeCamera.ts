@@ -10,7 +10,7 @@ export const GLOBE_DROP_ALTITUDE_M = 250;
 
 export const GLOBE_ENTER_DURATION_S = 3.5;
 export const GLOBE_EXIT_DURATION_S = 2.2;
-export const GLOBE_DROP_DURATION_S = 2.5;
+const GLOBE_DROP_DURATION_S = 2.5;
 
 export interface GlobeCameraPose {
   lat: number;
@@ -18,7 +18,7 @@ export interface GlobeCameraPose {
   heading: number;
 }
 
-export function globeStreetOrientation(headingDeg: number, pitchDeg: number) {
+function globeStreetOrientation(headingDeg: number, pitchDeg: number) {
   return {
     heading: Cesium.Math.toRadians(headingDeg),
     pitch: Cesium.Math.toRadians(pitchDeg),
@@ -63,7 +63,7 @@ export function flyGlobeExitDescend(
   });
 }
 
-export function flyGlobeOrbitalDrop(
+function flyGlobeOrbitalDrop(
   viewer: CesiumViewer | null,
   lat: number,
   lng: number,

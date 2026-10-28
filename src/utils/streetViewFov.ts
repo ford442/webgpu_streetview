@@ -15,12 +15,12 @@ export function streetViewZoomLevel(zoom: number): number {
 }
 
 /** Horizontal FOV (degrees) the panorama shows at a given store zoom. */
-export function streetViewHorizontalFov(zoom: number): number {
+function streetViewHorizontalFov(zoom: number): number {
   return 180 / 2 ** streetViewZoomLevel(zoom);
 }
 
 /** Vertical FOV (degrees) for a horizontal FOV at `aspect` = width / height. */
-export function verticalFovFromHorizontal(horizontalFovDeg: number, aspect: number): number {
+function verticalFovFromHorizontal(horizontalFovDeg: number, aspect: number): number {
   const safeAspect = aspect > 0 && Number.isFinite(aspect) ? aspect : 1;
   return (2 * Math.atan(Math.tan((horizontalFovDeg * DEG) / 2) / safeAspect)) / DEG;
 }

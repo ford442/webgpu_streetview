@@ -22,8 +22,8 @@ export interface FrameRateStats {
     readonly measured: boolean;
 }
 
-export const PERF_PUBLISH_INTERVAL_MS = 500;
-export const SLOW_FRAME_MS = (1000 / 60) * 1.5;
+const PERF_PUBLISH_INTERVAL_MS = 500;
+const SLOW_FRAME_MS = (1000 / 60) * 1.5;
 
 export const FRAME_RATE_IDLE: FrameRateStats = {
     fps: 0,

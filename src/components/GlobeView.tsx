@@ -42,8 +42,6 @@ import type {
   CesiumViewer,
 } from '../types/cesium';
 
-export type { GlobePOI, GlobeBookmark } from './globe/globeTypes';
-
 interface GlobeViewProps {
   transition: GlobeTransition;
   currentLat: number;

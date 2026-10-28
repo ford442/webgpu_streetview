@@ -21,7 +21,7 @@ import {
 } from './RouteProvider';
 
 /** Requests that take longer than this fail as `network`, not hang the planner. */
-export const OSRM_TIMEOUT_MS = 15000;
+const OSRM_TIMEOUT_MS = 15000;
 
 /** OSRM's demo server caps a request at 100 coordinates. */
 export const OSRM_MAX_WAYPOINTS = 25;

@@ -37,7 +37,7 @@ const DEG = Math.PI / 180;
 /** Normalised scene depth 1 (the horizon, `viewDepthProxy`'s scale) in metres. */
 export const DEPTH_FAR_METRES = 27;
 /** The nearest surface the stereo search considers — under the car's nose. */
-export const DEPTH_NEAR_METRES = 1.2;
+const DEPTH_NEAR_METRES = 1.2;
 /** Average adult IPD; the acceptance figure for the disocclusion fill. */
 export const DEFAULT_IPD_METRES = 0.064;
 /**
@@ -46,7 +46,7 @@ export const DEFAULT_IPD_METRES = 0.064;
  */
 export const DEFAULT_CONVERGENCE_METRES = 1.0;
 /** Stereo search taps along the row. */
-export const STEREO_SEARCH_STEPS = 24;
+const STEREO_SEARCH_STEPS = 24;
 
 export type ReprojectMode = 'copy' | 'latch' | 'sbs' | 'anaglyph' | 'eye';
 
@@ -96,8 +96,6 @@ export const ReprojectUniformIndex = {
 /** A 3×3 matrix, column-major (`m[c * 3 + r]`), x right / y up / z forward. */
 export type Mat3 = readonly number[];
 
-export const IDENTITY_MAT3: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
 export function mulMat3(a: Mat3, b: Mat3): number[] {
     const out = new Array<number>(9);
     for (let c = 0; c < 3; c++) {
@@ -127,7 +125,7 @@ export function rotY(rad: number): Mat3 {
  * `Ry(heading) · Rx(pitch)`, so this is `Rx(−packedPitch) · Ry(Δheading) · Rx(livePitch)`
  * (yaw and pitch do not commute away from level, so both pitches are absolute).
  */
-export function latchRotation(packedPitchDeg: number, yawDeg: number, livePitchDeg: number): Mat3 {
+function latchRotation(packedPitchDeg: number, yawDeg: number, livePitchDeg: number): Mat3 {
     return mulMat3(mulMat3(rotX(-packedPitchDeg * DEG), rotY(yawDeg * DEG)), rotX(livePitchDeg * DEG));
 }
 

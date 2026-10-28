@@ -11,9 +11,9 @@ import {
 } from './historicalWipe';
 import { PUBLIC_URL } from '../config/publicUrl';
 
-export const HISTORICAL_WIPE_SHADER_PATH = 'shaders/historical-wipe.wgsl';
+const HISTORICAL_WIPE_SHADER_PATH = 'shaders/historical-wipe.wgsl';
 
-export async function loadHistoricalWipeShader(): Promise<string> {
+async function loadHistoricalWipeShader(): Promise<string> {
     const url = `${PUBLIC_URL}/${HISTORICAL_WIPE_SHADER_PATH}`;
     return fetchShaderSource(url, 'historical-wipe.wgsl');
 }

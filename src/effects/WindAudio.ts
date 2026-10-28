@@ -398,19 +398,3 @@ export function getWindAudio(): WindAudio {
   return globalWindAudio;
 }
 
-/**
- * Initialize wind audio system
- */
-export async function initWindAudio(): Promise<boolean> {
-  return getWindAudio().init();
-}
-
-/**
- * Dispose wind audio system
- */
-export function disposeWindAudio(): void {
-  globalWindAudio?.dispose();
-  globalWindAudio = null;
-}
-
-export default WindAudio;

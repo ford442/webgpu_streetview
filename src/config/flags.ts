@@ -19,38 +19,38 @@
  * the query string itself.
  */
 
-export interface BoolFlagDef {
+interface BoolFlagDef {
   kind: 'bool';
   default?: boolean;
   doc: string;
 }
-export interface EnumFlagDef<V extends string = string> {
+interface EnumFlagDef<V extends string = string> {
   kind: 'enum';
   values: readonly V[];
   default?: V;
   doc: string;
 }
 /** `on | off | auto`; `1/true/yes` read as `on`, `0/false/no` as `off`. */
-export interface TriFlagDef {
+interface TriFlagDef {
   kind: 'tri';
   default?: 'on' | 'off' | 'auto';
   doc: string;
 }
-export interface NumberFlagDef {
+interface NumberFlagDef {
   kind: 'number';
   default?: number;
   min?: number;
   max?: number;
   doc: string;
 }
-export interface TokensFlagDef {
+interface TokensFlagDef {
   kind: 'tokens';
   /** Documented token vocabulary (informational; unknown tokens are preserved). */
   values?: readonly string[];
   doc: string;
 }
 /** Raw payload (trimmed, case preserved); empty reads as unset. The owning module validates it. */
-export interface StringFlagDef {
+interface StringFlagDef {
   kind: 'string';
   /** Shape of the payload, for docs/FLAGS.md. */
   format: string;

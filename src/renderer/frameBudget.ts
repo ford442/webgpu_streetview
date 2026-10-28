@@ -83,7 +83,7 @@ export interface FrameBudgetInput {
     frozen: boolean;
 }
 
-export interface FrameBudgetBlock {
+interface FrameBudgetBlock {
     /** The level that overloaded; this and everything above it stay off-limits. */
     level: number;
     untilMs: number;

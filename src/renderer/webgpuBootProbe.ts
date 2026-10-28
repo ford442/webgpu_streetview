@@ -28,7 +28,7 @@ export type BrowserBrand = 'Chrome' | 'Edge' | 'Firefox' | 'Safari' | 'Other';
  * preset that quietly stopped running compute weather is visible in DevTools /
  * Playwright rather than silently lying about the preset.
  */
-export interface WebGpuProbeWeatherDegrade {
+interface WebGpuProbeWeatherDegrade {
   from: WeatherPostProcessMode;
   to: WeatherPostProcessMode;
   /** The adapter-limit reason the first boot attempt failed with. */

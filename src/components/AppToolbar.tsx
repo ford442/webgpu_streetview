@@ -2,7 +2,7 @@ import React from 'react';
 import PlaceSearchBar from './PlaceSearchBar';
 import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
 
-export interface AppToolbarProps {
+interface AppToolbarProps {
   isCruiseMode: boolean;
   setIsCruiseMode: (v: boolean) => void;
   isPanoramaReady: boolean;

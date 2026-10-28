@@ -6,26 +6,7 @@ import { DigitalClock } from './DigitalClock';
 
 export const SPEED_DIAL_MAX_KMH = 180;
 export const TACHO_DIAL_MAX_RPM = 8000;
-export const TACHO_REDLINE_RPM = 6500;
-
-/**
- * Default instrument-cluster layout (metres, driver-camera local space).
- * Prefer `resolveGaugeLayout(vehicleConfig)` at build time for per-vehicle placement.
- * Dashboard bezel/rings in CarInteriorDashboardBuilder must stay in sync.
- */
-export const GAUGE_LAYOUT: GaugeLayoutConfig = {
-  speed: { x: -0.48, y: 0.70, z: -0.84 },
-  tacho: { x: -0.18, y: 0.70, z: -0.84 },
-  fuel: { x: -0.42, y: 0.58, z: -0.84 },
-  temp: { x: -0.24, y: 0.58, z: -0.84 },
-  dialRadius: 0.085,
-  needleLength: 0.066,
-  coverRadius: 0.09,
-  hubRadius: 0.007,
-  needleZ: 0.006,
-  hubZ: 0.009,
-  coverZ: 0.017,
-};
+const TACHO_REDLINE_RPM = 6500;
 
 /**
  * Map a 0..1 dial fraction to needle rotation.z.

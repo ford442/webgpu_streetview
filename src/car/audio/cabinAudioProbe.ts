@@ -7,7 +7,7 @@
  * second), so they describe the audio thread, not the main thread.
  */
 
-export type CabinAudioMode =
+type CabinAudioMode =
   /** The WASM cabin engine renders the bed inside the AudioWorklet. */
   | 'worklet-wasm'
   /** No worklet / no WASM: two oscillators through a biquad. */
@@ -41,7 +41,7 @@ export interface CabinAudioProbe {
   error?: string;
 }
 
-export function emptyCabinAudioProbe(): CabinAudioProbe {
+function emptyCabinAudioProbe(): CabinAudioProbe {
   return {
     mode: 'off',
     ready: false,

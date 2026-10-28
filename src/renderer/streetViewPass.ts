@@ -37,7 +37,7 @@ export function pass1TimestampWrites(
  * either side without the other produces a pipeline-create failure at boot,
  * not a visual glitch.
  */
-export function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+function createStreetViewBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
         label: 'streetview-bind-group-layout',
         entries: [

@@ -31,7 +31,7 @@ export interface UseAppCaptureOptions {
  * Everything the snapshot gallery needs except the offline flags, which the
  * shell owns. Spread it: `{ ...capture.gallery, isOnline, hasServiceWorker }`.
  */
-export type AppCaptureGallery = Omit<
+type AppCaptureGallery = Omit<
   ConnectedChromeSnapshots,
   'isOnline' | 'hasServiceWorker'
 >;

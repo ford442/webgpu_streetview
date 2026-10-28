@@ -64,9 +64,9 @@ declare global {
       };
       getWeatherMode: () => WeatherPostProcessMode;
       setWeatherMode: (mode: WeatherPostProcessMode) => void;
-      getGpuChores: () => import('./renderer/gpuChores').GpuChoresBreadcrumbs | null;
+      getGpuChores: () => import('./renderer/gpuChores/gpuChoresStatsStore').GpuChoresBreadcrumbs | null;
     };
-    __GPU_CHORES__?: import('./renderer/gpuChores').GpuChoresBreadcrumbs;
+    __GPU_CHORES__?: import('./renderer/gpuChores/gpuChoresStatsStore').GpuChoresBreadcrumbs;
   }
 }
 

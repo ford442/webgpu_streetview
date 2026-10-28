@@ -9,7 +9,7 @@
 
 import { requireWasm } from '../../wasm';
 
-export const RADIO_REQUERY_DISTANCE_M = 50_000;
+const RADIO_REQUERY_DISTANCE_M = 50_000;
 
 export interface TunedStation {
   id: string;

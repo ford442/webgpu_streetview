@@ -10,7 +10,7 @@ import type { TripStop } from '../../state/tripStore';
 import { isValidLatLng, type LatLng } from './RouteProvider';
 import { OSRM_MAX_WAYPOINTS } from './osrmProvider';
 
-export const ROUTE_LINK_PARAM = 'route';
+const ROUTE_LINK_PARAM = 'route';
 
 export function encodeRouteStops(stops: readonly LatLng[]): string {
   return stops.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';');

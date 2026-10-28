@@ -23,7 +23,7 @@ import {
  */
 
 /** Binding indices for the weather compute group — the contract with the WGSL. */
-export const WeatherBinding = {
+const WeatherBinding = {
     filteringSampler: 0,
     intermediate: 1,
     writeTexture: 2,
@@ -43,7 +43,7 @@ export const WeatherBinding = {
     noiseTile: 12,
 } as const;
 
-export function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
         label: 'weather-compute-bind-group-layout',
         entries: [

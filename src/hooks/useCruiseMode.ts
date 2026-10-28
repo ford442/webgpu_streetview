@@ -62,10 +62,7 @@ const toLatLng = (p: google.maps.LatLng | null): LatLng | null =>
  * engaged cruise on while facing a wall, narrow enough that cruise never
  * U-turns into oncoming travel.
  */
-export const CRUISE_REAIM_CONE_DEG = 100;
-
-/** Spacing between the extra hops a 2/3 gear queues within one cruise tick. */
-export const CRUISE_CHAINED_HOP_INTERVAL_MS = 550;
+const CRUISE_REAIM_CONE_DEG = 100;
 
 /** Initial bearing (degrees, 0–360) from point A to point B. */
 function bearingBetween(

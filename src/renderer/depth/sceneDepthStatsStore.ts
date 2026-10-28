@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from 'react';
 import type { DepthModelVariant } from './depthModel';
 
-export type SceneDepthState =
+type SceneDepthState =
     /** Off: not opted in, or the quality preset's weight is 0. */
     | 'off'
     /** Downloading the runtime / model, or building the session. */
@@ -87,7 +87,7 @@ export function resetSceneDepthStats(): void {
     publish();
 }
 
-export function subscribeSceneDepthStats(listener: () => void): () => void {
+function subscribeSceneDepthStats(listener: () => void): () => void {
     listeners.add(listener);
     return () => {
         listeners.delete(listener);

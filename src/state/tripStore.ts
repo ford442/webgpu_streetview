@@ -60,7 +60,7 @@ export interface TripState {
   readonly offlineDrive: OfflineDriveStats | null;
 }
 
-export const IDLE_TRIP: TripState = {
+const IDLE_TRIP: TripState = {
   status: 'idle',
   stops: [],
   route: null,

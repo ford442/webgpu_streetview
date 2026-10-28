@@ -18,7 +18,6 @@ import type { TripPanelBindings } from '../useTripBindings';
 import type { TripRecordingBindings } from '../useTripRecording';
 import { tourWaypointsToStops } from '../../services/routing/routeExport';
 import type { AppPanels } from '../useAppPanels';
-export type { ChromeStageActions, ChromeStageState } from './chromePanelContracts';
 import type { UseHistoricalExperienceResult } from '../useHistoricalExperience';
 import { compareStillScopeLabel, resolveYearChipReveal } from '../historicalExperience';
 import type { TeleportToPanoOptions } from '../../hooks/useStreetView';
@@ -61,7 +60,7 @@ function GlobeViewAtCurrentHeading(props: Omit<ComponentProps<typeof GlobeView>,
   return <GlobeView {...props} currentHeading={heading} />;
 }
 
-export interface ConnectedChromeSession {
+interface ConnectedChromeSession {
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
   isCruiseMode: boolean;
@@ -87,7 +86,7 @@ export interface ConnectedChromeBookmarks {
   syncAllToCloud: () => Promise<void>;
 }
 
-export interface ConnectedChromeHistory {
+interface ConnectedChromeHistory {
   history: HistoryEntry[];
   removeFromHistory: (id: string) => void;
   clearHistory: () => void;
@@ -107,7 +106,7 @@ export interface ConnectedChromeSnapshots {
   onTakeSnapshot: () => void;
 }
 
-export interface ConnectedChromeEnvironment {
+interface ConnectedChromeEnvironment {
   vibrance: number;
   saturation: number;
   contrast: number;
@@ -148,20 +147,20 @@ export interface ConnectedChromeEnvironment {
   applyTimeOfDayPreset: (preset: TimeOfDay) => void;
 }
 
-export interface ConnectedChromeGlobe {
+interface ConnectedChromeGlobe {
   globeMode: GlobeModeControls;
   effectiveMapsKey: string;
   handleGlobeTeleport: (lat: number, lng: number) => void | Promise<void>;
   handleStartJourney: (waypoints: { lat: number; lng: number }[]) => void | Promise<void>;
 }
 
-export interface ConnectedChromeOfflineRoutes {
+interface ConnectedChromeOfflineRoutes {
   summaries: RouteGraphSummary[];
   onDelete: (routeId: string) => void;
   onRefresh: () => void;
 }
 
-export interface ConnectedChromeOverlays {
+interface ConnectedChromeOverlays {
   showPerformanceStats: boolean;
   setShowPerformanceStats: (show: boolean) => void;
   memoryStats?: MemoryStats;

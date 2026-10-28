@@ -2,8 +2,6 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getConfiguredSupabaseAnonKey, getConfiguredSupabaseUrl, isSignalingConfigured } from './supabaseConfig';
 import type { SupabaseRealtimeClientLike } from './signalingClient';
 
-export { isSignalingConfigured };
-
 let cachedClient: SupabaseClient | null = null;
 let cachedForUrl = '';
 

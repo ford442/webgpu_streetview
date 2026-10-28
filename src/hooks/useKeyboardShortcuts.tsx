@@ -18,7 +18,7 @@ export type AccessibilitySettings = {
 
 const STORAGE_KEY = 'webgpu_streetview_a11y_settings';
 
-export const defaultAccessibilitySettings: AccessibilitySettings = {
+const defaultAccessibilitySettings: AccessibilitySettings = {
     highContrast: false,
     reducedMotion: false,
     largeText: false,
@@ -216,4 +216,3 @@ export function SkipLink({ targetId, children }: SkipLinkProps) {
     );
 }
 
-export default useKeyboardShortcuts;

@@ -12,10 +12,10 @@ import {
 } from '../car/input/cabinInputMachine';
 
 // Types
-export type ViewMode = 'freelook' | 'car';
+type ViewMode = 'freelook' | 'car';
 export type { ControlMode };
 
-export interface ViewModeState {
+interface ViewModeState {
   // Main mode
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
@@ -193,4 +193,3 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   );
 };
 
-export default ViewModeContext;

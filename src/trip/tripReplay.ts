@@ -17,12 +17,12 @@ import { getMapsCallBudget, type MapsCallBudget } from '../services/maps/callBud
 import { tripLibrary, type TripReplayState } from './tripLibrary';
 import type { TripHop, TripRecording } from './tripRecording';
 
-export const TRIP_REPLAY_SOURCE = 'replay';
+const TRIP_REPLAY_SOURCE = 'replay';
 
 /** Shortest time a replayed pano stays on screen (it has to load). */
-export const REPLAY_MIN_GAP_MS = 1500;
+const REPLAY_MIN_GAP_MS = 1500;
 /** Longest pause between replayed hops, however long the driver lingered. */
-export const REPLAY_MAX_GAP_MS = 8000;
+const REPLAY_MAX_GAP_MS = 8000;
 
 /** Duck-typed `google.maps.StreetViewService` for the by-id lookup. */
 export interface ReplayStreetViewService {

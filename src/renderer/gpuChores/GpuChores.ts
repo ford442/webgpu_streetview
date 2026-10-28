@@ -9,7 +9,6 @@ import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
 import { isWebGpuProbeOk } from '../webgpuBootProbe';
 import {
   CHORES_WORKGROUP_SIZE,
-  downsample2d,
   HIST_BINS,
   histDownsampleSize,
   meanLumaFromHistogram,
@@ -404,6 +403,4 @@ function extremaFromBins(bins: Uint32Array): { min: number; max: number } {
   return { min: minBin / 255, max: maxBin / 255 };
 }
 
-export { meanLumaFromHistogram, downsample2d };
-export { lumaHistogramBt709, reduceLumaBt709 } from './lumaMath';
 export type { GpuChoresBackend };

@@ -28,7 +28,7 @@ const API_BASE = 'https://de1.api.radio-browser.info/json';
  * in the signature for API consistency with getTopStationForLocation but are
  * not used for filtering (Radio Browser API has no direct geo-coordinate search).
  */
-export async function fetchNearbyStations(
+async function fetchNearbyStations(
     _lat: number,
     _lng: number,
     limit: number = 10
@@ -59,7 +59,7 @@ export async function fetchNearbyStations(
 /**
  * Fetch radio stations by country code (ISO 3166-1 alpha-2).
  */
-export async function fetchStationsByCountry(
+async function fetchStationsByCountry(
     countryCode: string,
     limit: number = 10
 ): Promise<RadioStation[]> {
@@ -82,7 +82,7 @@ export async function fetchStationsByCountry(
  * Radio Browser geo search (`geo_lat` / `geo_long` / `geo_distance`), so no
  * reverse geocoding is needed to find a local station.
  */
-export async function fetchStationsNear(
+async function fetchStationsNear(
     lat: number,
     lng: number,
     radiusKm: number = 100,
@@ -116,7 +116,7 @@ export async function fetchStationsNear(
  * (e.g. Hawaii, Caribbean), overlapping boundaries, and many smaller countries
  * will return '' (empty), causing a fallback to global popular stations.
  */
-export function approximateCountryCode(lat: number, lng: number): string {
+function approximateCountryCode(lat: number, lng: number): string {
     // Very rough geographic region mapping — covers major landmasses only
     if (lat > 24 && lat < 50 && lng > -125 && lng < -66) return 'US';
     if (lat > 41 && lat < 56 && lng > -8 && lng < 2) return 'GB';

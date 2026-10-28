@@ -23,7 +23,7 @@ import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gp
 import { getSceneDepthBindGroupLayout } from '../depth/sceneDepthBinding';
 import { REPROJECT_UNIFORM_FLOAT_COUNT } from './reprojectMath';
 
-export const REPROJECT_SHADER_PATH = 'shaders/reproject.wgsl';
+const REPROJECT_SHADER_PATH = 'shaders/reproject.wgsl';
 /** `minUniformBufferOffsetAlignment`'s ceiling — every adapter accepts it. */
 const SLOT_BYTES = 256;
 /** Main frame + two eyes + one spare. */

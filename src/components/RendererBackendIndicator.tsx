@@ -153,7 +153,7 @@ function chipLabel(info: RendererBackendInfo): string {
   return 'WebGPU failed';
 }
 
-export const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ backendInfo }) => {
+const RendererBackendIndicator: React.FC<RendererBackendIndicatorProps> = ({ backendInfo }) => {
   const [expanded, setExpanded] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics | null>(null);
   const [probe, setProbe] = useState<WebGpuProbeRecord | null>(null);

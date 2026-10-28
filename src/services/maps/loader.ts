@@ -140,7 +140,7 @@ export function clearAuthFailure(forKey?: string): void {
   }
 }
 
-export function ignoreAuthFailuresFor(ms: number = AUTH_FAILURE_IGNORE_WINDOW_MS): void {
+function ignoreAuthFailuresFor(ms: number = AUTH_FAILURE_IGNORE_WINDOW_MS): void {
   ignoreAuthFailuresUntil = Math.max(ignoreAuthFailuresUntil, Date.now() + ms);
   if (window.__mapsApiLoadState) {
     window.__mapsApiLoadState.ignoreAuthFailuresUntil = ignoreAuthFailuresUntil;

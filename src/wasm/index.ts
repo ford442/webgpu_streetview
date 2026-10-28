@@ -34,13 +34,9 @@ import { createScratchArena, WASM_STACK_SIZE } from './marshal';
 
 export type { StreetViewWasmAPI } from './abi';
 export type {
-  CabinDsp,
   CabinDspParams,
-  CsrGraph,
   DepthNormalizeOptions,
   DepthNormalizeState,
-  LumaAnalysis,
-  LumaReduce,
 } from './abi';
 
 // ---------------------------------------------------------------------------

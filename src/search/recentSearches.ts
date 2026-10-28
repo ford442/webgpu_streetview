@@ -7,7 +7,7 @@ export interface RecentSearch {
   at: number;
 }
 
-export const RECENT_SEARCHES_KEY = 'webgpu_streetview_recent_searches';
+const RECENT_SEARCHES_KEY = 'webgpu_streetview_recent_searches';
 const MAX_RECENT = 12;
 
 export function loadRecentSearches(): RecentSearch[] {

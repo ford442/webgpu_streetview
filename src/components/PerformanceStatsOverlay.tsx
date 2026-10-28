@@ -106,7 +106,7 @@ const UPSCALE_LABEL: Record<AppliedRenderScale['upscale'], string> = {
 };
 
 /** `0.75× auto · over-budget`, or `1.00× fixed · flag`. */
-export function formatRenderScale(s: AppliedRenderScale): string {
+function formatRenderScale(s: AppliedRenderScale): string {
   const why = s.frozen ? 'held' : s.limitedBy ?? s.reason;
   return `${s.scale.toFixed(2)}× ${s.mode} · ${why}`;
 }
@@ -166,7 +166,7 @@ const SceneDepthStatsRows: React.FC = () => {
  * Performance statistics overlay component
  * Displays FPS, frame times, the quality preset, and memory usage
  */
-export const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
+const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
   memoryStats,
   gpuPassTimings,
   gpuChoresStats,

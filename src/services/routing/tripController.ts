@@ -59,11 +59,6 @@ export function setTripOfflineGraph(routeId: string, nodes: readonly RouteGraphN
   offlineGraph = nodes && nodes.length > 0 ? { routeId, graph: linkGraphFor(routeId, nodes) } : null;
 }
 
-/** Whether a cached graph covers `routeId` (and how many panos it holds). */
-export function tripOfflineGraphSize(routeId: string): number {
-  return offlineGraph?.routeId === routeId ? offlineGraph.graph.panoIds.length : 0;
-}
-
 /** A pano of the cached graph (its capture date seeds a trip recording), if loaded. */
 export function tripOfflineGraphNode(panoId: string): RouteGraphNode | null {
   const i = offlineGraph?.graph.indexOf.get(panoId);

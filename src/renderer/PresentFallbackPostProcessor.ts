@@ -13,6 +13,7 @@ import { createRenderPipelineChecked, createShaderModuleChecked } from './gpuPip
  * weather or grade on it. Inline (not a fetched `.wgsl`) on purpose: it is the
  * thing that must still compile when a shipped shader does not.
  */
+/** @public Read as text by `scripts/validate-shaders.mjs` (naga). */
 export const PRESENT_FALLBACK_WGSL = /* wgsl */ `
 @group(0) @binding(0) var hdrFrame: texture_2d<f32>;
 @group(0) @binding(1) var hdrSampler: sampler;

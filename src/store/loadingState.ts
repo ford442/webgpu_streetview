@@ -16,7 +16,7 @@ export type LoadingType =
   | 'route'
   | 'search';
 
-export interface LoadingState {
+interface LoadingState {
   isLoading: boolean;
   message: string;
   progress?: number;
@@ -24,7 +24,7 @@ export interface LoadingState {
   retryable?: boolean;
 }
 
-export interface LoadingStates {
+interface LoadingStates {
   streetview: LoadingState;
   vehicle: LoadingState;
   camera: LoadingState;
@@ -225,4 +225,3 @@ class LoadingStateManager {
 export const loadingStateManager = new LoadingStateManager();
 
 // Convenience hooks will be in useLoadingState.ts
-export default loadingStateManager;

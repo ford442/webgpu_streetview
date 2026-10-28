@@ -16,8 +16,8 @@ import { readFlag } from '../config/flags';
 import { MAX_TRIP_HOPS, TRIP_FORMAT_VERSION, parseTripRecording, type TripHop, type TripRecording } from './tripRecording';
 
 export const TRIP_FILE_EXTENSION = '.svtrip';
-export const TRIP_FILE_MIME = 'application/vnd.webgpu-streetview.trip+gzip';
-export const TRIP_LINK_PARAM = 'trip';
+const TRIP_FILE_MIME = 'application/vnd.webgpu-streetview.trip+gzip';
+const TRIP_LINK_PARAM = 'trip';
 /** A `?trip=` payload longer than this is shared as a file instead. */
 export const TRIP_LINK_MAX_CHARS = 2048;
 

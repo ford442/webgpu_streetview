@@ -55,7 +55,7 @@ import { isXrPresenting } from '../xrPresentFrame';
 import { getSceneDepthStats, resetSceneDepthStats, setSceneDepthStats } from './sceneDepthStatsStore';
 import type { SceneDepthOptions } from './sceneDepthOptions';
 
-export const DEPTH_PASS_ORDER = 50;
+const DEPTH_PASS_ORDER = 50;
 
 /** Depth cannot run on this boot at all (as opposed to one inference failing). */
 class DepthUnavailableError extends Error {

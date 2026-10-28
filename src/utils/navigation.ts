@@ -60,16 +60,6 @@ export function findBestLink(
 }
 
 /**
- * Normalize angle to [0, 360)
- * Handles negative angles and angles >= 360
- *
- * Delegates to the WASM `normalize_angle` export instead of a second copy of the formula — see docs/WASM_BRIDGE.md.
- */
-export function normalizeAngle(angle: number): number {
-    return requireWasm().normalizeAngle(angle);
-}
-
-/**
  * Calculate the shortest signed angular difference [-180, 180]
  * Positive means rotate clockwise, negative means rotate counter-clockwise
  *

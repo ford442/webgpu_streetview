@@ -8,7 +8,7 @@
 
 import React, { useCallback } from 'react';
 
-export interface ScoutCardProps {
+interface ScoutCardProps {
     lat: number;
     lng: number;
     label?: string;

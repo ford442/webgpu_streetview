@@ -22,13 +22,13 @@
 import { readFlag } from '../config/flags';
 import { PRESETS, type QualityLevel } from '../config/visualPresets';
 
-export const RENDER_SCALE_MIN = 0.5;
-export const RENDER_SCALE_MAX = 1;
+const RENDER_SCALE_MIN = 0.5;
+const RENDER_SCALE_MAX = 1;
 /** Every scale is a multiple of this: a few texture sizes, not a new one per frame. */
-export const RENDER_SCALE_STEP = 0.05;
+const RENDER_SCALE_STEP = 0.05;
 const STEPS_PER_UNIT = Math.round(1 / RENDER_SCALE_STEP);
 
-export type RenderScaleMode = 'auto' | 'fixed';
+type RenderScaleMode = 'auto' | 'fixed';
 
 /** Why the requested scale is what it is. */
 export type RenderScaleReason =
@@ -55,7 +55,7 @@ export interface RenderScaleRequest {
  * Why the applied scale differs from the request, if it does: the upscale pass
  * is still being built (the first scaled request), or it failed to build.
  */
-export type RenderScaleLimit = 'upscale-pending' | 'upscale-unavailable' | null;
+type RenderScaleLimit = 'upscale-pending' | 'upscale-unavailable' | null;
 
 /** What the renderer used for the frame it last encoded. Also `webgpuProbe.renderScale`. */
 export interface AppliedRenderScale {

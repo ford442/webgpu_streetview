@@ -4,7 +4,7 @@
  * LoadingOverlay / window.__STREETVIEW_PROBE__ consume snapshots.
  */
 
-export type ScraperHealthStatus =
+type ScraperHealthStatus =
   | 'locating'
   | 'promoting'
   | 'stable'
@@ -12,7 +12,7 @@ export type ScraperHealthStatus =
   | 'auth-blocked'
   | 'timeout';
 
-export type ScraperErrorReason =
+type ScraperErrorReason =
   | 'auth'
   | 'timeout'
   | 'zero-size'
