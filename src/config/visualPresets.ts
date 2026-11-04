@@ -22,7 +22,6 @@ export interface VisualPreset {
   anisotropy: number;
 
   // Shadow settings
-  shadowMapSize: number;
   shadowsEnabled: boolean;
   softShadows: boolean;
 
@@ -107,7 +106,6 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     textureResolution: 64,
     anisotropy: 1,
 
-    shadowMapSize: 512,
     shadowsEnabled: false,
     softShadows: false,
 
@@ -149,7 +147,6 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     textureResolution: 128,
     anisotropy: 4,
 
-    shadowMapSize: 1024,
     shadowsEnabled: true,
     softShadows: false,
 
@@ -194,7 +191,6 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     textureResolution: 256,
     anisotropy: 8,
 
-    shadowMapSize: 2048,
     shadowsEnabled: true,
     softShadows: true,
 
@@ -236,7 +232,6 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     textureResolution: 512,
     anisotropy: 16,
 
-    shadowMapSize: 4096,
     shadowsEnabled: true,
     softShadows: true,
 

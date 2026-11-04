@@ -4,9 +4,7 @@ import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
 
 /** Documented optional features — see docs/RENDERER_FALLBACK.md § Capability matrix. */
 export const OPTIONAL_DEVICE_FEATURES = {
-    /** Always requested when the adapter exposes it (HDR intermediate + compute weather). */
-    float32Filterable: 'float32-filterable' as GPUFeatureName,
-    /** Opt-in: GPU pass timings in the performance overlay (P). */
+    /** Opt-in (`?gpu_timing`): GPU pass timings for the performance overlay (P) and the auto render scale. */
     timestampQuery: 'timestamp-query' as GPUFeatureName,
     /** Compute weather 16×16 luma reduce + gpu-chores 8×8 hist coalescing. */
     subgroups: 'subgroups' as GPUFeatureName,
@@ -28,7 +26,6 @@ export const OPTIONAL_DEVICE_FEATURES = {
 
 /** Names listed as attempted on the capability matrix (enabled ⊂ attempted ∩ adapter). */
 export const OPTIONAL_FEATURES_ATTEMPTED: GPUFeatureName[] = [
-    OPTIONAL_DEVICE_FEATURES.float32Filterable,
     OPTIONAL_DEVICE_FEATURES.timestampQuery,
     OPTIONAL_DEVICE_FEATURES.subgroups,
     OPTIONAL_DEVICE_FEATURES.rg11b10ufloatRenderable,

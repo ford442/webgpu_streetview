@@ -129,10 +129,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                             }}
                             onClick={() => onTeleport(entry.lat, entry.lng, entry.heading, entry.pitch)}
                             onMouseEnter={(e) => {
-                                (e.currentTarget as HTMLDivElement).style.backgroundColor = 'rgba(255,255,255,0.05)';
+                                (e.currentTarget).style.backgroundColor = 'rgba(255,255,255,0.05)';
                             }}
                             onMouseLeave={(e) => {
-                                (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent';
+                                (e.currentTarget).style.backgroundColor = 'transparent';
                             }}
                         >
                             <div style={{
@@ -190,10 +190,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                                     lineHeight: 1,
                                 }}
                                 onMouseEnter={(e) => {
-                                    (e.currentTarget as HTMLButtonElement).style.color = '#d9534f';
+                                    (e.currentTarget).style.color = '#d9534f';
                                 }}
                                 onMouseLeave={(e) => {
-                                    (e.currentTarget as HTMLButtonElement).style.color = '#666';
+                                    (e.currentTarget).style.color = '#666';
                                 }}
                             >
                                 ×

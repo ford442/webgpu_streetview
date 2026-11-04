@@ -180,7 +180,19 @@ const SIMD_MEMARG_LANE = new Set([84, 85, 86, 87, 88, 89, 90, 91]);
  * @returns {Record<string, number>}
  */
 export function countOpcodes(mod) {
-  const counts = { 'memory.grow': 0, 'memory.size': 0, 'memory.fill': 0, 'memory.copy': 0, trunc_sat: 0, simd: 0 };
+  const counts = {
+    'memory.grow': 0,
+    'memory.size': 0,
+    'memory.fill': 0,
+    'memory.copy': 0,
+    trunc_sat: 0,
+    simd: 0,
+    // Post-MVP features the build pins off (cpp/CMakeLists.txt); see wasmFeatureUse.
+    tail_call: 0,
+    reference_types: 0,
+    relaxed_simd: 0,
+    multivalue_block: 0,
+  };
   for (const body of mod.bodies) {
     const r = new Reader(mod.bytes, body.start, body.end);
     for (let groups = r.u32(); groups > 0; groups--) {
@@ -192,10 +204,14 @@ export function countOpcodes(mod) {
   return counts;
 }
 
-function blockType(r) {
+function blockType(r, counts) {
   const b = r.bytes[r.pos];
   if (b === 0x40 || VALTYPES.has(b)) r.skip(1);
-  else r.skipLeb();
+  else {
+    // A type index: the block takes parameters or yields several values.
+    counts.multivalue_block++;
+    r.skipLeb();
+  }
 }
 
 function memarg(r) {
@@ -206,23 +222,41 @@ function memarg(r) {
 
 function walkInstruction(r, counts) {
   const op = r.byte();
-  if (op <= 0x01 || op === 0x05 || op === 0x0b || op === 0x0f || op === 0x1a || op === 0x1b || op === 0xd1) return;
-  if (op >= 0x02 && op <= 0x04) return blockType(r);
-  if (op === 0x0c || op === 0x0d || op === 0x10 || op === 0x12 || op === 0xd2) return void r.u32();
+  if (op <= 0x01 || op === 0x05 || op === 0x0b || op === 0x0f || op === 0x1a || op === 0x1b) return;
+  if (op === 0xd1) {
+    counts.reference_types++; // ref.is_null
+    return;
+  }
+  if (op >= 0x02 && op <= 0x04) return blockType(r, counts);
+  if (op === 0x12) {
+    counts.tail_call++; // return_call
+    return void r.u32();
+  }
+  if (op === 0xd2) {
+    counts.reference_types++; // ref.func
+    return void r.u32();
+  }
+  if (op === 0x0c || op === 0x0d || op === 0x10) return void r.u32();
   if (op === 0x0e) {
     for (let n = r.u32(); n >= 0; n--) r.u32();
     return;
   }
   if (op === 0x11 || op === 0x13) {
+    if (op === 0x13) counts.tail_call++; // return_call_indirect
     r.u32();
     r.u32();
     return;
   }
   if (op === 0x1c) {
+    counts.reference_types++; // typed select
     for (let n = r.u32(); n > 0; n--) r.valtype();
     return;
   }
-  if (op >= 0x20 && op <= 0x26) return void r.u32();
+  if (op === 0x25 || op === 0x26) {
+    counts.reference_types++; // table.get / table.set
+    return void r.u32();
+  }
+  if (op >= 0x20 && op <= 0x24) return void r.u32();
   if (op >= 0x28 && op <= 0x3e) return memarg(r);
   if (op === 0x3f) {
     counts['memory.size']++;
@@ -236,7 +270,10 @@ function walkInstruction(r, counts) {
   if (op === 0x43) return r.skip(4);
   if (op === 0x44) return r.skip(8);
   if (op >= 0x45 && op <= 0xc4) return;
-  if (op === 0xd0) return r.skip(1);
+  if (op === 0xd0) {
+    counts.reference_types++; // ref.null
+    return r.skip(1);
+  }
   if (op === 0xfc) {
     const sub = r.u32();
     if (sub <= 7) {
@@ -244,7 +281,11 @@ function walkInstruction(r, counts) {
       return;
     }
     if (sub === 8) { r.u32(); r.u32(); return; }
-    if (sub === 9 || sub === 13 || (sub >= 15 && sub <= 17)) return void r.u32();
+    if (sub === 9 || sub === 13) return void r.u32();
+    if (sub >= 15 && sub <= 17) {
+      counts.reference_types++; // table.grow / size / fill
+      return void r.u32();
+    }
     if (sub === 10) {
       counts['memory.copy']++;
       r.u32();
@@ -255,12 +296,18 @@ function walkInstruction(r, counts) {
       counts['memory.fill']++;
       return void r.u32();
     }
-    if (sub === 12 || sub === 14) { r.u32(); r.u32(); return; }
+    if (sub === 12 || sub === 14) {
+      if (sub === 12) counts.reference_types++; // table.init (table.copy, 14, is bulk-memory-era MVP+)
+      r.u32();
+      r.u32();
+      return;
+    }
     throw new Error(`wasm: unknown 0xfc sub-opcode ${sub}`);
   }
   if (op === 0xfd) {
     counts.simd++;
     const sub = r.u32();
+    if (sub >= 0x100) counts.relaxed_simd++;
     if (SIMD_MEMARG.has(sub)) return memarg(r);
     if (sub === 12 || sub === 13) return r.skip(16);
     if (sub >= 21 && sub <= 34) return r.skip(1);

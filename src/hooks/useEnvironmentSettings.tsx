@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { loadCarRuntime } from '../car/carRuntimeLoader';
+import React, { createContext, useContext, useState, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { createStore, useStore, type Store } from '../state/createStore';
+import { withCarRuntime } from '../car/carRuntimeLoader';
 import {
   getLookPack,
   lookPackToEnvPatch,
@@ -169,6 +170,33 @@ export const useEnvironmentSettings = (): EnvironmentSettingsState => {
   );
 };
 
+const EnvStoreContext = createContext<Store<EnvironmentSettingsState> | null>(null);
+
+function useEnvStore(name: string): Store<EnvironmentSettingsState> {
+  const store = useContext(EnvStoreContext);
+  if (!store) throw new Error(`${name} must be used within EnvironmentSettingsProvider`);
+  return store;
+}
+
+/**
+ * Subscribe to one derived value of the whole environment. Re-renders only when
+ * `selector(env)` changes (`Object.is`) — unlike `useEnvironmentSettings()`,
+ * which re-renders on any slider, auto-night step or live-conditions tick.
+ * Return primitives or stable callbacks, never a fresh object.
+ */
+export function useEnvironmentSelector<T>(selector: (env: EnvironmentSettingsState) => T): T {
+  return useStore(useEnvStore('useEnvironmentSelector'), selector);
+}
+
+/**
+ * A stable getter for the live environment, for event handlers, effects and
+ * per-sample readers that need the value *now* but must not re-render on it.
+ */
+export function useEnvironmentGetter(): () => EnvironmentSettingsState {
+  const store = useEnvStore('useEnvironmentGetter');
+  return store.get;
+}
+
 interface EnvironmentSettingsProviderProps {
   children: React.ReactNode;
 }
@@ -253,7 +281,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   
   // Wipers
   const toggleWipersCallback = useCallback(() => {
-    void loadCarRuntime().then(({ toggleWipers, setCarWipers }) => {
+    void withCarRuntime(({ toggleWipers, setCarWipers }) => {
       const newState = toggleWipers();
       setWipersEnabledState(newState);
       setCarWipers(newState);
@@ -262,20 +290,20 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
 
   const setWipers = useCallback((enabled: boolean) => {
     setWipersEnabledState(enabled);
-    void loadCarRuntime().then(({ setCarWipers }) => setCarWipers(enabled));
+    void withCarRuntime(({ setCarWipers }) => setCarWipers(enabled));
   }, []);
 
   // Headlights
   const toggleHeadlights = useCallback((): boolean => {
     const newState = !headlightsOn;
     setHeadlightsOnState(newState);
-    void loadCarRuntime().then(({ setCarHeadlights }) => setCarHeadlights(newState));
+    void withCarRuntime(({ setCarHeadlights }) => setCarHeadlights(newState));
     return newState;
   }, [headlightsOn]);
 
   const setHeadlights = useCallback((enabled: boolean) => {
     setHeadlightsOnState(enabled);
-    void loadCarRuntime().then(({ setCarHeadlights }) => setCarHeadlights(enabled));
+    void withCarRuntime(({ setCarHeadlights }) => setCarHeadlights(enabled));
   }, []);
   
   // High beam
@@ -287,13 +315,13 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
   const toggleDomeLightCallback = useCallback((): boolean => {
     const newState = !domeLightOn;
     setDomeLightOnState(newState);
-    void loadCarRuntime().then(({ setCarDomeLight }) => setCarDomeLight(newState));
+    void withCarRuntime(({ setCarDomeLight }) => setCarDomeLight(newState));
     return newState;
   }, [domeLightOn]);
 
   const setDomeLight = useCallback((enabled: boolean) => {
     setDomeLightOnState(enabled);
-    void loadCarRuntime().then(({ setCarDomeLight }) => setCarDomeLight(enabled));
+    void withCarRuntime(({ setCarDomeLight }) => setCarDomeLight(enabled));
   }, []);
   
   // Roof
@@ -341,7 +369,7 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     setHighBeamState(patch.highBeam);
     setDomeLightOnState(patch.domeLightOn);
     setWipersEnabledState(patch.wipersEnabled);
-    void loadCarRuntime().then(({ setCarHeadlights, setCarDomeLight, setCarWipers }) => {
+    void withCarRuntime(({ setCarHeadlights, setCarDomeLight, setCarWipers }) => {
       setCarHeadlights(patch.headlightsOn);
       setCarDomeLight(patch.domeLightOn);
       setCarWipers(patch.wipersEnabled);
@@ -500,14 +528,27 @@ export const EnvironmentSettingsProvider: React.FC<EnvironmentSettingsProviderPr
     isRoofOpen, toggleRoof: toggleRoofCallback, setRoofOpen: setIsRoofOpen,
   }), [wipersEnabled, toggleWipersCallback, setWipers, isRoofOpen, toggleRoofCallback]);
 
+  const aggregate = useMemo<EnvironmentSettingsState>(
+    () => ({ ...weather, ...lighting, ...grade, ...carEnv }),
+    [weather, lighting, grade, carEnv],
+  );
+  const storeRef = useRef<Store<EnvironmentSettingsState> | null>(null);
+  storeRef.current ??= createStore(aggregate);
+  const envStore = storeRef.current;
+  useLayoutEffect(() => {
+    envStore.set(aggregate);
+  }, [envStore, aggregate]);
+
   return (
-    <WeatherContext.Provider value={weather}>
-      <LightingContext.Provider value={lighting}>
-        <GradeContext.Provider value={grade}>
-          <CarEnvContext.Provider value={carEnv}>{children}</CarEnvContext.Provider>
-        </GradeContext.Provider>
-      </LightingContext.Provider>
-    </WeatherContext.Provider>
+    <EnvStoreContext.Provider value={envStore}>
+      <WeatherContext.Provider value={weather}>
+        <LightingContext.Provider value={lighting}>
+          <GradeContext.Provider value={grade}>
+            <CarEnvContext.Provider value={carEnv}>{children}</CarEnvContext.Provider>
+          </GradeContext.Provider>
+        </LightingContext.Provider>
+      </WeatherContext.Provider>
+    </EnvStoreContext.Provider>
   );
 };
 

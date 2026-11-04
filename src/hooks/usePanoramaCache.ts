@@ -1,5 +1,6 @@
 import { useRef, useCallback, useMemo } from 'react';
 import { CallBudgetExceededError, getMapsCallBudget } from '../services/maps/callBudget';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface CachedPano {
   panoId: string;
@@ -68,7 +69,7 @@ export function usePanoramaCache() {
           };
           set(pano);
           resolve(pano);
-        }).catch(() => {});
+        }).catch(ignoreRejection);
       });
     },
     [get, set]

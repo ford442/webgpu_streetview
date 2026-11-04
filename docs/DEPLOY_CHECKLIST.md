@@ -120,7 +120,7 @@ See the comments on each for the latest codebase status and partial fixes (react
 
 - [ ] Rotate the production key every 90 days (create new restricted key, deploy with it, delete old).
 - [ ] Review the GCP project's enabled APIs and billing monthly.
-- [ ] After any change to `public/index.html` (script order) or the loader, re-test a full deploy cycle on a staging origin if possible.
+- [ ] After any change to `index.html` (script order) or the loader, re-test a full deploy cycle on a staging origin if possible.
 
 ---
 

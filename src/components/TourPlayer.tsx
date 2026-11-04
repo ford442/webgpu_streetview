@@ -3,6 +3,7 @@ import { type Tour } from '../hooks/useTours';
 import type { RouteGraphNode } from '../offline';
 import { findPathBetweenPanos } from '../offline';
 import { resolveDirectorAt, type TourDirectorKeyframe } from '../utils/tourDirector';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 interface TourPlayerProps {
     tour: Tour;
@@ -158,9 +159,9 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
 
     const toggleFullscreen = () => {
         if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
+            document.exitFullscreen().catch(ignoreRejection);
         } else {
-            containerRef.current?.requestFullscreen?.().catch(() => {});
+            containerRef.current?.requestFullscreen?.().catch(ignoreRejection);
         }
     };
 
@@ -192,7 +193,7 @@ const TourPlayer: React.FC<TourPlayerProps> = ({
             )}
             <div style={{ color: '#ccc', fontSize: '13px' }}>
                 Waypoint {waypointCount === 0 ? 0 : currentIndex + 1} / {waypointCount}
-                {tour.waypoints[currentIndex]?.annotation ? ` — ${tour.waypoints[currentIndex]!.annotation}` : ''}
+                {tour.waypoints[currentIndex]?.annotation ? ` — ${tour.waypoints[currentIndex].annotation}` : ''}
             </div>
 
             <input

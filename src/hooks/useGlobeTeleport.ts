@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from '../utils/geoTimeUtils';
 import { getTopStationForLocation } from '../services/radioBrowserService';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface UseGlobeTeleportOptions {
   teleportSafe: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => Promise<void>;
@@ -45,7 +46,7 @@ export function useGlobeTeleport({
           streamUrl = `https://${streamUrl.slice(7)}`;
         }
         audioRef.current.src = streamUrl;
-        audioRef.current.play().catch(() => {});
+        audioRef.current.play().catch(ignoreRejection);
         setIsRadioPlaying(true);
         console.log(`[GlobeTeleport] Tuned to: ${station.name} (${station.country})`);
       }

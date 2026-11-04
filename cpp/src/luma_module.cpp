@@ -42,23 +42,28 @@ constexpr double kLumaFullScale = 2550000.0;
  */
 void box_average(std::span<const unsigned char> in, int src_w, int src_h, int dst_w, int dst_h,
                  int dx, int dy, int out4[4]) {
-    int y0 = (dy * src_h) / dst_h;
-    int y1 = ((dy + 1) * src_h) / dst_h;
+    // 64-bit throughout: dy * src_h and a box's channel sums overflow int for
+    // frames in the tens of megapixels (signed overflow is UB).
+    const auto box_edge = [](int index, int src, int dst) {
+        return static_cast<int>((static_cast<int64_t>(index) * src) / dst);
+    };
+    int y0 = box_edge(dy, src_h, dst_h);
+    int y1 = box_edge(dy + 1, src_h, dst_h);
     if (y1 <= y0) y1 = y0 + 1;
     if (y1 > src_h) y1 = src_h;
-    int x0 = (dx * src_w) / dst_w;
-    int x1 = ((dx + 1) * src_w) / dst_w;
+    int x0 = box_edge(dx, src_w, dst_w);
+    int x1 = box_edge(dx + 1, src_w, dst_w);
     if (x1 <= x0) x1 = x0 + 1;
     if (x1 > src_w) x1 = src_w;
-    int sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
+    int64_t sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
     for (int y = y0; y < y1; ++y) {
         for (int x = x0; x < x1; ++x) {
             const size_t base =
                 (static_cast<size_t>(y) * static_cast<size_t>(src_w) + static_cast<size_t>(x)) * 4u;
-            sr += static_cast<int>(in[base]);
-            sg += static_cast<int>(in[base + 1]);
-            sb += static_cast<int>(in[base + 2]);
-            sa += static_cast<int>(in[base + 3]);
+            sr += in[base];
+            sg += in[base + 1];
+            sb += in[base + 2];
+            sa += in[base + 3];
             n += 1;
         }
     }
@@ -68,10 +73,10 @@ void box_average(std::span<const unsigned char> in, int src_w, int src_h, int ds
         out4[2] = 0;
         out4[3] = 255;
     } else {
-        out4[0] = sr / n;
-        out4[1] = sg / n;
-        out4[2] = sb / n;
-        out4[3] = sa / n;
+        out4[0] = static_cast<int>(sr / n);
+        out4[1] = static_cast<int>(sg / n);
+        out4[2] = static_cast<int>(sb / n);
+        out4[3] = static_cast<int>(sa / n);
     }
 }
 
@@ -87,10 +92,10 @@ void sw_luma_histogram_bt709(const unsigned char* rgba, int width, int height, u
     const std::span<unsigned int, 256> bin_span(bins, 256);
     for (size_t i = 0; i < 256; ++i) bin_span[i] = 0u;
     if (width <= 0 || height <= 0 || rgba == nullptr) return;
-    const int count = width * height;
-    const std::span<const unsigned char> px(rgba, static_cast<size_t>(count) * 4u);
-    for (int i = 0; i < count; ++i) {
-        const size_t base = static_cast<size_t>(i) * 4u;
+    const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const std::span<const unsigned char> px(rgba, count * 4u);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = i * 4u;
         int bin = bt709_bin_u8(px[base], px[base + 1], px[base + 2]);
         bin_span[static_cast<size_t>(bin)] += 1u;
     }
@@ -103,15 +108,15 @@ void sw_reduce_luma_bt709(const unsigned char* rgba, int width, int height, floa
     out[1] = 0.0f;
     out[2] = 0.0f;
     if (width <= 0 || height <= 0 || rgba == nullptr) return;
-    const int count = width * height;
-    const std::span<const unsigned char> px(rgba, static_cast<size_t>(count) * 4u);
+    const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const std::span<const unsigned char> px(rgba, count * 4u);
     // f64 accumulator: an f32 running sum over a 1080p frame drifts by ~1%
     // once the sum dwarfs each addend. The JS twin sums in f64 as well.
     double sum = 0.0;
     float mn = 1.0f;
     float mx = 0.0f;
-    for (int i = 0; i < count; ++i) {
-        const size_t base = static_cast<size_t>(i) * 4u;
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = i * 4u;
         float y =
             (0.2126f * static_cast<float>(px[base]) + 0.7152f * static_cast<float>(px[base + 1]) +
              0.0722f * static_cast<float>(px[base + 2])) /

@@ -5,6 +5,7 @@
 
 import { acquireCarAudioGraph, releaseCarAudioGraph, type CarAudioGraph } from './carAudioGraph';
 import { createBrowserAudioContext } from './createAudioContext';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface AudioAnalyzerOptions {
   /**
@@ -288,7 +289,7 @@ export class AudioAnalyzer {
       this.audioContext = null;
       releaseCarAudioGraph();
     } else if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close().catch(() => {});
+      this.audioContext.close().catch(ignoreRejection);
       this.audioContext = null;
     }
   }

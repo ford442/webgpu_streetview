@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 export type EasingFunction = (t: number) => number;
 
@@ -72,7 +73,7 @@ function useTransition(options: TransitionOptions) {
   const start = useCallback((from: number = 0, to: number = 1) => {
     // Cancel any existing animation
     if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
+      cancelFrame(animationRef.current);
     }
 
     isActiveRef.current = true;
@@ -95,7 +96,7 @@ function useTransition(options: TransitionOptions) {
       
       // Handle delay
       if (elapsed < delay) {
-        animationRef.current = requestAnimationFrame(animate);
+        animationRef.current = requestFrame(animate);
         return;
       }
 
@@ -111,7 +112,7 @@ function useTransition(options: TransitionOptions) {
       });
 
       if (rawProgress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
+        animationRef.current = requestFrame(animate);
       } else {
         isActiveRef.current = false;
         if (onComplete) {
@@ -120,13 +121,13 @@ function useTransition(options: TransitionOptions) {
       }
     };
 
-    animationRef.current = requestAnimationFrame(animate);
+    animationRef.current = requestFrame(animate);
   }, [duration, easing, delay, onComplete, onStart]);
 
   const stop = useCallback(() => {
     isActiveRef.current = false;
     if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
+      cancelFrame(animationRef.current);
       animationRef.current = null;
     }
     setState(prev => ({ ...prev, isTransitioning: false }));
@@ -136,7 +137,7 @@ function useTransition(options: TransitionOptions) {
   useEffect(() => {
     return () => {
       if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+        cancelFrame(animationRef.current);
       }
     };
   }, []);

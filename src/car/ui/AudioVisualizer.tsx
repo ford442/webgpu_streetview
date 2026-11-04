@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import { cancelFrame, requestFrame } from '../../xr/frameClock';
 
 export interface AudioVisualizerProps {
   analyser?: AnalyserNode | null;
@@ -35,7 +36,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = React.memo(
           const x = i * (barW + 2);
           ctx.fillRect(x, height - 2, barW, 2);
         }
-        animationRef.current = requestAnimationFrame(draw);
+        animationRef.current = requestFrame(draw);
         return;
       }
 
@@ -67,12 +68,12 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = React.memo(
         }
       }
 
-      animationRef.current = requestAnimationFrame(draw);
+      animationRef.current = requestFrame(draw);
     }, [analyser, isActive, barCount, width, height]);
 
     useEffect(() => {
-      animationRef.current = requestAnimationFrame(draw);
-      return () => cancelAnimationFrame(animationRef.current);
+      animationRef.current = requestFrame(draw);
+      return () => cancelFrame(animationRef.current);
     }, [draw]);
 
     return (

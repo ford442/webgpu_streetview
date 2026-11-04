@@ -22,6 +22,10 @@
 #
 # Env:
 #   CI=true                   fail if emcc is missing (do not reuse a stale binary)
+#   SV_WASM_PREBUILT=1        with CI=true: no emcc needed when the C++ source hash
+#                             matches the committed wasm. Only for jobs that run
+#                             beside `build-wasm-emscripten`, which proves the
+#                             committed binaries equal a pinned-emcc rebuild.
 
 set -euo pipefail
 
@@ -72,6 +76,11 @@ done
 SOURCE_HASH="$(node "$REPO_ROOT/scripts/wasm-source-hash.mjs")"
 
 if ! command -v emcc &>/dev/null; then
+  if [ "${CI:-}" = "true" ] && [ "${SV_WASM_PREBUILT:-}" = "1" ] && [ -f "$HASH_OUT" ] \
+     && [ "$(tr -d '[:space:]' < "$HASH_OUT")" = "$SOURCE_HASH" ]; then
+    echo "==> SV_WASM_PREBUILT: C++ source hash matches the committed wasm (rebuilt by build-wasm-emscripten)."
+    exit 0
+  fi
   if [ "${CI:-}" = "true" ]; then
     echo "ERROR: emcc is required in CI. Install the SDK pinned in cpp/emsdk.version" >&2
     echo "       (see WASM.md / mymindstorm/setup-emsdk)." >&2

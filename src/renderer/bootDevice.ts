@@ -14,6 +14,7 @@ import {
     resolveCanvasOutputPolicy,
     type CanvasOutputPolicy,
 } from './deviceInit';
+import { readFlag } from '../config/flags';
 import { DEVICE_LABELS } from './deviceCapabilities';
 import { resolveHdrIntermediateFormat } from './shaderFeatureVariants';
 import { createComputePipelineChecked, createShaderModuleChecked } from './gpuPipelineFactory';
@@ -21,6 +22,7 @@ import {
     adapterInfoFromGpuAdapter,
     publishWebGpuProbe,
     type WebGpuProbeAdapterInfo,
+    type WebGpuProbeHdr,
     type WebGpuProbeStage,
 } from './webgpuBootProbe';
 import {
@@ -68,6 +70,7 @@ export interface BootProbeContext {
     webglPreferenceDeferred: boolean;
     adapter?: WebGpuProbeAdapterInfo | undefined;
     capabilityMatrix?: CapabilityMatrix | undefined;
+    hdr?: WebGpuProbeHdr | undefined;
 }
 
 export type BootDeviceResult = BootDeviceSuccess | BootDeviceFailure;
@@ -149,6 +152,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     const requiredFeatures = collectOptionalDeviceFeatures(adapter, {
         featureLevel: describeAdapterSelection(adapterOptions).featureLevel,
         enableClipDistances: !readNoClipDistancesFlag(),
+        enableTimestampQueries: readFlag('gpu_timing'),
     });
 
     let device: GPUDevice;
@@ -165,6 +169,9 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         return fail('device', reason);
     }
     labelDevice(device);
+    // Before `configure()`: its validation errors are uncaptured errors too. The
+    // handler counts into a local sink until the capability matrix exists.
+    const retargetUncaptured = attachUncapturedErrorHandler(device, { uncapturedErrorCount: 0 });
 
     let destroyedHere = false;
     void device.lost.then((info) => {
@@ -189,6 +196,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         flags: getCanvasOutputFlags(),
         ...readDisplayOutputCapabilities(),
     });
+    const hdrRequested = canvasOutputPolicy.hdr;
     let appliedCanvas: ReturnType<typeof configureCanvasContext>;
     try {
         appliedCanvas = configureCanvasContext(context, device, preferredFormat, canvasOutputPolicy);
@@ -225,7 +233,13 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         requiredFeatures,
         capabilityMatrix,
     );
-    attachUncapturedErrorHandler(device, capabilityMatrix);
+    retargetUncaptured(capabilityMatrix);
+    probe.hdr = {
+        requested: hdrRequested,
+        mode: appliedCanvas.toneMapping,
+        readBack: appliedCanvas.readBack,
+        ...(appliedCanvas.downgradeReason !== undefined ? { downgradeReason: appliedCanvas.downgradeReason } : {}),
+    };
 
     // Boot-probe compute smoke: catch Edge/Chrome shader backend gaps before weather mounts.
     try {
@@ -260,6 +274,7 @@ export function publishBootSuccess(probe: BootProbeContext): void {
         webglPreferenceDeferred: probe.webglPreferenceDeferred,
         adapter: probe.adapter,
         capabilityMatrix: probe.capabilityMatrix,
+        hdr: probe.hdr,
     });
 }
 
@@ -273,6 +288,7 @@ export function publishBootFailure(probe: BootProbeContext, stage: WebGpuProbeSt
         webglPreferenceDeferred: probe.webglPreferenceDeferred,
         adapter: probe.adapter,
         capabilityMatrix: probe.capabilityMatrix,
+        hdr: probe.hdr,
     });
 }
 

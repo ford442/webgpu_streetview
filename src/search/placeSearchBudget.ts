@@ -51,7 +51,7 @@ export interface PlaceSearchBudgetStats {
   budgetRemaining: number;
   killed: boolean;
   nearbyEnabled: boolean;
-  lastBlockReason?: PlaceSearchBlockReason;
+  lastBlockReason?: PlaceSearchBlockReason | undefined;
 }
 
 const EMPTY_METERS: Record<PlaceSearchMeter, number> = {

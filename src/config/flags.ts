@@ -108,6 +108,10 @@ export const FLAGS = {
     kind: 'bool', default: false,
     doc: 'Kill switch for GPU chores (luma/horizon compute). Weather rendering is unaffected.',
   },
+  gpu_timing: {
+    kind: 'bool', default: false,
+    doc: 'Request the `timestamp-query` device feature: GPU pass timings in the performance overlay (P) and a GPU-timed auto render scale. Off: the auto scale follows frame time. A device feature cannot be added after boot, so this is read at boot.',
+  },
   no_clip_distances: {
     kind: 'bool', default: false,
     doc: 'Do not request the `clip-distances` device feature (also disables the windshield portal).',
@@ -256,7 +260,7 @@ function parseFlag(def: FlagDef, raw: string | null): unknown {
     }
     case 'enum': {
       const v = raw?.trim().toLowerCase();
-      return v && (def.values as readonly string[]).includes(v) ? v : def.default;
+      return v && (def.values).includes(v) ? v : def.default;
     }
     case 'number': {
       if (raw === null || raw.trim() === '') return def.default;

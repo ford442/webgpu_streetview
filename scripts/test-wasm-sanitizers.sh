@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# A UBSan finding must fail the run, not just print (the build also passes
+# -fno-sanitize-recover=all; this keeps the report readable).
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/cpp/build-wasm-tests"
 if ! command -v emcmake >/dev/null 2>&1; then

@@ -187,8 +187,8 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
                 module: shaderModule,
                 entryPoint: 'fs_main',
                 targets: this.dualSourcePrecip
-                    ? [{ format: presentationFormat as GPUTextureFormat, blend: DUAL_SOURCE_PRECIP_BLEND }]
-                    : [{ format: presentationFormat as GPUTextureFormat }],
+                    ? [{ format: presentationFormat, blend: DUAL_SOURCE_PRECIP_BLEND }]
+                    : [{ format: presentationFormat }],
             },
             primitive: { topology: 'triangle-list' },
         });

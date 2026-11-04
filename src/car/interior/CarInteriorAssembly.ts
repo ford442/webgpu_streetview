@@ -205,7 +205,7 @@ export function buildInteriorFromBuilder(host: CarInteriorAssemblyHost): void {
             cabin,
             host.metalMaterial,
             host.vehicleConfig,
-            host.gpuProfile as import('./performance').GPUPerformanceProfile,
+            host.gpuProfile,
             host.quality
         );
         host.speedometerNeedle = gaugeResult.speedometerNeedle;

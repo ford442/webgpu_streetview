@@ -1,5 +1,6 @@
 import type { CesiumViewer } from '../../types/cesium';
 import { getMapsCallBudget } from '../../services/maps/callBudget';
+import { ignoreRejection } from '../../utils/ignoreRejection';
 
 /** Street-level height used on enter start / exit descend (meters). */
 export const GLOBE_STREET_ALTITUDE_M = 120;
@@ -118,5 +119,5 @@ export function requestOrbitalDrop(opts: {
         opts.onNoStreetView();
       }
     },
-  ).catch(() => {});
+  ).catch(ignoreRejection);
 }

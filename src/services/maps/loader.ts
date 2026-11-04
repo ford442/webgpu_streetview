@@ -351,7 +351,7 @@ export function loadMapsApi(apiKey: string): Promise<void> {
           window.__mapsApiLoadState.status = 'failed';
           window.__mapsApiLoadState.lastAuthFailureKey = trimmedKey;
         }
-        reject(err);
+        reject(err instanceof Error ? err : new Error(String(err)));
       });
   })
     .catch(err => {

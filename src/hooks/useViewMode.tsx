@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { loadCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
+import { loadCarRuntime, withCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
 import { currentSearch } from '../config/flags';
 import { povStore } from '../state/povStore';
 import {
@@ -146,7 +146,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
 
     console.log(`[ViewMode] Switching: ${prevViewMode} → ${viewMode}`);
 
-    void loadCarRuntime().then(({ toggleCarMode }) => {
+    void withCarRuntime(({ toggleCarMode }) => {
       if (prevViewMode === 'car') {
         toggleCarMode(false);
       }
@@ -161,7 +161,7 @@ export const ViewModeProvider: React.FC<ViewModeProviderProps> = ({
   useEffect(() => {
     return () => {
       if (carModeStateRef.current) {
-        void loadCarRuntime().then(({ disposeCarMode }) => {
+        void withCarRuntime(({ disposeCarMode }) => {
           disposeCarMode();
           carModeStateRef.current = null;
         });

@@ -24,16 +24,18 @@ import { readFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { parseAbiHeader } from './gen-wasm-abi.mjs';
+import { checkWasmFeatures } from './check-wasm-features.mjs';
 import { countOpcodes, exportSignatures, formatSignature, readWasmModule } from './wasm-binary.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Exports emcc adds to every STANDALONE_WASM reactor; not part of the ABI. */
-export const RUNTIME_EXTRAS = new Set([
-  '_initialize',
-  '_emscripten_stack_restore',
-  'emscripten_stack_get_current',
-]);
+/**
+ * The one export emcc adds to every STANDALONE_WASM reactor that is not part
+ * of the ABI. Its other hard-coded exports (function table, stack helpers)
+ * are removed after the link by scripts/strip-wasm-exports.mjs, so a binary
+ * that still has them was not built by build-wasm.sh and fails here.
+ */
+export const RUNTIME_EXTRAS = new Set(['_initialize']);
 
 export const DSP_MAX_BYTES = 32 * 1024;
 
@@ -67,6 +69,7 @@ export function checkWasmBinary(bytes, kind, abi) {
   if (!mod.exports.some((e) => e.name === 'memory' && e.kind === 2)) {
     problems.push('does not export "memory"; the loader cannot transfer buffers');
   }
+  problems.push(...checkWasmFeatures(bytes));
   if (kind === 'dsp') {
     const ops = countOpcodes(mod);
     if (ops['memory.grow'] !== 0) problems.push(`has ${ops['memory.grow']} memory.grow instruction(s)`);

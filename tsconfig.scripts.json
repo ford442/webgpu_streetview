@@ -23,7 +23,5 @@
     "scripts/**/*.mjs",
     "scripts/**/*.d.ts"
   ],
-  "exclude": [
-    "scripts/quick-flicker-probe.mjs"
-  ]
+  "exclude": []
 }

@@ -8,8 +8,8 @@
  * definitions, in their own TU.
  *
  * Both kernels stay on add/sub/mul/div plus an integer LCG (no transcendentals
- * in the cabin IR) so the emcc binary, the host build and the JS twin in
- * src/wasm/jsFallback.ts agree to the last f32 bit.
+ * in the cabin IR) so the emcc binary and the host build agree with the
+ * goldens to the last f32 bit.
  *
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
  */
@@ -51,7 +51,8 @@ static const CabinProfile cabin_profiles[] = {
     {{0.95f, 1.60f, 2.30f}, {0.38f, 0.24f, 0.15f}, 0.26f, 1.80f, 0.34f, 0.92f, 0.050f, 7.0f},
 };
 
-static const int cabin_profile_count = (int)(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
+static const int cabin_profile_count =
+    static_cast<int>(sizeof(cabin_profiles) / sizeof(cabin_profiles[0]));
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -67,13 +68,17 @@ double sw_fill_engine_noise(float* buf, int count, float rpm, float load, float 
     // consecutive samples collapsed onto the same value (a staircase).
     if (!(phase >= 0.0 && phase < 1.0)) {
         phase = std::isfinite(phase) ? phase - std::floor(phase) : 0.0;
+        // -1e-20 - floor(-1e-20) rounds to exactly 1.0: keep the range half-open.
+        if (phase >= 1.0) phase = 0.0;
     }
     if (count <= 0 || buf == nullptr) return phase;
     if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
-    if (rpm < 0.0f) rpm = 0.0f;
-    if (load < 0.0f) load = 0.0f;
+    // NaN fails every comparison, so test the allowed range, not the forbidden one:
+    // a NaN / infinite rpm would otherwise make the whole block NaN (fuzz_audio).
+    if (!(rpm >= 0.0f) || !std::isfinite(rpm)) rpm = 0.0f;
+    if (!(load >= 0.0f)) load = 0.0f;
     if (load > 1.0f) load = 1.0f;
-    if (speed_kmh < 0.0f) speed_kmh = 0.0f;
+    if (!(speed_kmh >= 0.0f) || !std::isfinite(speed_kmh)) speed_kmh = 0.0f;
     // 2^53: past it a double no longer counts samples exactly.
     if (!(sample_index >= 0.0 && sample_index < 9007199254740992.0)) sample_index = 0.0;
 
@@ -106,7 +111,7 @@ double sw_fill_engine_noise(float* buf, int count, float rpm, float load, float 
 void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, float sample_rate) {
     if (count <= 0 || buf == nullptr) return;
     if (!(sample_rate > 1.0f)) sample_rate = 44100.0f;
-    if (openness < 0.0f) openness = 0.0f;
+    if (!(openness >= 0.0f)) openness = 0.0f; // NaN too
     if (openness > 1.0f) openness = 1.0f;
     if (vehicle_type < 0) vehicle_type = 0;
     if (vehicle_type >= cabin_profile_count) vehicle_type = cabin_profile_count - 1;
@@ -122,9 +127,11 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, f
     const float enclosure = 1.0f - 0.75f * openness;
     const float ms_to_taps = sample_rate / 1000.0f;
     for (int r = 0; r < 3; ++r) {
-        const int d = (int)(p.reflect_ms[r] * ms_to_taps);
-        if (d > 0 && d < count) {
-            out[static_cast<size_t>(d)] += p.reflect_gain[r] * enclosure;
+        // Range-check in float first: an enormous sample_rate would make the
+        // int conversion itself undefined (found by fuzz_audio).
+        const float d_f = p.reflect_ms[r] * ms_to_taps;
+        if (d_f >= 1.0f && d_f < static_cast<float>(count)) {
+            out[static_cast<size_t>(static_cast<int>(d_f))] += p.reflect_gain[r] * enclosure;
         }
     }
 
@@ -134,7 +141,7 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, f
     // emcc binary, the host build and the JS twin agree bit-for-bit.
     // The seed is per-vehicle only, so toggling the roof re-colours the same
     // room instead of swapping in a different one.
-    uint32_t state = (uint32_t)vehicle_type * 2654435761u + 1013904223u;
+    uint32_t state = static_cast<uint32_t>(vehicle_type) * 2654435761u + 1013904223u;
     const float tail_taps = p.tail_ms * ms_to_taps;
     const float decay = tail_taps > 1.0f ? 1.0f / tail_taps : 1.0f;
     float env = p.tail_level * enclosure;
@@ -150,7 +157,7 @@ void sw_fill_cabin_ir(float* buf, int count, int vehicle_type, float openness, f
     float prev_n = 0.0f;
     for (int i = 1; i < count; ++i) {
         state = state * 1664525u + 1013904223u;
-        float n = (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
+        float n = static_cast<float>((state >> 8) & 0xFFFFFFu) / 16777216.0f;
         n = n * 2.0f - 1.0f;
         // Differencing successive noise samples removes the tail's DC: over
         // only ~128 taps a raw noise tail has a large random mean, which would

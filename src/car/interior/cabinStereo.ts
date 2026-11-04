@@ -73,7 +73,7 @@ export function updateEyeCameras(
         const half = request.ipd / 2;
         // A point at depth Zc must project to the same NDC x in both eyes:
         // x_ndc(eye at +e) = P00·(X − e)/Zc + s  ⇒  s = P00·e / Zc.
-        const p00 = head.projectionMatrix.elements[0]!;
+        const p00 = head.projectionMatrix.elements[0];
         [[eyes.left, -half], [eyes.right, half]].forEach(([eye, e]) => {
             const s = (p00 * (e as number)) / request.convergence;
             offset.makeTranslation(e as number, 0, 0);

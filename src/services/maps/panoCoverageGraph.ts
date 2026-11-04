@@ -12,6 +12,7 @@
 
 import { getMapsCallBudget } from './callBudget';
 import { haversineDistance } from '../../utils/navigation';
+import { ignoreRejection } from '../../utils/ignoreRejection';
 
 export interface PanoGraphNode {
   panoId: string;
@@ -179,7 +180,7 @@ export function createMeteredPanoFetcher(svc: google.maps.StreetViewService): Pa
     return new Promise((resolve) => {
       svc.getPanorama({ pano: panoId }, (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? panoNodeFromData(data) : null);
-      }).catch(() => {});
+      }).catch(ignoreRejection);
     });
   };
 }

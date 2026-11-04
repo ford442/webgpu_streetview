@@ -106,7 +106,7 @@ export async function startXrCockpit(deps: XrCockpitDeps): Promise<XrCockpit> {
         binding = new Binding(session, deps.device);
         format = binding.getPreferredColorFormat();
         layer = binding.createProjectionLayer({ colorFormat: format, textureUsage: GPUTextureUsage.RENDER_ATTACHMENT });
-        await session.updateRenderState({ layers: [layer] } as XRRenderStateInit);
+        await session.updateRenderState({ layers: [layer] });
         refSpace = await session.requestReferenceSpace('local');
     } catch (error) {
         await session.end().catch(() => undefined);

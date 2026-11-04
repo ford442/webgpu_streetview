@@ -100,7 +100,7 @@ const GlobeView: React.FC<GlobeViewProps> = ({
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200) as unknown as number;
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
   }, []);
 
   const entryCoords = useRef({ lat: currentLat, lng: currentLng, heading: currentHeading });

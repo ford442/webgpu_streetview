@@ -309,7 +309,7 @@ class VehicleManager {
      */
     hasFeature(feature: keyof VehicleConfig): boolean {
         const config = this.getCurrentConfig();
-        return Boolean(config[feature as keyof VehicleConfig]);
+        return Boolean(config[feature]);
     }
 
     /**

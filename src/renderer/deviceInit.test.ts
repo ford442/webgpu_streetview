@@ -169,17 +169,17 @@ describe('deviceInit limits and features', () => {
         });
     });
 
-    it('collectOptionalDeviceFeatures requests float32-filterable and timestamp-query when present', () => {
-        const features = collectOptionalDeviceFeatures(
-            makeAdapter({}, ['float32-filterable', 'timestamp-query']),
-        );
-        expect(features).toContain('float32-filterable');
-        expect(features).toContain('timestamp-query');
+    it('requests timestamp-query only when asked (?gpu_timing), and never float32-filterable', () => {
+        const adapter = makeAdapter({}, ['float32-filterable', 'timestamp-query']);
+        expect(collectOptionalDeviceFeatures(adapter)).toEqual([]);
+        const timed = collectOptionalDeviceFeatures(adapter, { enableTimestampQueries: true });
+        expect(timed).toContain('timestamp-query');
+        expect(timed).not.toContain('float32-filterable');
+        expect(OPTIONAL_FEATURES_ATTEMPTED).not.toContain('float32-filterable');
     });
 
     it('collectOptionalDeviceFeatures requests the v3 optional set when the adapter exposes them', () => {
         const used = [
-            'float32-filterable',
             'timestamp-query',
             'subgroups',
             'rg11b10ufloat-renderable',
@@ -188,7 +188,10 @@ describe('deviceInit limits and features', () => {
             'core-features-and-limits',
         ] as GPUFeatureName[];
         const offered = [...used, TIMESTAMP_QUERY_INSIDE_PASSES, 'shader-f16' as GPUFeatureName];
-        const features = collectOptionalDeviceFeatures(makeAdapter({}, offered), { featureLevel: 'core' });
+        const features = collectOptionalDeviceFeatures(makeAdapter({}, offered), {
+            featureLevel: 'core',
+            enableTimestampQueries: true,
+        });
         expect(features).toEqual(used);
     });
 
@@ -204,10 +207,10 @@ describe('deviceInit limits and features', () => {
 
     it('collectOptionalDeviceFeatures skips names the adapter does not expose', () => {
         const features = collectOptionalDeviceFeatures(
-            makeAdapter({}, ['float32-filterable']),
+            makeAdapter({}, ['subgroups']),
             { featureLevel: 'core' },
         );
-        expect(features).toEqual(['float32-filterable']);
+        expect(features).toEqual(['subgroups']);
     });
 
     it('collectOptionalDeviceFeatures still requests clip-distances by default — the windshield portal depends on it', () => {
@@ -222,7 +225,6 @@ describe('deviceInit limits and features', () => {
         );
         expect(features).not.toContain('clip-distances');
         expect(features).toContain('subgroups');
-        expect(features).toContain('float32-filterable');
     });
 
     it.each([
@@ -250,10 +252,10 @@ describe('deviceInit limits and features', () => {
 
     it('collectOptionalDeviceFeatures skips timestamp-query when disabled', () => {
         const features = collectOptionalDeviceFeatures(
-            makeAdapter({}, ['float32-filterable', 'timestamp-query', TIMESTAMP_QUERY_INSIDE_PASSES]),
+            makeAdapter({}, ['subgroups', 'timestamp-query', TIMESTAMP_QUERY_INSIDE_PASSES]),
             { enableTimestampQueries: false },
         );
-        expect(features).toContain('float32-filterable');
+        expect(features).toContain('subgroups');
         expect(features).not.toContain('timestamp-query');
         expect(features).not.toContain(TIMESTAMP_QUERY_INSIDE_PASSES);
     });
@@ -386,7 +388,7 @@ describe('canvas output policy', () => {
             .toBe('display-p3');
     });
 
-    it('falls back to SDR when the browser rejects the HDR configure', () => {
+    it('drops HDR but keeps P3 when the browser rejects the HDR configure', () => {
         const configure = vi.fn()
             .mockImplementationOnce(() => { throw new Error('unsupported toneMapping'); })
             .mockImplementationOnce(() => undefined);
@@ -396,14 +398,64 @@ describe('canvas output policy', () => {
 
         expect(configure).toHaveBeenCalledTimes(2);
         expect(applied.format).toBe('bgra8unorm');
-        expect(applied.colorSpace).toBe('srgb');
+        expect(applied.colorSpace).toBe('display-p3');
         expect(applied.toneMapping).toBe('standard');
         expect(applied.downgradeReason).toMatch(/unsupported toneMapping/);
         expect(configure.mock.calls[1]?.[0].usage).toBe(CANVAS_USAGE);
     });
+
+    it('falls to plain SDR sRGB when P3 is rejected too', () => {
+        const configure = vi.fn()
+            .mockImplementationOnce(() => { throw new Error('no hdr'); })
+            .mockImplementationOnce(() => { throw new Error('no p3'); })
+            .mockImplementationOnce(() => undefined);
+        const context = { configure } as unknown as GPUCanvasContext;
+
+        const applied = configureCanvasContext(context, device, 'bgra8unorm', { hdr: true, p3: true });
+
+        expect(configure).toHaveBeenCalledTimes(3);
+        expect(applied.colorSpace).toBe('srgb');
+        expect(applied.toneMapping).toBe('standard');
+        expect(applied.downgradeReason).toMatch(/no hdr/);
+    });
+
+    it('reports the mode getConfiguration() reads back, not the one requested', () => {
+        // A browser that accepts `toneMapping` as an unknown member but ignores it.
+        const context = {
+            configure: vi.fn(),
+            getConfiguration: () => ({ format: HDR_CANVAS_FORMAT, colorSpace: 'srgb' }),
+        } as unknown as GPUCanvasContext;
+
+        const applied = configureCanvasContext(context, device, 'bgra8unorm', { hdr: true, p3: false });
+
+        expect(applied.toneMapping).toBe('standard');
+        expect(applied.readBack).toBe(true);
+    });
+
+    it('trusts the descriptor (readBack false) where getConfiguration is not shipped', () => {
+        const context = { configure: vi.fn() } as unknown as GPUCanvasContext;
+        const applied = configureCanvasContext(context, device, 'bgra8unorm', { hdr: true, p3: false });
+        expect(applied.toneMapping).toBe('extended');
+        expect(applied.readBack).toBe(false);
+    });
 });
 
 describe('uncaptured errors and labels', () => {
+    it('carries errors seen before the matrix exists (configure-time) onto it', () => {
+        let onUncapturedError: ((event: Event) => void) | undefined;
+        const early = {
+            addEventListener: (_t: string, h: (event: Event) => void) => { onUncapturedError = h; },
+        } as unknown as GPUDevice;
+        const retarget = attachUncapturedErrorHandler(early, { uncapturedErrorCount: 0 });
+        onUncapturedError?.({ error: new Error('bad configure') } as unknown as Event);
+        const matrix: { uncapturedErrorCount: number; lastUncapturedError?: string } = { uncapturedErrorCount: 0 };
+        retarget(matrix);
+        expect(matrix.uncapturedErrorCount).toBe(1);
+        expect(matrix.lastUncapturedError).toBe('bad configure');
+        onUncapturedError?.({ error: new Error('later') } as unknown as Event);
+        expect(matrix.uncapturedErrorCount).toBe(2);
+    });
+
     it('counts uncaptured errors onto the capability matrix', () => {
         let onUncapturedError: ((event: Event) => void) | undefined;
         const device = {
@@ -448,6 +500,7 @@ describe('uncaptured errors and labels', () => {
                 colorSpace: 'display-p3',
                 toneMapping: 'extended',
                 viewFormats: [],
+                readBack: true,
             },
         });
         expect(matrix.featureLevel).toBe('compatibility');

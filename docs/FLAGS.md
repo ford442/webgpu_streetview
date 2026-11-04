@@ -28,6 +28,7 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?wireframe` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Wireframe overlay (debug). |
 | `?legacyTransitions` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Force the legacy CPU-timed panorama transition (on) or the GPU transition (off). |
 | `?no_gpu_compute` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Kill switch for GPU chores (luma/horizon compute). Weather rendering is unaffected. |
+| `?gpu_timing` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Request the `timestamp-query` device feature: GPU pass timings in the performance overlay (P) and a GPU-timed auto render scale. Off: the auto scale follows frame time. A device feature cannot be added after boot, so this is read at boot. |
 | `?no_clip_distances` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | `false` | Do not request the `clip-distances` device feature (also disables the windshield portal). |
 | `?scale` | number | number (0.5…1) | — | Fixed road render scale (0.5–1, snapped to 0.05) and no frame-budget loop. Unset: the preset default, adapted to the GPU budget. `?scale=1` is bit-exact with no scaling. |
 | `?upscale` | enum | `fsr` \| `bilinear` | `fsr` | How a scaled road frame reaches the screen: FSR 1.0 EASU + RCAS, or a plain bilinear stretch. |

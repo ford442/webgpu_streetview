@@ -14,6 +14,7 @@
  */
 
 import { getMapsCallBudget } from '../services/maps/callBudget';
+import { ignoreRejection } from './ignoreRejection';
 
 export interface PanoEquirect {
   /** 2:1 equirectangular canvas, image centre = `centerHeading`. */
@@ -49,7 +50,7 @@ function fetchTileData(panoId: string): Promise<google.maps.StreetViewTileData |
       } else {
         resolve(null);
       }
-    }).catch(() => {});
+    }).catch(ignoreRejection);
   });
 }
 

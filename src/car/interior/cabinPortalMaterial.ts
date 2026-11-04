@@ -167,7 +167,7 @@ function dummyHdr(): THREE.Texture {
 }
 
 /** Explicit-level read: legal in non-uniform control flow, unlike an implicit-derivative `textureSample`. */
-const sampleLevel0 = (tex: Node, uvNode: Node): Node => (tex.sample(uvNode) as Node).level(0);
+const sampleLevel0 = (tex: Node, uvNode: Node): Node => (tex.sample(uvNode)).level(0);
 
 const LUMA = vec3(0.2126, 0.7152, 0.0722);
 const luma = (c: Node) => dot(c, LUMA);
@@ -434,19 +434,19 @@ export function createWindshieldPortalTslMaterial(
     })();
 
     const uniforms: WindshieldPortalUniforms = {
-        time: timeU as unknown as WindshieldPortalUniforms['time'],
-        rainIntensity: rainU as unknown as WindshieldPortalUniforms['rainIntensity'],
-        condensation: condensationU as unknown as WindshieldPortalUniforms['condensation'],
-        glassAspect: aspectU as unknown as WindshieldPortalUniforms['glassAspect'],
-        hdrFrame: hdrNode as unknown as WindshieldPortalUniforms['hdrFrame'],
-        vibrance: road.uniforms.vibrance as unknown as WindshieldPortalUniforms['vibrance'],
-        saturation: road.uniforms.saturation as unknown as WindshieldPortalUniforms['saturation'],
-        contrast: road.uniforms.contrast as unknown as WindshieldPortalUniforms['contrast'],
-        exposure: road.uniforms.exposure as unknown as WindshieldPortalUniforms['exposure'],
-        tempMult: road.uniforms.tempMult as unknown as WindshieldPortalUniforms['tempMult'],
-        nightIntensity: road.uniforms.nightIntensity as unknown as WindshieldPortalUniforms['nightIntensity'],
-        roadRain: road.uniforms.roadRain as unknown as WindshieldPortalUniforms['roadRain'],
-        graded: road.uniforms.graded as unknown as WindshieldPortalUniforms['graded'],
+        time: timeU,
+        rainIntensity: rainU,
+        condensation: condensationU,
+        glassAspect: aspectU,
+        hdrFrame: hdrNode,
+        vibrance: road.uniforms.vibrance,
+        saturation: road.uniforms.saturation,
+        contrast: road.uniforms.contrast,
+        exposure: road.uniforms.exposure,
+        tempMult: road.uniforms.tempMult,
+        nightIntensity: road.uniforms.nightIntensity,
+        roadRain: road.uniforms.roadRain,
+        graded: road.uniforms.graded,
     };
     Object.defineProperty(material, 'uniforms', { value: uniforms, enumerable: true });
     return material as unknown as WindshieldPortalMaterial;

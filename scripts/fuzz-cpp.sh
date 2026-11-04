@@ -18,7 +18,7 @@ SECONDS_PER_TARGET="${FUZZ_SECONDS:-60}"
 CXX_COMPILER="${FUZZ_CXX:-clang++}"
 TARGETS=("$@")
 if [ "${#TARGETS[@]}" -eq 0 ]; then
-  TARGETS=(fuzz_luma fuzz_polyline fuzz_dsp fuzz_depth)
+  TARGETS=(fuzz_luma fuzz_polyline fuzz_dsp fuzz_depth fuzz_graph fuzz_audio fuzz_noise)
 fi
 
 cmake -S "$REPO_ROOT/cpp" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \

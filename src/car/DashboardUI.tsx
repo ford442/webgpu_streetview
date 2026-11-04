@@ -255,7 +255,7 @@ export const DashboardUI: React.FC<DashboardUIProps> = ({
   gear,
 }) => {
   const hasTelemetry = speedKmh !== undefined;
-  const displaySpeedKmh = hasTelemetry ? speedKmh! : 0;
+  const displaySpeedKmh = hasTelemetry ? speedKmh : 0;
   const displayRpm = hasTelemetry ? rpm ?? 0 : 0;
   const displayGear = hasTelemetry ? gear ?? 'D' : 'P';
 

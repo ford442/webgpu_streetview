@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     createDepthNormalizeState,
+    decodeDisparity,
     DEFAULT_NEAR_DEPTH,
     disparityPercentiles,
     floatToHalfBits,
@@ -182,4 +183,35 @@ describe('the calibration hyperbola is the shaders\' own', () => {
             expect(body).toContain(`return clamp(${PROXY_GROUND_K.toFixed(2)} / max(below, 0.0025), 0.0, 1.0);`);
         }
     });
+});
+
+describe('decodeDisparity', () => {
+  it('copies float32 output', () => {
+    const src = new Float32Array([0.25, 1, 3]);
+    const out = decodeDisparity('float32', src);
+    expect(Array.from(out)).toEqual([0.25, 1, 3]);
+    expect(out.buffer).not.toBe(src.buffer);
+  });
+
+  it('decodes a raw Uint16Array of half bits (not value-converted)', () => {
+    // 0x3c00 = 1.0, 0x4000 = 2.0, 0xc000 = -2.0, 0x3800 = 0.5, 0x0000 = 0
+    const out = decodeDisparity('float16', new Uint16Array([0x3c00, 0x4000, 0xc000, 0x3800, 0]));
+    expect(Array.from(out)).toEqual([1, 2, -2, 0.5, 0]);
+  });
+
+  it('passes a native Float16Array (already numeric) through, same values as the raw path', () => {
+    const values = [0.5, 1.5, 7.25];
+    const raw = new Uint16Array([0x3800, 0x3e00, 0x4740]);
+    const F16 = (globalThis as { Float16Array?: new (v: number[]) => ArrayLike<number> }).Float16Array;
+    const native = F16 ? new F16(values) : values; // Node without Float16Array: a plain numeric array stands in
+    expect(Array.from(decodeDisparity('float16', native))).toEqual(Array.from(decodeDisparity('float16', raw)));
+  });
+
+  it('decodes subnormals, infinities and NaN', () => {
+    const out = decodeDisparity('float16', new Uint16Array([0x0001, 0x7c00, 0xfc00, 0x7e00]));
+    expect(out[0]).toBeCloseTo(2 ** -24, 12);
+    expect(out[1]).toBe(Infinity);
+    expect(out[2]).toBe(-Infinity);
+    expect(out[3]).toBeNaN();
+  });
 });

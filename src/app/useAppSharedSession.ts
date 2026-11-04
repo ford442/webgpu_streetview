@@ -1,18 +1,17 @@
-import { useSharedSession, type UseSharedSessionResult } from '../hooks/useSharedSession';
+import type { UseSharedSessionResult } from '../hooks/useSharedSession';
 import { getCabinView, setCabinView } from '../car/cabinView';
-import type { EnvironmentSettingsState } from '../hooks/useEnvironmentSettings';
+import { useGradeSettings, useLightingSettings, useWeatherSettings } from '../hooks/useEnvironmentSettings';
 import type { VehicleType } from '../car/VehicleManager';
+import { serializeWeatherPreset } from '../utils/weatherPresetSync';
 import { useSharedSessionSync } from './useSharedSessionSync';
 
-export interface UseAppSharedSessionOptions {
-  env: EnvironmentSettingsState;
+export interface SharedSessionSyncProps {
+  sharedSession: UseSharedSessionResult;
   panorama: google.maps.StreetViewPanorama | null;
   viewMode: 'freelook' | 'car';
   vehicleType: VehicleType;
   /** Historical image date of the pano on screen — guests follow it via pano id. */
   imageDate: string | null;
-  /** Serialized weather preset the host broadcasts (see weatherPresetSync). */
-  weatherPreset: string;
   hdr: boolean;
   teleportToPanoSafe: (panoId: string) => Promise<void>;
   setHeading: (heading: number) => void;
@@ -24,41 +23,48 @@ export interface UseAppSharedSessionOptions {
 }
 
 /**
- * The shared session and its host/guest sync, as one unit.
+ * The shared session's host/guest sync, mounted as a component.
  *
- * `useSharedSession` owns the WebRTC room; `useSharedSessionSync` maps the
- * room's packets onto app state in both directions. They are never useful
- * apart, and pairing them here keeps the twenty-odd state channels the sync
- * needs out of the shell body.
+ * `useSharedSession` owns the WebRTC room (the shell calls it); this maps the
+ * room's packets onto app state in both directions. It reads the weather and
+ * look itself, so a slider drag or live-conditions tick re-renders this null
+ * component, not the shell.
  */
-export function useAppSharedSession(options: UseAppSharedSessionOptions): UseSharedSessionResult {
-  const { env } = options;
-  const sharedSession = useSharedSession();
+export function SharedSessionSync(props: SharedSessionSyncProps): null {
+  const weather = useWeatherSettings();
+  const { timeOfDay, applyTimeOfDayPreset } = useLightingSettings();
+  const { activeLookId, applyLookPack } = useGradeSettings();
+  const weatherPreset = serializeWeatherPreset({
+    timeOfDay,
+    rainIntensity: weather.rainIntensity,
+    snowIntensity: weather.snowIntensity,
+    fogDensity: weather.fogDensity,
+  });
 
   useSharedSessionSync({
-    sharedSession,
-    panorama: options.panorama,
-    viewMode: options.viewMode,
-    teleportToPanoSafe: options.teleportToPanoSafe,
-    setHeading: options.setHeading,
-    setPitch: options.setPitch,
-    setZoom: options.setZoom,
-    weatherPreset: options.weatherPreset,
-    applyTimeOfDayPreset: env.applyTimeOfDayPreset,
-    setRainIntensity: env.setRainIntensity,
-    setSnowIntensity: env.setSnowIntensity,
-    setFogDensity: env.setFogDensity,
-    lookId: env.activeLookId,
-    imageDate: options.imageDate,
-    vehicleType: options.vehicleType,
+    sharedSession: props.sharedSession,
+    panorama: props.panorama,
+    viewMode: props.viewMode,
+    teleportToPanoSafe: props.teleportToPanoSafe,
+    setHeading: props.setHeading,
+    setPitch: props.setPitch,
+    setZoom: props.setZoom,
+    weatherPreset,
+    applyTimeOfDayPreset,
+    setRainIntensity: weather.setRainIntensity,
+    setSnowIntensity: weather.setSnowIntensity,
+    setFogDensity: weather.setFogDensity,
+    lookId: activeLookId,
+    imageDate: props.imageDate,
+    vehicleType: props.vehicleType,
     cabinView: getCabinView(),
-    hdr: options.hdr,
-    applyLookPack: env.applyLookPack,
-    setVehicleType: options.setSessionVehicle,
-    setViewMode: options.setViewMode,
-    setCarHeading: options.setCarHeading,
+    hdr: props.hdr,
+    applyLookPack,
+    setVehicleType: props.setSessionVehicle,
+    setViewMode: props.setViewMode,
+    setCarHeading: props.setCarHeading,
     setCabinView,
   });
 
-  return sharedSession;
+  return null;
 }

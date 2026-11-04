@@ -14,6 +14,7 @@ vi.mock('../../hooks/useStreetView', () => ({
 
 vi.mock('../../car/carRuntimeLoader', () => ({
   loadCarRuntime: () => new Promise(() => { /* never: no cabin in this test */ }),
+  withCarRuntime: () => new Promise(() => { /* never: no cabin in this test */ }),
 }));
 
 const ModeProbe: React.FC = () => {

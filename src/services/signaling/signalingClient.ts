@@ -1,3 +1,4 @@
+import { ignoreRejection } from '../../utils/ignoreRejection';
 /**
  * Room-code signaling for Shared Exploration Sessions.
  *
@@ -60,7 +61,7 @@ export interface RealtimeChannelLike {
 /** Minimal shape of the Supabase client this module depends on. */
 export interface SupabaseRealtimeClientLike {
   channel(name: string, opts?: Record<string, unknown>): RealtimeChannelLike;
-  removeChannel(channel: RealtimeChannelLike): Promise<unknown> | unknown;
+  removeChannel(channel: RealtimeChannelLike): unknown;
 }
 
 const SIGNAL_EVENT = 'signal';
@@ -189,7 +190,7 @@ export function createRoomSignalingClient(
   // Signaling-room join failures surface through `send`'s rejection path in
   // callers that await it; avoid an unhandled-rejection warning for callers
   // that only use the fire-and-forget `send()`.
-  ready.catch(() => {});
+  ready.catch(ignoreRejection);
 
   return {
     clientId: self.clientId,

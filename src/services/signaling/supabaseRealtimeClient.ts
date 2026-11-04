@@ -25,5 +25,5 @@ export function getSignalingRealtimeClient(): SupabaseRealtimeClientLike | null 
   // the small duck-typed interface this module depends on (see
   // signalingClient.ts) — cast rather than hand-maintain a structural type
   // that mirrors every overload of the real SDK.
-  return cachedClient as unknown as SupabaseRealtimeClientLike;
+  return cachedClient;
 }

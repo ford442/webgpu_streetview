@@ -272,6 +272,17 @@ struct DspState {
     float y_l[kQuantum], y_r[kQuantum];
 };
 
+// The worklet binary's heap is a fixed 1 MiB (CMakeLists.txt): the engine, the
+// loader's I/O block (cabinWorkletSource.ts: (QUANTUM * 4 + maxIrTaps) floats)
+// and the 16 KiB shadow stack must fit with 128 KiB to spare for emmalloc's
+// bookkeeping and the next feature. Today: 778 KiB + 66 KiB + 16 KiB.
+constexpr size_t kWorkletIoBytes =
+    (static_cast<size_t>(kQuantum) * 4U + kMaxIrTaps) * sizeof(float);
+constexpr size_t kWorkletStackBytes = 16384;
+static_assert(sizeof(DspState) + kWorkletIoBytes + kWorkletStackBytes <= 1048576U - 131072U,
+              "DspState outgrew the worklet's fixed 1 MiB heap; raise -sINITIAL_MEMORY in "
+              "cpp/CMakeLists.txt (and check the DSP binary's size budget) or shrink the engine");
+
 inline float clampf(float v, float lo, float hi) {
     if (!(v >= lo)) return lo; // also catches NaN
     if (v > hi) return hi;

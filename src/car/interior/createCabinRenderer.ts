@@ -6,7 +6,9 @@ import type {
     GPUPerformanceProfile,
 } from './performance';
 import { isWebGpuProbeOk } from '../../renderer/webgpuBootProbe';
+import { getAdapterPowerPreferencePolicy } from '../../renderer/RendererBackend';
 import { currentSearch, readFlag } from '../../config/flags';
+import { CABIN_DISPLAY_P3, ensureDisplayP3Registered } from './colorSpaces';
 import { setCabinMaterialBackend } from './cabinMaterialBackend';
 import { getCabinTslApi, setCabinTslApi } from './cabinTslRegistry';
 import { publishCabinRendererProbe, readCabinRendererProbe } from './cabinRendererProbe';
@@ -138,7 +140,8 @@ function parseP3Flag(search: string): boolean {
  */
 export function resolveCabinOutputColorSpace(search: string): THREE.ColorSpace {
     if (parseP3Flag(search)) {
-        return 'display-p3' as THREE.ColorSpace;
+        ensureDisplayP3Registered();
+        return CABIN_DISPLAY_P3;
     }
     return THREE.SRGBColorSpace;
 }
@@ -292,13 +295,28 @@ export async function createCabinRendererAsync(
     }
 }
 
+/**
+ * The WebGL cabin's `powerPreference`, mirroring the road's adapter choice so
+ * the two contexts do not land on different GPUs on a hybrid laptop: an
+ * explicit `?gpu=low|high` is honoured, otherwise high-performance (the
+ * WebGPU adapter's default too, short of its battery heuristic).
+ */
+export function resolveWebGLPowerPreference(): WebGLPowerPreference {
+    const { powerPreference } = getAdapterPowerPreferencePolicy();
+    return powerPreference === 'low-power' ? 'low-power' : 'high-performance';
+}
+
 function createWebGLCabinRenderer(
     gpuProfile: GPUPerformanceProfile,
     search: string,
 ): CabinRendererHandle {
     let renderer: THREE.WebGLRenderer;
     try {
-        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: gpuProfile.antialias });
+        renderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: gpuProfile.antialias,
+            powerPreference: resolveWebGLPowerPreference(),
+        });
     } catch (err) {
         throw new Error(
             `Car mode requires WebGL, which is not available in this environment. ` +

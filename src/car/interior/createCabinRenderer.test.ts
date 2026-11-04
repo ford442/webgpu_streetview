@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import type { GPUPerformanceProfile } from './performance';
 import * as THREE from 'three';
 
@@ -62,6 +62,7 @@ import {
     resetWebGPUCabinRendererForTests,
     resolveCabinRendererPreference,
     resolveCabinOutputColorSpace,
+    resolveWebGLPowerPreference,
 } from './createCabinRenderer';
 import {
     getWindshieldPortalSupport,
@@ -71,7 +72,6 @@ import {
 const GPU_PROFILE: GPUPerformanceProfile = {
     name: 'high',
     maxPixelRatio: 2,
-    shadowMapSize: 1024,
     antialias: true,
     maxTextureSize: 2048,
     lodDistance: [10, 20, 30],
@@ -129,6 +129,14 @@ describe('resolveCabinOutputColorSpace', () => {
 
     it('follows ?p3=1 as display-p3 (output-referred, not a second ACES)', () => {
         expect(resolveCabinOutputColorSpace('?p3=1')).toBe('display-p3');
+    });
+
+    it('registers display-p3 with ColorManagement so a renderer can use it', () => {
+        resolveCabinOutputColorSpace('?p3=1');
+        expect(THREE.ColorManagement.spaces['display-p3']).toBeDefined();
+        // A defined space round-trips through the working space; an undefined one throws.
+        const c = new THREE.Color(0.2, 0.4, 0.6);
+        expect(() => THREE.ColorManagement.workingToColorSpace(c, 'display-p3' as THREE.ColorSpace)).not.toThrow();
     });
 });
 
@@ -407,5 +415,18 @@ describe('windshield portal support follows the cabin backend', () => {
         createCabinRenderer({ gpuProfile: GPU_PROFILE, search: '?cabin=webgpu', probeOk: true });
         expect(getWindshieldPortalSupport().enabled).toBe(false);
         warnSpy.mockRestore();
+    });
+});
+
+describe('resolveWebGLPowerPreference', () => {
+    afterEach(() => window.history.replaceState(null, '', '/'));
+
+    it('defaults to high-performance', () => {
+        expect(resolveWebGLPowerPreference()).toBe('high-performance');
+    });
+
+    it('follows ?gpu=low like the WebGPU adapter request', () => {
+        window.history.replaceState(null, '', '/?gpu=low');
+        expect(resolveWebGLPowerPreference()).toBe('low-power');
     });
 });

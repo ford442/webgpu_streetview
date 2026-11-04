@@ -309,8 +309,10 @@ The exports (the cabin engine's `dsp_*` family is in §3a):
 Plus the runtime (`runtime.cpp`): `sv_malloc` / `sv_free` (every caller-owned
 block — the loader's arena, the worklet's I/O, the golden generator's scratch)
 and `sv_stack_base` / `sv_stack_end`; and the exported `memory`. emcc adds
-`_initialize`, `_emscripten_stack_restore` and `emscripten_stack_get_current`
-to every reactor; `check-wasm-abi` allows exactly those.
+`_initialize` to every reactor; `check-wasm-abi` allows exactly that. emcc also
+hard-codes exports of its function table and two stack helpers; a post-link step
+(`scripts/strip-wasm-exports.mjs`, run by CMake) removes them, so a binary that
+still has them was not built by `build-wasm.sh` and fails the check.
 
 **Adding an export means** declaring it in `abi.h` with `SV_EXPORT(name)`,
 defining it in its TU, `npm run gen:wasm-abi`, a wrapper in `src/wasm/index.ts`
@@ -531,7 +533,7 @@ oscillators through a biquad (the old fallback).
 Heading-relative **binaural convolution** (`WindAudio`, oscillator fallback only) is `fill_hrtf`, alongside `fill_cabin_ir`
 (`cpp/src/hrtf_module.cpp`; `fill_cabin_ir` and the engine bed live in
 `cpp/src/audio_module.cpp`). It is an analytic ITD/ILD shadow
-model, not a measured HRTF (no `cpp/data/` table). `WindAudio` fans its gain
+model, not a measured HRTF (no measured-HRTF data table in the tree). `WindAudio` fans its gain
 node into two `ConvolverNode`s (one per ear) recombined via a
 `ChannelMergerNode`, rebuilding both `AudioBuffer`s only when
 `signedAngleDiff(head, car)` has moved enough to matter. `StereoPannerNode`

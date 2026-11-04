@@ -27,7 +27,7 @@ import {
 } from './shaderFeatureVariants';
 
 export interface CollectOptionalFeaturesOptions {
-    /** Request timestamp-query when the adapter supports it (performance overlay). */
+    /** Request timestamp-query when the adapter supports it (`?gpu_timing`). Off unless true. */
     enableTimestampQueries?: boolean;
     /**
      * Request `clip-distances` when the adapter supports it. Defaults on; the
@@ -205,7 +205,7 @@ export function checkRequiredLimits(
 
     return {
         ok: true,
-        requiredLimits: required as Record<string, number>,
+        requiredLimits: required,
         gpuChores,
     };
 }
@@ -228,9 +228,14 @@ export function collectOptionalDeviceFeatures(
         if (adapter.features.has(name)) features.push(name);
     };
 
-    tryAdd(OPTIONAL_DEVICE_FEATURES.float32Filterable);
+    // `float32-filterable` is not requested: every r32float binding is
+    // `unfilterable-float` + `textureLoad`, and an unused feature only narrows
+    // the adapters a lost device can be recreated on.
 
-    const timestamps = options.enableTimestampQueries !== false;
+    // Opt-in (`?gpu_timing`): a feature cannot be added to a live device, so
+    // the overlay (P) / auto render scale read timings only when it was asked
+    // for at boot; otherwise the frame-time signal drives the scale.
+    const timestamps = options.enableTimestampQueries === true;
     tryAdd(OPTIONAL_DEVICE_FEATURES.timestampQuery, timestamps);
     // Not requested: `timestamp-query-inside-passes` is not a feature name any
     // browser ships (Chromium's is `chromium-experimental-…`), and `shader-f16`
@@ -452,13 +457,54 @@ export interface AppliedCanvasConfiguration {
     toneMapping: 'standard' | 'extended';
     viewFormats: GPUTextureFormat[];
     downgradeReason?: string;
+    /**
+     * True when `toneMapping` / `colorSpace` come from `context.getConfiguration()`
+     * (what the browser kept), false when it has no such method and the
+     * descriptor is all there is to go on.
+     */
+    readBack: boolean;
+}
+
+/** What the browser says is configured, or null where `getConfiguration` is not shipped. */
+function readBackConfiguration(context: GPUCanvasContext): Partial<CanvasConfigurationDescriptor> | null {
+    const reader = (context as GPUCanvasContext & { getConfiguration?: () => unknown }).getConfiguration;
+    if (typeof reader !== 'function') return null;
+    try {
+        return (reader.call(context) as Partial<CanvasConfigurationDescriptor> | null) ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function applied(
+    context: GPUCanvasContext,
+    descriptor: CanvasConfigurationDescriptor,
+    downgradeReason?: string,
+): AppliedCanvasConfiguration {
+    const actual = readBackConfiguration(context);
+    // A browser that ignores `toneMapping` keeps the standard mode: believe it, not the request.
+    const toneMapping = actual
+        ? (actual.toneMapping?.mode === 'extended' ? 'extended' : 'standard')
+        : (descriptor.toneMapping?.mode ?? 'standard');
+    const colorSpace = actual
+        ? (actual.colorSpace === 'display-p3' ? 'display-p3' : 'srgb')
+        : descriptor.colorSpace;
+    return {
+        format: actual?.format ?? descriptor.format,
+        colorSpace,
+        toneMapping,
+        viewFormats: [...(descriptor.viewFormats ?? [])],
+        readBack: actual !== null,
+        ...(downgradeReason !== undefined ? { downgradeReason } : {}),
+    };
 }
 
 /**
- * Configure the swap-chain, falling back to the SDR sRGB opaque configuration if
- * the browser rejects the requested HDR / display-P3 descriptor. Returns what was
- * actually applied — callers must use the returned `format` as their presentation
- * format, since the HDR path swaps it to `rgba16float`.
+ * Configure the swap-chain and report what the browser actually kept.
+ * A rejected descriptor degrades one step at a time: HDR off but P3 kept, then
+ * plain SDR sRGB — a browser that cannot do HDR must not lose wide gamut with it.
+ * Callers must use the returned `format` as their presentation format, since
+ * the HDR path swaps it to `rgba16float`.
  */
 export function configureCanvasContext(
     context: GPUCanvasContext,
@@ -466,28 +512,25 @@ export function configureCanvasContext(
     presentationFormat: GPUTextureFormat,
     policy: CanvasOutputPolicy = { hdr: false, p3: false },
 ): AppliedCanvasConfiguration {
-    const descriptor = buildCanvasConfiguration(device, presentationFormat, policy);
-    try {
-        context.configure(descriptor);
-        return {
-            format: descriptor.format,
-            colorSpace: descriptor.colorSpace,
-            toneMapping: descriptor.toneMapping?.mode ?? 'standard',
-            viewFormats: [...(descriptor.viewFormats ?? [])],
-        };
-    } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e);
-        console.warn('[Renderer] Canvas configure rejected — falling back to SDR sRGB:', reason);
-        const sdr = buildCanvasConfiguration(device, presentationFormat, { hdr: false, p3: false });
-        context.configure(sdr);
-        return {
-            format: sdr.format,
-            colorSpace: 'srgb',
-            toneMapping: 'standard',
-            viewFormats: [],
-            downgradeReason: reason,
-        };
+    const steps: CanvasOutputPolicy[] = [policy];
+    if (policy.hdr && policy.p3) steps.push({ hdr: false, p3: true });
+    if (policy.hdr || policy.p3) steps.push({ hdr: false, p3: false });
+
+    let firstReason: string | undefined;
+    for (let i = 0; i < steps.length; i++) {
+        const descriptor = buildCanvasConfiguration(device, presentationFormat, steps[i]);
+        const last = i === steps.length - 1;
+        try {
+            context.configure(descriptor);
+            return applied(context, descriptor, firstReason);
+        } catch (e) {
+            const reason = e instanceof Error ? e.message : String(e);
+            firstReason ??= reason;
+            if (last) throw e;
+            console.warn(`[Renderer] Canvas configure rejected — retrying with ${JSON.stringify(steps[i + 1])}:`, reason);
+        }
     }
+    throw new Error('unreachable: canvas configure produced no result');
 }
 
 /**
@@ -495,25 +538,37 @@ export function configureCanvasContext(
  * matrix (and therefore `window.rendererAdapterInfo` / the backend chip). Kept
  * separate from the `device.lost` promise so we never double-dispose.
  */
+/** The two fields the handler writes; the capability matrix satisfies it. */
+export type UncapturedErrorSink = Pick<DeviceCapabilityMatrix, 'uncapturedErrorCount' | 'lastUncapturedError'>;
+
 export function attachUncapturedErrorHandler(
     device: GPUDevice,
-    capabilityMatrix: DeviceCapabilityMatrix,
-): void {
-    if (typeof device.addEventListener !== 'function') return;
-    device.addEventListener('uncapturederror', (event: Event) => {
-        const error = (event as GPUUncapturedErrorEvent).error;
-        const message = error instanceof Error ? error.message : String(error);
-        capabilityMatrix.uncapturedErrorCount += 1;
-        capabilityMatrix.lastUncapturedError = message;
-        console.error('[Renderer] uncapturederror', error);
-        if (typeof window !== 'undefined') {
-            const info = window.rendererAdapterInfo;
-            if (info?.capabilityMatrix) {
-                info.capabilityMatrix.uncapturedErrorCount = capabilityMatrix.uncapturedErrorCount;
-                info.capabilityMatrix.lastUncapturedError = message;
+    capabilityMatrix: UncapturedErrorSink,
+): (next: UncapturedErrorSink) => void {
+    let target = capabilityMatrix;
+    if (typeof device.addEventListener === 'function') {
+        device.addEventListener('uncapturederror', (event: Event) => {
+            const error = (event as GPUUncapturedErrorEvent).error;
+            const message = error.message;
+            target.uncapturedErrorCount += 1;
+            target.lastUncapturedError = message;
+            console.error('[Renderer] uncapturederror', error);
+            if (typeof window !== 'undefined') {
+                const info = window.rendererAdapterInfo;
+                if (info?.capabilityMatrix) {
+                    info.capabilityMatrix.uncapturedErrorCount = target.uncapturedErrorCount;
+                    info.capabilityMatrix.lastUncapturedError = message;
+                }
             }
-        }
-    });
+        });
+    }
+    /** Point the handler at the real matrix once it exists, carrying the early count over. */
+    return (next) => {
+        if (next === target) return;
+        next.uncapturedErrorCount += target.uncapturedErrorCount;
+        if (target.lastUncapturedError !== undefined) next.lastUncapturedError = target.lastUncapturedError;
+        target = next;
+    };
 }
 
 /** Apply readable labels to the device and its default queue. */

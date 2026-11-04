@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { releaseGlContext } from '../utils/releaseGlContext';
 
 interface DeviceCapabilities {
   isMobile: boolean;
@@ -63,10 +64,9 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     
     try {
       const canvas = document.createElement('canvas');
-      supportsWebGL = !!(
-        canvas.getContext('webgl') || 
-        canvas.getContext('experimental-webgl')
-      );
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      supportsWebGL = !!gl;
+      releaseGlContext(gl);
     } catch {
       supportsWebGL = false;
     }
@@ -247,7 +247,7 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
   }), [device.screenSize]);
 
   return {
-    device: { ...device, ...breakpoints } as DeviceCapabilities,
+    device: { ...device, ...breakpoints },
     quality,
     setBatterySaveMode,
     setCustomQuality,

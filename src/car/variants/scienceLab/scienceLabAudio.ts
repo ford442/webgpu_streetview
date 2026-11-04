@@ -1,4 +1,5 @@
 import { createBrowserAudioContext } from '../../../audio/createAudioContext';
+import { ignoreRejection } from '../../../utils/ignoreRejection';
 
 export class ScienceLabAudio {
     audioContext: AudioContext | null = null;
@@ -67,7 +68,7 @@ export class ScienceLabAudio {
             this.fanOscillator.stop();
         }
         if (this.audioContext) {
-            this.audioContext.close().catch(() => {});
+            this.audioContext.close().catch(ignoreRejection);
         }
         this.fanOscillator = null;
         this.fanGain = null;

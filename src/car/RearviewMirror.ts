@@ -140,7 +140,7 @@ export class RearviewMirror {
             return;
         }
 
-        const texture = new THREE.Texture(sample.image as TexImageSource);
+        const texture = new THREE.Texture(sample.image);
         // Static samples are non-power-of-two and never tiled — clamp + linear.
         texture.wrapS = THREE.ClampToEdgeWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -151,7 +151,7 @@ export class RearviewMirror {
         texture.needsUpdate = true;
 
         this.rearTexture = texture;
-        this.mirrorMaterial.uniforms.rearTex!.value = texture;
+        this.mirrorMaterial.uniforms.rearTex.value = texture;
         this.headingDeltaDeg = 0;
         this.applyRearRegistration();
         this.setRearAvailable(true);
@@ -166,7 +166,7 @@ export class RearviewMirror {
     public setRearAvailable(available: boolean): void {
         const effective = available && this.rearTexture !== null;
         this.rearAvailable = effective;
-        this.mirrorMaterial.uniforms.rearAvailable!.value = effective ? 1.0 : 0.0;
+        this.mirrorMaterial.uniforms.rearAvailable.value = effective ? 1.0 : 0.0;
     }
 
     public isRearAvailable(): boolean {
@@ -196,13 +196,13 @@ export class RearviewMirror {
         const uniforms = this.mirrorMaterial.uniforms;
 
         if (!sample) {
-            uniforms.rearPan!.value = 0;
-            uniforms.rearFade!.value = 0;
+            uniforms.rearPan.value = 0;
+            uniforms.rearFade.value = 0;
             return;
         }
 
         const fov = sample.fov > 0 ? sample.fov : 90;
-        uniforms.rearPan!.value = this.headingDeltaDeg / fov;
+        uniforms.rearPan.value = this.headingDeltaDeg / fov;
 
         // Full confidence while the car is still inside the captured cone; fade
         // to nothing by the time it has turned a full FOV away.
@@ -215,7 +215,7 @@ export class RearviewMirror {
                 : turned >= fadeEnd
                   ? 0
                   : 1 - (turned - fadeStart) / (fadeEnd - fadeStart);
-        uniforms.rearFade!.value = fade;
+        uniforms.rearFade.value = fade;
     }
 
     private releaseRearTexture(): void {
@@ -223,7 +223,7 @@ export class RearviewMirror {
             this.rearTexture.dispose();
             this.rearTexture = null;
         }
-        this.mirrorMaterial.uniforms.rearTex!.value = null;
+        this.mirrorMaterial.uniforms.rearTex.value = null;
     }
 
     /**
@@ -242,7 +242,7 @@ export class RearviewMirror {
 
     public toggleNightMode(): void {
         this.isNightMode = !this.isNightMode;
-        this.mirrorMaterial.uniforms.nightMode!.value = this.isNightMode ? 1.0 : 0.0;
+        this.mirrorMaterial.uniforms.nightMode.value = this.isNightMode ? 1.0 : 0.0;
     }
 
     public getMirrorMesh(): THREE.Mesh {
@@ -263,8 +263,8 @@ export class RearviewMirror {
             hasCanvas: this.streetViewCanvas !== null,
             hasRearSample: this.rearSample !== null,
             headingDeltaDeg: this.headingDeltaDeg,
-            rearPan: this.mirrorMaterial.uniforms.rearPan!.value as number,
-            rearFade: this.mirrorMaterial.uniforms.rearFade!.value as number,
+            rearPan: this.mirrorMaterial.uniforms.rearPan.value,
+            rearFade: this.mirrorMaterial.uniforms.rearFade.value,
         };
     }
 

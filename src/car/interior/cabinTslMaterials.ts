@@ -92,8 +92,8 @@ function createVanityMirrorTslMaterial(
     })();
     material.opacityNode = float(0.92);
     return withUniforms(material, {
-        tDiffuse: tDiffuse as unknown as VanityMirrorUniforms['tDiffuse'],
-        warmth: warmth as unknown as VanityMirrorUniforms['warmth'],
+        tDiffuse: tDiffuse,
+        warmth: warmth,
     });
 }
 
@@ -159,12 +159,12 @@ function createRearviewMirrorTslMaterial(): UniformMaterial<RearviewMirrorUnifor
     };
 
     return withUniforms(material, {
-        nightMode: nightMode as unknown as RearviewMirrorUniforms['nightMode'],
-        rearAvailable: rearAvailable as unknown as RearviewMirrorUniforms['rearAvailable'],
-        time: timeU as unknown as RearviewMirrorUniforms['time'],
+        nightMode: nightMode,
+        rearAvailable: rearAvailable,
+        time: timeU,
         rearTex: rearTexUniform,
-        rearPan: rearPan as unknown as RearviewMirrorUniforms['rearPan'],
-        rearFade: rearFade as unknown as RearviewMirrorUniforms['rearFade'],
+        rearPan: rearPan,
+        rearFade: rearFade,
     });
 }
 
@@ -238,7 +238,7 @@ function createWindowWeatherOverlayTslMaterial(): UniformMaterial<WindowWeatherO
 
     const wiperActiveUniform: WindowWeatherOverlayUniforms['wiperActive'] = {
         get value() {
-            return (wiperActive.value as number) > 0.5;
+            return (wiperActive.value) > 0.5;
         },
         set value(next: boolean) {
             wiperActive.value = next ? 1 : 0;
@@ -246,10 +246,10 @@ function createWindowWeatherOverlayTslMaterial(): UniformMaterial<WindowWeatherO
     };
 
     return withUniforms(material, {
-        time: timeU as unknown as WindowWeatherOverlayUniforms['time'],
-        rainIntensity: rainIntensity as unknown as WindowWeatherOverlayUniforms['rainIntensity'],
-        condensation: condensation as unknown as WindowWeatherOverlayUniforms['condensation'],
-        wiperPhase: wiperPhase as unknown as WindowWeatherOverlayUniforms['wiperPhase'],
+        time: timeU,
+        rainIntensity: rainIntensity,
+        condensation: condensation,
+        wiperPhase: wiperPhase,
         wiperActive: wiperActiveUniform,
     });
 }
@@ -282,10 +282,10 @@ function createCupLiquidTslMaterial(
     material.opacityNode = float(0.88);
 
     return withUniforms(material, {
-        time: timeU as unknown as CupLiquidUniforms['time'],
-        liquidColor: liquidColor as unknown as CupLiquidUniforms['liquidColor'],
-        fillLevel: fillLevel as unknown as CupLiquidUniforms['fillLevel'],
-        slosh: slosh as unknown as CupLiquidUniforms['slosh'],
+        time: timeU,
+        liquidColor: liquidColor,
+        fillLevel: fillLevel,
+        slosh: slosh,
     });
 }
 
@@ -302,14 +302,14 @@ function createDashboardGlowTslMaterial(
     const falloff = uniform(uniforms.falloff.value);
 
     const live: DashboardGlowUniforms = {
-        time: timeU as unknown as DashboardGlowUniforms['time'],
-        intensity: intensity as unknown as DashboardGlowUniforms['intensity'],
-        glowColor: glowColor as unknown as DashboardGlowUniforms['glowColor'],
-        pulseSpeed: pulseSpeed as unknown as DashboardGlowUniforms['pulseSpeed'],
-        pulseAmount: pulseAmount as unknown as DashboardGlowUniforms['pulseAmount'],
-        glowCenter: glowCenter as unknown as DashboardGlowUniforms['glowCenter'],
-        glowRadius: glowRadius as unknown as DashboardGlowUniforms['glowRadius'],
-        falloff: falloff as unknown as DashboardGlowUniforms['falloff'],
+        time: timeU,
+        intensity: intensity,
+        glowColor: glowColor,
+        pulseSpeed: pulseSpeed,
+        pulseAmount: pulseAmount,
+        glowCenter: glowCenter,
+        glowRadius: glowRadius,
+        falloff: falloff,
     };
 
     const material = overlayMaterial();

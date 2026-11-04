@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 const WAYPOINT_INTERVAL_MS = 5000;
 
@@ -25,7 +26,7 @@ export function useAutopilot({
     if (waypoints.length === 0) return;
 
     waypoints.forEach((wp) => {
-      panoCache.fetch(wp.lat, wp.lng).catch(() => {});
+      panoCache.fetch(wp.lat, wp.lng).catch(ignoreRejection);
     });
 
     await handleGlobeTeleport(waypoints[0]!.lat, waypoints[0]!.lng);

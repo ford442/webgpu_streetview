@@ -95,6 +95,12 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, 'src'),
       },
     },
+    // Production only: console.log/debug/info calls (and `debugger`) are stripped.
+    // warn/error stay — they are the reporters `__SV__.errors` and the backend chip
+    // sit beside, and the only trace a user can paste from a failed boot.
+    esbuild: mode === 'production'
+      ? { pure: ['console.log', 'console.debug', 'console.info'], drop: ['debugger'] }
+      : {},
     server: {
       port: 3000,
       // Playwright smoke polls http://127.0.0.1:3000. Default Vite `localhost`
@@ -128,7 +134,9 @@ export default defineConfig(({ mode }) => {
       // older engines: Chrome/Edge 113 (first WebGPU), Firefox 141, Safari 26.
       target: ['chrome113', 'edge113', 'firefox141', 'safari26'],
       emptyOutDir: true,
-      sourcemap: true,
+      // 'hidden': maps are written (CI keeps them for symbolication) but the bundle
+      // carries no sourceMappingURL, and deploy.py does not upload them.
+      sourcemap: 'hidden',
       // Match former CRA layout so deploy.py / verify-build / budgets keep working.
       rollupOptions: {
         output: {

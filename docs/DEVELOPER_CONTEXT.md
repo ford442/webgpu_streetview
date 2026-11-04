@@ -61,7 +61,7 @@ Never upload live GMaps canvas while `holdActive`. Regression guard: `window.__S
 Single source of truth: `src/renderer/weatherUniformLayout.ts` — must match both `weather-post.wgsl` and `weather-post-compute.wgsl`.
 
 ### Cesium typing
-CDN-loaded Cesium is typed via `src/types/cesium.ts` + global ambient in `src/types/cesium.d.ts`. Globe camera / input / journey / POI live in `src/components/globe/` — no static `import 'cesium'`.
+CDN-loaded Cesium is typed via `src/types/cesium.ts` (ambient globals in `src/vite-env.d.ts`). Globe camera / input / journey / POI live in `src/components/globe/` — no static `import 'cesium'`.
 
 ---
 

@@ -18,7 +18,7 @@ target_include_directories(streetview_fuzz_core SYSTEM PUBLIC "${PROJECT_SOURCE_
 target_compile_definitions(streetview_fuzz_core PUBLIC SV_SIMDE)
 target_compile_options(streetview_fuzz_core PUBLIC ${STREETVIEW_FP_FLAGS} ${_sv_fuzz_sanitizers} -fsanitize=fuzzer-no-link)
 
-set(STREETVIEW_FUZZ_TARGETS fuzz_luma fuzz_polyline fuzz_dsp fuzz_depth)
+set(STREETVIEW_FUZZ_TARGETS fuzz_luma fuzz_polyline fuzz_dsp fuzz_depth fuzz_graph fuzz_audio fuzz_noise)
 foreach(target IN LISTS STREETVIEW_FUZZ_TARGETS)
     add_executable(${target} ${target}.cpp)
     target_link_libraries(${target} PRIVATE streetview_fuzz_core)
