@@ -225,12 +225,43 @@ describe('scene depth (#320) never reaches a stage the mirror repeats', () => {
         expect(FS_MAIN).toContain('col = col * (1.0 - p.rainIntensity * mix(0.22, 0.10, p.nightIntensity));');
     });
 
-    it('depth enters only through fog, rain/snow and DOF', () => {
+    it('depth enters only through fog, rain/snow, DOF and the semantic effects', () => {
         const readers = [...WEATHER.matchAll(/fn (\w+)\(/g)]
             .map((m) => m[1]!)
             .filter((name) => name !== 'sceneDepth' && name !== 'sampleSceneDepthMap')
             .filter((name) => /sceneDepth\(/.test(fnBody(WEATHER, name)));
-        expect(readers.sort()).toEqual(['applyCameraFX', 'fogAmountAt', 'rain', 'snow']);
+        expect(readers.sort()).toEqual([
+            'applyCameraFX',
+            'fogAmountAt',
+            'rain',
+            'semanticRelight',
+            'semanticSnowCover',
+            'semanticWetRoad',
+            'snow',
+        ]);
+    });
+});
+
+describe('the semantic layer (#352) never reaches a stage the mirror repeats', () => {
+    // Like depth: the class map reaches the road only through its own helpers
+    // (relight after night, sky, fog relief, rain over sky, wet road, snow
+    // cover), which the mirror does not repeat — a documented delta inside
+    // lenses, and none at all without a map (every helper's weight-0 return).
+    const SEMANTIC_READS = /semParams|semanticTex|classWeight|sceneClass|semanticSkyMatte/;
+
+    it('no mirrored stage reads the class map', () => {
+        for (const name of [
+            'applyVibrance',
+            'applySaturation',
+            'applyContrast',
+            'applyTemperatureTint',
+            'applyExposure',
+            'applyNight',
+            'applyVignette',
+            'aces_tonemap',
+        ]) {
+            expect(fnBody(WEATHER, name), name).not.toMatch(SEMANTIC_READS);
+        }
     });
 });
 

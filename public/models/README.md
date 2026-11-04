@@ -4,6 +4,12 @@
 in git**: `npm run fetch:depth-model` downloads the pinned, SHA-256-checked files
 here at deploy time (the directory is gitignored). See `docs/SCENE_DEPTH.md`.
 
+`semantic/` — the semantic-scene model (#352: DDRNet23-Slim, Cityscapes, **MIT**)
+is **not in git** either: `npm run fetch:models` downloads the pinned Qualcomm AI
+Hub archive, rebuilds it deterministically (`scripts/lib/onnxSurgery.mjs`) into
+`ddrnet23-slim-street7.onnx`, checks the result's SHA-256 and writes its
+`NOTICE.txt`. See `docs/SCENE_SEMANTIC.md`.
+
 # Cabin models
 
 Assets here load **only** on the opt-in hero-cabin path (`?gltfInterior=1` or

@@ -51,6 +51,14 @@ export interface VisualPreset {
    * the user opts in (weather panel, `?depth`).
    */
   depthBlend: number;
+  /**
+   * Weight (0–1) of the semantic class map (#352, renderer/semantic/ →
+   * `SceneSemanticParams.blend`): rain over sky, road-only wet, snow cover,
+   * fog at the skyline, night relight. 0 keeps every effect's pre-semantic
+   * branch bit-exactly and never downloads the model; above 0 it applies only
+   * once the user opts in and scene depth is on.
+   */
+  semanticBlend: number;
 
   /**
    * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
@@ -115,6 +123,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
     depthBlend: 0,
+    semanticBlend: 0,
 
     maxLights: 2,
     ambientOcclusion: false,
@@ -155,6 +164,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     motionBlurEnabled: false,
     horizonEstimateBlend: 0,
     depthBlend: 0,
+    semanticBlend: 0,
 
     maxLights: 4,
     ambientOcclusion: false,
@@ -198,6 +208,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     motionBlurEnabled: false,
     horizonEstimateBlend: 0.5,
     depthBlend: 0.6,
+    semanticBlend: 0.8,
 
     maxLights: 8,
     ambientOcclusion: true,
@@ -238,6 +249,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     motionBlurEnabled: true,
     horizonEstimateBlend: 0.7,
     depthBlend: 0.8,
+    semanticBlend: 1,
 
     maxLights: 16,
     ambientOcclusion: true,

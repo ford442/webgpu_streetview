@@ -62,10 +62,10 @@ jobs:
       - name: Verify
         run: npm run verify
 
-      # Scene depth (#320): the model ships under build/models/depth/ but is
-      # not in git — fetch the pinned, SHA-256-checked files before building.
-      - name: Fetch the scene-depth model
-        run: npm run fetch:depth-model
+      # Scene depth (#320) + semantic (#352): the models ship under build/models/
+      # but are not in git — fetch the pinned, SHA-256-checked files before building.
+      - name: Fetch the scene models (depth #320, semantic #352)
+        run: npm run fetch:models
 
       - name: Build production bundle
         run: npm run build

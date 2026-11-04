@@ -141,6 +141,7 @@ describe('pass encoders declare timestampWrites instead of stamping inside the p
       bindGroup: { kind: 'bindGroup' } as unknown as GPUBindGroup,
       lutBindGroup: null,
       sceneDepthBindGroup: { kind: 'sceneDepthBindGroup' } as unknown as GPUBindGroup,
+      sceneSemanticBindGroup: { kind: 'sceneSemanticBindGroup' } as unknown as GPUBindGroup,
       width: 64,
       height: 64,
       timing: timings.weather,

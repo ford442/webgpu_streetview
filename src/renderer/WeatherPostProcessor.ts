@@ -33,6 +33,12 @@ import {
     type AuxDepth,
 } from './depth/sceneDepthBinding';
 import {
+    getSceneSemanticBindGroupLayout,
+    getSceneSemanticFallback,
+    WEATHER_SCENE_SEMANTIC_GROUP,
+    type AuxSemantic,
+} from './semantic/sceneSemanticBinding';
+import {
     createRenderPipelineChecked,
     createShaderModuleChecked,
     fetchShaderSource,
@@ -61,6 +67,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private lutBindGroup: GPUBindGroup | null = null;
     /** Group 2: the published scene depth, or null for the per-device zero fallback. */
     private sceneDepth: AuxDepth | null = null;
+    private sceneSemantic: AuxSemantic | null = null;
     private weatherParams: Float32Array<ArrayBuffer> = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private startTime: number = Date.now();
     private shaderEffectsEnabled: boolean = true;
@@ -161,7 +168,12 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.lutBindGroupLayout = createLutBindGroupLayout(this.device, GPUShaderStage.FRAGMENT);
         const pipelineLayout = this.device.createPipelineLayout({
             label: 'weather-post-pipeline-layout',
-            bindGroupLayouts: [bindGroupLayout, this.lutBindGroupLayout, getSceneDepthBindGroupLayout(this.device)],
+            bindGroupLayouts: [
+                bindGroupLayout,
+                this.lutBindGroupLayout,
+                getSceneDepthBindGroupLayout(this.device),
+                getSceneSemanticBindGroupLayout(this.device),
+            ],
         });
 
         this.weatherPipeline = await createRenderPipelineChecked(this.device, {
@@ -244,6 +256,14 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
 
     private sceneDepthBindGroup(): GPUBindGroup {
         return this.sceneDepth?.bindGroup ?? getSceneDepthFallback(this.device);
+    }
+
+    public setSceneSemantic(semantic: AuxSemantic | null): void {
+        this.sceneSemantic = semantic;
+    }
+
+    private sceneSemanticBindGroup(): GPUBindGroup {
+        return this.sceneSemantic?.bindGroup ?? getSceneSemanticFallback(this.device);
     }
 
     public setShaderEffects(enabled: boolean): void {
@@ -341,6 +361,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
             postPass.setBindGroup(0, this.weatherBindGroup);
             if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
             postPass.setBindGroup(WEATHER_SCENE_DEPTH_GROUP, this.sceneDepthBindGroup());
+            postPass.setBindGroup(WEATHER_SCENE_SEMANTIC_GROUP, this.sceneSemanticBindGroup());
             postPass.draw(3, 1, 0, 0);
             postPass.end();
 
@@ -376,6 +397,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         postPass.setBindGroup(0, this.weatherBindGroup);
         if (this.lutBindGroup) postPass.setBindGroup(1, this.lutBindGroup);
         postPass.setBindGroup(WEATHER_SCENE_DEPTH_GROUP, this.sceneDepthBindGroup());
+        postPass.setBindGroup(WEATHER_SCENE_SEMANTIC_GROUP, this.sceneSemanticBindGroup());
         postPass.draw(3, 1, 0, 0);
         if (timing) {
             timing.timer.markPassEnd(postPass, timing.weatherEndIndex);
@@ -403,5 +425,6 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         this.lutBindGroup = null;
         this.lutBindGroupLayout = null;
         this.sceneDepth = null;
+        this.sceneSemantic = null;
     }
 }

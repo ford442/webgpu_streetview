@@ -40,6 +40,8 @@ import {
     type FrameBudgetState,
 } from './frameBudget';
 import { resolveSceneDepthOptions, type SceneDepthOptions } from './depth/sceneDepthOptions';
+import { resolveSceneSemanticOptions, type SceneSemanticOptions } from './semantic/sceneSemanticOptions';
+import { sceneSemanticStore } from '../state/sceneSemanticStore';
 import {
     readPresentTailFlags,
     resolvePresentTailOptions,
@@ -96,6 +98,7 @@ export class FrameDriver {
     private readonly meter: FrameRateMeter;
     private readonly params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private readonly sceneDepthOptions: SceneDepthOptions = { enabled: false, blend: 0, reducedMotion: false };
+    private readonly sceneSemanticOptions: SceneSemanticOptions = { enabled: false, blend: 0, reducedMotion: false };
     private readonly livePov = () => povStore.get();
     /** Page-relative time, to keep shader sin()/hash() inside f32 precision. */
     private readonly startedAt = Date.now();
@@ -207,6 +210,7 @@ export class FrameDriver {
             rowsPitch: choresStats.rowLumaPitch,
             rowsSeq: choresStats.rowLumaSeq,
             livePitch: weatherPitch,
+            skyEdge: renderer.getSemanticSkyEdge?.() ?? null,
         }, this.horizon);
         this.horizon = horizon.state;
         const params = packWeatherParams({
@@ -256,6 +260,12 @@ export class FrameDriver {
             optedIn: sceneDepthStore.get().enabled,
             reducedMotion,
         }, this.sceneDepthOptions));
+        renderer.setSceneSemantic?.(resolveSceneSemanticOptions({
+            quality,
+            optedIn: sceneSemanticStore.get().enabled,
+            depthEnabled: this.sceneDepthOptions.enabled,
+            reducedMotion,
+        }, this.sceneSemanticOptions));
 
         // Frame budget: frozen through a hold and under reduced motion
         // (a resolution that pumps is motion too). A GPU sample counts

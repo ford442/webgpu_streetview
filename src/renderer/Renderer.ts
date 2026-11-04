@@ -70,6 +70,10 @@ import type { WipeDirection } from './historicalWipe';
 import { releaseSceneDepthFallback, resolveSceneDepthBindGroup, type FrameAux } from './depth/sceneDepthBinding';
 import { DepthController } from './depth/DepthController';
 import type { SceneDepthOptions } from './depth/sceneDepthOptions';
+import type { SemanticSkyEdge } from './semantic/SemanticController';
+import { SemanticLayer } from './semantic/SemanticLayer';
+import type { SceneSemanticOptions } from './semantic/sceneSemanticOptions';
+import { releaseSceneSemanticFallback } from './semantic/sceneSemanticBinding';
 import { isPassFailed } from './passStatus';
 import { UpscalePass } from './upscale/UpscalePass';
 import {
@@ -216,6 +220,12 @@ export class Renderer implements StreetViewRenderer {
     private depth: DepthController | null = null;
     /** Set while the lazy `depth` pass is initialising (download + session create). */
     private depthInit: Promise<boolean> | null = null;
+    /**
+     * Semantic scene layer (#352): the lazy `semantic` pass, riding on the depth
+     * pipeline. Its controller is a separate chunk, loaded when it is first switched on.
+     */
+    private semantic: SemanticLayer | null = null;
+    private semanticInit: Promise<unknown> | null = null;
     /** What the cabin's windshield portal reads — see `roadFrameRegistry.ts`. */
     private roadFrameSource: RoadFrameSource | null = null;
     private readonly roadLook = createNeutralRoadLook();
@@ -471,7 +481,51 @@ export class Renderer implements StreetViewRenderer {
             baseUrl: typeof document !== 'undefined' ? document.baseURI : 'http://localhost/',
         });
         passes.register(this.depth.pass);
+        // Lazy: initialised by `setSceneSemantic` when the layer is switched on.
+        this.semantic = new SemanticLayer({
+            device: this.device,
+            pipeline: this.depth,
+            baseUrl: typeof document !== 'undefined' ? document.baseURI : 'http://localhost/',
+            onFailed: (error) => this.passes?.markFailed('semantic', error),
+        });
+        passes.register(this.semantic.pass);
         return passes;
+    }
+
+    /**
+     * The semantic scene layer for this frame (frame driver, every frame, after
+     * `setSceneDepth`). Switching it on the first time initialises the lazy
+     * `semantic` pass — a one-time download into the depth Worker; a failure
+     * stays on `webgpuProbe.passes.semantic` until it is switched off and on.
+     */
+    public setSceneSemantic(options: SceneSemanticOptions): void {
+        const semantic = this.semantic;
+        const passes = this.passes;
+        if (!semantic || !passes || this.isDestroyed) return;
+        const wasEnabled = semantic.getOptions().enabled;
+        semantic.setOptions(options);
+        if (!options.enabled || this.semanticInit) return;
+        // Depth must have its estimator loading before the session can follow it.
+        if (this.depthInit || !passes.isReady('depth')) return;
+        const retry = !wasEnabled && isPassFailed('semantic');
+        if (isPassFailed('semantic') && !retry) return;
+        if (!semantic.isInitialised() || retry) {
+            this.semanticInit = passes.initPass('semantic').finally(() => {
+                this.semanticInit = null;
+            });
+        } else if (semantic.needsSession()) {
+            // Scene depth was cycled: the pass is ready, the Worker is new.
+            this.semanticInit = semantic.loadSession()
+                .catch((error: unknown) => semantic.fail(error))
+                .finally(() => {
+                    this.semanticInit = null;
+                });
+        }
+    }
+
+    /** The class map's sky edge while it is applied (#352) — the horizon estimate prefers it. */
+    public getSemanticSkyEdge(): SemanticSkyEdge | null {
+        return this.semantic?.currentSkyEdge() ?? null;
     }
 
     /**
@@ -704,11 +758,14 @@ export class Renderer implements StreetViewRenderer {
             // Destroyed with the passes (it is one); drop the handle.
             this.depth = null;
             this.depthInit = null;
+            this.semantic = null;
+            this.semanticInit = null;
             this.gpuChores?.destroy();
             this.gpuChores = null;
             this.gpuPassTimer?.destroy();
             this.gpuPassTimer = null;
             releaseSceneDepthFallback(this.device);
+            releaseSceneSemanticFallback(this.device);
             if (unconfigureContext) {
                 this.context?.unconfigure();
             }
@@ -1151,6 +1208,10 @@ export class Renderer implements StreetViewRenderer {
             });
             this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
                 ? this.depth?.currentAux()
+                : undefined;
+            this.semantic?.onFrame({ nowMs: performance.now(), view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 } });
+            this.frameAux.semantic = passes.isReady('semantic') && !isPassFailed('semantic')
+                ? this.semantic?.currentAux()
                 : undefined;
             // Timestamp queries only while the overlay or the budget loop reads them.
             const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;

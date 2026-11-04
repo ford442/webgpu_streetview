@@ -59,6 +59,24 @@ keyed WebGPU host, `npm run capture:look-goldens` also writes
 | Rain: far streak layers occluded behind near walls (subtle in a still) | ![rain](./scene-depth/rain-webgpu.jpg) |
 | Hop release: the held frame dollies — near pixels move most | ![dolly](./scene-depth/dolly-webgpu.jpg) |
 
+## Semantic scene layer (#352)
+
+With **🏙️ Scene understanding** on (High/Ultra, needs scene depth), a street
+segmentation tells the weather and night passes what each pixel is — see
+[`docs/SCENE_SEMANTIC.md`](../SCENE_SEMANTIC.md). Left, scene depth only (and
+bit-exact with the layer at weight 0); right, the layer at Ultra's weight.
+Rendered from a CC0 street photo (`e2e/fixtures/scene-depth/street.jpg`) with
+both real models: `npm run capture:semantic-looks`. The network's mistakes show
+— cumulus read as vegetation keeps the photograph's cloud; see *Known limits*.
+
+| | |
+|---|---|
+| The classes (sky, road, sidewalk, building, vegetation, vehicle, person) | ![photo and class map](./semantic/class-map-webgpu.jpg) |
+| Rain: no streaks over the sky, a wet road, the sky regraded overcast | ![rain](./semantic/rain-webgpu.jpg) |
+| Snow settles on the road and verges, not on cars or the sky | ![snow](./semantic/snow-webgpu.jpg) |
+| Night: the sky sinks (also through bare branches), lamp light on the road, tail lights | ![night](./semantic/night-webgpu.jpg) |
+| Dusk: a golden-hour sky behind the skyline | ![dusk](./semantic/dusk-webgpu.jpg) |
+
 ---
 
 ## Looks

@@ -31,6 +31,7 @@ import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
 import type { GpuChoresBreadcrumbs } from '../renderer/gpuChores/gpuChoresStatsStore';
 import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
 import type { SceneDepthStats } from '../renderer/depth/sceneDepthStatsStore';
+import type { SceneSemanticStats } from '../renderer/semantic/sceneSemanticStatsStore';
 import type { CabinRendererProbe } from '../car/interior/cabinRendererProbe';
 import type { CabinAudioProbe } from '../car/audio/cabinAudioProbe';
 import type { RearViewFeed } from '../car/rearViewFeed';
@@ -70,6 +71,8 @@ export interface SvDebug {
     readonly gpuChores: GpuChoresBreadcrumbs | undefined;
     readonly gpuTimings: GpuPassTimings | undefined;
     readonly sceneDepth: SceneDepthStats | undefined;
+    /** Semantic scene layer (#352): state, timings, class histogram. */
+    readonly sceneSemantic: SceneSemanticStats | undefined;
     readonly streetView: Window['__STREETVIEW_PROBE__'];
     readonly renderer: RendererDebugHandle | undefined;
     readonly placeSearch: PlaceSearchKillSwitch | undefined;
@@ -96,6 +99,7 @@ declare global {
         __CABIN_AUDIO_PROBE__?: CabinAudioProbe;
         __GPU_CHORES__?: GpuChoresBreadcrumbs;
         __SCENE_DEPTH__?: SceneDepthStats;
+        __SCENE_SEMANTIC__?: SceneSemanticStats;
         __PLACE_SEARCH__?: PlaceSearchKillSwitch;
         __REARVIEW_FEED__?: RearViewFeed;
         streetViewRendererDebug?: RendererDebugHandle;
@@ -136,6 +140,7 @@ export function installSvGlobals(): void {
         get gpuChores() { return window.__GPU_CHORES__; },
         get gpuTimings() { return window.rendererGpuTimings; },
         get sceneDepth() { return window.__SCENE_DEPTH__; },
+        get sceneSemantic() { return window.__SCENE_SEMANTIC__; },
         get streetView() { return window.__STREETVIEW_PROBE__; },
         get renderer() { return window.streetViewRendererDebug; },
         get placeSearch() { return window.__PLACE_SEARCH__; },

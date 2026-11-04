@@ -1,6 +1,7 @@
 import { BLIT_SHADER, COMPUTE_WEATHER_OUTPUT_FORMAT } from './constants';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
 import { getSceneDepthBindGroupLayout } from '../depth/sceneDepthBinding';
+import { getSceneSemanticBindGroupLayout } from '../semantic/sceneSemanticBinding';
 import {
     assembleExtendedToneMappingShader,
     deviceHasFeature,
@@ -108,7 +109,12 @@ export async function createWeatherComputePipeline(
         label: 'weather-compute-pipeline',
         layout: device.createPipelineLayout({
             label: 'weather-compute-pipeline-layout',
-            bindGroupLayouts: [createComputeBindGroupLayout(device), lutBindGroupLayout, getSceneDepthBindGroupLayout(device)],
+            bindGroupLayouts: [
+                createComputeBindGroupLayout(device),
+                lutBindGroupLayout,
+                getSceneDepthBindGroupLayout(device),
+                getSceneSemanticBindGroupLayout(device),
+            ],
         }),
         compute: { module: computeModule, entryPoint: 'main' },
     });

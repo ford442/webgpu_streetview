@@ -294,14 +294,16 @@ jobs:
 
       # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
       # not in git: fetch the pinned, SHA-256-checked ones, cached on the pins.
-      - name: Cache the scene-depth model
+      - name: Cache the scene models
         uses: actions/cache@v4
         with:
-          path: public/models/depth
-          key: depth-model-${{ hashFiles('src/renderer/depth/depthModel.manifest.json') }}
+          path: |
+            public/models/depth
+            public/models/semantic
+          key: scene-models-${{ hashFiles('src/renderer/depth/depthModel.manifest.json', 'src/renderer/semantic/semanticModel.manifest.json', 'scripts/lib/onnxSurgery.mjs') }}
 
-      - name: Fetch the scene-depth model
-        run: npm run fetch:depth-model
+      - name: Fetch the scene models (depth #320, semantic #352)
+        run: npm run fetch:models
 
       - name: E2E smoke (keyless)
         run: npm run test:e2e:smoke

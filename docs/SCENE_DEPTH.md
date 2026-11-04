@@ -192,6 +192,17 @@ regenerates `docs/looks/scene-depth/` from the CC0 fixture photo — no Maps key
 no billable panorama load. On a WebGPU host with a Maps key,
 `npm run capture:look-goldens` also captures each look with `&depth=on`.
 
+## The semantic layer rides this Worker
+
+The semantic scene layer (#352, [`SCENE_SEMANTIC.md`](SCENE_SEMANTIC.md)) is a
+second ORT session in `depthWorker.ts`. When it is on, each depth inference
+also runs the segmenter on the same ImageNet tensor (`infer(..., semantic)`),
+and `DepthController` hands the result to its `SemanticSink`. A semantic
+failure never fails the depth half; switching depth off resets the sink.
+`npm run fetch:models` fetches both models (`fetch:depth-model` is depth only).
+ORT is not re-entrant on WebGPU: every session create, inference and release
+in the Worker is serialised through `onOrtQueue` (`depthWorker.ts`).
+
 ## Known limits
 
 - Relative depth only — no metric scale, no SLAM, no multi-pano fusion.

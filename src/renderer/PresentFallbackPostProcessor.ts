@@ -154,6 +154,7 @@ export class PresentFallbackPostProcessor implements WeatherPostProcessorLike {
     public setTemporalHistoryEnabled(): void {}
     /** The fallback is a plain ACES blit; there is no depth consumer to feed. */
     public setSceneDepth(): void {}
+    public setSceneSemantic(): void {}
     public updateWeatherParams(): void {}
     public updateColorParams(): void {}
     public updateWeatherAnimation(): void {}

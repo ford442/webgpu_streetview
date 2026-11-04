@@ -10,7 +10,12 @@
  * Runs in the depth Worker (Cache API and SubtleCrypto are both available
  * there); pure over its injected I/O so it is unit-tested with fakes.
  */
-import type { DepthModelFile } from './depthModel';
+/** A pinned same-origin model file (`DepthModelFile`, `SemanticModelFile`). */
+export interface PinnedModelFile {
+    url: string;
+    bytes: number;
+    sha256: string;
+}
 
 export interface ModelCacheIo {
     /** `self.caches`, or null where the Cache API is unavailable (insecure context, some private modes). */
@@ -20,7 +25,11 @@ export interface ModelCacheIo {
 }
 
 export interface LoadModelOptions {
-    file: DepthModelFile;
+    file: PinnedModelFile;
+    /** Names the model in errors (default `scene-depth`). */
+    label?: string;
+    /** The npm script that deploys it (default `fetch:depth-model`). */
+    fetchScript?: string;
     cacheName: string;
     cachePrefix: string;
     io: ModelCacheIo;
@@ -81,6 +90,8 @@ async function readWithProgress(
 
 export async function loadDepthModel({
     file,
+    label = 'scene-depth',
+    fetchScript = 'fetch:depth-model',
     cacheName,
     cachePrefix,
     io,
@@ -109,20 +120,20 @@ export async function loadDepthModel({
         response = await io.fetch(file.url);
     } catch (error) {
         throw new ModelUnavailableError(
-            `scene-depth model unreachable (${error instanceof Error ? error.message : String(error)})`,
+            `${label} model unreachable (${error instanceof Error ? error.message : String(error)})`,
         );
     }
     if (!response.ok) {
         throw new ModelUnavailableError(
-            `scene-depth model not deployed (HTTP ${response.status} for ${file.url}) — `
-            + 'run `npm run fetch:depth-model` before building',
+            `${label} model not deployed (HTTP ${response.status} for ${file.url}) — `
+            + `run \`npm run ${fetchScript}\` before building`,
         );
     }
     const bytes = await readWithProgress(response, file.bytes, onProgress);
     const digest = await io.sha256Hex(bytes);
     if (digest !== file.sha256) {
         throw new ModelUnavailableError(
-            `scene-depth model failed its integrity check (sha256 ${digest.slice(0, 12)}…, expected ${file.sha256.slice(0, 12)}…)`,
+            `${label} model failed its integrity check (sha256 ${digest.slice(0, 12)}…, expected ${file.sha256.slice(0, 12)}…)`,
         );
     }
     if (cache) {

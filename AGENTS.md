@@ -379,9 +379,10 @@ the module that owns it, not to the façade:
 | `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`depth` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `semantic` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
 | `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
 | `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
+| `semantic/` | semantic scene layer (#352): the lazy `semantic` pass riding the depth Worker, the class table, weather group 3 + zero fallback — see *Semantic scene layer* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
 | `textureLifecycle.ts` | `videoTexture` / intermediate texture create, resize, upload, bind group |
@@ -443,6 +444,40 @@ panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
 - **Optional pass**: lazy, so absent from `webgpuProbe.passes` until switched on;
   a failure (model missing, integrity, device lost, no chores readback) is
   reported there and in `window.__SCENE_DEPTH__`, never on the road frame.
+
+### Semantic scene layer (`src/renderer/semantic/`, #352)
+
+A 7-class street segmentation (sky, road, sidewalk, building, vegetation,
+vehicle, person; `semanticClasses.ts`) from a **second session in the depth
+Worker** — DDRNet23-Slim (MIT), fed the same ImageNet tensor as depth, so one
+readback and one upload serve both. Opt-in (`?semantic=on` / weather panel,
+~12 MB once), needs scene depth on, weighted only at High/Ultra
+(`semanticBlend` 0.8 / 1). Full design: [`docs/SCENE_SEMANTIC.md`](docs/SCENE_SEMANTIC.md).
+
+- **Wiring**: `SemanticController` (lazy pass `semantic`) is a `SemanticSink` on
+  `DepthController` — maps ride depth inferences (no own cadence), share its
+  epoch/trust rules, decode to `rg8unorm` (class + 1, probability) →
+  `FrameContext.aux.semantic` → weather **group 3** in both shaders
+  (`sceneSemanticBinding.ts`, `SceneSemanticParams` 64 B, own uniform buffer).
+  Its sky edge feeds `resolveHorizonFrame` (preferred over the row estimate).
+- **Weight 0 is bit-exact**: every `semantic*` WGSL helper and `classWeight`
+  returns its input first when `semParams.blend <= 0.0`; class ids are read with
+  `textureLoad` only (never filtered). Helpers are byte-identical in both
+  shaders (`sceneSemanticBinding.test.ts`); the windshield portal never reads
+  the map (`windshieldPortal.parity.test.ts`).
+- **Model**: not in git; `npm run fetch:models` downloads the pinned archive and
+  **rebuilds** it deterministically (`scripts/lib/onnxSurgery.mjs`: no
+  normalisation prologue, symbolic H/W, fp16-stored weights, the 7-class head)
+  — both the archive and the result are SHA-pinned in
+  `semanticModel.manifest.json`. Changing the surgery or the class table changes
+  the SHA: re-pin and bump `cacheVersion`.
+- **Lazy**: `Renderer` holds a `SemanticLayer` (pass stub + options); the
+  controller is its own chunk, imported on first enable — keep value imports of
+  `SemanticController` / `semanticParams` / `semanticHorizon` out of main-bundle modules.
+- **Worker**: ORT on WebGPU is not re-entrant — every session create / run /
+  release in `depthWorker.ts` goes through `onOrtQueue`.
+- **Probe**: `window.__SCENE_SEMANTIC__` (`__SV__.sceneSemantic`) — state,
+  inferences, `inferenceMs`, class `histogram`, `meanConfidence`, `skyEdgeY`.
 
 ### Split frame tail, stereo and the WebXR cockpit (`src/renderer/reproject/`, `src/xr/`, #331)
 
@@ -915,6 +950,7 @@ batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - `e2e/*.spec.ts` — Playwright smoke + keyed critical paths (see above).
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
 - `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~1 min per inference on SwiftShader.
+- `e2e/scene-semantic.spec.ts` (same fixture) — the semantic layer (#352) with the rebuilt model through ORT-web on SwiftShader: maps with a plausible class histogram, semantic weight 0 bit-exact across looks, no rain streaks over the sky, no wet or snow change on the walls, class-conditional night relight, sky replacement inside the sky only, and a missing model failing the `semantic` pass but not depth or the frame. Needs `npm run fetch:models`.
 - `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1.
 - The GPU specs run only in the **`chromium-webgpu`** Playwright project (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 

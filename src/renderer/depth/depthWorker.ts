@@ -24,11 +24,33 @@
  * (`vite.config.ts`), so threads are possible; they are not used because the
  * model is small and the CDN-hosted runtime's threaded build is a second,
  * unmeasured artifact (see docs/SCENE_DEPTH.md).
+ *
+ * **A second session (#352).** The semantic segmenter (`load-semantic`) runs on
+ * the same device and runtime, on the same input tensor: an `infer` with
+ * `semantic: true` builds the ImageNet tensor once and feeds both sessions
+ * (the rebuilt semantic model takes exactly that normalisation). A semantic
+ * failure never fails the depth half of a result.
+ *
+ * **One ORT operation at a time.** ORT's WebGPU backend is not re-entrant:
+ * creating the semantic session while a depth inference runs left that run
+ * with an invalid pipeline ("setPipeline … is not of type
+ * 'GPUComputePipeline'", SwiftShader, ORT 1.30). Every session create and
+ * every inference goes through `onOrtQueue`; downloads and hashing stay
+ * outside it.
  */
 import { loadDepthModel, sha256Hex } from './depthModelCache';
 import { pickDepthModelVariant } from './depthModel';
 import { decodeDisparity, rgbaToImageNetNchw } from './depthMath';
 import type { DepthInitRequest, DepthWorkerMessage, DepthWorkerRequest } from './depthProtocol';
+import { rgbaToImageNetNchw } from './depthMath';
+import type {
+    DepthInitRequest,
+    DepthLoadSemanticRequest,
+    DepthWorkerMessage,
+    DepthWorkerRequest,
+    SemanticResult,
+} from './depthProtocol';
+import { decodeSemanticProbs } from '../semantic/semanticDecode';
 
 /** The slice of the onnxruntime-web API this Worker uses (it has no npm types here). */
 interface OrtTensor {
@@ -66,6 +88,8 @@ const scope = self as unknown as WorkerScope;
 
 let ort: OrtModule | null = null;
 let session: OrtSession | null = null;
+let semanticSession: OrtSession | null = null;
+let semanticLoading = false;
 let device: GPUDevice | null = null;
 let disposed = false;
 let tensorScratch: Float32Array | null = null;
@@ -85,6 +109,15 @@ const ORT_LIMITS = [
     'maxComputeWorkgroupSizeY',
     'maxComputeWorkgroupSizeZ',
 ] as const;
+
+let ortQueue: Promise<unknown> = Promise.resolve();
+
+/** Run `task` after every ORT operation queued before it (success or failure). */
+function onOrtQueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = ortQueue.then(task, task);
+    ortQueue = run.catch(() => undefined);
+    return run;
+}
 
 async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: boolean; adapter: string }> {
     const gpu = (navigator as Navigator & { gpu?: GPU }).gpu;
@@ -112,6 +145,7 @@ async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: bool
     void created.lost.then((info) => {
         if (disposed) return;
         session = null;
+        semanticSession = null;
         post({ type: 'lost', message: info.message || info.reason || 'device lost' });
     });
     const info = (adapter as GPUAdapter & { info?: GPUAdapterInfo }).info;
@@ -141,9 +175,9 @@ async function init(request: DepthInitRequest): Promise<void> {
         onProgress: (loadedBytes, total) => post({ type: 'progress', loaded: loadedBytes, total }),
     });
     if (disposed) return;
-
+    const runtime = ort;
     const createStart = performance.now();
-    session = await ort.InferenceSession.create(new Uint8Array(loaded.bytes), {
+    session = await onOrtQueue(() => runtime.InferenceSession.create(new Uint8Array(loaded.bytes), {
         // wasm last: a WebGPU EP that cannot build this graph degrades to slow
         // inference instead of failing the toggle outright.
         executionProviders: ['webgpu', 'wasm'],
@@ -151,7 +185,7 @@ async function init(request: DepthInitRequest): Promise<void> {
         // Batch is always 1. height/width stay free: the input follows the
         // canvas aspect (`depthInputSize`), and a pinned size would fail every other aspect.
         freeDimensionOverrides: { batch_size: 1 },
-    });
+    }));
     post({
         type: 'ready',
         variant,
@@ -162,7 +196,74 @@ async function init(request: DepthInitRequest): Promise<void> {
     });
 }
 
-async function infer(id: number, rgba: Uint8Array, width: number, height: number): Promise<void> {
+async function loadSemantic(request: DepthLoadSemanticRequest): Promise<void> {
+    if (!ort || !device) throw new Error('the depth worker is not initialised');
+    if (semanticSession || semanticLoading) return;
+    semanticLoading = true;
+    try {
+        const loaded = await loadDepthModel({
+            file: request.model,
+            label: 'semantic-scene',
+            fetchScript: 'fetch:models',
+            cacheName: request.cacheName,
+            cachePrefix: request.cachePrefix,
+            io: { caches: scope.caches ?? null, fetch: (url) => fetch(url), sha256Hex },
+            onProgress: (loadedBytes, total) => post({ type: 'semantic-progress', loaded: loadedBytes, total }),
+        });
+        if (disposed) return;
+        const runtime = ort;
+        let createStart = 0;
+        semanticSession = await onOrtQueue(() => {
+            createStart = performance.now();
+            return runtime.InferenceSession.create(new Uint8Array(loaded.bytes), {
+                executionProviders: ['webgpu'],
+                graphOptimizationLevel: 'all',
+            });
+        });
+        if (disposed) {
+            // Disposed while it was being created: the dispose already ran.
+            const late = semanticSession;
+            semanticSession = null;
+            await late.release().catch(() => undefined);
+            return;
+        }
+        post({ type: 'semantic-ready', fromCache: loaded.fromCache, createMs: performance.now() - createStart });
+    } finally {
+        semanticLoading = false;
+    }
+}
+
+/** The semantic session on an already-built input tensor; null if it is not loaded. */
+async function runSemantic(input: OrtTensor, rgba: Uint8Array): Promise<SemanticResult | null> {
+    const s = semanticSession;
+    if (!s) return null;
+    const started = performance.now();
+    const outputs = await s.run({ [s.inputNames[0]!]: input });
+    const output = outputs[s.outputNames[0]!]!;
+    try {
+        const dims = output.dims;
+        if (dims.length !== 4) throw new Error(`semantic output has rank ${dims.length}, expected 4`);
+        const [, classes, outHeight, outWidth] = dims as [number, number, number, number];
+        const data = await output.getData();
+        if (!(data instanceof Float32Array)) throw new Error('semantic output is not float32');
+        // The head resizes to the input, so the frame lines up texel for texel.
+        const decoded = decodeSemanticProbs(data, classes, outWidth, outHeight,
+            rgba.length === outWidth * outHeight * 4 ? rgba : undefined);
+        return {
+            texels: decoded.texels,
+            histogram: decoded.histogram,
+            meanConfidence: decoded.meanConfidence,
+            skyColor: decoded.skyColor,
+            width: outWidth,
+            height: outHeight,
+            ms: performance.now() - started,
+        };
+    } finally {
+        output.dispose();
+    }
+}
+
+async function infer(id: number, rgba: Uint8Array, width: number, height: number, semantic: boolean): Promise<void> {
     if (!ort || !session) throw new Error('depth session is not ready');
     const started = performance.now();
     const size = 3 * width * height;
@@ -176,9 +277,32 @@ async function infer(id: number, rgba: Uint8Array, width: number, height: number
     const dims = output.dims;
     const outHeight = dims.length >= 2 ? dims[dims.length - 2]! : height;
     const outWidth = dims.length >= 1 ? dims[dims.length - 1]! : width;
+    const ms = performance.now() - started;
+
+    let semanticResult: SemanticResult | null = null;
+    let semanticError: string | undefined;
+    if (semantic) {
+        try {
+            semanticResult = await runSemantic(input, rgba);
+            if (!semanticResult) semanticError = 'semantic session is not ready';
+        } catch (error) {
+            semanticError = error instanceof Error ? error.message : String(error);
+        }
+    }
+    const transfer: Transferable[] = [disparity.buffer];
+    if (semanticResult) transfer.push(semanticResult.texels.buffer, semanticResult.histogram.buffer);
     post(
-        { type: 'result', id, disparity, width: outWidth, height: outHeight, ms: performance.now() - started },
-        [disparity.buffer],
+        {
+            type: 'result',
+            id,
+            disparity,
+            width: outWidth,
+            height: outHeight,
+            ms,
+            ...(semanticResult ? { semantic: semanticResult } : {}),
+            ...(semanticError !== undefined ? { semanticError } : {}),
+        },
+        transfer,
     );
 }
 
@@ -188,15 +312,20 @@ scope.onmessage = (event) => {
         init(message).catch((error: unknown) => {
             post({ type: 'error', message: error instanceof Error ? error.message : String(error) });
         });
+    } else if (message.type === 'load-semantic') {
+        loadSemantic(message).catch((error: unknown) => {
+            post({ type: 'semantic-error', message: error instanceof Error ? error.message : String(error) });
+        });
     } else if (message.type === 'infer') {
-        infer(message.id, message.rgba, message.width, message.height).catch((error: unknown) => {
+        onOrtQueue(() => infer(message.id, message.rgba, message.width, message.height, message.semantic)).catch((error: unknown) => {
             post({ type: 'error', id: message.id, message: error instanceof Error ? error.message : String(error) });
         });
     } else if (message.type === 'dispose') {
         disposed = true;
-        const s = session;
+        const sessions = [session, semanticSession].filter((x): x is OrtSession => x !== null);
         session = null;
-        void s?.release().catch(() => undefined).finally(() => device?.destroy());
-        if (!s) device?.destroy();
+        semanticSession = null;
+        // After any queued create / inference: releasing a session mid-run is the same re-entrancy.
+        void onOrtQueue(() => Promise.all(sessions.map((x) => x.release().catch(() => undefined)))).finally(() => device?.destroy());
     }
 };

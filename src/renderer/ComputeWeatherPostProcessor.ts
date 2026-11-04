@@ -19,6 +19,7 @@ import {
     getSceneDepthFallback,
     type AuxDepth,
 } from './depth/sceneDepthBinding';
+import { getSceneSemanticFallback, type AuxSemantic } from './semantic/sceneSemanticBinding';
 import {
     recordBlitPass,
     recordColorHistoryCopy,
@@ -86,6 +87,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
     private temporalHistoryEnabled = false;
     /** Group 2: the published scene depth, or null for the per-device zero fallback. */
     private sceneDepth: AuxDepth | null = null;
+    private sceneSemantic: AuxSemantic | null = null;
     private shaderEffectsEnabled = true;
     private lastIntermediateView: GPUTextureView | null = null;
     /** Reused per dispatch — `writeBuffer` copies it, so one scratch array is enough. */
@@ -179,6 +181,10 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
     public setSceneDepth(depth: AuxDepth | null): void {
         this.sceneDepth = depth;
+    }
+
+    public setSceneSemantic(semantic: AuxSemantic | null): void {
+        this.sceneSemantic = semantic;
     }
 
     public setLookLut(volume: LutVolume | null): void {
@@ -295,6 +301,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
             bindGroup,
             lutBindGroup: this.lut.getBindGroup(),
             sceneDepthBindGroup: this.sceneDepth?.bindGroup ?? getSceneDepthFallback(this.device),
+            sceneSemanticBindGroup: this.sceneSemantic?.bindGroup ?? getSceneSemanticFallback(this.device),
             width: res.writeWidth,
             height: res.writeHeight,
             timing,
@@ -376,6 +383,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
         this.lut.dispose();
         this.computePipeline = null;
         this.sceneDepth = null;
+        this.sceneSemantic = null;
         this.invalidateComputeBindGroups();
         this.blitPipeline = null;
         this.blitBindGroup = null;
