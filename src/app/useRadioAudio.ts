@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { acquireCarAudioGraph, releaseCarAudioGraph } from '../audio/carAudioGraph';
 
 const DEFAULT_STREAM_URL = 'https://stream.zeno.fm/ywcmn7hpha0uv';
 
@@ -11,11 +12,12 @@ export interface UseRadioAudioResult {
 
 /**
  * Free-look toolbar radio: Audio element + Web Audio graph lifecycle / toggle.
- * Car-mode audio remains a separate path in CarModeView.
+ * It joins `audio/carAudioGraph`: one AudioContext for the app.
  */
 export function useRadioAudio(streamUrl: string = DEFAULT_STREAM_URL): UseRadioAudioResult {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  /** The shared car/app audio graph, held while the radio has been started. */
+  const graphRef = useRef<ReturnType<typeof acquireCarAudioGraph>>(null);
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
 
@@ -26,7 +28,9 @@ export function useRadioAudio(streamUrl: string = DEFAULT_STREAM_URL): UseRadioA
       audioRef.current = el;
     }
     return () => {
-      audioCtxRef.current?.close().catch(() => {});
+      // Drop our reference; the shared context is suspended, never closed (the car radio reuses it).
+      if (graphRef.current) releaseCarAudioGraph();
+      graphRef.current = null;
     };
   }, [streamUrl]);
 
@@ -35,16 +39,16 @@ export function useRadioAudio(streamUrl: string = DEFAULT_STREAM_URL): UseRadioA
     if (isRadioPlaying) {
       audioRef.current.pause();
     } else {
-      if (!audioCtxRef.current) {
-        const ctx = new AudioContext();
-        audioCtxRef.current = ctx;
-        if (!audioSourceRef.current) {
-          audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
-          audioSourceRef.current.connect(ctx.destination);
+      if (!graphRef.current) {
+        // One AudioContext for the app: nodes cannot connect across contexts, and
+        // the car radio already lives on this graph's radioBus.
+        graphRef.current = acquireCarAudioGraph();
+        if (graphRef.current && !audioSourceRef.current) {
+          audioSourceRef.current = graphRef.current.ctx.createMediaElementSource(audioRef.current);
+          audioSourceRef.current.connect(graphRef.current.radioBus);
         }
-      }
-      if (audioCtxRef.current.state === 'suspended') {
-        void audioCtxRef.current.resume();
+      } else if (graphRef.current.ctx.state === 'suspended') {
+        void graphRef.current.ctx.resume();
       }
       audioRef.current.play().catch((e) => console.error('Audio play failed:', e));
     }

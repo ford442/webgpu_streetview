@@ -345,6 +345,7 @@ export function useSharedSession(): UseSharedSessionResult {
     [connectToHost, flushPendingCandidates],
   );
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- async API; the awaiting happens in the caller
   const createRoom = useCallback(async () => {
     teardown();
     setError(null);
@@ -388,6 +389,7 @@ export function useSharedSession(): UseSharedSessionResult {
   }, [teardown, handleSignalingMessage, connectToGuest, closePeer]);
 
   const joinRoom = useCallback(
+    // eslint-disable-next-line @typescript-eslint/require-await -- async API; the awaiting happens in the caller
     async (codeInput: string) => {
       if (!isValidRoomCode(codeInput)) {
         setError("That room code doesn't look right — codes are 6 characters.");

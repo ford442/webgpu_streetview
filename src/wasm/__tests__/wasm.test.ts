@@ -479,6 +479,28 @@ describe('the loader', () => {
     expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toMatch(/\/wasm\/streetview-wasm\.simd\.wasm$/);
   });
 
+  test('an application/wasm answer is compiled by streaming — validated once, no bytes read', async () => {
+    _resetWasmModule();
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    const bytes = readFileSync(join(process.cwd(), 'public', 'wasm', 'streetview-wasm.simd.wasm'));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, { headers: { 'content-type': 'application/wasm' } })));
+    const streaming = vi.spyOn(WebAssembly, 'compileStreaming');
+    const validate = vi.spyOn(WebAssembly, 'validate');
+    try {
+      const api = await loadWasmModule();
+      expect(streaming).toHaveBeenCalledTimes(1);
+      // (the SIMD feature probe validates a tiny module; the 50 KB binary is never re-validated)
+      expect(validate.mock.calls.filter(([b]) => (b as Uint8Array).length > 1000)).toEqual([]);
+      api.seed(7);
+      installed.seed(7);
+      expect(api.noise2d(0.5, 0.5)).toBe(installed.noise2d(0.5, 0.5));
+    } finally {
+      streaming.mockRestore();
+      validate.mockRestore();
+    }
+  });
+
   test('returns the installed module without fetching', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

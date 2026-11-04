@@ -38,7 +38,7 @@ shortest one). The open set is a binary heap with decrease-key, held in the
 caller's arena (`n × 32` bytes, `SW_GRAPH_ASTAR_WORK_BYTES_PER_NODE`); nothing
 allocates or throws. Ties break on the lower node index everywhere, so a path
 is a pure function of the CSR arrays and the scalar binary, the SIMD binary and
-the JS twin (`jsFallback.ts`) return the same node list. `graph_nearest` is
+the committed goldens pin the same node list (there is no JS twin). `graph_nearest` is
 the nearest node, ties to the lower index. Goldens: a 200-node synthetic
 Lisbon grid with missing links, one-way streets and a node with no way in
 (`scripts/gen-wasm-goldens.mjs`, `cpp/tests/graph_module_test.cpp`, which also

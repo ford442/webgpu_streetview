@@ -34,7 +34,14 @@ export class TextureLifecycle {
     public intermediateWidth = 0;
     public intermediateHeight = 0;
     public intermediateFormat: GPUTextureFormat = HDR_INTERMEDIATE_FORMAT;
-    public bindGroup!: GPUBindGroup;
+    /** Null until the first `updateBindGroup()` and after `Renderer.destroy()`. */
+    public bindGroup: GPUBindGroup | null = null;
+
+    /** The bind group a frame pass encodes with; the pass is gated on init, so absence is a bug. */
+    requireBindGroup(): GPUBindGroup {
+        if (!this.bindGroup) throw new Error('[TextureLifecycle] bind group used before init / after destroy');
+        return this.bindGroup;
+    }
 
     /** Scratch 2D canvas for the rare source larger than `maxTextureDimension2D`. */
     private downscaleCanvas: HTMLCanvasElement | null = null;
@@ -185,7 +192,7 @@ export class TextureLifecycle {
         try {
             this.deps.getDevice().queue.copyExternalImageToTexture(
                 { source: uploadSource as GPUCopyExternalImageSource },
-                { texture: this.videoTexture! },
+                { texture: this.videoTexture!, premultipliedAlpha: false },
                 [fit.width, fit.height]
             );
         } catch {

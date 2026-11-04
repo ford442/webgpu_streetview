@@ -52,7 +52,7 @@ class FakeRoom {
   presenceState(): Record<string, Array<Record<string, unknown>>> {
     const result: Record<string, Array<Record<string, unknown>>> = {};
     for (const state of this.presence.values()) {
-      const key = String(state.clientId ?? 'unknown');
+      const key = String((state.clientId as string | undefined) ?? 'unknown');
       result[key] = [state];
     }
     return result;

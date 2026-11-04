@@ -68,9 +68,16 @@ interface DepthLostMessage {
     message: string;
 }
 
+/** An `uncapturederror` on the Worker's own device (validation / OOM); counted, not fatal. */
+interface DepthGpuErrorMessage {
+    type: 'gpu-error';
+    message: string;
+}
+
 export type DepthWorkerMessage =
     | DepthProgressMessage
     | DepthReadyMessage
     | DepthResultMessage
     | DepthErrorMessage
-    | DepthLostMessage;
+    | DepthLostMessage
+    | DepthGpuErrorMessage;

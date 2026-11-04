@@ -5,7 +5,9 @@ import { usePovEffect } from '../state/povStore';
 import {
   useStreetView,
   useViewMode,
-  useEnvironmentSettings,
+  useEnvironmentGetter,
+  useEnvironmentSelector,
+  type TimeOfDay,
   useAdvanceSafe,
   useRoutePrefetch,
   usePlaceSearch,
@@ -18,7 +20,7 @@ import { useAnnouncer } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
 import { publishCruiseFlag } from '../state/cruiseFlagStore';
-import { loadCarRuntime } from '../car/carRuntimeLoader';
+import { withCarRuntime } from '../car/carRuntimeLoader';
 import { vehicleManager, type VehicleType } from '../car/VehicleManager';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
@@ -26,7 +28,8 @@ import BuildBadge from '../components/BuildBadge';
 import { getCarRuntime } from './carRuntimeCache';
 import { useAppPanels } from './useAppPanels';
 import { useMapsBootstrap } from './useMapsBootstrap';
-import { useAppSharedSession } from './useAppSharedSession';
+import { SharedSessionSync } from './useAppSharedSession';
+import { useSharedSession } from '../hooks/useSharedSession';
 import { useRadioAudio } from './useRadioAudio';
 import { useHistoricalExperience } from './useHistoricalExperience';
 import { useTourBindings } from './useTourBindings';
@@ -68,7 +71,14 @@ export function AppShell() {
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const { currentVehicle } = useVehicleSettings();
-  const env = useEnvironmentSettings();
+  // The shell must not re-render on a slider drag, an auto-night step or a
+  // live-conditions tick: it reads the environment through a getter and
+  // selectors (AppShell.renders.test.tsx). Components that need whole slices
+  // (`AppShortcuts`, `SharedSessionSync`) subscribe themselves.
+  const getEnv = useEnvironmentGetter();
+  const activeLookId = useEnvironmentSelector((e) => e.activeLookId);
+  const applyTimeOfDayPreset = useCallback((p: TimeOfDay) => getEnv().applyTimeOfDayPreset(p), [getEnv]);
+  const applyColorGradingPreset = useCallback((p: string) => getEnv().applyColorGradingPreset(p), [getEnv]);
   const panels = useAppPanels();
   const { isOnline, hasServiceWorker } = useOfflineStatus();
   const { announce } = useAnnouncer();
@@ -88,7 +98,7 @@ export function AppShell() {
   const cinema = useCinemaMode(connection.isConnected && !connection.showWelcome);
   const { isCinemaMode } = cinema;
 
-  const { weatherPresetBroadcast, getDirectorSnapshot, applyDirectorKeyframe } = useAppDirector(env);
+  const { getDirectorSnapshot, applyDirectorKeyframe } = useAppDirector(getEnv);
 
   // Wind pan follows head/car heading imperatively — POV is not React state, so
   // head-look does not re-render the shell.
@@ -116,7 +126,7 @@ export function AppShell() {
     viewMode,
     locationName,
     currentImageDate,
-    lookId: env.activeLookId,
+    lookId: activeLookId,
     vehicleType: currentVehicle,
     teleportSafe,
     teleportToPanoSafe,
@@ -126,25 +136,10 @@ export function AppShell() {
 
   const setSessionVehicle = useCallback((type: VehicleType) => {
     vehicleManager.setVehicle(type);
-    void loadCarRuntime().then((m) => m.setVehicleType(type));
+    void withCarRuntime((m) => m.setVehicleType(type));
   }, []);
 
-  const sharedSession = useAppSharedSession({
-    env,
-    panorama,
-    viewMode,
-    vehicleType: currentVehicle,
-    imageDate: currentImageDate,
-    weatherPreset: weatherPresetBroadcast,
-    hdr: connection.webgpuStatus === 'ready',
-    teleportToPanoSafe,
-    setHeading,
-    setPitch,
-    setZoom,
-    setViewMode,
-    setCarHeading,
-    setSessionVehicle,
-  });
+  const sharedSession = useSharedSession();
 
   const { tourPanelProps } = useTourBindings({
     panorama,
@@ -190,7 +185,7 @@ export function AppShell() {
     isConnected: connection.isConnected,
     isPanoramaReady,
     teleportToPanoSafe,
-    env,
+    getEnv,
     setHeading,
     setPitch,
     setZoom,
@@ -229,8 +224,8 @@ export function AppShell() {
 
   const handleGlobeTeleport = useGlobeTeleport({
     teleportSafe,
-    applyTimeOfDayPreset: env.applyTimeOfDayPreset,
-    applyColorGradingPreset: env.applyColorGradingPreset,
+    applyTimeOfDayPreset,
+    applyColorGradingPreset,
     globeMode,
     audioRef,
     setNavPending: connection.setNavPending,
@@ -246,7 +241,6 @@ export function AppShell() {
   });
 
   const shortcuts = {
-    env,
     globeMode,
     viewMode,
     toggleViewMode,
@@ -275,6 +269,21 @@ export function AppShell() {
       }}
     >
       <AppShortcuts {...shortcuts} />
+      <SharedSessionSync
+        sharedSession={sharedSession}
+        panorama={panorama}
+        viewMode={viewMode}
+        vehicleType={currentVehicle}
+        imageDate={currentImageDate}
+        hdr={connection.webgpuStatus === 'ready'}
+        teleportToPanoSafe={teleportToPanoSafe}
+        setHeading={setHeading}
+        setPitch={setPitch}
+        setZoom={setZoom}
+        setViewMode={setViewMode}
+        setCarHeading={setCarHeading}
+        setSessionVehicle={setSessionVehicle}
+      />
 
       <ShellNotices maps={maps} isConnected={connection.isConnected} isOnline={isOnline} />
 
@@ -323,7 +332,7 @@ export function AppShell() {
           cinema={cinema}
           renderer={renderer}
           panorama={panorama}
-          lookId={env.activeLookId}
+          lookId={activeLookId}
           vehicleType={currentVehicle}
           imageDate={currentImageDate}
           cabinOverlay={capture.cabinOverlay}

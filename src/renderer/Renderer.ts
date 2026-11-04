@@ -111,6 +111,7 @@ import {
     wantsTail,
     type PresentTailOptions,
 } from './reproject/presentTail';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 const NO_LATCH: LatchDelta = { yawDeg: 0, pitchDeg: 0, magnitudeDeg: 0 };
 
@@ -160,9 +161,10 @@ export class Renderer implements StreetViewRenderer {
     private presentationFormat!: GPUTextureFormat;
     private canvasOutputPolicy: CanvasOutputPolicy = { hdr: false, p3: false };
 
-    private pipeline!: GPURenderPipeline;
+    /** Null before init and after `destroy()`; never an `undefined` cast into a non-null type. */
+    private pipeline: GPURenderPipeline | null = null;
     private sampler!: GPUSampler;
-    private uniformBuffer!: GPUBuffer;
+    private uniformBuffer: GPUBuffer | null = null;
 
     private readonly textures: TextureLifecycle;
     private readonly holdTransition: HoldTransitionController;
@@ -240,9 +242,9 @@ export class Renderer implements StreetViewRenderer {
 
         this.textures = new TextureLifecycle({
             getDevice: () => this.device,
-            getPipeline: () => this.pipeline,
+            getPipeline: () => this.pipeline ?? undefined,
             getSampler: () => this.sampler,
-            getUniformBuffer: () => this.uniformBuffer,
+            getUniformBuffer: () => this.uniformBuffer ?? undefined,
             getTransitionPreviousFrame: () => this.transitionManager?.previousFrame,
             isHoldActive: () => this.holdTransition.isHoldActive(),
             getWeatherPostProcessor: () => this.weatherPostProcessor,
@@ -268,7 +270,7 @@ export class Renderer implements StreetViewRenderer {
         let probe: BootProbeContext | undefined;
         // In flight across the adapter/device round trips; awaited with the passes.
         const wasmLoad = loadBootWasm();
-        wasmLoad.catch(() => {});
+        wasmLoad.catch(ignoreRejection);
         try {
             const boot = await bootDevice({
                 canvas: this.canvas,
@@ -417,7 +419,7 @@ export class Renderer implements StreetViewRenderer {
             onPipeline: (pipeline) => {
                 this.pipeline = pipeline;
             },
-            getPipeline: () => this.pipeline,
+            getPipeline: () => this.pipeline ?? undefined,
             getTransitionManager: () => this.transitionManager,
         }));
         passes.register(createHistoricalWipeFramePass({
@@ -716,9 +718,9 @@ export class Renderer implements StreetViewRenderer {
         } catch {
             // ignore cleanup errors
         }
-        this.uniformBuffer = undefined as unknown as GPUBuffer;
-        this.pipeline = undefined as unknown as GPURenderPipeline;
-        this.textures.bindGroup = undefined as unknown as GPUBindGroup;
+        this.uniformBuffer = null;
+        this.pipeline = null;
+        this.textures.bindGroup = null;
     }
 
     public setCarMode(_active: boolean): void {
@@ -1115,7 +1117,7 @@ export class Renderer implements StreetViewRenderer {
     }
 
     public renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void {
-        if (this.isDestroyed || !this.device || !this.pipeline) return;
+        if (this.isDestroyed || !this.device || !this.pipeline || !this.uniformBuffer) return;
 
         if (!this.holdTransition.shouldRenderHeldFrame()) {
             this.renderWeatherOnly();
@@ -1135,7 +1137,8 @@ export class Renderer implements StreetViewRenderer {
             this.transitionManager?.recordLastPan(panX, panY);
 
             const passes = this.passes;
-            if (!passes) return;
+            const uniformBuffer = this.uniformBuffer;
+            if (!passes || !uniformBuffer) return;
             const holdActive = this.holdTransition.isHoldActive();
             const inline = this.transitionManager?.inlineProgress ?? 0;
             this.depth?.onFrame({
@@ -1159,7 +1162,7 @@ export class Renderer implements StreetViewRenderer {
             encodeAndSubmitFrame({
                 device: this.device,
                 textures: this.textures,
-                uniformBuffer: this.uniformBuffer,
+                uniformBuffer,
                 uniforms: packFrameUniforms({
                     time: (Date.now() - this.startTime) / 1000,
                     zoom: zoom || 1,

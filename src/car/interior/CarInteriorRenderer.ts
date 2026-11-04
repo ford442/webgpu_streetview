@@ -92,7 +92,7 @@ export class CarInteriorRenderer {
      * attachment's load op — scissor does not confine it); the second loads.
      */
     private renderEyes(stereo: CabinStereoRequest): void {
-        const renderer = this.renderer as CabinRenderer & { coordinateSystem: number };
+        const renderer = this.renderer;
         this.scene.updateMatrixWorld();
         this.camera.updateMatrixWorld();
         this.eyes ??= createEyeCameras();

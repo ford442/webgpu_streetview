@@ -100,6 +100,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
         this.fallbackReason = fallbackReason;
     }
 
+    // eslint-disable-next-line @typescript-eslint/require-await -- async to satisfy the shared init() contract
     public async init(): Promise<boolean> {
         try {
             const gl = this.canvas.getContext('webgl2', {

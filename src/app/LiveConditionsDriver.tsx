@@ -8,6 +8,7 @@ import {
   type WeatherTarget,
 } from '../services/conditions/openMeteo';
 import { liveConditionsStore, useLiveConditions } from '../state/liveConditionsStore';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 /** Time the weather takes to ease onto new live conditions — a hop never snaps the sky. */
 export const LIVE_CONDITIONS_SMOOTHING_MS = 1000;
@@ -122,12 +123,12 @@ export function LiveConditionsDriver(): null {
         fogDensity: Math.round(from.fogDensity + (target.fogDensity - from.fogDensity) * e),
         wind: Math.round(from.wind + (target.wind - from.wind) * e),
       });
-      if (k < 1) raf = requestAnimationFrame(step);
+      if (k < 1) raf = requestFrame(step);
       else tweening.current = false;
     };
-    raf = requestAnimationFrame(step);
+    raf = requestFrame(step);
     return () => {
-      cancelAnimationFrame(raf);
+      cancelFrame(raf);
       tweening.current = false;
     };
   }, [enabled, status, target]);

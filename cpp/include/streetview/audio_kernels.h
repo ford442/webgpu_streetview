@@ -79,6 +79,8 @@ struct HrtfShadow {
 
 /** `sample_rate` must already be sanitised (> 1). */
 inline HrtfShadow hrtf_shadow(float azimuth_deg, float sample_rate) {
+    // NaN fails every comparison below and would reach the int cast: centre it.
+    if (std::isnan(azimuth_deg)) azimuth_deg = 0.0f;
     if (azimuth_deg > 90.0f)
         azimuth_deg = 90.0f;
     else if (azimuth_deg < -90.0f)
@@ -95,8 +97,14 @@ inline HrtfShadow hrtf_shadow(float azimuth_deg, float sample_rate) {
     HrtfShadow s{};
     // Truncating x + 0.5f (x >= 0) is golden-pinned: lround differs where the
     // f32 add itself rounds up (0.49999997f + 0.5f == 1.0f).
+    // The clamp keeps a huge or non-finite sample_rate out of the (UB) out-of-range
+    // float->int conversion; no real rate (<= 768 kHz -> ~600 taps) comes near it.
+    float delay_f = kMaxItdSeconds * sample_rate * abs_shaped + 0.5f;
+    constexpr float kMaxDelayTaps = 1.0e6f;
+    if (!(delay_f >= 0.0f)) delay_f = 0.0f; // NaN too
+    if (delay_f > kMaxDelayTaps) delay_f = kMaxDelayTaps;
     // NOLINTNEXTLINE(bugprone-incorrect-roundings)
-    s.delay = static_cast<int>(kMaxItdSeconds * sample_rate * abs_shaped + 0.5f);
+    s.delay = static_cast<int>(delay_f);
     s.far_gain = 1.0f - kMaxFarGainCut * abs_shaped;
     s.damp = 1.0f - (1.0f - kFarEarDampFloor) * abs_shaped;
     s.right_is_near = shaped >= 0.0f;

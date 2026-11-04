@@ -80,7 +80,7 @@ export class CarInteriorDoorBuilder {
             ring.position.set(-0.955, 0.55, 0.6);
             ring.rotation.y = Math.PI / 2;
             this.interiorGroup.add(ring);
-            this.lodManager.registerDetail(ring as THREE.Mesh);
+            this.lodManager.registerDetail(ring);
         }
 
         const rightSpeaker = new THREE.Mesh(speakerGeo, grilleMat);
@@ -96,7 +96,7 @@ export class CarInteriorDoorBuilder {
             ring.position.set(0.955, 0.55, 0.6);
             ring.rotation.y = -Math.PI / 2;
             this.interiorGroup.add(ring);
-            this.lodManager.registerDetail(ring as THREE.Mesh);
+            this.lodManager.registerDetail(ring);
         }
 
         const handleGeo = gf.getBox(0.04, 0.015, 0.08);

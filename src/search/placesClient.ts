@@ -16,6 +16,7 @@ import {
   type NearbyPoi,
   type NearbyPoiCategory,
 } from './poiModel';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -159,7 +160,7 @@ export async function geocodeTextQuery(query: string): Promise<ResolvedDestinati
           resolve(null);
         }
       }
-    }).catch(() => {});
+    }).catch(ignoreRejection);
   });
 }
 
@@ -191,7 +192,7 @@ export function lookupStreetViewCoverage(lat: number, lng: number, panoId?: stri
         getPlaceSearchBudget().recordError('streetViewLookup');
         resolve({ ok: false, reason: 'no-coverage' });
       }
-    }).catch(() => {});
+    }).catch(ignoreRejection);
   });
 }
 

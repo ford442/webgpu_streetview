@@ -77,7 +77,6 @@ const StreetView: React.FC<StreetViewProps> = ({
     const REQUIRED_STABLE_SAMPLES = STABILITY_REQUIRED_STABLE_TICKS;
     const minEdge = SCRAPER_CONTAINER_INVARIANTS.minCanvasEdgePx;
 
-    const errorSuppressorRef = useRef<MutationObserver | null>(null);
     const startLocation = initialPosition ?? { lat: 37.86926, lng: -122.254811 };
 
     const emitHealth = (event: ScraperHealthEvent) => {
@@ -119,7 +118,6 @@ const StreetView: React.FC<StreetViewProps> = ({
             if (container && !mo) {
                 mo = new MutationObserver(suppress);
                 mo.observe(container, { childList: true, subtree: true });
-                errorSuppressorRef.current = mo;
             }
         };
         const attachT = setTimeout(attachObserver, 0);
@@ -130,7 +128,6 @@ const StreetView: React.FC<StreetViewProps> = ({
                 mo.disconnect();
                 mo = null;
             }
-            errorSuppressorRef.current = null;
         };
     }, []);
 
@@ -403,7 +400,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                     }
                 };
 
-                panoInstance.addListener('status_changed', () => {
+                const statusListener = panoInstance.addListener('status_changed', () => {
                     const status = panoInstance.getStatus();
                     if (status !== google.maps.StreetViewStatus.OK) {
                         console.warn('[StreetView] Panorama status:', status);
@@ -417,7 +414,7 @@ const StreetView: React.FC<StreetViewProps> = ({
                     }
                 });
 
-                panoInstance.addListener('pano_changed', () => {
+                const panoListener = panoInstance.addListener('pano_changed', () => {
                     checkForCanvas();
                 });
 
@@ -525,6 +522,8 @@ const StreetView: React.FC<StreetViewProps> = ({
                     stopStructure();
                     stopObserving();
                     errObserver.disconnect();
+                    statusListener.remove();
+                    panoListener.remove();
                     document.removeEventListener('visibilitychange', onVisibilityOrFocus);
                     window.removeEventListener('focus', onVisibilityOrFocus);
                     panoInstanceRef.current = null;

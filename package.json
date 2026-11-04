@@ -5,7 +5,7 @@
   "type": "module",
   "homepage": ".",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "dependencies": {
     "@photostructure/tz-lookup": "^11.7.0",

@@ -123,6 +123,35 @@ export function loadStreetViewWasmBytes(binary: WasmBinary): Promise<ArrayBuffer
 }
 
 /**
+ * The main binary, compiled once. With `WebAssembly.compileStreaming` and an
+ * `application/wasm` response (the production server, Vite dev) it compiles
+ * while downloading and validates exactly once. Otherwise — a server that
+ * sends another content type, or a runtime without streaming — it falls back
+ * to `WebAssembly.compile` of the bytes (still one validation; a wrong path
+ * answered with HTML fails here with a message naming the URL).
+ */
+async function fetchMainModule(): Promise<WebAssembly.Module> {
+  if (!wasmSimdSupported()) {
+    throw new Error('this browser lacks WebAssembly SIMD128, which streetview-wasm requires');
+  }
+  const url = wasmBinaryUrl('main');
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  try {
+    if (
+      typeof WebAssembly.compileStreaming === 'function' &&
+      response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/wasm'
+    ) {
+      return await WebAssembly.compileStreaming(response);
+    }
+    // `compile` validates (once); the caller instantiates the compiled module.
+    return await WebAssembly.compile(await response.arrayBuffer());
+  } catch (error) {
+    throw new Error(`${url} is not a valid module: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
  * Load the main binary once; later calls return the same promise. Rejects
  * when the fetch fails or the bytes do not instantiate against the ABI — there
  * is nothing to fall back to, so the page reports it and hard-fails. A
@@ -131,8 +160,8 @@ export function loadStreetViewWasmBytes(binary: WasmBinary): Promise<ArrayBuffer
 export function loadWasmModule(): Promise<StreetViewWasmAPI> {
   if (_cachedModule) return Promise.resolve(_cachedModule);
   if (!_pendingModule) {
-    const pending = loadStreetViewWasmBytes('main')
-      .then((bytes) => instantiateStreetViewWasm(bytes))
+    const pending = fetchMainModule()
+      .then((compiled) => instantiateStreetViewWasm(compiled))
       .then((mod) => {
         if (_pendingModule === pending) _cachedModule = mod;
         return mod;
@@ -153,7 +182,7 @@ export function loadWasmModule(): Promise<StreetViewWasmAPI> {
  * `scratchClock` drives the arena's idle shrink (tests only).
  */
 export async function instantiateStreetViewWasm(
-  bytes: BufferSource,
+  bytes: BufferSource | WebAssembly.Module,
   options: { scratchClock?: ScratchClock } = {},
 ): Promise<StreetViewWasmAPI> {
   // Emscripten STANDALONE_WASM links libm statically; the binary's only
@@ -164,7 +193,10 @@ export async function instantiateStreetViewWasm(
       emscripten_notify_memory_growth: (): void => {},
     },
   };
-  const { instance } = await WebAssembly.instantiate(bytes, importObject);
+  const instance =
+    bytes instanceof WebAssembly.Module
+      ? await WebAssembly.instantiate(bytes, importObject)
+      : (await WebAssembly.instantiate(bytes, importObject)).instance;
   const exp = instance.exports as Record<string, WebAssembly.ExportValue>;
 
   // A reactor (--no-entry) module runs its static constructors here. None

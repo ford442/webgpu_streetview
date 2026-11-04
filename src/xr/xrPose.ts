@@ -86,9 +86,9 @@ function toRoadFrame(q: XrQuat): Mat3 {
     const m = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w)).elements;
     // C · R · C with C = diag(1, 1, −1): negate the entries that mix z with x or y.
     return [
-        m[0]!, m[1]!, -m[2]!,
-        m[4]!, m[5]!, -m[6]!,
-        -m[8]!, -m[9]!, m[10]!,
+        m[0], m[1], -m[2],
+        m[4], m[5], -m[6],
+        -m[8], -m[9], m[10],
     ];
 }
 

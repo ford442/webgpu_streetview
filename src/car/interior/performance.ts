@@ -1,6 +1,7 @@
 /** @fileoverview Performance optimization utilities including LOD, texture optimization, and frustum culling */
 import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { releaseGlContext } from '../../utils/releaseGlContext';
 
 /**
  * Which Three.js backend the cabin is running on. Defined here rather than in
@@ -327,7 +328,6 @@ export interface GPUPerformanceProfile {
    * `devicePixelRatio` from before the window moved to another display.
    */
   maxPixelRatio: number;
-  shadowMapSize: number;
   antialias: boolean;
   maxTextureSize: number;
   lodDistance: number[];
@@ -338,7 +338,6 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   high: {
     name: 'high',
     maxPixelRatio: 2,
-    shadowMapSize: 2048,
     antialias: true,
     maxTextureSize: 4096,
     lodDistance: [10, 30, 100]
@@ -348,7 +347,6 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   medium: {
     name: 'medium',
     maxPixelRatio: 1.5,
-    shadowMapSize: 1024,
     antialias: false,
     maxTextureSize: 2048,
     lodDistance: [5, 15, 50]
@@ -358,7 +356,6 @@ export const GPU_PROFILES: { high: GPUPerformanceProfile; medium: GPUPerformance
   low: {
     name: 'low',
     maxPixelRatio: 1,
-    shadowMapSize: 512,
     antialias: false,
     maxTextureSize: 1024,
     lodDistance: [3, 8, 20]
@@ -375,9 +372,10 @@ export function detectGPUProfile(): GPUPerformanceProfile {
   if (!gl) return GPU_PROFILES.low;
   
   const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-  const renderer = debugInfo 
+  const renderer: string = debugInfo 
     ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
     : 'unknown';
+  releaseGlContext(gl);
   
   // Detect based on renderer string
   const rendererLower = renderer.toLowerCase();

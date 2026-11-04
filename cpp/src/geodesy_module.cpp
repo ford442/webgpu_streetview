@@ -9,8 +9,7 @@
  * polyline_project) the routed road trip follows.
  *
  * Every formula here is the single copy in the app: `src/utils/navigation.ts`
- * and `src/utils/historicalImagery.ts` call into this module (or its
- * bit-compatible twin in `src/wasm/jsFallback.ts`) rather than re-deriving the
+ * and `src/utils/historicalImagery.ts` call into this module rather than re-deriving the
  * math in TypeScript.
  *
  * Build with Emscripten (see CMakeLists.txt or scripts/build-wasm.sh).
@@ -53,7 +52,7 @@ double sw_haversine(double lat1, double lon1, double lat2, double lon2) {
 }
 
 double sw_batch_haversine(const double* points, int count, double* out) {
-    if (count < 2) return 0.0;
+    if (count < 2 || points == nullptr || out == nullptr) return 0.0;
     const std::span<const double> pts(points, static_cast<size_t>(count) * 2);
     const std::span<double> segs(out, static_cast<size_t>(count) - 1);
     double total = 0.0;

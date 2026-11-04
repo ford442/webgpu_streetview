@@ -1,4 +1,4 @@
-import { loadCarRuntime } from '../car/carRuntimeLoader';
+import { withCarRuntime } from '../car/carRuntimeLoader';
 
 type CarRuntimeModule = typeof import('../car/carModeRuntime');
 
@@ -6,7 +6,7 @@ let carRuntimeModule: CarRuntimeModule | null = null;
 
 // Warm the lazy chunk at module load so cruise gear hops and cinema/snapshot
 // cabin latching can read it synchronously once car mode has been touched.
-void loadCarRuntime().then((module) => {
+void withCarRuntime((module) => {
   carRuntimeModule = module;
 });
 

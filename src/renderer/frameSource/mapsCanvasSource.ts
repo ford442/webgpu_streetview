@@ -1,5 +1,6 @@
 import { readCanvasFingerprint } from './canvasFingerprint';
 import type { FrameSource } from './types';
+import { cancelFrame, requestFrame } from '../../xr/frameClock';
 
 /**
  * The scraped Google Maps canvas as a `FrameSource`, and the **one** place
@@ -53,14 +54,10 @@ function touchesCanvas(nodes: NodeList): boolean {
     return false;
 }
 
-/** One frame later (or a macrotask where there is no rAF): Maps mutates in bursts. */
+/** One frame later : Maps mutates in bursts. */
 function nextFrame(callback: () => void): () => void {
-    if (typeof requestAnimationFrame === 'function') {
-        const id = requestAnimationFrame(() => callback());
-        return () => cancelAnimationFrame(id);
-    }
-    const id = setTimeout(callback, 0);
-    return () => clearTimeout(id);
+    const id = requestFrame(() => callback());
+    return () => cancelFrame(id);
 }
 
 export class MapsCanvasSource implements FrameSource {
@@ -99,6 +96,27 @@ export class MapsCanvasSource implements FrameSource {
      * Fingerprint `canvas` ('' = too small or near-black), sharing a sample
      * with other callers when one at most `maxAgeMs` old exists or is in flight.
      */
+    /**
+     * Full-resolution 2D copy of `canvas` (the outgoing frame a hold-release
+     * crossfades from), or null when it is empty or cannot be drawn. The
+     * Maps canvas is read here and nowhere else.
+     */
+    public snapshot(canvas: HTMLCanvasElement): HTMLCanvasElement | null {
+        if (canvas.width <= 0 || canvas.height <= 0) return null;
+        try {
+            const copy = document.createElement('canvas');
+            copy.width = canvas.width;
+            copy.height = canvas.height;
+            const ctx = copy.getContext('2d');
+            if (!ctx) return null;
+            ctx.drawImage(canvas, 0, 0);
+            return copy;
+        } catch (e) {
+            console.warn('[MapsCanvasSource] Failed to snapshot canvas:', e);
+            return null;
+        }
+    }
+
     public fingerprint(canvas: HTMLCanvasElement, options: FingerprintOptions = {}): Promise<string> {
         const hit = this.peek(canvas);
         if (hit && now() - hit.at <= (options.maxAgeMs ?? 0)) {

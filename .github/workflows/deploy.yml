@@ -30,10 +30,11 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -41,20 +42,25 @@ jobs:
       - name: Verify install is complete
         run: node scripts/check-install.mjs --verbose
 
-      - name: Typecheck
-        run: npm run typecheck
+      # naga (WGSL) — `verify` fails in CI without it.
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Lint
-        run: npm run lint
+      - name: Cache naga-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/naga
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: naga-cli-${{ runner.os }}-v1
 
-      # `--watchAll` is a CRA/Jest flag; vitest rejects unknown options and this
-      # step failed unconditionally with CACError. `npm test` is already
-      # non-watching (`vitest run`).
-      - name: Run tests
-        run: npm test
+      - name: Install naga-cli (WGSL validation)
+        run: command -v naga >/dev/null 2>&1 || cargo install naga-cli --locked
 
-      - name: Check for committed deploy secrets
-        run: bash scripts/check-deploy-secrets.sh
+      # The same gate CI and the pre-push hook run: typecheck, lint, knip,
+      # secrets, unit tests, WGSL, C++ goldens — a deploy cannot skip one.
+      - name: Verify
+        run: npm run verify
 
       # Scene depth (#320): the model ships under build/models/depth/ but is
       # not in git — fetch the pinned, SHA-256-checked files before building.

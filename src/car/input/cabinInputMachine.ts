@@ -25,6 +25,7 @@
  */
 
 import { steerDeltaFromStick } from '../carSpatialModel';
+import { ignoreRejection } from '../../utils/ignoreRejection';
 
 export type ControlMode = 'FREE_LOOK' | 'STEER' | 'UI_INTERACT';
 
@@ -216,7 +217,8 @@ export function applyPointerLockEffect(
     // Chromium returns a promise (rejects without a gesture); others return undefined.
     const pending = target.requestPointerLock() as unknown;
     if (pending && typeof (pending as Promise<void>).catch === 'function') {
-      (pending as Promise<void>).catch(() => { /* refused — stay in UI_INTERACT */ });
+      // Refused — stay in UI_INTERACT.
+      (pending as Promise<void>).catch(ignoreRejection);
     }
   } catch {
     // Old engines throw synchronously; same outcome.

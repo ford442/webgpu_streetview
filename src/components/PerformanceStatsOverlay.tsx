@@ -314,7 +314,7 @@ const PerformanceStatsOverlay: React.FC<PerformanceStatsOverlayProps> = ({
           fontSize: '10px'
         }}>
           ⚠️ Memory Leak Detected!
-          {memoryStats!.leaks.map((leak, i) => (
+          {memoryStats.leaks.map((leak, i) => (
             <div key={i}>
               {leak.type}: +{leak.delta}
             </div>

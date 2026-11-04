@@ -43,6 +43,14 @@ export interface WebGpuProbeAdapterInfo {
   description: string;
 }
 
+export interface WebGpuProbeHdr {
+  requested: boolean;
+  mode: 'standard' | 'extended';
+  /** False where the browser has no `getConfiguration()`: `mode` is then the descriptor's. */
+  readBack: boolean;
+  downgradeReason?: string;
+}
+
 export interface WebGpuProbeRecord {
   ok: boolean;
   stage: WebGpuProbeStage;
@@ -53,6 +61,12 @@ export interface WebGpuProbeRecord {
   webglPreferenceDeferred: boolean;
   adapter?: WebGpuProbeAdapterInfo | undefined;
   capabilityMatrix?: DeviceCapabilityMatrix | undefined;
+  /**
+   * The swap chain's tone-mapping mode as `context.getConfiguration()` reports it
+   * (`readBack: true`), not as requested: a browser that ignores `toneMapping`
+   * reads `standard` here even under `?hdr`.
+   */
+  hdr?: WebGpuProbeHdr | undefined;
   /** Present only when the boot degraded the preset's weather mode. */
   weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
   /**
@@ -114,6 +128,7 @@ export interface PublishWebGpuProbeOptions {
   adapter?: WebGpuProbeAdapterInfo | undefined;
   capabilityMatrix?: DeviceCapabilityMatrix | undefined;
   weatherDegrade?: WebGpuProbeWeatherDegrade | undefined;
+  hdr?: WebGpuProbeHdr | undefined;
   browserBrand?: BrowserBrand;
   now?: number;
 }
@@ -136,6 +151,7 @@ export function publishWebGpuProbe(options: PublishWebGpuProbeOptions): WebGpuPr
     adapter: options.adapter ?? previous?.adapter,
     capabilityMatrix: options.capabilityMatrix ?? previous?.capabilityMatrix,
     weatherDegrade: options.weatherDegrade ?? previous?.weatherDegrade,
+    hdr: options.hdr ?? previous?.hdr,
     passes: getPassStatuses(),
     renderScale: previous?.renderScale,
     updatedAt: options.now ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()),

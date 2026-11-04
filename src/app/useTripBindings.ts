@@ -21,6 +21,8 @@ import { createConfiguredRouteProvider, resolveRoutingConfig, type RoutingConfig
 import { povStore } from '../state/povStore';
 import { tripStore, useTripSelector, type TripStop } from '../state/tripStore';
 import { signedAngleDiff } from '../utils/navigation';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 /** Drive with the cached graph planner: no network, or `?offline=1`. */
 function isTripOffline(): boolean {
@@ -78,7 +80,7 @@ function getPanoramaAt(target: LatLng): Promise<string | null> {
       (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK ? data?.location?.pano ?? null : null);
       },
-    ).catch(() => {});
+    ).catch(ignoreRejection);
   });
 }
 
@@ -123,7 +125,7 @@ export function useTripBindings({
       const apply = (k: number): void => {
         povStore.setCarHeading(start + delta * k);
       };
-      cancelAnimationFrame(raf);
+      cancelFrame(raf);
       if (prefersReducedMotion()) {
         apply(1);
         return;
@@ -132,9 +134,9 @@ export function useTripBindings({
       const step = (now: number): void => {
         const k = Math.min(1, (now - t0) / CAR_HEADING_EASE_MS);
         apply(1 - (1 - k) ** 3);
-        if (k < 1) raf = requestAnimationFrame(step);
+        if (k < 1) raf = requestFrame(step);
       };
-      raf = requestAnimationFrame(step);
+      raf = requestFrame(step);
     };
 
     configureTripController({
@@ -152,7 +154,7 @@ export function useTripBindings({
     const announcer = new RouteAnnouncer((m) => live.current.announce(m));
     const unsubscribe = tripStore.subscribe(() => announcer.update(tripStore.get()));
     return () => {
-      cancelAnimationFrame(raf);
+      cancelFrame(raf);
       unsubscribe();
       configureTripController(null);
     };

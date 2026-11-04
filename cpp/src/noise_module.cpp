@@ -78,13 +78,13 @@ extern "C" {
 void sw_seed(unsigned int seed) {
     // Fill perm[0..255] with a linear congruential shuffle.
     uint8_t tmp[256];
-    for (int i = 0; i < 256; ++i) tmp[i] = (uint8_t)i;
+    for (int i = 0; i < 256; ++i) tmp[i] = static_cast<uint8_t>(i);
 
     // LCG-based Fisher-Yates shuffle.
     uint32_t state = seed;
     for (int i = 255; i > 0; --i) {
         state = state * 1664525u + 1013904223u;
-        int j = (int)((state >> 16) & 0x7FFF) % (i + 1);
+        int j = static_cast<int>((state >> 16) & 0x7FFF) % (i + 1);
         uint8_t t = tmp[i];
         tmp[i] = tmp[j];
         tmp[j] = t;
@@ -127,8 +127,8 @@ void sw_fill_noise_buffer(float* buf, int width, int height, float scale, float 
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
-            float nx = ((float)col + offsetX) * inv_scale;
-            float ny = ((float)row + offsetY) * inv_scale;
+            float nx = (static_cast<float>(col) + offsetX) * inv_scale;
+            float ny = (static_cast<float>(row) + offsetY) * inv_scale;
             out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] =
                 sw_noise2d(nx, ny);
         }
@@ -158,8 +158,8 @@ void sw_fill_fbm_buffer(float* buf, int width, int height, float scale, float of
     const std::span<float> out(buf, static_cast<size_t>(width) * static_cast<size_t>(height));
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
-            float nx = ((float)col + offsetX) * inv_scale;
-            float ny = ((float)row + offsetY) * inv_scale;
+            float nx = (static_cast<float>(col) + offsetX) * inv_scale;
+            float ny = (static_cast<float>(row) + offsetY) * inv_scale;
             out[static_cast<size_t>(row) * static_cast<size_t>(width) + static_cast<size_t>(col)] =
                 sw_fbm2d(nx, ny, octaves, lacunarity, gain);
         }
@@ -168,13 +168,12 @@ void sw_fill_fbm_buffer(float* buf, int width, int height, float scale, float of
 
 void sw_fill_particle_seeds(float* buf, int count, unsigned int seed) {
     // Same LCG as sw_seed's shuffle; the top 24 bits of the low word give a
-    // uniform [0, 1) float. Mirrored bit-for-bit by the JS fallback in
-    // src/wasm/jsFallback.ts.
+    // uniform [0, 1) float. The goldens pin it bit for bit (there is no JS twin).
     if (buf == nullptr || count <= 0) return;
     uint32_t state = seed;
     auto next_unit = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
-        return (float)((state >> 8) & 0xFFFFFFu) / 16777216.0f;
+        return static_cast<float>((state >> 8) & 0xFFFFFFu) / 16777216.0f;
     };
     const std::span<float> out(buf, static_cast<size_t>(count) * 4);
     for (int i = 0; i < count; ++i) {

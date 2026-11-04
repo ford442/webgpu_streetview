@@ -12,6 +12,7 @@ import { getMapsCallBudget } from '../services/maps/callBudget';
 import { nearestGraphNode, type PanoGraphNode } from '../services/maps/panoCoverageGraph';
 import { PLACE_SEARCH_DEFAULTS } from './placeSearchBudget';
 import type { NearbyPoi } from './poiModel';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 const POI_COVERAGE_RADIUS_M = 50;
 
@@ -81,14 +82,14 @@ export function createMeteredPoiCoverageLookup(
         (data, status) => {
           const latLng = data?.location?.latLng;
           if (status === google.maps.StreetViewStatus.OK && latLng) {
-            resolve({ status: 'covered', panoId: data?.location?.pano, lat: latLng.lat(), lng: latLng.lng() });
+            resolve({ status: 'covered', ...(data?.location?.pano ? { panoId: data.location.pano } : {}), lat: latLng.lat(), lng: latLng.lng() });
           } else if (status === google.maps.StreetViewStatus.ZERO_RESULTS) {
             resolve({ status: 'none' });
           } else {
             resolve(null);
           }
         },
-      ).catch(() => {});
+      ).catch(ignoreRejection);
     });
   };
 }

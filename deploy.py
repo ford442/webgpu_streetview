@@ -322,6 +322,9 @@ def build_zip(
             parts = rel.parts
             if any(p in (".git", "node_modules", "__pycache__") for p in parts):
                 continue
+            if file.suffix == ".map":
+                # Source maps are not served: they stay a CI artifact for symbolication.
+                continue
 
             file_data = file.read_bytes()
 

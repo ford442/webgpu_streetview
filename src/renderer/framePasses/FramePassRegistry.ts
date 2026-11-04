@@ -139,7 +139,7 @@ export class FramePassRegistry {
     public async initAll(): Promise<void> {
         const eager = this.passes.filter((p) => !p.lazy);
         const outcomes = await Promise.allSettled(eager.map((p) => p.init()));
-        let requiredFailure: RequiredPassError | null = null;
+        let requiredFailure = null as RequiredPassError | null;
         outcomes.forEach((outcome, i) => {
             const pass = eager[i]!;
             if (outcome.status === 'fulfilled') {

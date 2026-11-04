@@ -24,6 +24,7 @@
 
 import { requireWasm } from '../wasm';
 import { getMapsCallBudget } from '../services/maps/callBudget';
+import { ignoreRejection } from './ignoreRejection';
 
 export interface HistoricalPanoEntry {
   panoId: string;
@@ -127,17 +128,17 @@ function queryPanorama(
           resolve(null);
           return;
         }
-        const panoData = data as google.maps.StreetViewPanoramaData;
+        const panoData = data;
         const latLng = panoData.location?.latLng;
         resolve({
-          panoId: panoData.location!.pano!,
+          panoId: panoData.location!.pano,
           imageDate: panoData.imageDate ?? '',
           lat: latLng ? latLng.lat() : location.lat,
           lng: latLng ? latLng.lng() : location.lng,
           copyright: panoData.copyright ?? null,
         });
       }
-    ).catch(() => {});
+    ).catch(ignoreRejection);
   });
 }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { resolvePanoLocation } from '../utils/panoLocation';
 import { useHistoricalImagery } from './useHistoricalImagery';
 import type { HistoricalPanoEntry } from '../utils/historicalImagery';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface UseHistoricalTimelineResult {
   entries: HistoricalPanoEntry[];
@@ -26,6 +27,19 @@ export function useHistoricalTimeline(
   const [currentImageDate, setCurrentImageDate] = useState<string | null>(null);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  // The pano id as state: a hop re-runs the resolve effect below. Reading
+  // `panorama.getPano()` in a dependency array only sees it on an unrelated render.
+  const [panoId, setPanoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!panorama) {
+      setPanoId(null);
+      return;
+    }
+    setPanoId(panorama.getPano() || null);
+    const listener = panorama.addListener('pano_changed', () => setPanoId(panorama.getPano() || null));
+    return () => listener.remove();
+  }, [panorama]);
 
   useEffect(() => {
     if (!panorama) return;
@@ -45,10 +59,11 @@ export function useHistoricalTimeline(
         if (info.lat != null) setLat(info.lat);
         if (info.lng != null) setLng(info.lng);
       })
-      .catch(() => { /* keep whatever synchronous info we already have */ });
+      // Keep whatever synchronous info we already have.
+      .catch(ignoreRejection);
 
     return () => { cancelled = true; };
-  }, [panorama, panorama?.getPano()]); // eslint-disable-line react-hooks/exhaustive-deps -- re-resolve on every pano hop
+  }, [panorama, panoId]); // panoId re-resolves on every pano hop
 
   const { entries, isLoading, error, hasTimeline } = useHistoricalImagery(
     lat,

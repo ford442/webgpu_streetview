@@ -85,7 +85,7 @@ std::vector<float> test_ir(int taps, uint32_t seed) {
         h[static_cast<size_t>(t)] = static_cast<float>(env * d(noise(seed)));
         env *= decay;
     }
-    h[0] = 0.5f;
+    if (!h.empty()) h[0] = 0.5f;
     // Unit L1 norm: the wet bed is never louder than the dry one (no clamp).
     double l1 = 0.0;
     for (float v : h) l1 += std::fabs(static_cast<double>(v));

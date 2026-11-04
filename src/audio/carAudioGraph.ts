@@ -19,6 +19,7 @@
  */
 
 import { createBrowserAudioContext } from './createAudioContext';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 export interface CarAudioGraph {
   readonly ctx: AudioContext;
@@ -75,7 +76,7 @@ export function acquireCarAudioGraph(): CarAudioGraph | null {
     }
   }
   users += 1;
-  if (graph.ctx.state === 'suspended') void graph.ctx.resume().catch(() => {});
+  if (graph.ctx.state === 'suspended') void graph.ctx.resume().catch(ignoreRejection);
   return graph;
 }
 
@@ -83,7 +84,7 @@ export function acquireCarAudioGraph(): CarAudioGraph | null {
 export function releaseCarAudioGraph(): void {
   if (!graph || users === 0) return;
   users -= 1;
-  if (users === 0 && graph.ctx.state === 'running') void graph.ctx.suspend().catch(() => {});
+  if (users === 0 && graph.ctx.state === 'running') void graph.ctx.suspend().catch(ignoreRejection);
 }
 
 /**

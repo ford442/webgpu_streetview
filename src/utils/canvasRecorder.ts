@@ -1,4 +1,5 @@
 import { MAPS_ATTRIBUTION } from './attribution';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 export type ClipRecorderState = 'idle' | 'recording' | 'stopped' | 'unsupported';
 
@@ -190,9 +191,9 @@ export class CanvasClipRecorder {
           burn,
           this.overlayLatchCtx?.canvas,
         );
-        this.rafId = requestAnimationFrame(tick);
+        this.rafId = requestFrame(tick);
       };
-      this.rafId = requestAnimationFrame(tick);
+      this.rafId = requestFrame(tick);
     } else {
       stream = this.sourceCanvas.captureStream(this.options.fps);
     }
@@ -217,7 +218,7 @@ export class CanvasClipRecorder {
     return new Promise((resolve, reject) => {
       recorder.onstop = () => {
         if (this.rafId !== null) {
-          cancelAnimationFrame(this.rafId);
+          cancelFrame(this.rafId);
           this.rafId = null;
         }
         this.stopOverlayLatch();
@@ -232,7 +233,7 @@ export class CanvasClipRecorder {
 
   dispose(): void {
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
+      cancelFrame(this.rafId);
       this.rafId = null;
     }
     this.stopOverlayLatch();

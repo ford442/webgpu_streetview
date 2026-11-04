@@ -33,7 +33,7 @@ const createDepthWorker: DepthWorkerFactory = () =>
     new Worker(new URL('./depthWorker.ts', import.meta.url), {
         type: 'module',
         name: 'scene-depth',
-    }) as unknown as DepthWorkerLike;
+    });
 
 export interface DepthLoadOptions {
     /** Base the same-origin model URLs resolve against (the page's `document.baseURI`). */
@@ -53,6 +53,9 @@ export class DepthEstimator {
     private pending = new Map<number, Pending>();
     private nextId = 1;
     private lostReason: string | null = null;
+    /** `uncapturederror`s the Worker's device raised (validation / OOM). */
+    public gpuErrors = 0;
+    public lastGpuError: string | null = null;
     /** Rejects an in-progress `load` — so a dispose mid-download settles it. */
     private abortLoad: ((error: Error) => void) | null = null;
 
@@ -126,6 +129,11 @@ export class DepthEstimator {
                         } else {
                             fail(message.message);
                         }
+                        break;
+                    case 'gpu-error':
+                        this.gpuErrors += 1;
+                        this.lastGpuError = message.message;
+                        console.warn('[SceneDepth] worker device uncapturederror', message.message);
                         break;
                     case 'lost':
                         fail(`depth device lost: ${message.message}`);

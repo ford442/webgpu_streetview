@@ -7,6 +7,7 @@ import { useViewMode } from '../hooks/useViewMode';
 import { applyPointerLockEffect, type CabinInputEvent } from '../car/input/cabinInputMachine';
 import { setXrCabinInputListener } from '../xr/xrCabinInput';
 import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../car/carSpatialModel';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 interface CarInputHandlerProps {
   /** The cabin view element: pointer-lock target and click surface. */
@@ -219,15 +220,15 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     const lookFrame = (now: number) => {
       lookRaf = null;
       stepLook(now);
-      if (lookDir() !== 0) lookRaf = requestAnimationFrame(lookFrame);
+      if (lookDir() !== 0) lookRaf = requestFrame(lookFrame);
     };
     const ensureLookLoop = () => {
       if (lookRaf !== null || lookDir() === 0) return;
       lookLast = performance.now();
-      lookRaf = requestAnimationFrame(lookFrame);
+      lookRaf = requestFrame(lookFrame);
     };
     const stopLookLoop = () => {
-      if (lookRaf !== null) cancelAnimationFrame(lookRaf);
+      if (lookRaf !== null) cancelFrame(lookRaf);
       lookRaf = null;
     };
     const handleBlur = () => {

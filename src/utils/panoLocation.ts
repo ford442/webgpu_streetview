@@ -13,6 +13,7 @@
 
 import { isGeocodeDenied, noteGeocodeStatus } from '../search/geocodeAuth';
 import { getMapsCallBudget } from '../services/maps/callBudget';
+import { ignoreRejection } from './ignoreRejection';
 
 export interface PanoLocationInfo {
   panoId: string;
@@ -73,7 +74,7 @@ function reverseGeocode(latLng: google.maps.LatLng): Promise<string | null> {
       } else {
         resolve(null);
       }
-    }).catch(() => {});
+    }).catch(ignoreRejection);
   });
 }
 
@@ -83,11 +84,11 @@ function fetchImageDate(panoId: string): Promise<string | null> {
   return new Promise((resolve) => {
     sv.getPanorama({ pano: panoId }, (data, status) => {
       if (status === google.maps.StreetViewStatus.OK && data) {
-        resolve((data as google.maps.StreetViewPanoramaData).imageDate ?? null);
+        resolve((data).imageDate ?? null);
       } else {
         resolve(null);
       }
-    }).catch(() => {});
+    }).catch(ignoreRejection);
   });
 }
 

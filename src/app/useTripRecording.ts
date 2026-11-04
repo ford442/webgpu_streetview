@@ -29,7 +29,8 @@ export interface UseTripRecordingParams {
   isConnected: boolean;
   isPanoramaReady: boolean;
   teleportToPanoSafe: (panoId: string) => Promise<void>;
-  env: EnvironmentSettingsState;
+  /** Live environment, read per sample / per replayed hop — never a render dependency. */
+  getEnv: () => EnvironmentSettingsState;
   setHeading: (heading: number) => void;
   setPitch: (pitch: number) => void;
   setZoom: (zoom: number) => void;
@@ -83,7 +84,8 @@ export function useTripRecording(params: UseTripRecordingParams): TripRecordingB
   useEffect(() => {
     const recorder = createTripRecorder({
       sample() {
-        const { panorama, env, currentImageDate } = live.current;
+        const { panorama, getEnv, currentImageDate } = live.current;
+        const env = getEnv();
         const panoId = panorama?.getPano();
         const pos = panorama?.getPosition();
         if (!panoId || !pos) return null;
@@ -145,7 +147,7 @@ export function useTripRecording(params: UseTripRecordingParams): TripRecordingB
           p.setCarHeading(hop.carHeading);
         },
         applyEnvironment(hop) {
-          const { env } = live.current;
+          const env = live.current.getEnv();
           env.setRainIntensity(hop.weather.rain);
           env.setSnowIntensity(hop.weather.snow);
           env.setWind(hop.weather.wind);

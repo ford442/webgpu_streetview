@@ -7,6 +7,8 @@ export { useStreetView, StreetViewProvider } from './useStreetView';
 export { useViewMode, ViewModeProvider,   } from './useViewMode';
 export {
   useEnvironmentSettings,
+  useEnvironmentGetter,
+  useEnvironmentSelector,
   useWeatherSettings,
   useLightingSettings,
   useGradeSettings,

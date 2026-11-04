@@ -13,6 +13,7 @@ import { povStore } from '../state/povStore';
 import { streetViewZoomLevel } from '../utils/streetViewFov';
 import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
 import { HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer/historicalWipe';
+import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 // Types
 export interface TeleportToPanoOptions {
@@ -247,20 +248,8 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       ? mapsCanvasSource.fingerprint(currentCanvas)
       : Promise.resolve('');
 
-    if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
-      try {
-        const snap = document.createElement('canvas');
-        snap.width = currentCanvas.width;
-        snap.height = currentCanvas.height;
-        const ctx = snap.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(currentCanvas, 0, 0);
-          setTransitionSource(snap);
-        }
-      } catch (e) {
-        console.warn('[StreetView] Failed to snapshot outgoing canvas:', e);
-      }
-    }
+    const snap = currentCanvas ? mapsCanvasSource.snapshot(currentCanvas) : null;
+    if (snap) setTransitionSource(snap);
 
     // Sync refs immediately so RAF / pano_changed listeners see the hold before
     // React re-renders — avoids a one-frame live upload leak.
@@ -271,7 +260,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     setIsTransitioning(true);
 
     if (transitionRafRef.current !== null) {
-      cancelAnimationFrame(transitionRafRef.current);
+      cancelFrame(transitionRafRef.current);
       transitionRafRef.current = null;
     }
   }, []);
@@ -500,7 +489,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     };
 
     if (transitionRafRef.current !== null) {
-      cancelAnimationFrame(transitionRafRef.current);
+      cancelFrame(transitionRafRef.current);
       transitionRafRef.current = null;
     }
 
@@ -530,17 +519,17 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       }
 
       if (progress < 1.0) {
-        transitionRafRef.current = requestAnimationFrame(animateRelease);
+        transitionRafRef.current = requestFrame(animateRelease);
       } else {
         finishRelease();
       }
     };
 
-    transitionRafRef.current = requestAnimationFrame(animateRelease);
+    transitionRafRef.current = requestFrame(animateRelease);
 
     return () => {
       if (transitionRafRef.current !== null) {
-        cancelAnimationFrame(transitionRafRef.current);
+        cancelFrame(transitionRafRef.current);
         transitionRafRef.current = null;
         renderer.endHistoricalWipe?.();
       }
@@ -553,7 +542,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     const navigationIdleTracker = navigationIdlePromiseRef.current;
     return () => {
       if (transitionRafRef.current !== null) {
-        cancelAnimationFrame(transitionRafRef.current);
+        cancelFrame(transitionRafRef.current);
       }
       readyPromiseTracker.clear();
       navigationIdleTracker.clear();

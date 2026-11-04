@@ -159,10 +159,10 @@ export class CarInteriorAnimator {
     this.microInteractions?.update(deltaTime);
 
     if (this.cupLiquidMaterial) {
-      this.cupLiquidMaterial.uniforms.time!.value = this.ambientTime;
+      this.cupLiquidMaterial.uniforms.time.value = this.ambientTime;
       const targetSlosh = THREE.MathUtils.clamp(carSpeedKmh / 45, 0, 1);
       this.cupSlosh += (targetSlosh - this.cupSlosh) * Math.min(deltaTime * 4, 1);
-      this.cupLiquidMaterial.uniforms.slosh!.value = this.cupSlosh;
+      this.cupLiquidMaterial.uniforms.slosh.value = this.cupSlosh;
     }
 
     this.syncWindAudio();

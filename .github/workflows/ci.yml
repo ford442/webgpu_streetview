@@ -9,22 +9,25 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR/branch supersedes the running one; main keeps
+# every run so each merge has a full result.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    env:
+      # No emsdk here: `build-wasm-emscripten` proves the committed binaries equal
+      # a pinned-emcc rebuild, and build-wasm.sh checks their source hash.
+      SV_WASM_PREBUILT: "1"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read pinned emsdk version
-        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
-
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: ${{ env.EMSDK_VERSION }}
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -86,6 +89,16 @@ jobs:
           path: /tmp/bundle-report.html
           if-no-files-found: ignore
 
+      # 'hidden' source maps are not deployed; keep them to symbolicate a
+      # production stack trace for the commit that built them.
+      - name: Upload source maps
+        uses: actions/upload-artifact@v4
+        with:
+          name: sourcemaps-${{ github.sha }}
+          path: build/static/js/*.map
+          if-no-files-found: warn
+          retention-days: 30
+
   # Native (non-Emscripten) build of the C++ source of truth plus the golden
   # vector tests. This is the job that makes the cpp/src/*_module.cpp sources a
   # real source rather than an untested parity twin: it needs no emcc, no browser and
@@ -136,7 +149,12 @@ jobs:
           cmake --build cpp/build-clang-v3 -j"$(nproc)"
           ctest --test-dir cpp/build-clang-v3 --output-on-failure
 
+      # -fno-sanitize-recover=all (cpp/CMakeLists.txt) makes a finding abort; the
+      # options keep the report readable. Without them UBSan only printed.
       - name: Host build + golden tests (ASan + UBSan)
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
         run: |
           cmake -S cpp -B cpp/build-asan -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_COMPILER=g++ -DSTREETVIEW_SANITIZERS=ON
@@ -162,7 +180,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       # The goldens are generated from the committed binary, so regenerating
       # them must be a no-op. A diff here means either the binary changed
@@ -185,10 +203,11 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -230,12 +249,15 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       - name: emcc -msimd128 -fsanitize=address,undefined test suite (node)
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: bash scripts/test-wasm-sanitizers.sh
 
   e2e-smoke:
@@ -245,13 +267,30 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
 
+      - name: Read Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+
+      # Browsers come from the cache; the OS libraries do not, so always install those.
       - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
       # not in git: fetch the pinned, SHA-256-checked ones, cached on the pins.

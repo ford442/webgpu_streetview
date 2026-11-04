@@ -34,7 +34,11 @@ if(MSVC)
         list(APPEND STREETVIEW_WARNINGS /WX)
     endif()
 else()
-    set(STREETVIEW_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion)
+    # -Wold-style-cast / -Wsign-conversion / -Wnull-dereference: C-style casts hide
+    # what a conversion does (static_cast / reinterpret_cast say it), and a
+    # silent signed<->unsigned flip on an index or size is how an OOB read starts.
+    set(STREETVIEW_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wold-style-cast
+        -Wsign-conversion -Wnull-dereference)
     if(STREETVIEW_WERROR)
         list(APPEND STREETVIEW_WARNINGS -Werror)
     endif()
@@ -106,9 +110,10 @@ if(EMSCRIPTEN AND NOT STREETVIEW_WASM_TESTS)
     #     `_initialize` when present.
     #
     # Three binaries:
-    #   streetview-wasm.wasm        scalar — never deployed; the reference CI
-    #                               builds and golden-tests (the oracle the
-    #                               goldens are generated from)
+    #   streetview-wasm.wasm        scalar — never deployed; the oracle CI
+    #                               builds and compares against the goldens
+    #                               (which scripts/gen-wasm-goldens.mjs
+    #                               generates from the SIMD binary)
     #   streetview-wasm.simd.wasm   SIMD128 — every main-thread kernel
     #   streetview-dsp.simd.wasm    SIMD128, cabin_dsp_module.cpp only, fixed
     #                               memory (no memory.grow on the real-time
@@ -163,8 +168,10 @@ if(EMSCRIPTEN AND NOT STREETVIEW_WASM_TESTS)
     set(STREETVIEW_WASM_DSP_LINK
         # Fixed memory: the real-time thread can never grow (and so never
         # detach its views or stall on a grow). 1 MiB holds one engine at
-        # 16384 taps (~530 KiB of IR spectra and FDL), its I/O block and the
-        # stack; check-wasm-abi.mjs asserts the binary has no memory.grow.
+        # 16384 taps (DspState is ~778 KiB: IR spectra, FDL), its 66 KiB I/O
+        # block and the 16 KiB stack, with ~160 KiB of headroom — the
+        # static_assert after DspState in cabin_dsp_module.cpp keeps 128 KiB of
+        # it; check-wasm-abi.mjs asserts the binary has no memory.grow.
         "-sINITIAL_MEMORY=1048576"
         "-sALLOW_MEMORY_GROWTH=0"
         "-sSTACK_SIZE=16384"
@@ -178,8 +185,20 @@ if(EMSCRIPTEN AND NOT STREETVIEW_WASM_TESTS)
     # (emsdk 6 defaults): the browser floor is SIMD128 + those, i.e. Safari
     # 16.4 / Chrome 91 / Firefox 89 — every WebGPU-capable browser.
     # Never -mrelaxed-simd: relaxed madd is FMA on some engines and not others.
+    #
+    # The pin is closed in both directions: the five features above are named,
+    # and every other post-MVP feature a newer LLVM "generic" CPU may switch on
+    # (reference types, multivalue, tail calls, extended-const, relaxed SIMD) is
+    # switched off, on all three targets — the scalar oracle included, so it
+    # cannot require more than what ships. scripts/check-wasm-features.mjs
+    # parses each binary's code and fails on a feature outside the allow-list.
+    set(STREETVIEW_WASM_BASE_FEATURES
+        -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals)
+    set(STREETVIEW_WASM_DISABLED_FEATURES
+        -mno-reference-types -mno-multivalue -mno-tail-call -mno-extended-const
+        -mno-relaxed-simd)
     set(STREETVIEW_WASM_SIMD_FEATURES
-        -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals)
+        -msimd128 ${STREETVIEW_WASM_BASE_FEATURES})
 
     foreach(target IN LISTS STREETVIEW_WASM_TARGETS)
         target_include_directories(${target} PRIVATE include)
@@ -191,12 +210,26 @@ if(EMSCRIPTEN AND NOT STREETVIEW_WASM_TESTS)
             -fno-exceptions
             -fno-rtti
             ${STREETVIEW_WASM_LTO}
+            ${STREETVIEW_WASM_BASE_FEATURES}
+            ${STREETVIEW_WASM_DISABLED_FEATURES}
         )
-        target_link_options(${target} PRIVATE ${STREETVIEW_WASM_COMMON_LINK})
+        target_link_options(${target} PRIVATE ${STREETVIEW_WASM_COMMON_LINK}
+            ${STREETVIEW_WASM_BASE_FEATURES} ${STREETVIEW_WASM_DISABLED_FEATURES})
         set_target_properties(${target} PROPERTIES
             SUFFIX ".wasm"
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/out"
         )
+    endforeach()
+    # emcc hard-codes a few Emscripten-internal exports (function table, stack
+    # restore / current). The loader needs none of them: scripts/strip-wasm-exports.mjs
+    # drops them from the export section after the link, leaving `_initialize`
+    # and the SV_EXPORT functions.
+    find_program(STREETVIEW_NODE node REQUIRED)
+    foreach(target IN LISTS STREETVIEW_WASM_TARGETS)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${STREETVIEW_NODE} "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/strip-wasm-exports.mjs"
+                    "$<TARGET_FILE:${target}>"
+            COMMENT "Stripping Emscripten-internal exports from ${target}")
     endforeach()
     target_link_options(streetview-wasm PRIVATE ${STREETVIEW_WASM_MAIN_LINK})
     target_link_options(streetview-wasm-simd PRIVATE ${STREETVIEW_WASM_MAIN_LINK})
@@ -225,7 +258,9 @@ else()
     # -Werror builds, ASan/UBSan and clang-tidy see the whole ABI.
     add_library(streetview_cpu STATIC ${STREETVIEW_SOURCES})
     target_include_directories(streetview_cpu PUBLIC include)
-    target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS})
+    # -fno-exceptions, like the wasm binaries: no `extern "C"` kernel can throw, which is
+    # what `noexcept` on each declaration would promise — stated once, here.
+    target_compile_options(streetview_cpu PRIVATE ${STREETVIEW_HOST_WARNINGS} -fno-exceptions)
     # PUBLIC so the test executable (which links this) inherits it too.
     target_compile_options(streetview_cpu PUBLIC ${STREETVIEW_FP_FLAGS})
 
@@ -257,7 +292,7 @@ else()
     target_include_directories(streetview_cpu_simd PUBLIC include)
     target_include_directories(streetview_cpu_simd SYSTEM PUBLIC third_party/simde)
     target_compile_definitions(streetview_cpu_simd PUBLIC SV_SIMDE)
-    target_compile_options(streetview_cpu_simd PRIVATE ${STREETVIEW_HOST_WARNINGS})
+    target_compile_options(streetview_cpu_simd PRIVATE ${STREETVIEW_HOST_WARNINGS} -fno-exceptions)
     target_compile_options(streetview_cpu_simd PUBLIC ${STREETVIEW_FP_FLAGS})
 
     if(EMSCRIPTEN)
@@ -265,7 +300,9 @@ else()
         # real wasm_simd128.h wins in streetview/simd.h), exceptions off like
         # the shipped binaries, enough memory for ASan's shadow.
         set(STREETVIEW_WASM_SIMD_FEATURES
-            -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals)
+            -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -mmutable-globals
+            -mno-reference-types -mno-multivalue -mno-tail-call -mno-extended-const
+            -mno-relaxed-simd)
         foreach(lib IN ITEMS streetview_cpu streetview_cpu_simd)
             target_compile_options(${lib} PUBLIC ${STREETVIEW_WASM_SIMD_FEATURES})
             target_link_options(${lib} PUBLIC ${STREETVIEW_WASM_SIMD_FEATURES}
@@ -279,12 +316,24 @@ else()
             message(FATAL_ERROR "STREETVIEW_SANITIZERS is not supported with MSVC")
         endif()
         foreach(lib IN ITEMS streetview_cpu streetview_cpu_simd)
+            # -fno-sanitize-recover=all: a UBSan finding aborts the process (a
+            # non-zero exit fails ctest/CI) instead of printing and carrying on.
             target_compile_options(${lib} PUBLIC
-                -fsanitize=address,undefined -fno-omit-frame-pointer)
+                -fsanitize=address,undefined -fno-sanitize-recover=all
+                -fno-omit-frame-pointer)
             target_link_options(${lib} PUBLIC -fsanitize=address,undefined)
         endforeach()
         message(STATUS "streetview_cpu{,_simd}: ASan + UBSan ENABLED")
     endif()
+
+    # Library hardening on Debug (the ASan job): std::span::operator[] and
+    # friends are bounds-checked, so an out-of-range index aborts even where
+    # ASan has no redzone to hit. Both spellings: libstdc++ and libc++.
+    foreach(lib IN ITEMS streetview_cpu streetview_cpu_simd)
+        target_compile_definitions(${lib} PUBLIC
+            $<$<CONFIG:Debug>:_GLIBCXX_ASSERTIONS>
+            $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE>)
+    endforeach()
 
     include(CTest)
     if(BUILD_TESTING)

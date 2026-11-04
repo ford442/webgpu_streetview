@@ -34,6 +34,6 @@ loadBootWasm().then(
 );
 
 registerServiceWorker({
-  onSuccess: () => console.log('[Offline] App shell cached for offline use.'),
-  onUpdate: () => console.log('[Offline] New app shell available — reload to update.'),
+  onSuccess: () => { console.log('[Offline] App shell cached for offline use.'); },
+  onUpdate: () => { console.log('[Offline] New app shell available — reload to update.'); },
 });

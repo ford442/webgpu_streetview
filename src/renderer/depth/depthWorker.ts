@@ -27,13 +27,15 @@
  */
 import { loadDepthModel, sha256Hex } from './depthModelCache';
 import { pickDepthModelVariant } from './depthModel';
-import { rgbaToImageNetNchw } from './depthMath';
+import { decodeDisparity, rgbaToImageNetNchw } from './depthMath';
 import type { DepthInitRequest, DepthWorkerMessage, DepthWorkerRequest } from './depthProtocol';
 
 /** The slice of the onnxruntime-web API this Worker uses (it has no npm types here). */
 interface OrtTensor {
     readonly dims: readonly number[];
-    getData(): Promise<Float32Array | Uint16Array>;
+    /** ORT element type name (`float32`, `float16`, …); decides how `getData()` is read. */
+    readonly type: string;
+    getData(): Promise<ArrayLike<number>>;
     dispose(): void;
 }
 interface OrtSession {
@@ -91,7 +93,7 @@ async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: bool
     const shaderF16 = adapter.features.has('shader-f16');
     const requiredFeatures: GPUFeatureName[] = [];
     if (shaderF16) requiredFeatures.push('shader-f16');
-    if (adapter.features.has('subgroups')) requiredFeatures.push('subgroups' as GPUFeatureName);
+    if (adapter.features.has('subgroups')) requiredFeatures.push('subgroups');
     const requiredLimits: Record<string, number> = {};
     for (const name of ORT_LIMITS) {
         const value = (adapter.limits as unknown as Record<string, number>)[name];
@@ -101,6 +103,11 @@ async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: bool
         label: 'scene-depth-device',
         requiredFeatures,
         requiredLimits,
+    });
+    // Nothing else listens on this device: a validation error would vanish.
+    created.addEventListener('uncapturederror', (event: Event) => {
+        const error = (event as GPUUncapturedErrorEvent).error;
+        post({ type: 'gpu-error', message: error.message });
     });
     void created.lost.then((info) => {
         if (disposed) return;
@@ -137,8 +144,13 @@ async function init(request: DepthInitRequest): Promise<void> {
 
     const createStart = performance.now();
     session = await ort.InferenceSession.create(new Uint8Array(loaded.bytes), {
-        executionProviders: ['webgpu'],
+        // wasm last: a WebGPU EP that cannot build this graph degrades to slow
+        // inference instead of failing the toggle outright.
+        executionProviders: ['webgpu', 'wasm'],
         graphOptimizationLevel: 'all',
+        // Batch is always 1. height/width stay free: the input follows the
+        // canvas aspect (`depthInputSize`), and a pinned size would fail every other aspect.
+        freeDimensionOverrides: { batch_size: 1 },
     });
     post({
         type: 'ready',
@@ -159,7 +171,7 @@ async function infer(id: number, rgba: Uint8Array, width: number, height: number
     const outputs = await session.run({ [session.inputNames[0]!]: input });
     const output = outputs[session.outputNames[0]!]!;
     const data = await output.getData();
-    const disparity = data instanceof Float32Array ? Float32Array.from(data) : Float32Array.from(data, Number);
+    const disparity = decodeDisparity(output.type, data);
     output.dispose();
     const dims = output.dims;
     const outHeight = dims.length >= 2 ? dims[dims.length - 2]! : height;

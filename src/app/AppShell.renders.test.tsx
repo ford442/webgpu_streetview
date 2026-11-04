@@ -77,6 +77,47 @@ describe('AppShell render isolation from hot POV state', () => {
     expect(shellRenders.count).toBe(baseline);
   });
 
+  it('a 1 s live-conditions burst and an auto-night tick cause 0 AppShell renders', async () => {
+    const { useWeatherSettings, useLightingSettings } = await import('../hooks/useEnvironmentSettings');
+    let weather!: ReturnType<typeof useWeatherSettings>;
+    let lighting!: ReturnType<typeof useLightingSettings>;
+    function Capture() {
+      weather = useWeatherSettings();
+      lighting = useLightingSettings();
+      return null;
+    }
+    await act(async () => {
+      render(
+        <AppProviders>
+          <Capture />
+          <AppShell />
+        </AppProviders>,
+      );
+    });
+    const baseline = shellRenders.count;
+    expect(baseline).toBeGreaterThan(0);
+
+    // LiveConditionsDriver: 4 weather setters per frame for 1 s (60 frames).
+    for (let frame = 1; frame <= 60; frame++) {
+      act(() => {
+        weather.setRainIntensity(frame / 60);
+        weather.setSnowIntensity(frame / 120);
+        weather.setFogDensity(frame / 240);
+        weather.setWind(frame / 60);
+      });
+    }
+    // Auto-night step: night intensity + astronomy every 250 ms.
+    for (let step = 1; step <= 4; step++) {
+      act(() => {
+        lighting.setNightIntensity(step / 4);
+        lighting.setSunAltitude(0.5 - step / 10);
+        lighting.setMoonIntensity(step / 8);
+      });
+    }
+
+    expect(shellRenders.count).toBe(baseline);
+  });
+
   it('a real pointer-locked head look through CarInputHandler also leaves the shell untouched', async () => {
     await mountShell();
     const container = document.createElement('div');

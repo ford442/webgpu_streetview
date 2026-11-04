@@ -14,6 +14,7 @@ set(STREETVIEW_TEST_SOURCES
     depth_test.cpp
     graph_module_test.cpp
     runtime_test.cpp
+    ub_edge_test.cpp
 )
 
 # streetview_cpu_tests: the scalar paths. streetview_simd_tests: the same

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cancelFrame } from '../../xr/frameClock';
 import { getMemoryProfiler, MemoryProfiler } from '../../utils/memoryProfiler';
 import { type GeometryFactory } from './GeometryFactory';
 import { type LODManager } from './LODManager';
@@ -39,14 +40,14 @@ function disposeMaterialTextures(material: THREE.Material): void {
     ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap']
         .forEach(prop => {
             if (mat[prop]) {
-                mat[prop]!.dispose();
+                mat[prop].dispose();
                 mat[prop] = undefined;
             }
         });
 }
 
 export function disposeCarInteriorResources(host: CarInteriorDisposeHost): void {
-    cancelAnimationFrame(host.animationId);
+    cancelFrame(host.animationId);
 
     // Call-site breadcrumb: a cabin dispose near a device loss shows who triggered it.
     console.debug('[CarInterior] dispose call site', new Error('disposeCarInteriorResources').stack);

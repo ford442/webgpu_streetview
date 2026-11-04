@@ -7,6 +7,7 @@ import { createBrowserAudioContext } from './createAudioContext';
 import { cabinAudioPanFromHeadYaw } from '../car/carSpatialModel';
 import { signedAngleDiff } from '../utils/navigation';
 import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';
+import { ignoreRejection } from '../utils/ignoreRejection';
 
 /** Taps per ear — short, this is a directional shadow model, not a reverb tail. */
 const HRTF_TAPS = 32;
@@ -66,6 +67,7 @@ export class WindAudio {
   /**
    * Initialize the audio context and create noise buffer
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- async to satisfy the shared init() contract
   async init(): Promise<boolean> {
     try {
       if (!this.audioContext) {
@@ -376,7 +378,7 @@ export class WindAudio {
     }
 
     if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close().catch(() => {});
+      this.audioContext.close().catch(ignoreRejection);
       this.audioContext = null;
     }
     this.wasm = null;

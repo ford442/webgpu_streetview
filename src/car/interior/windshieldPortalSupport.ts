@@ -53,7 +53,7 @@ export function isPortalDisabledByFlag(search: string): boolean {
 
 function deviceHasClipDistances(device: ResolvePortalSupportInput['device']): boolean {
     try {
-        return device?.features?.has?.('clip-distances' as GPUFeatureName) === true;
+        return device?.features?.has?.('clip-distances') === true;
     } catch {
         return false;
     }
@@ -93,7 +93,7 @@ export function resolveWindshieldPortalSupport(
             reason: 'The shared device has no clip-distances feature — hole + decal overlay.',
         };
     }
-    return { enabled: true, clipDistances, device: input.device as object };
+    return { enabled: true, clipDistances, device: input.device };
 }
 
 const DISABLED_DEFAULT: WindshieldPortalSupport = {

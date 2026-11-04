@@ -155,3 +155,32 @@ export function packHalfFloats(
     for (let i = 0; i < values.length; i++) out[i] = floatToHalfBits(values[i]!);
     return out;
 }
+
+/** IEEE-754 binary16 bits -> number. */
+function halfBitsToFloat(bits: number): number {
+    const sign = bits & 0x8000 ? -1 : 1;
+    const exp = (bits >> 10) & 0x1f;
+    const frac = bits & 0x3ff;
+    if (exp === 0) return sign * 2 ** -14 * (frac / 1024);
+    if (exp === 0x1f) return frac ? Number.NaN : sign * Number.POSITIVE_INFINITY;
+    return sign * 2 ** (exp - 15) * (1 + frac / 1024);
+}
+
+/**
+ * The model output as a fresh Float32Array. ORT reports a tensor's `type`
+ * and returns its data as the matching typed array: `Float32Array` for
+ * `float32`; for `float16` a native `Float16Array` where the runtime has one,
+ * else a `Uint16Array` of raw half bits — which must be *decoded*, not
+ * value-converted (`Float32Array.from(uint16, Number)` yields garbage such
+ * as 15360 for 1.0).
+ */
+export function decodeDisparity(type: string, data: ArrayLike<number>): Float32Array {
+    if (data instanceof Float32Array) return Float32Array.from(data);
+    if (type === 'float16' && data instanceof Uint16Array) {
+        const out = new Float32Array(data.length);
+        for (let i = 0; i < data.length; i++) out[i] = halfBitsToFloat(data[i]!);
+        return out;
+    }
+    // Float16Array, Float64Array, plain arrays: element values are already numbers.
+    return Float32Array.from(data, Number);
+}

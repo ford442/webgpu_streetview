@@ -1,11 +1,10 @@
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { buildAppKeyboardShortcuts } from '../hooks/useAppKeyboardShortcuts';
-import type { EnvironmentSettingsState } from '../hooks/useEnvironmentSettings';
+import { useEnvironmentSettings } from '../hooks/useEnvironmentSettings';
 import type { GlobeModeControls } from '../hooks/useGlobeMode';
 import { usePanelsSnapshot } from './useAppPanels';
 
 export interface UseAppShortcutsOptions {
-  env: EnvironmentSettingsState;
   globeMode: GlobeModeControls;
   viewMode: 'freelook' | 'car';
   toggleViewMode: () => void;
@@ -25,15 +24,16 @@ export interface UseAppShortcutsOptions {
  * Arms the global keyboard shortcut bag.
  *
  * `buildAppKeyboardShortcuts` stays the SSOT for what each key does; this hook
- * exists so the shell hands over whole state bags (`env`, `globeMode`) instead
+ * exists so the shell hands over whole state bags (`globeMode`) instead
  * of re-listing forty individual props every time a shortcut is added. Panel
  * state comes from `panelsStore`, so the shell mounts it as `<AppShortcuts>`:
  * a panel toggle re-renders that null component, not the shell.
  */
 function useAppShortcuts(options: UseAppShortcutsOptions): void {
   const panels = usePanelsSnapshot();
+  // Subscribed here (a null component), so env changes never re-render the shell.
+  const env = useEnvironmentSettings();
   const {
-    env,
     globeMode,
     viewMode,
     toggleViewMode,

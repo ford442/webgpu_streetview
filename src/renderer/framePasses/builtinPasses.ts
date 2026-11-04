@@ -60,7 +60,7 @@ export function createStreetViewFramePass(deps: StreetViewPassDeps): FramePass {
                 textures.intermediateTextureView,
                 textures.videoTexture!,
                 pipeline,
-                textures.bindGroup,
+                textures.requireBindGroup(),
                 timings.pass1,
             );
             if (!didTransition) {
@@ -68,7 +68,7 @@ export function createStreetViewFramePass(deps: StreetViewPassDeps): FramePass {
                     encoder,
                     textures.intermediateTextureView,
                     pipeline,
-                    textures.bindGroup,
+                    textures.requireBindGroup(),
                     resolveSceneDepthBindGroup(deps.device, aux),
                     timings.pass1,
                 );

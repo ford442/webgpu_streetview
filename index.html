@@ -27,17 +27,6 @@
         document.head.appendChild(script);
       })();
     </script>
-    <script>
-      // Force preserveDrawingBuffer on all WebGL contexts to allow capturing the canvas
-      const originalGetContext = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function(type, options) {
-        if (type === 'webgl' || type === 'webgl2') {
-          options = options || {};
-          options.preserveDrawingBuffer = true;
-        }
-        return originalGetContext.call(this, type, options);
-      };
-    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

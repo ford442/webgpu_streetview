@@ -65,7 +65,7 @@ export function createCabinPmrem(renderer: CabinRenderer): CabinPmrem | null {
         };
     }
 
-    const generator = new THREE.PMREMGenerator(renderer as THREE.WebGLRenderer);
+    const generator = new THREE.PMREMGenerator(renderer);
     return {
         // Synchronous on WebGL; the promise only exists to give both backends
         // one signature.

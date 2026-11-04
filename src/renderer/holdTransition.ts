@@ -38,7 +38,7 @@ export class HoldTransitionController {
             try {
                 this.deps.getDevice().queue.copyExternalImageToTexture(
                     { source: cpuSnapshot },
-                    { texture: textures.videoTexture! },
+                    { texture: textures.videoTexture!, premultipliedAlpha: false },
                     [cpuSnapshot.width, cpuSnapshot.height]
                 );
                 transitionManager?.captureCurrentFrame(textures.videoTexture!);

@@ -176,7 +176,8 @@ export async function fetchLookLutVolume(
     if (typeof createImageBitmap !== 'function') {
       return buildLutVolume(lookId, lutSizeForQuality(quality));
     }
-    const bmp = await createImageBitmap(blob);
+    // Raw texel values: no ICC conversion, no alpha premultiply (a LUT is data, not a picture).
+    const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
     const canvas = document.createElement('canvas');
     canvas.width = bmp.width;
     canvas.height = bmp.height;

@@ -92,6 +92,7 @@ function instantiate(rate: number = SAMPLE_RATE): Processor {
     expect(name).toBe(CABIN_PROCESSOR_NAME);
     ctor = processorCtor;
   };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- evaluates the worklet source the way the browser does
   new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', CABIN_WORKLET_SOURCE)(
     StubAudioWorkletProcessor,
     registerProcessor,

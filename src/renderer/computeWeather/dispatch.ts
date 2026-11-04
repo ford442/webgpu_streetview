@@ -74,13 +74,13 @@ export function recordBlitPass(
     });
     const timed = timing?.blitStartIndex !== undefined && timing.blitEndIndex !== undefined;
     if (timed) {
-        timing!.timer.markPassStart(blitPass, timing!.blitStartIndex!);
+        timing.timer.markPassStart(blitPass, timing.blitStartIndex!);
     }
     blitPass.setPipeline(pipeline);
     blitPass.setBindGroup(0, bindGroup);
     blitPass.draw(3, 1, 0, 0);
     if (timed) {
-        timing!.timer.markPassEnd(blitPass, timing!.blitEndIndex!);
+        timing.timer.markPassEnd(blitPass, timing.blitEndIndex!);
     }
     blitPass.end();
 }

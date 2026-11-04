@@ -182,5 +182,5 @@ export async function buildTripLinkUrl(recording: TripRecording, base: string = 
 
 /** The `?trip=` recording of the current page, if any. */
 export function readTripLink(search?: string): Promise<TripRecording | null> {
-  return decodeTripLink(readFlag('trip', search) as string | undefined);
+  return decodeTripLink(readFlag('trip', search));
 }
