@@ -40,6 +40,7 @@ const weatherStub = vi.hoisted(() => () => class {
     updateColorParams = vi.fn();
     setShaderEffects = vi.fn();
     setSceneDepth = vi.fn();
+    setSceneSemantic = vi.fn();
     updateWeatherAnimation = vi.fn();
     renderPass = (_encoder: GPUCommandEncoder, _timing: unknown, target?: GPUTextureView) => {
         weatherCalls.renderPass.push(target);

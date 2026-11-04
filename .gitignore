@@ -37,6 +37,7 @@ node_modules/
 public/wasm/*.js
 # Scene-depth model files: fetched at deploy time (npm run fetch:depth-model), never in git
 public/models/depth/
+public/models/semantic/
 __pycache__/
 *.pyc
 

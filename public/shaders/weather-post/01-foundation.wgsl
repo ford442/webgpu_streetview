@@ -111,6 +111,45 @@ struct SceneDepthParams {
 @group(2) @binding(1) var sceneDepthSampler: sampler;
 @group(2) @binding(2) var<uniform> depthParams: SceneDepthParams;
 
+// Semantic scene layer (group 3, src/renderer/semantic/sceneSemanticBinding.ts,
+// #352): an rg8unorm class map of the road frame — R = class id + 1 (0 =
+// unlabelled), G = that class's probability — and per-effect weights. Without
+// a map the renderer binds a 1x1 unlabelled texel and an all-zero block, so
+// semParams.blend is 0 and every semantic helper returns its input unchanged
+// (bit-exact). Struct, constants and helpers are byte-identical with
+// weather-post-compute.wgsl (weatherShaderParity.test.ts); the class ids match
+// src/renderer/semantic/semanticClasses.ts.
+struct SceneSemanticParams {
+    blend      : f32,  // preset weight x trust in the map; 0 = pre-semantic (bit-exact)
+    shiftX     : f32,  // screen UV -> class-map UV shift, current POV
+    shiftY     : f32,
+    rainSky    : f32,  // rain streaks thinned over sky pixels
+    wetRoad    : f32,  // wet sheen on road pixels only
+    snowCover  : f32,  // settled snow on horizontal classes
+    fogSky     : f32,  // fog coverage relaxed over the sky
+    relight    : f32,  // per-class night relight
+    skyReplace : f32,  // analytic sky behind the sky matte
+    zoom       : f32,  // digital zoom the map was inferred at
+    stillness  : f32,  // 1 under reduced motion: static clouds, steady windows
+    skyR       : f32,  // the photo's mean sky colour when the map was made
+    skyG       : f32,  //   (sky regrade reference and sky key colour; all 0 = no sky)
+    skyB       : f32,
+    pad0       : f32,  // pads the block to 64 bytes
+    pad1       : f32,
+}
+
+@group(3) @binding(0) var semanticTex: texture_2d<f32>;
+@group(3) @binding(1) var semanticSampler: sampler;
+@group(3) @binding(2) var<uniform> semParams: SceneSemanticParams;
+
+const CLASS_SKY: i32 = 0;
+const CLASS_ROAD: i32 = 1;
+const CLASS_SIDEWALK: i32 = 2;
+const CLASS_BUILDING: i32 = 3;
+const CLASS_VEGETATION: i32 = 4;
+const CLASS_VEHICLE: i32 = 5;
+const CLASS_PERSON: i32 = 6;
+
 // Vertex shader - full screen triangle
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {

@@ -125,6 +125,7 @@ export function createWeatherFramePass(deps: WeatherPassDeps): FramePass {
             // Kept on the processor too: `renderWeatherOnly` frames encode
             // outside the registry and bind whatever depth was last current.
             deps.processor.setSceneDepth(aux.depth ?? null);
+            deps.processor.setSceneSemantic(aux.semantic ?? null);
             deps.processor.renderPass(encoder, timings.weather, roadTarget);
         },
         destroy: () => deps.processor.dispose(),

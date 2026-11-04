@@ -3,11 +3,23 @@
  * Pixel and depth buffers are transferred, never copied.
  */
 import type { DepthModelFile, DepthModelVariant } from './depthModel';
+import type { SemanticModelFile } from '../semantic/semanticModel';
 
 export interface DepthInitRequest {
     type: 'init';
     runtimeUrl: string;
     models: Record<DepthModelVariant, DepthModelFile>;
+    cacheName: string;
+    cachePrefix: string;
+}
+
+/**
+ * Second session (#352): the semantic segmenter, on the same device and
+ * runtime. Sent after `ready`; answered by `semantic-ready` or `semantic-error`.
+ */
+export interface DepthLoadSemanticRequest {
+    type: 'load-semantic';
+    model: SemanticModelFile;
     cacheName: string;
     cachePrefix: string;
 }
@@ -19,13 +31,19 @@ interface DepthInferRequest {
     rgba: Uint8Array;
     width: number;
     height: number;
+    /** Also run the semantic session on the same input tensor (#352). */
+    semantic: boolean;
 }
 
 interface DepthDisposeRequest {
     type: 'dispose';
 }
 
-export type DepthWorkerRequest = DepthInitRequest | DepthInferRequest | DepthDisposeRequest;
+export type DepthWorkerRequest =
+    | DepthInitRequest
+    | DepthLoadSemanticRequest
+    | DepthInferRequest
+    | DepthDisposeRequest;
 
 interface DepthProgressMessage {
     type: 'progress';
@@ -44,6 +62,21 @@ export interface DepthReadyMessage {
     adapter: string;
 }
 
+/** The semantic half of a result (#352): the class map at the input size. */
+export interface SemanticResult {
+    /** `width × height × 2` bytes for `rg8unorm`: class id + 1, probability. */
+    texels: Uint8Array<ArrayBuffer>;
+    width: number;
+    height: number;
+    /** Fraction of texels per class (`semanticClasses.ts` order). */
+    histogram: Float32Array<ArrayBuffer>;
+    meanConfidence: number;
+    /** Mean RGB of the input pixels labelled sky (0–1; zeros without sky) — the sky regrade's reference and key. */
+    skyColor: [number, number, number];
+    /** The semantic `session.run` + decode, ms. */
+    ms: number;
+}
+
 export interface DepthResultMessage {
     type: 'result';
     id: number;
@@ -53,6 +86,28 @@ export interface DepthResultMessage {
     height: number;
     /** `session.run` wall time, preprocessing and readback included. */
     ms: number;
+    /** Present when the request asked for it and the semantic run succeeded. */
+    semantic?: SemanticResult;
+    /** The semantic run failed (the depth half is still good). */
+    semanticError?: string;
+}
+
+interface SemanticProgressMessage {
+    type: 'semantic-progress';
+    loaded: number;
+    total: number;
+}
+
+export interface SemanticReadyMessage {
+    type: 'semantic-ready';
+    fromCache: boolean;
+    createMs: number;
+}
+
+/** The semantic session could not be created; depth is unaffected. */
+interface SemanticLoadErrorMessage {
+    type: 'semantic-error';
+    message: string;
 }
 
 interface DepthErrorMessage {
@@ -73,4 +128,7 @@ export type DepthWorkerMessage =
     | DepthReadyMessage
     | DepthResultMessage
     | DepthErrorMessage
-    | DepthLostMessage;
+    | DepthLostMessage
+    | SemanticProgressMessage
+    | SemanticReadyMessage
+    | SemanticLoadErrorMessage;

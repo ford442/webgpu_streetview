@@ -5,6 +5,7 @@
 import type { GpuPassTimer } from './gpuPassTimer';
 import type { CanvasToneMapping } from './shaderFeatureVariants';
 import type { AuxDepth } from './depth/sceneDepthBinding';
+import type { AuxSemantic } from './semantic/sceneSemanticBinding';
 
 export interface WeatherPassTimingContext {
     timer: GpuPassTimer;
@@ -66,6 +67,8 @@ export interface WeatherPostProcessorLike {
      * pass registry. No-op on the present fallback.
      */
     setSceneDepth(depth: AuxDepth | null): void;
+    /** This frame's class map (`FrameContext.aux.semantic`, #352), or null for the zero fallback. */
+    setSceneSemantic(semantic: AuxSemantic | null): void;
     setShaderEffects(enabled: boolean): void;
     getCameraParams(): { heading: number; pitch: number };
     getShaderEffectsEnabled(): boolean;

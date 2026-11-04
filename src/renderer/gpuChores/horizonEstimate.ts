@@ -143,6 +143,12 @@ export interface HorizonFrameInput {
   rowsSeq: number;
   /** Normalized pitch this frame renders with. */
   livePitch: number;
+  /**
+   * The semantic class map's sky lower edge (#352), while that map is applied:
+   * when present it replaces the luma rows — a real sky boundary instead of a
+   * brightness split. Screen Y at `pitch`; `seq` bumps per map.
+   */
+  skyEdge?: { y: number; pitch: number; seq: number } | null;
 }
 
 export interface HorizonFrameState {
@@ -150,9 +156,16 @@ export interface HorizonFrameState {
   bias: number | null;
   /** Last rowsSeq consumed, so one sample is integrated once. */
   lastSeq: number;
+  /** Last semantic sky-edge seq consumed (#352). */
+  lastSkySeq?: number;
 }
 
 export const HORIZON_IDLE: HorizonFrameState = { bias: null, lastSeq: 0 };
+
+function integrateBias(state: HorizonFrameState, sampleBias: number): number | null {
+  if (Math.abs(sampleBias) > HORIZON_MAX_BIAS) return state.bias;
+  return state.bias == null ? sampleBias : state.bias + (sampleBias - state.bias) * HORIZON_SMOOTHING;
+}
 
 export interface HorizonFrameResult {
   state: HorizonFrameState;
@@ -172,17 +185,17 @@ export function resolveHorizonFrame(
   if (!(input.weight > 0)) return { state, uniforms: HORIZON_OFF };
 
   let next = state;
-  if (!input.holdActive && input.rows && input.rowsPitch != null && input.rowsSeq !== state.lastSeq) {
-    next = { bias: state.bias, lastSeq: input.rowsSeq };
-    const est = estimateHorizonFromRows(input.rows);
-    if (est) {
-      const sampleBias = est.y - predictedHorizonY(input.rowsPitch);
-      if (Math.abs(sampleBias) <= HORIZON_MAX_BIAS) {
-        next.bias = state.bias == null
-          ? sampleBias
-          : state.bias + (sampleBias - state.bias) * HORIZON_SMOOTHING;
-      }
+  const sky = input.skyEdge;
+  if (sky) {
+    // The class map's sky edge wins; luma rows are not consumed meanwhile.
+    if (!input.holdActive && sky.seq !== state.lastSkySeq) {
+      next = { ...state, lastSkySeq: sky.seq };
+      next.bias = integrateBias(state, sky.y - predictedHorizonY(sky.pitch));
     }
+  } else if (!input.holdActive && input.rows && input.rowsPitch != null && input.rowsSeq !== state.lastSeq) {
+    next = { ...state, lastSeq: input.rowsSeq };
+    const est = estimateHorizonFromRows(input.rows);
+    if (est) next.bias = integrateBias(state, est.y - predictedHorizonY(input.rowsPitch));
   }
 
   if (next.bias == null) return { state: next, uniforms: HORIZON_OFF };
