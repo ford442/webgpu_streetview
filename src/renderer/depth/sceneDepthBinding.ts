@@ -19,6 +19,7 @@
  * pre-depth value bit-exactly.
  */
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from '../gpuMemoryTracking';
+import type { AuxSemantic } from '../semantic/sceneSemanticBinding';
 
 /** Scene depth as a pass may read it this frame. */
 export interface AuxDepth {
@@ -35,6 +36,8 @@ export interface AuxDepth {
 /** Auxiliary textures passes may read — filled by `Renderer` before the frame encodes. */
 export interface FrameAux {
     depth?: AuxDepth | undefined;
+    /** The semantic class map (#352), weather group 3. */
+    semantic?: AuxSemantic | undefined;
 }
 
 export const SCENE_DEPTH_FORMAT: GPUTextureFormat = 'r16float';

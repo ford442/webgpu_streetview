@@ -4,6 +4,7 @@ import {
 } from '../weatherPostProcessorTypes';
 import { WORKGROUP_SIZE } from './constants';
 import { WEATHER_SCENE_DEPTH_GROUP } from '../depth/sceneDepthBinding';
+import { WEATHER_SCENE_SEMANTIC_GROUP } from '../semantic/sceneSemanticBinding';
 import { timestampWritesField } from '../gpuPassTimer';
 
 /**
@@ -18,6 +19,8 @@ export interface WeatherPassArgs {
     lutBindGroup: GPUBindGroup | null;
     /** Group 2: the frame's scene depth or the zero fallback (`depth/sceneDepthBinding.ts`). */
     sceneDepthBindGroup: GPUBindGroup;
+    /** Group 3: the frame's class map or the zero fallback (`semantic/sceneSemanticBinding.ts`). */
+    sceneSemanticBindGroup: GPUBindGroup;
     width: number;
     height: number;
     timing?: WeatherPassTimingContext | undefined;
@@ -26,7 +29,7 @@ export interface WeatherPassArgs {
 /** The main weather compute dispatch, over a WORKGROUP_SIZE² grid. */
 export function recordWeatherPass(
     commandEncoder: GPUCommandEncoder,
-    { pipeline, bindGroup, lutBindGroup, sceneDepthBindGroup, width, height, timing }: WeatherPassArgs,
+    { pipeline, bindGroup, lutBindGroup, sceneDepthBindGroup, sceneSemanticBindGroup, width, height, timing }: WeatherPassArgs,
 ): void {
     const computePass = commandEncoder.beginComputePass({
         ...timestampWritesField(timing?.timer.computePassTimestampWrites(
@@ -41,6 +44,7 @@ export function recordWeatherPass(
     computePass.setBindGroup(0, bindGroup);
     if (lutBindGroup) computePass.setBindGroup(1, lutBindGroup);
     computePass.setBindGroup(WEATHER_SCENE_DEPTH_GROUP, sceneDepthBindGroup);
+    computePass.setBindGroup(WEATHER_SCENE_SEMANTIC_GROUP, sceneSemanticBindGroup);
     computePass.dispatchWorkgroups(
         Math.ceil(width / WORKGROUP_SIZE),
         Math.ceil(height / WORKGROUP_SIZE),

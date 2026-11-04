@@ -22,7 +22,9 @@ export type FramePassId =
     | 'reproject'
     | 'cabin-composite'
     /** Scene depth (#320) — optional, lazy: only once scene depth is switched on. */
-    | 'depth';
+    | 'depth'
+    /** Semantic scene layer (#352) — optional, lazy: rides on the depth pipeline. */
+    | 'semantic';
 
 type PassState = 'ready' | 'failed';
 

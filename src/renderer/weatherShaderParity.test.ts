@@ -175,9 +175,10 @@ describe('weather shader parity guard', () => {
       expect(source.match(/viewDepthProxy\(/g)).toHaveLength(2);
       expect(extractFunctionBody(source, 'sceneDepth')).toContain('viewDepthProxy(uv, horizonY)');
     }
-    // rain, snow, fog, DOF in both paths; plus the compute path's per-pixel depth.
-    expect(readShader('weather-post.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(4);
-    expect(readShader('weather-post-compute.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(5);
+    // rain, snow, fog, DOF and the semantic wet road (#352) in both paths; plus
+    // the compute path's per-pixel depth.
+    expect(readShader('weather-post.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(5);
+    expect(readShader('weather-post-compute.wgsl').match(/sceneDepth\(uv, horizonY\)/g)).toHaveLength(6);
   });
 
   it('declares the scene-depth group at the same group index and struct in both paths', () => {

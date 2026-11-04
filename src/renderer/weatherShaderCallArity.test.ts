@@ -34,8 +34,9 @@ function declaredFunctions(source: string): Map<string, number> {
     const re = /\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)/g;
     let match: RegExpExecArray | null;
     while ((match = re.exec(source)) !== null) {
-        const params = match[2]!.trim();
-        declarations.set(match[1]!, params === '' ? 0 : params.split(',').length);
+        // WGSL allows a trailing comma after the last parameter.
+        const params = match[2]!.split(',').filter((param) => param.trim() !== '');
+        declarations.set(match[1]!, params.length);
     }
     return declarations;
 }

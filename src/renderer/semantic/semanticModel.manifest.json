@@ -1,0 +1,31 @@
+{
+  "$comment": "Semantic-scene model pins (#352). Read by src/renderer/semantic/semanticModel.ts and scripts/fetch-models.mjs. The served file is REBUILT at fetch time from the pinned source archive (scripts/lib/onnxSurgery.mjs: no normalisation prologue, symbolic H/W, fp16-stored weights, a bilinear ×inputScale input upsample, the 7-class head below), so both the archive and the rebuilt file are SHA-pinned. Changing either, or the class table: bump cacheVersion.",
+  "model": "DDRNet23-Slim (Cityscapes, 19 classes)",
+  "license": "MIT",
+  "licenseUrl": "https://github.com/chenjun2hao/DDRNet.pytorch/blob/main/LICENSE",
+  "upstream": "https://github.com/chenjun2hao/DDRNet.pytorch",
+  "exportedBy": "https://huggingface.co/qualcomm/DDRNet23-Slim (qai-hub-models v0.65.0, MIT)",
+  "cacheVersion": 2,
+  "source": {
+    "url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/ddrnet23_slim/releases/v0.65.0/ddrnet23_slim-onnx-float.zip",
+    "bytes": 21220184,
+    "sha256": "b11b2168b9a52dee8d1ad0c3b0b8e7fb2cf7eea6e1eaee0f3ddd0544ce5f9b71",
+    "graph": "ddrnet23_slim-onnx-float/ddrnet23_slim.onnx",
+    "weights": "ddrnet23_slim-onnx-float/ddrnet23_slim.data",
+    "labels": "ddrnet23_slim-onnx-float/labels.txt"
+  },
+  "inputScale": 2,
+  "file": "ddrnet23-slim-street7.onnx",
+  "bytes": 11820427,
+  "sha256": "e543c6b6434f5a58abb150a9d309a07315db08bc6f7af9c8745f8b165587734f",
+  "sourceClasses": ["road", "sidewalk", "building", "wall", "fence", "pole", "traffic light", "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car", "truck", "bus", "train", "motorcycle", "bicycle"],
+  "classes": [
+    { "name": "sky", "from": ["sky"] },
+    { "name": "road", "from": ["road"] },
+    { "name": "sidewalk", "from": ["sidewalk"] },
+    { "name": "building", "from": ["building", "wall", "fence", "pole", "traffic light", "traffic sign"] },
+    { "name": "vegetation", "from": ["vegetation", "terrain"] },
+    { "name": "vehicle", "from": ["car", "truck", "bus", "train", "motorcycle", "bicycle"] },
+    { "name": "person", "from": ["person", "rider"] }
+  ]
+}

@@ -20,6 +20,11 @@
  *   `webgpuProbe.passes.depth` and every consumer keeps its pre-depth look.
  * - **`depthBlend = 0` is bit-exact.** No map, a stale map, scene depth off or
  *   a Low/Medium preset all pack an all-zero params block.
+ * - **It also feeds the semantic layer (#352).** A `SemanticSink`
+ *   (`semantic/SemanticController.ts`) rides on this pipeline: same scheduler,
+ *   same readback, same Worker and input tensor — each inference also runs the
+ *   semantic session while the sink wants maps, and the class map is handed to
+ *   the sink with the pose it was inferred at.
  */
 import type { FramePass } from '../framePasses/FramePassRegistry';
 import type { GpuChores } from '../gpuChores/GpuChores';
@@ -54,7 +59,20 @@ import {
 import { isXrPresenting } from '../xrPresentFrame';
 import { getSceneDepthStats, resetSceneDepthStats, setSceneDepthStats } from './sceneDepthStatsStore';
 import type { SceneDepthOptions } from './sceneDepthOptions';
+import type { SemanticResult, SemanticReadyMessage } from './depthProtocol';
+import type { SemanticLoadOptions } from './DepthEstimator';
 
+/** The semantic layer's side of the shared pipeline (#352). */
+export interface SemanticSink {
+    /** Run the semantic session with every inference (opted in and loaded). */
+    wantsMaps(): boolean;
+    /** A class map inferred at `pose`, still current when it arrives. */
+    accept(result: SemanticResult, pose: DepthMapPose): void;
+    /** One semantic run failed (the depth half was fine). */
+    inferenceFailed(message: string): void;
+    /** The Worker (and with it the semantic session) is gone: depth off, failed or disposed. */
+    pipelineReset(): void;
+}
 const DEPTH_PASS_ORDER = 50;
 
 /** Depth cannot run on this boot at all (as opposed to one inference failing). */
@@ -124,6 +142,7 @@ export class DepthController {
     private readonly completions: number[] = [];
     private inFlight = false;
     private disposed = false;
+    private semanticSink: SemanticSink | null = null;
 
     constructor(private readonly deps: DepthControllerDeps) {
         this.pass = {
@@ -154,6 +173,7 @@ export class DepthController {
             this.estimator?.dispose();
             this.estimator = null;
             this.estimatorLoading = null;
+            this.semanticSink?.pipelineReset();
             this.scheduler.reset();
             this.confidence = 0;
             this.mapPose = null;
@@ -167,6 +187,35 @@ export class DepthController {
 
     public getOptions(): Readonly<SceneDepthOptions> {
         return this.options;
+    }
+
+    /** The semantic layer (#352) rides on this pipeline; one sink per controller. */
+    public attachSemantic(sink: SemanticSink | null): void {
+        this.semanticSink = sink;
+    }
+
+    /**
+     * Load the semantic session into the depth Worker. Needs scene depth on and
+     * its estimator loaded (the semantic layer has no pipeline of its own).
+     */
+    public async loadSemantic(options: SemanticLoadOptions): Promise<SemanticReadyMessage> {
+        if (!this.options.enabled || !this.estimatorLoading) {
+            throw new Error('the semantic layer needs scene depth on (it shares the depth pipeline)');
+        }
+        await this.estimatorLoading;
+        const estimator = this.estimator;
+        if (!estimator || this.disposed) throw new Error('scene depth was switched off');
+        return estimator.loadSemantic(options);
+    }
+
+    /** Bumped on every hold release: a map from an older epoch labels another pano. */
+    public currentEpoch(): number {
+        return this.epoch;
+    }
+
+    /** Re-infer the current view even though its depth map is current (a new consumer wants a map). */
+    public requestRefresh(): void {
+        this.scheduler.dropped();
     }
 
     /**
@@ -309,11 +358,14 @@ export class DepthController {
                 return;
             }
             linearToSrgbBytesInPlace(rgba);
-            const result = await estimator.infer(rgba, size.width, size.height);
+            const sink = this.semanticSink;
+            const result = await estimator.infer(rgba, size.width, size.height, { semantic: !!sink?.wantsMaps() });
             if (!this.stillCurrent(pose)) {
                 this.scheduler.dropped();
                 return;
             }
+            if (sink && result.semantic) sink.accept(result.semantic, pose);
+            else if (sink && result.semanticError !== undefined) sink.inferenceFailed(result.semanticError);
 
             const sameScene = this.normalizeEpoch === pose.epoch;
             const aligned = sameScene && !!this.mapPose && this.mapPose.epoch === pose.epoch && sameView(this.mapPose, pose);
@@ -423,6 +475,7 @@ export class DepthController {
         this.estimator?.dispose();
         this.estimator = null;
         this.estimatorLoading = null;
+        this.semanticSink?.pipelineReset();
         this.aux = null;
         this.mapPose = null;
         this.confidence = 0;
@@ -436,6 +489,8 @@ export class DepthController {
         this.estimator?.dispose();
         this.estimator = null;
         this.estimatorLoading = null;
+        this.semanticSink?.pipelineReset();
+        this.semanticSink = null;
         this.aux = null;
         for (const r of this.retired.splice(0)) destroyTracked(r.texture);
         destroyTracked(this.texture);

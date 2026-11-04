@@ -171,6 +171,10 @@ export const FLAGS = {
     kind: 'bool',
     doc: 'Scene depth: a monocular depth model (downloads ~25 MB once) drives fog, rain, DOF and the hop dolly. `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default). Applies at High/Ultra quality.',
   },
+  semantic: {
+    kind: 'bool',
+    doc: 'Semantic scene layer (#352): a street segmenter (downloads ~12 MB once) runs beside scene depth, so rain spares the sky, only the road gets wet, snow settles on the ground, fog stops at the skyline, the horizon follows the real sky edge and night relights windows and the road. Needs scene depth on; applies at High/Ultra. `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default).',
+  },
   // ── Weather feeders (named for the WASM feeders they replaced, #341) ───────
   wasmNoise: {
     kind: 'bool',

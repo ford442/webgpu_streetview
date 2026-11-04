@@ -123,6 +123,10 @@ export interface StreetViewRenderer {
     samplePanoramaStats?(opts?: PanoramaStatsOptions): void;
     /** Scene depth (#320), every frame — see `depth/DepthController.ts`. WebGPU only. */
     setSceneDepth?(options: import('./depth/sceneDepthOptions').SceneDepthOptions): void;
+    /** Semantic scene layer (#352), every frame after `setSceneDepth`. WebGPU only. */
+    setSceneSemantic?(options: import('./semantic/sceneSemanticOptions').SceneSemanticOptions): void;
+    /** The applied class map's sky edge (#352), for the horizon estimate. */
+    getSemanticSkyEdge?(): import('./semantic/SemanticController').SemanticSkyEdge | null;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into
