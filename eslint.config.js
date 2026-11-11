@@ -39,7 +39,6 @@ const UNSAFE_BASELINE = [
     'src/state/cabinHeadStore.ts',
     'src/state/liveConditionsStore.ts',
     'src/state/povStore.ts',
-    'src/state/sceneDepthStore.ts',
     'src/state/tripStore.ts',
     'src/trip/tripLibrary.ts',
     'src/trip/tripRecorder.ts',

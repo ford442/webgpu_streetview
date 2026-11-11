@@ -80,6 +80,31 @@ class DeploySecretsTest(unittest.TestCase):
         patched = deploy._inject_cesium_ion_token_into_bundle(bundle, "real-ion-token")
         self.assertIn(b'window.CESIUM_ION_TOKEN="real-ion-token";', patched)
 
+    def test_dry_run_needs_no_token(self):
+        deploy = _load_deploy_module()
+        env = {k: v for k, v in os.environ.items() if k != "DEPLOY_TOKEN"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = deploy.load_deploy_config(dry_run=True)
+        self.assertEqual(config.deploy_token, "")
+
+    def test_dry_run_builds_the_zip_and_uploads_nothing(self):
+        deploy = _load_deploy_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / "build"
+            (build / "models").mkdir(parents=True)
+            (build / "index.html").write_text("<html></html>", encoding="utf-8")
+            (build / "models" / "big.onnx").write_bytes(os.urandom(64 * 1024))
+            out = Path(tmp) / "bundle.zip"
+            env = {k: v for k, v in os.environ.items() if k != "DEPLOY_TOKEN"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                config = deploy.load_deploy_config(dry_run=True)
+            with mock.patch.object(deploy.requests, "post") as post:
+                self.assertTrue(deploy.deploy_bundle(config, build, dry_run=True, out=out))
+                post.assert_not_called()
+            largest = deploy.describe_zip(out.read_bytes())
+            self.assertEqual(largest[0][0], "models/big.onnx")
+            self.assertEqual(largest[0][2], 64 * 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

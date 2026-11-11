@@ -8,9 +8,10 @@ Usage:
   npm run build   # or let deploy.py run it when build/ is missing
   export DEPLOY_TOKEN='...'   # from VPS / storage manager config
   MAPS_API_KEY='AIzaSy...' python deploy.py
+  python deploy.py --dry-run [--out bundle.zip]   # size the zip, upload nothing
 
 Environment variables:
-  DEPLOY_TOKEN       (required) Auth token for the bundle upload API
+  DEPLOY_TOKEN       (required unless --dry-run) Auth token for the bundle upload API
   MAPS_API_KEY       (recommended) Baked into static/js/*.js at deploy time
                      (Vite emits build/static/js/main.[hash].js — same layout as former CRA)
   CESIUM_ION_TOKEN   (optional) Baked into static/js/*.js the same way, so full-screen
@@ -28,6 +29,7 @@ Requirements:
 
 from __future__ import annotations
 
+import argparse
 import io
 import os
 import re
@@ -91,10 +93,10 @@ def _is_placeholder(key: str) -> bool:
     return any(p.search(key) for p in _PLACEHOLDER_PATTERNS)
 
 
-def load_deploy_config() -> DeployConfig:
-    """Load deploy settings from environment variables."""
+def load_deploy_config(dry_run: bool = False) -> DeployConfig:
+    """Load deploy settings from environment variables (a dry run needs no token)."""
     deploy_token = os.environ.get("DEPLOY_TOKEN", "").strip()
-    if not deploy_token:
+    if not deploy_token and not dry_run:
         print("\nERROR: DEPLOY_TOKEN environment variable is required.")
         print("  The Contabo bundle upload API authenticates with this token.")
         print("  Obtain it from your VPS / storage manager configuration.")
@@ -369,7 +371,27 @@ def build_zip(
     return buf.getvalue()
 
 
-def deploy_bundle(config: DeployConfig, build_path: Path) -> bool:
+def describe_zip(zip_bytes: bytes, top: int = 10) -> list[tuple[str, int, int]]:
+    """The `top` largest entries of a bundle as (name, stored bytes, raw bytes), largest stored first."""
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        entries = [(i.filename, i.compress_size, i.file_size) for i in zf.infolist()]
+    entries.sort(key=lambda e: e[1], reverse=True)
+    return entries[:top]
+
+
+def print_bundle_report(zip_bytes: bytes) -> None:
+    """Size before upload: the Contabo API's 400 "error parsing the body" (#358) is
+    suspected to be a body limit once the scene models joined build/models/."""
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        count = len(zf.infolist())
+    print(f"Archive size: {len(zip_bytes) / (1024 * 1024):.2f} MiB, {count} files")
+    print("Largest entries (stored / raw):")
+    for name, stored, raw in describe_zip(zip_bytes):
+        print(f"  {stored / (1024 * 1024):8.2f} MiB / {raw / (1024 * 1024):8.2f} MiB  {name}")
+    print()
+
+
+def deploy_bundle(config: DeployConfig, build_path: Path, dry_run: bool = False, out: Optional[Path] = None) -> bool:
     target_folder = config.deploy_folder or config.project_name
     url = f"{config.contabo_base_url.rstrip('/')}/api/deploy/{config.project_name}/bundle"
     headers = {"X-Deploy-Token": config.deploy_token}
@@ -392,7 +414,13 @@ def deploy_bundle(config: DeployConfig, build_path: Path) -> bool:
         print("  No CESIUM_ION_TOKEN env — GlobeView/MiniMap use the CartoCDN + ellipsoid fallback")
 
     zip_bytes = build_zip(build_path, config.maps_api_key, config.cesium_ion_token)
-    print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
+    print_bundle_report(zip_bytes)
+    if out is not None:
+        out.write_bytes(zip_bytes)
+        print(f"Wrote {out}")
+    if dry_run:
+        print(f"Dry run: not uploading to {url} (target_folder={target_folder!r}).")
+        return True
 
     print("Uploading bundle...")
     try:
@@ -422,9 +450,21 @@ def deploy_bundle(config: DeployConfig, build_path: Path) -> bool:
     return False
 
 
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Upload build/ to the Contabo bundle API.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="build and size the zip, skip the health check and the upload (no DEPLOY_TOKEN needed)",
+    )
+    parser.add_argument("--out", type=Path, default=None, help="also write the zip to this path")
+    return parser.parse_args(argv)
+
+
 def main() -> None:
+    args = parse_args()
     refuse_if_secrets_in_source()
-    config = load_deploy_config()
+    config = load_deploy_config(dry_run=args.dry_run)
     site_host = "go.1ink.us" if config.deploy_target == "go" else "test.1ink.us"
 
     print(f"\n=== Deploying '{config.project_name}' via Contabo -> {site_host} (target={config.deploy_target}) ===\n")
@@ -436,6 +476,10 @@ def main() -> None:
     print("Checking Maps API key...")
     _validate_maps_key(config.maps_api_key or "")
 
+    if args.dry_run:
+        print()
+        sys.exit(0 if deploy_bundle(config, build_path, dry_run=True, out=args.out) else 1)
+
     try:
         health = requests.get(f"{config.contabo_base_url.rstrip('/')}/api/deploy/health", timeout=10)
         if health.status_code == 200:
@@ -444,7 +488,7 @@ def main() -> None:
         print("Warning: Could not contact storage manager (continuing anyway).")
 
     print()
-    success = deploy_bundle(config, build_path)
+    success = deploy_bundle(config, build_path, out=args.out)
 
     print(f"\n=== {'Deployment complete' if success else 'Deployment finished with errors'} ===")
     if success:

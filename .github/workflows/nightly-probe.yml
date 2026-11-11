@@ -12,11 +12,13 @@ permissions:
 jobs:
   hold-pause-probe:
     runs-on: ubuntu-latest
+    # Includes the `gpu-models` lane (real depth + semantic weights on SwiftShader).
+    timeout-minutes: 60
     if: ${{ github.repository == 'ford442/webgpu_streetview' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -28,7 +30,7 @@ jobs:
       # not in git: without them the dev server's SPA fallback serves its 404
       # page and the spec fails the model's SHA-256 check. Same cache key as ci.yml.
       - name: Cache the scene models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             public/models/depth
@@ -63,7 +65,7 @@ jobs:
 
       - name: Upload Playwright artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-keyed-artifacts
           path: |
@@ -78,7 +80,7 @@ jobs:
 
       - name: Upload probe screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: hold-pause-probe-screenshots
           path: repro-screenshots/hold-pause-probe/
@@ -110,10 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository == 'ford442/webgpu_streetview' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Restore fuzz corpora
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cpp/build-fuzz/corpus
           key: cpp-fuzz-corpus-${{ github.run_id }}
@@ -124,7 +126,7 @@ jobs:
 
       - name: Upload crash reproducers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cpp-fuzz-artifacts
           path: cpp/build-fuzz/artifacts/

@@ -70,7 +70,7 @@ Because of (1), a wrapper three has finished with *can* be disposed — and is, 
 
 The gate is decided once, where the cabin renderer is constructed (`createCabinRenderer`), so it cannot disagree with the backend. Probe: `window.__CABIN_RENDERER_PROBE__.portal` → `{ active, reason?, clipDistances, frameFormat?, held? }`.
 
-**Testing it.** Unit: `windshieldWetMask` / `windshieldAperture` / `roadFrameBinding` / `windshieldPortalSupport` / `windshieldPortal.parity` / `WindowWeatherOverlay` / `Renderer.roadFrame` tests. GPU: `npx playwright test --project=chromium-webgpu e2e/windshield-portal.spec.ts` drives `e2e/fixtures/windshield-portal/*` on Chromium's software WebGPU adapter (SwiftShader, which exposes `clip-distances`); in that project a missing adapter is a failure, not a skip. Manual: car mode, rain on, WebGPU host — wiper arcs should leave a clean strip that re-wets; `?portal=off` or `?no_clip_distances` should fall back to the hole + decal with no console errors.
+**Testing it.** Unit: `windshieldWetMask` / `windshieldAperture` / `roadFrameBinding` / `windshieldPortalSupport` / `windshieldPortal.parity` / `WindowWeatherOverlay` / `Renderer.roadFrame` tests. GPU: `npx playwright test --project=gpu e2e/windshield-portal.spec.ts` drives `e2e/fixtures/windshield-portal/*` on Chromium's software WebGPU adapter (SwiftShader, which exposes `clip-distances`); in that project a missing adapter is a failure, not a skip. Manual: car mode, rain on, WebGPU host — wiper arcs should leave a clean strip that re-wets; `?portal=off` or `?no_clip_distances` should fall back to the hole + decal with no console errors.
 
 ## Split frame tail and WebXR (#331)
 

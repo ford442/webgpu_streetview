@@ -23,9 +23,9 @@ jobs:
       # a pinned-emcc rebuild, and build-wasm.sh checks their source hash.
       SV_WASM_PREBUILT: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -47,7 +47,7 @@ jobs:
       # and cargo's install metadata so a hit makes the install step a no-op.
       # Bump the trailing -v1 to force a fresh naga.
       - name: Cache naga-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/naga
@@ -83,7 +83,7 @@ jobs:
           done | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload bundle report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bundle-report
           path: /tmp/bundle-report.html
@@ -92,7 +92,7 @@ jobs:
       # 'hidden' source maps are not deployed; keep them to symbolicate a
       # production stack trace for the commit that built them.
       - name: Upload source maps
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sourcemaps-${{ github.sha }}
           path: build/static/js/*.map
@@ -107,7 +107,7 @@ jobs:
   wasm-cpp-host:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Host build + golden tests (g++, -Werror)
         run: |
@@ -178,7 +178,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
@@ -195,7 +195,7 @@ jobs:
   build-wasm-emscripten:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read pinned emsdk version
         run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
@@ -205,7 +205,7 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -241,7 +241,7 @@ jobs:
   wasm-sanitizers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read pinned emsdk version
         run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < cpp/emsdk.version)" >> "$GITHUB_ENV"
@@ -251,7 +251,7 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
@@ -262,10 +262,13 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    # Chromium smoke + the `gpu` lane. Over this means a spec is waiting on
+    # something SwiftShader cannot do in time — move it to `gpu-models` (#358).
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -278,7 +281,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
@@ -292,19 +295,9 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      # e2e/scene-depth.spec.ts runs the real depth model (#320). The files are
-      # not in git: fetch the pinned, SHA-256-checked ones, cached on the pins.
-      - name: Cache the scene models
-        uses: actions/cache@v4
-        with:
-          path: |
-            public/models/depth
-            public/models/semantic
-          key: scene-models-${{ hashFiles('src/renderer/depth/depthModel.manifest.json', 'src/renderer/semantic/semanticModel.manifest.json', 'scripts/lib/onnxSurgery.mjs') }}
-
-      - name: Fetch the scene models (depth #320, semantic #352)
-        run: npm run fetch:models
-
+      # The real scene models (depth #320, semantic #352) are not fetched here:
+      # their specs are the `gpu-models` project, which runs only in
+      # nightly-probe.yml (one inference is ~220 s on SwiftShader, #358).
       - name: E2E smoke (keyless)
         run: npm run test:e2e:smoke
         env:
@@ -314,7 +307,7 @@ jobs:
 
       - name: Upload Playwright artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-smoke-artifacts
           path: |

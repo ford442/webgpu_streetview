@@ -13,7 +13,7 @@ import { requireGpuAdapter } from './gpuLane';
  *
  * The pages under `e2e/fixtures/windshield-portal/` build the real cabin pieces
  * (see their headers); this spec only drives them and asserts. It runs in the
- * `chromium-webgpu` project (SwiftShader launch flags in playwright.config.ts),
+ * `gpu` project (SwiftShader launch flags in playwright.config.ts),
  * where a missing adapter is a failure, not a skip — see `gpuLane.ts`.
  */
 

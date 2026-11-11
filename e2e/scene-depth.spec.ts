@@ -29,6 +29,7 @@ interface Stats {
     variant: string | null;
     fromCache: boolean | null;
     inferenceMs: number | null;
+    slowDevice: boolean;
     inferences: number;
     inputWidth: number;
     inputHeight: number;
@@ -128,6 +129,9 @@ test.describe('scene depth on a real WebGPU device', () => {
         expect(stats.generation).toBeGreaterThanOrEqual(1);
         expect(stats.inferences).toBeGreaterThanOrEqual(1);
         expect(stats.inferenceMs).toBeGreaterThan(0);
+        // SwiftShader takes ~220 s per inference: the scheduler must say so and
+        // then re-infer only for a new pano (depthScheduler.ts, #358).
+        expect(stats.slowDevice).toBe((stats.inferenceMs ?? 0) > 30_000);
         // ≈252² at the canvas aspect, on the ViT patch grid.
         expect(stats.inputWidth % 14).toBe(0);
         expect(stats.inputHeight % 14).toBe(0);

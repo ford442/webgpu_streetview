@@ -20,7 +20,7 @@ const hasMapsKey = Boolean(
  * What yields a real WebGPU adapter in headless Chromium on a GPU-less runner,
  * one that can also present to a canvas: SwiftShader's Vulkan backend under
  * Dawn (it exposes `clip-distances`, which the windshield portal needs). Without these the GPU specs would have
- * no adapter and — before the `chromium-webgpu` lane — quietly skip.
+ * no adapter and — before the `gpu` lane — quietly skip.
  */
 const SWIFTSHADER_WEBGPU_ARGS = [
   '--no-sandbox',
@@ -38,8 +38,25 @@ const SWIFTSHADER_WEBGPU_ARGS = [
   // compositor, and a screenshot of a presented frame is blank.
 ];
 
-/** Specs that need a real GPU device; they run (and must not skip) in `chromium-webgpu`. */
-const GPU_SPECS = /(gpu-foundation|windshield-portal|scene-depth|scene-semantic|stereo)\.spec\.ts$/;
+/**
+ * Specs that need a real GPU device; they run (and must not skip) in `gpu`.
+ * Boot, passes, portal, stereo, render scale, broken-shader isolation: each
+ * finishes in seconds on SwiftShader, so this is the PR lane (`ci.yml`).
+ */
+const GPU_SPECS = /(gpu-foundation|windshield-portal|stereo)\.spec\.ts$/;
+
+/**
+ * Specs that run the real scene models (depth #320, semantic #352). One Depth
+ * Anything inference takes ~220 s on SwiftShader, so these run only in the
+ * nightly (`nightly-probe.yml`, `--project=gpu-models`), never on a PR (#358).
+ */
+const GPU_MODEL_SPECS = /(scene-depth|scene-semantic)\.spec\.ts$/;
+
+const swiftShaderWebGpu = {
+  ...devices['Desktop Chrome'],
+  channel: 'chromium',
+  launchOptions: { args: SWIFTSHADER_WEBGPU_ARGS },
+};
 
 export default defineConfig({
   testDir: './e2e',
@@ -61,7 +78,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: GPU_SPECS,
+      testIgnore: [GPU_SPECS, GPU_MODEL_SPECS],
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -81,13 +98,15 @@ export default defineConfig({
       // adapter" into a failure here, so this project can never go green by
       // skipping. `channel: 'chromium'` runs the full browser in new headless
       // mode rather than the headless shell.
-      name: 'chromium-webgpu',
+      name: 'gpu',
       testMatch: GPU_SPECS,
-      use: {
-        ...devices['Desktop Chrome'],
-        channel: 'chromium',
-        launchOptions: { args: SWIFTSHADER_WEBGPU_ARGS },
-      },
+      use: swiftShaderWebGpu,
+    },
+    {
+      // Same browser, real model weights; nightly only (see GPU_MODEL_SPECS).
+      name: 'gpu-models',
+      testMatch: GPU_MODEL_SPECS,
+      use: swiftShaderWebGpu,
     },
   ],
   webServer: process.env.E2E_SKIP_WEBSERVER

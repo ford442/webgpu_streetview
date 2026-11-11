@@ -181,7 +181,7 @@ and `npm run capture:depth-looks`.
 | `src/renderer/depth/*.test.ts` | math (percentiles, calibration, f16 vs `Float16Array`), cache (download once, integrity, stale buckets), scheduler, params, the controller on the fake device with a scripted Worker, the bundle guard |
 | `Renderer.depth.test.ts` | lazy pass, aux reaching pass 1 and weather, failure reporting and retry |
 | `weatherShaderParity.test.ts`, `sceneDepthBinding.test.ts`, `windshieldPortal.parity.test.ts` | the WGSL side: identical helpers in both paths, the weight-0 branches, one params layout, depth never reaching a stage the windshield portal mirrors |
-| `e2e/scene-depth.spec.ts` (`chromium-webgpu`) | the real model on SwiftShader through the production renderer: runs with no validation errors; weight 0 bit-exact; fog, rain, DOF and the dolly change the frame the way they should; second visit from the Cache API; a bad model fails the pass, not the frame |
+| `e2e/scene-depth.spec.ts` (`gpu-models`, nightly) | the real model on SwiftShader through the production renderer: runs with no validation errors; weight 0 bit-exact; fog, rain, DOF and the dolly change the frame the way they should; second visit from the Cache API; a bad model fails the pass, not the frame |
 
 SwiftShader takes about a minute per inference at ≈252² — the lane asserts the
 model *runs*. The issue's ≤ 60 ms budget is a real-GPU number and is not
