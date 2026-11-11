@@ -1100,7 +1100,7 @@ MAPS_API_KEY='...' python deploy.py
 
 **`main` is protected.** Merges go through a pull request, and the `Verify` (`test-and-build`) and `build-wasm-emscripten` checks from `ci.yml` must pass — set under *Settings → Branches → Branch protection rules → main* (`Require a pull request before merging`, `Require status checks to pass`). `main` was red from 2026-10-28 to #358 unnoticed because nothing enforced this: nightly runs the dev server, and Vite does not typecheck. `Deploy` runs `verify` first, so a red `main` also blocks every deploy.
 
-**Closed ≠ merged.** The Linear sync closes GitHub issues as `COMPLETED` without code landing (#327–#332 in October; #353, temporal road frame, on 2026-11-04 — `renderer/upscale/` still holds only FSR 1). Before treating a closed roadmap issue as done, find the PR that implemented it (`gh pr list --state merged --search "<issue number>"`) and the code it names; if there is none, reopen the issue or file a successor that records the history.
+**Closed ≠ merged.** The Linear sync closes GitHub issues as `COMPLETED` without code landing (#327–#332 in October; #353, temporal road frame, on 2026-11-04 — `renderer/upscale/` still holds only FSR 1; re-filed as #360). Before treating a closed roadmap issue as done, find the PR that implemented it (`gh pr list --state merged --search "<issue number>"`) and the code it names; if there is none, reopen the issue or file a successor that records the history.
 
 ---
 
