@@ -171,7 +171,7 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
     }
     labelDevice(device);
     // The capability manifest (`__SV__.contexts.gpu`): the depth Worker reads
-    // the request options and adapter identity from here (#367 slice 3).
+    // the request options and adapter identity from here (#361 slice 3).
     recordGpuContext(adapter, adapterOptions, requiredFeatures);
     // Before `configure()`: its validation errors are uncaptured errors too. The
     // handler counts into a local sink until the capability matrix exists.

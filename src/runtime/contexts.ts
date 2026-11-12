@@ -1,6 +1,6 @@
 /**
  * `RuntimeContexts` — the one answer to "what is this machine and what may we
- * use" (#367 slice 1).
+ * use" (#361 slice 1).
  *
  * Every subsystem that used to probe the browser on its own (the road's
  * adapter policy, the canvas HDR / P3 gates, the cabin overlay's colour space,

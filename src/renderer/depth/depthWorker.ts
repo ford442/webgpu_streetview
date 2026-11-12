@@ -14,7 +14,7 @@
  * (~70 K texels, ≤ 5 Hz), which the main thread writes into an `r16float`
  * texture on the road's device. Nothing on this device is ever rendered.
  *
- * **The road's adapter policy (#367).** The init message carries the options
+ * **The road's adapter policy (#361).** The init message carries the options
  * the road's adapter was requested with (power preference — the battery
  * heuristic or `?gpu=` — feature level, fallback) and the road adapter's
  * identity. The Worker requests with the same options; on a different
@@ -144,7 +144,7 @@ interface DepthDevice {
 }
 
 /**
- * The road's adapter policy (#367): request with the road's options; on a
+ * The road's adapter policy (#361): request with the road's options; on a
  * different physical adapter, try the opposite power preference once, then
  * accept the policy's adapter and report the mismatch.
  */

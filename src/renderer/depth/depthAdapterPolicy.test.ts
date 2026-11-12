@@ -8,7 +8,7 @@ import {
 
 const id = (vendor: string, architecture = '', device = '') => ({ vendor, architecture, device, description: '' });
 
-describe('depth Worker adapter policy (#367)', () => {
+describe('depth Worker adapter policy (#361)', () => {
     it('follows the road: ?gpu=low-power reaches the Worker as low-power', () => {
         expect(buildDepthAdapterRequest({ requestOptions: { powerPreference: 'low-power' } }))
             .toEqual({ powerPreference: 'low-power' });

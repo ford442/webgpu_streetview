@@ -29,7 +29,7 @@ export interface WindAudioConfig {
 
 export class WindAudio {
   private audioContext: AudioContext | null = null;
-  /** The shared runtime's `wind` bus (#367) — the graph's output, never `destination`. */
+  /** The shared runtime's `wind` bus (#361) — the graph's output, never `destination`. */
   private output: AudioNode | null = null;
   private noiseNode: AudioBufferSourceNode | null = null;
   private gainNode: GainNode | null = null;

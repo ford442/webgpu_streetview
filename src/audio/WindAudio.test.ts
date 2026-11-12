@@ -129,7 +129,7 @@ interface WindAudioInternals {
   gainNode: StubGainNode | null;
   pannerNode: StubStereoPannerNode | null;
   audioContext: StubAudioContext | null;
-  /** The runtime's `wind` bus (#367): where the graph ends, instead of `destination`. */
+  /** The runtime's `wind` bus (#361): where the graph ends, instead of `destination`. */
   output: unknown;
 }
 

@@ -258,7 +258,7 @@ Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, 
 
 Compute binding still backed by a 1x1 dummy: `dataTextureC`. Binding 4/6 are a full-res **depth ping-pong** pair. Bindings 7/8 are a half-res density splat + compact particle-state grid when GPU particles are enabled (High/Ultra compute weather). See `docs/GRAPHICS.md` §5.
 
-## Runtime contexts — the capability manifest (#367)
+## Runtime contexts — the capability manifest (#361)
 
 `src/runtime/contexts.ts` answers "what is this machine and what may we use",
 once, for every subsystem. It is a frozen snapshot (replaced, never mutated),

@@ -414,7 +414,7 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
 
-### Runtime contexts (`src/runtime/contexts.ts`, #367)
+### Runtime contexts (`src/runtime/contexts.ts`, #361)
 
 The capability manifest — GPU (the road's request options, `adapter.info`,
 features, limits), display (HDR / P3 media queries, measured refresh rate),
@@ -443,7 +443,7 @@ panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
   `check-bundle-budget.sh`). It owns **its own `GPUDevice`** (a device cannot
   enter a Worker, and a model fault must not take the road down); that is the
   one `requestDevice` outside `bootDevice.ts`. `shader-f16` there selects the
-  `q4f16` model, else `q4`. Its adapter follows the road's policy (#367): the
+  `q4f16` model, else `q4`. Its adapter follows the road's policy (#361): the
   `init` message carries the road's request options and adapter identity
   (`depthAdapterPolicy.ts`; one opposite-preference retry on a different GPU,
   then `adapterMismatch`), and a lost Worker device is recovered by

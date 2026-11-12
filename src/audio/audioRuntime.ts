@@ -1,5 +1,5 @@
 /**
- * The app's one `AudioContext` (#367 slice 4), with named buses.
+ * The app's one `AudioContext` (#361 slice 4), with named buses.
  *
  * The cabin engine, the car radio, the convertible wind bed and the science
  * lab's fan used to create a context each — up to three on separate clocks in
@@ -167,7 +167,7 @@ function applyMute(name: AudioBusName): void {
 
 /**
  * Live `AudioContext`s this module has made — 0 or 1. `__CABIN_AUDIO_PROBE__.contexts`
- * reports it; anything above 1 is a regression of #367.
+ * reports it; anything above 1 is a regression of #361.
  */
 export function audioContextCount(): number {
     return runtime && runtime.ctx.state !== 'closed' ? 1 : 0;

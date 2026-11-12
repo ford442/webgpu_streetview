@@ -48,7 +48,7 @@ export interface CabinAudioProbe {
   renderMsAvg: number | null;
   renderMsMax: number | null;
   /**
-   * Live AudioContexts in the app (`audio/audioRuntime.ts`, #367): 1 with any
+   * Live AudioContexts in the app (`audio/audioRuntime.ts`, #361): 1 with any
    * audio running, 0 before the first. Above 1 is a regression.
    */
   contexts: number;

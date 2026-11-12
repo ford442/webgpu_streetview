@@ -1,5 +1,5 @@
 /**
- * #367: `runtime/contexts.ts` is the one reader of the machine's display and
+ * #361: `runtime/contexts.ts` is the one reader of the machine's display and
  * power answers, and `audio/audioRuntime.ts` the one creator of an
  * AudioContext. Same shape as `xr/frameClock.scan.test.ts`.
  */

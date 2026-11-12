@@ -201,7 +201,7 @@ test.describe('scene depth on a real WebGPU device', () => {
         expect(await call(page, 'uncaptured')).toEqual([]);
     });
 
-    test('#367: the Worker follows the road\'s power policy and recovers from a lost device within 10 s', async () => {
+    test('#361: the Worker follows the road\'s power policy and recovers from a lost device within 10 s', async () => {
         const before = await call(page, 'stats');
         // The road's request on this lane: the battery heuristic's default (no `?gpu=`).
         expect(before.powerPreference).toBe('high-performance');

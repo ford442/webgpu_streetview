@@ -207,7 +207,7 @@ export class DepthEstimator {
                     }
                 }
             };
-            // The road's adapter policy rides the init message (#367): the
+            // The road's adapter policy rides the init message (#361): the
             // Worker cannot see the battery heuristic or the URL itself.
             const gpu = getRuntimeContexts().gpu;
             worker.postMessage({

@@ -246,7 +246,7 @@ describe('scene depth — input, output, publication', () => {
         expect(getSceneDepthStats().state).toBe('ready');
     });
 
-    it('#367: a device lost in the Worker after ready recovers without a toggle', async () => {
+    it('#361: a device lost in the Worker after ready recovers without a toggle', async () => {
         const c = makeController({ lossRecovery: new DeviceLossRecovery({ baseDelayMs: 1 }) });
         await warmUp(c);
         const first = worker;
@@ -272,7 +272,7 @@ describe('scene depth — input, output, publication', () => {
         expect(worker.received.some((m) => m.type === 'infer')).toBe(true);
     });
 
-    it('#367: recovery is capped — three failed re-loads end in a reported failure', async () => {
+    it('#361: recovery is capped — three failed re-loads end in a reported failure', async () => {
         const c = makeController({ lossRecovery: new DeviceLossRecovery({ baseDelayMs: 1, maxAttempts: 3 }) });
         await warmUp(c);
         const first = worker;
@@ -294,7 +294,7 @@ describe('scene depth — input, output, publication', () => {
         expect(c.currentAux()).toBeUndefined();
     });
 
-    it('#367: the init message carries the road\'s adapter policy (?gpu=low-power) and identity', async () => {
+    it('#361: the init message carries the road\'s adapter policy (?gpu=low-power) and identity', async () => {
         resetRuntimeContextsForTests();
         const adapter = {
             info: { vendor: 'intel', architecture: 'xe', device: '0x46a6', description: 'Iris Xe' },

@@ -1,6 +1,6 @@
 import { acquireAudioRuntime, releaseAudioRuntime } from '../../../audio/audioRuntime';
 
-/** The lab's fan and beeps, on the shared runtime's `ui` bus (#367). */
+/** The lab's fan and beeps, on the shared runtime's `ui` bus (#361). */
 export class ScienceLabAudio {
     audioContext: AudioContext | null = null;
     private output: AudioNode | null = null;

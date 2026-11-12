@@ -13,7 +13,7 @@ export interface DepthInitRequest {
     models: Record<DepthModelVariant, DepthModelFile>;
     cacheName: string;
     cachePrefix: string;
-    /** The road's resolved adapter options (#367): power preference, feature level, fallback. */
+    /** The road's resolved adapter options (#361): power preference, feature level, fallback. */
     adapterRequest: DepthAdapterRequest;
     /** The road adapter's identity, to prefer the same physical GPU; null before the road booted. */
     mainAdapter: GpuAdapterIdentity | null;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * #367 slice 4: one AudioContext for the app. A car session with the cabin
+ * #361 slice 4: one AudioContext for the app. A car session with the cabin
  * engine, the radio and the wind bed playing holds exactly one context, every
  * source reaches `destination` through its bus and the master limiter, and
  * `__CABIN_AUDIO_PROBE__.contexts` says 1.

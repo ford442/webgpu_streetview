@@ -1,5 +1,5 @@
 /**
- * The depth Worker's adapter policy (#367 slice 3), pure so both sides of the
+ * The depth Worker's adapter policy (#361 slice 3), pure so both sides of the
  * Worker boundary — and the tests — share it.
  *
  * The Worker used to hard-code `powerPreference: 'high-performance'`: it

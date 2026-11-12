@@ -25,7 +25,7 @@
  *   same readback, same Worker and input tensor — each inference also runs the
  *   semantic session while the sink wants maps, and the class map is handed to
  *   the sink with the pose it was inferred at.
- * - **A lost Worker device recovers (#367).** The road's capped backoff
+ * - **A lost Worker device recovers (#361).** The road's capped backoff
  *   (`deviceLossRecovery.ts`, 3 tries per incident) re-creates the estimator;
  *   depth and the semantic session resume without a user toggle. The state
  *   reads `recovering` meanwhile, and the map's weight is 0 until a new map lands.

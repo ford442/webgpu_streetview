@@ -173,7 +173,7 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
         if (reinitTimerRef.current) clearTimeout(reinitTimerRef.current);
     }, []);
 
-    // #367: the window moved to a display with a different HDR / P3 answer.
+    // #361: the window moved to a display with a different HDR / P3 answer.
     // A colour-space change re-configures in place; an HDR change rebuilds the
     // renderer (an intended teardown — never counted as a device loss).
     useEffect(() => subscribeDisplayChanges(() => {

@@ -444,7 +444,7 @@ const api = {
         return frame;
     },
     stats: () => getSceneDepthStats(),
-    /** #367: destroy the depth Worker's device (the recovery path's trigger). */
+    /** #361: destroy the depth Worker's device (the recovery path's trigger). */
     loseDepthDevice: () => debugLoseSceneDepthDevice(),
     semanticStats: () => JSON.parse(JSON.stringify(getSceneSemanticStats())) as SceneSemanticStats,
     passes: () => JSON.parse(JSON.stringify(window.webgpuProbe?.passes ?? {})),

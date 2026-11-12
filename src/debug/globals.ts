@@ -53,7 +53,7 @@ export interface RendererDebugHandle {
     setEffectIsolation?: (effect: RendererEffectIsolation) => void;
     setWireframe?: (enabled: boolean) => void;
     setWeatherMode?: (mode: WeatherPostProcessMode) => void;
-    /** Destroy the scene-depth Worker's device to exercise its recovery (#367). False when depth is not ready. */
+    /** Destroy the scene-depth Worker's device to exercise its recovery (#361). False when depth is not ready. */
     loseDepthDevice?: () => boolean;
 }
 
@@ -85,7 +85,7 @@ export interface SvDebug {
     readonly perf: FrameRateStats;
     /** Unhandled promise rejections / errors since boot (`app/unhandledRejection.ts`). */
     readonly errors: UnhandledErrorStats;
-    /** The capability manifest (#367): GPU, display, audio, isolation, storage, power. */
+    /** The capability manifest (#361): GPU, display, audio, isolation, storage, power. */
     readonly contexts: Readonly<RuntimeContexts>;
     /** True when the page was opened with `?debug` (mutators installed). */
     readonly debug: boolean;

@@ -358,7 +358,7 @@ describe('getCanvasOutputFlags', () => {
   beforeEach(resetGlobals);
   afterEach(resetGlobals);
 
-  it('defaults both to auto — the display decides (#367)', () => {
+  it('defaults both to auto — the display decides (#361)', () => {
     expect(getCanvasOutputFlags()).toEqual({ hdr: 'auto', p3: 'auto' });
   });
 

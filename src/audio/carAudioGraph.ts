@@ -15,7 +15,7 @@
  *
  * The buses mix through the runtime's master limiter into `destination`.
  * While the cabin engine is attached it owns the wind, so the `wind` bus
- * (`WindAudio`) is muted (#367; it used to be a check in the animator only).
+ * (`WindAudio`) is muted (#361; it used to be a check in the animator only).
  *
  * The context outlives individual `CabinAudio` instances (the car-mode effect
  * can recreate one while the radio keeps playing); with no users left it is

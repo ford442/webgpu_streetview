@@ -377,7 +377,7 @@ export interface CanvasOutputPolicy {
 
 /**
  * Resolve the output-referred canvas policy. Both flags default to `auto`
- * (#367): an HDR / P3 display gets HDR / P3 without a flag, and an SDR sRGB
+ * (#361): an HDR / P3 display gets HDR / P3 without a flag, and an SDR sRGB
  * display (or `?hdr=0&p3=0`) is byte-identical to the historical SDR sRGB
  * opaque swap-chain. A missing `flags` argument still means all-off.
  *

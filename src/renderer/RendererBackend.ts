@@ -52,7 +52,7 @@ export interface StreetViewRenderer {
      */
     getMaxTextureDimension2D?(): number | undefined;
     /**
-     * The display's HDR / P3 answer changed (`runtime/contexts.ts`, #367):
+     * The display's HDR / P3 answer changed (`runtime/contexts.ts`, #361):
      * re-resolve the canvas output policy. A colour-space-only change is
      * re-configured in place; an HDR change swaps the swap-chain format, which
      * every pipeline is built for, so it asks the owner for a re-init.
@@ -266,7 +266,7 @@ export interface CanvasOutputFlags {
 }
 
 /**
- * Output-referred canvas policy flags. Both default to `auto` (#367): the
+ * Output-referred canvas policy flags. Both default to `auto` (#361): the
  * display decides (`runtime/contexts.ts`), so an SDR sRGB display boots the
  * historical swap-chain byte for byte; `off` / `on` override the display.
  */

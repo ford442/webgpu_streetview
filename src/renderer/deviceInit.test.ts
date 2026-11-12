@@ -332,7 +332,7 @@ describe('canvas output policy', () => {
         expect(descriptor.viewFormats).toBeUndefined();
     });
 
-    it('#367: with the default flags an HDR display gets extended tone mapping', () => {
+    it('#361: with the default flags an HDR display gets extended tone mapping', () => {
         const policy = resolveCanvasOutputPolicy({
             preferredFormat: 'bgra8unorm',
             flags: getCanvasOutputFlags(),
@@ -345,7 +345,7 @@ describe('canvas output policy', () => {
         expect(descriptor.format).toBe(HDR_CANVAS_FORMAT);
     });
 
-    it('#367: an SDR display, or ?hdr=0&p3=0 on an HDR one, is the historical descriptor byte for byte', () => {
+    it('#361: an SDR display, or ?hdr=0&p3=0 on an HDR one, is the historical descriptor byte for byte', () => {
         const historical = buildCanvasConfiguration(device, 'bgra8unorm', { hdr: false, p3: false });
         const sdrDisplay = resolveCanvasOutputPolicy({
             preferredFormat: 'bgra8unorm',

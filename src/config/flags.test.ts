@@ -61,7 +61,7 @@ describe('flag-specific behaviour', () => {
   });
 
   it('tri flags map bool spellings to on/off and keep auto', () => {
-    // #367: the display decides by default; the bool spellings override it.
+    // #361: the display decides by default; the bool spellings override it.
     expect(readFlag('hdr', '')).toBe('auto');
     expect(readFlag('p3', '')).toBe('auto');
     expect(readFlag('hdr', '?hdr')).toBe('on');

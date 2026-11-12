@@ -46,7 +46,7 @@ afterEach(() => {
     Reflect.deleteProperty(navigator, 'getBattery');
 });
 
-describe('runtime contexts (#367)', () => {
+describe('runtime contexts (#361)', () => {
     it('is a frozen snapshot', () => {
         const contexts = getRuntimeContexts();
         expect(Object.isFrozen(contexts)).toBe(true);

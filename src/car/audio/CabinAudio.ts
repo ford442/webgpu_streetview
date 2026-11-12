@@ -103,7 +103,7 @@ export class CabinAudio {
       this.ctx = graph.ctx;
       this.master = graph.ctx.createGain();
       this.master.gain.value = 1;
-      // The runtime's `cabin` bus (#367), not `destination`: one limiter for every bus.
+      // The runtime's `cabin` bus (#361), not `destination`: one limiter for every bus.
       this.master.connect(graph.cabinBus);
       publishCabinAudioProbe({ mode: 'off', ready: false, sampleRate: graph.ctx.sampleRate });
 

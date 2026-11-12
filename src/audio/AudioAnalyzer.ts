@@ -29,7 +29,7 @@ export class AudioAnalyzer {
   private audioContext: AudioContext | null = null;
   /** Set when playing through the car graph: the context is shared, never closed here. */
   private carGraph: CarAudioGraph | null = null;
-  /** Off the car graph: the shared runtime's `radio` bus (#367). Released, never closed. */
+  /** Off the car graph: the shared runtime's `radio` bus (#361). Released, never closed. */
   private radioOut: AudioNode | null = null;
   private analyser: AnalyserNode | null = null;
   // correct DOM type for a media-element based audio source

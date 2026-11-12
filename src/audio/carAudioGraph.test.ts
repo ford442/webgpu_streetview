@@ -46,7 +46,7 @@ describe('carAudioGraph', () => {
   it('plays the radio straight out (and into the tap) with no cabin engine', () => {
     const g = acquireCarAudioGraph()!;
     const bus = g.radioBus as unknown as StubNode;
-    // Out through the runtime's `radio` bus (#367), never to `destination` directly.
+    // Out through the runtime's `radio` bus (#361), never to `destination` directly.
     expect(bus.connections.has(g.radioOut)).toBe(true);
     expect(bus.connections.has(g.ctx.destination)).toBe(false);
     expect(bus.connections.has(g.analyser)).toBe(true);

@@ -13,7 +13,7 @@ type SceneDepthState =
     /** Downloading the runtime / model, or building the session. */
     | 'loading'
     | 'ready'
-    /** The Worker's device was lost: a new Worker loads after a capped backoff (#367). */
+    /** The Worker's device was lost: a new Worker loads after a capped backoff (#361). */
     | 'recovering'
     | 'failed';
 
@@ -25,7 +25,7 @@ export interface SceneDepthStats {
     /** The depth device has `shader-f16` (and so runs the f16 model). */
     shaderF16: boolean | null;
     adapter: string | null;
-    /** The power preference the Worker's adapter was requested with (the road's policy, #367). */
+    /** The power preference the Worker's adapter was requested with (the road's policy, #361). */
     powerPreference: GPUPowerPreference | null;
     /** The Worker landed on a different physical adapter than the road, after its one retry. */
     adapterMismatch: boolean;
@@ -110,7 +110,7 @@ export function useSceneDepthStats<T>(selector: (s: SceneDepthStats) => T): T {
     return useStore(store, selector);
 }
 
-/** The live controller's device-loss trigger (#367); null while no depth pass exists. */
+/** The live controller's device-loss trigger (#361); null while no depth pass exists. */
 let loseDeviceHook: (() => boolean) | null = null;
 
 /** `DepthController` registers its trigger here (the newest controller wins). */
