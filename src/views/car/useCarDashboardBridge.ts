@@ -1,48 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ControlMode } from '../../hooks/useViewMode';
-import {
-  initCarMode,
-  toggleCarMode,
-  disposeCarMode,
-  updateCarMode,
-  setCarSteering,
-  setCarWipers,
-  setCarSeatOffset,
-  updateCarGauges,
-  setWindowTint,
-  setMirrorStreetViewCanvas,
-  setCarZoomFOV,
-  setCarWeatherAmbient,
-  setCarInteriorEditMode,
-  triggerCarInteriorPress,
-  isCarCenterDisplayHit,
-  cycleCarDisplayPage,
-  setCarWeather,
-  isConvertibleOpen,
-  getCurrentVehicleType,
-  gearHopCount,
-  type CarModeState,
-  type GearPosition,
-} from '../../car';
-import { publishCameraSpeed } from '../../renderer/cameraMotionSignal';
-import { VehicleDynamics, type VehicleTelemetry } from '../../car/VehicleDynamics';
-import { applyVehicleTelemetry } from '../../car/telemetryFeed';
-import { CabinAudio, type CabinEnvironment } from '../../car/audio/CabinAudio';
-import {
-  createCabinRendererAsync,
-  preloadWebGPUCabinRenderer,
-  resolveCabinRendererPreference,
-} from '../../car/interior/createCabinRenderer';
-import { detectGPUProfile } from '../../car/interior/performance';
+import { initCarMode, toggleCarMode, disposeCarMode, updateCarMode, setCarSteering, setCarWipers, setCarSeatOffset, updateCarGauges, setWindowTint, setMirrorStreetViewCanvas, setCarZoomFOV, setCarWeatherAmbient, setCarInteriorEditMode, triggerCarInteriorPress, isCarCenterDisplayHit, cycleCarDisplayPage, setCarWeather, isConvertibleOpen, getCurrentVehicleType, gearHopCount, type CarModeState, type GearPosition, applyVehicleTelemetry, CabinAudio, createCabinRendererAsync, preloadWebGPUCabinRenderer, resolveCabinRendererPreference, detectGPUProfile, createCabinPovSync } from '../../car';
+import { publishCameraSpeed, frameTailScheduler } from '../../renderer';
+import { VehicleDynamics, type VehicleTelemetry, type CabinEnvironment } from '../../car/eager';
 import { currentSearch } from '../../config/flags';
-import { povStore, usePovEffect } from '../../state/povStore';
-import { cabinHeadStore } from '../../state/cabinHeadStore';
-import { createCabinPovSync } from '../../car/input/cabinPovSync';
-import { frameTailScheduler } from '../../renderer/reproject/frameTail';
-import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../car/carSpatialModel';
+import { povStore, usePovEffect, cabinHeadStore, tripStore, liveConditionsStore } from '../../state';
+import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../config/carSpatialModel';
 import { cancelFrame, isXrDriven, requestFrame } from '../../xr/frameClock';
-import { tripStore } from '../../state/tripStore';
-import { liveConditionsStore } from '../../state/liveConditionsStore';
 
 /**
  * The world the cabin engine hears, read imperatively once per frame: the

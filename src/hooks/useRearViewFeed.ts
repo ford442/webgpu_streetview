@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RearViewFeed, type RearViewFeedStats, type RearViewSample } from '../car/rearViewFeed';
-import { setMirrorRearSample } from '../car';
+import { type RearViewFeedStats, type RearViewSample } from '../car/eager';
+import { RearViewFeed, setMirrorRearSample } from '../car';
 import { getActiveQualityLevel } from '../config/visualPresets';
 import { onMapsAuthFailure } from '../services/maps/loader';
 

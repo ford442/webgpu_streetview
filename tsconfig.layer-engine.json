@@ -1,0 +1,47 @@
+{
+  "extends": "./tsconfig.layer.json",
+  "$comment": "Layer 'engine' of scripts/architecture.json: renderer, audio, xr, runtime, services, search, trip, offline. May import only itself and the layers it references.",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/layers/engine.tsbuildinfo",
+    "exactOptionalPropertyTypes": true
+  },
+  "include": [
+    "src/renderer",
+    "src/audio",
+    "src/xr",
+    "src/runtime",
+    "src/services",
+    "src/search",
+    "src/trip",
+    "src/offline",
+    "src/types/**/*.d.ts",
+    "src/vite-env.d.ts",
+    "src/renderer/**/*.json",
+    "src/audio/**/*.json",
+    "src/xr/**/*.json",
+    "src/runtime/**/*.json",
+    "src/services/**/*.json",
+    "src/search/**/*.json",
+    "src/trip/**/*.json",
+    "src/offline/**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/**/__tests__/**",
+    "src/setupTests.ts",
+    "src/vitest-env.d.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.layer-foundation.json"
+    },
+    {
+      "path": "./tsconfig.layer-state.json"
+    }
+  ]
+}

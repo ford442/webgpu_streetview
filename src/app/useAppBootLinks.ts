@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { parseDeepLinkParams } from '../utils/deepLink';
-import { parseStudioLinkParams } from '../utils/studioLink';
-import { pickHistoricalEntryForYear, type HistoricalPanoEntry } from '../utils/historicalImagery';
-import type { VehicleType } from '../car/VehicleManager';
+import { parseDeepLinkParams } from '../config/deepLink';
+import { parseStudioLinkParams } from '../car/eager';
+import { pickHistoricalEntryForYear, type HistoricalPanoEntry } from '../services/maps/historicalImagery';
+import type { VehicleType } from '../car/eager';
 
 export interface UseAppBootLinksOptions {
   isConnected: boolean;

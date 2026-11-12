@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { clearAuthFailure, loadMapsApi, onMapsAuthFailure } from './loader';
-import { writeWindowProperty } from '../../debug/globals';
+import { writeWindowProperty } from '../../debug/windowAccess';
 
 
 const resetMapsGlobals = () => {

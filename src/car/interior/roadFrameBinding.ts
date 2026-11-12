@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { RoadHdrFrame } from '../../renderer/roadFrameRegistry';
+import type { RoadHdrFrame } from '../../renderer';
 
 /**
  * Binds the road renderer's HDR intermediate into the cabin's TSL graph.

@@ -5,7 +5,7 @@
  * corner, so a follower that ignores the route goes straight on.
  */
 import { requireWasm } from '../../../wasm';
-import type { LatLng, Route } from '../RouteProvider';
+import type { Route, LatLng } from '../../../types/route';
 
 export const ORIGIN: LatLng = { lat: 55.95, lng: -3.2 };
 const offset = (p: LatLng, metres: number, bearing: number): LatLng =>

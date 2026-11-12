@@ -22,7 +22,7 @@
  * users. The output's sample rate and latency go to `__SV__.contexts.audio`.
  */
 import { createBrowserAudioContext } from './createAudioContext';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 import { recordAudioOutput } from '../runtime/contexts';
 
 export const AUDIO_BUS_NAMES = ['cabin', 'radio', 'wind', 'ui', 'voice'] as const;

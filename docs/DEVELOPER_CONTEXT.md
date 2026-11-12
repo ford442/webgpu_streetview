@@ -41,18 +41,18 @@ State lives in **providers and colocated hooks** under `src/app/` and `src/hooks
 |---------|-------|
 | Street View scrape | `src/components/StreetView.tsx` |
 | WebGPU render loop | `src/components/WebGPUCanvas.tsx` → `src/renderer/Renderer.ts` |
-| Hold-pause transitions | `src/hooks/useStreetView.tsx` + `src/utils/panoramaStability.ts` |
+| Hold-pause transitions | `src/hooks/useStreetView.tsx` + `src/services/maps/panoramaStability.ts` |
 | Free-look input | `src/components/FreeLookInputHandler.tsx` |
 | Car mode | `src/views/CarModeView.tsx` + `src/views/car/*` hooks |
 | Globe | `src/components/GlobeView.tsx` + `src/components/globe/` (camera, input, journey, POI) |
-| Cruise / navigation | `src/utils/navigation.ts`, toolbar in `AppToolbar.tsx` |
+| Cruise / navigation | `src/wasm/navigation.ts`, toolbar in `AppToolbar.tsx` |
 
 ---
 
 ## 3. Complexity hotspots
 
 ### Canvas scraper (`StreetView.tsx`)
-MutationObserver heuristics; container must stay `opacity: 1`. See `src/utils/scraperHealth.ts` and `AGENTS.md` danger zone §1.
+MutationObserver heuristics; container must stay `opacity: 1`. See `src/debug/scraperHealth.ts` and `AGENTS.md` danger zone §1.
 
 ### Hold-pause (`Renderer.ts`, `WebGPUCanvas.tsx`, `useStreetView.tsx`)
 Never upload live GMaps canvas while `holdActive`. Regression guard: `window.__STREETVIEW_PROBE__`.

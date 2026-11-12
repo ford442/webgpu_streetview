@@ -13,40 +13,14 @@
  * 10 minutes); a jump of more than 25 km refetches, at most once a minute.
  */
 
-import { haversineMeters } from '../../utils/navigation';
+import { haversineMeters } from '../../wasm/navigation';
+import type { LiveConditions, WeatherTarget } from '../../types/conditions';
 
 const OPEN_METEO_ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
 
 export const CONDITIONS_REFRESH_MS = 10 * 60 * 1000;
 const CONDITIONS_REFETCH_DISTANCE_M = 25_000;
 const CONDITIONS_MIN_SPACING_MS = 60 * 1000;
-
-export interface LiveConditions {
-  lat: number;
-  lng: number;
-  fetchedAt: number;
-  /** WMO weather interpretation code. */
-  weatherCode: number;
-  /** Precipitation over the preceding hour, mm. */
-  precipitationMm: number;
-  /** Snowfall over the preceding hour, cm. */
-  snowfallCm: number;
-  cloudCoverPct: number;
-  /** Metres; null when the model does not report it. */
-  visibilityM: number | null;
-  windSpeedKmh: number;
-  /** Direction the wind blows *from*, degrees. */
-  windFromDeg: number;
-  temperatureC: number | null;
-}
-
-/** Targets in the weather panel's own units (rain/snow/fog 0–100, wind −100…100). */
-export interface WeatherTarget {
-  rainIntensity: number;
-  snowIntensity: number;
-  fogDensity: number;
-  wind: number;
-}
 
 export function buildOpenMeteoUrl(lat: number, lng: number): string {
   const current = [
@@ -81,10 +55,10 @@ export function parseOpenMeteoCurrent(json: unknown, lat: number, lng: number, n
 export async function fetchLiveConditions(
   lat: number,
   lng: number,
-  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal; now?: number } = {},
+  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal | undefined; now?: number } = {},
 ): Promise<LiveConditions> {
   const fetchImpl = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
-  const res = await fetchImpl(buildOpenMeteoUrl(lat, lng), { signal: opts.signal, headers: { Accept: 'application/json' } });
+  const res = await fetchImpl(buildOpenMeteoUrl(lat, lng), { ...(opts.signal ? { signal: opts.signal } : {}), headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
   return parseOpenMeteoCurrent(await res.json(), lat, lng, opts.now ?? Date.now());
 }

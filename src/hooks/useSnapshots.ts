@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { loadMirroredJson, saveMirroredJson } from '../offline/offlinePersistence';
-import { buildStudioShareUrl } from '../utils/studioLink';
+import { buildStudioShareUrl } from '../car/eager';
 import {
     type ImageExportFormat,
     convertDataUrlFormat,
     blobToDataUrl,
     formatExtension,
-} from '../utils/imageExport';
-import { embedExifGps } from '../utils/exifGps';
+} from '../services/capture/imageExport';
+import { embedExifGps } from '../services/capture/exifGps';
 
 export interface SnapshotMetadata {
     id: string;
@@ -30,7 +30,7 @@ export interface SnapshotMetadata {
 
 export type SnapshotShareResult = 'share' | 'clipboard' | 'cancelled';
 
-import { MAPS_ATTRIBUTION } from '../utils/attribution';
+import { MAPS_ATTRIBUTION } from '../services/capture/attribution';
 
 const MAX_SNAPSHOTS = 20; // Limit stored snapshots to avoid storage quota issues
 

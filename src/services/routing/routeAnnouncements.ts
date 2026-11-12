@@ -5,7 +5,7 @@
  * that jumps past both thresholds speaks only the nearer one.
  */
 
-import { nextStep, type TripState } from '../../state/tripStore';
+import { nextStep, type TripState } from '../../state';
 import { formatGuidanceDistance, maneuverInstruction } from './guidanceFormat';
 
 const ANNOUNCE_THRESHOLDS_M = [200, 50] as const;

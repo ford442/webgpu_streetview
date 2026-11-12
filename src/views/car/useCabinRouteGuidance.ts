@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { setCarRouteGuidance } from '../../car';
 import type { RouteGuidance } from '../../services/routing/guidanceFormat';
-import { nextStep, tripStore, type TripState } from '../../state/tripStore';
+import { nextStep, tripStore, type TripState } from '../../state';
 
 /** The centre-display view of a trip, or null when no route is being driven. */
 function toRouteGuidance(state: TripState): RouteGuidance | null {

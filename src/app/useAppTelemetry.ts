@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getMemoryProfiler, type MemoryStats } from '../utils/memoryProfiler';
-import {
-  getGpuPassTimings,
-  setGpuPassTimingsWanted,
-  type GpuPassTimings,
-} from '../renderer/gpuPassTimingStore';
-import { getGpuChoresStats, type GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
-import { getAutoExposureStatus, type AutoExposureStatus } from '../renderer/autoExposure';
-import { getAppliedRenderScale, type AppliedRenderScale } from '../renderer/renderScale';
+import { getMemoryProfiler, type MemoryStats } from '../debug/memoryProfiler';
+import { getGpuPassTimings, setGpuPassTimingsWanted, type GpuPassTimings, getGpuChoresStats, type GpuChoresStats, getAutoExposureStatus, type AutoExposureStatus, getAppliedRenderScale, type AppliedRenderScale } from '../renderer';
 
 export interface AppTelemetry {
   memoryStats: MemoryStats | null;

@@ -8,7 +8,7 @@
 import { StrictMode } from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { writeWindowProperty } from '../debug/globals';
+import { writeWindowProperty } from '../debug/windowAccess';
 
 const maps = vi.hoisted(() => ({ load: vi.fn(() => Promise.resolve()) }));
 vi.mock('../services/maps/loader', () => ({

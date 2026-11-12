@@ -3,8 +3,7 @@ import type { EnvironmentSettingsState } from '../hooks/useEnvironmentSettings';
 import type { SnapshotMetadata } from '../hooks/useSnapshots';
 import { planTrip, tripOfflineGraphNode } from '../services/routing/tripController';
 import { createConfiguredRouteProvider } from '../services/routing/routingConfig';
-import { povStore } from '../state/povStore';
-import { tripStore } from '../state/tripStore';
+import { povStore, tripStore } from '../state';
 import { buildTripLinkUrl, decodeTripFile, encodeTripFile, readTripLink, tripFileName } from '../trip/tripFile';
 import {
   deleteTripRecording,
@@ -22,7 +21,7 @@ import {
   startReplay,
   stopReplay,
 } from '../trip/tripReplayController';
-import { getHistoricalImagery, pickHistoricalEntryForYear } from '../utils/historicalImagery';
+import { getHistoricalImagery, pickHistoricalEntryForYear } from '../services/maps/historicalImagery';
 
 export interface UseTripRecordingParams {
   panorama: google.maps.StreetViewPanorama | null;

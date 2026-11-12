@@ -13,9 +13,9 @@ import {
 import { gaugeDialGlow, gaugeNeedleGlow } from './cabinLightingRamps';
 import { getWindAudio } from '../../audio/WindAudio';
 import { isCabinEngineAttached } from '../../audio/carAudioGraph';
-import { panoramaPovFromCabin, wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
+import { panoramaPovFromCabin, wiperLowQualityOnPose, wiperParkPose } from '../../config/carSpatialModel';
 import { applyHeadOffset, applyHeadPose } from './cabinRig';
-import type { HeadOffset } from '../carSpatialModel';
+import type { HeadOffset } from '../../config/carSpatialModel';
 
 export interface CarInteriorAmbientState {
   rainNorm: number;

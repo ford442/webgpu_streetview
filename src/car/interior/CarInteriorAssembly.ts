@@ -32,7 +32,7 @@ import {
     loadGltfInteriorKit,
 } from '../gltfInteriorKit';
 import type { CabinRenderer } from './createCabinRenderer';
-import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from '../carSpatialModel';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y } from '../../config/carSpatialModel';
 
 /** Mutable assembly surface used by CarInterior during build and vehicle swaps. */
 export interface CarInteriorAssemblyHost {
@@ -82,7 +82,7 @@ export interface CarInteriorAssemblyHost {
     digitalClockMesh: THREE.Mesh | null;
     digitalClock: DigitalClock | null;
     locationPanel: LocationPanel | null;
-    lastLocationInfo: import('../../utils/panoLocation').PanoLocationInfo | null;
+    lastLocationInfo: import('../../services/maps/panoLocation').PanoLocationInfo | null;
     lastCompassHeading: number;
     lastRouteGuidance: import('../../services/routing/guidanceFormat').RouteGuidance | null;
     lastMediaInfo: { name: string; tags: string; playing: boolean };

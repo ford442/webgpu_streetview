@@ -7,7 +7,7 @@ import {
   PARTICLE_WIND_SCALE,
   PARTICLE_FALL_SPEED,
 } from './weatherParticles';
-import { WEATHER_FALL_Y_SIGN } from '../car/carSpatialModel';
+import { WEATHER_FALL_Y_SIGN } from '../config/worldAxes';
 
 describe('particle precipitation policy', () => {
   it('stays off on the fragment path even at ultra', () => {

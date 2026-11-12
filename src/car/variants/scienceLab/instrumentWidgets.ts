@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { ScienceLabGeometryContext } from './scienceLabGeometry';
+import type { ScienceLabGeometryContext } from './scienceLabContext';
 
 export interface LabInstrumentOverlay {
     speedKmh?: number;

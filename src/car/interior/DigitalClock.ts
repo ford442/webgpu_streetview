@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { PanoLocationInfo } from '../../utils/panoLocation';
+import type { PanoLocationInfo } from '../../services/maps/panoLocation';
 import { CONTENT_MAP_EMISSIVE } from './cabinLightingRamps';
-import { getZonedClock } from '../../utils/localTime';
-import { preloadTimeZoneLookup, resolveTimeZone } from '../../utils/panoTimeZone';
+import { getZonedClock } from '../../services/geo/localTime';
+import { preloadTimeZoneLookup, resolveTimeZone } from '../../services/geo/panoTimeZone';
 
 /**
  * DigitalClock

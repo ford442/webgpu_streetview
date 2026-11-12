@@ -1,10 +1,10 @@
-import { formatImageDate, type HistoricalPanoEntry } from '../utils/historicalImagery';
+import { formatImageDate, type HistoricalPanoEntry } from '../services/maps/historicalImagery';
 import {
   isReducedMotionRequested,
   resolveHistoricalReveal,
   wipeDirectionForHop,
   type HistoricalReveal,
-} from '../renderer/historicalWipe';
+} from '../renderer';
 
 /**
  * Label for the "after" side of a historical comparison overlay.

@@ -1,12 +1,5 @@
-import {
-  CONDITIONS_REFRESH_MS,
-  buildOpenMeteoUrl,
-  describeConditions,
-  mapConditionsToWeather,
-  parseOpenMeteoCurrent,
-  shouldFetchConditions,
-  type LiveConditions,
-} from './openMeteo';
+import { CONDITIONS_REFRESH_MS, buildOpenMeteoUrl, describeConditions, mapConditionsToWeather, parseOpenMeteoCurrent, shouldFetchConditions } from './openMeteo';
+import { type LiveConditions } from '../../types/conditions';
 
 const base: LiveConditions = {
   lat: 56.68, lng: -5.1, fetchedAt: 0, weatherCode: 0, precipitationMm: 0, snowfallCm: 0,

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type CabinRenderer } from './createCabinRenderer';
 import { createCabinPmrem, type CabinEnvTarget, type CabinPmrem } from './cabinPmrem';
-import { carRelativeBearing } from '../carSpatialModel';
+import { carRelativeBearing } from '../../config/carSpatialModel';
 
 /**
  * PanoEnvironment

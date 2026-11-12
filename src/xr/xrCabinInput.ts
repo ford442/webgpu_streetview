@@ -7,9 +7,12 @@
  * through `dispatchCabinInput` — so the left stick steers through STEER's
  * `steer()` exactly like the mouse, never by writing `carHeading` itself.
  */
-import type { CabinInputEvent } from '../car/input/cabinInputMachine';
-
-export type XrCabinInputEvent = Extract<CabinInputEvent, { type: 'XR_ENTER' | 'XR_EXIT' | 'XR_STICK' }>;
+/** WebXR session started / ended, and the left controller thumbstick (the cabin input machine's `XR_*` events). */
+export type XrCabinInputEvent =
+    | { type: 'XR_ENTER' }
+    | { type: 'XR_EXIT' }
+    /** Left controller thumbstick X (−1 left … +1 right), held for `dtS` seconds. */
+    | { type: 'XR_STICK'; axisX: number; dtS: number };
 
 type Listener = (event: XrCabinInputEvent) => void;
 

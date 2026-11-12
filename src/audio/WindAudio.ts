@@ -4,8 +4,8 @@
  */
 
 import { acquireAudioRuntime, releaseAudioRuntime } from './audioRuntime';
-import { cabinAudioPanFromHeadYaw } from '../car/carSpatialModel';
-import { signedAngleDiff } from '../utils/navigation';
+import { cabinAudioPanFromHeadYaw } from '../config/carSpatialModel';
+import { signedAngleDiff } from '../wasm/navigation';
 import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';
 
 /** Taps per ear — short, this is a directional shadow model, not a reverb tail. */

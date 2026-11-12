@@ -6,8 +6,9 @@
  */
 
 import { readFlag } from '../../config/flags';
-import type { TripStop } from '../../state/tripStore';
-import { isValidLatLng, type LatLng } from './RouteProvider';
+import type { TripStop } from '../../state';
+import { isValidLatLng } from './RouteProvider';
+import { type LatLng } from '../../types/route';
 import { OSRM_MAX_WAYPOINTS } from './osrmProvider';
 
 const ROUTE_LINK_PARAM = 'route';

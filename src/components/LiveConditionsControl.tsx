@@ -1,6 +1,6 @@
 import React from 'react';
 import { describeConditions } from '../services/conditions/openMeteo';
-import { liveConditionsStore, useLiveConditions } from '../state/liveConditionsStore';
+import { liveConditionsStore, useLiveConditions } from '../state';
 
 const pill = (active: boolean): React.CSSProperties => ({
   padding: '6px 10px',

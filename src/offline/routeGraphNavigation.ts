@@ -4,16 +4,16 @@
  * these only ever consult data already persisted by a prior prefetch.
  */
 
-import { absoluteAngleDiff, initialBearing } from '../utils/navigation';
+import { absoluteAngleDiff, initialBearing } from '../wasm/navigation';
 import { nearestPano, shortestPanoPath, type LinkGraph } from '../wasm/graph';
-import type { RouteGraphNode } from './offlineStore';
+import type { RouteGraphNode } from '../wasm/graph';
 
 const MAX_HEADING_DIFF_DEG = 45;
 
 /**
  * Pick the neighbor of `currentPanoId` (via its stored `linkPanoIds`) whose
  * bearing is closest to `targetHeading`, mirroring the live `findBestLink`
- * heuristic in `utils/navigation.ts` but using cached graph data instead of
+ * heuristic in `wasm/navigation.ts` but using cached graph data instead of
  * a live `getLinks()` call. Returns null if the current pano isn't in the
  * graph or no neighbor is within `MAX_HEADING_DIFF_DEG`.
  */

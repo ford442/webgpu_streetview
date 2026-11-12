@@ -15,7 +15,7 @@ Custom cabin GLSL (`ShaderMaterial`) lives in `src/shaders/` and is the WebGL-ha
 
 On the composited path **cinema clips and snapshots are the presented frame** — no 2D re-composite. `needsCabinOverlayLatch()` (`renderer/cabinComposite.ts`) reads `renderer.isCabinCompositedInFrame()`, and `useAppCapture` / `CinemaOverlay` pass no overlay when it is false.
 
-The 2D latch is still the path for the WebGL hatch and for any frame the compositor is not driving: `car/runtime/frameCapture.ts` publishes the post-`interior.render()` moment (the only frame in which a WebGL drawing buffer is readable — the cabin renderer has no `preserveDrawingBuffer`) and `utils/canvasRecorder.ts` latches the cabin there. Road-only stays the automatic fallback whenever car mode is not rendering. See `docs/SHARED_SESSIONS.md` § Cinema capture.
+The 2D latch is still the path for the WebGL hatch and for any frame the compositor is not driving: `car/runtime/frameCapture.ts` publishes the post-`interior.render()` moment (the only frame in which a WebGL drawing buffer is readable — the cabin renderer has no `preserveDrawingBuffer`) and `services/capture/canvasRecorder.ts` latches the cabin there. Road-only stays the automatic fallback whenever car mode is not rendering. See `docs/SHARED_SESSIONS.md` § Cinema capture.
 
 ### When the compositor stands down
 
@@ -209,7 +209,7 @@ Use this when changing rain/snow particle math in `weather-post.wgsl`, `weather-
 
 1. Raise snow (and rain) intensity above 0 in the Weather panel.
 2. **WebGPU default** — flakes/streaks must fall **downward** (top-origin UV; `st.y - t * …`).
-3. **GLSL reference** — same downward direction. The vertex shader flips `vUv.y` to top-origin; particle Y time terms must stay **negative** (`WEATHER_FALL_Y_SIGN = -1` in `src/car/carSpatialModel.ts`). Locked by `webglLookParity.test.ts`.
+3. **GLSL reference** — same downward direction. The vertex shader flips `vUv.y` to top-origin; particle Y time terms must stay **negative** (`WEATHER_FALL_Y_SIGN = -1` in `src/config/carSpatialModel.ts`). Locked by `webglLookParity.test.ts`.
 4. Optional: **`?weather=compute`** on WebGPU — match fragment fall direction.
 5. **WebGPU night preset** — road readable with headlights; not crushed black. Floors live in `carSpatialModel.ts` (`NIGHT_BASE_FLOOR` / `NIGHT_SKY_FLOOR`).
 

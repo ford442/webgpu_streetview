@@ -10,21 +10,16 @@
  * {@link configureTripController}.
  */
 
-import type { CruiseRouteGuide } from '../../hooks/useCruiseMode';
-import type { RouteGraphNode } from '../../offline/offlineStore';
+import type { CruiseRouteGuide } from './routeFollow';
+import type { RouteGraphNode } from '../../wasm/graph';
 import { planOfflineHop } from '../../offline/routeGraphNavigation';
-import { tripStore, type OfflineDriveStats, type TripStop, type TripSummary } from '../../state/tripStore';
+import { tripStore, type OfflineDriveStats, type TripStop, type TripSummary } from '../../state';
 import { linkGraphFor, type LinkGraph } from '../../wasm/graph';
 import { getMapsCallBudget } from '../maps/callBudget';
 import { RouteFollower, type LinkLike, type RouteFollowConfig, type RouteHopDecision } from './routeFollow';
-import { bearingBetween, buildActiveRoute, type ActiveRoute } from './routeGeometry';
-import {
-  RouteError,
-  describeRouteError,
-  isValidLatLng,
-  type LatLng,
-  type RouteProvider,
-} from './RouteProvider';
+import { bearingBetween, buildActiveRoute } from './routeGeometry';
+import { type ActiveRoute, type LatLng } from '../../types/route';
+import { RouteError, describeRouteError, isValidLatLng, type RouteProvider } from './RouteProvider';
 
 export interface TripControllerDeps {
   /** One metered `getPanorama` + hold-pause teleport; true when the pano moved. */

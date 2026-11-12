@@ -1,11 +1,11 @@
-import { useThrottledPov } from '../../state/povStore';
+import { useThrottledPov } from '../../state';
 import CinemaOverlay from '../../components/CinemaOverlay';
-import type { ClipOverlaySource } from '../../utils/canvasRecorder';
-import { buildStudioShareUrl } from '../../utils/studioLink';
+import type { ClipOverlaySource } from '../../services/capture/canvasRecorder';
+import { buildStudioShareUrl } from '../../car/eager';
 import type { useCinemaMode } from '../../hooks/useCinemaMode';
-import type { StreetViewRenderer } from '../../renderer/RendererBackend';
+import type { StreetViewRenderer } from '../../renderer';
 import type { LookId } from '../../config/lookPacks';
-import type { VehicleType } from '../../car/VehicleManager';
+import type { VehicleType } from '../../car/eager';
 
 interface CinemaLayerProps {
   cinema: ReturnType<typeof useCinemaMode>;

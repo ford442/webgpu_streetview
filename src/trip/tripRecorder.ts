@@ -11,7 +11,7 @@
  * Maps, React or DOM dependency, so a whole trip can be recorded in a test.
  */
 
-import { tripStore, type TripState, type TripStore } from '../state/tripStore';
+import { tripStore, type TripState, type TripStore } from '../state';
 import { tripLibrary } from './tripLibrary';
 import {
   MAX_TRIP_HOPS,

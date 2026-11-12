@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { readWindowProperty } from '../debug/globals';
+import { readWindowProperty } from '../debug/windowAccess';
 
 export type GlobeTransition = 'inactive' | 'loading' | 'entering' | 'active' | 'exiting';
 

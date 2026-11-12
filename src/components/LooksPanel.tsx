@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { LOOK_IDS, LOOK_PACKS, lookPackMatchesState, type LookEnvSnapshot, type LookId } from '../config/lookPacks';
-import { buildLookUrl } from '../utils/lookLink';
+import { buildLookUrl } from '../config/lookLink';
 
 interface LooksPanelProps {
   isOpen: boolean;

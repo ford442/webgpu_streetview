@@ -1,26 +1,12 @@
-import { povStore } from '../state/povStore';
+import { povStore } from '../state';
 import { useRef, useEffect, useState } from 'react';
 import { findBestOfflineLink } from '../offline';
 import type { RouteGraphNode } from '../offline';
-import { gearChainedHopIntervalMs } from '../car/VehicleDynamics';
+import { gearChainedHopIntervalMs } from '../car/eager';
 import { isGeocodeDenied } from '../search/geocodeAuth';
-import { DEFAULT_LINK_CONE_DEG, findBestLink, initialBearing } from '../utils/navigation';
-import type { RouteHopDecision } from '../services/routing/routeFollow';
-import type { LatLng } from '../services/routing/RouteProvider';
-
-/**
- * Route guidance for a routed road trip (`app/useTripBindings.ts`). Cruise asks
- * it which way to go before each hop; it never makes a Maps call on-route.
- */
-export interface CruiseRouteGuide {
-  /** `panoId` is the pano the car is on (the offline graph planner keys on it). */
-  planHop(position: LatLng, links: readonly google.maps.StreetViewLink[], panoId?: string): RouteHopDecision;
-  /** After every hop attempt, with the pano position it ended on. */
-  afterHop(position: LatLng | null, moved: boolean): void;
-  /** One metered re-snap to a route point; resolves true when the pano moved there. */
-  resnap(target: LatLng): Promise<boolean>;
-  arrived(): void;
-}
+import { DEFAULT_LINK_CONE_DEG, findBestLink, initialBearing } from '../wasm/navigation';
+import type { CruiseRouteGuide } from '../services/routing/routeFollow';
+import type { LatLng } from '../types/route';
 
 export interface UseCruiseModeOptions {
   panorama: google.maps.StreetViewPanorama | null;

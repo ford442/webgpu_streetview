@@ -1,15 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { loadCarRuntime, withCarRuntime, type CarModeState } from '../car/carRuntimeLoader';
+import { loadCarRuntime, withCarRuntime, type CarModeState, INITIAL_CABIN_INPUT, cabinInputMode, transitionCabinInput, type CabinInputEvent, type CabinInputTransition, type ControlMode } from '../car/eager';
 import { currentSearch } from '../config/flags';
-import { povStore } from '../state/povStore';
-import {
-  INITIAL_CABIN_INPUT,
-  cabinInputMode,
-  transitionCabinInput,
-  type CabinInputEvent,
-  type CabinInputTransition,
-  type ControlMode,
-} from '../car/input/cabinInputMachine';
+import { povStore } from '../state';
 
 // Types
 type ViewMode = 'freelook' | 'car';

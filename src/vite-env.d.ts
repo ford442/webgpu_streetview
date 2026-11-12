@@ -1,8 +1,6 @@
 /// <reference types="vite/client" />
 /// <reference types="@webgpu/types" />
 
-import type { WeatherPostProcessMode } from './renderer/RendererBackend';
-
 declare global {
   interface ImportMetaEnv {
     readonly BASE_URL: string;
@@ -27,17 +25,12 @@ declare global {
     readonly env: ImportMetaEnv;
   }
 
-  /** Config and backend flags. Debug / probe globals are typed in `debug/globals.ts`. */
+  /** Config and backend flags. Each debug / probe global is typed by the module that publishes it; `window.__SV__` (`app/svGlobals.ts`) reads them. */
   interface Window {
     MAPS_API_KEY?: string;
     CESIUM_ION_TOKEN?: string;
     /** OSRM-compatible route endpoint (config.js); unset = public demo, '' = off. */
     ROUTING_ENDPOINT?: string;
-    rendererType?: 'webgpu' | 'webgl' | undefined;
-    usingWebGPU?: boolean | undefined;
-    usingWebGL?: boolean | undefined;
-    rendererFallbackReason?: string | undefined;
-    weatherPostProcessMode?: WeatherPostProcessMode | undefined;
   }
 }
 

@@ -44,7 +44,7 @@ import {
     resetSceneSemanticStats,
     setSceneSemanticStats,
 } from './sceneSemanticStatsStore';
-import type { SceneSemanticOptions } from './sceneSemanticOptions';
+import type { SceneSemanticOptions, SemanticSkyEdge } from './sceneSemanticOptions';
 
 const SEMANTIC_PASS_ORDER = 51;
 
@@ -68,16 +68,6 @@ export interface SemanticControllerDeps {
 export interface SemanticFrameInput {
     nowMs: number;
     view: DepthPov;
-}
-
-/** The sky boundary of the current map, for the horizon estimate. */
-export interface SemanticSkyEdge {
-    /** Screen Y (top-origin) of the sky's lower edge at the pitch the map was inferred at. */
-    y: number;
-    /** Normalised pitch (0.5 = level) the map was inferred at. */
-    pitch: number;
-    /** Bumped per map, so one edge is integrated once. */
-    seq: number;
 }
 
 interface PendingMap {

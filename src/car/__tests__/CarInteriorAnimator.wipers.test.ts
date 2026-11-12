@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { CarInteriorAnimator } from '../interior/CarInteriorAnimator';
-import { wiperLowQualityOnPose, wiperParkPose } from '../carSpatialModel';
+import { wiperLowQualityOnPose, wiperParkPose } from '../../config/carSpatialModel';
 
 vi.mock('../../audio/WindAudio', () => ({
   getWindAudio: () => ({

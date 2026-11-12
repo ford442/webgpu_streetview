@@ -1,7 +1,7 @@
 import { buildLinkGraph } from '../wasm/graph';
-import { initialBearing } from '../utils/navigation';
+import { initialBearing } from '../wasm/navigation';
 import { findBestOfflineLink, findPathBetweenPanos, planOfflineHop } from './routeGraphNavigation';
-import type { RouteGraphNode } from './offlineStore';
+import type { RouteGraphNode } from '../wasm/graph';
 
 function node(partial: Partial<RouteGraphNode> & { panoId: string }): RouteGraphNode {
   return {

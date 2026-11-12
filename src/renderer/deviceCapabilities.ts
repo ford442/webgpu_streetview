@@ -1,4 +1,4 @@
-import type { AdapterFeatureLevel, WeatherPostProcessMode } from './RendererBackend';
+import type { AdapterFeatureLevel, WeatherPostProcessMode } from './types';
 import type { TimestampWriteStrategy } from './gpuPassTimer';
 import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
 
@@ -129,4 +129,10 @@ export interface AdapterCapabilitySummary {
     };
     enabledFeatures: GPUFeatureName[];
     capabilityMatrix?: DeviceCapabilityMatrix | undefined;
+}
+
+declare global {
+    interface Window {
+        rendererAdapterInfo?: AdapterCapabilitySummary;
+    }
 }

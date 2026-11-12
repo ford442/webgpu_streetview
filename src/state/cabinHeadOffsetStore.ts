@@ -7,7 +7,7 @@
  * changes shape. Hot state: an external store, never React context; the car
  * loop applies it once per frame (`car/runtime/lifecycle.updateCarMode`).
  */
-import { clampHeadOffset, NO_HEAD_OFFSET, type HeadOffset } from '../car/carSpatialModel';
+import { clampHeadOffset, NO_HEAD_OFFSET, type HeadOffset } from '../config/carSpatialModel';
 
 let offset: HeadOffset = NO_HEAD_OFFSET;
 

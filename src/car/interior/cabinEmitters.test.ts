@@ -9,7 +9,7 @@ import { GeometryFactory } from './GeometryFactory';
 import { LODManager } from './LODManager';
 import { LocationPanel } from './LocationPanel';
 import { CLUSTER_WELL_EMISSIVE, CONTENT_MAP_EMISSIVE, DISPLAY_HOUSING_EMISSIVE } from './cabinLightingRamps';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 /**
  * jsdom has no 2D canvas. The dial/clock/panel constructors only need a

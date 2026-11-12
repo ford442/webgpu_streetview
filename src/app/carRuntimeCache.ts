@@ -1,4 +1,4 @@
-import { withCarRuntime } from '../car/carRuntimeLoader';
+import { withCarRuntime } from '../car/eager';
 
 type CarRuntimeModule = typeof import('../car/carModeRuntime');
 

@@ -16,15 +16,10 @@
 
 import { getMapsCallBudget, type MapsCallBudget } from '../services/maps/callBudget';
 import { ROUTE_FOLLOW_DEFAULTS } from '../services/routing/routeFollow';
-import {
-  ROUTE_RESAMPLE_STEP_M,
-  bearingBetween,
-  pointAlong,
-  projectOnRoute,
-  type ActiveRoute,
-} from '../services/routing/routeGeometry';
-import type { LatLng } from '../services/routing/RouteProvider';
-import { absoluteAngleDiff } from '../utils/navigation';
+import { ROUTE_RESAMPLE_STEP_M, bearingBetween, pointAlong, projectOnRoute } from '../services/routing/routeGeometry';
+import { type ActiveRoute } from '../types/route';
+import type { LatLng } from '../types/route';
+import { absoluteAngleDiff } from '../wasm/navigation';
 import { savePrefetchedRoute, type PanoLinkSnapshot } from './routePrefetch';
 
 /** The call meter source every trip-prefetch lookup is counted under. */

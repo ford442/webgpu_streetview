@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { type PanoLocationInfo, headingToCompass } from '../../utils/panoLocation';
+import { type PanoLocationInfo, headingToCompass } from '../../services/maps/panoLocation';
 import { createAccentMaterial } from './MaterialFactory';
 import { centerDisplayGlowFromNight } from './cabinLightingRamps';
 import { type VehicleConfig } from '../VehicleManager';

@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import WelcomeModal from '../components/WelcomeModal';
 import { getWindAudio } from '../audio/WindAudio';
-import { usePovEffect } from '../state/povStore';
+import { usePovEffect, publishCruiseFlag } from '../state';
 import {
   useStreetView,
   useViewMode,
@@ -19,9 +19,7 @@ import { useGlobeMode } from '../hooks/useGlobeMode';
 import { useAnnouncer } from '../hooks/useKeyboardShortcuts';
 import { useCruiseMode } from '../hooks/useCruiseMode';
 import { useCinemaMode } from '../hooks/useCinemaMode';
-import { publishCruiseFlag } from '../state/cruiseFlagStore';
-import { withCarRuntime } from '../car/carRuntimeLoader';
-import { vehicleManager, type VehicleType } from '../car/VehicleManager';
+import { withCarRuntime, vehicleManager, type VehicleType } from '../car/eager';
 import { useAutopilot } from '../hooks/useAutopilot';
 import { useGlobeTeleport } from '../hooks/useGlobeTeleport';
 import BuildBadge from '../components/BuildBadge';

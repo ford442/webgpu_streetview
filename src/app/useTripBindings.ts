@@ -3,9 +3,9 @@ import { readFlag } from '../config/flags';
 import { useViewMode } from '../hooks/useViewMode';
 import { estimateTripPrefetch, type TripPrefetchEstimate, type TripPrefetchProgress, type TripPrefetchResult } from '../offline/tripPrefetch';
 import type { UseRoutePrefetchResult } from '../hooks/useRoutePrefetch';
-import { prefersReducedMotion } from '../renderer/cinematicCameraFx';
+import { prefersReducedMotion } from '../renderer';
 import { getMapsCallBudget } from '../services/maps/callBudget';
-import type { LatLng } from '../services/routing/RouteProvider';
+import type { LatLng } from '../types/route';
 import { RouteAnnouncer } from '../services/routing/routeAnnouncements';
 import { distanceBetween } from '../services/routing/routeGeometry';
 import { buildRouteLinkUrl, readRouteLink } from '../services/routing/routeLink';
@@ -18,11 +18,10 @@ import {
   startDrive,
 } from '../services/routing/tripController';
 import { createConfiguredRouteProvider, resolveRoutingConfig, type RoutingConfig } from '../services/routing/routingConfig';
-import { povStore } from '../state/povStore';
-import { tripStore, useTripSelector, type TripStop } from '../state/tripStore';
-import { signedAngleDiff } from '../utils/navigation';
+import { povStore, tripStore, useTripSelector, type TripStop } from '../state';
+import { signedAngleDiff } from '../wasm/navigation';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 /** Drive with the cached graph planner: no network, or `?offline=1`. */
 function isTripOffline(): boolean {

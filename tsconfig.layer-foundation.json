@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.layer.json",
+  "$comment": "Layer 'foundation' of scripts/architecture.json: wasm, config, types, shaders. May import only itself and the layers it references.",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/layers/foundation.tsbuildinfo",
+    "exactOptionalPropertyTypes": true
+  },
+  "include": [
+    "src/wasm",
+    "src/config",
+    "src/types",
+    "src/shaders",
+    "src/types/**/*.d.ts",
+    "src/vite-env.d.ts",
+    "src/wasm/**/*.json",
+    "src/config/**/*.json",
+    "src/shaders/**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/**/__tests__/**",
+    "src/setupTests.ts",
+    "src/vitest-env.d.ts"
+  ],
+  "references": []
+}

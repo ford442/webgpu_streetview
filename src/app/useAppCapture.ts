@@ -1,16 +1,15 @@
 import { useCallback, useMemo } from 'react';
-import type { ClipOverlaySource } from '../utils/canvasRecorder';
-import { captureCompositedStill } from '../utils/canvasRecorder';
+import type { ClipOverlaySource } from '../services/capture/canvasRecorder';
+import { captureCompositedStill } from '../services/capture/canvasRecorder';
 import { useSnapshots } from '../hooks/useSnapshots';
-import { makePickerThumbDataUrl } from '../renderer/gpuChores/pickerThumb';
-import type { StreetViewRenderer } from '../renderer/RendererBackend';
-import { needsCabinOverlayLatch } from '../renderer/cabinComposite';
+import { makePickerThumbDataUrl, needsCabinOverlayLatch } from '../renderer';
+import type { StreetViewRenderer } from '../renderer';
 import type { LookId } from '../config/lookPacks';
-import type { VehicleType } from '../car/VehicleManager';
+import type { VehicleType } from '../car/eager';
 import type { ConnectedChromeSnapshots } from './shell/ConnectedChrome';
 import { getCarRuntime } from './carRuntimeCache';
-import { povStore } from '../state/povStore';
-import { fireAndForget } from '../utils/fireAndForget';
+import { povStore } from '../state';
+import { fireAndForget } from '../config/fireAndForget';
 
 export interface UseAppCaptureOptions {
   panorama: google.maps.StreetViewPanorama | null;

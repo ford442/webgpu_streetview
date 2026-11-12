@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getHistoricalImagery, type HistoricalPanoEntry } from '../utils/historicalImagery';
+import { getHistoricalImagery, type HistoricalPanoEntry } from '../services/maps/historicalImagery';
 
 export interface UseHistoricalImageryResult {
   entries: HistoricalPanoEntry[];

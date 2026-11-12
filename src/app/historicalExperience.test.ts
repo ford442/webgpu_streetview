@@ -3,7 +3,7 @@ import {
   resolveHistoricalAfterLabel,
   resolveYearChipReveal,
 } from './historicalExperience';
-import type { HistoricalPanoEntry } from '../utils/historicalImagery';
+import type { HistoricalPanoEntry } from '../services/maps/historicalImagery';
 
 const entries: HistoricalPanoEntry[] = [
   {

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { clampHeadOffset, clampHeadPitch, clampHeadYaw, type HeadOffset } from '../carSpatialModel';
+import { clampHeadOffset, clampHeadPitch, clampHeadYaw, type HeadOffset } from '../../config/carSpatialModel';
 
 /**
- * The cabin transform hierarchy (see `car/carSpatialModel.ts`):
+ * The cabin transform hierarchy (see `config/carSpatialModel.ts`):
  *
  *     scene
  *     └─ carRig (`interiorGroup`) — shell, dash, wheel, mirrors; identity rotation, always

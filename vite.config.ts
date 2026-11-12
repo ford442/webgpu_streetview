@@ -1,8 +1,9 @@
-import { loadEnv } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import checker from 'vite-plugin-checker';
 import path from 'path';
+import fs from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import publicEnvKeys from './scripts/public-env-keys.json';
@@ -15,6 +16,41 @@ function gitShortHash(): string {
   } catch {
     return 'dev';
   }
+}
+
+/**
+ * Writes `build/chunk-graph.json`: every emitted chunk with the source modules that landed in
+ * it, and the inverse (module → chunks). `scripts/check-chunk-graph.mjs` (run by
+ * `scripts/verify-build.sh`) checks it against the contracts in `scripts/chunks.json` — a forbidden
+ * module in a chunk, a singleton duplicated, a lazy entry that is not its own chunk.
+ * Module ids are repo-relative (`src/…`, `node_modules/…`); virtual ids keep their `\0` prefix.
+ */
+function chunkGraphPlugin(): Plugin {
+  const rel = (id: string) => (id.startsWith(__dirname) ? path.relative(__dirname, id).split(path.sep).join('/') : id).replace(/\?.*$/, '');
+  return {
+    name: 'streetview-chunk-graph',
+    apply: 'build',
+    writeBundle(options, bundle) {
+      const chunks: Record<string, unknown> = {};
+      const modules: Record<string, string[]> = {};
+      for (const [file, item] of Object.entries(bundle)) {
+        if (item.type !== 'chunk') continue;
+        const ids = Object.keys(item.modules).map(rel);
+        chunks[file] = {
+          name: item.name,
+          isEntry: item.isEntry,
+          isDynamicEntry: item.isDynamicEntry,
+          facadeModuleId: item.facadeModuleId ? rel(item.facadeModuleId) : null,
+          imports: item.imports,
+          dynamicImports: item.dynamicImports,
+          modules: ids,
+        };
+        for (const id of ids) (modules[id] ??= []).push(file);
+      }
+      const dir = options.dir ?? path.resolve(__dirname, 'build');
+      fs.writeFileSync(path.join(dir, 'chunk-graph.json'), `${JSON.stringify({ version: 1, chunks, modules }, null, 1)}\n`);
+    },
+  };
 }
 
 /**
@@ -76,12 +112,14 @@ export default defineConfig(({ mode }) => {
     publicDir: 'public',
     plugins: [
       react(),
+      chunkGraphPlugin(),
       // Typecheck in CI via `npm run typecheck`; skip overlay during vitest.
       ...(process.env.VITEST
         ? []
         : [
             checker({
-              typescript: { tsconfigPath: 'tsconfig.app.json' },
+              // `tsc -b`: tsconfig.app.json references the per-layer projects, which must be built first.
+              typescript: { tsconfigPath: 'tsconfig.app.json', buildMode: true },
               overlay: { initialIsOpen: false },
             }),
           ]),

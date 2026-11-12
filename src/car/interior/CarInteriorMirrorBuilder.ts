@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 export interface CarInteriorMirrorResult {
     leftMirrorPlane: THREE.Mesh;

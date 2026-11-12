@@ -1,3 +1,5 @@
+import type { RouteGraphNode } from '../wasm/graph';
+
 const OFFLINE_DB_NAME = 'webgpu-streetview-offline';
 /** v2 added `tripRecordings` (onupgradeneeded only creates stores that are missing). */
 const OFFLINE_DB_VERSION = 2;
@@ -10,19 +12,6 @@ export type OfflineStoreName =
   | 'panoMetadata'
   | 'routeGraph'
   | 'tripRecordings';
-
-export interface RouteGraphNode {
-  panoId: string;
-  linkPanoIds: string[];
-  lat: number;
-  lng: number;
-  /** Heading of each link, aligned with `linkPanoIds` (trip prefetch only; NaN = unknown). */
-  linkHeadings?: number[];
-  /** Capture date (`YYYY-MM`) — lets a trip recording keep the imagery year. */
-  imageDate?: string;
-  routeId: string;
-  cachedAt: string;
-}
 
 interface OfflineRecord<T = unknown> {
   key: string;

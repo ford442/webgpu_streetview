@@ -13,7 +13,7 @@ import {
   getWeatherPostProcessModePolicy,
   type RendererDebugOptions,
 } from './RendererBackend';
-import type { RendererDebugHandle } from '../debug/globals';
+import type { RendererDebugHandle } from './RendererBackend';
 
 /** The debug handle with its `?debug` mutators, failing loudly when they are missing. */
 function debugHandle(): Required<RendererDebugHandle> {

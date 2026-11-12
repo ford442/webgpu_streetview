@@ -3,7 +3,7 @@ import { type Tour, type TourWaypoint, type CurrentPOV, type TourTransitionType 
 import type { RouteGraphNode, RouteGraphSummary, RoutePrefetchProgress } from '../offline';
 import { useFocusTrap } from '../hooks/useKeyboardShortcuts';
 import { useWasmModule } from '../wasm/useWasmModule';
-import { computeRouteStats, formatDistanceMetric } from '../utils/routeStats';
+import { computeRouteStats, formatDistanceMetric } from '../services/routing/routeStats';
 import TourRecorder from './TourRecorder';
 import TourPlayer from './TourPlayer';
 
@@ -48,7 +48,7 @@ interface TourPanelProps {
     onDeleteRouteGraph?: (routeId: string) => void;
     getRouteGraph?: (routeId: string) => Promise<RouteGraphNode[]>;
     panoCacheFetch?: (lat: number, lng: number) => Promise<unknown>;
-    applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
+    applyDirectorKeyframe?: (frame: import('../hooks/tourDirector').TourDirectorKeyframe) => void;
 }
 
 type TabKey = 'library' | 'record' | 'play';

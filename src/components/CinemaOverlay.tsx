@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { StreetViewRenderer } from '../renderer/RendererBackend';
-import { needsCabinOverlayLatch } from '../renderer/cabinComposite';
+import type { StreetViewRenderer } from '../renderer';
+import { needsCabinOverlayLatch } from '../renderer';
 import {
   CanvasClipRecorder,
   isClipRecordingSupported,
   shareOrDownloadClip,
   type ClipOverlaySource,
   type ClipRecorderState,
-} from '../utils/canvasRecorder';
+} from '../services/capture/canvasRecorder';
 import {
   createCinemaSidecarSession,
   downloadSidecarJson,
   type CinemaSidecarSession,
-} from '../utils/cinemaSidecar';
+} from '../services/capture/cinemaSidecar';
 
 interface CinemaOverlayProps {
   visible: boolean;

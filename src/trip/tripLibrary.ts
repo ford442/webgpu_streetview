@@ -6,7 +6,7 @@
  * Recordings persist in the `tripRecordings` IndexedDB store, keyed by id.
  */
 
-import { createStore, useStore } from '../state/createStore';
+import { createStore, useStore } from '../state';
 import { offlineDelete, offlineGet, offlineListKeys, offlineSet } from '../offline/offlineStore';
 import { parseTripRecording, type TripRecording } from './tripRecording';
 

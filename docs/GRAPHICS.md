@@ -379,7 +379,7 @@ Share with location deep links:
 ?tod=night&sat=0.4&con=1.55
 ```
 
-`src/utils/lookLink.ts` round-trips `look` + overrides. Reduced motion still
+`src/config/lookLink.ts` round-trips `look` + overrides. Reduced motion still
 applies the grade/weather; it only zeroes cinematic slots 38/39.
 
 Creator UX: **Looks** toolbar button (shortcut `K`) or the Looks strip inside

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { setCarLocationInfo, setCarCompassHeading } from '../car';
-import { getPanoLocationBase } from '../utils/panoLocation';
-import { usePovEffect } from '../state/povStore';
+import { getPanoLocationBase } from '../services/maps/panoLocation';
+import { usePovEffect } from '../state';
 
 /**
  * Car HUD location readout on each hop:

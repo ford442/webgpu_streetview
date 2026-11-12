@@ -1,18 +1,17 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { findBestLink } from '../utils/navigation';
-import { type StreetViewRenderer } from '../renderer/RendererBackend';
+import { findBestLink } from '../wasm/navigation';
+import { type StreetViewRenderer, mapsCanvasSource, getAppliedRenderScale, HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer';
 import {
   advancePanoramaStabilityTick,
   createPanoramaStabilityState,
   isFingerprintable,
   STABILITY_POLL_INTERVAL_MS,
   type PanoramaStabilityTickState,
-} from '../utils/panoramaStability';
-import { mapsCanvasSource } from '../renderer/frameSource/mapsCanvasSource';
-import { povStore } from '../state/povStore';
-import { streetViewZoomLevel } from '../utils/streetViewFov';
-import { installStreetViewProbe, streetViewProbe } from '../utils/streetViewProbe';
-import { HISTORICAL_WIPE_DURATION_MS, wipeProgressAt, type HistoricalReveal } from '../renderer/historicalWipe';
+} from '../services/maps/panoramaStability';
+import { povStore } from '../state';
+import { streetViewZoomLevel } from '../config/streetViewFov';
+import { streetViewProbe } from '../debug/streetViewProbe';
+import { installStreetViewProbe } from './installStreetViewProbe';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 // Types
@@ -241,7 +240,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
     // Snapshot uses view heading/pitch (what is on screen), not car body heading.
     const pov = povStore.get();
     renderer?.beginHoldTransition(pov.heading, pov.pitch, currentCanvas ?? undefined, travelHeading);
-    streetViewProbe.holdArmed();
+    streetViewProbe.holdArmed(getAppliedRenderScale().scale);
     pendingRevealRef.current = null;
 
     holdBaselineFingerprintRef.current = currentCanvas
@@ -463,7 +462,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       holdBaselineFingerprintRef.current = Promise.resolve('');
       setIsTransitioning(false);
       setTransitionSource(null);
-      streetViewProbe.released();
+      streetViewProbe.released(getAppliedRenderScale().scale);
       return;
     }
 
@@ -485,7 +484,7 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       setIsTransitioning(false);
       setTransitionSource(null);
       console.log('[StreetView] Transition pause complete, ready for next advance');
-      streetViewProbe.released();
+      streetViewProbe.released(getAppliedRenderScale().scale);
     };
 
     if (transitionRafRef.current !== null) {

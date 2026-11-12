@@ -8,8 +8,8 @@
  * re-requests every pano from Google by id, metered.
  */
 
-import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
-import type { TripStop } from '../state/tripStore';
+import type { TimeOfDay } from '../config/timeOfDay';
+import type { TripStop } from '../state';
 
 /** Bump on an incompatible change; `parseTripRecording` rejects other versions. */
 export const TRIP_FORMAT_VERSION = 1;

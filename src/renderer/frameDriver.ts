@@ -16,9 +16,7 @@
  * the only thing presenting the cabin, so a skipped frame would freeze the
  * wipers and gauges.
  */
-import { povStore } from '../state/povStore';
-import { isReducedMotion } from '../state/reducedMotionStore';
-import { sceneDepthStore } from '../state/sceneDepthStore';
+import { povStore, isReducedMotion, sceneDepthStore, sceneSemanticStore } from '../state';
 import { type StreetViewRenderer } from './RendererBackend';
 import { packWeatherParams, type WeatherParamsEnvInput } from './packWeatherParams';
 import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from './weatherUniformLayout';
@@ -41,7 +39,6 @@ import {
 } from './frameBudget';
 import { resolveSceneDepthOptions, type SceneDepthOptions } from './depth/sceneDepthOptions';
 import { resolveSceneSemanticOptions, type SceneSemanticOptions } from './semantic/sceneSemanticOptions';
-import { sceneSemanticStore } from '../state/sceneSemanticStore';
 import {
     readPresentTailFlags,
     resolvePresentTailOptions,
@@ -62,7 +59,7 @@ import {
     PARTICLE_SEED,
 } from './weatherParticles';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
-import { streetViewProbe } from '../utils/streetViewProbe';
+import { streetViewProbe } from '../debug/streetViewProbe';
 import type { NoiseTileFeeder } from './weatherNoiseTile';
 import type { ParticleSeedFeeder } from './weatherParticleSeeds';
 

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { retryWebGpuBackend, wantsGpuFeatureDump, type RendererBackendType } from '../renderer/RendererBackend';
-import type { WebGpuProbeRecord } from '../renderer/webgpuBootProbe';
-import { useUnhandledErrors } from '../app/unhandledRejection';
-import { readCabinRendererProbe, type CabinRendererProbe } from '../car/interior/cabinRendererProbe';
-import { WEBGL2_FALLBACK_ACTIVE_MESSAGE, WEBGPU_REQUIRED_MESSAGE } from '../renderer/webgl2FallbackMessages';
+import { retryWebGpuBackend, wantsGpuFeatureDump, type RendererBackendType, WEBGL2_FALLBACK_ACTIVE_MESSAGE, WEBGPU_REQUIRED_MESSAGE } from '../renderer';
+import type { WebGpuProbeRecord } from '../renderer';
+import { useUnhandledErrors } from '../debug/unhandledRejection';
+import { readCabinRendererProbe } from '../car/eager';
+import { type CabinRendererProbe } from '../debug/probeTypes';
 
 export interface RendererBackendInfo {
   backendType: RendererBackendType | null;

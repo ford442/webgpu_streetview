@@ -1,5 +1,5 @@
 import type { CesiumEntity, CesiumViewer } from '../../types/cesium';
-import type { ActiveRoute } from '../../services/routing/routeGeometry';
+import type { ActiveRoute } from '../../types/route';
 
 /** Cesium does not need every OSRM vertex to draw a road at globe scale. */
 const MAX_GLOBE_ROUTE_POINTS = 2000;

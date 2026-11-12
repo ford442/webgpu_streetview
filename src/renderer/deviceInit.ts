@@ -1,14 +1,5 @@
-import {
-    buildAdapterRequestOptions,
-    getAdapterPowerPreferencePolicy,
-    getAdapterSelectionPolicy,
-    getCanvasOutputFlags,
-    supportsAdapterFeatureLevel,
-    type AdapterFeatureLevel,
-    type CanvasOutputFlags,
-    type RendererInitOptions,
-    type WeatherPostProcessMode,
-} from './RendererBackend';
+import { buildAdapterRequestOptions, getAdapterPowerPreferencePolicy, getAdapterSelectionPolicy, getCanvasOutputFlags, supportsAdapterFeatureLevel, type CanvasOutputFlags, type RendererInitOptions } from './RendererBackend';
+import { type AdapterFeatureLevel, type WeatherPostProcessMode } from './types';
 import {
     COMPUTE_WEATHER_WORKGROUP_SIZE,
     COMPUTE_CHORES_WORKGROUP_SIZE,

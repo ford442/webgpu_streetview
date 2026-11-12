@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, type ComponentProps } from 'react';
-import { useThrottledPov } from '../../state/povStore';
+import { useThrottledPov } from '../../state';
 import { useEnvironmentSettings, useStreetView, useViewMode, type TimeOfDay } from '../../hooks';
 import { pickLookSnapshot } from '../../config/lookPacks';
 import type { UsePlaceSearchResult } from '../../hooks/usePlaceSearch';
@@ -10,7 +10,7 @@ import type { AccessibilitySettings } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../hooks/useBookmarks';
 import type { HistoryEntry } from '../../hooks/useLocationHistory';
 import type { SnapshotMetadata, SnapshotShareResult } from '../../hooks/useSnapshots';
-import type { ImageExportFormat } from '../../utils/imageExport';
+import type { ImageExportFormat } from '../../services/capture/imageExport';
 import type { UseSharedSessionResult } from '../../hooks/useSharedSession';
 import type { GlobeModeControls } from '../../hooks/useGlobeMode';
 import type { TourPanelBindings } from '../useTourBindings';
@@ -42,7 +42,7 @@ import {
 } from '../../components';
 import StorageManagementPanel from '../../components/StorageManagementPanel';
 import GlobeReturnButton from '../../components/GlobeReturnButton';
-import { fireAndForget } from '../../utils/fireAndForget';
+import { fireAndForget } from '../../config/fireAndForget';
 
 const GlobeView = lazy(() => import('../../components/GlobeView'));
 /** Street View coverage map (Google / 3D toggle); its own chunk, mounted only while open. */

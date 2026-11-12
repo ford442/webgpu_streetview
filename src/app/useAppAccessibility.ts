@@ -3,7 +3,7 @@ import {
   loadAccessibilitySettings,
   type AccessibilitySettings,
 } from '../hooks/useKeyboardShortcuts';
-import { setAppReducedMotion } from '../state/reducedMotionStore';
+import { setAppReducedMotion } from '../state';
 
 export interface UseAppAccessibilityResult {
   accessibilitySettings: AccessibilitySettings;

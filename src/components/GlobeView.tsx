@@ -8,13 +8,13 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { type GlobeTransition } from '../hooks/useGlobeMode';
-import { resolveMiniMapLayerOptions } from '../utils/cesiumImagery';
+import { resolveMiniMapLayerOptions } from '../services/maps/cesiumImagery';
 import ScoutCard from './ScoutCard';
 import { type GlobeBookmark, type GlobePOI } from './globe/globeTypes';
 import { addLocationBeacon, syncGlobeBookmarkEntities, syncGlobePoiEntities } from './globe/globePoiLayer';
 import { syncGlobeAutopilotVisuals } from './globe/globeAutopilot';
 import { syncGlobeTripRoute } from './globe/globeTripRoute';
-import { useTripSelector } from '../state/tripStore';
+import { useTripSelector } from '../state';
 import {
   flyGlobeEnterOrbit,
   flyGlobeExitDescend,

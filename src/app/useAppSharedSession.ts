@@ -1,8 +1,8 @@
 import type { UseSharedSessionResult } from '../hooks/useSharedSession';
-import { getCabinView, setCabinView } from '../car/cabinView';
+import { getCabinView, setCabinView } from '../car/eager';
 import { useGradeSettings, useLightingSettings, useWeatherSettings } from '../hooks/useEnvironmentSettings';
-import type { VehicleType } from '../car/VehicleManager';
-import { serializeWeatherPreset } from '../utils/weatherPresetSync';
+import type { VehicleType } from '../car/eager';
+import { serializeWeatherPreset } from './weatherPresetSync';
 import { useSharedSessionSync } from './useSharedSessionSync';
 
 export interface SharedSessionSyncProps {

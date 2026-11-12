@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 import { registerGlowMaterial } from './MaterialFactory';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 export interface CarInteriorVariantResult {
     glowSprites: CabinGlowSprite[];

@@ -5,7 +5,7 @@ import {
     getVehicleConfig, 
     isValidVehicleType,
     vehicleManager 
-} from '../car/VehicleManager';
+} from '../car/eager';
 
 const STORAGE_KEY = 'webgpu_streetview_vehicle';
 const TINT_STORAGE_KEY = 'webgpu_streetview_window_tint';

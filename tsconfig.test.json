@@ -12,5 +12,28 @@
     "src/setupTests.ts",
     "src/**/*.d.ts"
   ],
-  "exclude": ["node_modules", "build"]
+  "exclude": [
+    "node_modules",
+    "build"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.layer-foundation.json"
+    },
+    {
+      "path": "./tsconfig.layer-state.json"
+    },
+    {
+      "path": "./tsconfig.layer-engine.json"
+    },
+    {
+      "path": "./tsconfig.layer-car.json"
+    },
+    {
+      "path": "./tsconfig.layer-ui.json"
+    }
+  ]
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useViewMode, type ControlMode } from '../hooks/useViewMode';
-import { applyPointerLockEffect } from '../car/input/cabinInputMachine';
+import { applyPointerLockEffect } from '../car/eager';
+import { DashboardUI, handleCarInteriorPointerDown, handleCarInteriorPointerMove, handleCarInteriorPointerUp, pressCarInteriorAlongRay } from '../car';
 import {
   useCarEnvSettings,
   useLightingSettings,
@@ -13,24 +14,16 @@ import { useCabinRouteGuidance } from './car/useCabinRouteGuidance';
 import { useCabinEnvironment } from '../hooks/useCabinEnvironment';
 import { useRearViewFeed } from '../hooks/useRearViewFeed';
 import CarInputHandler from '../components/CarInputHandler';
-import {
-  handleCarInteriorPointerDown,
-  handleCarInteriorPointerMove,
-  handleCarInteriorPointerUp,
-  pressCarInteriorAlongRay,
-} from '../car';
 import { XrCockpitButton } from './car/XrCockpitButton';
 import { getActiveXrCockpit } from '../xr/xrSession';
-import { DashboardUI } from '../car/DashboardUI';
 import { useCarHudMode } from './car/useCarHudMode';
-import { povStore, usePovEffect } from '../state/povStore';
-import { useCruiseFlag } from '../state/cruiseFlagStore';
+import { povStore, usePovEffect, useCruiseFlag } from '../state';
 import { useGearHopAdvance } from './car/useGearHopAdvance';
 import { useCabinRadioBinding } from './car/useCabinRadioBinding';
 import { useCarDashboardBridge } from './car/useCarDashboardBridge';
 import { CarControlModeOverlay } from './car/CarControlModeOverlay';
 import { CarLeverFallbacks } from './car/CarLeverFallbacks';
-import { fireAndForget } from '../utils/fireAndForget';
+import { fireAndForget } from '../config/fireAndForget';
 
 interface CarModeViewProps {
   mapsApiKey: string;

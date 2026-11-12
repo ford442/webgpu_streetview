@@ -7,7 +7,7 @@
  * Region comes from the stations' own metadata, so no reverse geocoding.
  */
 
-import { haversineMeters } from '../../utils/navigation';
+import { haversineMeters } from '../../wasm/navigation';
 
 const RADIO_REQUERY_DISTANCE_M = 50_000;
 

@@ -2,7 +2,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAutoNight, AUTO_NIGHT_RECOMPUTE_MS } from '../useAutoNight';
-import type { AutoNightSample } from '../../utils/autoNightModel';
+import type { AutoNightSample } from '../../services/geo/autoNightModel';
 
 const coords = { lat: 0, lng: 0 };
 

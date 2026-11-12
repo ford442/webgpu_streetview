@@ -1,9 +1,9 @@
 import { MapsCallBudget } from '../services/maps/callBudget';
 import { L_ROUTE, ORIGIN, buildGraph, linksOf, type FakePano } from '../services/routing/__tests__/routeFixtures';
 import { buildActiveRoute } from '../services/routing/routeGeometry';
-import { haversineMeters } from '../utils/navigation';
+import { haversineMeters } from '../wasm/navigation';
 import { buildLinkGraph } from '../wasm/graph';
-import type { RouteGraphNode } from './offlineStore';
+import type { RouteGraphNode } from '../wasm/graph';
 import type { PanoLinkSnapshot } from './routePrefetch';
 import { planOfflineHop } from './routeGraphNavigation';
 import {

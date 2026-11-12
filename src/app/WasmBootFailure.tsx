@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { LoadingOverlay } from '../components/LoadingOverlay';
-import { publishWebGpuProbe } from '../renderer/webgpuBootProbe';
-import { WEBGPU_FAILURE_USER_MESSAGE } from '../utils/scraperHealth';
+import { publishWebGpuProbe } from '../renderer';
+import { WEBGPU_FAILURE_USER_MESSAGE } from '../debug/scraperHealth';
 
 /**
  * What src/index.tsx renders instead of the app when the WASM numeric layer

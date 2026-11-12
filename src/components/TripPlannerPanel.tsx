@@ -5,7 +5,7 @@ import { PLACE_SEARCH_DEFAULTS } from '../search/placeSearchBudget';
 import { formatEta, formatGuidanceDistance, maneuverInstruction } from '../services/routing/guidanceFormat';
 import { parseLatLngText } from '../services/routing/routeLink';
 import { downloadTextFile, routeToGpx } from '../services/routing/routeExport';
-import { nextStep, useTripSelector, type TripStop } from '../state/tripStore';
+import { nextStep, useTripSelector, type TripStop } from '../state';
 import type { TripPanelBindings } from '../app/useTripBindings';
 import type { TripRecordingBindings } from '../app/useTripRecording';
 import { TripRecordingsSection } from './TripRecordingsSection';

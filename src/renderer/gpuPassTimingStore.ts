@@ -70,3 +70,9 @@ export function setGpuPassTimingsWanted(wanted: boolean, consumer: GpuPassTiming
 export function areGpuPassTimingsWanted(): boolean {
     return timingsWanted.size > 0;
 }
+
+declare global {
+    interface Window {
+        rendererGpuTimings?: GpuPassTimings;
+    }
+}

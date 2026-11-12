@@ -13,7 +13,7 @@
  * clamped to the device's `maxTextureDimension2D` — the swap chain *is* a
  * texture of this size.
  */
-import { clampTextureSize } from '../renderer/deviceInit';
+import { clampTextureSize } from '../renderer';
 
 export interface CanvasBoxSize {
     cssWidth: number;

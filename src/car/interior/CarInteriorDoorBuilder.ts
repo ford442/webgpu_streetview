@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type GeometryFactory } from './GeometryFactory';
 import { type LODManager } from './LODManager';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 /**
  * Door cards, armrests, and the center console.

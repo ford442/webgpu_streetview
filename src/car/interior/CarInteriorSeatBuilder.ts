@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
 import { type GeometryFactory } from './GeometryFactory';
-import { type CarInteriorMaterials } from './CarInteriorBuilder';
+import { type CarInteriorMaterials } from './CarInteriorMaterials';
 
 export class CarInteriorSeatBuilder {
     constructor(

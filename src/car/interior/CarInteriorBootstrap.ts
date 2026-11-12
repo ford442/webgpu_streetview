@@ -1,11 +1,5 @@
 import * as THREE from 'three';
-import {
-    applyPerformanceProfile,
-    optimizeTextures,
-    FrustumCuller,
-    type VehicleLODConfig,
-} from './performance';
-import { detectGPUProfile } from './performance';
+import { applyPerformanceProfile, optimizeTextures, FrustumCuller, type VehicleLODConfig, detectGPUProfile } from './performance';
 import { type VehicleType, type VehicleConfig, getVehicleConfig } from '../VehicleManager';
 import { InteractionHelper } from './InteractionHelper';
 import { GeometryFactory } from './GeometryFactory';
@@ -30,7 +24,7 @@ import {
 } from './CarInteriorAssembly';
 import { createCabinRenderer, type CabinRenderer, type CabinRendererHandle } from './createCabinRenderer';
 import { createCabinRig } from './cabinRig';
-import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
+import { panoramaMatchedVerticalFov } from '../../config/streetViewFov';
 
 export interface CarInteriorBootstrapResult {
     scene: THREE.Scene;

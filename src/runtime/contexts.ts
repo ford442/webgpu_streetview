@@ -25,7 +25,7 @@
  *
  * Published on `window.__SV__.contexts`.
  */
-import { createStore } from '../state/createStore';
+import { createStore } from '../state';
 import { requestFrame } from '../xr/frameClock';
 
 export interface GpuAdapterIdentity {

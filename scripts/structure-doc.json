@@ -63,7 +63,7 @@
     "note": "Layout + mount composition only (≤~350 LOC)"
   },
   {
-    "path": "src/app/unhandledRejection.ts",
+    "path": "src/debug/unhandledRejection.ts",
     "note": "Counts unhandled rejections onto __SV__.errors + backend chip"
   },
   {
@@ -554,8 +554,16 @@
     "note": "Typed window globals"
   },
   {
-    "path": "src/debug/globals.ts",
-    "note": "window.__SV__ + every probe global; the only `window as` cast"
+    "path": "src/debug/windowAccess.ts",
+    "note": "readWindowProperty / writeWindowProperty — the only `window as` cast; `?debug`"
+  },
+  {
+    "path": "src/debug/probeTypes.ts",
+    "note": "Probe shapes a lower layer must name (cabin probe)"
+  },
+  {
+    "path": "src/app/svGlobals.ts",
+    "note": "window.__SV__ over every probe global (each typed by its publisher)"
   },
   {
     "path": "src/config/"
@@ -628,38 +636,35 @@
     "note": "Cloud storage API client"
   },
   {
-    "path": "src/utils/"
-  },
-  {
-    "path": "src/utils/navigation.ts",
+    "path": "src/wasm/navigation.ts",
     "note": "findBestLink() + angle math + haversine"
   },
   {
-    "path": "src/utils/navigation.test.ts",
+    "path": "src/wasm/navigation.test.ts",
     "note": "Unit tests for navigation math"
   },
   {
-    "path": "src/utils/routeStats.ts",
+    "path": "src/services/routing/routeStats.ts",
     "note": "Route length stats via WASM batch_haversine"
   },
   {
-    "path": "src/utils/geoTimeUtils.ts",
+    "path": "src/services/geo/geoTimeUtils.ts",
     "note": "Sun/moon position, time-of-day colors"
   },
   {
-    "path": "src/utils/localTime.ts",
+    "path": "src/services/geo/localTime.ts",
     "note": "HH:MM:SS in an IANA zone (Intl, DST-correct)"
   },
   {
-    "path": "src/utils/panoTimeZone.ts",
+    "path": "src/services/geo/panoTimeZone.ts",
     "note": "Offline lat/lng → IANA zone (lazy tz-lookup chunk)"
   },
   {
-    "path": "src/utils/cesiumImagery.ts",
+    "path": "src/services/maps/cesiumImagery.ts",
     "note": "Globe imagery/terrain resolution (Ion token → CartoCDN fallback)"
   },
   {
-    "path": "src/utils/memoryProfiler.ts",
+    "path": "src/debug/memoryProfiler.ts",
     "note": "Heap usage tracking (performance overlay)"
   },
   {
@@ -690,7 +695,7 @@
     "note": "Unused file / dependency policy (CI)"
   },
   {
-    "path": "tsconfig.{base,app,test,node,scripts,strict-optional}.json",
+    "path": "tsconfig.{base,layer,layer-*,app,test,node,scripts}.json",
     "note": "+ e2e/tsconfig.json; root tsconfig.json is the tsc -b solution"
   },
   {
@@ -716,5 +721,13 @@
   {
     "path": "README.md",
     "note": "Human-facing README"
+  },
+  {
+    "path": "src/config/carSpatialModel.ts",
+    "note": "Cabin world model + head clamps (pure; state/, xr/, audio/ and car/ share it)"
+  },
+  {
+    "path": "src/config/worldAxes.ts",
+    "note": "World-axis conventions shared by renderer and cabin"
   }
 ]

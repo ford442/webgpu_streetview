@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { isPanelOpen, setPanelOpen, usePanelsState, type PanelId } from '../state/panelsStore';
+import { isPanelOpen, setPanelOpen, usePanelsState, type PanelId } from '../state';
 
 export interface AppPanels {
   isBookmarkPanelOpen: boolean;

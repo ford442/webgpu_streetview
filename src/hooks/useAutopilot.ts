@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 const WAYPOINT_INTERVAL_MS = 5000;
 

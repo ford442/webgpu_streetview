@@ -1,4 +1,4 @@
-import { ignoreRejection } from '../../utils/ignoreRejection';
+import { ignoreRejection } from '../../config/ignoreRejection';
 /**
  * Room-code signaling for Shared Exploration Sessions.
  *

@@ -537,3 +537,9 @@ export class RearViewFeed {
         this.inFlight.clear();
     }
 }
+
+declare global {
+    interface Window {
+        __REARVIEW_FEED__?: RearViewFeed;
+    }
+}

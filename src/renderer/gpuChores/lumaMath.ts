@@ -19,13 +19,6 @@ export function bt709LumaU8(r: number, g: number, b: number): number {
   return BT709_R * r + BT709_G * g + BT709_B * b;
 }
 
-export interface LumaReduce {
-  mean: number;
-  min: number;
-  max: number;
-  count: number;
-}
-
 /** Mean luma in [0,1] from a 256-bin histogram (gauge path; quantized). */
 export function meanLumaFromHistogram(bins: Uint32Array): number {
   let total = 0;

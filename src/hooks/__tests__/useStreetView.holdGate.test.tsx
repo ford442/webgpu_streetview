@@ -23,7 +23,7 @@ import {
   STABILITY_MAX_WAIT_MS,
   STABILITY_POLL_INTERVAL_MS,
   STABILITY_REQUIRED_STABLE_MS,
-} from '../../utils/panoramaStability';
+} from '../../services/maps/panoramaStability';
 
 let panoChanged: (() => void) | null = null;
 const mockPano = {

@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import type { TripRecordingBindings } from '../app/useTripRecording';
 import { useTripLibrary } from '../trip/tripLibrary';
 import { formatEta } from '../services/routing/guidanceFormat';
-import { formatImageDate } from '../utils/historicalImagery';
+import { formatImageDate } from '../services/maps/historicalImagery';
 import { TRIP_FILE_EXTENSION } from '../trip/tripFile';
 
 const btn = (bg: string, disabled = false): React.CSSProperties => ({

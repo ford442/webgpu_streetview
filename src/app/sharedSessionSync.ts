@@ -1,12 +1,11 @@
 import type { SessionState } from '../hooks/useSharedSession';
 import { isLookId } from '../config/lookPacks';
-import { isValidVehicleType, type VehicleType } from '../car/VehicleManager';
-import { isCabinView, type CabinView } from '../car/cabinView';
+import { isValidVehicleType, type VehicleType, isCabinView, type CabinView } from '../car/eager';
 import { decodeRouteStops } from '../services/routing/routeLink';
 import { TRIP_LINK_MAX_CHARS } from '../trip/tripFile';
 import type { SessionReplay } from '../trip/tripReplayController';
 
-export type { CabinView } from '../car/cabinView';
+export type { CabinView } from '../car/eager';
 
 export type HostBroadcastPov = SessionState['pov'];
 export type HostBroadcastViewMode = SessionState['viewMode'];

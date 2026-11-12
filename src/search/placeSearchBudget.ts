@@ -199,3 +199,15 @@ export function installPlaceSearchKillSwitch(budget: PlaceSearchBudget = getPlac
     getStats: () => budget.getStats(),
   };
 }
+
+/** `window.__PLACE_SEARCH__` — the billing kill switch, always installed (BILLING_SAFETY_CHECKLIST.md). */
+export interface PlaceSearchKillSwitch {
+    kill: () => void;
+    getStats: () => PlaceSearchBudgetStats;
+}
+
+declare global {
+    interface Window {
+        __PLACE_SEARCH__?: PlaceSearchKillSwitch;
+    }
+}

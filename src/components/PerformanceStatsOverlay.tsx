@@ -1,14 +1,9 @@
 /** @fileoverview Performance statistics overlay component */
 import React from 'react';
-import { useFrameRateStats } from '../renderer/perfStore';
+import { useFrameRateStats, exposureHintFromMeanLuma, useSceneDepthStats } from '../renderer';
 import { getActiveQualityLevel } from '../config/visualPresets';
-import { type MemoryStats, MemoryProfiler } from '../utils/memoryProfiler';
-import type { GpuPassTimings } from '../renderer/gpuPassTimingStore';
-import type { GpuChoresStats } from '../renderer/gpuChores/gpuChoresStatsStore';
-import { exposureHintFromMeanLuma } from '../renderer/gpuChores/lumaMath';
-import type { AutoExposureStatus } from '../renderer/autoExposure';
-import { useSceneDepthStats } from '../renderer/depth/sceneDepthStatsStore';
-import type { AppliedRenderScale } from '../renderer/renderScale';
+import { type MemoryStats, MemoryProfiler } from '../debug/memoryProfiler';
+import type { GpuPassTimings, GpuChoresStats, AutoExposureStatus, AppliedRenderScale } from '../renderer';
 
 type OverlayPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 

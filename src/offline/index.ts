@@ -1,11 +1,5 @@
-export {
-  offlineGetRouteGraph,
-  offlineGetAllRouteGraphNodes,
-  offlineListRouteGraphs,
-  offlineDeleteRouteGraph,
-  type RouteGraphNode,
-  type RouteGraphSummary,
-} from './offlineStore';
+export { offlineGetRouteGraph, offlineGetAllRouteGraphNodes, offlineListRouteGraphs, offlineDeleteRouteGraph, type RouteGraphSummary } from './offlineStore';
+export { type RouteGraphNode } from '../wasm/graph';
 export {
   findBestOfflineLink,
   findPathBetweenPanos,

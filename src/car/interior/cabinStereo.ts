@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CabinStereoRequest } from '../../renderer/cabinStereoRequest';
+import type { CabinStereoRequest } from '../../renderer';
 
 /**
  * Two eye cameras for the cabin (#331), derived from the one cabin camera so

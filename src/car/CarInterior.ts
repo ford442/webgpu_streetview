@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type VehicleType, type VehicleConfig, getVehicleConfig } from './VehicleManager';
 import { type FrustumCuller, type VehicleLODConfig, detectGPUProfile } from './interior/performance';
-import { type PanoLocationInfo } from '../utils/panoLocation';
+import { type PanoLocationInfo } from '../services/maps/panoLocation';
 import { type CarInteriorAnimator } from './interior/CarInteriorAnimator';
 import { type CarInteriorRenderer } from './interior/CarInteriorRenderer';
 import { type CarInteriorLightingManager } from './interior/CarInteriorLightingManager';
@@ -38,7 +38,7 @@ import { bootstrapCarInterior } from './interior/CarInteriorBootstrap';
 import { disposeCarInteriorResources } from './interior/CarInteriorDispose';
 import { applyDriverSeatOffset } from './seatPosition';
 import type { CabinRenderer, CabinRendererHandle } from './interior/createCabinRenderer';
-import { ROOF_CLOSED_Y, ROOF_OPEN_Y, type HeadOffset } from './carSpatialModel';
+import { ROOF_CLOSED_Y, ROOF_OPEN_Y, type HeadOffset } from '../config/carSpatialModel';
 import type { RouteGuidance } from '../services/routing/guidanceFormat';
 
 /**

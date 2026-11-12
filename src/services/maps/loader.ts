@@ -60,7 +60,7 @@ export interface MapsAuthFailureEvent {
 
 interface AuthFailureListener {
   cb: (event: MapsAuthFailureEvent) => void;
-  forKey?: string;
+  forKey?: string | undefined;
 }
 
 /** Registered auth-failure callbacks */

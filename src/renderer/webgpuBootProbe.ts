@@ -3,11 +3,11 @@
  * Written on both success and failure; WebGL weather is not a rescue path.
  */
 
-import type { RendererBackendPreference, WeatherPostProcessMode } from './RendererBackend';
+import type { RendererBackendPreference, WeatherPostProcessMode } from './types';
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 import { getPassStatuses, type PassStatusRecord } from './passStatus';
 import type { AppliedRenderScale } from './renderScale';
-import type { CabinRendererProbe } from '../car/interior/cabinRendererProbe';
+import type { CabinRendererProbe } from '../debug/probeTypes';
 
 export type WebGpuProbeStage =
   | 'navigator'
@@ -168,4 +168,10 @@ export function isWebGpuProbeOk(
   win: { webgpuProbe?: WebGpuProbeRecord } | undefined = typeof window !== 'undefined' ? window : undefined,
 ): boolean {
   return win?.webgpuProbe?.ok === true;
+}
+
+declare global {
+    interface Window {
+        webgpuProbe?: WebGpuProbeRecord;
+    }
 }

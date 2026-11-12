@@ -1,4 +1,4 @@
-import type { PanoLocationInfo } from '../../utils/panoLocation';
+import type { PanoLocationInfo } from '../../services/maps/panoLocation';
 import type { RouteGuidance } from '../../services/routing/guidanceFormat';
 import { getState } from './state';
 

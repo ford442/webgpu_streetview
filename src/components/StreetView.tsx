@@ -4,16 +4,16 @@ import {
   fingerprintSize,
   STABILITY_POLL_INTERVAL_MS,
   STABILITY_REQUIRED_STABLE_TICKS,
-} from '../utils/panoramaStability';
-import { mapsCanvasSource } from '../renderer/frameSource/mapsCanvasSource';
+} from '../services/maps/panoramaStability';
+import { mapsCanvasSource } from '../renderer';
 import {
   createInitialScraperHealth,
   reduceScraperHealth,
   SCRAPER_CONTAINER_INVARIANTS,
   type ScraperHealth,
   type ScraperHealthEvent,
-} from '../utils/scraperHealth';
-import { streetViewProbe } from '../utils/streetViewProbe';
+} from '../debug/scraperHealth';
+import { streetViewProbe } from '../debug/streetViewProbe';
 import {
     CANVAS_TAKEOVER_CONFIRM_MS,
     createTakeoverState,

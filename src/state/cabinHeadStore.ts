@@ -1,5 +1,5 @@
 /**
- * Car-local head pose for the cabin (see `car/carSpatialModel.ts`).
+ * Car-local head pose for the cabin (see `config/carSpatialModel.ts`).
  *
  * `headYaw` / `headPitch` are radians relative to the car's nose: +yaw looks
  * LEFT, +pitch looks UP, clamped to ±90° / −45°..+45°. Like `povStore`, this is
@@ -10,7 +10,7 @@
  * `carHeading` once per frame (`syncCabinPanoramaPov`); nothing else writes
  * the panorama POV while the cabin is up.
  */
-import { clampHeadPitch, clampHeadYaw } from '../car/carSpatialModel';
+import { clampHeadPitch, clampHeadYaw } from '../config/carSpatialModel';
 import { createStore } from './createStore';
 
 interface CabinHead {

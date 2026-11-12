@@ -2,7 +2,7 @@
  * Lazy loader for the heavy car-mode runtime (Three.js interior stack).
  * Import this from providers/hooks that must not pull `car/index.ts` into main.
  */
-import { noteUnhandled } from '../app/unhandledRejection';
+import { noteUnhandled } from '../debug/unhandledRejection';
 import type { CarModeState } from './carModeRuntime';
 
 export type { CarModeState };

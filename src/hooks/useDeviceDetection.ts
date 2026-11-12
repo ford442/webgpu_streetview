@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { releaseGlContext } from '../utils/releaseGlContext';
+import { releaseGlContext } from '../renderer';
 import { getRuntimeContexts, readBatteryState, subscribeRuntimeContexts } from '../runtime/contexts';
 
 interface DeviceCapabilities {

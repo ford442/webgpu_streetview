@@ -1,4 +1,4 @@
-import type { CabinRendererBackend } from './performance';
+import type { CabinRendererBackend } from '../../debug/probeTypes';
 import { currentSearch, readFlag } from '../../config/flags';
 
 /**

@@ -9,16 +9,8 @@
  * (OSRM-compatible mode) or a commercial OSRM-compatible host.
  */
 
-import {
-  RouteError,
-  isValidLatLng,
-  type LatLng,
-  type Route,
-  type RouteManeuver,
-  type RouteProvider,
-  type RouteRequest,
-  type RouteStep,
-} from './RouteProvider';
+import { RouteError, isValidLatLng, type RouteProvider, type RouteRequest } from './RouteProvider';
+import { type Route, type RouteStep, type RouteManeuver, type LatLng } from '../../types/route';
 
 /** Requests that take longer than this fail as `network`, not hang the planner. */
 const OSRM_TIMEOUT_MS = 15000;

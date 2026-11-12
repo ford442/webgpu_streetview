@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useBookmarks } from '../hooks/useBookmarks';
-import { povStore } from '../state/povStore';
+import { povStore } from '../state';
 import type { ConnectedChromeBookmarks } from './shell/ConnectedChrome';
 
 /**

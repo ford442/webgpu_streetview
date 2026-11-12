@@ -24,8 +24,9 @@
  * handler (so the user-gesture requirement holds).
  */
 
-import { steerDeltaFromStick } from '../carSpatialModel';
-import { ignoreRejection } from '../../utils/ignoreRejection';
+import { steerDeltaFromStick } from '../../config/carSpatialModel';
+import { ignoreRejection } from '../../config/ignoreRejection';
+import type { XrCabinInputEvent } from '../../xr/xrCabinInput';
 
 export type ControlMode = 'FREE_LOOK' | 'STEER' | 'UI_INTERACT';
 
@@ -53,11 +54,8 @@ export type CabinInputEvent =
   | { type: 'SELECT_MODE'; mode: ControlMode }
   /** Car view entered / left. */
   | { type: 'RESET' }
-  /** WebXR session started / ended (`xr/xrSession.ts`). */
-  | { type: 'XR_ENTER' }
-  | { type: 'XR_EXIT' }
-  /** Left controller thumbstick X (−1 left … +1 right), held for `dtS` seconds. */
-  | { type: 'XR_STICK'; axisX: number; dtS: number };
+  /** WebXR session started / ended, and the left thumbstick (`xr/xrCabinInput.ts`, #331). */
+  | XrCabinInputEvent;
 
 export type PointerLockEffect = 'requestPointerLock' | 'exitPointerLock';
 

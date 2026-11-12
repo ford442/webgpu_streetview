@@ -90,3 +90,9 @@ function publishGpuChoresBreadcrumbs(): GpuChoresBreadcrumbs {
   }
   return crumbs;
 }
+
+declare global {
+    interface Window {
+        __GPU_CHORES__?: GpuChoresBreadcrumbs;
+    }
+}

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createCupLiquidMaterial, type CupLiquidUniforms } from '../../shaders/cupLiquid';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 import type { InteriorInteractive } from './InteriorMicroInteractions';
 import { getCabinMaterialBackend } from './cabinMaterialBackend';
 import { getCabinTslApi } from './cabinTslRegistry';

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { buildAppKeyboardShortcuts } from '../useAppKeyboardShortcuts';
 import { noteGeocodeStatus, resetGeocodeAuthForTests } from '../../search/geocodeAuth';
-import type { TimeOfDay } from '../useEnvironmentSettings';
+import type { TimeOfDay } from '../../config/timeOfDay';
 
 function baseOptions(overrides: Partial<Parameters<typeof buildAppKeyboardShortcuts>[0]> = {}) {
   const announce = vi.fn();
