@@ -179,6 +179,10 @@ export const FLAGS = {
     kind: 'bool',
     doc: 'Semantic scene layer (#352): a street segmenter (downloads ~12 MB once) runs beside scene depth, so rain spares the sky, only the road gets wet, snow settles on the ground, fog stops at the skyline, the horizon follows the real sky edge and night relights windows and the road. Needs scene depth on; applies at High/Ultra. `on`/`off` win over the weather panel\'s persisted toggle; unset defers to it (off by default).',
   },
+  atmosphere: {
+    kind: 'bool',
+    doc: 'Physically based atmosphere (Hillaire 2020): builds the transmittance, multi-scattering, sky-view and aerial-perspective LUTs from the sun and the live visibility, on change only. Nothing reads them yet — the frame is unchanged. Applies at High/Ultra; off by default.',
+  },
   // ── Weather feeders (named for the WASM feeders they replaced, #341) ───────
   wasmNoise: {
     kind: 'bool',

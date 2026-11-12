@@ -215,6 +215,7 @@ export async function instantiateStreetViewWasm(
     luma_histogram_bt709, reduce_luma_bt709, downsample_2d, luma_analyze,
     dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render, dsp_max_ir_taps,
     depth_percentiles, depth_near_depth, depth_normalize,
+    atmo_param_count, atmo_params, atmo_transmittance, atmo_transmittance_lut, atmo_sun_color,
     sv_malloc: malloc, sv_free: free,
   } = fns;
   const stackBase = fns.sv_stack_base();
@@ -621,6 +622,36 @@ export async function instantiateStreetViewWasm(
     };
   };
 
+  const ATMO_PARAMS = atmo_param_count();
+  const atmoParams = (visibilityM: number | null, groundAlbedo: number): Float32Array => {
+    const ptr = scratch.reserve(ATMO_PARAMS * 4);
+    atmo_params(visibilityM ?? -1, groundAlbedo, ptr);
+    return new Float32Array(wasmMemory.buffer.slice(ptr, ptr + ATMO_PARAMS * 4));
+  };
+  /** [params][out 3 f32]: copy the block in, run `kernel`, read rgb back. */
+  const atmoRgb = (params: Float32Array, kernel: (paramsPtr: number, outPtr: number) => void): [number, number, number] => {
+    const ptr = scratch.reserve(ATMO_PARAMS * 4 + 16);
+    new Float32Array(wasmMemory.buffer, ptr, ATMO_PARAMS).set(params.subarray(0, ATMO_PARAMS));
+    kernel(ptr, ptr + ATMO_PARAMS * 4);
+    const out = new Float32Array(wasmMemory.buffer, ptr + ATMO_PARAMS * 4, 3);
+    return [out[0]!, out[1]!, out[2]!];
+  };
+  const atmoTransmittance = (params: Float32Array, altitudeM: number, cosZenith: number) =>
+    atmoRgb(params, (p, o) => atmo_transmittance(p, altitudeM, cosZenith, o));
+  const atmoSunColor = (params: Float32Array, sinElevation: number, altitudeM: number) =>
+    atmoRgb(params, (p, o) => atmo_sun_color(p, sinElevation, altitudeM, o));
+  const atmoTransmittanceLut = (params: Float32Array, width: number, height: number): Float32Array => {
+    const w = Math.max(0, Math.floor(width));
+    const h = Math.max(0, Math.floor(height));
+    const n = w * h * 4;
+    if (n === 0) return new Float32Array(0);
+    const ptr = scratch.reserve(ATMO_PARAMS * 4 + n * 4);
+    new Float32Array(wasmMemory.buffer, ptr, ATMO_PARAMS).set(params.subarray(0, ATMO_PARAMS));
+    atmo_transmittance_lut(ptr, w, h, ptr + ATMO_PARAMS * 4);
+    const start = ptr + ATMO_PARAMS * 4;
+    return new Float32Array(wasmMemory.buffer.slice(start, start + n * 4));
+  };
+
   const api: StreetViewWasmAPI = {
     seed,
     noise2d,
@@ -644,6 +675,10 @@ export async function instantiateStreetViewWasm(
     depthPercentiles,
     depthNearDepth,
     depthNormalize,
+    atmoParams,
+    atmoTransmittance,
+    atmoTransmittanceLut,
+    atmoSunColor,
     graphAstar,
     graphNearest,
   };

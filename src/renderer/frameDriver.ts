@@ -16,7 +16,7 @@
  * the only thing presenting the cabin, so a skipped frame would freeze the
  * wipers and gauges.
  */
-import { povStore, isReducedMotion, sceneDepthStore, sceneSemanticStore } from '../state';
+import { povStore, isReducedMotion, sceneDepthStore, sceneSemanticStore, liveConditionsStore } from '../state';
 import { type StreetViewRenderer } from './RendererBackend';
 import { packWeatherParams, type WeatherParamsEnvInput } from './packWeatherParams';
 import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from './weatherUniformLayout';
@@ -39,6 +39,8 @@ import {
 } from './frameBudget';
 import { resolveSceneDepthOptions, type SceneDepthOptions } from './depth/sceneDepthOptions';
 import { resolveSceneSemanticOptions, type SceneSemanticOptions } from './semantic/sceneSemanticOptions';
+import { createAtmosphereOptions, resolveAtmosphereOptions } from './atmosphere/atmosphereOptions';
+import { readFlag } from '../config/flags';
 import {
     readPresentTailFlags,
     resolvePresentTailOptions,
@@ -96,6 +98,9 @@ export class FrameDriver {
     private readonly params = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
     private readonly sceneDepthOptions: SceneDepthOptions = { enabled: false, blend: 0, reducedMotion: false };
     private readonly sceneSemanticOptions: SceneSemanticOptions = { enabled: false, blend: 0, reducedMotion: false };
+    private readonly atmosphereOptions = createAtmosphereOptions();
+    /** `?atmosphere=on`, read once at `start()`. */
+    private atmosphereOptedIn = false;
     private readonly livePov = () => povStore.get();
     /** Page-relative time, to keep shader sin()/hash() inside f32 precision. */
     private readonly startedAt = Date.now();
@@ -127,6 +132,7 @@ export class FrameDriver {
         if (scaleRequest.mode === 'auto') setGpuPassTimingsWanted(true, 'budget');
         // #331: the URL's late latch / stereo, read once; reduced motion per frame.
         this.tailFlags = readPresentTailFlags();
+        this.atmosphereOptedIn = readFlag('atmosphere') === true;
         this.tailOptions = resolvePresentTailOptions({ reducedMotion: false, ...this.tailFlags });
         this.frame(performance.now());
     }
@@ -263,6 +269,16 @@ export class FrameDriver {
             depthEnabled: this.sceneDepthOptions.enabled,
             reducedMotion,
         }, this.sceneSemanticOptions));
+        if (renderer.setAtmosphere) {
+            // Live visibility only while live conditions are on and applied.
+            const live = liveConditionsStore.get();
+            renderer.setAtmosphere(resolveAtmosphereOptions({
+                quality,
+                optedIn: this.atmosphereOptedIn,
+                sunAltitude: e.sunAltitude,
+                visibilityM: live.enabled && live.status === 'live' ? live.conditions?.visibilityM ?? null : null,
+            }, this.atmosphereOptions));
+        }
 
         // Frame budget: frozen through a hold and under reduced motion
         // (a resolution that pumps is motion too). A GPU sample counts

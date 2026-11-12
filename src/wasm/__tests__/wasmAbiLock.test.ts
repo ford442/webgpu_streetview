@@ -176,6 +176,10 @@ describe('WASM ABI lock', () => {
       depthPercentiles: ['depth_percentiles'],
       depthNearDepth: ['depth_near_depth'],
       depthNormalize: ['depth_normalize'],
+      atmoParams: ['atmo_param_count', 'atmo_params'],
+      atmoTransmittance: ['atmo_transmittance'],
+      atmoTransmittanceLut: ['atmo_transmittance_lut'],
+      atmoSunColor: ['atmo_sun_color'],
       graphAstar: ['graph_astar'],
       graphNearest: ['graph_nearest'],
     };

@@ -82,6 +82,7 @@ set(STREETVIEW_SOURCES
     src/cabin_dsp_module.cpp
     src/depth_module.cpp
     src/graph_module.cpp
+    src/atmosphere_module.cpp
     src/runtime.cpp
 )
 # The AudioWorklet's binary: the cabin engine and the heap, nothing else.

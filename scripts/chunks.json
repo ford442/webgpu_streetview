@@ -67,6 +67,11 @@
       "entry": "src/renderer/webgl/WebGL2FallbackRenderer.ts"
     },
     {
+      "name": "AtmosphereController",
+      "entry": "src/renderer/atmosphere/AtmosphereController.ts",
+      "note": "The atmosphere LUT pass; absent at Low/Medium and opt-in above, so value imports of AtmosphereController stay out of main-bundle modules (AtmosphereLayer imports it lazily)."
+    },
+    {
       "name": "SemanticController",
       "entry": "src/renderer/semantic/SemanticController.ts",
       "note": "Value imports of SemanticController stay out of main-bundle modules (#352). onnxruntime-web is imported inside the depth Worker only.",

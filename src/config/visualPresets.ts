@@ -59,6 +59,12 @@ export interface VisualPreset {
    * once the user opts in and scene depth is on.
    */
   semanticBlend: number;
+  /**
+   * Build the physically based atmosphere's LUTs (renderer/atmosphere/,
+   * Hillaire 2020). False keeps the `atmosphere` pass absent; true builds it
+   * once the user opts in (`?atmosphere`). Compute-only, so High/Ultra.
+   */
+  atmosphereLuts: boolean;
 
   /**
    * WebGPU weather post-process pipeline: 'fragment' (default, streetview.wgsl
@@ -124,6 +130,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     horizonEstimateBlend: 0,
     depthBlend: 0,
     semanticBlend: 0,
+    atmosphereLuts: false,
 
     maxLights: 2,
     ambientOcclusion: false,
@@ -165,6 +172,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     horizonEstimateBlend: 0,
     depthBlend: 0,
     semanticBlend: 0,
+    atmosphereLuts: false,
 
     maxLights: 4,
     ambientOcclusion: false,
@@ -209,6 +217,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     horizonEstimateBlend: 0.5,
     depthBlend: 0.6,
     semanticBlend: 0.8,
+    atmosphereLuts: true,
 
     maxLights: 8,
     ambientOcclusion: true,
@@ -250,6 +259,7 @@ export const PRESETS: Record<QualityLevel, VisualPreset> = {
     horizonEstimateBlend: 0.7,
     depthBlend: 0.8,
     semanticBlend: 1,
+    atmosphereLuts: true,
 
     maxLights: 16,
     ambientOcclusion: true,

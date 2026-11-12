@@ -31,6 +31,7 @@ load fails the boot (§4).
 | `cpp/src/cabin_dsp_module.cpp` | the cabin audio engine and its UPOLS convolver (AudioWorklet, §3a) |
 | `cpp/src/depth_module.cpp` | scene-depth calibration: disparity percentiles, ground-calibrated near depth, normalisation + easing (`docs/SCENE_DEPTH.md`) |
 | `cpp/src/graph_module.cpp` | A* (`graph_astar`) and nearest node (`graph_nearest`) over the CSR link graph a trip prefetch saves — see `docs/ROAD_TRIPS.md` |
+| `cpp/src/atmosphere_module.cpp` | the physically based atmosphere's CPU reference (`atmo_*`): the medium's constants (Mie from visibility), the transmittance integral and its LUT, the sun's colour — on its own `exp`, so bit-exact everywhere (`docs/GRAPHICS.md` §10) |
 | `cpp/src/runtime.cpp` | `sv_malloc` / `sv_free` / `sv_stack_base` / `sv_stack_end` and the ABI `static_assert`s |
 | `cpp/include/streetview/abi.h` | **the ABI**: every export is one `SV_EXPORT(name)` declaration here, with its contract (§2) |
 | `cpp/include/streetview/platform.h` | `SV_EXPORT` (export_name + used under emcc, nothing on the host) and the stack-bounds shim — no `#ifdef __EMSCRIPTEN__` anywhere else |

@@ -122,6 +122,8 @@ export interface StreetViewRenderer {
     setSceneDepth?(options: import('./depth/sceneDepthOptions').SceneDepthOptions): void;
     /** Semantic scene layer (#352), every frame after `setSceneDepth`. WebGPU only. */
     setSceneSemantic?(options: import('./semantic/sceneSemanticOptions').SceneSemanticOptions): void;
+    /** The atmosphere LUT pass's inputs (sun, live visibility); WebGPU only. */
+    setAtmosphere?(options: import('./atmosphere/atmosphereOptions').AtmosphereOptions): void;
     /** The applied class map's sky edge (#352), for the horizon estimate. */
     getSemanticSkyEdge?(): import('./semantic/sceneSemanticOptions').SemanticSkyEdge | null;
     getOutputCanvas?(): HTMLCanvasElement;

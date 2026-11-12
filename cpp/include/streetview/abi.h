@@ -32,6 +32,8 @@
  *                         (also the whole of streetview-dsp.simd.wasm)
  *   depth_module.cpp      depth_* — scene-depth percentiles + proxy calibration
  *   graph_module.cpp      graph_astar / graph_nearest over the cached link graph
+ *   atmosphere_module.cpp atmo_* — the physically based sky's CPU reference
+ *                         (params, transmittance, its LUT, the sun's colour)
  *   runtime.cpp           sv_malloc / sv_free / sv_stack_base / sv_stack_end —
  *                         what the loader's scratch arena and stack check use
  *
@@ -437,6 +439,62 @@ SV_EXPORT(depth_normalize)
 void sw_depth_normalize(const float* disparity, int count, int width, int height, double horizon_y,
                         int aligned, int same_scene, double* state3, const float* previous,
                         float* out);
+
+/*
+ * Atmosphere (atmosphere_module.cpp): the CPU reference of the physically
+ * based sky (Hillaire 2020) whose LUTs the GPU builds in atmosphere.wgsl.
+ *
+ * A params block is sw_atmo_param_count() floats, lengths in km:
+ *   [0-3]   bottomRadius, topRadius, rayleighScaleHeight, mieScaleHeight
+ *   [4-7]   rayleighScattering.rgb (/km), mieG
+ *   [8-11]  mieScattering.rgb, ozoneCenter
+ *   [12-15] mieExtinction.rgb, ozoneHalfWidth
+ *   [16-19] ozoneAbsorption.rgb, visibility (km, as clamped)
+ *   [20-23] groundAlbedo.rgb, turbidity ((rayleigh + mie) / rayleigh at 550 nm)
+ * The renderer uploads it verbatim as `AtmosphereParams`
+ * (src/renderer/atmosphere/atmosphereLayout.ts).
+ */
+
+/** Floats in an atmosphere params block (24). */
+SV_EXPORT(atmo_param_count)
+SW_NODISCARD int sw_atmo_param_count(void);
+
+/**
+ * Fill a params block. Mie extinction comes from the meteorological
+ * visibility (Koschmieder, 3.912 / V at 550 nm, minus Rayleigh); a
+ * non-positive or NaN `visibility_m` means MODTRAN's 23 km rural standard.
+ * V is clamped to [50 m, 300 km]; `ground_albedo` to [0, 1].
+ */
+SV_EXPORT(atmo_params)
+void sw_atmo_params(double visibility_m, double ground_albedo, float* out);
+
+/**
+ * Transmittance from an observer `altitude_m` above the ground to the top of
+ * the atmosphere along a ray with cosine-of-zenith `cos_zenith` (40-step
+ * midpoint rule). `out_rgb` = 3 floats. A ray that would hit the ground is
+ * integrated as if the ground were transparent, like the LUT.
+ */
+SV_EXPORT(atmo_transmittance)
+void sw_atmo_transmittance(const float* params, double altitude_m, double cos_zenith,
+                           float* out_rgb);
+
+/**
+ * The transmittance LUT, width x height texels of RGBA (A = 1), row-major,
+ * row 0 at the ground: texel (i, j) is x_mu = i / (width - 1),
+ * x_r = j / (height - 1) of Bruneton's (mu, r) mapping — the same texels
+ * atmosphere.wgsl's `transmittance_lut` writes.
+ */
+SV_EXPORT(atmo_transmittance_lut)
+void sw_atmo_transmittance_lut(const float* params, int width, int height, float* out_rgba);
+
+/**
+ * Linear-RGB colour of a white sun seen from `altitude_m` at
+ * `sin_elevation`: the transmittance toward it, times the visible fraction
+ * of the disk as it crosses the geometric horizon (0 below it).
+ */
+SV_EXPORT(atmo_sun_color)
+void sw_atmo_sun_color(const float* params, double sin_elevation, double altitude_m,
+                       float* out_rgb);
 
 /*
  * Runtime (runtime.cpp). The loader's scratch arena and every caller-owned

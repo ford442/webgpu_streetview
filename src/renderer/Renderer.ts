@@ -71,6 +71,8 @@ import { DepthController } from './depth/DepthController';
 import type { SceneDepthOptions } from './depth/sceneDepthOptions';
 import type { SemanticSkyEdge, SceneSemanticOptions } from './semantic/sceneSemanticOptions';
 import { SemanticLayer } from './semantic/SemanticLayer';
+import { AtmosphereLayer } from './atmosphere/AtmosphereLayer';
+import type { AtmosphereOptions } from './atmosphere/atmosphereOptions';
 import { releaseSceneSemanticFallback } from './semantic/sceneSemanticBinding';
 import { UpscalePass } from './upscale/UpscalePass';
 import {
@@ -222,6 +224,12 @@ export class Renderer implements StreetViewRenderer {
      */
     private semantic: SemanticLayer | null = null;
     private semanticInit: Promise<unknown> | null = null;
+    /**
+     * The physically based atmosphere's LUTs: the lazy `atmosphere` pass,
+     * rebuilt on change. Its controller is a separate chunk.
+     */
+    private atmosphere: AtmosphereLayer | null = null;
+    private atmosphereInit: Promise<boolean> | null = null;
     /** What the cabin's windshield portal reads — see `roadFrameRegistry.ts`. */
     private roadFrameSource: RoadFrameSource | null = null;
     private readonly roadLook = createNeutralRoadLook();
@@ -485,7 +493,37 @@ export class Renderer implements StreetViewRenderer {
             onFailed: (error) => this.passes?.markFailed('semantic', error),
         });
         passes.register(this.semantic.pass);
+        // Lazy: initialised by `setAtmosphere` when the pass is switched on.
+        this.atmosphere = new AtmosphereLayer({ device: this.device });
+        passes.register(this.atmosphere.pass);
         return passes;
+    }
+
+    /**
+     * The atmosphere for this frame (frame driver, every frame): the sun and
+     * the live visibility. Switching it on the first time initialises the lazy
+     * `atmosphere` pass; a failure stays on `webgpuProbe.passes.atmosphere`
+     * until it is switched off and on. Nothing samples the LUTs yet, so the
+     * road frame is the same with the pass on or off.
+     */
+    public setAtmosphere(options: AtmosphereOptions): void {
+        const atmosphere = this.atmosphere;
+        const passes = this.passes;
+        if (!atmosphere || !passes || this.isDestroyed) return;
+        const wasEnabled = atmosphere.getOptions().enabled;
+        atmosphere.setOptions(options);
+        if (!options.enabled || this.atmosphereInit) return;
+        const retry = !wasEnabled && isPassFailed('atmosphere');
+        if (isPassFailed('atmosphere') && !retry) return;
+        if (atmosphere.isInitialised() && !retry) return;
+        this.atmosphereInit = passes.initPass('atmosphere').finally(() => {
+            this.atmosphereInit = null;
+        });
+    }
+
+    /** The atmosphere layer (tests and the e2e fixture read its LUTs back). */
+    public getAtmosphereLayer(): AtmosphereLayer | null {
+        return this.atmosphere;
     }
 
     /**
@@ -776,6 +814,8 @@ export class Renderer implements StreetViewRenderer {
             this.depthInit = null;
             this.semantic = null;
             this.semanticInit = null;
+            this.atmosphere = null;
+            this.atmosphereInit = null;
             this.gpuChores?.destroy();
             this.gpuChores = null;
             this.gpuPassTimer?.destroy();

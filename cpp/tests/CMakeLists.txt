@@ -9,6 +9,7 @@
 
 set(STREETVIEW_TEST_SOURCES
     noise_module_test.cpp
+    atmosphere_test.cpp
     cabin_dsp_test.cpp
     convolver_test.cpp
     depth_test.cpp

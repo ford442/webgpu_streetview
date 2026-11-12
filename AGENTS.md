@@ -417,9 +417,10 @@ the module that owns it, not to the façade:
 | `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`depth` (lazy) → `semantic` (lazy) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `semantic` (lazy) → `atmosphere` (lazy, High/Ultra) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
 | `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
 | `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
+| `atmosphere/` | the physically based atmosphere's LUTs (Hillaire 2020): the lazy `atmosphere` pass, rebuilt on change from the sun and the live visibility; C++ reference in `atmosphere_module.cpp` — see `docs/GRAPHICS.md` §10 |
 | `semantic/` | semantic scene layer (#352): the lazy `semantic` pass riding the depth Worker, the class table, weather group 3 + zero fallback — see *Semantic scene layer* |
 | `frameLoop.ts` | uniform packing, timestamp slots per pass id, and the per-frame encode (uniforms → registered passes → resolve → submit) |
 | `deviceLossRecovery.ts` | capped (3), backed-off re-init after a genuine device loss; the renderer never reports a loss it caused |
@@ -883,7 +884,8 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
 The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
 audio engine, panorama luma analysis, scene-depth calibration) has **one
 implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
-domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth, link graph), shipped
+domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth, link graph,
+atmosphere), shipped
 as two committed SIMD128 binaries: `public/wasm/streetview-wasm.simd.wasm`
 (every kernel, main thread) and `streetview-dsp.simd.wasm` (the cabin engine
 alone, fixed memory, the AudioWorklet). The scalar build is CI's oracle and
