@@ -13,6 +13,8 @@ type SceneDepthState =
     /** Downloading the runtime / model, or building the session. */
     | 'loading'
     | 'ready'
+    /** The Worker's device was lost: a new Worker loads after a capped backoff (#361). */
+    | 'recovering'
     | 'failed';
 
 export interface SceneDepthStats {
@@ -23,6 +25,16 @@ export interface SceneDepthStats {
     /** The depth device has `shader-f16` (and so runs the f16 model). */
     shaderF16: boolean | null;
     adapter: string | null;
+    /** The power preference the Worker's adapter was requested with (the road's policy, #361). */
+    powerPreference: GPUPowerPreference | null;
+    /** The Worker landed on a different physical adapter than the road, after its one retry. */
+    adapterMismatch: boolean;
+    /** Device losses recovered from without a toggle, this session. */
+    recoveries: number;
+    /** Attempt number of the recovery in progress (or the last one); 0 = never lost. */
+    recoveryAttempt: number;
+    /** Why the Worker's device was last lost. */
+    lastLossReason: string | null;
     downloadedBytes: number;
     downloadTotal: number;
     /** The model came from the Cache API bucket this session — nothing downloaded. */
@@ -53,6 +65,11 @@ const INITIAL: SceneDepthStats = {
     variant: null,
     shaderF16: null,
     adapter: null,
+    powerPreference: null,
+    adapterMismatch: false,
+    recoveries: 0,
+    recoveryAttempt: 0,
+    lastLossReason: null,
     downloadedBytes: 0,
     downloadTotal: 0,
     fromCache: null,
@@ -91,4 +108,25 @@ export function resetSceneDepthStats(): void {
 
 export function useSceneDepthStats<T>(selector: (s: SceneDepthStats) => T): T {
     return useStore(store, selector);
+}
+
+/** The live controller's device-loss trigger (#361); null while no depth pass exists. */
+let loseDeviceHook: (() => boolean) | null = null;
+
+/** `DepthController` registers its trigger here (the newest controller wins). */
+export function setSceneDepthLoseDeviceHook(hook: () => boolean): void {
+    loseDeviceHook = hook;
+}
+
+/** On dispose: clear the trigger, unless a newer controller has already replaced it. */
+export function clearSceneDepthLoseDeviceHook(hook: () => boolean): void {
+    if (loseDeviceHook === hook) loseDeviceHook = null;
+}
+
+/**
+ * `?debug` → `__SV__.renderer.loseDepthDevice()`: destroy the depth Worker's
+ * device so the recovery path can be watched. False when depth is not ready.
+ */
+export function debugLoseSceneDepthDevice(): boolean {
+    return loseDeviceHook?.() ?? false;
 }

@@ -13,6 +13,7 @@ import { setCabinMaterialBackend } from './cabinMaterialBackend';
 import { getCabinTslApi, setCabinTslApi } from './cabinTslRegistry';
 import { publishCabinRendererProbe, readCabinRendererProbe } from './cabinRendererProbe';
 import type { CabinTslApi } from './cabinTslMaterials';
+import { readDisplayCapabilities } from '../../runtime/contexts';
 import {
     resolveWindshieldPortalSupport,
     setWindshieldPortalSupport,
@@ -121,14 +122,8 @@ export function resetWebGPUCabinRendererForTests(): void {
 function parseP3Flag(search: string): boolean {
     const p3 = readFlag('p3', search);
     if (p3 === 'on') return true;
-    if (p3 === 'auto' && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-        try {
-            return window.matchMedia('(color-gamut: p3)').matches === true;
-        } catch {
-            return false;
-        }
-    }
-    return false;
+    // The display answer comes from the capability manifest, like the road canvas's.
+    return p3 === 'auto' && readDisplayCapabilities().p3;
 }
 
 /**

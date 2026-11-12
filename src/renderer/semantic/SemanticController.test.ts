@@ -41,7 +41,7 @@ class ScriptedWorker implements DepthWorkerLike {
     postMessage(message: DepthWorkerRequest): void {
         this.received.push(message);
         if (message.type === 'init') {
-            queueMicrotask(() => this.emit({ type: 'ready', variant: 'q4', shaderF16: false, fromCache: true, createMs: 1, adapter: 'fake' }));
+            queueMicrotask(() => this.emit({ type: 'ready', variant: 'q4', shaderF16: false, fromCache: true, createMs: 1, adapter: 'fake', powerPreference: null, adapterMismatch: false, adapterRetried: false }));
         } else if (message.type === 'load-semantic') {
             queueMicrotask(() => this.emit(this.semanticLoadError
                 ? { type: 'semantic-error', message: this.semanticLoadError }

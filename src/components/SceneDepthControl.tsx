@@ -49,6 +49,8 @@ const SceneDepthControl: React.FC = () => {
             line = total > 0
                 ? `Downloading the depth model… ${Math.round((downloaded / total) * 100)}%`
                 : 'Loading the depth model…';
+        } else if (state === 'recovering') {
+            line = 'The depth GPU was reset — reloading the model…';
         } else if (state === 'failed') {
             line = `Scene depth unavailable — ${reason ?? 'error'}. Effects use the horizon estimate.`;
         } else if (state === 'ready') {

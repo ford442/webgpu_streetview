@@ -6,9 +6,12 @@ import { installUnhandledRejectionCounter } from './app/unhandledRejection';
 import { installSvGlobals } from './debug/globals';
 import { registerServiceWorker } from './offline/serviceWorkerRegistration';
 import { loadBootWasm } from './renderer/bootWasm';
+import { startRuntimeContexts } from './runtime/contexts';
 
 installUnhandledRejectionCounter();
 installSvGlobals();
+// The capability manifest (`__SV__.contexts`): battery, storage, refresh rate, display changes.
+startRuntimeContexts();
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

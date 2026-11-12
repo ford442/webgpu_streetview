@@ -103,7 +103,8 @@ export class CabinAudio {
       this.ctx = graph.ctx;
       this.master = graph.ctx.createGain();
       this.master.gain.value = 1;
-      this.master.connect(graph.ctx.destination);
+      // The runtime's `cabin` bus (#361), not `destination`: one limiter for every bus.
+      this.master.connect(graph.cabinBus);
       publishCabinAudioProbe({ mode: 'off', ready: false, sampleRate: graph.ctx.sampleRate });
 
       // The main-thread module only builds IRs (cold); the worklet gets its

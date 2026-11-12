@@ -15,6 +15,7 @@ import {
     type CanvasOutputPolicy,
 } from './deviceInit';
 import { readFlag } from '../config/flags';
+import { recordGpuContext } from '../runtime/contexts';
 import { DEVICE_LABELS } from './deviceCapabilities';
 import { resolveHdrIntermediateFormat } from './shaderFeatureVariants';
 import { createComputePipelineChecked, createShaderModuleChecked } from './gpuPipelineFactory';
@@ -169,6 +170,9 @@ export async function bootDevice(options: BootDeviceOptions): Promise<BootDevice
         return fail('device', reason);
     }
     labelDevice(device);
+    // The capability manifest (`__SV__.contexts.gpu`): the depth Worker reads
+    // the request options and adapter identity from here (#361 slice 3).
+    recordGpuContext(adapter, adapterOptions, requiredFeatures);
     // Before `configure()`: its validation errors are uncaptured errors too. The
     // handler counts into a local sink until the capability matrix exists.
     const retargetUncaptured = attachUncapturedErrorHandler(device, { uncapturedErrorCount: 0 });

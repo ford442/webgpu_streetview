@@ -19,8 +19,8 @@ Where a flag also has a persisted `localStorage` choice, precedence is URL → s
 | `?webgpu` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Shorthand for `?renderer=webgpu`. |
 | `?webgl2` | bool | `1\|true\|on\|yes` / `0\|false\|off\|no` | — | Opt-in WebGL2 fallback when WebGPU fails to boot. Never automatic; shows a "WebGL2 fallback active" banner. |
 | `?gpu` | tokens | comma list: `low`, `low-power`, `high`, `high-performance`, `fallback`, `software`, `compat`, `compatibility`, `features` | — | Adapter selection tokens, e.g. `?gpu=high,compat`. `features` dumps enabled optional features on the backend chip. |
-| `?hdr` | tri | `on\|off\|auto` (bool spellings accepted) | `off` | Output-referred HDR canvas (extended tone mapping + rgba16float). `auto` follows the display. |
-| `?p3` | tri | `on\|off\|auto` (bool spellings accepted) | `off` | Display-P3 canvas colour space (also colours the cabin overlay). `auto` follows the display. |
+| `?hdr` | tri | `on\|off\|auto` (bool spellings accepted) | `auto` | Output-referred HDR canvas (extended tone mapping + rgba16float). Default `auto`: on when the display matches `(dynamic-range: high)`. `?hdr=0` forces SDR (byte-identical to an SDR display), `?hdr=1` forces HDR. |
+| `?p3` | tri | `on\|off\|auto` (bool spellings accepted) | `auto` | Display-P3 canvas colour space (also colours the cabin overlay). Default `auto`: on when the display matches `(color-gamut: p3)`. `?p3=0` forces sRGB, `?p3=1` forces P3. |
 | `?weather` | enum | `fragment` \| `compute` | — | Weather post-process pipeline. Wins over the persisted choice and the quality preset. |
 | `?quality` | enum | `low` \| `medium` \| `high` \| `ultra` | — | Visual quality preset. Wins over the persisted choice and hardware auto-detection. |
 | `?effect` | enum | `all` \| `raw` \| `color` \| `weather` \| `fog` \| `night` \| `lighting` | — | Isolate a single post-process effect (debug). |

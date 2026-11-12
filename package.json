@@ -79,7 +79,7 @@
     "@types/three": "0.180.0",
     "@types/webxr": "^0.5.24",
     "@vitejs/plugin-react": "^5.2.0",
-    "@webgpu/types": "^0.1.64",
+    "@webgpu/types": "^0.1.74",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",

@@ -241,7 +241,7 @@ export class SemanticController implements SemanticSink {
         setSceneSemanticStats({ failures: stats.failures + 1, reason: message });
     }
 
-    public pipelineReset(): void {
+    public pipelineReset(reason = 'scene depth is off'): void {
         this.session = 'none';
         this.sessionLoad = null;
         this.confidence = 0;
@@ -250,7 +250,7 @@ export class SemanticController implements SemanticSink {
         this.skyEdge = null;
         this.params.fill(0);
         if (!this.disposed && this.options.enabled) {
-            setSceneSemanticStats({ state: 'off', reason: 'scene depth is off', appliedBlend: 0, skyEdgeY: null });
+            setSceneSemanticStats({ state: 'off', reason, appliedBlend: 0, skyEdgeY: null });
         }
     }
 

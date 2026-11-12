@@ -358,8 +358,8 @@ describe('getCanvasOutputFlags', () => {
   beforeEach(resetGlobals);
   afterEach(resetGlobals);
 
-  it('defaults both opt-ins to off so a default boot stays SDR sRGB', () => {
-    expect(getCanvasOutputFlags()).toEqual({ hdr: 'off', p3: 'off' });
+  it('defaults both to auto — the display decides (#361)', () => {
+    expect(getCanvasOutputFlags()).toEqual({ hdr: 'auto', p3: 'auto' });
   });
 
   it('reads ?hdr=1 / ?p3=1 and the auto form', () => {
@@ -370,9 +370,9 @@ describe('getCanvasOutputFlags', () => {
     expect(getCanvasOutputFlags()).toEqual({ hdr: 'off', p3: 'on' });
   });
 
-  it('treats an unrecognized value as off', () => {
+  it('treats an unrecognized value as the auto default', () => {
     setSearch('?hdr=bogus');
-    expect(getCanvasOutputFlags().hdr).toBe('off');
+    expect(getCanvasOutputFlags().hdr).toBe('auto');
   });
 });
 

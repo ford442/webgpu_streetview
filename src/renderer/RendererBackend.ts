@@ -1,6 +1,7 @@
 import { type RenderMode } from './types';
 import { readFlag } from '../config/flags';
 import { installSvGlobals, isDebugMode, type RendererDebugHandle } from '../debug/globals';
+import { debugLoseSceneDepthDevice } from './depth/sceneDepthStatsStore';
 
 export type RendererBackendType = 'webgpu' | 'webgl';
 export type RendererBackendPreference = RendererBackendType | 'auto';
@@ -50,6 +51,13 @@ export interface StreetViewRenderer {
      * swap-chain texture, so it must be sized inside this.
      */
     getMaxTextureDimension2D?(): number | undefined;
+    /**
+     * The display's HDR / P3 answer changed (`runtime/contexts.ts`, #361):
+     * re-resolve the canvas output policy. A colour-space-only change is
+     * re-configured in place; an HDR change swaps the swap-chain format, which
+     * every pipeline is built for, so it asks the owner for a re-init.
+     */
+    applyDisplayOutputChange?(): DisplayOutputChangeResult;
     destroy(): void;
     setCarMode(active: boolean): void;
     updateEffects(effectsData: Float32Array<ArrayBuffer>): void;
@@ -246,18 +254,21 @@ export function buildAdapterRequestOptions(
     return requestOptions;
 }
 
+export type DisplayOutputChangeResult = 'unchanged' | 'reconfigured' | 'reinit';
+
 type CanvasOutputFlag = 'on' | 'off' | 'auto';
 
 export interface CanvasOutputFlags {
-    /** `?hdr=1` — extended tone mapping + rgba16float swap-chain. */
+    /** `?hdr` — extended tone mapping + rgba16float swap-chain; `auto` (default) follows the display. */
     hdr: CanvasOutputFlag;
     /** `?p3=1` — display-p3 canvas color space; `?p3=auto` follows the display. */
     p3: CanvasOutputFlag;
 }
 
 /**
- * Output-referred canvas opt-ins. Both default to `off` so a default boot stays
- * pixel-identical to the SDR sRGB swap-chain; `auto` defers to the display.
+ * Output-referred canvas policy flags. Both default to `auto` (#361): the
+ * display decides (`runtime/contexts.ts`), so an SDR sRGB display boots the
+ * historical swap-chain byte for byte; `off` / `on` override the display.
  */
 export function getCanvasOutputFlags(): CanvasOutputFlags {
     return { hdr: readFlag('hdr'), p3: readFlag('p3') };
@@ -399,6 +410,7 @@ function installStreetViewRendererDebug(
             window.localStorage.setItem('streetview.effect', effect);
             applyDebugOptions({ effectIsolation: effect });
         };
+        handle.loseDepthDevice = debugLoseSceneDepthDevice;
         handle.setWireframe = (enabled: boolean) => {
             applyDebugOptions({ wireframe: enabled });
         };

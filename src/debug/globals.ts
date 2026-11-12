@@ -36,6 +36,7 @@ import type { CabinRendererProbe } from '../car/interior/cabinRendererProbe';
 import type { CabinAudioProbe } from '../car/audio/cabinAudioProbe';
 import type { RearViewFeed } from '../car/rearViewFeed';
 import type { PlaceSearchBudgetStats } from '../search/placeSearchBudget';
+import { getRuntimeContexts, type RuntimeContexts } from '../runtime/contexts';
 
 /** `window.streetViewRendererDebug` — read-only always, mutators only with `?debug`. */
 export interface RendererDebugHandle {
@@ -52,6 +53,8 @@ export interface RendererDebugHandle {
     setEffectIsolation?: (effect: RendererEffectIsolation) => void;
     setWireframe?: (enabled: boolean) => void;
     setWeatherMode?: (mode: WeatherPostProcessMode) => void;
+    /** Destroy the scene-depth Worker's device to exercise its recovery (#361). False when depth is not ready. */
+    loseDepthDevice?: () => boolean;
 }
 
 interface PlaceSearchKillSwitch {
@@ -82,6 +85,8 @@ export interface SvDebug {
     readonly perf: FrameRateStats;
     /** Unhandled promise rejections / errors since boot (`app/unhandledRejection.ts`). */
     readonly errors: UnhandledErrorStats;
+    /** The capability manifest (#361): GPU, display, audio, isolation, storage, power. */
+    readonly contexts: Readonly<RuntimeContexts>;
     /** True when the page was opened with `?debug` (mutators installed). */
     readonly debug: boolean;
 }
@@ -148,6 +153,7 @@ export function installSvGlobals(): void {
         get frameSource() { return mapsCanvasSource.stats(); },
         get perf() { return perfStore.get(); },
         get errors() { return getUnhandledErrors(); },
+        get contexts() { return getRuntimeContexts(); },
         debug,
     };
     Object.defineProperty(window, '__SV__', { value: sv, configurable: true, enumerable: false });

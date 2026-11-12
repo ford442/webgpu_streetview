@@ -151,7 +151,8 @@ const SceneDepthStatsRows: React.FC = () => {
       <div style={{ marginBottom: '4px', color: '#cccccc' }} data-testid="perf-scene-depth">
         {state === 'ready'
           ? `${inferenceMs != null ? `${inferenceMs.toFixed(0)}ms` : '—'} · ${cadenceHz.toFixed(1)} Hz · w ${appliedBlend.toFixed(2)}`
-          : state === 'loading' ? 'loading…' : `failed: ${reason ?? '—'}`}
+          : state === 'loading' ? 'loading…'
+          : state === 'recovering' ? `recovering (device lost: ${reason ?? '—'})` : `failed: ${reason ?? '—'}`}
       </div>
       {state === 'ready' && (
         <div style={{ marginBottom: '4px', color: '#888888', fontSize: '10px' }}>

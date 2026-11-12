@@ -20,6 +20,7 @@ import {
 } from './deviceCapabilities';
 import { currentSearch, readFlag } from '../config/flags';
 import { detectXrSupport } from '../xr/xrSupport';
+import { readBatteryState, readDisplayCapabilities } from '../runtime/contexts';
 import { readNoGpuComputeFlag } from './gpuChores/gpuChoresPolicy';
 import {
     resolveHdrIntermediateFormat,
@@ -73,24 +74,15 @@ export function withXrCompatible(
     return xrCompatible ? { ...request, xrCompatible: true } : request;
 }
 
-/** Battery heuristic for the default (no `?gpu=`, no override) power preference. */
+/**
+ * Battery heuristic for the default (no `?gpu=`, no override) power preference.
+ * The battery is read through `runtime/contexts.ts`, the one Battery API reader.
+ */
 async function resolveDefaultPowerPreference(): Promise<GPUPowerPreference> {
-    const batteryApi = (navigator as Navigator & {
-        getBattery?: () => Promise<{ charging: boolean; level: number }>;
-    }).getBattery;
-    if (typeof batteryApi !== 'function') {
-        return 'high-performance';
+    const battery = await readBatteryState();
+    if (battery && !battery.charging && battery.level <= 0.2) {
+        return 'low-power';
     }
-
-    try {
-        const battery = await batteryApi.call(navigator);
-        if (!battery.charging && battery.level <= 0.2) {
-            return 'low-power';
-        }
-    } catch {
-        // Ignore battery API failures and fall back to high-performance.
-    }
-
     return 'high-performance';
 }
 
@@ -329,9 +321,8 @@ export function logAdapterCapabilities(
     enabledFeatures: GPUFeatureName[] = [],
     capabilityMatrix?: DeviceCapabilityMatrix,
 ): void {
-    const adapterInfo = (adapter as GPUAdapter & {
-        info?: { vendor?: string; architecture?: string; device?: string; description?: string };
-    }).info;
+    // Typed since @webgpu/types 0.1.71; still optional-chained for browsers that predate it.
+    const adapterInfo = adapter.info as GPUAdapterInfo | undefined;
     const summary: AdapterCapabilitySummary = {
         powerPreference: powerPreference || undefined,
         weatherMode: weatherPostProcessMode,
@@ -373,9 +364,9 @@ export interface CanvasOutputPolicyInput {
     /** `navigator.gpu.getPreferredCanvasFormat()`. */
     preferredFormat: GPUTextureFormat;
     flags?: CanvasOutputFlags;
-    /** `matchMedia('(dynamic-range: high)')` — only consulted for `?hdr=auto`. */
+    /** `(dynamic-range: high)` via `runtime/contexts.ts` — consulted for `?hdr=auto` (the default). */
     displaySupportsHdr?: boolean;
-    /** `matchMedia('(color-gamut: p3)')` — only consulted for `?p3=auto`. */
+    /** `(color-gamut: p3)` via `runtime/contexts.ts` — consulted for `?p3=auto` (the default). */
     displaySupportsP3?: boolean;
 }
 
@@ -385,8 +376,10 @@ export interface CanvasOutputPolicy {
 }
 
 /**
- * Resolve the output-referred canvas policy. Both opt-ins default off, so a
- * default boot is byte-identical to the historical SDR sRGB opaque swap-chain.
+ * Resolve the output-referred canvas policy. Both flags default to `auto`
+ * (#361): an HDR / P3 display gets HDR / P3 without a flag, and an SDR sRGB
+ * display (or `?hdr=0&p3=0`) is byte-identical to the historical SDR sRGB
+ * opaque swap-chain. A missing `flags` argument still means all-off.
  *
  * HDR needs nothing but an `rgba16float` swap chain, which every WebGPU
  * implementation accepts as a canvas format — no optional feature. (It used to
@@ -402,22 +395,13 @@ export function resolveCanvasOutputPolicy(input: CanvasOutputPolicyInput): Canva
     return { hdr, p3 };
 }
 
-/** Read the display-side `auto` gates; safe in jsdom / SSR where matchMedia is absent. */
+/**
+ * Read the display-side `auto` gates through `runtime/contexts.ts` (the one
+ * `matchMedia` reader); false in jsdom / SSR where matchMedia is absent.
+ */
 export function readDisplayOutputCapabilities(): { displaySupportsHdr: boolean; displaySupportsP3: boolean } {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-        return { displaySupportsHdr: false, displaySupportsP3: false };
-    }
-    const match = (query: string): boolean => {
-        try {
-            return window.matchMedia(query).matches === true;
-        } catch {
-            return false;
-        }
-    };
-    return {
-        displaySupportsHdr: match('(dynamic-range: high)'),
-        displaySupportsP3: match('(color-gamut: p3)'),
-    };
+    const display = readDisplayCapabilities();
+    return { displaySupportsHdr: display.hdr, displaySupportsP3: display.p3 };
 }
 
 export interface CanvasConfigurationDescriptor extends GPUCanvasConfiguration {

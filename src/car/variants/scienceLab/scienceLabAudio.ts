@@ -1,14 +1,18 @@
-import { createBrowserAudioContext } from '../../../audio/createAudioContext';
-import { ignoreRejection } from '../../../utils/ignoreRejection';
+import { acquireAudioRuntime, releaseAudioRuntime } from '../../../audio/audioRuntime';
 
+/** The lab's fan and beeps, on the shared runtime's `ui` bus (#361). */
 export class ScienceLabAudio {
     audioContext: AudioContext | null = null;
+    private output: AudioNode | null = null;
     fanOscillator: OscillatorNode | null = null;
     fanGain: GainNode | null = null;
 
     init(): void {
         try {
-            this.audioContext = createBrowserAudioContext();
+            const rt = acquireAudioRuntime();
+            if (!rt) throw new Error('Web Audio API is not available');
+            this.audioContext = rt.ctx;
+            this.output = rt.buses.ui;
             this.startEquipmentSounds();
         } catch (e) {
             console.warn('Audio not available for lab equipment:', e);
@@ -16,7 +20,7 @@ export class ScienceLabAudio {
     }
 
     startEquipmentSounds(): void {
-        if (!this.audioContext) return;
+        if (!this.audioContext || !this.output) return;
 
         this.fanOscillator = this.audioContext.createOscillator();
         this.fanGain = this.audioContext.createGain();
@@ -31,13 +35,13 @@ export class ScienceLabAudio {
 
         this.fanOscillator.connect(filter);
         filter.connect(this.fanGain);
-        this.fanGain.connect(this.audioContext.destination);
+        this.fanGain.connect(this.output);
 
         this.fanOscillator.start();
     }
 
     playBeep(frequency: number = 800, duration: number = 0.1): void {
-        if (!this.audioContext) return;
+        if (!this.audioContext || !this.output) return;
 
         const osc = this.audioContext.createOscillator();
         const gain = this.audioContext.createGain();
@@ -48,7 +52,7 @@ export class ScienceLabAudio {
         gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
 
         osc.connect(gain);
-        gain.connect(this.audioContext.destination);
+        gain.connect(this.output);
 
         osc.start();
         osc.stop(this.audioContext.currentTime + duration);
@@ -67,11 +71,14 @@ export class ScienceLabAudio {
         if (this.fanOscillator) {
             this.fanOscillator.stop();
         }
+        this.fanGain?.disconnect();
         if (this.audioContext) {
-            this.audioContext.close().catch(ignoreRejection);
+            // Shared: release, never close.
+            releaseAudioRuntime();
         }
         this.fanOscillator = null;
         this.fanGain = null;
         this.audioContext = null;
+        this.output = null;
     }
 }

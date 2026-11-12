@@ -3,11 +3,10 @@
  * Creates procedural wind noise that varies with car speed
  */
 
-import { createBrowserAudioContext } from './createAudioContext';
+import { acquireAudioRuntime, releaseAudioRuntime } from './audioRuntime';
 import { cabinAudioPanFromHeadYaw } from '../car/carSpatialModel';
 import { signedAngleDiff } from '../utils/navigation';
 import { loadWasmModule, type StreetViewWasmAPI } from '../wasm';
-import { ignoreRejection } from '../utils/ignoreRejection';
 
 /** Taps per ear — short, this is a directional shadow model, not a reverb tail. */
 const HRTF_TAPS = 32;
@@ -30,6 +29,8 @@ export interface WindAudioConfig {
 
 export class WindAudio {
   private audioContext: AudioContext | null = null;
+  /** The shared runtime's `wind` bus (#361) — the graph's output, never `destination`. */
+  private output: AudioNode | null = null;
   private noiseNode: AudioBufferSourceNode | null = null;
   private gainNode: GainNode | null = null;
   private pannerNode: StereoPannerNode | null = null;
@@ -71,8 +72,13 @@ export class WindAudio {
   async init(): Promise<boolean> {
     try {
       if (!this.audioContext) {
-        this.audioContext = createBrowserAudioContext();
+        // The app's one AudioContext; the cabin engine mutes this bus while it owns the wind.
+        const rt = acquireAudioRuntime();
+        if (!rt) throw new Error('Web Audio API is not available');
+        this.audioContext = rt.ctx;
+        this.output = rt.buses.wind;
       }
+      const output = this.output!;
 
       // Create gain node for volume control
       this.gainNode = this.audioContext.createGain();
@@ -81,7 +87,7 @@ export class WindAudio {
       this.pannerNode = this.audioContext.createStereoPanner();
       this.pannerNode.pan.value = this.pendingPan;
       this.gainNode.connect(this.pannerNode);
-      this.pannerNode.connect(this.audioContext.destination);
+      this.pannerNode.connect(output);
 
       // Create filter for wind effect (lowpass that opens with speed)
       this.filterNode = this.audioContext.createBiquadFilter();
@@ -112,7 +118,8 @@ export class WindAudio {
     try {
       const wasm = await loadWasmModule();
       const ctx = this.audioContext;
-      if (!ctx || !this.gainNode || !this.pannerNode) return;
+      const output = this.output;
+      if (!ctx || !output || !this.gainNode || !this.pannerNode) return;
 
       const convolverL = ctx.createConvolver();
       const convolverR = ctx.createConvolver();
@@ -135,10 +142,10 @@ export class WindAudio {
       this.gainNode.connect(convolverR);
       convolverL.connect(merger, 0, 0);
       convolverR.connect(merger, 0, 1);
-      merger.connect(ctx.destination);
+      merger.connect(output);
 
       this.gainNode.disconnect(this.pannerNode);
-      this.pannerNode.disconnect(ctx.destination);
+      this.pannerNode.disconnect(output);
     } catch (e) {
       console.warn('[WindAudio] HRTF convolver upgrade failed; staying on StereoPannerNode pan', e);
       this.convolverL = null;
@@ -377,9 +384,11 @@ export class WindAudio {
       this.gainNode = null;
     }
 
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close().catch(ignoreRejection);
+    if (this.audioContext) {
+      // Shared: release, never close (the runtime suspends it when unused).
       this.audioContext = null;
+      this.output = null;
+      releaseAudioRuntime();
     }
     this.wasm = null;
     this.lastHrtfAzimuthDeg = 0;

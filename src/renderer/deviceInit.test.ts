@@ -19,7 +19,7 @@ import {
     readNoClipDistancesFlag,
     resolveCanvasOutputPolicy,
 } from './deviceInit';
-import { buildAdapterRequestOptions, type AdapterSelectionPolicy } from './RendererBackend';
+import { buildAdapterRequestOptions, getCanvasOutputFlags, type AdapterSelectionPolicy } from './RendererBackend';
 import { CHORES_WORKGROUP_SIZE } from './gpuChores/lumaMath';
 import { COMPUTE_CHORES_WORKGROUP_SIZE, COMPUTE_WEATHER_WORKGROUP_SIZE, DEVICE_LABELS, OPTIONAL_FEATURES_ATTEMPTED } from './deviceCapabilities';
 
@@ -330,6 +330,38 @@ describe('canvas output policy', () => {
         expect(descriptor.usage).toBe(CANVAS_USAGE);
         expect(descriptor.toneMapping).toBeUndefined();
         expect(descriptor.viewFormats).toBeUndefined();
+    });
+
+    it('#361: with the default flags an HDR display gets extended tone mapping', () => {
+        const policy = resolveCanvasOutputPolicy({
+            preferredFormat: 'bgra8unorm',
+            flags: getCanvasOutputFlags(),
+            displaySupportsHdr: true,
+            displaySupportsP3: true,
+        });
+        expect(policy).toEqual({ hdr: true, p3: true });
+        const descriptor = buildCanvasConfiguration(device, 'bgra8unorm', policy);
+        expect(descriptor.toneMapping).toEqual({ mode: 'extended' });
+        expect(descriptor.format).toBe(HDR_CANVAS_FORMAT);
+    });
+
+    it('#361: an SDR display, or ?hdr=0&p3=0 on an HDR one, is the historical descriptor byte for byte', () => {
+        const historical = buildCanvasConfiguration(device, 'bgra8unorm', { hdr: false, p3: false });
+        const sdrDisplay = resolveCanvasOutputPolicy({
+            preferredFormat: 'bgra8unorm',
+            flags: getCanvasOutputFlags(),
+            displaySupportsHdr: false,
+            displaySupportsP3: false,
+        });
+        const forcedOff = resolveCanvasOutputPolicy({
+            preferredFormat: 'bgra8unorm',
+            flags: { hdr: 'off', p3: 'off' },
+            displaySupportsHdr: true,
+            displaySupportsP3: true,
+        });
+        for (const policy of [sdrDisplay, forcedOff]) {
+            expect(buildCanvasConfiguration(device, 'bgra8unorm', policy)).toEqual(historical);
+        }
     });
 
     // Spec values — jsdom has no GPUTextureUsage global, which is exactly the

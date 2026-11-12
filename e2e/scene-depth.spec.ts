@@ -34,6 +34,10 @@ interface Stats {
     inputWidth: number;
     inputHeight: number;
     generation: number;
+    powerPreference: string | null;
+    adapterMismatch: boolean;
+    recoveries: number;
+    recoveryAttempt: number;
 }
 interface Scene {
     boot(o?: { missingModel?: boolean }): Promise<unknown>;
@@ -44,6 +48,7 @@ interface Scene {
     capture(): Promise<Capture>;
     release(o: { travelHeading?: number; progress: number }): Promise<Capture>;
     stats(): Stats;
+    loseDepthDevice(): boolean;
     passes(): Record<string, { state: string; reason?: string }>;
     probeOk(): boolean | null;
     uncaptured(): string[];
@@ -193,6 +198,26 @@ test.describe('scene depth on a real WebGPU device', () => {
         const shift = (c: Capture, r: 'farDoor' | 'nearGround') => Math.abs(luma(c.regions[r]) - luma(crossfade.regions[r]));
         expect(shift(dolly, 'nearGround')).toBeGreaterThan(shift(dolly, 'farDoor'));
         // (A teleport has no link heading and keeps the crossfade — depthParams.test.ts.)
+        expect(await call(page, 'uncaptured')).toEqual([]);
+    });
+
+    test('#361: the Worker follows the road\'s power policy and recovers from a lost device within 10 s', async () => {
+        const before = await call(page, 'stats');
+        // The road's request on this lane: the battery heuristic's default (no `?gpu=`).
+        expect(before.powerPreference).toBe('high-performance');
+        expect(before.adapterMismatch).toBe(false);
+        expect(await call(page, 'loseDepthDevice')).toBe(true);
+        const lost = await call(page, 'waitForState', ['recovering', 'failed'], 5_000);
+        expect(lost.state, lost.reason ?? '').toBe('recovering');
+        const started = Date.now();
+        // Session create is the slow part on SwiftShader; the model comes from the Cache API.
+        const recovered = await call(page, 'waitForState', ['ready', 'failed'], 10_000);
+        expect(recovered.state, recovered.reason ?? '').toBe('ready');
+        expect(Date.now() - started).toBeLessThan(10_000);
+        expect(recovered.recoveries).toBe(before.recoveries + 1);
+        expect(recovered.recoveryAttempt).toBeLessThanOrEqual(3);
+        expect(recovered.fromCache).toBe(true);
+        expect((await call(page, 'passes')).depth?.state).toBe('ready');
         expect(await call(page, 'uncaptured')).toEqual([]);
     });
 

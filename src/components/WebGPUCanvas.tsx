@@ -14,6 +14,7 @@ import { prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicC
 import { fetchLookLutVolume } from '../renderer/lut';
 import { FrameDriver } from '../renderer/frameDriver';
 import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
+import { subscribeDisplayChanges } from '../runtime/contexts';
 import {
     DEFAULT_MAX_TEXTURE_DIMENSION,
     dprCapForPixelRatio,
@@ -171,6 +172,17 @@ const WebGPUCanvas: React.FC<WebGPUCanvasProps> = ({ onWebGPUStatus, onBackendIn
     useEffect(() => () => {
         if (reinitTimerRef.current) clearTimeout(reinitTimerRef.current);
     }, []);
+
+    // #361: the window moved to a display with a different HDR / P3 answer.
+    // A colour-space change re-configures in place; an HDR change rebuilds the
+    // renderer (an intended teardown — never counted as a device loss).
+    useEffect(() => subscribeDisplayChanges(() => {
+        const result = internalRendererRef.current?.applyDisplayOutputChange?.();
+        if (result === 'reinit') {
+            console.info('[Renderer] Display HDR capability changed — rebuilding the renderer for the new swap chain');
+            setReinitCounter((c) => c + 1);
+        }
+    }), []);
 
     // Latest environment settings for the frame driver.
     useEffect(() => {
