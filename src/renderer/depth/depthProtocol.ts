@@ -4,6 +4,8 @@
  */
 import type { DepthModelFile, DepthModelVariant } from './depthModel';
 import type { SemanticModelFile } from '../semantic/semanticModel';
+import type { DepthAdapterRequest } from './depthAdapterPolicy';
+import type { GpuAdapterIdentity } from '../../runtime/contexts';
 
 export interface DepthInitRequest {
     type: 'init';
@@ -11,6 +13,10 @@ export interface DepthInitRequest {
     models: Record<DepthModelVariant, DepthModelFile>;
     cacheName: string;
     cachePrefix: string;
+    /** The road's resolved adapter options (#367): power preference, feature level, fallback. */
+    adapterRequest: DepthAdapterRequest;
+    /** The road adapter's identity, to prefer the same physical GPU; null before the road booted. */
+    mainAdapter: GpuAdapterIdentity | null;
 }
 
 /**
@@ -39,11 +45,20 @@ interface DepthDisposeRequest {
     type: 'dispose';
 }
 
+/**
+ * Test / `?debug` hook: `device.destroy()` the Worker's device, which then
+ * reports `lost` like a real loss — the recovery path's e2e trigger.
+ */
+interface DepthDebugLoseDeviceRequest {
+    type: 'debug-lose-device';
+}
+
 export type DepthWorkerRequest =
     | DepthInitRequest
     | DepthLoadSemanticRequest
     | DepthInferRequest
-    | DepthDisposeRequest;
+    | DepthDisposeRequest
+    | DepthDebugLoseDeviceRequest;
 
 interface DepthProgressMessage {
     type: 'progress';
@@ -60,6 +75,12 @@ export interface DepthReadyMessage {
     /** Session create (graph optimisation + weight upload). */
     createMs: number;
     adapter: string;
+    /** The power preference the accepted adapter was requested with; null = browser default. */
+    powerPreference: GPUPowerPreference | null;
+    /** The Worker's adapter is known to differ from the road's (after the one retry). */
+    adapterMismatch: boolean;
+    /** The first adapter differed and the opposite power preference was tried. */
+    adapterRetried: boolean;
 }
 
 /** The semantic half of a result (#352): the class map at the input size. */

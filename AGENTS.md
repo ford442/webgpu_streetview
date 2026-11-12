@@ -287,6 +287,7 @@ webgpu_streetview/
 │   │   ├── panoTimeZone.ts          # Offline lat/lng → IANA zone (lazy tz-lookup chunk)
 │   │   ├── cesiumImagery.ts         # Globe imagery/terrain resolution (Ion token → CartoCDN fallback)
 │   │   └── memoryProfiler.ts        # Heap usage tracking (performance overlay)
+│   ├── runtime/
 │   ├── search/
 │   ├── trip/
 │   ├── types/
@@ -413,6 +414,19 @@ The intermediate HDR texture is lazily created and resized in `ensureIntermediat
 
 **Note on coverage**: the parity test above reads only `.wgsl` files and `weatherPostProcessor.contract.test.ts` only checks method names, so neither one covers the TypeScript. Runtime behaviour of the compute path — binding indices, ping-pong ordering, pass sequence, resource lifecycle — is pinned by `src/renderer/computeWeather/__tests__/computeWeather.characterization.test.ts` against the fake `GPUDevice` in `fakeGpu.ts` (jsdom has no `navigator.gpu`). Extend those when you add a binding or a pass.
 
+### Runtime contexts (`src/runtime/contexts.ts`, #367)
+
+The capability manifest — GPU (the road's request options, `adapter.info`,
+features, limits), display (HDR / P3 media queries, measured refresh rate),
+audio output, cross-origin isolation, storage estimate, battery / save-data —
+as a frozen snapshot on `window.__SV__.contexts`. Every subsystem reads it; it
+is the only module that queries `(dynamic-range: high)` / `(color-gamut: p3)`
+or calls `navigator.getBattery` (`contexts.scan.test.ts`). `?hdr` / `?p3`
+default to `auto`; display changes re-configure the canvas
+(`Renderer.applyDisplayOutputChange`). There is one `AudioContext`
+(`audio/audioRuntime.ts`) with named buses into a master limiter. Details:
+`docs/RENDERER_FALLBACK.md` § Runtime contexts.
+
 ### Scene depth (`src/renderer/depth/`, #320)
 
 A monocular depth map of the road frame (Depth Anything V2 Small through
@@ -429,7 +443,12 @@ panel / `?depth=on`; ~25 MB once) and only weighted at High/Ultra (`depthBlend`
   `check-bundle-budget.sh`). It owns **its own `GPUDevice`** (a device cannot
   enter a Worker, and a model fault must not take the road down); that is the
   one `requestDevice` outside `bootDevice.ts`. `shader-f16` there selects the
-  `q4f16` model, else `q4`.
+  `q4f16` model, else `q4`. Its adapter follows the road's policy (#367): the
+  `init` message carries the road's request options and adapter identity
+  (`depthAdapterPolicy.ts`; one opposite-preference retry on a different GPU,
+  then `adapterMismatch`), and a lost Worker device is recovered by
+  `DepthController` with `deviceLossRecovery.ts`'s capped backoff — depth and
+  the semantic session resume without a toggle (`state: 'recovering'`).
 - **Model**: Apache-2.0 Small only (Base/Large are CC-BY-NC). Not in git —
   `npm run fetch:depth-model` puts the pinned, SHA-256-checked files into
   `public/models/depth/` (deploy runs it); the Worker caches the verified file

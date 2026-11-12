@@ -3,7 +3,13 @@ import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
 import { type WeatherPostProcessorLike } from './weatherPostProcessorTypes';
-import { configureCanvasContext, type CanvasOutputPolicy } from './deviceInit';
+import {
+    configureCanvasContext,
+    getCanvasOutputFlags,
+    readDisplayOutputCapabilities,
+    resolveCanvasOutputPolicy,
+    type CanvasOutputPolicy,
+} from './deviceInit';
 import { GpuPassTimer } from './gpuPassTimer';
 import { resetGpuPassTimings } from './gpuPassTimingStore';
 import { clampSamplerAnisotropy, getSamplerAnisotropyForQuality } from './samplerAnisotropy';
@@ -13,6 +19,7 @@ import { TextureLifecycle } from './textureLifecycle';
 import {
     type PanoramaStatsOptions,
     type RendererDebugOptions,
+    type DisplayOutputChangeResult,
     type RendererInitOptions,
     type StreetViewRenderer,
     type WeatherPostProcessMode,
@@ -704,6 +711,26 @@ export class Renderer implements StreetViewRenderer {
     }
 
     /** The device's 2D texture limit — the canvas backing store must fit inside it. */
+    public applyDisplayOutputChange(): DisplayOutputChangeResult {
+        if (this.isDestroyed || !this.device) return 'unchanged';
+        const next = resolveCanvasOutputPolicy({
+            preferredFormat: this.presentationFormat,
+            flags: getCanvasOutputFlags(),
+            ...readDisplayOutputCapabilities(),
+        });
+        const current = this.canvasOutputPolicy;
+        if (next.hdr === current.hdr && next.p3 === current.p3) return 'unchanged';
+        // HDR moves the swap-chain format (and the output-referred shader
+        // variant): pipelines are built for it, so only a re-init can follow.
+        if (next.hdr !== current.hdr) return 'reinit';
+        const applied = configureCanvasContext(this.context, this.device, this.presentationFormat, next);
+        this.canvasOutputPolicy = {
+            hdr: applied.toneMapping === 'extended',
+            p3: applied.colorSpace === 'display-p3',
+        };
+        return 'reconfigured';
+    }
+
     public getMaxTextureDimension2D(): number | undefined {
         const limit = Number(this.getSharedGpuDevice()?.limits?.maxTextureDimension2D);
         return Number.isFinite(limit) && limit > 0 ? limit : undefined;

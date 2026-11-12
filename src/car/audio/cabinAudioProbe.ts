@@ -7,6 +7,8 @@
  * second), so they describe the audio thread, not the main thread.
  */
 
+import { audioContextCount } from '../../audio/audioRuntime';
+
 type CabinAudioMode =
   /** The WASM cabin engine renders the bed inside the AudioWorklet. */
   | 'worklet-wasm'
@@ -45,6 +47,11 @@ export interface CabinAudioProbe {
   /** Mean / worst `dsp_render` time per quantum, ms (null where the worklet scope has no clock). */
   renderMsAvg: number | null;
   renderMsMax: number | null;
+  /**
+   * Live AudioContexts in the app (`audio/audioRuntime.ts`, #367): 1 with any
+   * audio running, 0 before the first. Above 1 is a regression.
+   */
+  contexts: number;
   /** Last worklet error (instantiation / render), if any. */
   error?: string;
 }
@@ -63,11 +70,16 @@ function emptyCabinAudioProbe(): CabinAudioProbe {
     underruns: 0,
     renderMsAvg: null,
     renderMsMax: null,
+    contexts: 0,
   };
 }
 
 /** Merge into the published probe (creating it on first use). */
 export function publishCabinAudioProbe(patch: Partial<CabinAudioProbe>): void {
   if (typeof window === 'undefined') return;
-  window.__CABIN_AUDIO_PROBE__ = { ...(window.__CABIN_AUDIO_PROBE__ ?? emptyCabinAudioProbe()), ...patch };
+  window.__CABIN_AUDIO_PROBE__ = {
+    ...(window.__CABIN_AUDIO_PROBE__ ?? emptyCabinAudioProbe()),
+    ...patch,
+    contexts: audioContextCount(),
+  };
 }

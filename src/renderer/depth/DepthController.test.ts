@@ -12,6 +12,8 @@ import { SCENE_DEPTH_FORMAT, SceneDepthParamIndex as I } from './sceneDepthBindi
 import { getSceneDepthStats, resetSceneDepthStats } from './sceneDepthStatsStore';
 import { DEPTH_SETTLE_MS } from './depthScheduler';
 import type { GpuChores } from '../gpuChores/GpuChores';
+import { DeviceLossRecovery } from '../deviceLossRecovery';
+import { recordGpuContext, resetRuntimeContextsForTests } from '../../runtime/contexts';
 
 /** A Worker that answers like `depthWorker.ts`, under test control. */
 class ScriptedWorker implements DepthWorkerLike {
@@ -30,7 +32,10 @@ class ScriptedWorker implements DepthWorkerLike {
         if (message.type === 'init') {
             queueMicrotask(() => this.emit(this.initError
                 ? { type: 'error', message: this.initError }
-                : { type: 'ready', variant: 'q4', shaderF16: false, fromCache: true, createMs: 12, adapter: 'fake' }));
+                : {
+                    type: 'ready', variant: 'q4', shaderF16: false, fromCache: true, createMs: 12, adapter: 'fake',
+                    powerPreference: 'high-performance', adapterMismatch: false, adapterRetried: false,
+                }));
         } else if (message.type === 'infer') {
             // Disparity rises left → right: the right edge is nearest.
             const disparity = new Float32Array(message.width * message.height);
@@ -241,13 +246,72 @@ describe('scene depth — input, output, publication', () => {
         expect(getSceneDepthStats().state).toBe('ready');
     });
 
-    it('a device lost in the Worker after ready is reported as a pass failure', async () => {
-        const c = makeController();
+    it('#367: a device lost in the Worker after ready recovers without a toggle', async () => {
+        const c = makeController({ lossRecovery: new DeviceLossRecovery({ baseDelayMs: 1 }) });
         await warmUp(c);
-        worker.emit({ type: 'lost', message: 'GPU hung' });
-        expect(failed.map((e) => e.message)).toEqual(['depth device lost: GPU hung']);
-        expect(c.currentAux()).toBeUndefined();
+        const first = worker;
+        worker = new ScriptedWorker();
+        first.emit({ type: 'lost', message: 'GPU hung' });
+        expect(getSceneDepthStats().state).toBe('recovering');
+        expect(getSceneDepthStats().lastLossReason).toBe('depth device lost: GPU hung');
+        expect(getSceneDepthStats().recoveryAttempt).toBe(1);
+        // The map's weight drops to 0 until a new map lands.
+        c.onFrame(frame(10_000));
+        expect(getSceneDepthStats().appliedBlend).toBe(0);
+        await vi.waitFor(() => expect(getSceneDepthStats().state).toBe('ready'));
+        expect(failed).toEqual([]);
+        expect(worker.received[0]?.type).toBe('init');
+        expect(getSceneDepthStats().recoveries).toBe(1);
+        // Depth resumes: new maps are inferred on the new Worker.
+        let t = 20_000;
+        for (let i = 0; i < 40 && !worker.received.some((m) => m.type === 'infer'); i++) {
+            c.onFrame(frame(t));
+            await settle();
+            t += DEPTH_SETTLE_MS;
+        }
+        expect(worker.received.some((m) => m.type === 'infer')).toBe(true);
+    });
+
+    it('#367: recovery is capped — three failed re-loads end in a reported failure', async () => {
+        const c = makeController({ lossRecovery: new DeviceLossRecovery({ baseDelayMs: 1, maxAttempts: 3 }) });
+        await warmUp(c);
+        const first = worker;
+        const workers: ScriptedWorker[] = [];
+        worker = new ScriptedWorker();
+        worker.initError = 'no adapter';
+        const factory = () => {
+            const w = new ScriptedWorker();
+            w.initError = 'no adapter';
+            workers.push(w);
+            return w;
+        };
+        // Every re-load gets a Worker whose init fails.
+        (c as unknown as { deps: DepthControllerDeps }).deps.createEstimator = () => new DepthEstimator(factory);
+        first.emit({ type: 'lost', message: 'GPU hung' });
+        await vi.waitFor(() => expect(failed.length).toBe(1));
+        expect(workers.length).toBe(3);
         expect(getSceneDepthStats().state).toBe('failed');
+        expect(c.currentAux()).toBeUndefined();
+    });
+
+    it('#367: the init message carries the road\'s adapter policy (?gpu=low-power) and identity', async () => {
+        resetRuntimeContextsForTests();
+        const adapter = {
+            info: { vendor: 'intel', architecture: 'xe', device: '0x46a6', description: 'Iris Xe' },
+            features: new Set<string>(),
+            limits: {},
+        } as unknown as GPUAdapter;
+        recordGpuContext(adapter, { powerPreference: 'low-power', xrCompatible: true }, []);
+        const c = makeController();
+        c.setOptions({ enabled: true, blend: 0.6, reducedMotion: false });
+        await c.pass.init();
+        const init = worker.received[0];
+        expect(init?.type).toBe('init');
+        if (init?.type !== 'init') return;
+        expect(init.adapterRequest).toEqual({ powerPreference: 'low-power' });
+        expect(init.mainAdapter).toEqual({ vendor: 'intel', architecture: 'xe', device: '0x46a6', description: 'Iris Xe' });
+        expect(getSceneDepthStats().powerPreference).toBe('high-performance');
+        resetRuntimeContextsForTests();
     });
 
     it('without the GPU chores readback (?no_gpu_compute) it fails honestly instead of spinning', async () => {

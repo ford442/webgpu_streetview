@@ -14,6 +14,15 @@
  * (~70 K texels, ≤ 5 Hz), which the main thread writes into an `r16float`
  * texture on the road's device. Nothing on this device is ever rendered.
  *
+ * **The road's adapter policy (#367).** The init message carries the options
+ * the road's adapter was requested with (power preference — the battery
+ * heuristic or `?gpu=` — feature level, fallback) and the road adapter's
+ * identity. The Worker requests with the same options; on a different
+ * physical adapter it retries once with the opposite power preference, then
+ * accepts the policy's adapter and reports `adapterMismatch`
+ * (`depthAdapterPolicy.ts`). A lost device is recovered by the main thread
+ * (`DepthController`), which makes a new Worker.
+ *
  * `shader-f16` is requested when the adapter has it: that is what lets the
  * `q4f16` model (f16 activations) run; without it the `q4` variant does.
  *
@@ -49,6 +58,14 @@ import type {
     SemanticResult,
 } from './depthProtocol';
 import { decodeSemanticProbs } from '../semantic/semanticDecode';
+import {
+    adapterIdentity,
+    describeAdapter,
+    oppositePowerPreference,
+    sameAdapter,
+    type DepthAdapterRequest,
+} from './depthAdapterPolicy';
+import type { GpuAdapterIdentity } from '../../runtime/contexts';
 
 /** The slice of the onnxruntime-web API this Worker uses (it has no npm types here). */
 interface OrtTensor {
@@ -117,14 +134,52 @@ function onOrtQueue<T>(task: () => Promise<T>): Promise<T> {
     return run;
 }
 
-async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: boolean; adapter: string }> {
+interface DepthDevice {
+    device: GPUDevice;
+    shaderF16: boolean;
+    adapter: string;
+    powerPreference: GPUPowerPreference | null;
+    adapterMismatch: boolean;
+    adapterRetried: boolean;
+}
+
+/**
+ * The road's adapter policy (#367): request with the road's options; on a
+ * different physical adapter, try the opposite power preference once, then
+ * accept the policy's adapter and report the mismatch.
+ */
+async function pickDepthAdapter(
+    gpu: GPU,
+    request: DepthAdapterRequest,
+    mainAdapter: GpuAdapterIdentity | null,
+): Promise<{ adapter: GPUAdapter; powerPreference: GPUPowerPreference | null; mismatch: boolean; retried: boolean }> {
+    const first = await gpu.requestAdapter(request);
+    if (!first) throw new Error('no WebGPU adapter in the depth worker');
+    const firstMatch = sameAdapter(adapterIdentity(first), mainAdapter);
+    const preference = request.powerPreference ?? null;
+    if (firstMatch !== false || !preference) {
+        return { adapter: first, powerPreference: preference, mismatch: firstMatch === false, retried: false };
+    }
+    const opposite = oppositePowerPreference(preference);
+    const second = await gpu.requestAdapter({ ...request, powerPreference: opposite }).catch(() => null);
+    if (second && sameAdapter(adapterIdentity(second), mainAdapter) === true) {
+        return { adapter: second, powerPreference: opposite, mismatch: false, retried: true };
+    }
+    return { adapter: first, powerPreference: preference, mismatch: true, retried: true };
+}
+
+async function createDepthDevice(request: DepthInitRequest): Promise<DepthDevice> {
     const gpu = (navigator as Navigator & { gpu?: GPU }).gpu;
-    const adapter = await gpu?.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter) throw new Error('no WebGPU adapter in the depth worker');
+    if (!gpu) throw new Error('no WebGPU in the depth worker');
+    const picked = await pickDepthAdapter(gpu, request.adapterRequest, request.mainAdapter);
+    const adapter = picked.adapter;
     const shaderF16 = adapter.features.has('shader-f16');
     const requiredFeatures: GPUFeatureName[] = [];
     if (shaderF16) requiredFeatures.push('shader-f16');
     if (adapter.features.has('subgroups')) requiredFeatures.push('subgroups');
+    // ORT's kernels assume a core device: on a `?gpu=compat` adapter that can
+    // do core, ask for it (the road keeps compat; this device renders nothing).
+    if (adapter.features.has('core-features-and-limits')) requiredFeatures.push('core-features-and-limits');
     const requiredLimits: Record<string, number> = {};
     for (const name of ORT_LIMITS) {
         const value = (adapter.limits as unknown as Record<string, number>)[name];
@@ -146,16 +201,18 @@ async function createDepthDevice(): Promise<{ device: GPUDevice; shaderF16: bool
         semanticSession = null;
         post({ type: 'lost', message: info.message || info.reason || 'device lost' });
     });
-    const info = (adapter as GPUAdapter & { info?: GPUAdapterInfo }).info;
     return {
         device: created,
         shaderF16,
-        adapter: [info?.vendor, info?.architecture, info?.description].filter(Boolean).join(' ') || 'unknown',
+        adapter: describeAdapter(adapterIdentity(adapter)),
+        powerPreference: picked.powerPreference,
+        adapterMismatch: picked.mismatch,
+        adapterRetried: picked.retried,
     };
 }
 
 async function init(request: DepthInitRequest): Promise<void> {
-    const created = await createDepthDevice();
+    const created = await createDepthDevice(request);
     device = created.device;
 
     ort = (await import(/* @vite-ignore */ request.runtimeUrl)) as OrtModule;
@@ -191,6 +248,9 @@ async function init(request: DepthInitRequest): Promise<void> {
         fromCache: loaded.fromCache,
         createMs: performance.now() - createStart,
         adapter: created.adapter,
+        powerPreference: created.powerPreference,
+        adapterMismatch: created.adapterMismatch,
+        adapterRetried: created.adapterRetried,
     });
 }
 
@@ -318,6 +378,9 @@ scope.onmessage = (event) => {
         onOrtQueue(() => infer(message.id, message.rgba, message.width, message.height, message.semantic)).catch((error: unknown) => {
             post({ type: 'error', id: message.id, message: error instanceof Error ? error.message : String(error) });
         });
+    } else if (message.type === 'debug-lose-device') {
+        // `lost` follows through the device's own promise, as for a real loss.
+        device?.destroy();
     } else if (message.type === 'dispose') {
         disposed = true;
         const sessions = [session, semanticSession].filter((x): x is OrtSession => x !== null);

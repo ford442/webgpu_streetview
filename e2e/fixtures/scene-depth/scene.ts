@@ -19,7 +19,11 @@ import { createStreetViewRenderer } from '/src/renderer/createStreetViewRenderer
 import type { StreetViewRenderer } from '/src/renderer/RendererBackend';
 import { createDefaultWeatherParams } from '/src/renderer/packWeatherParams';
 import { WeatherParamIndex as I } from '/src/renderer/weatherUniformLayout';
-import { getSceneDepthStats, type SceneDepthStats } from '/src/renderer/depth/sceneDepthStatsStore';
+import {
+    debugLoseSceneDepthDevice,
+    getSceneDepthStats,
+    type SceneDepthStats,
+} from '/src/renderer/depth/sceneDepthStatsStore';
 import { getSceneSemanticStats, type SceneSemanticStats } from '/src/renderer/semantic/sceneSemanticStatsStore';
 import type { SemanticEffectWeights } from '/src/renderer/semantic/semanticParams';
 
@@ -440,6 +444,8 @@ const api = {
         return frame;
     },
     stats: () => getSceneDepthStats(),
+    /** #367: destroy the depth Worker's device (the recovery path's trigger). */
+    loseDepthDevice: () => debugLoseSceneDepthDevice(),
     semanticStats: () => JSON.parse(JSON.stringify(getSceneSemanticStats())) as SceneSemanticStats,
     passes: () => JSON.parse(JSON.stringify(window.webgpuProbe?.passes ?? {})),
     probeOk: () => window.webgpuProbe?.ok ?? null,

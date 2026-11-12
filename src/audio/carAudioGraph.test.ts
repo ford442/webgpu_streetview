@@ -5,7 +5,7 @@
  * `AudioAnalyzer` that joins it instead of opening a context of its own.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   acquireCarAudioGraph,
@@ -15,68 +15,24 @@ import {
   resetCarAudioGraphForTests,
 } from './carAudioGraph';
 import { AudioAnalyzer } from './AudioAnalyzer';
-
-class StubNode {
-  readonly connections = new Set<unknown>();
-  readonly connect = vi.fn((dest: unknown) => {
-    this.connections.add(dest);
-  });
-
-  readonly disconnect = vi.fn((dest?: unknown) => {
-    if (dest === undefined) this.connections.clear();
-    else this.connections.delete(dest);
-  });
-}
-
-const contexts: StubAudioContext[] = [];
-
-class StubAudioContext {
-  state: AudioContextState = 'running';
-  readonly destination = new StubNode();
-  readonly resume = vi.fn(async () => {
-    this.state = 'running';
-  });
-
-  readonly suspend = vi.fn(async () => {
-    this.state = 'suspended';
-  });
-
-  readonly close = vi.fn(async () => {});
-  readonly sampleRate = 48000;
-
-  constructor() {
-    contexts.push(this);
-  }
-
-  readonly gains: StubNode[] = [];
-
-  createGain(): StubNode & { gain: { value: number } } {
-    const node = Object.assign(new StubNode(), { gain: { value: 1 } });
-    this.gains.push(node);
-    return node;
-  }
-
-  createAnalyser(): StubNode & { fftSize: number; frequencyBinCount: number } {
-    return Object.assign(new StubNode(), { fftSize: 2048, frequencyBinCount: 128 });
-  }
-
-  createMediaElementSource(): StubNode {
-    return new StubNode();
-  }
-}
-
-const scope = globalThis as unknown as Record<string, unknown>;
-let savedCtx: unknown;
+import { isAudioBusMuted, resetAudioRuntimeForTests } from './audioRuntime';
+import {
+  StubNode,
+  contexts,
+  installStubAudioContext,
+  removeAudioContext,
+  restoreAudioContext,
+  type StubAudioContext,
+} from './__tests__/stubAudioContext';
 
 beforeEach(() => {
-  savedCtx = scope.AudioContext;
-  scope.AudioContext = StubAudioContext;
-  contexts.length = 0;
+  installStubAudioContext();
+  resetAudioRuntimeForTests();
   resetCarAudioGraphForTests();
 });
 
 afterEach(() => {
-  scope.AudioContext = savedCtx;
+  restoreAudioContext();
 });
 
 describe('carAudioGraph', () => {
@@ -90,7 +46,9 @@ describe('carAudioGraph', () => {
   it('plays the radio straight out (and into the tap) with no cabin engine', () => {
     const g = acquireCarAudioGraph()!;
     const bus = g.radioBus as unknown as StubNode;
-    expect(bus.connections.has(g.ctx.destination)).toBe(true);
+    // Out through the runtime's `radio` bus (#367), never to `destination` directly.
+    expect(bus.connections.has(g.radioOut)).toBe(true);
+    expect(bus.connections.has(g.ctx.destination)).toBe(false);
     expect(bus.connections.has(g.analyser)).toBe(true);
     expect(isCabinEngineAttached()).toBe(false);
   });
@@ -101,13 +59,16 @@ describe('carAudioGraph', () => {
     const engine = new StubNode();
     const detach = attachCabinEngine(engine as unknown as AudioNode, engine as unknown as AudioNode);
     expect(isCabinEngineAttached()).toBe(true);
+    // The engine owns the wind bed: the `wind` bus is muted while it runs.
+    expect(isAudioBusMuted('wind')).toBe(true);
     expect([...bus.connections]).toEqual([engine]);
     // The visualiser hears the post-cabin mix.
     expect(engine.connections.has(g.analyser)).toBe(true);
 
     detach();
     expect(isCabinEngineAttached()).toBe(false);
-    expect(bus.connections.has(g.ctx.destination)).toBe(true);
+    expect(isAudioBusMuted('wind')).toBe(false);
+    expect(bus.connections.has(g.radioOut)).toBe(true);
     expect(engine.connections.has(g.analyser)).toBe(false);
   });
 
@@ -137,7 +98,7 @@ describe('carAudioGraph', () => {
   });
 
   it('is null without Web Audio', () => {
-    scope.AudioContext = undefined;
+    removeAudioContext();
     expect(acquireCarAudioGraph()).toBeNull();
     expect(() => releaseCarAudioGraph()).not.toThrow();
   });
@@ -159,12 +120,15 @@ describe('AudioAnalyzer on the car graph', () => {
     expect(contexts[0]!.close).not.toHaveBeenCalled();
   });
 
-  it('keeps its private context without the option', async () => {
+  it('without the option it still joins the one context, on the radio bus, and never closes it', async () => {
+    const g = acquireCarAudioGraph()!;
     const analyzer = new AudioAnalyzer();
     expect(await analyzer.init('https://example.test/stream')).toBe(true);
     expect(contexts).toHaveLength(1);
-    expect(analyzer.getAnalyser()).not.toBeNull();
+    const analyser = analyzer.getAnalyser() as unknown as StubNode;
+    expect(analyser).not.toBe(g.analyser);
+    expect(analyser.connections.has(g.radioOut)).toBe(true);
     analyzer.dispose();
-    expect(contexts[0]!.close).toHaveBeenCalled();
+    expect(contexts[0]!.close).not.toHaveBeenCalled();
   });
 });

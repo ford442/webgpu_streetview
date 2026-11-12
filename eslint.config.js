@@ -149,6 +149,10 @@ export default tseslint.config(
             'no-restricted-syntax': ['error', {
                 selector: "CallExpression[callee.property.name='catch'][arguments.0.type='ArrowFunctionExpression'][arguments.0.params.length=0][arguments.0.body.type='BlockStatement'][arguments.0.body.body.length=0]",
                 message: 'Use `.catch(ignoreRejection)` (utils/ignoreRejection.ts) for an intentionally ignored rejection.',
+            }, {
+                // #367: one AudioContext for the app, with named buses.
+                selector: "NewExpression[callee.name=/^(webkit)?AudioContext$/], NewExpression[callee.property.name=/^(webkit)?AudioContext$/]",
+                message: 'Use acquireAudioRuntime() (audio/audioRuntime.ts) and connect to a bus — the app has one AudioContext.',
             }],
             // Empty blocks hide bugs; `catch {}` is the one allowed (see shared TS rules).
             'no-empty': ['error', { allowEmptyCatch: true }],

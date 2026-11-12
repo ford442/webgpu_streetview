@@ -25,6 +25,10 @@
  *   same readback, same Worker and input tensor — each inference also runs the
  *   semantic session while the sink wants maps, and the class map is handed to
  *   the sink with the pose it was inferred at.
+ * - **A lost Worker device recovers (#367).** The road's capped backoff
+ *   (`deviceLossRecovery.ts`, 3 tries per incident) re-creates the estimator;
+ *   depth and the semantic session resume without a user toggle. The state
+ *   reads `recovering` meanwhile, and the map's weight is 0 until a new map lands.
  */
 import type { FramePass } from '../framePasses/FramePassRegistry';
 import type { GpuChores } from '../gpuChores/GpuChores';
@@ -39,6 +43,7 @@ import {
     type AuxDepth,
 } from './sceneDepthBinding';
 import { DepthEstimator } from './DepthEstimator';
+import { DeviceLossRecovery, type DeviceLossDecision } from '../deviceLossRecovery';
 import { depthInputSize } from './depthModel';
 import {
     createDepthNormalizeState,
@@ -57,7 +62,13 @@ import {
     type DepthMapPose,
 } from './depthParams';
 import { isXrPresenting } from '../xrPresentFrame';
-import { getSceneDepthStats, resetSceneDepthStats, setSceneDepthStats } from './sceneDepthStatsStore';
+import {
+    clearSceneDepthLoseDeviceHook,
+    getSceneDepthStats,
+    resetSceneDepthStats,
+    setSceneDepthLoseDeviceHook,
+    setSceneDepthStats,
+} from './sceneDepthStatsStore';
 import type { SceneDepthOptions } from './sceneDepthOptions';
 import type { SemanticResult, SemanticReadyMessage } from './depthProtocol';
 import type { SemanticLoadOptions } from './DepthEstimator';
@@ -70,8 +81,8 @@ export interface SemanticSink {
     accept(result: SemanticResult, pose: DepthMapPose): void;
     /** One semantic run failed (the depth half was fine). */
     inferenceFailed(message: string): void;
-    /** The Worker (and with it the semantic session) is gone: depth off, failed or disposed. */
-    pipelineReset(): void;
+    /** The Worker (and with it the semantic session) is gone: depth off, failed, recovering or disposed. */
+    pipelineReset(reason?: string): void;
 }
 const DEPTH_PASS_ORDER = 50;
 
@@ -103,6 +114,12 @@ export interface DepthControllerDeps {
     /** Resolves same-origin model URLs (the page's `document.baseURI`). */
     baseUrl: string;
     createEstimator?: () => DepthEstimator;
+    /** Backoff policy for a lost Worker device; the road's defaults when omitted. */
+    lossRecovery?: DeviceLossRecovery;
+}
+
+function delay(ms: number): Promise<void> {
+    return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
 interface PendingMap {
@@ -143,8 +160,11 @@ export class DepthController {
     private inFlight = false;
     private disposed = false;
     private semanticSink: SemanticSink | null = null;
+    private readonly lossRecovery: DeviceLossRecovery;
 
     constructor(private readonly deps: DepthControllerDeps) {
+        this.lossRecovery = deps.lossRecovery ?? new DeviceLossRecovery();
+        setSceneDepthLoseDeviceHook(this.loseDeviceHook);
         this.pass = {
             id: 'depth',
             order: DEPTH_PASS_ORDER,
@@ -202,7 +222,14 @@ export class DepthController {
         if (!this.options.enabled || !this.estimatorLoading) {
             throw new Error('the semantic layer needs scene depth on (it shares the depth pipeline)');
         }
-        await this.estimatorLoading;
+        // A device-loss recovery replaces the load in flight: follow it to the
+        // estimator that actually comes up.
+        let loading: Promise<void> | null = this.estimatorLoading;
+        while (loading !== null) {
+            await loading;
+            if (this.estimatorLoading === loading) break;
+            loading = this.estimatorLoading;
+        }
         const estimator = this.estimator;
         if (!estimator || this.disposed) throw new Error('scene depth was switched off');
         return estimator.loadSemantic(options);
@@ -301,35 +328,93 @@ export class DepthController {
         await this.loadEstimator();
     }
 
-    private loadEstimator(): Promise<void> {
+    /** Test / `?debug` hook: destroy the Worker's device (the recovery path's trigger). */
+    public debugLoseDevice(): boolean {
+        return this.estimator?.debugLoseDevice() ?? false;
+    }
+
+    private readonly loseDeviceHook = (): boolean => this.debugLoseDevice();
+
+    private loadEstimator(delayMs = 0): Promise<void> {
         if (this.estimatorLoading) return this.estimatorLoading;
         const estimator = this.deps.createEstimator?.() ?? new DepthEstimator();
         this.estimator = estimator;
-        setSceneDepthStats({ state: 'loading', reason: null, downloadedBytes: 0 });
-        estimator.onLost = (reason) => this.fail(new Error(reason));
-        this.estimatorLoading = estimator.load({
-            baseUrl: this.deps.baseUrl,
-            onProgress: (loaded, total) => setSceneDepthStats({ downloadedBytes: loaded, downloadTotal: total }),
+        const recovering = this.lossRecovery.isRecovering();
+        if (!recovering) setSceneDepthStats({ state: 'loading', reason: null, downloadedBytes: 0 });
+        estimator.onLost = (reason) => this.onEstimatorLost(estimator, reason);
+        const loading: Promise<void> = delay(delayMs).then(() => {
+            if (this.estimator !== estimator) throw new Error('scene depth was switched off');
+            return estimator.load({
+                baseUrl: this.deps.baseUrl,
+                onProgress: (loaded, total) => setSceneDepthStats({ downloadedBytes: loaded, downloadTotal: total }),
+            });
         }).then((ready) => {
             if (this.estimator !== estimator) return; // turned off meanwhile
+            const wasRecovering = this.lossRecovery.isRecovering();
+            this.lossRecovery.onBootSucceeded();
             setSceneDepthStats({
                 state: 'ready',
+                reason: null,
                 variant: ready.variant,
                 shaderF16: ready.shaderF16,
                 adapter: ready.adapter,
+                powerPreference: ready.powerPreference,
+                adapterMismatch: ready.adapterMismatch,
                 fromCache: ready.fromCache,
                 createMs: ready.createMs,
+                ...(wasRecovering ? { recoveries: getSceneDepthStats().recoveries + 1 } : {}),
             });
+            if (ready.adapterMismatch) {
+                console.warn(`[SceneDepth] the depth Worker runs on a different adapter than the road (${ready.adapter})`);
+            }
         }, (error: unknown) => {
             // Switched off mid-download: that is "off", not a failure.
             if (this.estimator !== estimator) return;
+            const err = error instanceof Error ? error : new Error(String(error));
+            if (this.lossRecovery.isRecovering()) {
+                const decision = this.lossRecovery.onReinitFailed();
+                if (decision.action === 'reinit') {
+                    this.scheduleRecovery(decision, err.message);
+                    return;
+                }
+            }
             this.estimator = null;
             this.estimatorLoading = null;
-            const err = error instanceof Error ? error : new Error(String(error));
             setSceneDepthStats({ state: 'failed', reason: err.message });
             throw err;
         });
-        return this.estimatorLoading;
+        this.estimatorLoading = loading;
+        return loading;
+    }
+
+    /** The Worker's device was lost (or the Worker died) after it was ready. */
+    private onEstimatorLost(estimator: DepthEstimator, reason: string): void {
+        if (this.disposed || this.estimator !== estimator) return;
+        console.warn('[SceneDepth] worker device lost:', reason);
+        setSceneDepthStats({ lastLossReason: reason });
+        const decision = this.lossRecovery.onDeviceLost();
+        if (decision.action === 'give-up') {
+            this.fail(new Error(`${reason} (no recovery after ${decision.attempts} attempt(s))`));
+            return;
+        }
+        this.scheduleRecovery(decision, reason);
+    }
+
+    /** Drop the dead estimator, keep the pass, and load a new one after the backoff. */
+    private scheduleRecovery(decision: Extract<DeviceLossDecision, { action: 'reinit' }>, reason: string): void {
+        this.estimator?.dispose();
+        this.estimator = null;
+        this.estimatorLoading = null;
+        this.semanticSink?.pipelineReset('scene depth is recovering from a device loss');
+        this.scheduler.reset();
+        this.mapPose = null;
+        this.pending = null;
+        this.confidence = 0;
+        this.inFlight = false;
+        setSceneDepthStats({ state: 'recovering', reason, recoveryAttempt: decision.attempt, cadenceHz: 0 });
+        console.warn(`[SceneDepth] recovery attempt ${decision.attempt} in ${decision.delayMs} ms`);
+        // A give-up surfaces through the load's own rejection: report it as a failure.
+        this.loadEstimator(decision.delayMs).catch((error: unknown) => this.fail(error));
     }
 
     private async infer(estimator: DepthEstimator, pose: DepthMapPose): Promise<void> {
@@ -488,6 +573,7 @@ export class DepthController {
     public dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        clearSceneDepthLoseDeviceHook(this.loseDeviceHook);
         this.estimator?.dispose();
         this.estimator = null;
         this.estimatorLoading = null;

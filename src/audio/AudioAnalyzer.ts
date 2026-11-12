@@ -4,8 +4,7 @@
  */
 
 import { acquireCarAudioGraph, releaseCarAudioGraph, type CarAudioGraph } from './carAudioGraph';
-import { createBrowserAudioContext } from './createAudioContext';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { acquireAudioRuntime, releaseAudioRuntime } from './audioRuntime';
 
 export interface AudioAnalyzerOptions {
   /**
@@ -30,6 +29,8 @@ export class AudioAnalyzer {
   private audioContext: AudioContext | null = null;
   /** Set when playing through the car graph: the context is shared, never closed here. */
   private carGraph: CarAudioGraph | null = null;
+  /** Off the car graph: the shared runtime's `radio` bus (#367). Released, never closed. */
+  private radioOut: AudioNode | null = null;
   private analyser: AnalyserNode | null = null;
   // correct DOM type for a media-element based audio source
   private mediaSource: MediaElementAudioSourceNode | null = null;
@@ -78,7 +79,12 @@ export class AudioAnalyzer {
           this.carGraph = acquireCarAudioGraph();
           if (this.carGraph) this.audioContext = this.carGraph.ctx;
         }
-        if (!this.audioContext) this.audioContext = createBrowserAudioContext();
+        if (!this.audioContext) {
+          const rt = acquireAudioRuntime();
+          if (!rt) throw new Error('Web Audio API is not available');
+          this.audioContext = rt.ctx;
+          this.radioOut = rt.buses.radio;
+        }
       }
 
       // Create hidden audio element
@@ -110,7 +116,7 @@ export class AudioAnalyzer {
           this.gain.connect(this.carGraph.radioBus);
         } else {
           this.gain.connect(this.analyser);
-          this.analyser.connect(this.audioContext.destination);
+          this.analyser.connect(this.radioOut!);
         }
       }
 
@@ -271,13 +277,13 @@ export class AudioAnalyzer {
       this.audioElement.parentNode.removeChild(this.audioElement);
       this.audioElement = null;
     }
-    if (this.carGraph) {
-      try {
-        this.gain?.disconnect();
-        this.mediaSource?.disconnect();
-      } catch {
-        /* already disconnected */
-      }
+    try {
+      // The context is shared either way: unhook our nodes from it.
+      this.gain?.disconnect();
+      this.mediaSource?.disconnect();
+      if (!this.carGraph) this.analyser?.disconnect();
+    } catch {
+      /* already disconnected */
     }
     this.mediaSource = null;
     this.gain = null;
@@ -288,9 +294,10 @@ export class AudioAnalyzer {
       this.carGraph = null;
       this.audioContext = null;
       releaseCarAudioGraph();
-    } else if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close().catch(ignoreRejection);
+    } else if (this.audioContext) {
       this.audioContext = null;
+      this.radioOut = null;
+      releaseAudioRuntime();
     }
   }
 }

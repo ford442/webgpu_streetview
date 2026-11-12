@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { releaseGlContext } from '../utils/releaseGlContext';
+import { getRuntimeContexts, readBatteryState, subscribeRuntimeContexts } from '../runtime/contexts';
 
 interface DeviceCapabilities {
   isMobile: boolean;
@@ -187,45 +188,18 @@ export function useDeviceDetection(): UseDeviceDetectionReturn {
     };
   }, [detectCapabilities]);
 
-  // Listen for battery status if available
+  // Battery saver: the battery is read once, by the capability manifest
+  // (runtime/contexts.ts); this follows its level / charging updates.
   useEffect(() => {
-    const setupBatteryMonitoring = async () => {
-      if ('getBattery' in navigator) {
-        try {
-          const navWithBattery = navigator as Navigator & {
-            getBattery: () => Promise<{
-              level: number;
-              charging: boolean;
-              addEventListener: (type: string, listener: () => void) => void;
-              removeEventListener: (type: string, listener: () => void) => void;
-            }>;
-          };
-          const battery = await navWithBattery.getBattery();
-          
-          const handleBatteryChange = () => {
-            // Enable battery save mode if battery is low (< 20%) or charging is slow
-            const shouldSaveBattery = battery.level < 0.2 && !battery.charging;
-            if (shouldSaveBattery && !quality.batterySaveMode) {
-              setBatterySaveMode(true);
-            }
-          };
-          
-          battery.addEventListener('levelchange', handleBatteryChange);
-          battery.addEventListener('chargingchange', handleBatteryChange);
-          
-          handleBatteryChange();
-          
-          return () => {
-            battery.removeEventListener('levelchange', handleBatteryChange);
-            battery.removeEventListener('chargingchange', handleBatteryChange);
-          };
-        } catch {
-          console.warn('Battery API not available');
-        }
+    const check = () => {
+      const battery = getRuntimeContexts().power.battery;
+      // Enable battery save mode if battery is low (< 20%) and not charging
+      if (battery && battery.level < 0.2 && !battery.charging && !quality.batterySaveMode) {
+        setBatterySaveMode(true);
       }
     };
-    
-    void setupBatteryMonitoring();
+    void readBatteryState().then(check);
+    return subscribeRuntimeContexts(check);
   }, [quality.batterySaveMode, setBatterySaveMode]);
 
   const setCustomQuality = useCallback((settings: Partial<QualitySettings>) => {

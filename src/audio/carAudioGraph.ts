@@ -1,6 +1,6 @@
 /**
- * The car's one AudioContext, and the radio bus that decides whether the radio
- * plays through the cabin.
+ * The car's audio graph on the app's one AudioContext (`audioRuntime.ts`), and
+ * the radio route that decides whether the radio plays through the cabin.
  *
  * The cabin engine (`CabinAudio`, an AudioWorklet running the WASM DSP) and the
  * car radio (`AudioAnalyzer` behind `useCabinRadioBinding`) used to own an
@@ -9,17 +9,20 @@
  *
  *   radio <audio> ─► MediaElementSource ─► station gain (volume, crossfade)
  *                                              │
- *                                          radioBus ──► cabin worklet input ─► cabin ─► destination
+ *                                          radioBus ──► cabin worklet input ─► cabin ─► `cabin` bus
  *                                              │                               └──► analyser (dash visualiser)
- *                                              └─ (no cabin engine) ──────────► destination + analyser
+ *                                              └─ (no cabin engine) ──────────► `radio` bus + analyser
+ *
+ * The buses mix through the runtime's master limiter into `destination`.
+ * While the cabin engine is attached it owns the wind, so the `wind` bus
+ * (`WindAudio`) is muted (#367; it used to be a check in the animator only).
  *
  * The context outlives individual `CabinAudio` instances (the car-mode effect
  * can recreate one while the radio keeps playing); with no users left it is
  * suspended, not closed, so a later car mode reuses it.
  */
 
-import { createBrowserAudioContext } from './createAudioContext';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { acquireAudioRuntime, releaseAudioRuntime, setAudioBusMuted, type AudioRuntime } from './audioRuntime';
 
 export interface CarAudioGraph {
   readonly ctx: AudioContext;
@@ -30,6 +33,10 @@ export interface CarAudioGraph {
    * radio as heard in the car, bed included), the raw radio otherwise.
    */
   readonly analyser: AnalyserNode;
+  /** Where the cabin engine's output goes (the runtime's `cabin` bus). */
+  readonly cabinBus: GainNode;
+  /** The runtime's `radio` bus: the radio's direct route. */
+  readonly radioOut: GainNode;
 }
 
 interface CabinAttachment {
@@ -52,9 +59,12 @@ function safeDisconnect(node: AudioNode, destination?: AudioNode): void {
 
 function routeDirect(g: CarAudioGraph): void {
   safeDisconnect(g.radioBus);
-  g.radioBus.connect(g.ctx.destination);
+  g.radioBus.connect(g.radioOut);
   g.radioBus.connect(g.analyser);
 }
+
+/** The cabin engine owns the wind bed while attached: mute the `wind` bus. */
+const CABIN_ENGINE_MUTE_OWNER = 'cabin-engine';
 
 /**
  * Take a reference on the shared graph, creating the context on first use and
@@ -62,29 +72,30 @@ function routeDirect(g: CarAudioGraph): void {
  * every successful call with {@link releaseCarAudioGraph}.
  */
 export function acquireCarAudioGraph(): CarAudioGraph | null {
-  if (!graph) {
+  const rt: AudioRuntime | null = acquireAudioRuntime();
+  if (!rt) return null;
+  if (!graph || graph.ctx !== rt.ctx) {
     try {
-      const ctx = createBrowserAudioContext();
-      const radioBus = ctx.createGain();
-      const analyser = ctx.createAnalyser();
+      const radioBus = rt.ctx.createGain();
+      const analyser = rt.ctx.createAnalyser();
       analyser.fftSize = 256;
-      graph = { ctx, radioBus, analyser };
+      graph = { ctx: rt.ctx, radioBus, analyser, cabinBus: rt.buses.cabin, radioOut: rt.buses.radio };
       routeDirect(graph);
     } catch (err) {
-      console.warn('[carAudioGraph] Web Audio unavailable', err);
+      console.warn('[carAudioGraph] could not build the car graph', err);
+      releaseAudioRuntime();
       return null;
     }
   }
   users += 1;
-  if (graph.ctx.state === 'suspended') void graph.ctx.resume().catch(ignoreRejection);
   return graph;
 }
 
-/** Drop a reference; the last one suspends the context (never closes it). */
+/** Drop a reference; the runtime suspends its context when nobody holds it (never closes it). */
 export function releaseCarAudioGraph(): void {
   if (!graph || users === 0) return;
   users -= 1;
-  if (users === 0 && graph.ctx.state === 'running') void graph.ctx.suspend().catch(ignoreRejection);
+  releaseAudioRuntime();
 }
 
 /**
@@ -101,10 +112,12 @@ export function attachCabinEngine(input: AudioNode, output: AudioNode): () => vo
   output.connect(g.analyser);
   const attachment: CabinAttachment = { input, output };
   cabin = attachment;
+  setAudioBusMuted('wind', CABIN_ENGINE_MUTE_OWNER, true);
   return () => {
     if (cabin !== attachment || !graph) return;
     safeDisconnect(output, graph.analyser);
     cabin = null;
+    setAudioBusMuted('wind', CABIN_ENGINE_MUTE_OWNER, false);
     routeDirect(graph);
   };
 }
@@ -122,4 +135,5 @@ export function resetCarAudioGraphForTests(): void {
   graph = null;
   cabin = null;
   users = 0;
+  setAudioBusMuted('wind', CABIN_ENGINE_MUTE_OWNER, false);
 }

@@ -30,6 +30,7 @@ import { CABIN_RING_BYTES, CABIN_RING_FIELDS } from './cabinParamRing';
 import { CABIN_IR_TAPS } from './cabinIr';
 import { CABIN_PROCESSOR_NAME } from './cabinWorkletSource';
 import { isCabinEngineAttached, resetCarAudioGraphForTests } from '../../audio/carAudioGraph';
+import { resetAudioRuntimeForTests } from '../../audio/audioRuntime';
 import type { VehicleTelemetry } from '../VehicleDynamics';
 
 interface PortMessage {
@@ -162,6 +163,7 @@ beforeEach(() => {
   for (const key of ['AudioContext', 'AudioWorkletNode', 'URL']) saved[key] = scope[key];
   workletNodes.length = 0;
   contexts.length = 0;
+  resetAudioRuntimeForTests();
   resetCarAudioGraphForTests();
   delete window.__CABIN_AUDIO_PROBE__;
   setSearch('');
@@ -290,7 +292,7 @@ describe('CabinAudio: worklet engine path', () => {
     await audio.start();
     const node = workletNodes[0]!;
     expect(isCabinEngineAttached()).toBe(true);
-    // The worklet feeds the master (→ destination) and the visualiser tap.
+    // The worklet feeds the master (→ cabin bus → limiter → destination) and the visualiser tap.
     expect(node.connect).toHaveBeenCalledTimes(2);
     audio.dispose();
     expect(isCabinEngineAttached()).toBe(false);

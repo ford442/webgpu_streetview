@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resetAudioRuntimeForTests } from './audioRuntime';
 
 import { WindAudio } from './WindAudio';
 
@@ -111,6 +112,7 @@ const scope = globalThis as unknown as Record<string, unknown>;
 let savedAudioContext: unknown;
 
 beforeEach(() => {
+  resetAudioRuntimeForTests();
   savedAudioContext = scope.AudioContext;
   convolverNodes.length = 0;
   scope.AudioContext = StubAudioContext;
@@ -127,6 +129,8 @@ interface WindAudioInternals {
   gainNode: StubGainNode | null;
   pannerNode: StubStereoPannerNode | null;
   audioContext: StubAudioContext | null;
+  /** The runtime's `wind` bus (#367): where the graph ends, instead of `destination`. */
+  output: unknown;
 }
 
 async function initAndUpgrade(wind: WindAudio): Promise<WindAudioInternals> {
@@ -143,7 +147,7 @@ describe('WindAudio: HRTF upgrade', () => {
 
     const internals = wind as unknown as WindAudioInternals;
     expect(internals.gainNode?.connect).toHaveBeenCalledWith(internals.pannerNode);
-    expect(internals.pannerNode?.connect).toHaveBeenCalledWith(internals.audioContext?.destination);
+    expect(internals.pannerNode?.connect).toHaveBeenCalledWith(internals.output);
     wind.dispose();
   });
 
@@ -161,12 +165,12 @@ describe('WindAudio: HRTF upgrade', () => {
 
     // Rewired away from the panner, onto the convolver pair, into the merger.
     expect(internals.gainNode?.disconnect).toHaveBeenCalledWith(internals.pannerNode);
-    expect(internals.pannerNode?.disconnect).toHaveBeenCalledWith(internals.audioContext?.destination);
+    expect(internals.pannerNode?.disconnect).toHaveBeenCalledWith(internals.output);
     expect(internals.gainNode?.connect).toHaveBeenCalledWith(internals.convolverL);
     expect(internals.gainNode?.connect).toHaveBeenCalledWith(internals.convolverR);
     expect(internals.convolverL?.connect).toHaveBeenCalledWith(internals.merger, 0, 0);
     expect(internals.convolverR?.connect).toHaveBeenCalledWith(internals.merger, 0, 1);
-    expect(internals.merger?.connect).toHaveBeenCalledWith(internals.audioContext?.destination);
+    expect(internals.merger?.connect).toHaveBeenCalledWith(internals.output);
 
     wind.dispose();
   });

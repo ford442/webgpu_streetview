@@ -76,12 +76,12 @@ export const FLAGS = {
     doc: 'Adapter selection tokens, e.g. `?gpu=high,compat`. `features` dumps enabled optional features on the backend chip.',
   },
   hdr: {
-    kind: 'tri', default: 'off',
-    doc: 'Output-referred HDR canvas (extended tone mapping + rgba16float). `auto` follows the display.',
+    kind: 'tri', default: 'auto',
+    doc: 'Output-referred HDR canvas (extended tone mapping + rgba16float). Default `auto`: on when the display matches `(dynamic-range: high)`. `?hdr=0` forces SDR (byte-identical to an SDR display), `?hdr=1` forces HDR.',
   },
   p3: {
-    kind: 'tri', default: 'off',
-    doc: 'Display-P3 canvas colour space (also colours the cabin overlay). `auto` follows the display.',
+    kind: 'tri', default: 'auto',
+    doc: 'Display-P3 canvas colour space (also colours the cabin overlay). Default `auto`: on when the display matches `(color-gamut: p3)`. `?p3=0` forces sRGB, `?p3=1` forces P3.',
   },
   weather: {
     kind: 'enum', values: ['fragment', 'compute'],

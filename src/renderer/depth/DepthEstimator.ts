@@ -20,6 +20,8 @@ import {
     SEMANTIC_MODEL_CACHE_PREFIX,
     semanticModelFile,
 } from '../semantic/semanticModel';
+import { getRuntimeContexts } from '../../runtime/contexts';
+import { buildDepthAdapterRequest } from './depthAdapterPolicy';
 
 /** What `DepthEstimator` needs of a Worker — a fake in tests. */
 export interface DepthWorkerLike {
@@ -205,15 +207,21 @@ export class DepthEstimator {
                     }
                 }
             };
+            // The road's adapter policy rides the init message (#367): the
+            // Worker cannot see the battery heuristic or the URL itself.
+            const gpu = getRuntimeContexts().gpu;
             worker.postMessage({
                 type: 'init',
                 runtimeUrl: DEPTH_RUNTIME_URL,
                 models: depthModelFiles(options.baseUrl),
                 cacheName: DEPTH_MODEL_CACHE_NAME,
                 cachePrefix: DEPTH_MODEL_CACHE_PREFIX,
+                adapterRequest: buildDepthAdapterRequest(gpu),
+                mainAdapter: gpu ? { ...gpu.adapterInfo } : null,
             });
         });
-        // A failed load is final for this estimator; the owner makes a new one to retry.
+        // A failed load is final for this estimator; the owner (`DepthController`)
+        // makes a new one to retry — after a device loss, with capped backoff.
         this.loading.catch(() => this.terminate());
         return this.loading;
     }
@@ -239,6 +247,13 @@ export class DepthEstimator {
                 [rgba.buffer],
             );
         });
+    }
+
+    /** Test / `?debug` hook: destroy the Worker's device; it reports `lost` like a real loss. */
+    public debugLoseDevice(): boolean {
+        if (!this.worker || !this.isReady()) return false;
+        this.worker.postMessage({ type: 'debug-lose-device' });
+        return true;
     }
 
     public dispose(): void {

@@ -165,14 +165,20 @@ and `npm run capture:depth-looks`.
   (the pass is lazy), then `ready` or `failed(reason)`. A failure never touches
   the road frame: consumers bind the zero fallback.
 - `window.__SCENE_DEPTH__` — `state`, `reason`, `variant`, `shaderF16`,
-  `fromCache`, `inferenceMs`, `cadenceHz`, input size, applied weight.
+  `fromCache`, `inferenceMs`, `cadenceHz`, input size, applied weight; the
+  Worker's `powerPreference` / `adapterMismatch` (it follows the road's adapter
+  policy, #367) and `recoveries` / `recoveryAttempt` / `lastLossReason`.
 - Performance overlay (**P**) — "Scene depth: 38ms · 2.0 Hz · w 0.80".
 - Failures and what they mean: *model not deployed (HTTP 404)* /
   *integrity check failed* (deploy without `fetch:depth-model`, or a bad file);
   *needs the GPU chores readback* (`?no_gpu_compute`, or the adapter failed the
-  chores limits — depth has no other way to read the frame); *depth device
-  lost*. A failure is not retried every frame; switching scene depth off and on
-  retries.
+  chores limits — depth has no other way to read the frame). A failure is not
+  retried every frame; switching scene depth off and on retries.
+- *Depth device lost* is not a failure (#367): the state reads `recovering`
+  and a new Worker loads with the road's capped backoff (3 tries per incident,
+  `deviceLossRecovery.ts`); depth and the semantic session resume on their own.
+  Only a spent budget fails the pass. See `docs/RENDERER_FALLBACK.md` § Runtime
+  contexts.
 
 ## Testing
 

@@ -258,6 +258,83 @@ Rain, snow, fog, color grading, night/headlight lighting, astronomical effects, 
 
 Compute binding still backed by a 1x1 dummy: `dataTextureC`. Binding 4/6 are a full-res **depth ping-pong** pair. Bindings 7/8 are a half-res density splat + compact particle-state grid when GPU particles are enabled (High/Ultra compute weather). See `docs/GRAPHICS.md` §5.
 
+## Runtime contexts — the capability manifest (#367)
+
+`src/runtime/contexts.ts` answers "what is this machine and what may we use",
+once, for every subsystem. It is a frozen snapshot (replaced, never mutated),
+published on **`window.__SV__.contexts`**:
+
+| Section | Filled by | Contents |
+| --- | --- | --- |
+| `gpu` | `bootDevice.ts` (`recordGpuContext`) once the road's adapter exists | the `requestAdapter` options actually sent, `adapter.info` (vendor / architecture / device / description), adapter features, the features enabled on the road's device, limits, feature level, `xrCompatible` |
+| `display` | first read (sync) + `matchMedia` change events | `hdr` = `(dynamic-range: high)`, `p3` = `(color-gamut: p3)`, `refreshHz` measured over 30 frames at boot (median interval, through `xr/frameClock.ts`) |
+| `audio` | `audio/audioRuntime.ts` when it creates the one context | `sampleRate`, `baseLatency`, `outputLatency` |
+| `isolation` | first read | `crossOriginIsolated` (the cabin param ring needs it) |
+| `storage` | boot (`navigator.storage.estimate()`) | `quota`, `usage` |
+| `power` | boot (`navigator.getBattery()`, then its change events) + first read | `battery` `{ charging, level }` (null without the API), `saveData` |
+
+Rules:
+
+- **No other module** calls `matchMedia` for HDR / P3 or reads
+  `navigator.getBattery` — `runtime/contexts.scan.test.ts` enforces it. The
+  battery heuristic (`deviceInit.ts`), the canvas `auto` gates
+  (`readDisplayOutputCapabilities`), the cabin overlay's `?p3=auto`
+  (`createCabinRenderer.ts`) and the battery saver (`useDeviceDetection.ts`)
+  all read it.
+- **HDR / P3 by detection.** `?hdr` / `?p3` default to `auto`: a display that
+  matches gets extended tone mapping + `rgba16float` / display-p3 without a
+  flag; `?hdr=0` / `?p3=0` force them off (byte-identical SDR sRGB), `=1` force
+  them on. The applied result still comes from `context.getConfiguration()`.
+- **Display changes** (a window dragged to another monitor) notify
+  `subscribeDisplayChanges`. `WebGPUCanvas` calls
+  `Renderer.applyDisplayOutputChange()`: a colour-space-only change is
+  re-configured in place through `configureCanvasContext`; an HDR change moves
+  the swap-chain format every pipeline is built for, so the renderer is rebuilt
+  (an intended teardown, never counted as a device loss).
+
+### The depth Worker follows the road's policy
+
+The scene-depth Worker (`renderer/depth/depthWorker.ts`) owns the one
+`requestDevice` outside `bootDevice.ts`. Its `init` message now carries the
+road's resolved adapter options (`depthAdapterPolicy.ts`:
+`buildDepthAdapterRequest(contexts.gpu)` — power preference from the battery
+heuristic or `?gpu=low|high`, feature level, `forceFallbackAdapter`; never
+`xrCompatible`) and the road adapter's identity:
+
+1. Request with the road's options.
+2. If `adapter.info` vendor / architecture / device differ from the road's,
+   retry **once** with the opposite power preference; keep the retry only if it
+   matches.
+3. Otherwise accept the policy's adapter and report `adapterMismatch: true`
+   (and `powerPreference`) on `__SCENE_DEPTH__`.
+
+ORT's kernels assume a core device, so the Worker asks for
+`core-features-and-limits` when the adapter offers it (the road keeps
+compatibility mode under `?gpu=compat`).
+
+**Device loss** in the Worker is recovered by `DepthController` with the
+road's capped backoff (`deviceLossRecovery.ts`: 3 tries per incident, 500 ms
+doubling): the estimator and Worker are re-created, depth reads
+`state: 'recovering'` meanwhile (map weight 0), and the semantic session is
+re-loaded by `Renderer.setSceneSemantic` once depth is ready again — no user
+toggle. `__SCENE_DEPTH__` reports `recoveries`, `recoveryAttempt` and
+`lastLossReason`. With `?debug`, `__SV__.renderer.loseDepthDevice()` destroys
+the Worker's device to exercise it (`e2e/scene-depth.spec.ts` checks recovery
+within 10 s).
+
+### One AudioContext
+
+`audio/audioRuntime.ts` owns the only `createBrowserAudioContext()` call; an
+ESLint `no-restricted-syntax` rule fails any other `new AudioContext`. Sources
+connect to named buses — `cabin` (the WASM cabin engine), `radio`, `wind`
+(`WindAudio`), `ui` (science-lab equipment), `voice` (empty, for #343 / #354) —
+each a `GainNode` into a master gain → `DynamicsCompressorNode` limiter →
+`destination`. `WindAudio` stays off while the cabin engine runs, now by a
+`wind` bus mute held by `carAudioGraph.attachCabinEngine`. The context is
+reference-counted and suspended (never closed) when unused or when the page is
+hidden; it resumes on visibility or the next gesture.
+`__CABIN_AUDIO_PROBE__.contexts` reports the live count (1 in a car session).
+
 ## Capability matrix (WebGPU device init)
 
 Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterInfo` after init.
@@ -284,9 +361,9 @@ Enforced in `src/renderer/deviceInit.ts` and exposed on `window.rendererAdapterI
 | Sampler `maxAnisotropy` | Low=1, Medium=2, High=4, Ultra=8 | Clamped to `device.limits.maxAnisotropy`; fragment path only |
 | `featureLevel` | `'core'` (default) / `'compatibility'` (`?gpu=compat`) / `'unknown'` | `'unknown'` when the browser has no `featureLevel` field |
 | `forceFallbackAdapter` | `true` only for `?gpu=fallback` | Software adapter for CI and probe runs |
-| `canvasFormat` | Preferred canvas format, or `rgba16float` under `?hdr=1` | Pipelines follow whatever configure actually applied |
-| `canvasColorSpace` | `'srgb'` (default) / `'display-p3'` (`?p3=1`) | |
-| `canvasToneMapping` | `'standard'` (default) / `'extended'` (`?hdr=1`) | Drives the output-referred `aces_tonemap` swap; mirrored as `shaderFeatureUses.extendedToneMapping` |
+| `canvasFormat` | Preferred canvas format, or `rgba16float` with HDR on (an HDR display by default, or `?hdr=1`) | Pipelines follow whatever configure actually applied |
+| `canvasColorSpace` | `'display-p3'` on a P3 display (default `?p3=auto`) or `?p3=1`; `'srgb'` otherwise / `?p3=0` | |
+| `canvasToneMapping` | `'extended'` on an HDR display (default `?hdr=auto`) or `?hdr=1`; `'standard'` otherwise / `?hdr=0` | Drives the output-referred `aces_tonemap` swap; mirrored as `shaderFeatureUses.extendedToneMapping`. An SDR display (or `?hdr=0&p3=0`) is the historical descriptor byte for byte |
 | `viewFormats` | `[]` today | Reserved for future sRGB-variant views |
 | `canvasDowngradeReason` | Set when an HDR/P3 configure was rejected | Renderer re-configures SDR sRGB and keeps going |
 | `uncapturedErrorCount` / `lastUncapturedError` | Counted from `uncapturederror` | Shown on the backend chip |
