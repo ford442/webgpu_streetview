@@ -8,7 +8,10 @@
  * `scripts/structure-doc.json` holds the curated entries — `{ path, note? }`,
  * in display order, a trailing `/` for directories, `*` / `{a,b}` globs allowed.
  * Every entry must exist (a glob must match something) or the script fails, and
- * every top-level `src/` folder is listed even without an entry.
+ * every top-level `src/` folder is listed even without an entry. An entry with
+ * `"optional": true` names a generated tree (`build/`, `cpp/build-*`) that exists
+ * only after a build: it is rendered but never checked, so `--check` gives the
+ * same answer before and after `npm run build` (#358).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,7 +43,7 @@ function exists(entryPath) {
 
 function loadEntries() {
   const entries = JSON.parse(fs.readFileSync(entriesPath, 'utf8'));
-  const missing = entries.filter((e) => !exists(e.path)).map((e) => e.path);
+  const missing = entries.filter((e) => !e.optional && !exists(e.path)).map((e) => e.path);
   if (missing.length) {
     throw new Error(`structure-doc.json lists paths that do not exist:\n  ${missing.join('\n  ')}`);
   }

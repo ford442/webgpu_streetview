@@ -664,7 +664,8 @@
   },
   {
     "path": "build/",
-    "note": "Production build output"
+    "note": "Production build output",
+    "optional": true
   },
   {
     "path": "deploy.py",

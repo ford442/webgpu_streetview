@@ -9,7 +9,11 @@
  * - never while a hold is active or a transition is running (the intermediate
  *   then holds a frozen or blended frame, not the scene the map would label);
  * - plus one refresh `DEPTH_RELEASE_REFRESH_MS` after a release, because Street
- *   View keeps sharpening tiles after the stability check lets go.
+ *   View keeps sharpening tiles after the stability check lets go;
+ * - on a slow device (one inference took over `DEPTH_SLOW_DEVICE_MS`, e.g.
+ *   SwiftShader at ~220 s) only a new pano starts one: no release refresh and
+ *   no re-inference for a pan / zoom within the pano, so a map is never queued
+ *   behind a refresh nobody will see for minutes (#357, #358).
  */
 
 export const DEPTH_SETTLE_MS = 150;
@@ -17,6 +21,8 @@ export const DEPTH_MIN_INTERVAL_MS = 200;
 export const DEPTH_RELEASE_REFRESH_MS = 1200;
 /** After a failed inference, wait this long before trying again. */
 export const DEPTH_RETRY_MS = 2000;
+/** An inference slower than this marks the device slow (see the header). */
+export const DEPTH_SLOW_DEVICE_MS = 30_000;
 /** Pan / zoom changes below this are the same view (sub-pixel at any FOV). */
 const POV_EPSILON = 1e-4;
 
@@ -61,6 +67,12 @@ export class DepthScheduler {
     private epochSeen = -1;
     private epochStartMs = -Infinity;
     private refreshPending = false;
+    private slow = false;
+
+    /** True once an inference took longer than `DEPTH_SLOW_DEVICE_MS`. */
+    public get slowDevice(): boolean {
+        return this.slow;
+    }
 
     /** Call every frame; true when an inference should start now (then call `started`). */
     public shouldStart(frame: DepthSchedulerFrame): boolean {
@@ -69,6 +81,7 @@ export class DepthScheduler {
         if (frame.nowMs < this.notBeforeMs) return false;
         if (frame.nowMs - this.lastStartMs < DEPTH_MIN_INTERVAL_MS) return false;
         if (frame.nowMs - this.lastPovChangeMs < DEPTH_SETTLE_MS) return false;
+        if (this.slow) return this.inferredEpoch !== frame.epoch || !this.inferredPov;
         if (this.isStale(frame)) return true;
         return this.refreshPending
             && this.inferredEpoch === frame.epoch
@@ -83,6 +96,11 @@ export class DepthScheduler {
         }
         this.inferredPov = { ...frame.pov };
         this.inferredEpoch = frame.epoch;
+    }
+
+    /** An inference finished in `ms` (Worker-side time). */
+    public completed(ms: number): void {
+        if (ms > DEPTH_SLOW_DEVICE_MS) this.slow = true;
     }
 
     /** The inference failed or was dropped: forget it, and back off before the next try. */
@@ -108,6 +126,7 @@ export class DepthScheduler {
         this.inferredEpoch = -1;
         this.epochSeen = -1;
         this.refreshPending = false;
+        this.slow = false;
     }
 
     private observe(frame: DepthSchedulerFrame): void {

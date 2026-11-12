@@ -41,8 +41,6 @@
 import { loadDepthModel, sha256Hex } from './depthModelCache';
 import { pickDepthModelVariant } from './depthModel';
 import { decodeDisparity, rgbaToImageNetNchw } from './depthMath';
-import type { DepthInitRequest, DepthWorkerMessage, DepthWorkerRequest } from './depthProtocol';
-import { rgbaToImageNetNchw } from './depthMath';
 import type {
     DepthInitRequest,
     DepthLoadSemanticRequest,

@@ -43,7 +43,7 @@ export const sceneDepthStore = {
         store.set(initial);
         return initial;
     },
-    subscribe: store.subscribe,
+    subscribe: (listener: () => void) => store.subscribe(listener),
     /** The panel toggle: persists (best effort) and applies from the next frame. */
     setEnabled(enabled: boolean): void {
         const current = sceneDepthStore.get();

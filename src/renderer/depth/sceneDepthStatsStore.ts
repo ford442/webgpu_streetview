@@ -33,6 +33,11 @@ export interface SceneDepthStats {
     inferenceMs: number | null;
     /** Inferences per second over the last 5 s — 0 while the view is still. */
     cadenceHz: number;
+    /**
+     * An inference took over `DEPTH_SLOW_DEVICE_MS` (SwiftShader): only a new
+     * pano re-infers from then on (`depthScheduler.ts`).
+     */
+    slowDevice: boolean;
     inferences: number;
     inputWidth: number;
     inputHeight: number;
@@ -54,6 +59,7 @@ const INITIAL: SceneDepthStats = {
     createMs: null,
     inferenceMs: null,
     cadenceHz: 0,
+    slowDevice: false,
     inferences: 0,
     inputWidth: 0,
     inputHeight: 0,

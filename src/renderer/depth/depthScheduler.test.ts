@@ -4,6 +4,7 @@ import {
     DEPTH_RELEASE_REFRESH_MS,
     DEPTH_RETRY_MS,
     DEPTH_SETTLE_MS,
+    DEPTH_SLOW_DEVICE_MS,
     DepthScheduler,
     sameView,
     wrapPanDelta,
@@ -98,5 +99,38 @@ describe('the depth cadence', () => {
         const s = new DepthScheduler();
         run(s, 0, 1500);
         expect(run(s, 1516, 2000, () => ({ pov: { ...POV, zoom: 1.5 } }))).toHaveLength(1);
+    });
+});
+
+describe('a slow device (#357, #358)', () => {
+    it('is not slow until an inference takes over DEPTH_SLOW_DEVICE_MS', () => {
+        const s = new DepthScheduler();
+        s.completed(DEPTH_SLOW_DEVICE_MS);
+        expect(s.slowDevice).toBe(false);
+        s.completed(DEPTH_SLOW_DEVICE_MS + 1);
+        expect(s.slowDevice).toBe(true);
+        s.reset();
+        expect(s.slowDevice).toBe(false);
+    });
+
+    it('skips the release refresh and same-pano view changes, but still infers a new pano', () => {
+        const s = new DepthScheduler();
+        const first = run(s, 0, 400);
+        expect(first).toHaveLength(1);
+        s.completed(220_000);
+        // No release refresh, and a pan inside the same pano does not re-infer.
+        expect(run(s, 400, 5000)).toEqual([]);
+        expect(run(s, 5000, 8000, () => ({ pov: { ...POV, panX: 0.4 } }))).toEqual([]);
+        // A new pano does — exactly once.
+        const next = run(s, 8000, 12_000, () => ({ epoch: 1, pov: { ...POV, panX: 0.4 } }));
+        expect(next).toHaveLength(1);
+    });
+
+    it('retries a failed inference on a slow device', () => {
+        const s = new DepthScheduler();
+        run(s, 0, 400);
+        s.completed(220_000);
+        s.failed(400);
+        expect(run(s, 400, 400 + DEPTH_RETRY_MS + 100)).toHaveLength(1);
     });
 });

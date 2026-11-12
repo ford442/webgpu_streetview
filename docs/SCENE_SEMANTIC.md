@@ -263,7 +263,7 @@ or the class table changes, because any of them changes the SHA.
 | `sceneSemanticBinding.test.ts` | WGSL struct and class constants ↔ TS, byte-identical helpers in both shaders, weight-0 first statements, `textureLoad`-only class reads, entry-point wiring, layout and fallback |
 | `windshieldPortal.parity.test.ts` | no mirrored stage reads the semantic map |
 | `depthBundleGuard.test.ts` | the semantic model and runtime stay out of the bundle |
-| `e2e/scene-semantic.spec.ts` (`chromium-webgpu`) | the rebuilt model through ORT-web on SwiftShader and the production renderer: maps with a plausible histogram, weight 0 bit-exact across looks, no rain streaks over the sky, no wet change off the road, snow on the ground only, class-conditional night relight, sky replacement confined to the matte, a missing model fails the pass, not the frame |
+| `e2e/scene-semantic.spec.ts` (`gpu-models`, nightly) | the rebuilt model through ORT-web on SwiftShader and the production renderer: maps with a plausible histogram, weight 0 bit-exact across looks, no rain streaks over the sky, no wet change off the road, snow on the ground only, class-conditional night relight, sky replacement confined to the matte, a missing model fails the pass, not the frame |
 
 On SwiftShader, at the depth tensor's 266×224, the semantic run takes about
 22 s for the ×1 graph and about 52 s for the shipped ×2 graph. Depth takes

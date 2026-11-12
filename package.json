@@ -60,7 +60,7 @@
     "validate:shaders": "node scripts/validate-shaders.mjs",
     "probe:hold-pause": "node scripts/hold-pause-probe.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:smoke": "playwright test --grep-invert @keyed",
+    "test:e2e:smoke": "playwright test --project=chromium --project=gpu --grep-invert @keyed",
     "test:e2e:keyed": "playwright test",
     "analyze": "source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html",
     "preview": "vite preview"

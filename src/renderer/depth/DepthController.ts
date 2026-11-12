@@ -404,6 +404,7 @@ export class DepthController {
     }
 
     private recordInference(ms: number, size: { width: number; height: number }): void {
+        this.scheduler.completed(ms);
         const now = performance.now();
         this.completions.push(now);
         while (this.completions.length && now - this.completions[0]! > CADENCE_WINDOW_MS) this.completions.shift();
@@ -414,6 +415,7 @@ export class DepthController {
             cadenceHz: this.completions.length / (CADENCE_WINDOW_MS / 1000),
             inputWidth: size.width,
             inputHeight: size.height,
+            slowDevice: this.scheduler.slowDevice,
         });
     }
 
