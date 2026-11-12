@@ -1,5 +1,5 @@
 /**
- * Shapes of the `window` probes the engine publishes (#368). They live in `debug/` so a lower layer
+ * Shapes of the `window` probes the engine publishes. They live in `debug/` so a lower layer
  * (the renderer's boot probe) can name them without importing the cabin that fills them in.
  */
 

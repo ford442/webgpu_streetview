@@ -1,7 +1,7 @@
 /**
  * The `window.__SV__` namespace over every debug / test global the app hangs on `window`.
  * Each global is declared (typed) by the module that publishes it; this file only reads them,
- * so it sits above the engine and car layers and nothing below imports it (#368).
+ * so it sits above the engine and car layers and nothing below imports it.
  *
  * `__SV__` is the surface to use: a Playwright helper or the nightly probe
  * reads `window.__SV__.probe`, `.cabin`, `.frameSource`, `.errors`, … The old

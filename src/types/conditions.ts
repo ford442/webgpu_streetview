@@ -1,5 +1,5 @@
 /**
- * Live-conditions shapes shared by `services/conditions` and the `state/` stores that hold them (#368).
+ * Live-conditions shapes shared by `services/conditions` and the `state/` stores that hold them.
  */
 
 export interface LiveConditions {

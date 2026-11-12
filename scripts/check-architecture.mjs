@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run check:architecture` — the layering gate (#368). Four checks:
+ * `npm run check:architecture` — the layering gate. Five checks:
  *
  *   1. scripts/architecture.json is whole: every top-level `src/` folder is in exactly one layer and
  *      every listed folder exists.

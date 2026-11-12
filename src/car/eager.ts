@@ -1,5 +1,5 @@
 /**
- * Main-bundle-safe public entry of `src/car/` (#368): what the UI layer may import from code that ships in the main chunk.
+ * Main-bundle-safe public entry of `src/car/`: what the UI layer may import from code that ships in the main chunk.
  * Value exports of modules only the lazy car chunk reaches are NOT here — they are in `./index` (lazy-side API).
  * Everything else in the folder is internal — `scripts/check-architecture.mjs` (dependency-cruiser rule
  * `only-through-entry`) fails a deeper import. Keep it a pure re-export list: no logic, no side effects.

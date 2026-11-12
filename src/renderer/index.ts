@@ -1,5 +1,5 @@
 /**
- * Public entry of `src/renderer/` (#368): what higher layers (car, ui) may import.
+ * Public entry of `src/renderer/`: what higher layers (car, ui) may import.
  * Everything else in the folder is internal — `scripts/check-architecture.mjs` (dependency-cruiser rule
  * `only-through-entry`) fails a deeper import. Keep it a pure re-export list: no logic, no side effects.
  */

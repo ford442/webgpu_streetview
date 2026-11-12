@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates two blocks of AGENTS.md from the repo, so they cannot go stale (#340, #368):
+ * Generates two blocks of AGENTS.md from the repo, so they cannot go stale (#340):
  *   - the "Project Structure" tree, from the filesystem and `scripts/structure-doc.json`;
  *   - the layer table, from `scripts/architecture.json` (the same file the import rules are built from).
  *   node scripts/gen-structure-doc.mjs           rewrite the tree

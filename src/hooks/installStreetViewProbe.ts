@@ -1,7 +1,7 @@
 /**
  * `window.__STREETVIEW_PROBE__` — the DevTools / headless surface over the hold-pause probe
  * (`debug/streetViewProbe.ts`) and the engine counters that sit beside it. It reads the renderer,
- * trip, XR and call-budget modules, so it lives with the hooks that install it, not in `debug/` (#368).
+ * trip, XR and call-budget modules, so it lives with the hooks that install it, not in `debug/`.
  * See `scripts/hold-pause-probe.mjs`.
  */
 import { streetViewProbe, type HoldTimelineEntry, type ProbeWarning } from '../debug/streetViewProbe';

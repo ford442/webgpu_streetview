@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Checks `build/chunk-graph.json` (written by `vite build`, see `chunkGraphPlugin` in
- * vite.config.ts) against the chunk contracts in `scripts/chunks.json` (#368):
+ * vite.config.ts) against the chunk contracts in `scripts/chunks.json`:
  *
  *   - every contract chunk was emitted and holds its entry module(s), and only that chunk does;
  *   - no module matching a contract's `forbidden` expression is in that chunk;

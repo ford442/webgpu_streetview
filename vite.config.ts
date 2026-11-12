@@ -19,7 +19,7 @@ function gitShortHash(): string {
 }
 
 /**
- * Writes `build/chunk-graph.json` (#368): every emitted chunk with the source modules that landed in
+ * Writes `build/chunk-graph.json`: every emitted chunk with the source modules that landed in
  * it, and the inverse (module → chunks). `scripts/check-chunk-graph.mjs` (run by
  * `scripts/verify-build.sh`) checks it against the contracts in `scripts/chunks.json` — a forbidden
  * module in a chunk, a singleton duplicated, a lazy entry that is not its own chunk.

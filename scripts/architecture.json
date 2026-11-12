@@ -1,5 +1,5 @@
 {
-  "$comment": "Source of truth for the import layering (#368). A layer may import its own layer and the layers below it. Checked by dependency-cruiser (.dependency-cruiser.mjs) and scripts/check-architecture.mjs; the TypeScript projects (tsconfig.layer-*.json) mirror it; the AGENTS.md layer table is generated from this file (npm run gen:structure-doc). `packages` are folders with a public surface: a HIGHER layer may import them only through an entry (type-only `import()` queries and dynamic `import()` of lazy entries excepted); same-layer and lower-layer code, and tests, may reach inside.",
+  "$comment": "Source of truth for the import layering. A layer may import its own layer and the layers below it. Checked by dependency-cruiser (.dependency-cruiser.mjs) and scripts/check-architecture.mjs; the TypeScript projects (tsconfig.layer-*.json) mirror it; the AGENTS.md layer table is generated from this file (npm run gen:structure-doc). `packages` are folders with a public surface: a HIGHER layer may import them only through an entry (type-only `import()` queries and dynamic `import()` of lazy entries excepted); same-layer and lower-layer code, and tests, may reach inside.",
   "layers": [
     {
       "name": "foundation",

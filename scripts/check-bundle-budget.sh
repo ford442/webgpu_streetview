@@ -3,7 +3,7 @@
 # Fail the build if the production JS bundle regresses past documented budgets.
 # Invoked from scripts/verify-build.sh after vite build.
 #
-# Budgets and contracts live in scripts/chunks.json (#368) — see docs/DEVELOPER_CONTEXT.md §6:
+# Budgets and contracts live in scripts/chunks.json — see docs/DEVELOPER_CONTEXT.md §6:
 #   main.gzipBudgetBytes / main.cesiumMaxHits  — gzipped main.*.js, "Cesium" string matches in main
 #   defaultChunkGzipBudgetBytes, chunks[].gzipBudgetBytes — per lazy *.chunk.js
 #   workers[].gzipBudgetBytes, forbiddenBundleText, forbiddenAssets — the depth Worker / ORT / model files

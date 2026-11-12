@@ -1,4 +1,4 @@
-/** World-axis conventions shared by the road renderer and the cabin (#368). */
+/** World-axis conventions shared by the road renderer and the cabin. */
 
 /**
  * Particle fall direction in top-origin UV space (uv.y = 0 at top, 1 at bottom).

@@ -1,6 +1,6 @@
 /**
  * The shape of a planned road route. Lives in `types/` so `state/` (the trip store) and
- * `services/routing` can both name it without one importing the other (#368).
+ * `services/routing` can both name it without one importing the other.
  */
 
 export interface LatLng {

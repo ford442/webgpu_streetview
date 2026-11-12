@@ -192,7 +192,7 @@ else
   ERRORS=$((ERRORS+1))
 fi
 
-# 5b. Chunk contracts (#368): forbidden modules per chunk (onnxruntime-web / cesium never in main),
+# 5b. Chunk contracts: forbidden modules per chunk (onnxruntime-web / cesium never in main),
 #     lazy entries in their own chunk, single-instance modules in exactly one chunk.
 if ! node "$SCRIPT_ROOT/scripts/check-chunk-graph.mjs" "$BUILD_DIR"; then
   ERRORS=$((ERRORS+1))

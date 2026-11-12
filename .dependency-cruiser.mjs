@@ -1,5 +1,5 @@
 /**
- * Architecture rules (#368). The layer table lives in scripts/architecture.json; this file only turns
+ * Architecture rules. The layer table lives in scripts/architecture.json; this file only turns
  * it into rules, so the docs and the cruiser cannot disagree. The lazy-chunk rule (no static
  * reachability of a chunk entry from src/index.tsx) is not a per-edge rule, so it lives in
  * scripts/check-architecture.mjs, which also runs this file.
