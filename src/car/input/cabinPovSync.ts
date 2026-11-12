@@ -1,6 +1,5 @@
-import { panoramaPovFromCabin } from '../carSpatialModel';
-import { povStore as defaultPovStore, type PovStore } from '../../state/povStore';
-import { cabinHeadStore as defaultHeadStore, type CabinHeadStore } from '../../state/cabinHeadStore';
+import { panoramaPovFromCabin } from '../../config/carSpatialModel';
+import { povStore as defaultPovStore, type PovStore, cabinHeadStore as defaultHeadStore, type CabinHeadStore } from '../../state';
 
 const DEG = Math.PI / 180;
 

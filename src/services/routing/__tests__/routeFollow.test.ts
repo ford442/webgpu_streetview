@@ -1,4 +1,4 @@
-import { absoluteAngleDiff } from '../../../utils/navigation';
+import { absoluteAngleDiff } from '../../../wasm/navigation';
 import { RouteFollower } from '../routeFollow';
 import {
   ROUTE_RESAMPLE_STEP_M,

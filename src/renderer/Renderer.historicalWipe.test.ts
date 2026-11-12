@@ -72,7 +72,7 @@ vi.mock('./cabinComposite', async (importOriginal) => ({
 }));
 
 import { Renderer } from './Renderer';
-import { streetViewProbe } from '../utils/streetViewProbe';
+import { streetViewProbe } from '../debug/streetViewProbe';
 import { resetRoadFrameSourceForTests } from './roadFrameRegistry';
 import type { TextureLifecycle } from './textureLifecycle';
 import type { TransitionManager } from './TransitionManager';

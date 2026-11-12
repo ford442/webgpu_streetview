@@ -192,6 +192,12 @@ else
   ERRORS=$((ERRORS+1))
 fi
 
+# 5b. Chunk contracts (#368): forbidden modules per chunk (onnxruntime-web / cesium never in main),
+#     lazy entries in their own chunk, single-instance modules in exactly one chunk.
+if ! node "$SCRIPT_ROOT/scripts/check-chunk-graph.mjs" "$BUILD_DIR"; then
+  ERRORS=$((ERRORS+1))
+fi
+
 # 6. Refuse committed deploy credentials (passwords, tokens)
 if [ -f "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" ]; then
   bash "$SCRIPT_ROOT/scripts/check-deploy-secrets.sh" || ERRORS=$((ERRORS+1))

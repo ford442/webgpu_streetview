@@ -1,5 +1,5 @@
 import { type KeyboardShortcut } from './useKeyboardShortcuts';
-import type { TimeOfDay } from './useEnvironmentSettings';
+import type { TimeOfDay } from '../config/timeOfDay';
 
 export interface UseAppKeyboardShortcutsOptions {
   showPerformanceStats: boolean;

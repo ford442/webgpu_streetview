@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
-import { vehicleManager } from '../car/VehicleManager';
+import { vehicleManager } from '../car/eager';
 import type { EnvironmentSettingsState } from '../hooks/useEnvironmentSettings';
 import type { DirectorSnapshot } from '../hooks/useTours';
-import type { TourDirectorKeyframe } from '../utils/tourDirector';
+import type { TourDirectorKeyframe } from '../hooks/tourDirector';
 
 export interface UseAppDirectorResult {
   /** Current look, captured when a tour records a director keyframe. */

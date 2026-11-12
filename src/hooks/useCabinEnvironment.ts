@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import SunCalc from 'suncalc';
 import { setCarPanoEnvironment, setCarSunPosition } from '../car';
-import { fetchPanoEquirect } from '../utils/panoEquirect';
+import { fetchPanoEquirect } from '../services/maps/panoEquirect';
 
 /**
  * Lights the car cabin consistently with the surrounding panorama and the

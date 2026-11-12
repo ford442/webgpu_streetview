@@ -1,7 +1,7 @@
 /**
  * Cabin frame capture taps.
  *
- * Cinema (`utils/canvasRecorder.ts`) records the Street View WebGPU canvas.
+ * Cinema (`services/capture/canvasRecorder.ts`) records the Street View WebGPU canvas.
  * To get the cabin into that clip it has to composite the cabin canvas on top
  * — but a WebGL drawing buffer without `preserveDrawingBuffer` is only
  * readable inside the same frame that drew it, and the cabin renderer

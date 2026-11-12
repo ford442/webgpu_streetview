@@ -17,8 +17,9 @@ This file is a short pointer so Claude Code sessions land on the right doc witho
 - **Hold-pause** (`Renderer.ts`, `WebGPUCanvas.tsx`, `useStreetView.tsx`) — never upload live GMaps canvas while `holdActive`; use `window.__STREETVIEW_PROBE__`.
 - **Input hijacking** — UI overlays must `stopPropagation` on mouse/keyboard events.
 - **Maps API keys / secrets** — runtime `public/config.js` / deploy `MAPS_API_KEY`; referrer allowlist per host. Only `scripts/public-env-keys.json` keys are inlined into the bundle; never track `.env*` (only `*.example`); `git.sh` requires a message and stages tracked files only (gitleaks runs in CI).
+- **Import layers** (`scripts/architecture.json`, AGENTS.md *Import Layers*, #368) — a layer imports itself and the layers below only (`foundation` wasm/config/types/shaders → `state` state/debug → `engine` renderer/audio/xr/runtime/services/search/trip/offline → `car` → `ui` hooks/components/views/app); no cycles, even type-only. No `utils/`: when a lower layer needs a shape, move it down (`types/`, `config/`, `debug/probeTypes.ts`). `wasm/`, `state/`, `renderer/`, `car/` are packages — higher layers import their entries (`index.ts`; car: `eager.ts` from main-bundle code). `window` globals are declared by their publisher; `app/svGlobals.ts` only reads them. Lazy chunks have contracts in `scripts/chunks.json` (`build/chunk-graph.json` is checked by `verify-build.sh`) — add one with every `import()`. `npm run check:architecture`.
 - **Hot POV state** — `heading`/`pitch`/`zoom`/`carHeading` live in `src/state/povStore.ts`, not React context; do not put them (or anything per-frame) in a provider value. `AppShell.renders.test.tsx` enforces it.
-- **Cabin transforms** — the cabin scene is the car's frame: `interiorGroup` (car rig) stays at identity rotation; `headPivot` → camera carry only the car-local head pose (`cabinHeadStore`, radians, +yaw = left). Never rotate the rig with `carHeading`/look, never feed a world heading to the camera (it is parented — that double-counts `carHeading`). Street View POV is derived once per frame in `car/input/cabinPovSync.ts`; cabin FOV comes from `utils/streetViewFov.ts`. Modes: `car/input/cabinInputMachine.ts` (pointer lock; Esc via `pointerlockchange` only).
+- **Cabin transforms** — the cabin scene is the car's frame: `interiorGroup` (car rig) stays at identity rotation; `headPivot` → camera carry only the car-local head pose (`cabinHeadStore`, radians, +yaw = left). Never rotate the rig with `carHeading`/look, never feed a world heading to the camera (it is parented — that double-counts `carHeading`). Street View POV is derived once per frame in `car/input/cabinPovSync.ts`; cabin FOV comes from `config/streetViewFov.ts`. Modes: `car/input/cabinInputMachine.ts` (pointer lock; Esc via `pointerlockchange` only).
 - **Runtime contexts** (`runtime/contexts.ts`, #361) — the capability manifest on `__SV__.contexts` (GPU, display, audio, isolation, storage, power). It is the only module that calls `matchMedia` for HDR/P3 or reads `navigator.getBattery` (`contexts.scan.test.ts`). `?hdr`/`?p3` default to `auto` (the display decides); `?hdr=0&p3=0` must stay byte-identical to an SDR boot.
 - **URL flags** — add them to `src/config/flags.ts` (then `npm run gen:flags-doc`); never parse `location.search` anywhere else.
 - **Shader uniform layout** — `src/renderer/weatherUniformLayout.ts` must match both weather WGSL passes. Shader *variants* (subgroups, dual-source precip, the `?hdr` output-referred grade) are source substitutions at pipeline-create time in `shaderFeatureVariants.ts` — keep their literal bodies byte-identical to the shipped `.wgsl`. Slots 40–41 are the image-derived horizon (`renderer/gpuChores/horizonEstimate.ts`, preset weight `horizonEstimateBlend`); every effect reads it through `sceneHorizonY()`, and blend 0 is bit-exact with the pitch-only horizon.
@@ -39,9 +40,10 @@ This file is a short pointer so Claude Code sessions land on the right doc witho
 ```bash
 npm ci          # clean install
 npm start       # dev server :3000
-npm run verify  # THE gate: typecheck + lint + knip + secrets + tests + WGSL + C++ goldens
+npm run verify  # THE gate: architecture + typecheck + lint + knip + secrets + tests + WGSL + C++ goldens
+npm run check:architecture  # layers, cycles, lazy chunk entries (dependency-cruiser)
 npm test        # Vitest (node env by default; `// @vitest-environment jsdom` per file for DOM)
-npm run typecheck   # tsc -b
+npm run typecheck   # tsc -b (one composite project per layer)
 npm run lint
 npm run build
 npm run test:cpp  # native C++ golden tests (needs cmake + a C++20 compiler)

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getMemoryProfiler } from '../utils/memoryProfiler';
+import { getMemoryProfiler } from '../debug/memoryProfiler';
 import { createTrackedBuffer, createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
 import { bytesPerTexel, estimateTextureBytes } from './gpuTextureBytes';
 

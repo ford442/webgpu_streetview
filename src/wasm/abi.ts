@@ -6,7 +6,7 @@
  * interface in its own file means the ABI shape can be read/reviewed without
  * wading through the loader.
  */
-import type { LumaReduce } from '../renderer/gpuChores/lumaMath';
+import type { LumaReduce } from './types';
 
 export type { LumaReduce };
 
@@ -181,7 +181,7 @@ export interface StreetViewWasmAPI {
   /**
    * Haversine distance for a whole polyline in one call — one WASM boundary
    * crossing instead of one per segment. A single pair is the f64 TS
-   * `haversineMeters` (src/utils/navigation.ts), the same formula.
+   * `haversineMeters` (src/wasm/navigation.ts), the same formula.
    *
    * @param points       `count * 2` doubles: lat, lon, lat, lon, …
    * @param segmentsOut  Receives the `count - 1` per-segment distances in
@@ -195,7 +195,7 @@ export interface StreetViewWasmAPI {
    * Destination point from a WGS-84 start, a distance in metres and an initial
    * bearing (0 = north, clockwise) — the spherical direct geodetic problem.
    *
-   * The only copy of this formula in the app: `src/utils/historicalImagery.ts`
+   * The only copy of this formula in the app: `src/services/maps/historicalImagery.ts`
    * builds its sample ring with it instead of re-deriving `asin`/`atan2` in
    * TypeScript.
    *

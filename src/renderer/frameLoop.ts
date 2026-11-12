@@ -1,18 +1,9 @@
 import type { GpuPassTimer } from './gpuPassTimer';
 import type { TextureLifecycle } from './textureLifecycle';
-import type { WeatherPassTimingContext } from './weatherPostProcessorTypes';
-import type { WeatherPostProcessMode } from './RendererBackend';
-import type { Pass1TimingContext } from './streetViewPass';
+import type { WeatherPostProcessMode } from './types';
 import type { CabinCompositePass, CabinCompositeRegion, CabinCompositeViewport } from './cabinComposite';
-import type { FrameContext, FramePassRegistry } from './framePasses/FramePassRegistry';
+import type { FrameContext, FramePassRegistry, FramePassTimings } from './framePasses/FramePassRegistry';
 import type { FramePassId } from './passStatus';
-import type { UpscaleTimingContext } from './upscale/UpscalePass';
-
-export interface FramePassTimings {
-    pass1?: Pass1TimingContext;
-    weather?: WeatherPassTimingContext;
-    upscale?: UpscaleTimingContext;
-}
 
 /**
  * Timestamp-query slots per pass id, fixed so the timing store can label the

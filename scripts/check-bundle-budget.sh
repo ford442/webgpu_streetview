@@ -3,35 +3,38 @@
 # Fail the build if the production JS bundle regresses past documented budgets.
 # Invoked from scripts/verify-build.sh after vite build.
 #
-# Budgets (see docs/DEVELOPER_CONTEXT.md §6):
-#   MAIN_GZIP_BUDGET_BYTES  — gzipped main.*.js (re-baselined for Vite ESM)
-#   CESIUM_MAX_HITS         — "Cesium" string matches in main (CDN loader URL = 1)
-#   CHUNK_GZIP_BUDGET_BYTES — per lazy *.chunk.js (catches Cesium leaking into a chunk)
-#   SINGLETON_MODULES       — modules that must not be duplicated across chunks
+# Budgets and contracts live in scripts/chunks.json (#368) — see docs/DEVELOPER_CONTEXT.md §6:
+#   main.gzipBudgetBytes / main.cesiumMaxHits  — gzipped main.*.js, "Cesium" string matches in main
+#   defaultChunkGzipBudgetBytes, chunks[].gzipBudgetBytes — per lazy *.chunk.js
+#   workers[].gzipBudgetBytes, forbiddenBundleText, forbiddenAssets — the depth Worker / ORT / model files
+# Which modules may sit in which chunk, and the single-instance modules, are checked against
+# build/chunk-graph.json by scripts/check-chunk-graph.mjs (called from verify-build.sh).
+# Env overrides (MAIN_GZIP_BUDGET_BYTES, CESIUM_MAX_HITS, CHUNK_GZIP_BUDGET_BYTES,
+# DEPTH_WORKER_GZIP_BUDGET_BYTES) still win, for experiments.
 
 set -euo pipefail
 
 BUILD_DIR="${1:-build}"
-MAIN_GZIP_BUDGET_BYTES="${MAIN_GZIP_BUDGET_BYTES:-409600}"   # 400 KiB
-CESIUM_MAX_HITS="${CESIUM_MAX_HITS:-1}"
-CHUNK_GZIP_BUDGET_BYTES="${CHUNK_GZIP_BUDGET_BYTES:-102400}" # 100 KiB default, per lazy chunk
+SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONTRACTS="$SCRIPT_ROOT/scripts/chunks.json"
 
-# Per-chunk overrides, keyed by the chunk's logical name (its filename up to
-# the content-hash segment, e.g. "carModeRuntime.<hash>.chunk.js"). Anything
-# not listed here still uses CHUNK_GZIP_BUDGET_BYTES above.
-declare -A CHUNK_GZIP_BUDGET_OVERRIDES=(
-  # three.js bump to a WebGPURenderer-capable release (r160 -> pinned 0.180,
-  # cabin/pano device-unification "one GPUDevice, one frame" effort) shifted
-  # more of three's own shared payload into this already-lazy car-mode chunk
-  # (measured ~108 KiB, was ~32 KiB pre-bump) — see AGENTS.md "Car Mode
-  # Rendering Stack".
-  ["carModeRuntime"]=143360   # 140 KiB
-  # three/webgpu (the node-material/TSL renderer) loads as its own further-lazy
-  # chunk via preloadWebGPUCabinRenderer — default-on for capable adapters,
-  # skipped for `?cabin=webgl`. Budgeted generously since three/webgpu is
-  # inherently large; do not statically import it from the car-mode chunk.
-  ["three.webgpu"]=204800     # 200 KiB
-)
+# One node call turns the contract file into shell assignments (numbers and plain names only).
+eval "$(node -e '
+const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const out = [];
+out.push(`CONTRACT_MAIN_BUDGET=${c.main.gzipBudgetBytes}`);
+out.push(`CONTRACT_CESIUM_MAX=${c.main.cesiumMaxHits}`);
+out.push(`CONTRACT_DEFAULT_CHUNK_BUDGET=${c.defaultChunkGzipBudgetBytes}`);
+out.push("declare -A CHUNK_GZIP_BUDGET_OVERRIDES=(" + c.chunks.filter((x) => x.gzipBudgetBytes).map((x) => `["${x.name}"]=${x.gzipBudgetBytes}`).join(" ") + ")");
+const w = (c.workers || [])[0];
+out.push(`CONTRACT_WORKER_BUDGET=${w ? w.gzipBudgetBytes : 16384}`);
+out.push("FORBIDDEN_BUNDLE_TEXT_RE=\"" + (c.forbiddenBundleText || []).join("|") + "\"");
+console.log(out.join("\n"));
+' "$CONTRACTS")"
+
+MAIN_GZIP_BUDGET_BYTES="${MAIN_GZIP_BUDGET_BYTES:-$CONTRACT_MAIN_BUDGET}"
+CESIUM_MAX_HITS="${CESIUM_MAX_HITS:-$CONTRACT_CESIUM_MAX}"
+CHUNK_GZIP_BUDGET_BYTES="${CHUNK_GZIP_BUDGET_BYTES:-$CONTRACT_DEFAULT_CHUNK_BUDGET}"
 
 ERRORS=0
 
@@ -103,54 +106,13 @@ else
   fi
 fi
 
-# Single-instance modules. These hold module-level state that one chunk writes
-# and another reads — the eager renderer reads the cabin overlay the lazy car
-# chunk publishes, and the lazy car chunk reads the road HDR frame the eager
-# renderer publishes (roadFrameRegistry — the windshield portal's only road
-# input). Rollup normally hoists a shared module into the entry chunk, but if it
-# ever duplicates one, each chunk gets its own copy of that state and the
-# handoff silently stops working with no type or test error. Read the emitted
-# sourcemaps and assert each name appears in exactly one chunk.
-SINGLETON_MODULES="src/renderer/cabinOverlayRegistry.ts src/renderer/roadFrameRegistry.ts src/car/runtime/frameCapture.ts"
-if ! node -e '
-const fs = require("fs");
-const path = require("path");
-const dir = process.argv[1];
-const names = process.argv.slice(2);
-const maps = fs.readdirSync(dir).filter((f) => f.endsWith(".map"));
-if (maps.length === 0) {
-  console.log("ℹ️  No sourcemaps emitted — skipping singleton-module check");
-  process.exit(0);
-}
-let failed = false;
-for (const name of names) {
-  const owners = maps.filter((mapFile) => {
-    const map = JSON.parse(fs.readFileSync(path.join(dir, mapFile), "utf8"));
-    return (map.sources || []).some((s) => s.replace(/^(\.\.\/)+/, "") === name);
-  });
-  if (owners.length === 1) continue;
-  failed = true;
-  if (owners.length === 0) {
-    console.log(`❌ ERROR: ${name} is in no chunk — did it get renamed or tree-shaken?`);
-  } else {
-    console.log(`❌ ERROR: ${name} was duplicated into ${owners.length} chunks: ${owners.join(", ")}`);
-    console.log("   Each copy gets its own module-level state, so the cross-chunk handoff breaks silently.");
-  }
-}
-process.exit(failed ? 1 : 0);
-' "$BUILD_DIR/static/js" $SINGLETON_MODULES; then
-  ERRORS=$((ERRORS + 1))
-else
-  echo "✅ single-instance module check passed"
-fi
-
 # Scene depth (#320): onnxruntime-web is imported from a pinned CDN URL inside
 # the depth Worker, and the model is fetched at run time from models/depth/.
 # Neither may ever be bundled: no ORT runtime code (its wasm loader names the
 # `ort-wasm-simd-threaded` files; its C API exports `OrtCreateSession`) and no
 # .onnx under build/static. The Worker itself stays a few KB.
-DEPTH_WORKER_GZIP_BUDGET_BYTES="${DEPTH_WORKER_GZIP_BUDGET_BYTES:-16384}"
-ORT_IN_BUNDLE=$(grep -l -E "ort-wasm-simd-threaded|OrtCreateSession" "$BUILD_DIR"/static/js/*.js 2>/dev/null || true)
+DEPTH_WORKER_GZIP_BUDGET_BYTES="${DEPTH_WORKER_GZIP_BUDGET_BYTES:-$CONTRACT_WORKER_BUDGET}"
+ORT_IN_BUNDLE=$(grep -l -E "$FORBIDDEN_BUNDLE_TEXT_RE" "$BUILD_DIR"/static/js/*.js 2>/dev/null || true)
 if [ -n "$ORT_IN_BUNDLE" ]; then
   echo "❌ ERROR: onnxruntime-web code is bundled into: ${ORT_IN_BUNDLE}"
   echo "   Load it from DEPTH_RUNTIME_URL inside the depth Worker (src/renderer/depth/)."

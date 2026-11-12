@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from '../utils/geoTimeUtils';
+import { getTimeOfDayForLocation, getColorPresetForTimeOfDay } from '../services/geo/geoTimeUtils';
 import { getTopStationForLocation } from '../services/radioBrowserService';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 export interface UseGlobeTeleportOptions {
   teleportSafe: (lat: number, lng: number, targetHeading?: number, targetPitch?: number) => Promise<void>;

@@ -1,4 +1,4 @@
-import { getMemoryProfiler } from '../utils/memoryProfiler';
+import { getMemoryProfiler } from '../debug/memoryProfiler';
 import { estimateTextureBytes, textureDescriptorExtent } from './gpuTextureBytes';
 
 /**

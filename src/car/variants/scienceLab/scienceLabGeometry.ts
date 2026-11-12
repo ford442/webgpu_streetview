@@ -1,20 +1,10 @@
 import * as THREE from 'three';
-import type { ScienceLabMaterials } from './scienceLabMaterials';
 import { buildInstrumentDisplays as buildInstrumentDisplayWidgets } from './instrumentWidgets';
+import type { ScienceLabGeometryContext } from './scienceLabContext';
 
 export interface ScienceLabLighting {
     uvLight: THREE.PointLight;
     taskLights: THREE.PointLight[];
-}
-
-export interface ScienceLabGeometryContext {
-    labGroup: THREE.Group;
-    equipmentGroup: THREE.Group;
-    materials: ScienceLabMaterials;
-    instrumentDisplays: THREE.Mesh[];
-    displayMaterials: THREE.MeshStandardMaterial[];
-    equipmentFans: THREE.Group[];
-    sampleDrawers: THREE.Group[];
 }
 
 export function createScienceLabLighting(scene: THREE.Object3D): ScienceLabLighting {

@@ -26,11 +26,8 @@ import {
     type WebGpuProbeHdr,
     type WebGpuProbeStage,
 } from './webgpuBootProbe';
-import {
-    type RendererInitOptions,
-    type WeatherPostProcessMode,
-    getRendererPreference,
-} from './RendererBackend';
+import { type RendererInitOptions, getRendererPreference } from './RendererBackend';
+import { type WeatherPostProcessMode } from './types';
 
 type CapabilityMatrix = ReturnType<typeof buildCapabilityMatrix>;
 

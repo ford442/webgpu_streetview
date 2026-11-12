@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { HEAD_YAW_LIMIT } from '../car/carSpatialModel';
+import { HEAD_YAW_LIMIT } from '../config/carSpatialModel';
 import { mulMat3, rotX, rotY } from '../renderer/reproject/reprojectMath';
 import {
     eyeFromHead,

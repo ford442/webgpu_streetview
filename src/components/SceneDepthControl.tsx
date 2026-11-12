@@ -1,13 +1,7 @@
 import React from 'react';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
-import {
-    DEPTH_MODEL_LICENSE,
-    DEPTH_MODEL_NAME,
-    depthDownloadBytes,
-    formatMegabytes,
-} from '../renderer/depth/depthModel';
-import { useSceneDepthStats } from '../renderer/depth/sceneDepthStatsStore';
-import { sceneDepthStore, useSceneDepthOptIn } from '../state/sceneDepthStore';
+import { DEPTH_MODEL_LICENSE, DEPTH_MODEL_NAME, depthDownloadBytes, formatMegabytes, useSceneDepthStats } from '../renderer';
+import { sceneDepthStore, useSceneDepthOptIn } from '../state';
 
 const pill = (active: boolean, disabled: boolean): React.CSSProperties => ({
     padding: '6px 10px',

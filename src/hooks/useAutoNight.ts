@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { computeAutoNight, stepNightIntensity, type AutoNightSample } from '../utils/autoNightModel';
+import { computeAutoNight, stepNightIntensity, type AutoNightSample } from '../services/geo/autoNightModel';
 
 interface Coords { lat: number; lng: number; }
 
@@ -9,7 +9,7 @@ const AUTO_NIGHT_SMOOTH_MS = 250;
 
 /**
  * Drives nightIntensity and the sun/moon uniforms from the real clock at the
- * current Street View location (model: `utils/autoNightModel.ts`).
+ * current Street View location (model: `services/geo/autoNightModel.ts`).
  *
  * @param coords           Current lat/lng; null until the first panorama resolves.
  * @param enabled          Auto-night mode on/off.

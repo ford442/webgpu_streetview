@@ -4,7 +4,7 @@
  * only by `DepthController`; an external store, so a 5 Hz stats update never
  * re-renders anything that is not subscribed to it.
  */
-import { createStore, useStore } from '../../state/createStore';
+import { createStore, useStore } from '../../state';
 import type { DepthModelVariant } from './depthModel';
 
 type SceneDepthState =
@@ -129,4 +129,10 @@ export function clearSceneDepthLoseDeviceHook(hook: () => boolean): void {
  */
 export function debugLoseSceneDepthDevice(): boolean {
     return loseDeviceHook?.() ?? false;
+}
+
+declare global {
+    interface Window {
+        __SCENE_DEPTH__?: SceneDepthStats;
+    }
 }

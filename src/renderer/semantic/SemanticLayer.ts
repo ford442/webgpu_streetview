@@ -10,13 +10,8 @@
  */
 import type { FramePass } from '../framePasses/FramePassRegistry';
 import type { AuxSemantic } from './sceneSemanticBinding';
-import type { SceneSemanticOptions } from './sceneSemanticOptions';
-import type {
-    SemanticController,
-    SemanticControllerDeps,
-    SemanticFrameInput,
-    SemanticSkyEdge,
-} from './SemanticController';
+import type { SceneSemanticOptions, SemanticSkyEdge } from './sceneSemanticOptions';
+import type { SemanticController, SemanticControllerDeps, SemanticFrameInput } from './SemanticController';
 import type { SemanticEffectWeights } from './semanticParams';
 
 /** After `depth` (50), before `streetview` (100). */

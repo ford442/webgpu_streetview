@@ -4,7 +4,7 @@
  * rate (`PERF_PUBLISH_INTERVAL_MS`), never per frame. GPU pass timings stay in
  * `gpuPassTimingStore.ts`.
  */
-import { createStore, useStore } from '../state/createStore';
+import { createStore, useStore } from '../state';
 
 export interface FrameRateStats {
     /** Frames rendered per second over the last window. */

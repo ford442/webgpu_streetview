@@ -14,17 +14,11 @@
  * teleports through the hold-pause path.
  */
 
-import { absoluteAngleDiff } from '../../utils/navigation';
-import type { LatLng } from './RouteProvider';
-import {
-  bearingBetween,
-  distanceBetween,
-  pointAlong,
-  projectOnRoute,
-  type ActiveRoute,
-  type RouteProjection,
-} from './routeGeometry';
-import type { TripProgress } from '../../state/tripStore';
+import { absoluteAngleDiff } from '../../wasm/navigation';
+import type { LatLng } from '../../types/route';
+import { bearingBetween, distanceBetween, pointAlong, projectOnRoute, type RouteProjection } from './routeGeometry';
+import { type ActiveRoute } from '../../types/route';
+import type { TripProgress } from '../../state';
 
 export interface RouteFollowConfig {
   /**
@@ -195,4 +189,18 @@ export class RouteFollower {
       avgSpeedMps: this.paceMps,
     };
   }
+}
+
+/**
+ * Route guidance for a routed road trip (`app/useTripBindings.ts`). Cruise asks
+ * it which way to go before each hop; it never makes a Maps call on-route.
+ */
+export interface CruiseRouteGuide {
+  /** `panoId` is the pano the car is on (the offline graph planner keys on it). */
+  planHop(position: LatLng, links: readonly google.maps.StreetViewLink[], panoId?: string): RouteHopDecision;
+  /** After every hop attempt, with the pano position it ended on. */
+  afterHop(position: LatLng | null, moved: boolean): void;
+  /** One metered re-snap to a route point; resolves true when the pano moved there. */
+  resnap(target: LatLng): Promise<boolean>;
+  arrived(): void;
 }

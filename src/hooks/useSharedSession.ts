@@ -15,7 +15,7 @@ import {
   toSharedSessionParticipants,
   type SharedSessionParticipant,
 } from './sharedSessionRoster';
-import { resolveIceServers } from '../utils/iceServers';
+import { resolveIceServers } from '../services/signaling/iceServers';
 
 /**
  * Shared Exploration Sessions — multiplayer Street View road trips.

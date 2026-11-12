@@ -19,8 +19,8 @@ import {
   type NearbyPoi,
   type NearbyPoiCategory,
 } from '../search/poiModel';
-import { buildDeepLinkUrl } from '../utils/deepLink';
-import { povStore } from '../state/povStore';
+import { buildDeepLinkUrl } from '../config/deepLink';
+import { povStore } from '../state';
 
 interface PlaceSearchApplyTarget {
   lat: number;

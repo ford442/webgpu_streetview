@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createGlassMaterial } from './glassMaterial';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 export interface CarInteriorGlazingResult {
     windshieldGlassMesh: THREE.Mesh;

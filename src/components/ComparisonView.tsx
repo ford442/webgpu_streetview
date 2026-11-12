@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { formatImageDate, type HistoricalPanoEntry } from '../utils/historicalImagery';
+import { formatImageDate, type HistoricalPanoEntry } from '../services/maps/historicalImagery';
 
 interface ComparisonViewProps {
   beforeUrl: string;

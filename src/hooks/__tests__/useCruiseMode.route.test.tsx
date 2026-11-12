@@ -19,9 +19,9 @@ import {
   setTripOfflineGraph,
   startDrive,
 } from '../../services/routing/tripController';
-import type { RouteGraphNode } from '../../offline/offlineStore';
+import type { RouteGraphNode } from '../../wasm/graph';
 import type { RouteProvider } from '../../services/routing/RouteProvider';
-import { absoluteAngleDiff } from '../../utils/navigation';
+import { absoluteAngleDiff } from '../../wasm/navigation';
 import { DESTINATION, L_ROUTE, ORIGIN, buildGraph, linksOf } from '../../services/routing/__tests__/routeFixtures';
 import { useCruiseMode } from '../useCruiseMode';
 

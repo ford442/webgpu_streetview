@@ -27,7 +27,7 @@ import {
   SCRATCH_INITIAL_BYTES,
   type ScratchClock,
 } from '../marshal';
-import { haversineMeters } from '../../utils/navigation';
+import { haversineMeters } from '../navigation';
 
 const WASM_PATH = join(__dirname, '..', '..', '..', 'public', 'wasm', 'streetview-wasm.simd.wasm');
 

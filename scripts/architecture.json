@@ -1,0 +1,86 @@
+{
+  "$comment": "Source of truth for the import layering (#368). A layer may import its own layer and the layers below it. Checked by dependency-cruiser (.dependency-cruiser.mjs) and scripts/check-architecture.mjs; the TypeScript projects (tsconfig.layer-*.json) mirror it; the AGENTS.md layer table is generated from this file (npm run gen:structure-doc). `packages` are folders with a public surface: a HIGHER layer may import them only through an entry (type-only `import()` queries and dynamic `import()` of lazy entries excepted); same-layer and lower-layer code, and tests, may reach inside.",
+  "layers": [
+    {
+      "name": "foundation",
+      "folders": [
+        "wasm",
+        "config",
+        "types",
+        "shaders"
+      ],
+      "note": "Pure data, constants, the numeric layer. Imports nothing above."
+    },
+    {
+      "name": "state",
+      "folders": [
+        "state",
+        "debug"
+      ],
+      "note": "External stores and the debug surface (window globals, probe shapes)."
+    },
+    {
+      "name": "engine",
+      "folders": [
+        "renderer",
+        "audio",
+        "xr",
+        "runtime",
+        "services",
+        "search",
+        "trip",
+        "offline"
+      ],
+      "note": "GPU, audio, XR, capability manifest, Maps/routing services, offline trips."
+    },
+    {
+      "name": "car",
+      "folders": [
+        "car"
+      ],
+      "note": "The cabin: lazy car runtime, cabin renderer, input."
+    },
+    {
+      "name": "ui",
+      "folders": [
+        "hooks",
+        "components",
+        "views",
+        "app"
+      ],
+      "note": "React: hooks, components, views, the app shell."
+    }
+  ],
+  "packages": {
+    "wasm": {
+      "entries": [
+        "index.ts",
+        "navigation.ts",
+        "graph.ts",
+        "types.ts",
+        "useWasmModule.ts",
+        "abi.generated.ts"
+      ],
+      "note": "The loader plus its typed facades. abi.ts / marshal.ts / bindExports.ts are internal."
+    },
+    "state": {
+      "entries": [
+        "index.ts"
+      ],
+      "note": "Every external store."
+    },
+    "renderer": {
+      "entries": [
+        "index.ts"
+      ],
+      "note": "What the cabin and the UI use of the road renderer: backend, probes, registries, stats stores. Does not export the lazy entries (SemanticController, WebGL2FallbackRenderer)."
+    },
+    "car": {
+      "entries": [
+        "index.ts",
+        "eager.ts"
+      ],
+      "note": "eager.ts is safe from main-bundle code. index.ts is the lazy-side API: it re-exports carModeRuntime, so only code the lazy car chunk reaches may import it (scripts/check-architecture.mjs enforces)."
+    }
+  }
+}

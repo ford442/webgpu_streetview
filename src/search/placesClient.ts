@@ -16,7 +16,7 @@ import {
   type NearbyPoi,
   type NearbyPoiCategory,
 } from './poiModel';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 export interface PlaceSuggestion {
   placeId: string;

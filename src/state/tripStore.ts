@@ -8,8 +8,7 @@
  * the cabin bridge reads `tripStore.get()` imperatively.
  */
 import { createStore, useStore } from './createStore';
-import type { ActiveRoute, RoutedStep } from '../services/routing/routeGeometry';
-import type { LatLng } from '../services/routing/RouteProvider';
+import type { ActiveRoute, RoutedStep, LatLng } from '../types/route';
 
 export type TripStatus = 'idle' | 'planning' | 'ready' | 'driving' | 'arrived' | 'error';
 

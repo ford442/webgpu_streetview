@@ -5,7 +5,9 @@ import {
     type FramePassId,
 } from '../passStatus';
 import type { TextureLifecycle } from '../textureLifecycle';
-import type { FramePassTimings } from '../frameLoop';
+import type { WeatherPassTimingContext } from '../weatherPostProcessorTypes';
+import type { Pass1TimingContext } from '../streetViewPass';
+import type { UpscaleTimingContext } from '../upscale/UpscalePass';
 import type { FrameAux } from '../depth/sceneDepthBinding';
 import type { RenderScaleFrame } from '../renderScale';
 
@@ -219,4 +221,10 @@ export class FramePassRegistry {
 
 function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+export interface FramePassTimings {
+    pass1?: Pass1TimingContext;
+    weather?: WeatherPassTimingContext;
+    upscale?: UpscaleTimingContext;
 }

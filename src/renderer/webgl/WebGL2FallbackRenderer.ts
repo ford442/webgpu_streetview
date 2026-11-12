@@ -7,12 +7,8 @@
  * weather, LUTs, temporal history, GPU snapshots, or one-frame cabin compositor.
  * Shaders come from `weatherReference.glsl.ts` (parity-tested against WGSL).
  */
-import { type RenderMode } from '../types';
-import {
-    type RendererDebugOptions,
-    type RendererEffectIsolation,
-    type StreetViewRenderer,
-} from '../RendererBackend';
+import { type RenderMode, type RendererEffectIsolation } from '../types';
+import { type RendererDebugOptions, type StreetViewRenderer } from '../RendererBackend';
 import { mapsCanvasSource } from '../frameSource/mapsCanvasSource';
 import {
     WEATHER_PARAMS_FLOAT_COUNT,

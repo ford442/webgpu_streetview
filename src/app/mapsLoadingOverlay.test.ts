@@ -4,7 +4,7 @@ import {
   reduceScraperHealth,
   scraperHealthUserMessage,
   WEBGPU_FAILURE_USER_MESSAGE,
-} from '../utils/scraperHealth';
+} from '../debug/scraperHealth';
 
 const healthy = reduceScraperHealth(createInitialScraperHealth(), {
   type: 'promoted',

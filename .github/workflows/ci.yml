@@ -89,6 +89,22 @@ jobs:
           path: /tmp/bundle-report.html
           if-no-files-found: ignore
 
+      # The gate (layers, cycles, lazy entries) ran in `Verify`; this only renders the report.
+      # chunk-graph.json is module -> chunk, written by `vite build` and checked by verify-build.sh.
+      - name: Architecture report
+        if: always()
+        run: node scripts/check-architecture.mjs --report || true
+
+      - name: Upload architecture report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: architecture-report
+          path: |
+            build/architecture-report.html
+            build/chunk-graph.json
+          if-no-files-found: ignore
+
       # 'hidden' source maps are not deployed; keep them to symbolicate a
       # production stack trace for the commit that built them.
       - name: Upload source maps

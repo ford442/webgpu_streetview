@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { type Tour } from '../hooks/useTours';
 import type { RouteGraphNode } from '../offline';
 import { findPathBetweenPanos } from '../offline';
-import { resolveDirectorAt, type TourDirectorKeyframe } from '../utils/tourDirector';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { resolveDirectorAt, type TourDirectorKeyframe } from '../hooks/tourDirector';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 interface TourPlayerProps {
     tour: Tour;

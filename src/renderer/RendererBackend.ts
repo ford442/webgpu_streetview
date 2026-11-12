@@ -1,25 +1,14 @@
 import { type RenderMode } from './types';
 import { readFlag } from '../config/flags';
-import { installSvGlobals, isDebugMode, type RendererDebugHandle } from '../debug/globals';
+import { isDebugMode } from '../debug/windowAccess';
+import type { GpuChoresBreadcrumbs } from './gpuChores/gpuChoresStatsStore';
 import { debugLoseSceneDepthDevice } from './depth/sceneDepthStatsStore';
-
-export type RendererBackendType = 'webgpu' | 'webgl';
-export type RendererBackendPreference = RendererBackendType | 'auto';
-export type RendererEffectIsolation =
-    'all' |
-    'raw' |
-    'color' |
-    'weather' |
-    'fog' |
-    'night' |
-    'lighting';
+import type { RendererBackendType, RendererBackendPreference, RendererEffectIsolation, WeatherPostProcessMode, AdapterFeatureLevel } from './types';
 
 export interface RendererDebugOptions {
     effectIsolation: RendererEffectIsolation;
     wireframe: boolean;
 }
-
-export type WeatherPostProcessMode = 'fragment' | 'compute';
 
 /** Options for `samplePanoramaStats` (#216 gpu-chores). */
 export interface PanoramaStatsOptions {
@@ -134,7 +123,7 @@ export interface StreetViewRenderer {
     /** Semantic scene layer (#352), every frame after `setSceneDepth`. WebGPU only. */
     setSceneSemantic?(options: import('./semantic/sceneSemanticOptions').SceneSemanticOptions): void;
     /** The applied class map's sky edge (#352), for the horizon estimate. */
-    getSemanticSkyEdge?(): import('./semantic/SemanticController').SemanticSkyEdge | null;
+    getSemanticSkyEdge?(): import('./semantic/sceneSemanticOptions').SemanticSkyEdge | null;
     getOutputCanvas?(): HTMLCanvasElement;
     /**
      * WebGPU only — true when this renderer already draws car mode's cabin into
@@ -204,8 +193,6 @@ export interface AdapterSelectionPolicy {
     featureLevel: AdapterFeatureLevel;
     featureLevelSource: 'url' | 'default';
 }
-
-export type AdapterFeatureLevel = 'core' | 'compatibility';
 
 /**
  * `?gpu=features` dumps attempted/enabled optional features on the backend chip.
@@ -391,7 +378,6 @@ function installStreetViewRendererDebug(
     debugOptions: RendererDebugOptions,
     applyDebugOptions: (options: Partial<RendererDebugOptions>) => void,
 ): void {
-    installSvGlobals();
     const handle: RendererDebugHandle = {
         getBackend: () => ({
             rendererType: window.rendererType,
@@ -457,4 +443,29 @@ export function exposeRendererHardFailGlobals(
     installStreetViewRendererDebug(debugOptions, () => {
         // No live renderer to apply debug options onto.
     });
+}
+
+/** `window.streetViewRendererDebug` — read-only always, mutators only with `?debug`. */
+export interface RendererDebugHandle {
+    getBackend: () => {
+        rendererType?: 'webgpu' | 'webgl' | undefined;
+        usingWebGPU?: boolean | undefined;
+        usingWebGL?: boolean | undefined;
+        rendererFallbackReason?: string | undefined;
+    };
+    getDebugOptions: () => { effectIsolation: RendererEffectIsolation; wireframe: boolean };
+    getWeatherMode: () => WeatherPostProcessMode;
+    getGpuChores: () => GpuChoresBreadcrumbs | null;
+    setBackend?: (backend: RendererBackendPreference) => void;
+    setEffectIsolation?: (effect: RendererEffectIsolation) => void;
+    setWireframe?: (enabled: boolean) => void;
+    setWeatherMode?: (mode: WeatherPostProcessMode) => void;
+    /** Destroy the scene-depth Worker's device to exercise its recovery (#361). False when depth is not ready. */
+    loseDepthDevice?: () => boolean;
+}
+
+declare global {
+    interface Window {
+        streetViewRendererDebug?: RendererDebugHandle;
+    }
 }

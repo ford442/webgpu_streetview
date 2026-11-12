@@ -11,8 +11,8 @@
  */
 
 import { getMapsCallBudget } from './callBudget';
-import { haversineDistance } from '../../utils/navigation';
-import { ignoreRejection } from '../../utils/ignoreRejection';
+import { haversineDistance } from '../../wasm/navigation';
+import { ignoreRejection } from '../../config/ignoreRejection';
 
 export interface PanoGraphNode {
   panoId: string;
@@ -20,7 +20,7 @@ export interface PanoGraphNode {
   lng: number;
   /** Linked pano ids, in the order Street View reported them. */
   links: string[];
-  description?: string;
+  description?: string | undefined;
 }
 
 interface PanoGraphEdge {

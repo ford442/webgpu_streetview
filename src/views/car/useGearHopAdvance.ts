@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gearHopCount, GEAR_POSITIONS, setCabinLeverHandlers, setCarGear, type GearPosition, type WiperStalkPosition, cycleWiperStalk } from '../../car';
-import { gearChainedHopIntervalMs } from '../../car/VehicleDynamics';
-import { povStore } from '../../state/povStore';
+import { gearChainedHopIntervalMs } from '../../car/eager';
+import { povStore } from '../../state';
 
 export interface UseGearHopAdvanceOptions {
   advance: (direction: 'forward' | 'backward' | 'left' | 'right', currentHeading?: number) => void;

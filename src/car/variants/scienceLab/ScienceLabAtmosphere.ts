@@ -1,13 +1,8 @@
 import * as THREE from 'three';
 import type { VehicleType } from '../../VehicleManager';
 import { ScienceLabAudio } from './scienceLabAudio';
-import {
-    buildEquipmentRack,
-    buildInstrumentDisplays,
-    buildSampleStorage,
-    createScienceLabLighting,
-    type ScienceLabGeometryContext,
-} from './scienceLabGeometry';
+import { buildEquipmentRack, buildInstrumentDisplays, buildSampleStorage, createScienceLabLighting } from './scienceLabGeometry';
+import { type ScienceLabGeometryContext } from './scienceLabContext';
 import { createScienceLabMaterials, type ScienceLabMaterials } from './scienceLabMaterials';
 import { applyLabInstrumentOverlay } from './instrumentWidgets';
 

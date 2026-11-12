@@ -83,3 +83,9 @@ export function publishCabinAudioProbe(patch: Partial<CabinAudioProbe>): void {
     contexts: audioContextCount(),
   };
 }
+
+declare global {
+    interface Window {
+        __CABIN_AUDIO_PROBE__?: CabinAudioProbe;
+    }
+}

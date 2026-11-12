@@ -1,0 +1,125 @@
+{
+  "$comment": "Chunk contracts (#368). Read by scripts/check-architecture.mjs (source: a lazy entry must not be statically reachable from src/index.tsx; every import() of an app module needs a contract here), scripts/check-chunk-graph.mjs (build/chunk-graph.json, written by vite build: forbidden modules, singletons, entries in their own chunk) and scripts/check-bundle-budget.sh (gzip budgets). `name` is the chunk's logical name \u2014 its filename up to the content hash. `entry` is a repo-relative module id (an exact file, or a node_modules prefix). `forbidden` are regular expressions over module ids; the main chunk also forbids every `entry` below. Add a contract when you add an import().",
+  "main": {
+    "gzipBudgetBytes": 409600,
+    "cesiumMaxHits": 1,
+    "forbidden": [
+      "^node_modules/three/",
+      "^node_modules/onnxruntime",
+      "^node_modules/cesium/",
+      "^node_modules/@photostructure/tz-lookup/"
+    ]
+  },
+  "defaultChunkGzipBudgetBytes": 102400,
+  "chunks": [
+    {
+      "name": "carModeRuntime",
+      "entry": "src/car/carModeRuntime.ts",
+      "gzipBudgetBytes": 143360,
+      "note": "The car-mode runtime. three bump to a WebGPURenderer-capable release moved more of three's shared payload here (~108 KiB, was ~32 KiB). Do not statically import three/webgpu from it.",
+      "forbidden": [
+        "^node_modules/three/build/three\\.webgpu\\.js$",
+        "^node_modules/onnxruntime",
+        "^node_modules/cesium/"
+      ]
+    },
+    {
+      "name": "createCabinRenderer",
+      "entry": "src/car/interior/createCabinRenderer.ts",
+      "note": "The WebGPU cabin renderer; loads three/webgpu as its own further-lazy chunk.",
+      "forbidden": [
+        "^node_modules/three/build/three\\.webgpu\\.js$"
+      ]
+    },
+    {
+      "name": "cabinTslMaterials",
+      "entry": "src/car/interior/cabinTslMaterials.ts"
+    },
+    {
+      "name": "performance",
+      "entry": "src/car/interior/performance.ts"
+    },
+    {
+      "name": "CarModeView",
+      "entry": "src/views/CarModeView.tsx"
+    },
+    {
+      "name": "GlobeView",
+      "entry": "src/components/GlobeView.tsx",
+      "note": "Cesium is CDN-loaded (loadCesiumSDK), never bundled.",
+      "forbidden": [
+        "^node_modules/cesium/"
+      ]
+    },
+    {
+      "name": "CoverageMap",
+      "entry": "src/components/CoverageMap.tsx",
+      "forbidden": [
+        "^node_modules/cesium/"
+      ]
+    },
+    {
+      "name": "TripPlannerPanel",
+      "entry": "src/components/TripPlannerPanel.tsx"
+    },
+    {
+      "name": "WebGL2FallbackRenderer",
+      "entry": "src/renderer/webgl/WebGL2FallbackRenderer.ts"
+    },
+    {
+      "name": "SemanticController",
+      "entry": "src/renderer/semantic/SemanticController.ts",
+      "note": "Value imports of SemanticController stay out of main-bundle modules (#352). onnxruntime-web is imported inside the depth Worker only.",
+      "forbidden": [
+        "^node_modules/onnxruntime"
+      ]
+    },
+    {
+      "name": "three.webgpu",
+      "entry": "node_modules/three/build/three.webgpu.js",
+      "gzipBudgetBytes": 204800,
+      "note": "The node-material / TSL renderer, loaded by createCabinRenderer; inherently large. Skipped for ?cabin=webgl."
+    },
+    {
+      "name": "three.core",
+      "entry": "node_modules/three/build/three.core.js"
+    },
+    {
+      "name": "GLTFLoader",
+      "entry": "node_modules/three/examples/jsm/loaders/GLTFLoader.js"
+    },
+    {
+      "name": "tz",
+      "entry": "node_modules/@photostructure/tz-lookup/",
+      "note": "Offline lat/lng \u2192 IANA zone for the in-car clock."
+    }
+  ],
+  "singletons": [
+    {
+      "module": "src/renderer/cabinOverlayRegistry.ts",
+      "why": "The eager renderer reads the cabin overlay the lazy car chunk publishes."
+    },
+    {
+      "module": "src/renderer/roadFrameRegistry.ts",
+      "why": "The lazy car chunk reads the road HDR frame the eager renderer publishes (the windshield portal's only road input)."
+    },
+    {
+      "module": "src/car/runtime/frameCapture.ts",
+      "why": "Module-level capture state shared between the car runtime and its callers."
+    }
+  ],
+  "workers": [
+    {
+      "name": "depthWorker",
+      "gzipBudgetBytes": 16384,
+      "note": "A few KB: onnxruntime-web is imported from a pinned CDN URL inside the Worker at run time, never bundled (#320)."
+    }
+  ],
+  "forbiddenAssets": [
+    "*.onnx"
+  ],
+  "forbiddenBundleText": [
+    "ort-wasm-simd-threaded",
+    "OrtCreateSession"
+  ]
+}

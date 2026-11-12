@@ -10,7 +10,7 @@ pixels in WGSL, cabin geometry in Three.js.
 | Per-pixel effects | WGSL |
 | Car interior | Three.js |
 | Batch geodesy, cabin DSP, luma, depth calibration | **C++ → WASM** |
-| One-line maths: angles, a single haversine, the 64² dust-noise tile, particle seeds (#341) | TypeScript (`utils/navigation.ts`, `renderer/weatherNoiseTile.ts`, `renderer/weatherParticleSeeds.ts`) |
+| One-line maths: angles, a single haversine, the 64² dust-noise tile, particle seeds (#341) | TypeScript (`wasm/navigation.ts`, `renderer/weatherNoiseTile.ts`, `renderer/weatherParticleSeeds.ts`) |
 
 The committed binaries are the **only** implementation of these kernels — on
 the main thread, in the AudioWorklet and in Vitest. There is no JS twin:
@@ -382,7 +382,7 @@ binary to pin this.
 
 | Consumer | Export | What it does |
 |---|---|---|
-| `TourPanel` via `src/utils/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
+| `TourPanel` via `src/services/routing/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
 | cabin AudioWorklet (`cabinWorkletSource.ts`, car mode) | `dsp_create` / `dsp_set_params` / `dsp_set_ir` / `dsp_render` / `dsp_destroy` / `dsp_max_ir_taps` (from `streetview-dsp.simd.wasm`) | the whole car bed + radio, rendered on the audio thread — see §3a |
 | `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR (1024–2048 taps) posted to the worklet; roof openness raises its high-frequency transfer and lets the late tail escape |
 | `DepthController` (`renderer/depth/depthMath.ts`, `?depth`) | `depth_normalize` / `depth_percentiles` / `depth_near_depth` | turns each network inference into the `r16float` depth texture — see `docs/SCENE_DEPTH.md` |

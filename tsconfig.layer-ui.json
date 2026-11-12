@@ -1,0 +1,44 @@
+{
+  "extends": "./tsconfig.layer.json",
+  "$comment": "Layer 'ui' of scripts/architecture.json: hooks, components, views, app. May import only itself and the layers it references. exactOptionalPropertyTypes is not on yet for this layer (car/ and the UI layer still have ~65 optional-property sites to fix); turn it on here when they are clean.",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/layers/ui.tsbuildinfo"
+  },
+  "include": [
+    "src/hooks",
+    "src/components",
+    "src/views",
+    "src/app",
+    "src/types/**/*.d.ts",
+    "src/vite-env.d.ts",
+    "src/hooks/**/*.json",
+    "src/components/**/*.json",
+    "src/views/**/*.json",
+    "src/app/**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/**/__tests__/**",
+    "src/setupTests.ts",
+    "src/vitest-env.d.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.layer-foundation.json"
+    },
+    {
+      "path": "./tsconfig.layer-state.json"
+    },
+    {
+      "path": "./tsconfig.layer-engine.json"
+    },
+    {
+      "path": "./tsconfig.layer-car.json"
+    }
+  ]
+}

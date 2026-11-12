@@ -127,7 +127,7 @@ const POLYLINE = [
 ];
 
 // Destination-point cases. The first eight are exactly the ring
-// `buildSamplePoints()` in src/utils/historicalImagery.ts walks (10 m at
+// `buildSamplePoints()` in src/services/maps/historicalImagery.ts walks (10 m at
 // 45-degree steps); the rest cover a zero-distance no-op, a bearing that has
 // to wrap past the antimeridian, a southern-hemisphere start, a negative
 // bearing and a distance far larger than any the crawl uses.

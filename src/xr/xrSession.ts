@@ -23,9 +23,7 @@
  *
  * No WebGL path and no XR framework: WebXR + the WebXR/WebGPU binding only.
  */
-import { povStore } from '../state/povStore';
-import { cabinHeadStore } from '../state/cabinHeadStore';
-import { cabinHeadOffsetStore } from '../state/cabinHeadOffsetStore';
+import { povStore, cabinHeadStore, cabinHeadOffsetStore } from '../state';
 import { getCabinStereoRequest, publishCabinStereoRequest, type CabinEyeView } from '../renderer/cabinStereoRequest';
 import {
     getXrPresentedFrames,

@@ -6,7 +6,7 @@ import {
     shouldRecordDirectorKeyframe,
     type DirectorSnapshot,
     type TourDirectorKeyframe,
-} from '../utils/tourDirector';
+} from './tourDirector';
 
 export interface TourWaypoint {
     id: string;

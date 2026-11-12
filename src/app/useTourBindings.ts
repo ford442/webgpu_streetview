@@ -1,4 +1,4 @@
-import { povStore } from '../state/povStore';
+import { povStore } from '../state';
 import { useCallback, useMemo } from 'react';
 import { useTours, type CurrentPOV, type DirectorSnapshot, type Tour, type TourWaypoint } from '../hooks/useTours';
 import type { UseRoutePrefetchResult } from '../hooks/useRoutePrefetch';
@@ -17,7 +17,7 @@ export interface UseTourBindingsParams {
   /** Optional director-track snapshot for session recording. */
   getDirectorSnapshot?: () => DirectorSnapshot | null;
   /** Apply director keyframe during tour playback. */
-  applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
+  applyDirectorKeyframe?: (frame: import('../hooks/tourDirector').TourDirectorKeyframe) => void;
 }
 
 /** Props bag consumed by TourPanel (minus isOpen/onClose owned by panels). */
@@ -61,7 +61,7 @@ export interface TourPanelBindings {
   onDeleteRouteGraph: (routeId: string) => void;
   getRouteGraph: (routeId: string) => Promise<RouteGraphNode[]>;
   panoCacheFetch: (lat: number, lng: number) => Promise<unknown>;
-  applyDirectorKeyframe?: (frame: import('../utils/tourDirector').TourDirectorKeyframe) => void;
+  applyDirectorKeyframe?: (frame: import('../hooks/tourDirector').TourDirectorKeyframe) => void;
 }
 
 export interface UseTourBindingsResult {

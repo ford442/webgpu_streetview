@@ -9,7 +9,8 @@ Everything here is run through `npm run <name>` (see `package.json`) unless note
 | --- | --- |
 | `verify.mjs` | `npm run verify` — the one gate CI, deploy and the pre-push check run: install, typecheck, ratchets, lint, docs, WASM ABI, knip, secrets, tests, WGSL, C++ goldens. `--fast`, `--bail`, `--no-cpp`. |
 | `check-install.mjs` | node_modules matches `package.json` and Node meets `engines`. |
-| `check-strict-optional.mjs` | the `exactOptionalPropertyTypes` ratchet (`tsconfig.strict-optional.json`). |
+| `check-architecture.mjs` | the layering gate: `architecture.json` whole, dependency-cruiser (cycles, upward imports, orphans), lazy chunk entries not statically reachable from `src/index.tsx`, every `import()` has a contract in `chunks.json`. |
+| `check-chunk-graph.mjs` | `build/chunk-graph.json` (written by `vite build`) against `chunks.json`: forbidden modules per chunk, singletons, lazy entries. Run by `verify-build.sh`. |
 | `check-test-env.mjs` | DOM specs carry a jsdom pragma. |
 | `check-deploy-secrets.sh`, `check-build-env-leak.mjs`, `public-env-keys.json` | no committed secrets; only listed env keys reach the bundle. |
 | `validate-shaders.mjs` | WGSL through `naga`. |

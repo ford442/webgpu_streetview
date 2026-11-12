@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { resolvePanoLocation } from '../utils/panoLocation';
+import { resolvePanoLocation } from '../services/maps/panoLocation';
 import { useHistoricalImagery } from './useHistoricalImagery';
-import type { HistoricalPanoEntry } from '../utils/historicalImagery';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import type { HistoricalPanoEntry } from '../services/maps/historicalImagery';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 export interface UseHistoricalTimelineResult {
   entries: HistoricalPanoEntry[];

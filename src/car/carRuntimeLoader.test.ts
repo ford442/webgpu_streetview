@@ -13,7 +13,7 @@ function mockRuntime() {
 async function freshLoader() {
   vi.resetModules();
   mockRuntime();
-  const [loader, errors] = await Promise.all([import('./carRuntimeLoader'), import('../app/unhandledRejection')]);
+  const [loader, errors] = await Promise.all([import('./carRuntimeLoader'), import('../debug/unhandledRejection')]);
   return { ...loader, getUnhandledErrors: errors.getUnhandledErrors };
 }
 

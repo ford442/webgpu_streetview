@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import type { CabinOverlayLayout, CabinOverlaySource } from '../../renderer/cabinComposite';
+import type { CabinOverlayLayout, CabinOverlaySource } from '../../renderer';
 import { isWebGPUCabinRenderer, type CabinRenderer } from './createCabinRenderer';
-import { estimateTextureBytes } from '../../renderer/gpuTextureBytes';
-import { getMemoryProfiler } from '../../utils/memoryProfiler';
+import { estimateTextureBytes } from '../../renderer';
+import { getMemoryProfiler } from '../../debug/memoryProfiler';
 
 /**
  * The cabin's half of the one-frame compositor.

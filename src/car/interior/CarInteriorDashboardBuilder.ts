@@ -5,7 +5,7 @@ import { type GeometryFactory } from './GeometryFactory';
 import { type LODManager } from './LODManager';
 import { CLUSTER_WELL_EMISSIVE, DISPLAY_HOUSING_EMISSIVE } from './cabinLightingRamps';
 import { createAccentMaterial, registerGlowMaterial } from './MaterialFactory';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 import { createCabinGlowSprite, type CabinGlowSprite } from './CabinEmitterGlow';
 
 /** Main dash block extents, car-body space (metres). */

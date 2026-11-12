@@ -8,8 +8,7 @@ import {
   type CabinView,
   type HostBroadcastExtras,
 } from './sharedSessionSync';
-import { povStore } from '../state/povStore';
-import { tripStore } from '../state/tripStore';
+import { povStore, tripStore } from '../state';
 import { decodeRouteStops, encodeRouteStops } from '../services/routing/routeLink';
 import { clearTrip, planTrip } from '../services/routing/tripController';
 import { createConfiguredRouteProvider } from '../services/routing/routingConfig';
@@ -20,9 +19,9 @@ function currentTripRoute(): string | undefined {
   const { route, stops } = tripStore.get();
   return route && stops.length >= 2 ? encodeRouteStops(stops) : undefined;
 }
-import { parseWeatherPreset } from '../utils/weatherPresetSync';
-import type { TimeOfDay } from '../hooks/useEnvironmentSettings';
-import type { VehicleType } from '../car/VehicleManager';
+import { parseWeatherPreset } from './weatherPresetSync';
+import type { TimeOfDay } from '../config/timeOfDay';
+import type { VehicleType } from '../car/eager';
 
 export interface UseSharedSessionSyncParams {
   sharedSession: UseSharedSessionResult;

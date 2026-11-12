@@ -4,7 +4,7 @@
  * `SemanticController`; an external store, so a 5 Hz update re-renders only
  * subscribers.
  */
-import { createStore, useStore } from '../../state/createStore';
+import { createStore, useStore } from '../../state';
 import type { SemanticClassName } from './semanticClasses';
 
 type SceneSemanticState =
@@ -84,4 +84,10 @@ export function resetSceneSemanticStats(): void {
 
 export function useSceneSemanticStats<T>(selector: (s: SceneSemanticStats) => T): T {
     return useStore(store, selector);
+}
+
+declare global {
+    interface Window {
+        __SCENE_SEMANTIC__?: SceneSemanticStats;
+    }
 }

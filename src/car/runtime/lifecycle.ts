@@ -1,14 +1,14 @@
 import { CarInterior } from '../CarInterior';
-import { panoramaPovFromCabin } from '../carSpatialModel';
+import { panoramaPovFromCabin } from '../../config/carSpatialModel';
 import { RearviewMirror } from '../RearviewMirror';
 import { SelectivePostProcessing } from '../SelectivePostProcessing';
 import { ConvertibleMode, LimoAtmosphere, ScienceLabAtmosphere } from '../variants';
 import { DEFAULT_VEHICLE, vehicleManager, type VehicleType } from '../VehicleManager';
 import { applyGearFromMesh, applyWiperStalk } from './cabinControls';
 import { notifyCabinFrameRendered } from './frameCapture';
-import { publishCabinOverlaySource } from '../../renderer/cabinOverlayRegistry';
+import { publishCabinOverlaySource } from '../../renderer';
 import { getState, setState, type CarModeState } from './state';
-import { cabinHeadOffsetStore } from '../../state/cabinHeadOffsetStore';
+import { cabinHeadOffsetStore } from '../../state';
 import type { CabinRendererHandle } from '../interior/createCabinRenderer';
 
 /**

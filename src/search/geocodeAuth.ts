@@ -4,7 +4,7 @@
  * does not authorize the browser Maps JS key (HTTP referrers).
  */
 
-import { createStore, useStore } from '../state/createStore';
+import { createStore, useStore } from '../state';
 
 export const GEOCODE_DENIED_STATUS = 'REQUEST_DENIED';
 

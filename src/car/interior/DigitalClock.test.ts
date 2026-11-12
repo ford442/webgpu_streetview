@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import type { PanoLocationInfo } from '../../utils/panoLocation';
-import { resolveTimeZone } from '../../utils/panoTimeZone';
+import type { PanoLocationInfo } from '../../services/maps/panoLocation';
+import { resolveTimeZone } from '../../services/geo/panoTimeZone';
 import { DigitalClock } from './DigitalClock';
 
 // Real lookup by default; individual tests swap in deferred promises.
-vi.mock('../../utils/panoTimeZone', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../utils/panoTimeZone')>();
+vi.mock('../../services/geo/panoTimeZone', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/geo/panoTimeZone')>();
   return { ...actual, resolveTimeZone: vi.fn(actual.resolveTimeZone) };
 });
 

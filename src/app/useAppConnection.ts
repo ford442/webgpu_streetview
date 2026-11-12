@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { RendererBackendType } from '../renderer/RendererBackend';
+import type { RendererBackendType } from '../renderer';
 import type { MapsLoadStatus } from '../components/StreetView';
 import { migrateLocalStorageToIndexedDB } from '../offline/offlinePersistence';
 

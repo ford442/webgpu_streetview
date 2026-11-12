@@ -6,7 +6,7 @@ import {
     fingerprintScratchContext,
     getCanvasFingerprint,
     isFingerprintable,
-} from '../../utils/panoramaStability';
+} from '../../services/maps/panoramaStability';
 
 /**
  * Fingerprint a canvas without stalling on it: `createImageBitmap` snapshots

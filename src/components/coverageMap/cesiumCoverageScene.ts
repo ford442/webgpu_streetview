@@ -12,7 +12,7 @@
  */
 
 import type { CesiumEntity, CesiumViewer } from '../../types/cesium';
-import { resolveMiniMapLayerOptions } from '../../utils/cesiumImagery';
+import { resolveMiniMapLayerOptions } from '../../services/maps/cesiumImagery';
 import { bindGlobeCanvasInputGuard, pickGlobeLatLng } from '../globe/globeInput';
 import type { PanoGraph } from '../../services/maps/panoCoverageGraph';
 import { POI_COVERAGE_COLORS, type PoiCoverage } from '../../search/poiCoverage';

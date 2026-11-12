@@ -1,19 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { createStreetViewRenderer } from '../renderer/createStreetViewRenderer';
-import { type RendererBackendType, type StreetViewRenderer } from '../renderer/RendererBackend';
+import { createStreetViewRenderer, type StreetViewRenderer, type RendererBackendType, NoiseTileFeeder, getNoiseTilePreference, ParticleSeedFeeder, getParticleSeedPreference, prefersReducedMotion, isCinematicQuality, fetchLookLutVolume, FrameDriver, DeviceLossRecovery } from '../renderer';
 import {
     useWeatherSettings,
     useLightingSettings,
     useGradeSettings,
     useStreetView,
 } from '../hooks';
-import { NoiseTileFeeder, getNoiseTilePreference } from '../renderer/weatherNoiseTile';
-import { ParticleSeedFeeder, getParticleSeedPreference } from '../renderer/weatherParticleSeeds';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
-import { prefersReducedMotion, isCinematicQuality } from '../renderer/cinematicCameraFx';
-import { fetchLookLutVolume } from '../renderer/lut';
-import { FrameDriver } from '../renderer/frameDriver';
-import { DeviceLossRecovery } from '../renderer/deviceLossRecovery';
 import { subscribeDisplayChanges } from '../runtime/contexts';
 import {
     DEFAULT_MAX_TEXTURE_DIMENSION,

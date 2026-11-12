@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StreetViewProvider, useStreetView } from '../useStreetView';
-import { STABILITY_MAX_WAIT_MS } from '../../utils/panoramaStability';
+import { STABILITY_MAX_WAIT_MS } from '../../services/maps/panoramaStability';
 
 const forwardLink = { pano: 'next-pano', heading: 34, description: 'forward' };
 

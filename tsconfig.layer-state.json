@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.layer.json",
+  "$comment": "Layer 'state' of scripts/architecture.json: state, debug. May import only itself and the layers it references.",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/layers/state.tsbuildinfo",
+    "exactOptionalPropertyTypes": true
+  },
+  "include": [
+    "src/state",
+    "src/debug",
+    "src/types/**/*.d.ts",
+    "src/vite-env.d.ts",
+    "src/state/**/*.json",
+    "src/debug/**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/**/__tests__/**",
+    "src/setupTests.ts",
+    "src/vitest-env.d.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.layer-foundation.json"
+    }
+  ]
+}

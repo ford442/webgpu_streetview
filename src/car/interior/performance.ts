@@ -1,14 +1,8 @@
 /** @fileoverview Performance optimization utilities including LOD, texture optimization, and frustum culling */
 import * as THREE from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { releaseGlContext } from '../../utils/releaseGlContext';
-
-/**
- * Which Three.js backend the cabin is running on. Defined here rather than in
- * `car/interior/createCabinRenderer.ts` because that module already depends on
- * this one (`GPUPerformanceProfile`) — one definition, one direction.
- */
-export type CabinRendererBackend = 'webgl' | 'webgpu';
+import { releaseGlContext } from '../../renderer';
+import type { CabinRendererBackend } from '../../debug/probeTypes';
 
 /**
  * Either cabin backend. The `three/webgpu` import is type-only and erases, so

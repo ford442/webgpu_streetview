@@ -12,7 +12,7 @@
  * loaded only once and the same instance is shared across all consumers.
  *
  * @remarks `useWasmModule` backs the tour route-length labels in
- * src/components/TourPanel.tsx (via src/utils/routeStats.ts).
+ * src/components/TourPanel.tsx (via src/services/routing/routeStats.ts).
  */
 
 import { useState, useEffect } from 'react';

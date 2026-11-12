@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./node_modules/.tmp/layers/dts"
+  },
+  "$comment": "Shared by the per-layer projects (tsconfig.layer-*.json, one per layer of scripts/architecture.json). All of them emit declarations into the same outDir with rootDir src, so a declaration's relative imports resolve across projects. Only declarations are emitted; nothing is shipped from here."
+}

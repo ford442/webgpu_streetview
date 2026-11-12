@@ -16,7 +16,7 @@
  * the headset says while the rig never moves.
  */
 import * as THREE from 'three';
-import { clampHeadOffset, clampHeadPitch, clampHeadYaw, type HeadOffset } from '../car/carSpatialModel';
+import { clampHeadOffset, clampHeadPitch, clampHeadYaw, type HeadOffset } from '../config/carSpatialModel';
 import { mulMat3, rotY, type Mat3, type OutputFrustum } from '../renderer/reproject/reprojectMath';
 
 export interface XrVec3 { readonly x: number; readonly y: number; readonly z: number }

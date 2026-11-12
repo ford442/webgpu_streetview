@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
 import { resolveSteeringWheel } from '../vehicleLayout';
-import type { CarInteriorMaterials } from './CarInteriorBuilder';
+import type { CarInteriorMaterials } from './CarInteriorMaterials';
 
 export interface CarInteriorSteeringResult {
     steeringWheelGroup: THREE.Group;

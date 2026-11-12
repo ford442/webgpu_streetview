@@ -27,7 +27,7 @@ Tracking: #221 (stills hop, shipped) → year-strip / GPU wipe product issue.
 
 - Street View Service `getPanorama` only. No Static API, no Street View Publish,
   no tile/Cache Storage/IndexedDB of Google imagery; `swPolicy` is unchanged.
-- `MAX_PANORAMA_CALLS_PER_CRAWL = 12` (`src/utils/historicalImagery.ts`) caps
+- `MAX_PANORAMA_CALLS_PER_CRAWL = 12` (`src/services/maps/historicalImagery.ts`) caps
   center + ring; `buildSamplePoints` clamps `sampleCount` to it. Default crawl is
   **9 calls** (center + 8 points at 10 m).
 - A crawl runs at most once per settled position (400 ms debounce in

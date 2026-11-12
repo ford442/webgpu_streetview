@@ -45,3 +45,12 @@ export {
     setCarWeather,
     disposeCarMode,
 } from './carModeRuntime';
+
+// Lazy-side exports (#368): modules only the lazy car chunk reaches. Never import from main-bundle code.
+export { CabinAudio } from './audio/CabinAudio';
+export { DashboardUI } from './DashboardUI';
+export { createCabinPovSync } from './input/cabinPovSync';
+export { createCabinRendererAsync, preloadWebGPUCabinRenderer, resolveCabinRendererPreference } from './interior/createCabinRenderer';
+export { detectGPUProfile } from './interior/performance';
+export { RearViewFeed } from './rearViewFeed';
+export { applyVehicleTelemetry } from './telemetryFeed';

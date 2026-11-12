@@ -3,7 +3,7 @@ import {
   scraperHealthUserMessage,
   WEBGPU_FAILURE_USER_MESSAGE,
   type ScraperHealth,
-} from '../utils/scraperHealth';
+} from '../debug/scraperHealth';
 import type { WebGpuConnectionStatus } from './useAppConnection';
 
 export interface MapsLoadingOverlayConfig {

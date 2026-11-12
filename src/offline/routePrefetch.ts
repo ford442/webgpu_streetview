@@ -4,7 +4,8 @@
  * Does NOT download Google tile imagery (Maps ToS).
  */
 
-import { offlineSaveRouteGraph, type RouteGraphNode } from './offlineStore';
+import { offlineSaveRouteGraph } from './offlineStore';
+import { type RouteGraphNode } from '../wasm/graph';
 import { getMapsCallBudget } from '../services/maps/callBudget';
 
 export interface RoutePrefetchWaypoint {
@@ -22,7 +23,7 @@ export interface RoutePrefetchProgress {
   routeId: string;
   totalSteps: number;
   completedSteps: number;
-  currentPanoId?: string;
+  currentPanoId?: string | undefined;
 }
 
 export interface PanoLinkSnapshot {

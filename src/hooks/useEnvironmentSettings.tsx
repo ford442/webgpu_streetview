@@ -1,17 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import { createStore, useStore, type Store } from '../state/createStore';
-import { withCarRuntime } from '../car/carRuntimeLoader';
+import { createStore, useStore, type Store } from '../state';
+import { withCarRuntime } from '../car/eager';
 import {
   getLookPack,
   lookPackToEnvPatch,
   type LookEnvPatch,
   type LookId,
 } from '../config/lookPacks';
-import { readBootLook } from '../utils/lookLink';
-import { nextAutoExposureEnabled, type AutoExposureEvent } from '../renderer/autoExposure';
-
-// Types
-export type TimeOfDay = 'day' | 'sunrise' | 'sunset' | 'night';
+import { readBootLook } from '../config/lookLink';
+import { nextAutoExposureEnabled, type AutoExposureEvent } from '../renderer';
+import type { TimeOfDay } from '../config/timeOfDay';
 
 export interface EnvironmentSettingsState {
   // Weather settings

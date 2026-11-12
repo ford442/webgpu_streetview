@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { CarInteriorAnimator } from '../interior/CarInteriorAnimator';
 import { applyHeadPose, createCabinRig } from '../interior/cabinRig';
-import { panoramaPovFromCabin } from '../carSpatialModel';
-import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
+import { panoramaPovFromCabin } from '../../config/carSpatialModel';
+import { panoramaMatchedVerticalFov } from '../../config/streetViewFov';
 import { createEyeCameras, updateEyeCameras } from '../interior/cabinStereo';
 import { eyeFromHead, headOffsetFromPosition, headPoseFromOrientation } from '../../xr/xrPose';
 

@@ -1,12 +1,8 @@
 import * as THREE from 'three';
 import type { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu';
-import type {
-    CabinCapableRenderer,
-    CabinRendererBackend,
-    GPUPerformanceProfile,
-} from './performance';
-import { isWebGpuProbeOk } from '../../renderer/webgpuBootProbe';
-import { getAdapterPowerPreferencePolicy } from '../../renderer/RendererBackend';
+import type { CabinCapableRenderer, GPUPerformanceProfile } from './performance';
+import type { CabinRendererBackend } from '../../debug/probeTypes';
+import { isWebGpuProbeOk, getAdapterPowerPreferencePolicy } from '../../renderer';
 import { currentSearch, readFlag } from '../../config/flags';
 import { CABIN_DISPLAY_P3, ensureDisplayP3Registered } from './colorSpaces';
 import { setCabinMaterialBackend } from './cabinMaterialBackend';

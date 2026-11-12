@@ -4,9 +4,8 @@
  * waypoints as trip stops (so a recorded tour can be driven by road).
  */
 
-import type { TripStop } from '../../state/tripStore';
-import type { LatLng } from './RouteProvider';
-import type { ActiveRoute } from './routeGeometry';
+import type { TripStop } from '../../state';
+import type { LatLng, ActiveRoute } from '../../types/route';
 import { OSRM_MAX_WAYPOINTS } from './osrmProvider';
 import { labelStops } from './routeLink';
 

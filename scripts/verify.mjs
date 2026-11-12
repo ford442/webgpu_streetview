@@ -26,8 +26,8 @@ const haveCpp = has('cmake') && (has('g++') || has('clang++') || has('c++'));
 /** @type {Array<{ name: string, cmd: string, args: string[], skip?: string | null, requires?: string | null }>} */
 const steps = [
   { name: 'install is complete', cmd: 'node', args: ['scripts/check-install.mjs'] },
-  { name: 'typecheck (tsc -b)', cmd: 'npx', args: ['--no-install', 'tsc', '-b'] },
-  { name: 'exactOptionalPropertyTypes ratchet (renderer/, state/)', cmd: 'node', args: ['scripts/check-strict-optional.mjs'] },
+  { name: 'architecture (layers, cycles, lazy chunk entries)', cmd: 'node', args: ['scripts/check-architecture.mjs'] },
+  { name: 'typecheck (tsc -b: one project per layer, then app, tests, e2e, scripts)', cmd: 'npx', args: ['--no-install', 'tsc', '-b'] },
   {
     name: 'lint',
     cmd: 'npx',

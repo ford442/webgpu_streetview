@@ -5,16 +5,8 @@
 // Core context hooks
 export { useStreetView, StreetViewProvider } from './useStreetView';
 export { useViewMode, ViewModeProvider,   } from './useViewMode';
-export {
-  useEnvironmentSettings,
-  useEnvironmentGetter,
-  useEnvironmentSelector,
-  useWeatherSettings,
-  useLightingSettings,
-  useGradeSettings,
-  EnvironmentSettingsProvider,
-  type TimeOfDay,
-} from './useEnvironmentSettings';
+export { useEnvironmentSettings, useEnvironmentGetter, useEnvironmentSelector, useWeatherSettings, useLightingSettings, useGradeSettings, EnvironmentSettingsProvider } from './useEnvironmentSettings';
+export { type TimeOfDay } from '../config/timeOfDay';
 
 export { usePlaceSearch,  } from './usePlaceSearch';
 export { useVehicleSettings } from './useVehicleSettings';

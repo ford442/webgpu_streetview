@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { cancelFrame } from '../../xr/frameClock';
-import { getMemoryProfiler, MemoryProfiler } from '../../utils/memoryProfiler';
+import { getMemoryProfiler, MemoryProfiler } from '../../debug/memoryProfiler';
 import { type GeometryFactory } from './GeometryFactory';
 import { type LODManager } from './LODManager';
 import type { PanoEnvironment } from './PanoEnvironment';

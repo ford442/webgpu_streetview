@@ -12,7 +12,7 @@ import { getMapsCallBudget } from '../services/maps/callBudget';
 import { nearestGraphNode, type PanoGraphNode } from '../services/maps/panoCoverageGraph';
 import { PLACE_SEARCH_DEFAULTS } from './placeSearchBudget';
 import type { NearbyPoi } from './poiModel';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 const POI_COVERAGE_RADIUS_M = 50;
 

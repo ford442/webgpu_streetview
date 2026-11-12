@@ -7,41 +7,15 @@
  * All polyline geometry goes through the WASM kernels (`polyline_resample`,
  * `polyline_project`, `batch_haversine`, `initial_bearing`) — never a
  * TypeScript re-derivation. A single point-to-point distance is the f64
- * `haversineMeters` (utils/navigation.ts): one-line maths stays in TS (#341).
+ * `haversineMeters` (wasm/navigation.ts): one-line maths stays in TS (#341).
  */
 
 import { requireWasm, type StreetViewWasmAPI } from '../../wasm';
-import { haversineMeters } from '../../utils/navigation';
-import type { LatLng, Route, RouteStep } from './RouteProvider';
+import { haversineMeters } from '../../wasm/navigation';
+import type { ActiveRoute, LatLng, Route, RoutedStep } from '../../types/route';
 
 /** Resample spacing; Street View panoramas sit ~5–15 m apart on a road. */
 export const ROUTE_RESAMPLE_STEP_M = 10;
-
-export interface RoutedStep extends RouteStep {
-  /** Where the maneuver sits along the route, in metres from the origin. */
-  alongM: number;
-}
-
-export interface ActiveRoute {
-  /** Stable for the same stops — keys prefetch graphs and shared sessions. */
-  id: string;
-  providerId: string;
-  /** The stops the route was planned through (origin first). */
-  stops: LatLng[];
-  polyline: LatLng[];
-  /** `polyline` as lat, lng, lat, lng, … for the kernels. */
-  flat: Float64Array;
-  /** Along-track distance of each polyline vertex. */
-  cumulativeM: Float64Array;
-  /** Geometric length (what along-track distances are measured against). */
-  lengthM: number;
-  /** Evenly spaced points every {@link ROUTE_RESAMPLE_STEP_M} metres. */
-  resampled: Float64Array;
-  /** Provider's road distance and driving duration (for the ETA). */
-  distanceM: number;
-  durationS: number;
-  steps: RoutedStep[];
-}
 
 export interface RouteProjection {
   alongM: number;

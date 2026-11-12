@@ -30,7 +30,7 @@ Host browser                         Guest browser
 | **Cost** | Free public STUN | You operate or rent a TURN server |
 | **When needed** | Most home NATs | Symmetric NAT, corporate firewalls on **both** ends |
 
-The app resolves ICE servers in `src/utils/iceServers.ts`:
+The app resolves ICE servers in `src/services/signaling/iceServers.ts`:
 
 1. Google STUN (always).
 2. Optional TURN when `REACT_APP_TURN_URL` is set at build time, **or** `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`.
@@ -100,14 +100,14 @@ Snapshots carry JPEG EXIF (GPS + UserComment). Nobody in this path calls the Str
 | `src/hooks/useSharedSession.ts` | WebRTC + room lifecycle |
 | `src/app/useSharedSessionSync.ts` | 10 Hz host broadcast + guest apply |
 | `src/app/sharedSessionSync.ts` | Pure payload builders |
-| `src/utils/iceServers.ts` | STUN + optional TURN resolution |
-| `src/utils/weatherPresetSync.ts` | Weather preset serialize/parse |
-| `src/utils/studioLink.ts` | Share URLs: `?look=&year=&vehicle=` plus location |
-| `src/utils/cinemaSidecar.ts` | WebM metadata JSON |
+| `src/services/signaling/iceServers.ts` | STUN + optional TURN resolution |
+| `src/app/weatherPresetSync.ts` | Weather preset serialize/parse |
+| `src/car/studioLink.ts` | Share URLs: `?look=&year=&vehicle=` plus location |
+| `src/services/capture/cinemaSidecar.ts` | WebM metadata JSON |
 | `src/renderer/cabinComposite.ts` | Cabin-over-road pass + `needsCabinOverlayLatch` |
 | `src/car/interior/cabinFrameTarget.ts` | Cabin → `GPUTexture` redirect (three `setOutputRenderTarget`) |
 | `src/car/runtime/frameCapture.ts` | Cabin canvas + post-render tap for the 2D-latch fallback |
-| `src/utils/exifGps.ts` | JPEG GPS + UserComment film-set fields |
+| `src/services/capture/exifGps.ts` | JPEG GPS + UserComment film-set fields |
 
 ## Audio
 

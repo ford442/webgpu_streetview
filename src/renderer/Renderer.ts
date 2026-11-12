@@ -1,4 +1,4 @@
-import { type RenderMode } from './types';
+import { type RenderMode, type WeatherPostProcessMode } from './types';
 import { TransitionManager } from './TransitionManager';
 import { WeatherPostProcessor } from './WeatherPostProcessor';
 import { ComputeWeatherPostProcessor } from './ComputeWeatherPostProcessor';
@@ -11,19 +11,12 @@ import {
     type CanvasOutputPolicy,
 } from './deviceInit';
 import { GpuPassTimer } from './gpuPassTimer';
-import { resetGpuPassTimings } from './gpuPassTimingStore';
+import { resetGpuPassTimings, areGpuPassTimingsWanted } from './gpuPassTimingStore';
 import { clampSamplerAnisotropy, getSamplerAnisotropyForQuality } from './samplerAnisotropy';
 import type { QualityLevel } from '../config/visualPresets';
 import { HoldTransitionController } from './holdTransition';
 import { TextureLifecycle } from './textureLifecycle';
-import {
-    type PanoramaStatsOptions,
-    type RendererDebugOptions,
-    type DisplayOutputChangeResult,
-    type RendererInitOptions,
-    type StreetViewRenderer,
-    type WeatherPostProcessMode,
-} from './RendererBackend';
+import { type PanoramaStatsOptions, type RendererDebugOptions, type DisplayOutputChangeResult, type RendererInitOptions, type StreetViewRenderer } from './RendererBackend';
 import {
     bootDevice,
     publishBootSuccess,
@@ -50,8 +43,7 @@ import {
     createWeatherFramePass,
 } from './framePasses/builtinPasses';
 import { PresentFallbackPostProcessor } from './PresentFallbackPostProcessor';
-import { reportPassFailed, reportPassReady, resetPassStatuses } from './passStatus';
-import { areGpuPassTimingsWanted } from './gpuPassTimingStore';
+import { reportPassFailed, reportPassReady, resetPassStatuses, isPassFailed } from './passStatus';
 import { GpuChores } from './gpuChores/GpuChores';
 import { histDownsampleSize } from './gpuChores/lumaMath';
 import {
@@ -77,11 +69,9 @@ import type { WipeDirection } from './historicalWipe';
 import { releaseSceneDepthFallback, resolveSceneDepthBindGroup, type FrameAux } from './depth/sceneDepthBinding';
 import { DepthController } from './depth/DepthController';
 import type { SceneDepthOptions } from './depth/sceneDepthOptions';
-import type { SemanticSkyEdge } from './semantic/SemanticController';
+import type { SemanticSkyEdge, SceneSemanticOptions } from './semantic/sceneSemanticOptions';
 import { SemanticLayer } from './semantic/SemanticLayer';
-import type { SceneSemanticOptions } from './semantic/sceneSemanticOptions';
 import { releaseSceneSemanticFallback } from './semantic/sceneSemanticBinding';
-import { isPassFailed } from './passStatus';
 import { UpscalePass } from './upscale/UpscalePass';
 import {
     getRenderScaleRequest,
@@ -91,7 +81,7 @@ import {
 } from './renderScale';
 import { EXTENDED_TONEMAP_HEADROOM } from './shaderFeatureVariants';
 import { readFlag } from '../config/flags';
-import { ReprojectPass } from './reproject/ReprojectPass';
+import { ReprojectPass, REPROJECT_UNIFORM_SLOTS } from './reproject/ReprojectPass';
 import { publishCabinStereoRequest } from './cabinStereoRequest';
 import {
     DEFAULT_CONVERGENCE_METRES,
@@ -105,7 +95,6 @@ import {
     type LatchDelta,
     type PovSample,
 } from './reproject/reprojectMath';
-import { REPROJECT_UNIFORM_SLOTS } from './reproject/ReprojectPass';
 import {
     getXrPresentFrame,
     isXrPresenting,
@@ -122,7 +111,7 @@ import {
     wantsTail,
     type PresentTailOptions,
 } from './reproject/presentTail';
-import { ignoreRejection } from '../utils/ignoreRejection';
+import { ignoreRejection } from '../config/ignoreRejection';
 
 const NO_LATCH: LatchDelta = { yawDeg: 0, pitchDeg: 0, magnitudeDeg: 0 };
 
@@ -1106,7 +1095,7 @@ export class Renderer implements StreetViewRenderer {
     /**
      * True when the road frame this renderer presents already contains the
      * cabin. Cinema and snapshots read it to skip the 2D overlay latch — see
-     * `utils/canvasRecorder.ts` and `car/runtime/frameCapture.ts`. False in
+     * `services/capture/canvasRecorder.ts` and `car/runtime/frameCapture.ts`. False in
      * free-look, on the `?cabin=webgl` hatch, and any frame the cabin has not
      * produced a texture for, which are exactly the cases the latch still covers.
      */

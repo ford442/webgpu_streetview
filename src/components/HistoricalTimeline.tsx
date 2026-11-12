@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { formatImageDate, yearStripLabels, type HistoricalPanoEntry } from '../utils/historicalImagery';
+import { formatImageDate, yearStripLabels, type HistoricalPanoEntry } from '../services/maps/historicalImagery';
 
 export interface HistoricalTimelineProps {
   isOpen: boolean;

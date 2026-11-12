@@ -43,8 +43,8 @@ const UNSAFE_BASELINE = [
     'src/trip/tripLibrary.ts',
     'src/trip/tripRecorder.ts',
     'src/trip/tripReplay.ts',
-    'src/utils/historicalImagery.ts',
-    'src/utils/memoryProfiler.ts',
+    'src/services/maps/historicalImagery.ts',
+    'src/debug/memoryProfiler.ts',
     'src/wasm/index.ts',
 ];
 
@@ -148,7 +148,7 @@ export default tseslint.config(
             '@typescript-eslint/no-unsafe-enum-comparison': 'off',
             'no-restricted-syntax': ['error', {
                 selector: "CallExpression[callee.property.name='catch'][arguments.0.type='ArrowFunctionExpression'][arguments.0.params.length=0][arguments.0.body.type='BlockStatement'][arguments.0.body.body.length=0]",
-                message: 'Use `.catch(ignoreRejection)` (utils/ignoreRejection.ts) for an intentionally ignored rejection.',
+                message: 'Use `.catch(ignoreRejection)` (config/ignoreRejection.ts) for an intentionally ignored rejection.',
             }, {
                 // #361: one AudioContext for the app, with named buses.
                 selector: "NewExpression[callee.name=/^(webkit)?AudioContext$/], NewExpression[callee.property.name=/^(webkit)?AudioContext$/]",
@@ -204,7 +204,7 @@ export default tseslint.config(
 
     // Node-side tooling: configs, scripts, Playwright (e2e specs also run page.evaluate code).
     {
-        files: ['*.config.{ts,js,mjs}', 'scripts/**/*.{mjs,js,ts}', 'e2e/**/*.ts'],
+        files: ['*.config.{ts,js,mjs}', '.dependency-cruiser.mjs', 'scripts/**/*.{mjs,js,ts}', 'e2e/**/*.ts'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',

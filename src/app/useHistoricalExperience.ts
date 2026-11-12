@@ -1,8 +1,8 @@
 import { useHistoricalTimeline } from '../hooks/useHistoricalTimeline';
 import { useHistoricalCompare } from '../hooks/useHistoricalCompare';
 import type { HistoricalComparison } from '../hooks/useHistoricalCompare';
-import type { HistoricalPanoEntry } from '../utils/historicalImagery';
-import type { StreetViewRenderer } from '../renderer/RendererBackend';
+import type { HistoricalPanoEntry } from '../services/maps/historicalImagery';
+import type { StreetViewRenderer } from '../renderer';
 import { resolveHistoricalAfterLabel } from './historicalExperience';
 
 export interface UseHistoricalExperienceParams {

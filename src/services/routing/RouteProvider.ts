@@ -11,51 +11,11 @@
  * a kind the UI can explain honestly (unconfigured, unreachable, no route, …).
  */
 
-export interface LatLng {
-  lat: number;
-  lng: number;
-}
-
+import type { LatLng, Route } from '../../types/route';
 export interface RouteRequest {
   /** Origin, optional via-points, destination — at least two. */
   waypoints: LatLng[];
   profile: 'driving';
-}
-
-export type RouteManeuver =
-  | 'depart'
-  | 'continue'
-  | 'turn-left'
-  | 'turn-right'
-  | 'slight-left'
-  | 'slight-right'
-  | 'sharp-left'
-  | 'sharp-right'
-  | 'uturn'
-  | 'merge'
-  | 'fork-left'
-  | 'fork-right'
-  | 'roundabout'
-  | 'arrive';
-
-export interface RouteStep {
-  maneuver: RouteManeuver;
-  /** Road the step travels on ('' when the provider has no name for it). */
-  name: string;
-  /** Where the maneuver happens. */
-  location: LatLng;
-  /** Length of the road travelled *after* the maneuver, in metres. */
-  distanceM: number;
-  /** Roundabout exit number, when the provider reports one. */
-  exit?: number;
-}
-
-export interface Route {
-  /** Full-resolution road geometry, origin to destination. */
-  polyline: LatLng[];
-  distanceM: number;
-  durationS: number;
-  steps: RouteStep[];
 }
 
 export interface RouteProvider {

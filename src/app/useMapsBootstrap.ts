@@ -11,8 +11,8 @@ import {
   createInitialScraperHealth,
   reduceScraperHealth,
   type ScraperHealth,
-} from '../utils/scraperHealth';
-import { streetViewProbe } from '../utils/streetViewProbe';
+} from '../debug/scraperHealth';
+import { streetViewProbe } from '../debug/streetViewProbe';
 
 const GM_ERR_SELECTOR =
   '.streetview-scraper [class*="gm-err"], .streetview-scraper .gm-err-container, .streetview-scraper .gm-err-content, .streetview-scraper .gm-err-icon, .streetview-scraper .gm-err-title, .streetview-scraper .gm-err-message, .streetview-scraper [aria-label*="Google Maps" i]';

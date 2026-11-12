@@ -8,14 +8,14 @@
  * Particle *controls* (wind, rain, snow, speed) already live in the 44-float
  * weather block — this module does not add uniforms.
  *
- * Fall direction matches `WEATHER_FALL_Y_SIGN` in src/car/carSpatialModel.ts
+ * Fall direction matches `WEATHER_FALL_Y_SIGN` in src/config/worldAxes.ts
  * (negative Y in top-origin UV). The WGSL integrate shader hardcodes the
  * same sign; keep them together.
  */
 
 import { PRESETS, type QualityLevel } from '../config/visualPresets';
-import type { WeatherPostProcessMode } from './RendererBackend';
-import { WEATHER_FALL_Y_SIGN } from '../car/carSpatialModel';
+import type { WeatherPostProcessMode } from './types';
+import { WEATHER_FALL_Y_SIGN } from '../config/worldAxes';
 
 export interface ParticlePrecipitationInput {
     weatherMode: WeatherPostProcessMode;
@@ -33,7 +33,7 @@ export interface ParticleGrid {
 
 export const PARTICLE_SEED = 0x51ed;
 
-/** Matches carSpatialModel.WEATHER_FALL_Y_SIGN — flakes fall downward. */
+/** Matches worldAxes.WEATHER_FALL_Y_SIGN — flakes fall downward. */
 export const PARTICLE_FALL_Y_SIGN: typeof WEATHER_FALL_Y_SIGN = WEATHER_FALL_Y_SIGN;
 
 /** UV wind advection per (wind * speed * dt). */

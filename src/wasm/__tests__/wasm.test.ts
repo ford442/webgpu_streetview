@@ -15,7 +15,7 @@ import {
   _resetWasmModule,
   type StreetViewWasmAPI,
 } from '../index';
-import { haversineMeters } from '../../utils/navigation';
+import { haversineMeters } from '../navigation';
 
 const installed = requireWasm();
 

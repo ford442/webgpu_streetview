@@ -1,9 +1,15 @@
 {
-  "extends": "./tsconfig.base.json",
+  "extends": "./tsconfig.layer.json",
+  "$comment": "The top of the graph: the app entry (src/index.tsx, src/App.tsx) over every layer.",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
   },
-  "include": ["src"],
+  "include": [
+    "src/*.ts",
+    "src/*.tsx",
+    "src/types/**/*.d.ts",
+    "src/vite-env.d.ts"
+  ],
   "exclude": [
     "node_modules",
     "build",
@@ -14,5 +20,22 @@
     "src/**/__tests__/**",
     "src/setupTests.ts",
     "src/vitest-env.d.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.layer-foundation.json"
+    },
+    {
+      "path": "./tsconfig.layer-state.json"
+    },
+    {
+      "path": "./tsconfig.layer-engine.json"
+    },
+    {
+      "path": "./tsconfig.layer-car.json"
+    },
+    {
+      "path": "./tsconfig.layer-ui.json"
+    }
   ]
 }

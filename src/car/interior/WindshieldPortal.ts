@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getRoadFrameSource } from '../../renderer/roadFrameRegistry';
+import { getRoadFrameSource } from '../../renderer';
 import type { CabinTslApi } from './cabinTslMaterials';
 import type { WindshieldPortalMaterial } from './cabinPortalMaterial';
 import { computeTempMult } from './portalGrade';

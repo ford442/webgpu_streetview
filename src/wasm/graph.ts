@@ -10,7 +10,6 @@
  * visited) are dropped: the kernel only walks what is cached.
  */
 
-import type { RouteGraphNode } from '../offline/offlineStore';
 import type { CsrGraph } from './abi';
 import { requireWasm } from './index';
 
@@ -84,4 +83,17 @@ export function shortestPanoPath(graph: LinkGraph, fromPanoId: string, toPanoId:
 export function nearestPano(graph: LinkGraph, lat: number, lng: number): string | null {
   const i = requireWasm().graphNearest(graph.csr, lat, lng);
   return i >= 0 ? graph.panoIds[i]! : null;
+}
+
+export interface RouteGraphNode {
+  panoId: string;
+  linkPanoIds: string[];
+  lat: number;
+  lng: number;
+  /** Heading of each link, aligned with `linkPanoIds` (trip prefetch only; NaN = unknown). */
+  linkHeadings?: number[];
+  /** Capture date (`YYYY-MM`) — lets a trip recording keep the imagery year. */
+  imageDate?: string;
+  routeId: string;
+  cachedAt: string;
 }

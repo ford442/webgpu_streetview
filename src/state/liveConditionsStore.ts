@@ -8,7 +8,7 @@
  */
 import { createStore, useStore } from './createStore';
 import { readFlag } from '../config/flags';
-import type { LiveConditions, WeatherTarget } from '../services/conditions/openMeteo';
+import type { LiveConditions, WeatherTarget } from '../types/conditions';
 
 type LiveConditionsStatus = 'off' | 'loading' | 'live' | 'overridden' | 'error';
 

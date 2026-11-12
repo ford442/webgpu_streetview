@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import HistoricalTimeline, { type HistoricalTimelineProps } from './HistoricalTimeline';
-import type { HistoricalPanoEntry } from '../utils/historicalImagery';
+import type { HistoricalPanoEntry } from '../services/maps/historicalImagery';
 
 const e = (panoId: string, imageDate: string): HistoricalPanoEntry => ({
   panoId, imageDate, lat: 0, lng: 0, copyright: null,

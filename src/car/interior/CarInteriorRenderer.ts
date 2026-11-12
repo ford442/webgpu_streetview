@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import type { PostProcessingManager } from './PostProcessingManager';
-import { panoramaMatchedVerticalFov } from '../../utils/streetViewFov';
+import { panoramaMatchedVerticalFov } from '../../config/streetViewFov';
 import type { CabinRenderer } from './createCabinRenderer';
 import { CabinFrameTarget } from './cabinFrameTarget';
 import { publishCabinCompositeState } from './cabinRendererProbe';
-import type { CabinOverlaySource } from '../../renderer/cabinComposite';
-import { getCabinStereoRequest, type CabinStereoRequest } from '../../renderer/cabinStereoRequest';
+import type { CabinOverlaySource } from '../../renderer';
+import { getCabinStereoRequest, type CabinStereoRequest } from '../../renderer';
 import { createEyeCameras, eyeViewport, updateEyeCameras, type EyeCameras } from './cabinStereo';
 
 export class CarInteriorRenderer {

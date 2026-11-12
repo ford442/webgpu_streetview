@@ -327,6 +327,9 @@ def build_zip(
             if file.suffix == ".map":
                 # Source maps are not served: they stay a CI artifact for symbolication.
                 continue
+            if str(rel) in ("chunk-graph.json", "architecture-report.html"):
+                # Build diagnostics (scripts/check-chunk-graph.mjs, scripts/check-architecture.mjs): CI artifacts.
+                continue
 
             file_data = file.read_bytes()
 

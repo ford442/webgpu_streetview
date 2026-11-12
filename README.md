@@ -124,7 +124,7 @@ Earlier versions of this feature required manually copy-pasting base64 SDP blobs
 
 ### STUN/TURN and connection failures
 
-WebRTC needs to traverse NAT to connect two browsers directly. ICE servers are resolved in [`src/utils/iceServers.ts`](src/utils/iceServers.ts) (consumed by `useSharedSession.ts`): **Google STUN is always included**; optional TURN is added when `REACT_APP_TURN_URL` is set at build time, or `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`. Full setup: [`docs/SHARED_SESSIONS.md`](docs/SHARED_SESSIONS.md).
+WebRTC needs to traverse NAT to connect two browsers directly. ICE servers are resolved in [`src/services/signaling/iceServers.ts`](src/services/signaling/iceServers.ts) (consumed by `useSharedSession.ts`): **Google STUN is always included**; optional TURN is added when `REACT_APP_TURN_URL` is set at build time, or `window.TURN_URL` (+ optional `TURN_USERNAME` / `TURN_CREDENTIAL`) in runtime `public/config.js`. Full setup: [`docs/SHARED_SESSIONS.md`](docs/SHARED_SESSIONS.md).
 
 STUN is enough for most home/mobile networks, but two participants both behind symmetric NATs or restrictive corporate firewalls may fail to connect a data channel even though signaling succeeds. When that happens:
 
@@ -313,7 +313,7 @@ CESIUM_ION_TOKEN="your_ion_token..." python deploy.py
 - Open **Globe View** (🌍 button) — mountains/valleys should have visible relief instead of a smooth sphere.
 - Check the browser console for `[cesiumImagery] Ion terrain/imagery failed` warnings, which indicate the token was rejected and the app fell back to ellipsoid + CartoCDN.
 
-See also `src/utils/cesiumImagery.ts` (token resolution + fallback logic) and `docs/DEVELOPER_CONTEXT.md` (why Cesium is CDN-loaded, not npm-bundled).
+See also `src/services/maps/cesiumImagery.ts` (token resolution + fallback logic) and `docs/DEVELOPER_CONTEXT.md` (why Cesium is CDN-loaded, not npm-bundled).
 
 ---
 
@@ -477,7 +477,7 @@ See [Renderer Fallback and Debugging](docs/RENDERER_FALLBACK.md) for parity note
 
 ### Navigation Algorithm (`findBestLink`)
 
-`findBestLink(panorama, direction, currentHeading)` in `src/utils/navigation.ts`:
+`findBestLink(panorama, direction, currentHeading)` in `src/wasm/navigation.ts`:
 
 1. Maps `direction` to a heading offset: forward=0°, right=90°, backward=180°, left=270°
 2. Iterates `panorama.getLinks()` entries, computes angular distance to target with wrap-around

@@ -1,13 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
 import { useLightingSettings, useWeatherSettings } from '../hooks/useEnvironmentSettings';
-import {
-  fetchLiveConditions,
-  mapConditionsToWeather,
-  shouldFetchConditions,
-  type WeatherTarget,
-} from '../services/conditions/openMeteo';
-import { liveConditionsStore, useLiveConditions } from '../state/liveConditionsStore';
+import { fetchLiveConditions, mapConditionsToWeather, shouldFetchConditions } from '../services/conditions/openMeteo';
+import { type WeatherTarget } from '../types/conditions';
+import { liveConditionsStore, useLiveConditions } from '../state';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 /** Time the weather takes to ease onto new live conditions — a hop never snaps the sky. */

@@ -10,7 +10,7 @@
  * script gives that invariant an automatable, repeatable check:
  *
  *   1. Drives a few WASD hops against a running dev/build server.
- *   2. Reads window.__STREETVIEW_PROBE__ (see src/utils/streetViewProbe.ts)
+ *   2. Reads window.__STREETVIEW_PROBE__ (see src/debug/streetViewProbe.ts)
  *      for hold-armed / first-stable / released timestamps and any
  *      INVARIANT VIOLATION warnings (the holdActive guard being bypassed).
  *   3. Independently re-checks the visible canvas itself: takes two
@@ -70,7 +70,7 @@ if (args.goldens) mkdirSync(GOLDEN_DIR, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Same coarse center-region fingerprint as src/utils/streetViewProbe.ts,
+/** Same coarse center-region fingerprint as src/debug/streetViewProbe.ts,
  * evaluated independently in-page so this check doesn't rely on the app's
  * own probe being correct. */
 const SAMPLE_FN = () => {

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import type { HistoricalPanoEntry } from '../utils/historicalImagery';
-import type { StreetViewRenderer } from '../renderer/RendererBackend';
-import { needsCabinOverlayLatch } from '../renderer/cabinComposite';
+import type { HistoricalPanoEntry } from '../services/maps/historicalImagery';
+import type { StreetViewRenderer } from '../renderer';
+import { needsCabinOverlayLatch } from '../renderer';
 
 export interface HistoricalComparison {
   beforeUrl: string;

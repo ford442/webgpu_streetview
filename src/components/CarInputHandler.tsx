@@ -1,12 +1,11 @@
 import type React from 'react';
 import { useEffect, useRef } from 'react';
 import { useStreetView } from '../hooks/useStreetView';
-import { povStore } from '../state/povStore';
-import { cabinHeadStore } from '../state/cabinHeadStore';
+import { povStore, cabinHeadStore } from '../state';
 import { useViewMode } from '../hooks/useViewMode';
-import { applyPointerLockEffect, type CabinInputEvent } from '../car/input/cabinInputMachine';
+import { applyPointerLockEffect, type CabinInputEvent } from '../car/eager';
 import { setXrCabinInputListener } from '../xr/xrCabinInput';
-import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../car/carSpatialModel';
+import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../config/carSpatialModel';
 import { cancelFrame, requestFrame } from '../xr/frameClock';
 
 interface CarInputHandlerProps {
@@ -56,7 +55,7 @@ const WHEEL_PER_HEADING_DEG = 0.5;
  *
  * Input only writes `carHeading` (povStore) and the head pose
  * (`cabinHeadStore`); the Street View POV is derived from them once per frame.
- * World model: `src/car/carSpatialModel.ts`.
+ * World model: `src/config/carSpatialModel.ts`.
  */
 const CarInputHandler: React.FC<CarInputHandlerProps> = ({
   targetRef,

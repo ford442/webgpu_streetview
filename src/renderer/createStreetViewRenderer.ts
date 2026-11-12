@@ -1,17 +1,6 @@
 import { Renderer } from './Renderer';
-import {
-    exposeRendererDebugGlobals,
-    exposeRendererHardFailGlobals,
-    getLegacyTransitionsEnabled,
-    getRendererDebugOptions,
-    getRendererPreference,
-    getWeatherPostProcessModePolicy,
-    type RendererBackendType,
-    type RendererDebugOptions,
-    type RendererInitOptions,
-    type StreetViewRenderer,
-    type WeatherPostProcessMode,
-} from './RendererBackend';
+import { exposeRendererDebugGlobals, exposeRendererHardFailGlobals, getLegacyTransitionsEnabled, getRendererDebugOptions, getRendererPreference, getWeatherPostProcessModePolicy, type RendererDebugOptions, type RendererInitOptions, type StreetViewRenderer } from './RendererBackend';
+import { type RendererBackendType, type WeatherPostProcessMode } from './types';
 import { getPreset, detectRecommendedQuality } from '../config/visualPresets';
 import { publishWebGpuProbe, type WebGpuProbeStage } from './webgpuBootProbe';
 import { readFlag } from '../config/flags';

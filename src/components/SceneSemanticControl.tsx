@@ -1,14 +1,7 @@
 import React from 'react';
 import { getActiveQualityLevel, PRESETS } from '../config/visualPresets';
-import { formatMegabytes } from '../renderer/depth/depthModel';
-import {
-    SEMANTIC_MODEL_BYTES,
-    SEMANTIC_MODEL_LICENSE,
-    SEMANTIC_MODEL_NAME,
-} from '../renderer/semantic/semanticModel';
-import { useSceneSemanticStats } from '../renderer/semantic/sceneSemanticStatsStore';
-import { sceneSemanticStore, useSceneSemanticOptIn } from '../state/sceneSemanticStore';
-import { useSceneDepthOptIn } from '../state/sceneDepthStore';
+import { formatMegabytes, SEMANTIC_MODEL_BYTES, SEMANTIC_MODEL_LICENSE, SEMANTIC_MODEL_NAME, useSceneSemanticStats } from '../renderer';
+import { sceneSemanticStore, useSceneSemanticOptIn, useSceneDepthOptIn } from '../state';
 
 const pill = (active: boolean, disabled: boolean): React.CSSProperties => ({
     padding: '6px 10px',

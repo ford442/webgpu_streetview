@@ -62,13 +62,13 @@ export class TransitionManager {
             label: 'Transition Bind Group Layout',
             entries: [
                 { binding: 0, visibility: GPUShaderStage.FRAGMENT,
-                  texture: { sampleType: 'float' as GPUTextureSampleType } },
+                  texture: { sampleType: 'float' } },
                 { binding: 1, visibility: GPUShaderStage.FRAGMENT,
-                  texture: { sampleType: 'float' as GPUTextureSampleType } },
+                  texture: { sampleType: 'float' } },
                 { binding: 2, visibility: GPUShaderStage.FRAGMENT,
-                  sampler: { type: 'filtering' as GPUSamplerBindingType } },
+                  sampler: { type: 'filtering' } },
                 { binding: 3, visibility: GPUShaderStage.FRAGMENT,
-                  buffer: { type: 'uniform' as GPUBufferBindingType } },
+                  buffer: { type: 'uniform' } },
             ],
         });
 

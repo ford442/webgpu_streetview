@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { useThrottledPov } from '../state/povStore';
+import { useThrottledPov } from '../state';
 import Compass from '../components/Compass';
 import FreeLookInputHandler from '../components/FreeLookInputHandler';
 

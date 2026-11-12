@@ -1,5 +1,5 @@
 import { mapsCanvasSource } from './frameSource/mapsCanvasSource';
-import { streetViewProbe } from '../utils/streetViewProbe';
+import { streetViewProbe } from '../debug/streetViewProbe';
 import { type WeatherPostProcessorLike } from './weatherPostProcessorTypes';
 import { HDR_INTERMEDIATE_FORMAT } from './shaderFeatureVariants';
 import { createTrackedTexture, destroyTracked } from './gpuMemoryTracking';
