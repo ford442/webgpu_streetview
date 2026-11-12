@@ -121,6 +121,14 @@ interface Goldens {
     nearMap: number[];
     nearDepth: { label: string; horizonY: number; expected: number }[];
   };
+  atmosphere: {
+    paramCount: number;
+    params: { label: string; visibilityM: number; albedo: number; expected: number[] }[];
+    rayParams: string;
+    transmittance: { altitudeM: number; cosZenith: number; expected: number[] }[];
+    transmittanceLut: { width: number; height: number; expected: number[] };
+    sunColor: { altitudeM: number; sinElevation: number; expected: number[] }[];
+  };
 }
 
 const goldens: Goldens = JSON.parse(
@@ -452,6 +460,41 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     for (const c of goldens.depth.nearDepth) {
       expectExact(api.depthNearDepth(map, goldens.depth.width, goldens.depth.height, c.horizonY), c.expected, c.label);
     }
+  });
+
+  it('atmoParams matches the goldens bit for bit (null visibility is the unknown path)', () => {
+    for (const c of goldens.atmosphere.params) {
+      const got = api.atmoParams(c.visibilityM, c.albedo);
+      expect(got.length).toBe(goldens.atmosphere.paramCount);
+      expect(f32Bits(got), c.label).toEqual(f32Bits(Float32Array.from(c.expected)));
+    }
+    const unknown = goldens.atmosphere.params.find((c) => c.label === 'unknown')!;
+    expect(f32Bits(api.atmoParams(null, unknown.albedo))).toEqual(f32Bits(Float32Array.from(unknown.expected)));
+  });
+
+  const atmoRayParams = () => Float32Array.from(
+    goldens.atmosphere.params.find((c) => c.label === goldens.atmosphere.rayParams)!.expected,
+  );
+
+  it('atmoTransmittance / atmoSunColor match the goldens bit for bit', () => {
+    const params = atmoRayParams();
+    for (const c of goldens.atmosphere.transmittance) {
+      const got = api.atmoTransmittance(params, c.altitudeM, c.cosZenith);
+      expect(f32Bits(Float32Array.from(got)), `${c.altitudeM} m, mu ${c.cosZenith}`)
+        .toEqual(f32Bits(Float32Array.from(c.expected)));
+    }
+    for (const c of goldens.atmosphere.sunColor) {
+      const got = api.atmoSunColor(params, c.sinElevation, c.altitudeM);
+      expect(f32Bits(Float32Array.from(got)), `${c.altitudeM} m, sin ${c.sinElevation}`)
+        .toEqual(f32Bits(Float32Array.from(c.expected)));
+    }
+  });
+
+  it('atmoTransmittanceLut matches the goldens bit for bit', () => {
+    const { width, height, expected } = goldens.atmosphere.transmittanceLut;
+    const got = api.atmoTransmittanceLut(atmoRayParams(), width, height);
+    expect(f32Bits(got)).toEqual(f32Bits(Float32Array.from(expected)));
+    expect(api.atmoTransmittanceLut(atmoRayParams(), 0, height)).toHaveLength(0);
   });
 
   for (const script of goldens.cabinDsp) {

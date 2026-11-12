@@ -29,6 +29,7 @@ SOURCES=(
   "${ROOT}/cpp/src/cabin_dsp_module.cpp"
   "${ROOT}/cpp/src/depth_module.cpp"
   "${ROOT}/cpp/src/graph_module.cpp"
+  "${ROOT}/cpp/src/atmosphere_module.cpp"
   "${ROOT}/cpp/src/runtime.cpp"
 )
 # Formatted (not tidied): headers, tests and fuzz harnesses too. Vendored code

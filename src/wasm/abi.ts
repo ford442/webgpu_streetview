@@ -363,6 +363,22 @@ export interface StreetViewWasmAPI {
     out: Float32Array,
   ): Float32Array;
 
+  /**
+   * The atmosphere's params block (`atmo_params`, 24 floats, abi.h): Rayleigh,
+   * Mie from the meteorological visibility (null → the 23 km default), ozone,
+   * ground albedo. The renderer uploads it verbatim (`renderer/atmosphere/`).
+   */
+  atmoParams(visibilityM: number | null, groundAlbedo: number): Float32Array;
+
+  /** Transmittance [r, g, b] to the top of the atmosphere from `altitudeM` along `cosZenith`. */
+  atmoTransmittance(params: Float32Array, altitudeM: number, cosZenith: number): [number, number, number];
+
+  /** The transmittance LUT the GPU builds, as RGBA f32 (row 0 at the ground) — the parity reference. */
+  atmoTransmittanceLut(params: Float32Array, width: number, height: number): Float32Array;
+
+  /** Linear RGB of a white sun at `sinElevation`, seen from `altitudeM` (0 below the horizon). */
+  atmoSunColor(params: Float32Array, sinElevation: number, altitudeM: number): [number, number, number];
+
   /** Integer box-filter downsample of packed RGBA8. */
   downsample2d(
     src: Uint8Array | Uint8ClampedArray,

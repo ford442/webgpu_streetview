@@ -48,6 +48,11 @@ export const WASM_ABI = {
   depth_percentiles: { params: ['i32', 'i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
   depth_near_depth: { params: ['i32', 'i32', 'i32', 'f64'], results: ['f64'], binaries: ['main'] },
   depth_normalize: { params: ['i32', 'i32', 'i32', 'i32', 'f64', 'i32', 'i32', 'i32', 'i32', 'i32'], results: [], binaries: ['main'] },
+  atmo_param_count: { params: [], results: ['i32'], binaries: ['main'] },
+  atmo_params: { params: ['f64', 'f64', 'i32'], results: [], binaries: ['main'] },
+  atmo_transmittance: { params: ['i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
+  atmo_transmittance_lut: { params: ['i32', 'i32', 'i32', 'i32'], results: [], binaries: ['main'] },
+  atmo_sun_color: { params: ['i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
   sv_malloc: { params: ['i32'], results: ['i32'], binaries: ['main', 'dsp'] },
   sv_free: { params: ['i32'], results: [], binaries: ['main', 'dsp'] },
   sv_stack_base: { params: [], results: ['i32'], binaries: ['main', 'dsp'] },
@@ -119,6 +124,16 @@ export interface StreetViewWasmExports {
   depth_near_depth(nearness: number, width: number, height: number, horizonY: number): number;
   /** `void sw_depth_normalize(const float* disparity, int count, int width, int height, double horizon_y, int aligned, int same_scene, double* state3, const float* previous, float* out)` (depth_module.cpp) */
   depth_normalize(disparity: number, count: number, width: number, height: number, horizonY: number, aligned: number, sameScene: number, state3: number, previous: number, out_: number): void;
+  /** `int sw_atmo_param_count(void)` (atmosphere_module.cpp) */
+  atmo_param_count(): number;
+  /** `void sw_atmo_params(double visibility_m, double ground_albedo, float* out)` (atmosphere_module.cpp) */
+  atmo_params(visibilityM: number, groundAlbedo: number, out_: number): void;
+  /** `void sw_atmo_transmittance(const float* params, double altitude_m, double cos_zenith, float* out_rgb)` (atmosphere_module.cpp) */
+  atmo_transmittance(params: number, altitudeM: number, cosZenith: number, outRgb: number): void;
+  /** `void sw_atmo_transmittance_lut(const float* params, int width, int height, float* out_rgba)` (atmosphere_module.cpp) */
+  atmo_transmittance_lut(params: number, width: number, height: number, outRgba: number): void;
+  /** `void sw_atmo_sun_color(const float* params, double sin_elevation, double altitude_m, float* out_rgb)` (atmosphere_module.cpp) */
+  atmo_sun_color(params: number, sinElevation: number, altitudeM: number, outRgb: number): void;
   /** `void* sv_malloc(size_t bytes)` (runtime.cpp) */
   sv_malloc(bytes: number): number;
   /** `void sv_free(void* ptr)` (runtime.cpp) */

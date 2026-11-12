@@ -412,7 +412,64 @@ Guarded by `src/renderer/webglLookParity.test.ts` and
 
 ---
 
-## 10. Editing checklist
+## 10. Atmosphere (physically based sky, LUTs)
+
+The replaced sky, aerial perspective and (later) clouds and the cabin's sky
+light come from one standard model: Hillaire, *A Scalable and Production Ready
+Sky and Atmosphere Rendering Technique* (EGSR 2020). **Slice 1** (this section)
+builds the look-up tables; nothing samples them yet, so the road frame is
+bit-exact with the pass on or off. Slices 2–5 (sky + aerial perspective in the
+weather shaders, volumetric clouds, the cabin IBL, look packs as atmosphere
+states) read them.
+
+| Piece | Where |
+|---|---|
+| Physical constants, Mie from visibility, transmittance integral, sun colour | `cpp/src/atmosphere_module.cpp` (`atmo_*`, abi.h) |
+| LUT compute shaders (4 entry points) | `public/shaders/atmosphere.wgsl` |
+| Lazy `atmosphere` frame pass (order 60), rebuild policy, uniforms | `src/renderer/atmosphere/` (`AtmosphereLayer` main bundle → `AtmosphereController` chunk) |
+| Layout: LUT sizes, `AtmosphereParams` (32 floats), bindings, texel mappings | `src/renderer/atmosphere/atmosphereLayout.ts` |
+| Probe | `window.__ATMOSPHERE__` (state, builds, sun elevation, visibility, turbidity, CPU sun colour); `webgpuProbe.passes.atmosphere` |
+
+**Medium.** Earth 6360–6460 km; Rayleigh (5.802, 13.558, 33.1)·10⁻³ /km,
+H = 8 km; ozone tent at 25 ± 15 km; Mie H = 1.2 km, g = 0.8 (Cornette–Shanks),
+single-scattering albedo 0.9. Mie extinction comes from the live
+**meteorological visibility** (Open-Meteo `visibilityM`) by Koschmieder:
+β(550 nm) = 3.912 / V, minus Rayleigh. Unknown visibility is MODTRAN's 23 km
+rural standard (aerosol optical depth ≈ 0.19). Ground albedo 0.3, observer at
+0 m (an elevation source is a non-goal for now).
+
+**Tables** (all `rgba16float`, all in the sun's frame, so turning the camera
+never rebuilds them):
+
+| LUT | Size | Holds | Rebuilt when |
+|---|---|---|---|
+| transmittance | 256×64 | T to the top over (μ, r), Bruneton mapping | medium changes |
+| multi-scattering | 32×32 | Ψ_ms over (μ_s, r), 64 directions × 20 steps | medium changes |
+| sky view | 192×108 | luminance at the observer over (azimuth to sun, zenith) | medium changes or sun moves > 0.1° |
+| aerial perspective | 32×32×32 | in-scatter + mean T over (azimuth to sun, elevation, √(d/32 km)) | medium changes or sun moves > 0.1° |
+
+Hillaire's aerial volume is camera-aligned froxels; with the observer fixed at
+the pano the integral depends only on direction relative to the sun and
+distance, so the volume is sun-relative and does not rebuild per frame.
+
+**When it runs.** Absent at Low/Medium (`PRESETS[q].atmosphereLuts`), opt-in
+at High/Ultra with `?atmosphere=on` until slice 2 gives it a consumer. A frame
+with nothing to rebuild encodes nothing. It never reads the Maps canvas or the
+intermediate, so the hold-pause guard does not apply.
+
+**Checks.** The C++ goldens are bit-exact on every build: the integral uses an
+in-TU `exp` (Cody–Waite + Horner, IEEE add/mul only), `sqrt` and `floor`, never
+libm's `exp` (musl and glibc differ). `e2e/atmosphere.spec.ts` (PR `gpu`
+lane, SwiftShader) holds the GPU transmittance LUT within 1e-3 of
+`atmoTransmittanceLut` (measured ≈ 3·10⁻⁴, one f16 step), checks the
+rebuild-on-change policy, the sunset looks (sun 2°, −4°, −12°: horizon
+brighter toward the sun, night far darker than dusk), the Earth's shadow under
+the Belt of Venus in clear air with the sun 2° down, and aerial perspective at
+300 m (≈ 21 % at 5 km visibility, ≈ 2.5 % at 50 km).
+
+---
+
+## 11. Editing checklist
 
 - Shared WGSL helper changed? Update **both** `weather-post.wgsl` and
   `weather-post-compute.wgsl`; `weatherShaderParity.test.ts` will fail otherwise.
@@ -427,6 +484,11 @@ Guarded by `src/renderer/webglLookParity.test.ts` and
   Named artistic looks go in `src/config/lookPacks.ts` + `docs/looks/README.md`.
 - Coupling between channels belongs in `weatherCohesion.ts` (CPU, testable),
   not duplicated into three shaders.
+- Atmosphere: `AtmosphereParams` in `atmosphere.wgsl` and `atmosphereLayout.ts`
+  move together (`atmosphereLayout.test.ts`); the medium floats are the C++
+  `sw_atmo_params` block, so a constant changes in `atmosphere_module.cpp`
+  (goldens regenerated), never in TypeScript or WGSL. The transmittance entry
+  point and `sw_atmo_transmittance_lut` share texels and step count.
 - Changing what the CPU noise tile contains? The fragment path is the default
   look — put new detail behind the compute path unless the change is intended to
   be visible everywhere. See `docs/WASM_BRIDGE.md` §3.

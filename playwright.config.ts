@@ -40,10 +40,11 @@ const SWIFTSHADER_WEBGPU_ARGS = [
 
 /**
  * Specs that need a real GPU device; they run (and must not skip) in `gpu`.
- * Boot, passes, portal, stereo, render scale, broken-shader isolation: each
- * finishes in seconds on SwiftShader, so this is the PR lane (`ci.yml`).
+ * Boot, passes, portal, stereo, render scale, broken-shader isolation, the
+ * atmosphere LUTs: each finishes in seconds on SwiftShader, so this is the PR
+ * lane (`ci.yml`).
  */
-const GPU_SPECS = /(gpu-foundation|windshield-portal|stereo)\.spec\.ts$/;
+const GPU_SPECS = /(gpu-foundation|windshield-portal|stereo|atmosphere)\.spec\.ts$/;
 
 /**
  * Specs that run the real scene models (depth #320, semantic #352). One Depth

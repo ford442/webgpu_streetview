@@ -22,6 +22,7 @@ export const WASM_SOURCE_FILES = [
   'cpp/src/cabin_dsp_module.cpp',
   'cpp/src/depth_module.cpp',
   'cpp/src/graph_module.cpp',
+  'cpp/src/atmosphere_module.cpp',
   'cpp/src/runtime.cpp',
   'cpp/include/streetview/abi.h',
   'cpp/include/streetview/audio_kernels.h',
