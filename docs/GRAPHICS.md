@@ -307,8 +307,25 @@ swap chain. `?upscale=bilinear` is one filtered stretch. One timestamp span
 request below 1 starts building it, and until it is ready the road stays at 1
 (`limitedBy: 'upscale-pending'`); if it fails it is reported on
 `webgpuProbe.passes.upscale` and the road stays at 1 for the session
-(`'upscale-unavailable'`). Temporal reprojection and FSR 2/3, DLSS, XeSS are
-out of scope.
+(`'upscale-unavailable'`). FSR 2/3, DLSS, XeSS are out of scope; the temporal
+resolve is #360 (below).
+
+**Motion field (#360 slice 1, not wired yet).** `src/renderer/temporal/`:
+`motion.wgsl` writes `rg16float` at the intermediate's size, `motion =
+current − previous` in intermediate pixels (history of `p` is at `p −
+motion`). The camera term is the exact rotation homography from the POV delta
+(`reprojectMath.latchRotation`, previous frame as the packed camera; a zoom
+change is the FOV term); the release dolly term inverts
+`samplePrevForRelease` to first order and is the identity at dolly 0.
+`motionMath.ts` is the CPU mirror, pinned by `motionMath.test.ts` (layout,
+homography, dolly). `TemporalHistoryTracker` keeps two bits: **motion** (off on
+the first frame, resize, hold, pano change, Maps zoom step, a turn wider than
+the view) and **history** (also off during a release crossfade, a legacy
+transition or a historical wipe, *and on the frame after one* — that frame's
+history holds the ghost). `MotionVectorPass` owns its 112-byte uniform buffer
+and reads the shared scene-depth group at group 1. Nothing in `Renderer`
+builds it until the slice-2 `TemporalPass` consumes it, so every frame is
+unchanged.
 
 **Budget loop.** One 0.05 step at most every 10 frames, on the median of that
 window. With `timestamp-query` it reads the road's GPU time (pass 1 + weather

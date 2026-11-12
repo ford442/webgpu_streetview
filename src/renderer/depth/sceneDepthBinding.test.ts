@@ -40,6 +40,8 @@ const SHADERS = [
     ['weather-post-compute.wgsl', WEATHER_SCENE_DEPTH_GROUP],
     // The stereo tail reads depth at group 1 (`ReprojectPass`'s pipeline layout).
     ['reproject.wgsl', 1],
+    // The motion field reads the release dolly at group 1 (`MotionVectorPass`'s pipeline layout).
+    ['motion.wgsl', 1],
 ] as const;
 
 describe('SceneDepthParams — one layout in TS and every WGSL consumer', () => {

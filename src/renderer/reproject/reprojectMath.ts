@@ -124,8 +124,10 @@ export function rotY(rad: number): Mat3 {
  * The rotation from a live camera's rays to the packed camera's. A camera is
  * `Ry(heading) · Rx(pitch)`, so this is `Rx(−packedPitch) · Ry(Δheading) · Rx(livePitch)`
  * (yaw and pitch do not commute away from level, so both pitches are absolute).
+ * Also the camera half of the temporal motion field (`temporal/motionMath.ts`),
+ * with the previous frame as the packed camera.
  */
-function latchRotation(packedPitchDeg: number, yawDeg: number, livePitchDeg: number): Mat3 {
+export function latchRotation(packedPitchDeg: number, yawDeg: number, livePitchDeg: number): Mat3 {
     return mulMat3(mulMat3(rotX(-packedPitchDeg * DEG), rotY(yawDeg * DEG)), rotX(livePitchDeg * DEG));
 }
 
