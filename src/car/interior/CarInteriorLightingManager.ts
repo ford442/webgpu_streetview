@@ -4,6 +4,7 @@ import { setCabinGlowLevel, type CabinGlowSprite } from './CabinEmitterGlow';
 import {
     cabinEmitterTargets,
     cabinFillTargets,
+    headlightsSpotIntensity,
     clusterGlowLevel,
     domeGlowLevel,
     iblIntensityFromNight,
@@ -217,7 +218,9 @@ export class CarInteriorLightingManager {
     public setHeadlights(on: boolean): void {
         this.headlightsOn = on;
         if (this.headlightsLight) {
-            this.headlightsLight.intensity = on ? 0.2 : 0;
+            // Snap to the current ramp target (not a flat night value) so
+            // switching the lamps on by day does not flash the hood.
+            this.headlightsLight.intensity = headlightsSpotIntensity(on, this.getEffectiveNight());
         }
     }
 
