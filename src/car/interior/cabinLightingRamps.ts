@@ -136,6 +136,12 @@ export function cabinGlowScale(
   return 0.07 + n * 1.05 + (headlightsOn ? n * 0.12 : 0) + breathe;
 }
 
+/** Cabin-side headlight spot: trace by day, full at night, 0 when off. */
+export function headlightsSpotIntensity(on: boolean, night: number): number {
+  if (!on) return 0;
+  return 0.04 + Math.max(0, Math.min(1, night)) * 0.16;
+}
+
 export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
   const night = Math.max(0, Math.min(1, input.effectiveNight));
   const day = 1 - night;
@@ -158,10 +164,12 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
   const rightWindow = (0.07 * day * clinical * balance.right + 0.006 * night) * diffuse;
 
   // Headlights: a little dash bounce, not a cabin flood. Rain adds bounce
-  // (wet road scatter) instead of extra ambient.
+  // (wet road scatter) instead of extra ambient; with the lamps on at night
+  // the wet road throws some of their beam back up at the dash.
   const bounce =
     (input.headlightsOn ? night * 0.14 : 0) +
-    rain * 0.1 * (0.3 + day * 0.7);
+    rain * 0.1 * (0.3 + day * 0.7) +
+    (input.headlightsOn ? rain * night * 0.05 : 0);
   // The spill sits ~0.4 m off the dash face, so it lands as a patch above the
   // cluster. At the old 0.22 + 0.1 that patch out-shone the cluster at night;
   // half that keeps it a glow around the instruments.
@@ -170,7 +178,10 @@ export function cabinFillTargets(input: CabinRampInput): CabinFillTargets {
     (input.headlightsOn ? night * 0.05 : 0) +
     (input.domeLightOn ? 0.02 : 0);
   const dome = input.domeLightOn ? 1.3 : 0;
-  const headlights = input.headlightsOn ? 0.2 : 0;
+  // The spot lands on the hood/road edge. In daylight a lit lamp is invisible
+  // against the sun, so the cabin-side spot keeps only a trace by day and
+  // reaches full strength at night (night = 1 is the old flat 0.2).
+  const headlights = headlightsSpotIntensity(input.headlightsOn, night);
 
   return {
     hemi,

@@ -12,6 +12,7 @@ import {
   domeGlowLevel,
   gaugeDialGlow,
   gaugeNeedleGlow,
+  headlightsSpotIntensity,
   iblIntensityFromNight,
   locationPanelGlowFromNight,
   sunBaseIntensityFromStrength,
@@ -414,5 +415,25 @@ describe('cabinLightingRamps', () => {
     // At night the day term is gone, so the streetlight hint stays flat.
     const night = { ...base, effectiveNight: 1 };
     expect(cabinFillTargets({ ...night, sunSide: 1 })).toEqual(cabinFillTargets(night));
+  });
+});
+
+describe('headlight look pass', () => {
+  it('headlight spot is a trace by day, full at night, 0 when off', () => {
+    expect(headlightsSpotIntensity(false, 1)).toBe(0);
+    expect(headlightsSpotIntensity(true, 1)).toBeCloseTo(0.2, 6);
+    expect(headlightsSpotIntensity(true, 0)).toBeLessThan(0.06);
+    expect(headlightsSpotIntensity(true, 0)).toBeGreaterThan(0);
+    expect(headlightsSpotIntensity(true, 5)).toBeCloseTo(0.2, 6);
+  });
+
+  it('wet road throws headlight bounce back at night, not ambient', () => {
+    const base = { effectiveNight: 1, rain: 1, domeLightOn: false };
+    const off = cabinFillTargets({ ...base, headlightsOn: false });
+    const on = cabinFillTargets({ ...base, headlightsOn: true });
+    const dryOn = cabinFillTargets({ ...base, rain: 0, headlightsOn: true });
+    expect(on.bounce - off.bounce).toBeGreaterThan(dryOn.bounce);
+    expect(on.ambient).toBeCloseTo(off.ambient, 6);
+    expect(on.bounce).toBeLessThan(0.25);
   });
 });
