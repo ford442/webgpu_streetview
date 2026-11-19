@@ -6,7 +6,7 @@ import { useViewMode } from '../hooks/useViewMode';
 import { applyPointerLockEffect, type CabinInputEvent } from '../car/eager';
 import { setXrCabinInputListener } from '../xr/xrCabinInput';
 import { FREE_LOOK_RAD_PER_PX, steerDeltaFromMouse } from '../config/carSpatialModel';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, requestFrame } from '../xr/frameClock';
 
 interface CarInputHandlerProps {
   /** The cabin view element: pointer-lock target and click surface. */
@@ -223,7 +223,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
     };
     const ensureLookLoop = () => {
       if (lookRaf !== null || lookDir() === 0) return;
-      lookLast = performance.now();
+      lookLast = frameNow();
       lookRaf = requestFrame(lookFrame);
     };
     const stopLookLoop = () => {
@@ -316,7 +316,7 @@ const CarInputHandler: React.FC<CarInputHandlerProps> = ({
         callbacksRef.current.onHudKeyUp?.();
       }
       // Credit the time held since the last frame so a sub-frame tap still turns.
-      if (upKey === 'a' || upKey === 'd') stepLook(performance.now());
+      if (upKey === 'a' || upKey === 'd') stepLook(frameNow());
       keysPressedRef.current.delete(e.key.toLowerCase());
       keysPressedRef.current.delete(e.key);
     };

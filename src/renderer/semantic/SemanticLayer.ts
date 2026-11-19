@@ -13,6 +13,7 @@ import type { AuxSemantic } from './sceneSemanticBinding';
 import type { SceneSemanticOptions, SemanticSkyEdge } from './sceneSemanticOptions';
 import type { SemanticController, SemanticControllerDeps, SemanticFrameInput } from './SemanticController';
 import type { SemanticEffectWeights } from './semanticParams';
+import type { FrameInputWork } from '../../types/frameInputs';
 
 /** After `depth` (50), before `streetview` (100). */
 const SEMANTIC_PASS_ORDER = 51;
@@ -98,6 +99,12 @@ export class SemanticLayer {
 
     public currentAux(): AuxSemantic | undefined {
         return this.controller?.currentAux();
+    }
+
+    /** The controller's `frameWork`; busy while its chunk loads (#374). */
+    public frameWork(): FrameInputWork {
+        if (this.disposed || !this.options.enabled) return 'off';
+        return this.controller?.frameWork() ?? 'busy';
     }
 
     public currentSkyEdge(): SemanticSkyEdge | null {

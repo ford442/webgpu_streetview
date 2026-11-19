@@ -34,6 +34,7 @@ vi.mock('./TransitionManager', () => ({
         init = vi.fn().mockResolvedValue(undefined);
         dispose = vi.fn();
         recordLastPan = vi.fn();
+        setTransitionProgress = vi.fn();
         renderTransitionPass = () => false;
         isInTransition = () => false;
         inlineProgress = 0;
@@ -241,6 +242,38 @@ describe('Renderer — scene depth', () => {
         await renderFor(renderer, 1);
         expect(weather.setSceneDepth.at(-1)).toBeNull();
         expect(pass1.depthGroups.at(-1)).toBe(getSceneDepthFallback(gpu.device));
+        renderer.destroy();
+    });
+});
+
+describe('Renderer — virtual frame readiness (#374)', () => {
+    it('reports the hold and scene depth work a frame step waits for', async () => {
+        const renderer = await bootRenderer();
+        expect(renderer.frameInputs()).toEqual({ holdActive: false, depth: 'off', semantic: 'off' });
+
+        renderer.setSceneDepth({ enabled: true, blend: 0.8, reducedMotion: false });
+        expect(renderer.frameInputs().depth).toBe('busy'); // the lazy pass is initialising
+        await settle();
+        await settle();
+        expect(renderer.frameInputs().depth).toBe('idle');
+
+        renderer.beginHoldTransition(0, 0);
+        expect(renderer.frameInputs().holdActive).toBe(true);
+        renderer.endHoldTransition();
+        expect(renderer.frameInputs().holdActive).toBe(false);
+
+        await expect(renderer.whenGpuIdle()).resolves.toBeUndefined();
+        renderer.destroy();
+        await expect(renderer.whenGpuIdle()).resolves.toBeUndefined();
+    });
+
+    it('a failed depth pass is off — nothing to wait for', async () => {
+        estimator.loadError = 'scene-depth model not deployed (HTTP 404)';
+        const renderer = await bootRenderer();
+        renderer.setSceneDepth({ enabled: true, blend: 0.8, reducedMotion: false });
+        await settle();
+        await settle();
+        expect(renderer.frameInputs().depth).toBe('off');
         renderer.destroy();
     });
 });

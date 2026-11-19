@@ -580,6 +580,42 @@ session presenting; otherwise the frame is exactly the pre-#331 frame.
   capped in a headset (`depthParams.XR_RELEASE_DOLLY_SCALE`). Fallbacks:
   `docs/RENDERER_FALLBACK.md` § WebXR fallback matrix.
 
+### Virtual frame clock — the film export's time base (`src/xr/frameClock.ts`, #374 slice 1)
+
+The frame clock has a third source besides the window and an XR session: the
+**virtual** clock. `beginVirtualFrames(startMs)` takes every queued loop off
+the window; nothing animates until `stepFrame(dtMs)` / `stepFrameTo(timeMs)`
+advances app time by exactly that and runs every queued callback once, in
+request order. It wins over XR (a session that starts mid-export queues
+behind it; `beginVirtualFrames` refuses while one presents). `endVirtualFrames()`
+hands loops back with app time **continuous** — later real frames are offset
+so no loop's `now − last` jumps or goes negative.
+
+- **App time is `frameNow()`**: the virtual time while virtual, else
+  `performance.now()` (+ that offset). Every per-frame consumer reads it —
+  weather/shader time (`frameDriver`, `Renderer`, `WeatherPostProcessor`,
+  compute `weatherParams`, the WebGL reference), auto-exposure / budget `dt`,
+  depth/semantic `nowMs`, the camera-speed signal, the car loop's `dt` (vehicle
+  sim, wipers, cabin particles and lights, limo atmosphere, mirror frost) and
+  every crossfade/tween (hold release, `useTransition`, live conditions, trip
+  heading ease, keyboard look). `frameClock.scan.test.ts` fails any module
+  that imports the clock and reads `performance.now()` / `Date.now()`, except
+  its short list of wall-clock measurements (the real-time recorder, readback
+  ages, the Open-Meteo throttle, the stepper's own waits).
+- **The render-scale budget is frozen while virtual** (as during a hold):
+  an export's scale must not follow GPU timing.
+- **Readiness** (`services/capture/virtualFrameStepper.ts`):
+  `VirtualFrameStepper.step()` = wait for the inputs → `stepFrameTo(t₀ + n·1000/fps)`
+  (computed, never accumulated) → `whenGpuIdle()`; the caller captures after.
+  Inputs come from `Renderer.frameInputs()` (`types/frameInputs.ts`): the
+  **hold** (waited out, never stepped — a hold that outlives `holdTimeoutMs`
+  is an error, not a frozen film), **depth/semantic** work in flight
+  (`DepthController` / `SemanticController.frameWork()`: model load, lazy
+  chunk, inference — skipped and reported past `mapsTimeoutMs`), and the Maps
+  **tiles** (two fresh `MapsCanvasSource` fingerprints that agree; reported
+  `timeout` past `tilesTimeoutMs`). Waits run on the real clock; only steps
+  move app time. Always `end()` in a `finally`.
+
 ### WebGL2 Fallback / Debug Renderer
 
 `src/renderer/createStreetViewRenderer.ts` selects the post-processing backend. **WebGPU is required**: a failed boot probe is a hard-fail (blocking overlay). There is **no live GL weather class** in the runtime module graph — including for `?renderer=webgl` / stale localStorage (preference is recorded as `window.webgpuProbe.webglPreferenceDeferred`). Explicit flags:

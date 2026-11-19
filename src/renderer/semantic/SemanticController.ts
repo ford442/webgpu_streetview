@@ -45,6 +45,7 @@ import {
     setSceneSemanticStats,
 } from './sceneSemanticStatsStore';
 import type { SceneSemanticOptions, SemanticSkyEdge } from './sceneSemanticOptions';
+import type { FrameInputWork } from '../../types/frameInputs';
 
 const SEMANTIC_PASS_ORDER = 51;
 
@@ -157,6 +158,15 @@ export class SemanticController implements SemanticSink {
     /** This frame's class map, or undefined — `Renderer` puts it on `FrameContext.aux`. */
     public currentAux(): AuxSemantic | undefined {
         return this.options.enabled && this.aux ? this.aux : undefined;
+    }
+
+    /**
+     * For a virtual frame step (#374): busy until the session is loaded. The
+     * class maps ride depth's inferences, so depth's `frameWork` covers those.
+     */
+    public frameWork(): FrameInputWork {
+        if (this.disposed || !this.options.enabled) return 'off';
+        return this.session === 'ready' ? 'idle' : 'busy';
     }
 
     /** The current map's sky edge while its weight is applied; null otherwise. */

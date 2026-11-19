@@ -19,6 +19,7 @@ function fakeController() {
         onFrame: vi.fn(),
         currentAux: vi.fn(() => undefined),
         currentSkyEdge: vi.fn(() => ({ y: 0.4, pitch: 0.5, seq: 1 })),
+        frameWork: vi.fn(() => 'idle' as const),
         dispose: vi.fn(),
     };
 }
@@ -49,6 +50,10 @@ describe('SemanticLayer', () => {
         expect(layer.pass.enabled({} as never)).toBe(false);
         expect(layer.isInitialised()).toBe(false);
         expect(layer.needsSession()).toBe(false);
+        // #374: switched on with its chunk not loaded — a virtual frame step waits.
+        expect(layer.frameWork()).toBe('busy');
+        layer.setOptions({ enabled: false, blend: 0, reducedMotion: false });
+        expect(layer.frameWork()).toBe('off');
     });
 
     it('hands the options and effects set before loading to the controller, then delegates', async () => {
@@ -63,6 +68,7 @@ describe('SemanticLayer', () => {
 
         layer.onFrame({ nowMs: 1, view: { panX: 0, panY: 0.5, zoom: 1 } });
         expect(controller.onFrame).toHaveBeenCalledTimes(1);
+        expect(layer.frameWork()).toBe('idle');
         expect(layer.currentSkyEdge()).toEqual({ y: 0.4, pitch: 0.5, seq: 1 });
         layer.pass.encode({} as never, {} as never);
         expect(controller.pass.encode).toHaveBeenCalledTimes(1);

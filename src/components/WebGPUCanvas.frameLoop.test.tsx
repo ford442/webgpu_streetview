@@ -46,7 +46,13 @@ const renderer = vi.hoisted(() => {
             return calls.get(key);
         },
     });
-    return { proxy, hold, count: (key: string) => calls.get(key)?.mock.calls.length ?? 0, reset: () => calls.clear() };
+    return {
+        proxy,
+        hold,
+        count: (key: string) => calls.get(key)?.mock.calls.length ?? 0,
+        lastArgs: (key: string) => calls.get(key)?.mock.calls.at(-1) as unknown[] | undefined,
+        reset: () => calls.clear(),
+    };
 });
 vi.mock('../renderer/createStreetViewRenderer', () => ({
     createStreetViewRenderer: async () => ({ renderer: renderer.proxy, backendType: 'webgpu' }),
@@ -58,6 +64,8 @@ import { getRenderScaleRequest, resetRenderScaleForTests } from '../renderer/ren
 import { resetGpuPassTimings, setGpuPassTimings } from '../renderer/gpuPassTimingStore';
 import { perfStore, FRAME_RATE_IDLE } from '../renderer/perfStore';
 import { povStore } from '../state/povStore';
+import { WeatherParamIndex } from '../renderer/weatherUniformLayout';
+import { beginVirtualFrames, endVirtualFrames, resetFrameClockForTests, stepFrame } from '../xr/frameClock';
 
 let rafQueue: FrameRequestCallback[] = [];
 let now = 0;
@@ -94,6 +102,7 @@ beforeEach(() => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
 });
 afterEach(() => {
+    resetFrameClockForTests();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     resetRenderScaleForTests();
@@ -174,5 +183,34 @@ describe('WebGPUCanvas render loop', () => {
         expect(publishes.mock.calls.length).toBeGreaterThanOrEqual(7);
         expect(publishes.mock.calls.length).toBeLessThanOrEqual(9);
         stop();
+    });
+
+    it('#374: under the virtual clock each step renders once at its exact app time, budget frozen', async () => {
+        sv.canvas = document.createElement('canvas');
+        await mounted(); // the driver's time origin is app time 0
+        frames(1, 16);
+        expect(renderer.count('renderStreetView')).toBe(1);
+
+        beginVirtualFrames(1000);
+        frames(3, 16); // the window's frames run nothing now
+        expect(renderer.count('renderStreetView')).toBe(1);
+        let seq = 0;
+        for (let i = 0; i < 60; i++) {
+            // A GPU that reads far over budget: an export's scale must not follow it.
+            setGpuPassTimings({
+                available: true, seq: ++seq, renderScale: getRenderScaleRequest().scale,
+                pass1Ms: 30, weatherMs: 10, blitMs: null, upscaleMs: null,
+            });
+            act(() => { stepFrame(1000 / 60); });
+        }
+        expect(renderer.count('renderStreetView')).toBe(61);
+        expect(getRenderScaleRequest().scale).toBe(1);
+        // Weather time is the stepped app time: 1000 ms + 60 frames at 60 fps.
+        const params = renderer.lastArgs('updateWeatherParams')?.[0] as Float32Array;
+        expect(params[WeatherParamIndex.time]).toBeCloseTo(2, 5);
+
+        endVirtualFrames();
+        frames(3, 16);
+        expect(renderer.count('renderStreetView')).toBe(64);
     });
 });

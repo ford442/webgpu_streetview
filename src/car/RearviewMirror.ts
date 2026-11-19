@@ -4,6 +4,7 @@ import { signedHeadingDelta } from './rearViewFeed';
 import type { CabinRenderer } from './interior/createCabinRenderer';
 import { createRearviewMirrorGlslMaterial, type RearviewMirrorUniforms } from '../shaders/rearviewMirrorGlass';
 import { getCabinTslApi } from './interior/cabinTslRegistry';
+import { frameNow } from '../xr/frameClock';
 
 /**
  * Duplicated from `createCabinRenderer.ts`'s `isWebGPUCabinRenderer` rather
@@ -233,7 +234,7 @@ export class RearviewMirror {
     public update(carHeading: number, _skipFrame: boolean = false): void {
         const u = this.mirrorMaterial.uniforms.time;
         if (u) {
-            u.value = performance.now() * 0.001;
+            u.value = frameNow() * 0.001;
         }
         if (this.rearSample) {
             this.updateOrientation(carHeading, 0);

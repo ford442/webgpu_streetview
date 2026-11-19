@@ -8,6 +8,7 @@ import {
     tickLimoAtmosphere,
     type LimoState,
 } from './limoAtmosphere';
+import { frameNow } from '../../../xr/frameClock';
 
 export type { LimoState };
 
@@ -368,7 +369,7 @@ export class LimoAtmosphere {
     }
 
     update(_deltaTime: number): void {
-        tickLimoAtmosphere(this.state, this.moodLights, this.ceilingLights, performance.now() * 0.001);
+        tickLimoAtmosphere(this.state, this.moodLights, this.ceilingLights, frameNow() * 0.001);
     }
 
     dispose(): void {

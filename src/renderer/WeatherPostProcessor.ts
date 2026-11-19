@@ -44,6 +44,7 @@ import {
 } from './gpuPipelineFactory';
 import { PUBLIC_URL } from '../config/publicUrl';
 import { timestampWritesField } from './gpuPassTimer';
+import { frameNow } from '../xr/frameClock';
 
 // Must match NOISE_TILE_SIZE in src/renderer/weatherNoiseTile.ts and the
 // `array<f32, 4096>` storage buffer `wasmNoiseTile` (src/shaders/weather/bindings.wesl).
@@ -68,7 +69,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     private sceneDepth: AuxDepth | null = null;
     private sceneSemantic: AuxSemantic | null = null;
     private weatherParams: Float32Array<ArrayBuffer> = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
-    private startTime: number = Date.now();
+    private startTime: number = frameNow();
     private shaderEffectsEnabled: boolean = true;
     private dualSourcePrecip = false;
     /**
@@ -302,7 +303,7 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
     public updateWeatherAnimation(): void {
         if (!this.device || !this.weatherParamsBuffer) return;
         try {
-            const time = (Date.now() - this.startTime) / 1000;
+            const time = (frameNow() - this.startTime) / 1000;
             this.weatherParams[WeatherParamIndex.time] = time % 10000.0;
             this.weatherParamsDirty = true;
         } catch {

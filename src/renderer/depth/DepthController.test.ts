@@ -162,6 +162,38 @@ describe('scene depth — lazy, optional pass', () => {
     });
 });
 
+describe('scene depth — virtual frame readiness (#374)', () => {
+    it('is off until switched on, busy while loading and inferring, idle between maps', async () => {
+        const c = makeController();
+        expect(c.frameWork()).toBe('off');
+        c.setOptions({ enabled: true, blend: 0.6, reducedMotion: false });
+        expect(c.frameWork()).toBe('busy'); // the estimator is not loaded yet
+        await c.pass.init();
+        expect(c.frameWork()).toBe('idle');
+        worker.manual = true;
+        const inferring = () => worker.received.some((m) => m.type === 'infer');
+        for (let t = 0; t < 40 * DEPTH_SETTLE_MS && !inferring(); t += DEPTH_SETTLE_MS) {
+            c.onFrame(frame(t));
+            await settle();
+        }
+        expect(inferring()).toBe(true);
+        expect(c.frameWork()).toBe('busy'); // an inference is in flight
+        worker.flush();
+        await settle();
+        expect(c.frameWork()).toBe('idle');
+        c.setOptions({ enabled: false, blend: 0, reducedMotion: false });
+        expect(c.frameWork()).toBe('off');
+    });
+
+    it('a failed load is off, not busy: nothing will arrive to wait for', async () => {
+        worker.initError = 'scene-depth model not deployed (HTTP 404)';
+        const c = makeController();
+        c.setOptions({ enabled: true, blend: 0.6, reducedMotion: false });
+        await expect(c.pass.init()).rejects.toThrow(/HTTP 404/);
+        expect(c.frameWork()).toBe('off');
+    });
+});
+
 describe('scene depth — input, output, publication', () => {
     it('reads the pass-1 intermediate only, at ≈252² with the canvas aspect', async () => {
         const c = makeController();

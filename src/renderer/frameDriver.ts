@@ -61,7 +61,7 @@ import {
     particleCountForGrid,
     PARTICLE_SEED,
 } from './weatherParticles';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, isVirtualDriven, requestFrame } from '../xr/frameClock';
 import { streetViewProbe } from '../debug/streetViewProbe';
 import type { NoiseTileFeeder } from './weatherNoiseTile';
 import type { ParticleSeedFeeder } from './weatherParticleSeeds';
@@ -103,8 +103,8 @@ export class FrameDriver {
     /** `?atmosphere=on`, read once at `start()`. */
     private atmosphereOptedIn = false;
     private readonly livePov = () => povStore.get();
-    /** Page-relative time, to keep shader sin()/hash() inside f32 precision. */
-    private readonly startedAt = Date.now();
+    /** Page-relative app time (`frameNow`), to keep shader sin()/hash() inside f32 precision. */
+    private readonly startedAt = frameNow();
     private tailFlags: ReturnType<typeof readPresentTailFlags> = {};
     private tailOptions: PresentTailOptions | null = null;
     private budget: FrameBudgetState | null = null;
@@ -135,7 +135,7 @@ export class FrameDriver {
         this.tailFlags = readPresentTailFlags();
         this.atmosphereOptedIn = readFlag('atmosphere') === true;
         this.tailOptions = resolvePresentTailOptions({ reducedMotion: false, ...this.tailFlags });
-        this.frame(performance.now());
+        this.frame(frameNow());
     }
 
     public stop(): void {
@@ -219,7 +219,7 @@ export class FrameDriver {
         this.horizon = horizon.state;
         const params = packWeatherParams({
             env: e,
-            timeSeconds: (Date.now() - this.startedAt) / 1000.0,
+            timeSeconds: (frameNow() - this.startedAt) / 1000.0,
             cameraHeading: weatherHeading,
             cameraPitch: weatherPitch,
             wasmNoiseActive,
@@ -231,7 +231,7 @@ export class FrameDriver {
             horizon: horizon.uniforms,
         }, this.params);
 
-        const nowMs = performance.now();
+        const nowMs = frameNow();
         const dtMs = this.lastFrameMs == null ? 0 : nowMs - this.lastFrameMs;
         this.lastFrameMs = nowMs;
         const reducedMotion = bootReducedMotion || isReducedMotion();
@@ -281,8 +281,10 @@ export class FrameDriver {
             }, this.atmosphereOptions));
         }
 
-        // Frame budget: frozen through a hold and under reduced motion
-        // (a resolution that pumps is motion too). A GPU sample counts
+        // Frame budget: frozen through a hold, under reduced motion (a
+        // resolution that pumps is motion too) and while the virtual clock
+        // steps frames (#374 — an export's scale must not follow GPU timing,
+        // or two exports differ). A GPU sample counts
         // only once, and only if it timed a frame at the current scale.
         const request = getRenderScaleRequest();
         if (request.mode === 'auto' && this.budget) {
@@ -297,7 +299,7 @@ export class FrameDriver {
                 // The raw last frame interval, not an average: the budget
                 // smooths with its own windowed median.
                 frameMs: this.meter.lastIntervalMs,
-                frozen: holdActive || reducedMotion,
+                frozen: holdActive || reducedMotion || isVirtualDriven(),
                 temporal: getAppliedRenderScale().upscale === 'temporal',
             }, { ...DEFAULT_FRAME_BUDGET, min: request.min, max: request.max });
             this.budget = budget;
