@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type VehicleConfig } from '../VehicleManager';
 import { type GPUPerformanceProfile } from './performance';
-import { cabinGlowScale } from './cabinLightingRamps';
+import { ACCENT_TRIM_ALBEDO_SCALE, cabinGlowScale } from './cabinLightingRamps';
 
 export interface MaterialSet {
   dashboard: THREE.MeshPhysicalMaterial;
@@ -191,9 +191,19 @@ export function setCabinGlowState(
 }
 
 /**
+ * Daylight colour of accent trim: the accent, darkened in linear space to a
+ * smoked tint (`ACCENT_TRIM_ALBEDO_SCALE`). Hue survives, saturation-as-paint
+ * does not — the full accent is reserved for the emissive term.
+ */
+function accentTrimAlbedo(accentHex: number): THREE.Color {
+  return new THREE.Color(accentHex).multiplyScalar(ACCENT_TRIM_ALBEDO_SCALE);
+}
+
+/**
  * Lacquered accent trim material. Clearcoat gives the pieces a sharp
- * reflection of the panorama environment on top of the tinted base, and the
- * emissive term makes the trim read as ambient accent lighting. Callers pass
+ * reflection of the panorama environment on top of a dark accent-tinted base
+ * (`accentTrimAlbedo`), and the emissive term — the full accent — makes the
+ * trim read as ambient accent lighting once the night ramp raises it. Callers pass
  * different `emissiveIntensity` values so trim pieces vary in glow (bezels
  * brighter than long strips); the neon theme boosts all of them. Each accent
  * material joins the glow registry so cabin state modulates it.
@@ -205,9 +215,9 @@ export function createAccentMaterial(
   const accentHex = parseInt(config.accentColor.replace('#', '0x'));
   const base = accentGlowBase(config, emissiveIntensity);
   const material = new THREE.MeshPhysicalMaterial({
-    color: accentHex,
-    // Painted trim, not chrome: the emissive term is the light, clearcoat
-    // is the lacquer that catches the pano.
+    color: accentTrimAlbedo(accentHex),
+    // Smoked lacquer, not chrome or neon paint: the emissive term is the
+    // light, clearcoat is the lacquer that catches the pano.
     roughness: 0.42,
     metalness: 0.12,
     emissive: accentHex,

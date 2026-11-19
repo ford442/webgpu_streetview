@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VEHICLES } from '../VehicleManager';
 import { GPU_PROFILES } from './performance';
-import { createMaterials } from './MaterialFactory';
+import { createAccentMaterial, createMaterials, resetGlowRegistry } from './MaterialFactory';
+import { ACCENT_TRIM_ALBEDO_SCALE } from './cabinLightingRamps';
 
 describe('cabin material finish', () => {
   beforeEach(() => {
@@ -17,7 +18,10 @@ describe('cabin material finish', () => {
       };
     } as never);
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetGlowRegistry();
+  });
 
   it('gives sedan leather and dash a highlight the sun and cluster can catch', () => {
     const { dashboard, leather, chrome } = createMaterials(VEHICLES.sedan, GPU_PROFILES.medium);
@@ -42,5 +46,22 @@ describe('cabin material finish', () => {
     expect(lab.dashboard.clearcoat).toBeGreaterThan(sedan.dashboard.clearcoat);
     expect(lab.leather.sheenColor.b).toBeGreaterThan(lab.leather.sheenColor.r);
     expect(lab.dashboard.color.g).toBeGreaterThan(sedan.dashboard.color.g);
+  });
+
+  it('keeps the accent on the emissive and paints trim as smoked lacquer', () => {
+    for (const config of Object.values(VEHICLES)) {
+      const { accent } = createMaterials(config, GPU_PROFILES.medium);
+      const ring = createAccentMaterial(config, 0.45);
+      for (const mat of [accent, ring]) {
+        // The light is the full vehicle accent, so night glow follows config.accentColor.
+        expect(`#${mat.emissive.getHexString()}`).toBe(config.accentColor.toLowerCase());
+        // The paint is the same hue, darkened: by day the sun and the pano IBL
+        // light lacquered trim, not a second copy of the night glow.
+        for (const ch of ['r', 'g', 'b'] as const) {
+          expect(mat.color[ch]).toBeCloseTo(mat.emissive[ch] * ACCENT_TRIM_ALBEDO_SCALE, 6);
+        }
+        expect(Math.max(mat.color.r, mat.color.g, mat.color.b)).toBeLessThanOrEqual(0.15);
+      }
+    }
   });
 });

@@ -100,6 +100,17 @@ export const CLUSTER_WELL_EMISSIVE = 0x10120e;
 export const DISPLAY_HOUSING_EMISSIVE = 0x0e1012;
 
 /**
+ * Linear albedo scale for lacquered accent trim (dash strips, gauge bezel
+ * rings, display frame, shifter knob, stalk tips). The accent is a *light*:
+ * it belongs on `emissive`, which `cabinGlowScale` takes to ~0 by day. Painted
+ * at full strength into the albedo as well, the sun and pano IBL lit the trim
+ * as saturated neon plastic in daylight — the night colour never left. At
+ * 0.15 the trim reads as smoked lacquer with a hint of the hue by day, the
+ * same ratio as the Cortianics ambient strip (0x55120f under 0xdc201c).
+ */
+export const ACCENT_TRIM_ALBEDO_SCALE = 0.15;
+
+/**
  * Dash point-light spill. Warm instrument bounce, not `accentColor`:
  * a green point light paints the wheel and the leather.
  */
