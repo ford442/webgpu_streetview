@@ -417,8 +417,9 @@ the module that owns it, not to the façade:
 | `bootDevice.ts` | the boot sequence and **the only main-thread `requestDevice` call site** (`deviceInit.test.ts` pins it; the scene-depth Worker's device is the one other, see *Scene depth*) |
 | `streetViewPass.ts` | pass-1 pipeline + bind group layout, the panorama sampler, the pass-1 encode |
 | `gpuPipelineFactory.ts` | validation-safe shader module / pipeline creation (`getCompilationInfo`, `create*PipelineAsync`, error scopes); the only place `createShaderModule` / `create*Pipeline` may be called (`gpuObjectLabels.test.ts`) |
-| `framePasses/` | the ordered pass registry (`depth` (lazy) → `semantic` (lazy) → `atmosphere` (lazy, High/Ultra) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
+| `framePasses/` | the ordered pass registry (`depth` (lazy) → `semantic` (lazy) → `atmosphere` (lazy, High/Ultra) → `streetview` → `historical-wipe` → `weather` \| `present-fallback` → `temporal` (lazy, `?temporal`) \| `upscale` (lazy, below scale 1) → `cabin-composite`): concurrent init, `ready \| failed` per pass on `webgpuProbe.passes`, only ready + enabled passes encoded; `FrameContext.aux` carries auxiliary inputs (scene depth); `FrameContext.renderScale` / `roadTarget` the frame's render scale |
 | `renderScale.ts`, `frameBudget.ts`, `upscale/` | render scale (#329): the request (preset range or `?scale=`), the pure budget loop, the FSR 1.0 EASU + RCAS / bilinear upscale — see `docs/GRAPHICS.md` §7 |
+| `temporal/` | the temporal resolve (#360, `?temporal`): motion field (`motion.wgsl`), history validity (`TemporalHistoryTracker`), Halton jitter applied in pass 1, `TemporalPass` (resolve + RCAS present, in `upscale`'s place), `webgpuProbe.temporal` — see `docs/GRAPHICS.md` §7 |
 | `depth/` | scene depth (#320): the lazy `depth` pass, the depth Worker, the shared scene-depth bind group + zero fallback — see *Scene depth* |
 | `atmosphere/` | the physically based atmosphere's LUTs (Hillaire 2020): the lazy `atmosphere` pass, rebuilt on change from the sun and the live visibility; C++ reference in `atmosphere_module.cpp` — see `docs/GRAPHICS.md` §10 |
 | `semantic/` | semantic scene layer (#352): the lazy `semantic` pass riding the depth Worker, the class table, weather group 3 + zero fallback — see *Semantic scene layer* |
@@ -840,14 +841,19 @@ Scene depth is **not** in this block: it is its own bind group
 `sceneDepthBinding.test.ts` checks the struct in all three shaders against
 `SceneDepthParamIndex`.
 
-The main `streetview.wgsl` uniform buffer is 8 floats (32 bytes):
+The main `streetview.wgsl` uniform buffer is 12 floats (48 bytes,
+`frameLoop.packFrameUniforms`, `PanoramaUniforms`):
 ```
 [0-3]   time, zoom, panX, panY
-[4]     inlineTransitionProgress
-[5]     transitionParam1 (zoom amount)
-[6]     transitionParam2 (blur strength)
-[7]     padding
+[4]     transitionProgress (the release crossfade)
+[5]     holdActive
+[6-7]   capturePanX, capturePanY (pan at the hold snapshot)
+[8-9]   jitter (temporal resolve sub-pixel offset, screen UV — 0 without `?temporal`)
+[10-11] padding
 ```
+The temporal resolve's own block is `temporal/temporalMath.ts`
+(`TemporalUniformIndex`, 12 floats); `temporalMath.test.ts` checks it against
+`temporal.wgsl`.
 
 Changing either layout without updating `weatherUniformLayout.ts`, `Renderer.ts`, `WebGPUCanvas.tsx`, and both weather WGSL files will break rendering.
 
@@ -999,6 +1005,7 @@ batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - `src/debug/scraperHealth.test.ts` — Pure scraper health reducer transitions (`locating`→`promoting`→`stable`→`lost`, auth-blocked, timeout) and `SCRAPER_CONTAINER_INVARIANTS` opacity contract.
 - `src/debug/streetViewProbe.test.ts` — Hold timeline recording (armed/first-stable/released, render scale at arm and release), warning capping, opt-in intra-hold pixel-drift heuristic, and `getScraperHealth()` probe surface.
 - `src/components/WebGPUCanvas.frameLoop.test.tsx` — the real render loop renders every animation frame (live, weather-only, held) at any frame time; GPU load lowers the requested render scale; a hold freezes it.
+- `src/renderer/temporal/temporalMath.test.ts`, `TemporalPass.test.ts`, `Renderer.temporal.test.ts` — the temporal resolve (#360): jitter sequence and uniform layout (against `temporal.wgsl`); motion → resolve → present encode, ping-pong, history refused on the first frame / reset / resize; and the real `Renderer` — off builds nothing and leaves pass 1's jitter zero, `auto` / `on` present through the lazy pass, a hold / release / wipe reset history in their own frame, a failed resolve leaves FSR 1 presenting. `e2e/temporal.spec.ts` (`gpu`) runs the WGSL: a pan at 0.6 converges under 2/255 of native in 8 frames, beats FSR 1, and a hop resets with no ghost.
 - `src/renderer/renderScale.test.ts`, `frameBudget.test.ts`, `upscale/UpscalePass.test.ts`, `Renderer.renderScale.test.ts` — render scale (#329): quantisation and the request/probe store; the budget loop on simulated timing traces (converges within 2 s, never oscillates by more than a step, backs off failed probes, learns a 50 Hz refresh, frozen holds); the EASU → RCAS / bilinear encode; and the real `Renderer` at scale 1 (no upscale built or encoded) vs 0.5 (scaled intermediate + road target), hold freeze, and a failing upscale.
 - `src/hooks/__tests__/useStreetView.holdLook.test.tsx` — `advance()`/`teleport()` hold-arming, `setPov` suppression during hold, and teleport's no-op-while-transitioning guard.
 - `src/renderer/RendererBackend.test.ts`, `src/renderer/createStreetViewRenderer*.test.ts`, `src/renderer/webgpuBootProbe.test.ts` — Backend preference/debug-flag parsing, WebGPU-required hard-fail (no WebGL construct), and `webgpuProbe` brand/stage records.
@@ -1015,8 +1022,8 @@ batch kernels stay WASM. Full detail: `docs/WASM_BRIDGE.md`.
 - `e2e/windshield-portal.spec.ts` (+ `e2e/fixtures/windshield-portal/`) — the portal on a **real WebGPU device** (Chromium's SwiftShader adapter, which exposes `clip-distances`): real `weather-post` vs the display mirror, hardware clip distances present in the generated WGSL, wipers clearing droplets, the no-`clip-distances` and `?portal=off` fallbacks, a same-size road-texture replacement, both HDR formats, and the road's texture surviving the cabin.
 - `e2e/scene-depth.spec.ts` (+ `e2e/fixtures/scene-depth/`, a CC0 photo) — scene depth with the real model on the production renderer: ready with no validation errors, depth weight 0 bit-exact with no depth, fog/rain/DOF/dolly changing the frame the way they should, the model served from the Cache API on the next visit, and a bad model failing the pass but not the frame. Needs `npm run fetch:depth-model`; ~220 s per inference on SwiftShader — nightly `gpu-models` lane only.
 - `e2e/scene-semantic.spec.ts` (same fixture) — the semantic layer (#352) with the rebuilt model through ORT-web on SwiftShader: maps with a plausible class histogram, semantic weight 0 bit-exact across looks, no rain streaks over the sky, no wet or snow change on the walls, class-conditional night relight, sky replacement inside the sky only, and a missing model failing the `semantic` pass but not depth or the frame. Needs `npm run fetch:models`.
-- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1.
-- The GPU specs run only in the **`gpu`** and **`gpu-models`** Playwright projects (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. `gpu` (boot, passes, portal, stereo, render scale, broken-shader isolation) is the PR lane in `ci.yml` `e2e-smoke`; `gpu-models` (`scene-depth`, `scene-semantic` — the real weights, ~220 s per depth inference on SwiftShader) runs only in `nightly-probe.yml` (#358). Never move a model spec into `gpu`: a PR lane that waits minutes per inference fails on runner load, not on regressions. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
+- `e2e/gpu-foundation.spec.ts` (+ `e2e/fixtures/gpu-foundation/`) — the production `Renderer` on the same device: a broken `cabin-composite.wgsl` / `weather-post.wgsl` is disabled and reported on `webgpuProbe.passes` with compilation info while the road frame still presents (pixel-checked) with no uncaptured errors; a broken `streetview.wgsl` fails boot at stage `pipeline`; DPR 2 gives a 2× backing store; an external `device.destroy()` re-inits exactly once and the renderer's own `destroy()` never does; render scale — `?scale=1` builds no upscale and presents the unflagged frame, `?scale=0.5` (FSR and `?upscale=bilinear`) presents a half-size road frame at full size, and a broken `upscale.wgsl` keeps the road at scale 1; temporal (#360) — `?temporal=auto` at 0.6 and `on` at 1 present through the resolve with history, a broken `temporal.wgsl` leaves FSR 1 presenting, and a hold, its release and a wipe each report no history in their own frame.
+- The GPU specs run only in the **`gpu`** and **`gpu-models`** Playwright projects (SwiftShader launch flags in `playwright.config.ts`; `--use-vulkan=swiftshader` is what lets a frame *present* to a canvas without losing the device). There a missing adapter **fails** the test (`e2e/gpuLane.ts`); the plain `chromium` project ignores them. `gpu` (boot, passes, portal, stereo, render scale, temporal resolve, broken-shader isolation) is the PR lane in `ci.yml` `e2e-smoke`; `gpu-models` (`scene-depth`, `scene-semantic` — the real weights, ~220 s per depth inference on SwiftShader) runs only in `nightly-probe.yml` (#358). Never move a model spec into `gpu`: a PR lane that waits minutes per inference fails on runner load, not on regressions. Run against a dev server with `E2E_SKIP_WEBSERVER=1 E2E_BASE_URL=http://127.0.0.1:<port>` or let Playwright start one.
 
 ### Manual Testing Requirements
 WebGPU rendering and canvas detection cannot be reliably tested in Vitest/jsdom. Prefer Playwright E2E / the hold-pause probe when automating; otherwise verify manually:
@@ -1164,7 +1171,7 @@ MAPS_API_KEY='...' python deploy.py
 
 **`main` is protected.** Merges go through a pull request, and the `Verify` (`test-and-build`) and `build-wasm-emscripten` checks from `ci.yml` must pass — set under *Settings → Branches → Branch protection rules → main* (`Require a pull request before merging`, `Require status checks to pass`). `main` was red from 2026-10-28 to #358 unnoticed because nothing enforced this: nightly runs the dev server, and Vite does not typecheck. `Deploy` runs `verify` first, so a red `main` also blocks every deploy.
 
-**Closed ≠ merged.** The Linear sync closes GitHub issues as `COMPLETED` without code landing (#327–#332 in October; #353, temporal road frame, on 2026-11-04 — `renderer/upscale/` still holds only FSR 1; re-filed as #360). Before treating a closed roadmap issue as done, find the PR that implemented it (`gh pr list --state merged --search "<issue number>"`) and the code it names; if there is none, reopen the issue or file a successor that records the history.
+**Closed ≠ merged.** The Linear sync closes GitHub issues as `COMPLETED` without code landing (#327–#332 in October; #353, temporal road frame, on 2026-11-04 — re-filed as #360, whose motion field landed first and whose resolve is `renderer/temporal/TemporalPass.ts`). Before treating a closed roadmap issue as done, find the PR that implemented it (`gh pr list --state merged --search "<issue number>"`) and the code it names; if there is none, reopen the issue or file a successor that records the history.
 
 ---
 

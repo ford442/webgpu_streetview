@@ -287,7 +287,8 @@ frame to keep up: under load the scale drops first, a preset downgrade last.
 | Budget loop | `frameBudget.ts` — pure `stepFrameBudget`, driven per frame by `WebGPUCanvas` |
 | Applied per frame | `Renderer.resolveFrameScale` → `FrameContext.renderScale`; `window.webgpuProbe.renderScale` |
 | Upscale | `upscale/UpscalePass.ts` + `public/shaders/upscale.wgsl`, frame pass `upscale` (order 350) |
-| Overlay | `PerformanceStatsOverlay` — scale, road size → output, upscaler, range; per-pass GPU ms incl. upscale |
+| Temporal resolve (`?temporal`) | `temporal/TemporalPass.ts` + `public/shaders/temporal.wgsl`, frame pass `temporal` (order 340), presents in `upscale`'s place; `window.webgpuProbe.temporal` |
+| Overlay | `PerformanceStatsOverlay` — scale, road size → output, upscaler (`temporal` when the resolve presents), range; per-pass GPU ms incl. upscale / temporal |
 
 **Scaled frame.** Pass 1, the intermediate, the compute weather targets and
 the gpuChores inputs follow the intermediate's size. `weather-post.wgsl`
@@ -308,9 +309,9 @@ request below 1 starts building it, and until it is ready the road stays at 1
 (`limitedBy: 'upscale-pending'`); if it fails it is reported on
 `webgpuProbe.passes.upscale` and the road stays at 1 for the session
 (`'upscale-unavailable'`). FSR 2/3, DLSS, XeSS are out of scope; the temporal
-resolve is #360 (below).
+resolve (#360, below) replaces it under `?temporal`.
 
-**Motion field (#360 slice 1, not wired yet).** `src/renderer/temporal/`:
+**Motion field (#360).** `src/renderer/temporal/`:
 `motion.wgsl` writes `rg16float` at the intermediate's size, `motion =
 current − previous` in intermediate pixels (history of `p` is at `p −
 motion`). The camera term is the exact rotation homography from the POV delta
@@ -323,13 +324,71 @@ the first frame, resize, hold, pano change, Maps zoom step, a turn wider than
 the view) and **history** (also off during a release crossfade, a legacy
 transition or a historical wipe, *and on the frame after one* — that frame's
 history holds the ghost). `MotionVectorPass` owns its 112-byte uniform buffer
-and reads the shared scene-depth group at group 1. Nothing in `Renderer`
-builds it until the slice-2 `TemporalPass` consumes it, so every frame is
-unchanged.
+and reads the shared scene-depth group at group 1; `TemporalPass` owns and
+encodes it.
+
+**Temporal resolve (#360, `?temporal=off|auto|on`, default `off`).** With
+`auto` a scaled frame (scale < 1) presents through the resolve instead of
+`upscale`; `on` also runs it at scale 1 (anti-aliasing the native frame).
+`off`, and `auto` at scale 1, are the frame without it: nothing built, pass
+1's four extra uniform floats zero — `uv + 0.0` is `uv`, and pass 1 is
+byte-identical to the pre-#360 shader at zero jitter (checked on SwiftShader:
+live, digital zoom, release crossfade, hold).
+
+- *Jitter.* The source is the Maps canvas, a texture, so the jitter is a
+  **sampling offset**: pass 1 adds `PanoramaUniforms.jitter` (screen UV) to
+  the UV it samples at. Halton(2, 3), 1-based, `ceil(8 · (out/in)²)` phases
+  (8 at scale 1, 23 at 0.6, 32 at 0.5 — eight samples per output pixel).
+  Zero on every frame that does not blend history (a reset, a hold, a
+  release), so a frame shown alone never shimmers.
+- *Resolve* (`temporal.wgsl`, own 48-byte block, output size). Current: the
+  3×3 intermediate samples, each at the position pass 1 really sampled,
+  Gaussian-weighted — an input pixel wide on a reset (a soft spatial
+  upsample, weighted 0.1 so the sharp samples outweigh it at once), under an
+  output pixel once there is history. History: last frame's resolve at `uv −
+  motion` through a Keys cubic (a = −0.55: within 0.2 % of unity below half
+  the output Nyquist at every sub-pixel shift, where Catmull-Rom loses 3–4 %
+  per resample of 5 px detail — compounded over a history's life that was
+  the difference between converged and soft), clipped to the 3×3 YCoCg
+  min/max ∩ mean ± 2σ, its weight divided by how far it was clipped. A
+  running weighted average, capped at weight 16. The history (`rgba16float`,
+  a = weight) is ping-ponged and never sharpened.
+- *Present.* RCAS from `upscale.wgsl` (its own pipeline, 1 stop) from the
+  history into the swap chain — or the split frame's present source. A
+  broken `upscale.wgsl` therefore fails the resolve too.
+- *Lazy, with a fallback.* Built the first time a frame wants it (motion,
+  resolve and present compile concurrently through `gpuPipelineFactory`);
+  `upscale` presents meanwhile, and for the session if it fails
+  (`webgpuProbe.passes.temporal`). A hold freezes what presents along with
+  the scale. Timing: the resolve + present share the upscale span (slots
+  6–7; only one of the two presents), so the budget loop sees it; the motion
+  pass is not stamped yet.
+- *Never seen by the portal.* The windshield portal keeps sampling the
+  (jittered, scaled) pass-1 intermediate, never the resolve.
+- *Probe.* `webgpuProbe.temporal`: `presenting`, `history`, `historyReset`
+  (`first-frame | hold | pano | maps-zoom | cut | resize | transition |
+  historical-wipe | dirty-history | weather-only | off`), jitter, phases,
+  frames, resets.
+- *Measured* (`e2e/temporal.spec.ts`, SwiftShader, 400×240 from 240×144,
+  mean |error| against the native point-sampled view, 8-bit units): a 0.1° /
+  frame pan goes 2.71 → 1.46 by frame 8 and settles at ~1.15; a 1° / frame
+  (~3.5 px) pan 2.71 → 1.69, settling ~1.37; FSR 1 on the same frame 4.70.
+  Stripes at 0.4 contrast close to the 0.6 frame's Nyquist settle at ~2.1
+  (FSR 1: 5.68) — the floor of ~6 jittered 8-bit samples per output pixel,
+  not drift. Weather drawn into the road (rain, drops) is not jittered and
+  has no motion of its own: the clip keeps it from ghosting, and a reactive
+  mask for it is slice 5's.
+
+**Budget loop's temporal lever.** While the resolve presents, the loop may
+drop to 0.5 (`TEMPORAL_RENDER_SCALE_MIN`) below the preset floor — the
+resolve accumulates a scaled frame back toward native.
+`renderScale.getRenderScaleRange()` applies the same floor to the request,
+and when the resolve stops presenting the request is raised back to the
+preset's (`getEffectiveRequestedScale`).
 
 **Budget loop.** One 0.05 step at most every 10 frames, on the median of that
 window. With `timestamp-query` it reads the road's GPU time (pass 1 + weather
-+ blit + upscale) against 75 % of a 60 Hz frame and predicts a step up as
++ blit + upscale or temporal) against 75 % of a 60 Hz frame and predicts a step up as
 `cost × (up / scale)²` — it climbs back as soon as a load ends and never
 re-enters a level that will not fit; a level it stepped *up* into and then
 overloaded is blocked for 8 s (doubling, ≤ 64 s). A timing sample counts once

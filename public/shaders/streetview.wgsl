@@ -5,6 +5,9 @@
 // Transition support:
 // - holdActive: freeze on previousFrameTexture while the next panorama loads
 // - Look-around: UV shift on the frozen frame from heading/pitch delta
+// - Jitter (#360): with the temporal resolve on, the screen UV moves by a
+//   Halton sub-pixel offset each frame (src/renderer/temporal/temporalMath.ts).
+//   It is exactly zero otherwise, and uv + 0.0 is uv.
 // - Release: crossfade when transitionProgress goes 0→1. With a scene-depth map
 //   for the held frame (group 1, src/renderer/depth/sceneDepthBinding.ts) the
 //   outgoing frame also dollies — near pixels move more than the skyline. With
@@ -24,6 +27,8 @@ struct PanoramaUniforms {
     holdActive: f32,        // 1.0 = freeze on previous frame
     capturePanX: f32,       // panX at snapshot capture time
     capturePanY: f32,       // panY at snapshot capture time
+    jitter: vec2<f32>,      // temporal resolve sub-pixel offset, screen UV (0 without it)
+    pad0: vec2<f32>,
 };
 
 @vertex
@@ -121,8 +126,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = uniforms.zoom;
     let center = vec2<f32>(0.5, 0.5);
 
+    let screenUV = input.uv + uniforms.jitter;
+
     // Apply digital zoom centered on the image
-    var uv = (input.uv - center) / zoom + center;
+    var uv = (screenUV - center) / zoom + center;
     let clampedUV = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
 
     let t = uniforms.transitionProgress;
@@ -137,7 +144,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         color = textureSample(tex, texSampler, clampedUV).rgb;
         if (t > 0.0 && t < 1.0) {
             // Release: clean crossfade from held frame to the new live panorama
-            let prevColor = samplePrevForRelease(input.uv, uv, t);
+            let prevColor = samplePrevForRelease(screenUV, uv, t);
             let fade = pow(t, 1.2);
             color = mix(prevColor, color, fade);
         }

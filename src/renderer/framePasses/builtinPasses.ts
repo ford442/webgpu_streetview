@@ -10,7 +10,8 @@
  * | 200 | `historical-wipe` | `HistoricalWipePass` |
  * | 300 | `weather` | `WeatherPostProcessor` / `ComputeWeatherPostProcessor` |
  * | 310 | `present-fallback` (lazy) | `PresentFallbackPostProcessor` — only when weather failed |
- * | 350 | `upscale` (lazy) | `upscale/UpscalePass` — only below render scale 1 |
+ * | 340 | `temporal` (lazy) | `temporal/TemporalPass` — presents in `upscale`'s place under `?temporal` |
+ * | 350 | `upscale` (lazy) | `upscale/UpscalePass` — only below render scale 1, when temporal does not present |
  * | 380 | `reproject` (lazy, tail) | `reproject/ReprojectPass` — late latch / stereo (#331) |
  * | 400 | `cabin-composite` (last) | `CabinCompositePass` |
  */
@@ -21,6 +22,7 @@ import type { TransitionManager } from '../TransitionManager';
 import type { HistoricalWipePass } from '../HistoricalWipePass';
 import type { CabinCompositePass } from '../cabinComposite';
 import type { UpscalePass } from '../upscale/UpscalePass';
+import type { TemporalPass } from '../temporal/TemporalPass';
 import type { ReprojectPass } from '../reproject/ReprojectPass';
 import type { WeatherPostInitOptions, WeatherPostProcessorLike } from '../weatherPostProcessorTypes';
 import type { FramePass } from './FramePassRegistry';
@@ -30,6 +32,7 @@ const PASS_ORDER = {
     historicalWipe: 200,
     weather: 300,
     presentFallback: 310,
+    temporal: 340,
     upscale: 350,
     reproject: 380,
     cabinComposite: 400,
@@ -150,11 +153,49 @@ export function createUpscaleFramePass(deps: UpscalePassDeps): FramePass {
         order: PASS_ORDER.upscale,
         lazy: true,
         init: () => deps.pass.init(deps.presentationFormat, { peak: deps.peak }),
-        enabled: ({ renderScale }) => renderScale.scale < 1,
+        enabled: ({ renderScale }) => renderScale.scale < 1 && renderScale.upscale !== 'temporal',
         encode(encoder, { getSwapChainView, presentTarget, renderScale, timings }) {
             const view = presentTarget ?? getSwapChainView();
             if (!view) return;
             deps.pass.encode(encoder, view, renderScale.outputWidth, renderScale.outputHeight, timings.upscale);
+        },
+        destroy: () => deps.pass.dispose(),
+    };
+}
+
+export interface TemporalPassDeps {
+    pass: TemporalPass;
+    presentationFormat: GPUTextureFormat;
+    device: GPUDevice;
+    /** Same "applied, not requested" ceiling as the upscale's RCAS limiter. */
+    peak: number;
+}
+
+/**
+ * The temporal resolve (#360): the jittered road frame + its history → the
+ * swap chain (or the split frame's present source). Lazy — `Renderer` builds
+ * it the first time `?temporal` wants it — and encoded only on frames whose
+ * `renderScale.upscale` is `temporal`; `upscale` is skipped on those, and
+ * presents instead whenever this pass is pending or failed.
+ */
+export function createTemporalFramePass(deps: TemporalPassDeps): FramePass {
+    return {
+        id: 'temporal',
+        order: PASS_ORDER.temporal,
+        lazy: true,
+        init: () => deps.pass.init(deps.presentationFormat, { peak: deps.peak }),
+        enabled: ({ renderScale }) => renderScale.upscale === 'temporal',
+        encode(encoder, { getSwapChainView, presentTarget, renderScale, timings, aux }) {
+            const view = presentTarget ?? getSwapChainView();
+            if (!view) return;
+            deps.pass.encode(
+                encoder,
+                view,
+                renderScale.outputWidth,
+                renderScale.outputHeight,
+                resolveSceneDepthBindGroup(deps.device, aux),
+                timings.temporal,
+            );
         },
         destroy: () => deps.pass.dispose(),
     };

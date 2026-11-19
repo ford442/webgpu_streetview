@@ -8,6 +8,7 @@ import type { TextureLifecycle } from '../textureLifecycle';
 import type { WeatherPassTimingContext } from '../weatherPostProcessorTypes';
 import type { Pass1TimingContext } from '../streetViewPass';
 import type { UpscaleTimingContext } from '../upscale/UpscalePass';
+import type { TemporalTimingContext } from '../temporal/TemporalPass';
 import type { FrameAux } from '../depth/sceneDepthBinding';
 import type { RenderScaleFrame } from '../renderScale';
 
@@ -21,7 +22,8 @@ export interface FrameContext {
     renderScale: RenderScaleFrame;
     /**
      * Where the weather pass writes: undefined for the swap chain (scale 1),
-     * else the upscale pass's road target at the intermediate's size.
+     * else the road target of whatever presents (`renderScale.upscale`: the
+     * upscale pass, or the temporal resolve) at the intermediate's size.
      */
     roadTarget: GPUTextureView | undefined;
     /**
@@ -99,7 +101,7 @@ export class RequiredPassError extends Error {
 
 /**
  * The frame as an ordered list of passes: `streetview → [historical-wipe] →
- * weather | present-fallback → [upscale] → [reproject] → cabin-composite`
+ * weather | present-fallback → [temporal | upscale] → [reproject] → cabin-composite`
  * (`reproject` and, in a split frame, the cabin composite in the tail).
  *
  * Boot builds every non-lazy pass concurrently (their WGSL fetches and pipeline
@@ -227,4 +229,6 @@ export interface FramePassTimings {
     pass1?: Pass1TimingContext;
     weather?: WeatherPassTimingContext;
     upscale?: UpscaleTimingContext;
+    /** The temporal resolve shares the upscale span: only one of them presents a frame. */
+    temporal?: TemporalTimingContext;
 }

@@ -25,6 +25,12 @@
  *   reads, standing in for a car loop that moved the view after the road was
  *   packed. The lazy reproject pass settles like the upscale.
  *
+ * - `temporal` — `webgpuProbe.temporal` (#360) with `?temporal=on|auto` (the
+ *   app's flag): the lazy temporal pass settles like the upscale; with
+ *   `resets=1` the fixture then walks a hold, its release and a year-chip
+ *   wipe and records the probe after each frame (`temporalEvents`) — every
+ *   one of those frames must report no history.
+ *
  * Query: `break=<file.wgsl>` serves that shader with a syntax error;
  * `frames=N`; `lost=1`; `scale=` / `upscale=` / `latelatch` / `stereo` (the
  * app's own flags); `livepov=h,p`; `pattern=bars` (vertical colour bars, so a
@@ -52,6 +58,8 @@ const [liveHeading = 0, livePitch = 0] = (q.get('livepov') ?? '0,0').split(',').
 const tailFlags = readPresentTailFlags();
 const wantsTail = tailFlags.latch || !!tailFlags.stereo;
 const wasmMissing = q.get('wasm') === 'missing';
+const temporalWanted = q.has('temporal');
+const walkResets = q.get('resets') === '1';
 
 const out: Record<string, unknown> = {};
 (window as unknown as { __out: unknown }).__out = out;
@@ -130,6 +138,44 @@ async function renderFrames(renderer: StreetViewRenderer, source: HTMLCanvasElem
     }
 }
 
+/**
+ * A hold, its release and a year-chip wipe, the way the app drives them, with
+ * `webgpuProbe.temporal` read after every frame.
+ */
+async function walkTemporalResets(renderer: StreetViewRenderer, source: HTMLCanvasElement) {
+    const events: Array<{ event: string; history: boolean; historyReset: string | null; presenting: boolean }> = [];
+    const record = (event: string) => {
+        const t = window.webgpuProbe?.temporal;
+        events.push({ event, history: !!t?.history, historyReset: t?.historyReset ?? null, presenting: !!t?.presenting });
+    };
+    const frame = async (event: string, held = false) => {
+        renderer.beginFrame?.(await nextFrame());
+        if (held) renderer.renderHeldFrame?.(0, 0, 1);
+        else renderer.renderStreetView('streetview', source, 0, 0, 1);
+        record(event);
+    };
+    await frame('steady');
+    renderer.beginHoldTransition?.(0, 0, source);
+    await frame('hold', true);
+    await frame('hold', true);
+    renderer.endHoldTransition?.();
+    renderer.setTransitionProgress?.(0.5);
+    await frame('release');
+    renderer.setTransitionProgress?.(1);
+    await frame('after-release');
+    await frame('after-release');
+    await frame('steady-again');
+    const wiped = renderer.beginHistoricalWipe?.(1) ?? false;
+    if (wiped) {
+        renderer.setHistoricalWipeProgress?.(0.5);
+        await frame('wipe');
+        renderer.endHistoricalWipe?.();
+        await frame('after-wipe');
+        await frame('steady-after-wipe');
+    }
+    return { events, wiped };
+}
+
 async function boot(onLost?: (info: GPUDeviceLostInfo) => void) {
     const result = await createStreetViewRenderer(gpuCanvas, { onLost });
     if (!result.renderer) throw new Error(`renderer failed to boot: ${result.fallbackReason}`);
@@ -174,6 +220,16 @@ async function main() {
                 await renderFrames(renderer, source, 1);
             }
             await renderFrames(renderer, source, frames);
+        }
+        if (temporalWanted) {
+            // Lazy temporal resolve (#360): requested by the first frame that wants it.
+            const deadline = performance.now() + 60_000;
+            while (!window.webgpuProbe?.passes?.temporal && performance.now() < deadline) {
+                await renderFrames(renderer, source, 1);
+            }
+            await renderFrames(renderer, source, frames);
+            out.temporal = JSON.parse(JSON.stringify(window.webgpuProbe?.temporal ?? null));
+            if (walkResets) out.temporalEvents = await walkTemporalResets(renderer, source);
         }
         // Let any asynchronous validation errors from those frames arrive.
         await device.queue.onSubmittedWorkDone();

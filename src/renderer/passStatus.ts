@@ -18,6 +18,8 @@ export type FramePassId =
     | 'present-fallback'
     /** Render scale (#329): the scaled road frame → swap chain; encoded only below scale 1. */
     | 'upscale'
+    /** #360: the temporal resolve — presents scaled frames in `upscale`'s place under `?temporal`; lazy. */
+    | 'temporal'
     /** #331: late latch / stereo / WebXR eyes — the split frame's tail; lazy. */
     | 'reproject'
     | 'cabin-composite'

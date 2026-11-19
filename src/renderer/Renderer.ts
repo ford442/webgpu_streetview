@@ -39,6 +39,7 @@ import {
     createHistoricalWipeFramePass,
     createReprojectFramePass,
     createStreetViewFramePass,
+    createTemporalFramePass,
     createUpscaleFramePass,
     createWeatherFramePass,
 } from './framePasses/builtinPasses';
@@ -75,8 +76,22 @@ import { AtmosphereLayer } from './atmosphere/AtmosphereLayer';
 import type { AtmosphereOptions } from './atmosphere/atmosphereOptions';
 import { releaseSceneSemanticFallback } from './semantic/sceneSemanticBinding';
 import { UpscalePass } from './upscale/UpscalePass';
+import { TemporalPass } from './temporal/TemporalPass';
 import {
-    getRenderScaleRequest,
+    MOTION_UNIFORM_FLOAT_COUNT,
+    TemporalHistoryTracker,
+    heldLookDelta,
+    packMotionUniforms,
+} from './temporal/motionMath';
+import {
+    jitterOffset,
+    jitterPhaseCount,
+    wantsTemporal,
+    type TemporalMode,
+} from './temporal/temporalMath';
+import { publishTemporalStats } from './temporal/temporalStats';
+import {
+    getEffectiveRequestedScale,
     publishAppliedRenderScale,
     scaledSize,
     type RenderScaleFrame,
@@ -116,6 +131,7 @@ import {
 import { ignoreRejection } from '../config/ignoreRejection';
 
 const NO_LATCH: LatchDelta = { yawDeg: 0, pitchDeg: 0, magnitudeDeg: 0 };
+const NO_JITTER: readonly [number, number] = [0, 0];
 
 type ResolvedHistoricalWipe = { pass: HistoricalWipePass; before: GPUTexture | undefined } | null;
 
@@ -140,6 +156,7 @@ function wrapUnit(v: number): number {
  * | `roadFrameRegistry.ts` | the HDR intermediate, handed to the cabin's windshield portal |
  * | `HistoricalWipePass.ts` | the year-chip wipe from the hold snapshot, over pass 1 |
  * | `upscale/UpscalePass.ts` | below render scale 1: the scaled road frame → swap chain |
+ * | `temporal/TemporalPass.ts` | `?temporal`: the jittered road frame + history → swap chain, in `upscale`'s place |
  * | `reproject/` | the split frame's tail: late latch, stereo, WebXR eyes (#331) |
  *
  * What stays here is what needs the instance: lifetime (init/dispose/device
@@ -184,6 +201,20 @@ export class Renderer implements StreetViewRenderer {
     /** Render scale (#329): the lazy `upscale` pass, built on the first scale below 1. */
     private upscale: UpscalePass | null = null;
     private upscaleInit: Promise<boolean> | null = null;
+    /**
+     * #360: the lazy temporal resolve, built the first time `?temporal`
+     * wants it; `upscale` presents until it is ready, and if it fails.
+     */
+    private temporal: TemporalPass | null = null;
+    private temporalInit: Promise<boolean> | null = null;
+    private temporalMode: TemporalMode = 'off';
+    private readonly temporalTracker = new TemporalHistoryTracker();
+    private temporalFrameIndex = 0;
+    private readonly motionUniforms = new Float32Array(MOTION_UNIFORM_FLOAT_COUNT);
+    /** The jitter (intermediate px) pass 1 last rendered the intermediate with. */
+    private lastJitter: readonly [number, number] = NO_JITTER;
+    /** Pass 1's jitter in screen UV, refilled per frame. */
+    private readonly jitterUV: [number, number] = [0, 0];
     /**
      * This frame's scale (`FrameContext.renderScale`), refilled per frame. Its
      * `scale` is also what a hold freezes on: no scale change between
@@ -324,7 +355,7 @@ export class Renderer implements StreetViewRenderer {
 
             this.uniformBuffer = createTrackedBuffer(this.device, {
                 label: 'streetview-uniforms',
-                size: 32,
+                size: FRAME_UNIFORM_FLOAT_COUNT * 4,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             }, 'sv-uniforms');
 
@@ -336,6 +367,11 @@ export class Renderer implements StreetViewRenderer {
             this.historicalWipe = new HistoricalWipePass(this.device);
             this.upscale = new UpscalePass(this.device, readFlag('upscale'));
             this.upscaleInit = null;
+            this.temporal = new TemporalPass(this.device);
+            this.temporalInit = null;
+            this.temporalMode = readFlag('temporal');
+            this.temporalTracker.reset();
+            this.lastJitter = NO_JITTER;
             this.reproject = new ReprojectPass(this.device);
             this.reprojectInit = null;
             this.lastPacked = null;
@@ -455,6 +491,12 @@ export class Renderer implements StreetViewRenderer {
             pass: this.upscale!,
             presentationFormat: this.presentationFormat,
             // Same "applied, not requested" rule as the weather tone curve.
+            peak: this.canvasOutputPolicy.hdr ? EXTENDED_TONEMAP_HEADROOM : 1,
+        }));
+        passes.register(createTemporalFramePass({
+            pass: this.temporal!,
+            presentationFormat: this.presentationFormat,
+            device: this.device,
             peak: this.canvasOutputPolicy.hdr ? EXTENDED_TONEMAP_HEADROOM : 1,
         }));
         passes.register(createReprojectFramePass({
@@ -796,6 +838,7 @@ export class Renderer implements StreetViewRenderer {
                 this.cabinComposite?.dispose();
                 this.historicalWipe?.dispose();
                 this.upscale?.dispose();
+                this.temporal?.dispose();
                 this.reproject?.dispose();
             }
             frameTailScheduler.reset();
@@ -807,6 +850,9 @@ export class Renderer implements StreetViewRenderer {
             this.historicalWipe = null;
             this.upscale = null;
             this.upscaleInit = null;
+            this.temporal = null;
+            this.temporalInit = null;
+            this.temporalTracker.reset();
             this.reproject = null;
             this.reprojectInit = null;
             // Destroyed with the passes (it is one); drop the handle.
@@ -927,20 +973,132 @@ export class Renderer implements StreetViewRenderer {
         if (this.isDestroyed || !this.device) return;
         const frame = this.resolveFrameScale();
         this.textures.ensureIntermediateTexture(frame.width, frame.height);
-        const upscale = frame.scale < 1 ? this.upscale : null;
-        const roadTarget = upscale?.ensureInput(frame.width, frame.height);
+        // The intermediate is last frame's pass 1, not a new one: the resolve
+        // presents it alone (with the jitter it was drawn at), and the next
+        // pass-1 frame starts the history afresh.
+        const temporal = frame.upscale === 'temporal' ? this.temporal : null;
+        if (temporal) this.prepareWeatherOnlyTemporalFrame(temporal);
+        else this.dropTemporalHistory();
+        const upscale = !temporal && frame.scale < 1 ? this.upscale : null;
+        const roadTarget = temporal
+            ? temporal.ensureInput(frame.width, frame.height)
+            : upscale?.ensureInput(frame.width, frame.height);
         const cabin = this.resolveCabinComposite();
         this.weatherPostProcessor?.renderWeatherOnly(
             this.textures.intermediateTextureView,
             (encoder) => {
-                if (upscale) {
-                    const view = this.getSwapChainView();
-                    if (view) upscale.encode(encoder, view, frame.outputWidth, frame.outputHeight);
+                const view = temporal || upscale ? this.getSwapChainView() : null;
+                if (view && temporal) {
+                    temporal.encode(
+                        encoder,
+                        view,
+                        frame.outputWidth,
+                        frame.outputHeight,
+                        resolveSceneDepthBindGroup(this.device, this.frameAux),
+                    );
+                } else if (view && upscale) {
+                    upscale.encode(encoder, view, frame.outputWidth, frame.outputHeight);
                 }
                 encodeCabinComposite(encoder, cabin, () => this.getSwapChainView());
             },
             roadTarget,
         );
+    }
+
+    /**
+     * Before pass 1 of a frame the resolve presents: step the history
+     * tracker, pack the motion field, pick the jitter. Returns the jitter in
+     * intermediate pixels — zero whenever the resolve will not blend history
+     * (a hold, a release, a reset), so a frame shown alone never shimmers.
+     */
+    private prepareTemporalFrame(
+        temporal: TemporalPass,
+        frame: RenderScaleFrame,
+        pov: PovSample,
+        view: { panX: number; panY: number; holdActive: boolean; transitioning: boolean; inline: number },
+    ): readonly [number, number] {
+        const releasing = view.inline > 0 && view.inline < 1;
+        const decision = this.temporalTracker.step({
+            pov,
+            width: frame.width,
+            height: frame.height,
+            holdActive: view.holdActive,
+            panoEpoch: this.depth?.currentEpoch() ?? 0,
+            transitioning: view.transitioning,
+            historicalWipe: !!this.historicalWipe?.isActive(),
+            releaseProgress: releasing ? view.inline : 0,
+        });
+        packMotionUniforms({
+            mode: decision.motion ? 'camera' : 'none',
+            prev: decision.prev?.pov ?? pov,
+            current: pov,
+            width: frame.width,
+            height: frame.height,
+            progress: releasing ? view.inline : 0,
+            prevProgress: decision.prev?.releaseProgress ?? 0,
+            ...(releasing
+                ? { look: heldLookDelta({ x: view.panX, y: view.panY }, this.holdTransition.getCapturePan(), pov.zoom) }
+                : {}),
+        }, this.motionUniforms);
+        const phases = jitterPhaseCount(frame.width, frame.outputWidth);
+        const jitter = decision.history ? jitterOffset(this.temporalFrameIndex++, phases) : NO_JITTER;
+        temporal.setFrame({ motionUniforms: this.motionUniforms, jitter, history: decision.history });
+        this.lastJitter = jitter;
+        publishTemporalStats({
+            mode: this.temporalMode,
+            presenting: true,
+            history: decision.history,
+            historyReset: decision.historyReset,
+            motionReset: decision.motionReset,
+            jitter,
+            phases,
+        });
+        return jitter;
+    }
+
+    /** A weather-only frame through the resolve: last pass 1's intermediate, no history, no motion. */
+    private prepareWeatherOnlyTemporalFrame(temporal: TemporalPass): void {
+        this.temporalTracker.reset();
+        temporal.resetHistory();
+        this.motionUniforms.fill(0);
+        temporal.setFrame({ motionUniforms: this.motionUniforms, jitter: this.lastJitter, history: false });
+        publishTemporalStats({
+            mode: this.temporalMode,
+            presenting: true,
+            history: false,
+            historyReset: 'weather-only',
+            motionReset: 'weather-only',
+            jitter: this.lastJitter,
+            phases: 0,
+        });
+    }
+
+    /** A frame the resolve does not present: whatever it accumulated no longer follows the screen. */
+    private dropTemporalHistory(): void {
+        this.temporalTracker.reset();
+        this.temporal?.resetHistory();
+        this.lastJitter = NO_JITTER;
+        if (this.temporalMode === 'off') return;
+        publishTemporalStats({
+            mode: this.temporalMode,
+            presenting: false,
+            history: false,
+            historyReset: 'off',
+            motionReset: 'off',
+            jitter: NO_JITTER,
+            phases: 0,
+        });
+    }
+
+    private fillJitterUV(jitter: readonly [number, number], frame: RenderScaleFrame): readonly [number, number] {
+        this.jitterUV[0] = jitter[0] / frame.width;
+        this.jitterUV[1] = jitter[1] / frame.height;
+        return this.jitterUV;
+    }
+
+    /** Debug / tests: switch `?temporal` without a reboot. */
+    public setTemporalMode(mode: TemporalMode): void {
+        this.temporalMode = mode;
     }
 
     /**
@@ -952,14 +1110,15 @@ export class Renderer implements StreetViewRenderer {
      */
     private resolveFrameScale(): RenderScaleFrame {
         const frame = this.frameScale;
-        const requested = getRenderScaleRequest().scale;
+        const requested = getEffectiveRequestedScale();
         const hold = this.holdTransition.isHoldActive();
+        const frozen = hold && this.hasFrameScale;
         let scale: number;
         let limitedBy: RenderScaleFrame['limitedBy'] = null;
-        if (hold && this.hasFrameScale) {
+        if (frozen) {
             scale = frame.scale;
             limitedBy = frame.limitedBy;
-        } else if (requested < 1 && !this.upscale?.isReady()) {
+        } else if (requested < 1 && !this.upscale?.isReady() && !this.temporalReady(requested)) {
             scale = 1;
             limitedBy = this.requestUpscalePass() ? 'upscale-pending' : 'upscale-unavailable';
         } else {
@@ -971,8 +1130,13 @@ export class Renderer implements StreetViewRenderer {
         frame.height = size.height;
         frame.outputWidth = this.canvas.width;
         frame.outputHeight = this.canvas.height;
-        frame.upscale = scale < 1 && this.upscale ? this.upscale.getMode() : 'none';
-        frame.frozen = hold && this.hasFrameScale;
+        // What presents is frozen with the scale: a hold never changes the look under the user.
+        if (!frozen) {
+            frame.upscale = this.temporalReady(scale) ? 'temporal'
+                : scale < 1 && this.upscale ? this.upscale.getMode()
+                : 'none';
+        }
+        frame.frozen = frozen;
         frame.limitedBy = limitedBy;
         this.hasFrameScale = true;
         publishAppliedRenderScale(frame);
@@ -1117,6 +1281,19 @@ export class Renderer implements StreetViewRenderer {
     }
 
     /**
+     * Whether the temporal resolve presents a frame at `scale`. The first
+     * frame that wants it starts building the lazy pass (and presents through
+     * `upscale` meanwhile); a pass that failed is reported on
+     * `webgpuProbe.passes.temporal` and never retried.
+     */
+    private temporalReady(scale: number): boolean {
+        if (!wantsTemporal(this.temporalMode, scale) || !this.temporal || !this.passes) return false;
+        if (this.temporal.isReady() && this.passes.isReady('temporal') && !isPassFailed('temporal')) return true;
+        if (!isPassFailed('temporal')) this.temporalInit ??= this.passes.initPass('temporal');
+        return false;
+    }
+
+    /**
      * Pick up whatever car mode published this frame (`cabinOverlayRegistry`).
      * Called from both encode paths and from `isCabinCompositedInFrame`, so the
      * answer capture reads is the same one the next frame will draw.
@@ -1254,13 +1431,14 @@ export class Renderer implements StreetViewRenderer {
             if (!passes || !uniformBuffer) return;
             const holdActive = this.holdTransition.isHoldActive();
             const inline = this.transitionManager?.inlineProgress ?? 0;
+            const transitioning = (inline > 0 && inline < 1)
+                || !!this.transitionManager?.isInTransition()
+                || !!this.historicalWipe?.isActive();
             this.depth?.onFrame({
                 nowMs: performance.now(),
                 view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 },
                 holdActive,
-                transitioning: (inline > 0 && inline < 1)
-                    || !!this.transitionManager?.isInTransition()
-                    || !!this.historicalWipe?.isActive(),
+                transitioning,
             });
             this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
                 ? this.depth?.currentAux()
@@ -1273,9 +1451,25 @@ export class Renderer implements StreetViewRenderer {
             const timer = areGpuPassTimingsWanted() ? this.gpuPassTimer : null;
             const renderScale = this.resolveFrameScale();
             const presentTarget = this.resolvePresentTarget(renderScale);
-            const roadTarget = renderScale.scale < 1
-                ? this.upscale?.ensureInput(renderScale.width, renderScale.height)
-                : presentTarget;
+            const temporal = renderScale.upscale === 'temporal' ? this.temporal : null;
+            const pov: PovSample = { heading: heading || 0, pitch: pitch || 0, zoom: zoom || 1 };
+            let jitter = NO_JITTER;
+            if (temporal) {
+                jitter = this.prepareTemporalFrame(temporal, renderScale, pov, {
+                    panX,
+                    panY,
+                    holdActive,
+                    transitioning,
+                    inline,
+                });
+            } else {
+                this.dropTemporalHistory();
+            }
+            const roadTarget = temporal
+                ? temporal.ensureInput(renderScale.width, renderScale.height)
+                : renderScale.scale < 1
+                    ? this.upscale?.ensureInput(renderScale.width, renderScale.height)
+                    : presentTarget;
             encodeAndSubmitFrame({
                 device: this.device,
                 textures: this.textures,
@@ -1288,6 +1482,7 @@ export class Renderer implements StreetViewRenderer {
                     inlineTransitionProgress: this.transitionManager?.inlineProgress ?? 0.0,
                     holdActive,
                     capturePan: this.holdTransition.getCapturePan(),
+                    jitterUV: this.fillJitterUV(jitter, renderScale),
                 }, this.frameUniforms),
                 passes,
                 frame: {
@@ -1302,7 +1497,7 @@ export class Renderer implements StreetViewRenderer {
                 timings: buildFramePassTimings(timer, this.weatherPostProcessMode),
             });
             if (presentTarget) {
-                this.scheduleTail({ heading: heading || 0, pitch: pitch || 0, zoom: zoom || 1 });
+                this.scheduleTail(pov);
             } else {
                 recordNoTail();
             }
