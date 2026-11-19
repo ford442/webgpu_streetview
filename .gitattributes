@@ -1,0 +1,2 @@
+# Linked from src/shaders/**/*.wesl by `npm run gen:shaders` — review the .wesl diff.
+public/shaders/*.wgsl linguist-generated=true

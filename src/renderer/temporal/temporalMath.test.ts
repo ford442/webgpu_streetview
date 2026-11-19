@@ -13,7 +13,7 @@ import {
     wantsTemporal,
 } from './temporalMath';
 
-const SHADER = readFileSync(path.resolve(__dirname, '../../../public/shaders/temporal.wgsl'), 'utf8');
+const SHADER = readFileSync(path.resolve(__dirname, '../../../src/shaders/temporal.wesl'), 'utf8');
 
 describe('wantsTemporal', () => {
     it('off never, auto below scale 1 only, on everywhere', () => {

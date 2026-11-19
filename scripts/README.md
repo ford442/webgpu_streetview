@@ -20,7 +20,7 @@ Everything here is run through `npm run <name>` (see `package.json`) unless note
 
 | Script | What it does |
 | --- | --- |
-| `prebuild-env.mjs`, `gen-weather-post-shader.mjs` | run by `npm run build` before Vite. |
+| `prebuild-env.mjs`, `gen-shaders.mjs --check` | run by `npm run build` before Vite. `gen-shaders.mjs` links `src/shaders/**/*.wesl` into `public/shaders/*.wgsl` (`npm run gen:shaders`). |
 | `stamp-sw.mjs`, `sw-manifest.mjs` | stamp `build/service-worker.js` with the asset cache id. |
 | `verify-build.sh`, `check-bundle-budget.sh` | post-build checks (stamped worker, wasm present and current, bundle budget, env-leak). |
 | `check-maps-key.sh` | `npm run validate:maps-key` helper. |

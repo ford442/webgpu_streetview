@@ -10,6 +10,7 @@ declare module '*/scripts/check-chunk-graph.mjs' {
         },
         contracts: {
             main?: { forbidden?: string[] };
+            everywhere?: { forbidden?: string[] };
             chunks?: Array<{ name: string; entry: string; forbidden?: string[] }>;
             singletons?: Array<{ module: string }>;
         },

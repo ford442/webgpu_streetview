@@ -49,8 +49,8 @@ export const STREETVIEW_SCENE_DEPTH_GROUP = 1;
 
 /**
  * `SceneDepthParams` in the WGSL (all `f32`, 48 bytes). Must match the struct in
- * `streetview.wgsl`, `weather-post/01-foundation.wgsl` and
- * `weather-post-compute.wgsl` — `sceneDepthBinding.test.ts` reads all three.
+ * `src/shaders/lib/sceneDepth.wesl` — the one definition every pass that binds
+ * scene depth links (`sceneDepthBinding.test.ts` checks every linked pass).
  */
 export const SceneDepthParamIndex = {
     /** Weight of the depth map against `viewDepthProxy`; 0 returns the proxy exactly. */

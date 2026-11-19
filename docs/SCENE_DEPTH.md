@@ -22,16 +22,16 @@ Medium the weight is 0 and nothing is downloaded.
 | Rain / snow | streak brightness boosted toward the bottom of the frame | streak layers farther than the nearest surface are occluded (no far rain in front of a near wall) ([rain](looks/scene-depth/rain-webgpu.jpg) — subtle in a still, rain is short dashes at one instant) |
 | Hop release | a 250 ms crossfade from the held frame | the held frame dollies along the hop: near pixels move more than the skyline ([dolly](looks/scene-depth/dolly-webgpu.jpg)) |
 
-All four read one function, `sceneDepth(uv, horizonY)` in both weather shaders
-(`weather-post/01-foundation.wgsl`, `weather-post-compute.wgsl`), and the dolly
-in `streetview.wgsl`. The pictures come from `npm run capture:depth-looks`
+All four read one function, `sceneDepth(uv, horizonY)` (`src/shaders/lib/sceneDepth.wesl`,
+linked into both weather shaders and into reproject), and the dolly in
+`streetview.wesl` (`heldDepthNearness`, same module). The pictures come from `npm run capture:depth-looks`
 (below); the e2e asserts the same things numerically.
 
 **Weight 0 is bit-exact.** With no map, a stale map, scene depth off, or a
 Low/Medium preset, the params block is all zero: `sceneDepth` returns
 `viewDepthProxy` before touching the map, rain/snow keep their original
 accumulate statement, and the release keeps `samplePrevWithLookAround`.
-`weatherShaderParity.test.ts` pins the branches; `e2e/scene-depth.spec.ts`
+`weatherShaderStructure.test.ts` pins the branches; `e2e/scene-depth.spec.ts`
 compares frames byte for byte with the map bound at weight 0.
 
 ---
@@ -186,7 +186,7 @@ and `npm run capture:depth-looks`.
 |---|---|
 | `src/renderer/depth/*.test.ts` | math (percentiles, calibration, f16 vs `Float16Array`), cache (download once, integrity, stale buckets), scheduler, params, the controller on the fake device with a scripted Worker, the bundle guard |
 | `Renderer.depth.test.ts` | lazy pass, aux reaching pass 1 and weather, failure reporting and retry |
-| `weatherShaderParity.test.ts`, `sceneDepthBinding.test.ts`, `windshieldPortal.parity.test.ts` | the WGSL side: identical helpers in both paths, the weight-0 branches, one params layout, depth never reaching a stage the windshield portal mirrors |
+| `linkedShaders.test.ts`, `weatherShaderStructure.test.ts`, `sceneDepthBinding.test.ts`, `windshieldPortal.parity.test.ts` | the WGSL side: one source per helper, the weight-0 branches, one params layout, depth never reaching a stage the windshield portal mirrors |
 | `e2e/scene-depth.spec.ts` (`gpu-models`, nightly) | the real model on SwiftShader through the production renderer: runs with no validation errors; weight 0 bit-exact; fog, rain, DOF and the dolly change the frame the way they should; second visit from the Cache API; a bad model fails the pass, not the frame |
 
 SwiftShader takes about a minute per inference at ≈252² — the lane asserts the

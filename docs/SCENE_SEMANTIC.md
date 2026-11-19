@@ -98,10 +98,10 @@ SemanticController (lazy FramePass 'semantic', order 51)
   - `stillness`, set to 1 with `prefers-reduced-motion`, which freezes clouds
     and window flicker.
 
-## Effects (`weather-post.wgsl` fragments 01/03, `weather-post-compute.wgsl`)
+## Effects (`src/shaders/weather/semantic.wesl`, `sky.wesl`)
 
-Each helper body is byte-identical in both shaders, after renaming the frame
-texture (`readTexture`→`sceneTex`) and the sampler (`u_sampler`→`linearSampler`).
+Each helper is written once and linked into both weather shaders (the compute
+pass binds the frame as `sceneTex` / `linearSampler` too).
 `sceneSemanticBinding.test.ts` checks this. No helper uses `textureSample` on
 `semanticTex`: class ids are read only with `textureLoad`.
 
@@ -260,7 +260,7 @@ or the class table changes, because any of them changes the SHA.
 |---|---|
 | `src/renderer/semantic/semanticUnits.test.ts` | class table ↔ manifest, decode (NaN → unlabelled), sky edge, params packing (all-zero without a map / at weight 0), option gating, horizon preferring the sky edge |
 | `SemanticController.test.ts` | the controller on the fake device with a scripted Worker: lazy load, maps riding depth inferences, epochs, failure isolation, reset |
-| `sceneSemanticBinding.test.ts` | WGSL struct and class constants ↔ TS, byte-identical helpers in both shaders, weight-0 first statements, `textureLoad`-only class reads, entry-point wiring, layout and fallback |
+| `sceneSemanticBinding.test.ts` | WGSL struct and class constants ↔ TS, one source per helper, linked into both shaders, weight-0 first statements, `textureLoad`-only class reads, entry-point wiring, layout and fallback |
 | `windshieldPortal.parity.test.ts` | no mirrored stage reads the semantic map |
 | `depthBundleGuard.test.ts` | the semantic model and runtime stay out of the bundle |
 | `e2e/scene-semantic.spec.ts` (`gpu-models`, nightly) | the rebuilt model through ORT-web on SwiftShader and the production renderer: maps with a plausible histogram, weight 0 bit-exact across looks, no rain streaks over the sky, no wet change off the road, snow on the ground only, class-conditional night relight, sky replacement confined to the matte, a missing model fails the pass, not the frame |

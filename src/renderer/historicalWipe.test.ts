@@ -14,7 +14,7 @@ import {
 } from './historicalWipe';
 import { WEATHER_PARAMS_FLOAT_COUNT } from './weatherUniformLayout';
 
-const shader = readFileSync(join(__dirname, '..', '..', 'public', 'shaders', 'historical-wipe.wgsl'), 'utf8');
+const shader = readFileSync(join(__dirname, '..', '..', 'src', 'shaders', 'historical-wipe.wesl'), 'utf8');
 
 describe('wipeProgressAt', () => {
     it('runs 0 → 1 over the duration and clamps either side', () => {

@@ -231,7 +231,7 @@ describe('stereo synthesis', () => {
 
 describe('ReprojectUniforms — one layout in TS and reproject.wgsl', () => {
     it('every index lands on the WGSL member it names', () => {
-        const source = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', 'reproject.wgsl'), 'utf8');
+        const source = readFileSync(join(__dirname, '..', '..', '..', 'src', 'shaders', 'reproject.wesl'), 'utf8');
         const start = source.indexOf('struct ReprojectUniforms');
         const body = source.slice(source.indexOf('{', start) + 1, source.indexOf('};', start));
         // Float offset of each member, with WGSL's 16-byte alignment for vec4.

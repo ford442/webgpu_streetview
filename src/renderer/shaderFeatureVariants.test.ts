@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
+import shaderManifest from '../shaders/shaders.manifest.json';
 import {
-    ACES_TONEMAP_SDR_BODY,
-    APPLY_OPTIONAL_LUMA_REDUCE_SCALAR,
-    assembleDualSourceWeatherShader,
-    assembleExtendedToneMappingShader,
+    computeWeatherShaderFile,
     deviceHasFeature,
-    EXTENDED_TONEMAP_HEADROOM,
     HDR_INTERMEDIATE_FORMAT,
     HDR_INTERMEDIATE_FORMAT_PACKED,
+    linkedShaderFile,
     resolveHdrIntermediateFormat,
     resolveShaderFeatureUses,
-    withSubgroupLumaReduce,
+    weatherPostShaderFile,
+    type LinkedShaderEntry,
+    type ShaderCondition,
 } from './shaderFeatureVariants';
 
 const SHADER_ROOT = join(__dirname, '..', '..', 'public', 'shaders');
@@ -51,131 +51,46 @@ describe('shader feature gating', () => {
     });
 });
 
-describe('withSubgroupLumaReduce', () => {
-    it('leaves shaders without the helper unchanged (compat / fake fetch)', () => {
-        expect(withSubgroupLumaReduce('// fake wgsl')).toBe('// fake wgsl');
+describe('linked shader variants are chosen by name', () => {
+    it('names the default variant after the entry alone', () => {
+        expect(linkedShaderFile('streetview')).toBe('streetview.wgsl');
+        expect(linkedShaderFile('weather-post')).toBe('weather-post.wgsl');
+        expect(linkedShaderFile('gpu-chores-hist', { subgroups: false })).toBe('gpu-chores-hist.wgsl');
     });
 
-    it('prepends enable subgroups and replaces the scalar no-op', () => {
-        const src = `// header\n${APPLY_OPTIONAL_LUMA_REDUCE_SCALAR}\n@compute fn main() {}\n`;
-        const out = withSubgroupLumaReduce(src);
-        expect(out.startsWith('enable subgroups;\n')).toBe(true);
-        expect(out).toContain('subgroupAdd');
-        expect(out).not.toContain('return col;\n}');
+    it('appends enabled conditions in manifest order, whatever order the caller lists them', () => {
+        expect(linkedShaderFile('weather-post', { hdr_grade: true, dual_source: true }))
+            .toBe('weather-post.dual_source.hdr_grade.wgsl');
+        expect(linkedShaderFile('gpu-chores-hist', { subgroups: true })).toBe('gpu-chores-hist.subgroups.wgsl');
     });
 
-    it('locks the scalar helper to weather-post-compute.wgsl', () => {
-        const compute = readFileSync(join(SHADER_ROOT, 'weather-post-compute.wgsl'), 'utf8');
-        expect(compute).toContain(APPLY_OPTIONAL_LUMA_REDUCE_SCALAR);
-        expect(compute.startsWith('enable subgroups;')).toBe(false);
-        expect(compute).not.toMatch(/^enable subgroups;/m);
-    });
-});
-
-describe('assembleDualSourceWeatherShader', () => {
-    const fragment = `@fragment
-fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-    let uv = fragCoord.xy;
-    if (p.shaderEffectsEnabled < 0.5) {
-        return vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0);
-    }
-    var col = vec3<f32>(0.0);
-    var precipAdd = vec3<f32>(0.1);
-    col = col + precipAdd;
-    return vec4<f32>(col, 1.0);
-}
-`;
-
-    it('leaves shaders without fs_main unchanged', () => {
-        expect(assembleDualSourceWeatherShader('// fake')).toBe('// fake');
+    it('refuses a condition the entry has no variant for, instead of quietly fetching the default', () => {
+        expect(() => linkedShaderFile('streetview', { hdr_grade: true })).toThrow(/no "hdr_grade" variant/);
+        expect(() => linkedShaderFile('weather-post-compute', { subgroups: true })).toThrow(/no "subgroups" variant/);
+        // Off is always fine.
+        expect(linkedShaderFile('streetview', { hdr_grade: false })).toBe('streetview.wgsl');
     });
 
-    it('enables dual_source_blending and writes precip as src1', () => {
-        const out = assembleDualSourceWeatherShader(fragment);
-        expect(out.startsWith('enable dual_source_blending;\n')).toBe(true);
-        expect(out).toContain('@second_blend_source precip');
-        expect(out).toContain('DualFragOut(vec4<f32>(col, 1.0), vec4<f32>(precipAdd, 0.0))');
-        expect(out).not.toContain('-> @location(0) vec4<f32>');
+    it('selects the fragment weather variant from the applied tone mapping and dual-source blending', () => {
+        expect(weatherPostShaderFile('standard', false)).toBe('weather-post.wgsl');
+        expect(weatherPostShaderFile('extended', false)).toBe('weather-post.hdr_grade.wgsl');
+        expect(weatherPostShaderFile('standard', true)).toBe('weather-post.dual_source.wgsl');
+        expect(weatherPostShaderFile('extended', true)).toBe('weather-post.dual_source.hdr_grade.wgsl');
     });
 
-    it('assembles dual-source from the generated fragment weather shader', () => {
-        const fragment = readFileSync(join(SHADER_ROOT, 'weather-post.wgsl'), 'utf8');
-        const out = assembleDualSourceWeatherShader(fragment);
-        expect(out.startsWith('enable dual_source_blending;\n')).toBe(true);
-        expect(out).toContain('@second_blend_source precip');
-        expect(out).toContain('precipAdd');
-    });
-});
-
-describe('gpu-chores hist variants', () => {
-    it('keeps the scalar hist naga-clean and the subgroup file gated', () => {
-        const scalar = readFileSync(join(SHADER_ROOT, 'gpu-chores-hist.wgsl'), 'utf8');
-        const subgroups = readFileSync(join(SHADER_ROOT, 'gpu-chores-hist-subgroups.wgsl'), 'utf8');
-        expect(scalar).not.toContain('enable subgroups;');
-        expect(scalar).toContain('atomicAdd');
-        expect(subgroups.startsWith('enable subgroups;')).toBe(true);
-        expect(subgroups).toContain('subgroupShuffle');
-        expect(subgroups).toContain('fn luma_histogram_bt709');
-    });
-});
-
-describe('extended (output-referred) tone mapping', () => {
-    const PRODUCTION_SHADERS = [
-        'weather-post.wgsl',
-        'weather-post-compute.wgsl',
-    ] as const;
-
-    it.each(PRODUCTION_SHADERS)('%s carries the exact SDR ACES body once', (name) => {
-        const code = readFileSync(join(SHADER_ROOT, name), 'utf8');
-        expect(code.split(ACES_TONEMAP_SDR_BODY)).toHaveLength(2);
+    it('selects the compute weather variant from the applied tone mapping only', () => {
+        expect(computeWeatherShaderFile('standard')).toBe('weather-post-compute.wgsl');
+        expect(computeWeatherShaderFile('extended')).toBe('weather-post-compute.hdr_grade.wgsl');
     });
 
-    it.each(PRODUCTION_SHADERS)('%s is byte-identical on the standard swap chain', (name) => {
-        const code = readFileSync(join(SHADER_ROOT, name), 'utf8');
-        expect(assembleExtendedToneMappingShader(code, 'standard')).toBe(code);
-    });
-
-    it.each(PRODUCTION_SHADERS)('%s drops the SDR crush when the canvas is extended', (name) => {
-        const code = readFileSync(join(SHADER_ROOT, name), 'utf8');
-        const out = assembleExtendedToneMappingShader(code, 'extended');
-        expect(out).not.toBe(code);
-        expect(out).not.toContain(ACES_TONEMAP_SDR_BODY);
-        expect(out).toContain(`let headroom = ${EXTENDED_TONEMAP_HEADROOM.toFixed(1)};`);
-        expect(out).toContain('let x = color / headroom;');
-        // Still exactly one tonemap definition, still no `enable` directive.
-        expect(out.split('fn aces_tonemap(')).toHaveLength(2);
-        expect(out.startsWith('enable ')).toBe(false);
-    });
-
-    it('leaves a drifted / truncated shader on the historical curve', () => {
-        const stub = 'fn aces_tonemap(color: vec3<f32>) -> vec3<f32> { return color; }';
-        expect(assembleExtendedToneMappingShader(stub, 'extended')).toBe(stub);
-    });
-
-    it('composes with the dual-source assembler in either order', () => {
-        const code = readFileSync(join(SHADER_ROOT, 'weather-post.wgsl'), 'utf8');
-        const a = assembleDualSourceWeatherShader(assembleExtendedToneMappingShader(code, 'extended'));
-        const b = assembleExtendedToneMappingShader(assembleDualSourceWeatherShader(code), 'extended');
-        expect(a).toBe(b);
-    });
-
-    it('headroom stays at or above SDR white — below 1.0 would darken, not extend', () => {
-        expect(EXTENDED_TONEMAP_HEADROOM).toBeGreaterThanOrEqual(1);
-    });
-
-    it('marks extendedToneMapping only for an applied extended canvas', () => {
-        expect(resolveShaderFeatureUses([], 'rgba16float').extendedToneMapping).toBe(false);
-        expect(resolveShaderFeatureUses([], 'rgba16float', 'standard').extendedToneMapping).toBe(false);
-        expect(resolveShaderFeatureUses([], 'rgba16float', 'extended').extendedToneMapping).toBe(true);
-    });
-});
-
-describe('validate:shaders variant lockstep', () => {
-    it('the naga variant script substitutes exactly what the runtime assembles', async () => {
-        const script = await import('../../scripts/validate-shaders.mjs');
-        expect(script.SDR_ACES_TONEMAP_BODY).toBe(ACES_TONEMAP_SDR_BODY);
-        expect(
-            assembleExtendedToneMappingShader(ACES_TONEMAP_SDR_BODY, 'extended'),
-        ).toBe(script.EXTENDED_ACES_TONEMAP_BODY);
+    it('every name it can produce is a linked file in public/shaders', () => {
+        for (const [entry, spec] of Object.entries(shaderManifest.entries)) {
+            const conditions = ('conditions' in spec ? spec.conditions : []) as ShaderCondition[];
+            for (let mask = 0; mask < 1 << conditions.length; mask += 1) {
+                const enabled = Object.fromEntries(conditions.map((c, i) => [c, ((mask >> i) & 1) === 1]));
+                const file = linkedShaderFile(entry as LinkedShaderEntry, enabled);
+                expect(existsSync(join(SHADER_ROOT, file)), file).toBe(true);
+            }
+        }
     });
 });

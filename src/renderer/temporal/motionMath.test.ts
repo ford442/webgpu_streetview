@@ -244,7 +244,7 @@ describe('packMotionUniforms', () => {
 
 describe('MotionUniforms — one layout in TS and motion.wgsl', () => {
     it('every index lands on the WGSL member it names', () => {
-        const source = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', 'motion.wgsl'), 'utf8');
+        const source = readFileSync(join(__dirname, '..', '..', '..', 'src', 'shaders', 'motion.wesl'), 'utf8');
         const start = source.indexOf('struct MotionUniforms');
         const body = source.slice(source.indexOf('{', start) + 1, source.indexOf('};', start));
         const sizes: Record<string, [number, number]> = { 'f32': [1, 1], 'vec2<f32>': [2, 2], 'vec4<f32>': [4, 4] };
@@ -269,22 +269,23 @@ describe('MotionUniforms — one layout in TS and motion.wgsl', () => {
         expect([offsets.get('rotX'), offsets.get('rotY'), offsets.get('rotZ')]).toEqual([I.rotation, I.rotation + 4, I.rotation + 8]);
     });
 
-    it('declares the shared SceneDepthParams struct field for field', () => {
-        const read = (file: string) => {
-            const source = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', file), 'utf8');
-            const start = source.indexOf('struct SceneDepthParams');
-            return source.slice(source.indexOf('{', start) + 1, source.indexOf('}', start))
-                .split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean)
-                .map((l) => l.replace(/\s+/g, ''));
-        };
-        expect(read('motion.wgsl')).toEqual(read('streetview.wgsl'));
+    it('reads the one SceneDepthParams and held-frame nearness that pass 1 reads (lib/sceneDepth.wesl)', () => {
+        const shaders = join(__dirname, '..', '..', '..', 'src', 'shaders');
+        for (const file of ['motion.wesl', 'streetview.wesl']) {
+            const source = readFileSync(join(shaders, file), 'utf8');
+            expect(source, file).toMatch(/^import package::lib::sceneDepth::\{depthParams, heldDepthNearness\};$/m);
+            expect(source, file).not.toContain('struct SceneDepthParams');
+        }
     });
 
-    it('mirrors streetview.wgsl: the dolly early return and the nearness lookup', () => {
-        const motion = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', 'motion.wgsl'), 'utf8');
+    it('mirrors streetview.wesl: the dolly early return and the nearness lookup', () => {
+        const shaders = join(__dirname, '..', '..', '..', 'src', 'shaders');
+        const motion = readFileSync(join(shaders, 'motion.wesl'), 'utf8');
         expect(motion).toContain('if (depthParams.dolly == 0.0 && depthParams.dollyLateral == 0.0) {\n        return screenUV;');
         expect(motion).toContain('let scale = max(1.0 + depthParams.dolly * t * near, 0.5);');
-        expect(motion).toContain('let coverage = smoothstep(0.0, 0.04, edge);');
+        expect(motion).toContain('let near = heldDepthNearness(uv - u.look);');
+        const lib = readFileSync(join(shaders, 'lib', 'sceneDepth.wesl'), 'utf8');
+        expect(lib).toContain('let coverage = smoothstep(0.0, 0.04, edge);');
     });
 });
 

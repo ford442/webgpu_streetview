@@ -367,11 +367,9 @@ webgpu_streetview/
 ├── public/
 │   ├── index.html
 │   ├── images/
-│   └── shaders/                   # WGSL shaders (static files, not bundled)
+│   └── shaders/                   # Linked WGSL (GENERATED from src/shaders/**/*.wesl — npm run gen:shaders)
 │       ├── streetview.wgsl        # Pass 1: panorama texture + zoom/pan
-│       ├── weather-post.wgsl      # Pass 2: HDR color grading + rain/snow
-│       ├── carview.wgsl           # Car windshield post-process
-│       └── texture.wgsl           # Debug passthrough
+│       └── weather-post*.wgsl     # Pass 2: HDR color grading + rain/snow (+ variants)
 ├── src/
 │   ├── App.tsx                    # Thin root: AppProviders + AppShell
 │   ├── index.tsx
@@ -507,6 +505,11 @@ Score >= 7 → Ultra, >= 5 → High, >= 3 → Medium, else → Low.
 
 ## Shader Reference
 
+Shaders are written in WESL under `src/shaders/` (shared helpers in `lib/` and
+`weather/`, imported rather than copied) and linked at build time into the
+plain WGSL files in `public/shaders/` that the renderer fetches — see
+AGENTS.md §6b. Edit the `.wesl`, then `npm run gen:shaders`.
+
 ### `public/shaders/streetview.wgsl` — uniforms
 
 ```wgsl
@@ -569,7 +572,7 @@ Index  Field            Range / Notes
 
 ### Adding a New Shader Effect
 
-1. Create `public/shaders/my-effect.wgsl`
+1. Create `src/shaders/my-effect.wesl` (import shared helpers from `lib/` / `weather/`), add `"my-effect": {}` to `src/shaders/shaders.manifest.json`, and run `npm run gen:shaders` — it writes `public/shaders/my-effect.wgsl`
 2. Add `createMyEffectPipeline()` in `Renderer.ts` — fetch shader, build `GPURenderPipeline`
 3. Insert a new render pass in `renderStreetView()` at the correct point in the chain
 4. Add a boolean toggle to `visualPresets.ts` to disable it at lower quality tiers

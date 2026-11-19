@@ -19,7 +19,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
-    "prebuild": "node scripts/gen-weather-post-shader.mjs && node scripts/prebuild-env.mjs",
+    "prebuild": "node scripts/gen-shaders.mjs --check && node scripts/prebuild-env.mjs",
     "build": "npm run build:wasm && vite build && node scripts/stamp-sw.mjs build && ./scripts/verify-build.sh",
     "build:wasm": "bash scripts/build-wasm.sh",
     "build:wasm:update": "bash scripts/build-wasm.sh --update",
@@ -29,7 +29,8 @@
     "gen:wasm-abi": "node scripts/gen-wasm-abi.mjs",
     "check:wasm-abi": "node scripts/gen-wasm-abi.mjs --check && node scripts/check-wasm-abi.mjs",
     "bench:cabin-dsp": "node scripts/bench-cabin-dsp.mjs",
-    "gen:weather-shader": "node scripts/gen-weather-post-shader.mjs",
+    "gen:shaders": "node scripts/gen-shaders.mjs",
+    "check:shaders": "node scripts/gen-shaders.mjs --check",
     "gen:look-luts": "node scripts/gen-look-luts.mjs",
     "gen:flags-doc": "node scripts/gen-flags-doc.mjs",
     "gen:structure-doc": "node scripts/gen-structure-doc.mjs",
@@ -95,6 +96,7 @@
     "typescript-eslint": "^8.66.0",
     "vite": "^7.3.7",
     "vite-plugin-checker": "^0.11.0",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "wesl": "0.7.31"
   }
 }

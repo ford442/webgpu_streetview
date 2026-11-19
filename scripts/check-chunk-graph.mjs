@@ -7,6 +7,8 @@
  *   - no module matching a contract's `forbidden` expression is in that chunk;
  *   - the main chunk holds no `node_modules` package it forbids and no lazy chunk's entry —
  *     the check that fails when `onnxruntime-web` or `cesium` lands in main;
+ *   - no chunk at all holds a module `everywhere.forbidden` names (build-time-only
+ *     tooling such as the `wesl` shader linker);
  *   - each singleton module is in exactly one chunk (a duplicate gets its own module-level state,
  *     and the cross-chunk handoff silently stops working).
  *
@@ -20,7 +22,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * @param {{ chunks: Record<string, { name: string; isEntry: boolean; modules: string[] }>; modules: Record<string, string[]> }} graph
- * @param {{ main?: { forbidden?: string[] }; chunks?: Array<{ name: string; entry: string; forbidden?: string[] }>; singletons?: Array<{ module: string }> }} contracts
+ * @param {{ main?: { forbidden?: string[] }; everywhere?: { forbidden?: string[] }; chunks?: Array<{ name: string; entry: string; forbidden?: string[] }>; singletons?: Array<{ module: string }> }} contracts
  * @returns {string[]} one message per violation; empty when the graph honours the contracts
  */
 export function checkChunkGraph(graph, contracts) {
@@ -54,6 +56,15 @@ export function checkChunkGraph(graph, contracts) {
         for (const id of graph.chunks[file].modules) {
           if (re.test(id)) errors.push(`chunk "${contract.name}" contains forbidden module ${id} (/${pattern}/)`);
         }
+      }
+    }
+  }
+
+  for (const pattern of contracts.everywhere?.forbidden ?? []) {
+    const re = new RegExp(pattern);
+    for (const file of chunkFiles) {
+      for (const id of graph.chunks[file].modules) {
+        if (re.test(id)) errors.push(`chunk ${path.basename(file)} contains ${id} (/${pattern}/), which must never ship — build-time only`);
       }
     }
   }

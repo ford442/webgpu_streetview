@@ -1,12 +1,14 @@
 /**
  * Optional WebGPU features already requested on the single `requestDevice`
- * callsite. Production shaders consume subgroups, packed HDR intermediates, and
- * dual-source precip when the adapter enabled them; scalar / rgba16float /
- * in-shader-composite fallbacks stay naga-clean.
+ * callsite, and the linked shader variant each selects. Production shaders
+ * consume subgroups (the gpu-chores histogram), packed HDR intermediates, and
+ * dual-source precip when the adapter enabled them; every variant is a file
+ * `scripts/gen-shaders.mjs` linked from the WESL sources and naga validated.
  *
  * `shader-f16` stays requested-but-unused until a production pass uses `f16`
  * (see scripts/f16-naga-spike.wgsl and docs/RENDERER_FALLBACK.md).
  */
+import shaderManifest from '../shaders/shaders.manifest.json';
 import { OPTIONAL_DEVICE_FEATURES, type ShaderFeatureUses } from './deviceCapabilities';
 
 /** Tone mapping mode `configureCanvasContext` applied to the swap chain. */
@@ -50,139 +52,61 @@ export function resolveHdrIntermediateFormat(
 }
 
 /**
- * Exact `aces_tonemap` body shared verbatim by `public/shaders/weather-post/
- * 03-night-and-composite.wgsl` (and therefore the generated `weather-post.wgsl`)
- * and `public/shaders/weather-post-compute.wgsl` — keep all three in lockstep.
- */
-export const ACES_TONEMAP_SDR_BODY =
-    'fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {\n'
-    + '    let a = 2.51;\n'
-    + '    let b = 0.03;\n'
-    + '    let c = 2.43;\n'
-    + '    let d = 0.59;\n'
-    + '    let e = 0.14;\n'
-    + '    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));\n'
-    + '}';
-
-/**
  * SDR-relative peak the extended-range grade rolls highlights into.
  *
  * `toneMapping: { mode: 'extended' }` (see `deviceInit.ts`) tells the browser the
  * swap chain carries values above SDR white; 4.0 is a conservative headroom that
  * every HDR display Chrome reports today can show, and the browser clamps what it
  * cannot. Keep it ≥ 1.0 — at exactly 1.0 the extended body is algebraically the
- * SDR body, which is what `weatherShaderParity.test.ts` pins.
+ * SDR body. The WGSL literal is `aces_tonemap`'s `hdr_grade` body in
+ * `src/shaders/weather/grade.wesl` (`linkedShaders.test.ts` holds them equal).
  */
 export const EXTENDED_TONEMAP_HEADROOM = 4.0;
 
-const ACES_TONEMAP_EXTENDED_BODY =
-    'fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {\n'
-    + '    // Output-referred variant, assembled only when the applied canvas tone\n'
-    + '    // mapping is `extended` (`?hdr=1` on a capable display). The ACES shoulder\n'
-    + '    // is evaluated against the display headroom instead of assuming SDR white\n'
-    + '    // is the peak, so sun flare / headlights land in the extended range the\n'
-    + '    // swap chain can actually show instead of being clamped flat at 1.0.\n'
-    + '    // At headroom 1.0 this reduces exactly to the SDR body above.\n'
-    + '    let a = 2.51;\n'
-    + '    let b = 0.03;\n'
-    + '    let c = 2.43;\n'
-    + '    let d = 0.59;\n'
-    + '    let e = 0.14;\n'
-    + `    let headroom = ${EXTENDED_TONEMAP_HEADROOM.toFixed(1)};\n`
-    + '    let x = color / headroom;\n'
-    + '    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0)) * headroom;\n'
-    + '}';
+/** A `@if` condition of `src/shaders/**\/*.wesl` that selects a linked variant. */
+export type ShaderCondition = 'dual_source' | 'hdr_grade' | 'subgroups';
+
+/** An entry of `src/shaders/shaders.manifest.json`: one `.wesl` root, linked once per condition subset. */
+export type LinkedShaderEntry = keyof typeof shaderManifest.entries;
 
 /**
- * Swap the SDR ACES crush for the output-referred grade.
- *
- * Callers pass the tone mapping `configureCanvasContext` actually applied, never
- * the requested flag — a rejected `?hdr=1` configure falls back to SDR sRGB and
- * must keep the SDR body. A shader whose body has drifted from
- * `ACES_TONEMAP_SDR_BODY` is returned unchanged (test fakes, truncated fetches)
- * so the pipeline still builds on the historical curve.
+ * The `public/shaders` file `scripts/gen-shaders.mjs` linked for `entry` with
+ * the `enabled` conditions: `<entry>[.<condition>...].wgsl`, conditions in
+ * manifest order. Variants are chosen by name — nothing is assembled or linked
+ * at runtime. Throws for a condition the entry does not have, so a typo cannot
+ * quietly fetch the default.
  */
-export function assembleExtendedToneMappingShader(
-    shaderCode: string,
-    canvasToneMapping: CanvasToneMapping,
+export function linkedShaderFile(
+    entry: LinkedShaderEntry,
+    enabled: Partial<Record<ShaderCondition, boolean>> = {},
 ): string {
-    if (canvasToneMapping !== 'extended') return shaderCode;
-    if (!shaderCode.includes(ACES_TONEMAP_SDR_BODY)) return shaderCode;
-    return shaderCode.replace(ACES_TONEMAP_SDR_BODY, ACES_TONEMAP_EXTENDED_BODY);
+    const spec = shaderManifest.entries[entry];
+    const conditions: readonly string[] = 'conditions' in spec ? spec.conditions : [];
+    for (const [name, on] of Object.entries(enabled)) {
+        if (on && !conditions.includes(name)) {
+            throw new Error(`linkedShaderFile: ${entry} has no "${name}" variant`);
+        }
+    }
+    return [entry, ...conditions.filter((c) => enabled[c as ShaderCondition] === true)].join('.') + '.wgsl';
 }
-
-/** Exact scalar body in `public/shaders/weather-post-compute.wgsl` — keep in lockstep. */
-export const APPLY_OPTIONAL_LUMA_REDUCE_SCALAR =
-    'fn applyOptionalLumaReduce(col: vec3<f32>) -> vec3<f32> {\n    return col;\n}';
-
-const APPLY_OPTIONAL_LUMA_REDUCE_SUBGROUPS =
-    'fn applyOptionalLumaReduce(col: vec3<f32>) -> vec3<f32> {\n'
-    + '    let luma = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));\n'
-    + '    let sum = subgroupAdd(luma);\n'
-    + '    let ballot = subgroupBallot(true);\n'
-    + '    let n = countOneBits(ballot.x) + countOneBits(ballot.y) + countOneBits(ballot.z) + countOneBits(ballot.w);\n'
-    + '    let mean = sum / f32(max(n, 1u));\n'
-    + '    let hot = luma > mean * 32.0 && mean > 0.0;\n'
-    + '    let scale = select(1.0, (mean * 32.0) / max(luma, 1e-6), hot);\n'
-    + '    return col * scale;\n'
-    + '}';
 
 /**
- * Prepend `enable subgroups;` and replace the scalar luma-reduce no-op.
- * Missing helper (test fakes, truncated fetches) stays scalar so `?gpu=compat`
- * and jsdom characterization tests still boot.
+ * The fragment weather pass's linked variant. Callers pass the tone mapping
+ * `configureCanvasContext` actually applied, never the requested flag — a
+ * rejected `?hdr=1` configure falls back to SDR sRGB and keeps the SDR grade.
+ * `dualSource`: the device enabled `dual-source-blending`, so precipitation also
+ * leaves through `@blend_src(1)` (`DUAL_SOURCE_PRECIP_BLEND`).
  */
-export function withSubgroupLumaReduce(shaderCode: string): string {
-    if (!shaderCode.includes('fn applyOptionalLumaReduce(')) {
-        return shaderCode;
-    }
-    if (shaderCode.includes('enable subgroups;')) {
-        return shaderCode;
-    }
-    const replaced = shaderCode.replace(
-        APPLY_OPTIONAL_LUMA_REDUCE_SCALAR,
-        APPLY_OPTIONAL_LUMA_REDUCE_SUBGROUPS,
-    );
-    if (replaced === shaderCode) {
-        return shaderCode;
-    }
-    return `enable subgroups;\n${replaced}`;
+export function weatherPostShaderFile(canvasToneMapping: CanvasToneMapping, dualSource: boolean): string {
+    return linkedShaderFile('weather-post', {
+        dual_source: dualSource,
+        hdr_grade: canvasToneMapping === 'extended',
+    });
 }
 
-const FS_MAIN_SCALAR_SIG =
-    'fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {';
-
-const FS_MAIN_DUAL_SIG = `struct DualFragOut {
-    @location(0) color: vec4<f32>,
-    @location(0) @second_blend_source precip: vec4<f32>,
-}
-
-fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> DualFragOut {`;
-
-const BYPASS_SCALAR =
-    '        return vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0);';
-const BYPASS_DUAL =
-    '        return DualFragOut(vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0), vec4<f32>(0.0));';
-
-const FINAL_SCALAR = '    return vec4<f32>(col, 1.0);\n}';
-const FINAL_DUAL = '    return DualFragOut(vec4<f32>(col, 1.0), vec4<f32>(precipAdd, 0.0));\n}';
-
-/**
- * Dual-source fragment weather: same `fs_main` math, precip in `@second_blend_source`.
- * The production `weather-post.wgsl` stays naga-clean (no `enable`); this wrapper
- * is assembled at pipeline-create time when the device enabled the feature.
- */
-export function assembleDualSourceWeatherShader(shaderCode: string): string {
-    if (!shaderCode.includes(FS_MAIN_SCALAR_SIG) || shaderCode.includes('enable dual_source_blending;')) {
-        return shaderCode;
-    }
-    const withSig = shaderCode.replace(FS_MAIN_SCALAR_SIG, FS_MAIN_DUAL_SIG);
-    const withBypass = withSig.replace(BYPASS_SCALAR, BYPASS_DUAL);
-    const withReturn = withBypass.replace(FINAL_SCALAR, FINAL_DUAL);
-    if (withReturn === shaderCode) {
-        return shaderCode;
-    }
-    return `enable dual_source_blending;\n${withReturn}`;
+/** The compute weather pass's linked variant (see `weatherPostShaderFile`). */
+export function computeWeatherShaderFile(canvasToneMapping: CanvasToneMapping): string {
+    return linkedShaderFile('weather-post-compute', { hdr_grade: canvasToneMapping === 'extended' });
 }
 
 /** Blend state that references src1. Cleared dest → `color + 0 * precip` = in-shader composite. */

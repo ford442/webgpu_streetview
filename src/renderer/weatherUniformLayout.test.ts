@@ -12,9 +12,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Documented name→index table mirroring both WGSL headers:
- *  - public/shaders/weather-post.wgsl (`struct WeatherParams`)
- *  - public/shaders/weather-post-compute.wgsl (`extraBuffer` comment block)
+ * Documented name→index table mirroring both paths of the WGSL block, both in
+ * src/shaders/weather/bindings.wesl:
+ *  - the fragment `struct WeatherParams`
+ *  - the compute `p_<name>()` accessors over `extraBuffer`
  *
  * Renaming or reordering WeatherParamIndex without updating this table fails CI.
  */
@@ -93,33 +94,25 @@ describe('weatherUniformLayout', () => {
         }
     });
 
-    it('compute WGSL header comment lists every param name', () => {
-        const wgslPath = path.join(
-            __dirname,
-            '..',
-            '..',
-            'public',
-            'shaders',
-            'weather-post-compute.wgsl'
-        );
-        const header = fs.readFileSync(wgslPath, 'utf8').split('\n').slice(0, 20).join('\n');
-        const named = DOCUMENTED_LAYOUT.filter(([name]) => !name.startsWith('_pad')).map(([n]) => n);
-        for (const name of named) {
-            expect(header).toContain(name);
+    const BINDINGS = path.join(__dirname, '..', 'shaders', 'weather', 'bindings.wesl');
+
+    it('the compute accessors read every param at its WeatherParamIndex, and the fragment ones its field', () => {
+        const source = fs.readFileSync(BINDINGS, 'utf8');
+        const compute = new Map([...source.matchAll(/^@if\(compute\) fn p_(\w+)\(\) -> f32 \{ return ep\((\d+)\); \}$/gm)]
+            .map((m) => [m[1]!, Number(m[2])]));
+        const fragment = new Set([...source.matchAll(/^@else fn p_(\w+)\(\) -> f32 \{ return p\.(\w+); \}$/gm)]
+            .filter((m) => m[1] === m[2]).map((m) => m[1]!));
+        // `speed` is read by the entry points only (the compute one clamps it); pads are never read.
+        const named = DOCUMENTED_LAYOUT.filter(([name]) => !name.startsWith('horizonPad') && name !== 'speed');
+        for (const [name, index] of named) {
+            expect(compute.get(name), name).toBe(index);
+            expect(fragment.has(name), name).toBe(true);
         }
-        expect(header).toMatch(/38-39:padding|padding/);
+        expect(compute.size).toBe(named.length);
     });
 
     it('fragment WGSL WeatherParams struct lists every param name', () => {
-        const wgslPath = path.join(
-            __dirname,
-            '..',
-            '..',
-            'public',
-            'shaders',
-            'weather-post.wgsl'
-        );
-        const source = fs.readFileSync(wgslPath, 'utf8');
+        const source = fs.readFileSync(BINDINGS, 'utf8');
         const structMatch = source.match(/struct WeatherParams \{[\s\S]*?\n\}/);
         expect(structMatch).not.toBeNull();
         const structBody = structMatch![0];

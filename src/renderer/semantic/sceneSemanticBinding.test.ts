@@ -1,5 +1,3 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createFakeGpu, installGpuGlobals, type FakeGpu } from '../computeWeather/__tests__/fakeGpu';
 import {
@@ -15,10 +13,13 @@ import {
 } from './sceneSemanticBinding';
 import { SEMANTIC_CLASS_COUNT, SEMANTIC_CLASS_NAMES, SemanticClass } from './semanticClasses';
 import { WEATHER_SCENE_DEPTH_GROUP } from '../depth/sceneDepthBinding';
+import { fnSource, readLinked, readWesl, squash } from '../../shaders/__tests__/shaderSources';
 
-const shaderDir = join(__dirname, '..', '..', '..', 'public', 'shaders');
-const read = (name: string) => readFileSync(join(shaderDir, name), 'utf8');
+/** The linked weather shaders, as the device receives them (default variants). */
+const read = readLinked;
 const WEATHER_SHADERS = ['weather-post.wgsl', 'weather-post-compute.wgsl'] as const;
+/** Where the semantic helpers are written, once, for both weather paths. */
+const SEMANTIC_SOURCES = () => readWesl('weather/semantic.wesl') + readWesl('weather/sky.wesl');
 
 function structFields(source: string): string[] {
     const start = source.indexOf('struct SceneSemanticParams');
@@ -34,20 +35,7 @@ function structFields(source: string): string[] {
         });
 }
 
-/** Body of `fn name(...) { ... }`, brace-matched. */
-function fnBody(source: string, name: string): string {
-    const start = source.indexOf(`fn ${name}(`);
-    if (start < 0) throw new Error(`fn ${name} not found`);
-    let depth = 0;
-    for (let i = source.indexOf('{', start); i < source.length; i++) {
-        if (source[i] === '{') depth++;
-        else if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
-    }
-    throw new Error(`fn ${name} unterminated`);
-}
-
-/** The compute shader names the frame texture/sampler differently; nothing else may differ. */
-const normalize = (body: string) => body.replace(/readTexture/g, 'sceneTex').replace(/u_sampler/g, 'linearSampler');
+const fnBody = fnSource;
 
 const HELPERS = [
     'semanticMapUv',
@@ -90,8 +78,8 @@ describe('SceneSemanticParams — one layout in TS and both weather shaders', ()
         expect(SCENE_SEMANTIC_PARAMS_BYTE_SIZE % 16).toBe(0);
     });
 
-    it.each(WEATHER_SHADERS)('%s binds map, sampler, params at group 3', (name) => {
-        const source = read(name);
+    it('weather/semantic.wesl binds map, sampler, params at group 3 for both paths', () => {
+        const source = readWesl('weather/semantic.wesl');
         expect(WEATHER_SCENE_SEMANTIC_GROUP).toBe(3);
         expect(WEATHER_SCENE_SEMANTIC_GROUP).not.toBe(WEATHER_SCENE_DEPTH_GROUP);
         expect(source).toContain('@group(3) @binding(0) var semanticTex: texture_2d<f32>;');
@@ -99,8 +87,8 @@ describe('SceneSemanticParams — one layout in TS and both weather shaders', ()
         expect(source).toContain('@group(3) @binding(2) var<uniform> semParams: SceneSemanticParams;');
     });
 
-    it.each(WEATHER_SHADERS)('%s numbers the classes as semanticClasses.ts does', (name) => {
-        const source = read(name);
+    it('weather/semantic.wesl numbers the classes as semanticClasses.ts does', () => {
+        const source = readWesl('weather/semantic.wesl');
         expect(SEMANTIC_CLASS_NAMES).toHaveLength(SEMANTIC_CLASS_COUNT);
         for (const [cls, id] of Object.entries(SemanticClass)) {
             expect(source).toContain(`const CLASS_${cls.toUpperCase()}: i32 = ${id};`);
@@ -109,23 +97,25 @@ describe('SceneSemanticParams — one layout in TS and both weather shaders', ()
 });
 
 describe('semantic WGSL helpers', () => {
-    it.each(HELPERS)('%s is byte-identical in the fragment and compute shaders', (name) => {
-        expect(normalize(fnBody(read('weather-post-compute.wgsl'), name)))
-            .toBe(fnBody(read('weather-post.wgsl'), name));
+    it.each(HELPERS)('%s is written once, in weather/semantic|sky.wesl, and linked into both paths', (name) => {
+        expect(SEMANTIC_SOURCES().match(new RegExp(`\\bfn ${name}\\(`, 'g'))).toHaveLength(1);
+        // Linked wherever an entry calls it (the linker drops what nothing calls),
+        // and then from that one source, so the bodies agree path for path.
+        const linked = WEATHER_SHADERS.map(read).filter((code) => new RegExp(`\\bfn ${name}\\(`).test(code));
+        for (const code of linked) expect(squash(fnBody(code, name))).toBe(squash(fnBody(linked[0]!, name)));
     });
 
     it.each(EFFECTS)('%s returns its input first when semParams.blend is 0 (bit-exact)', (name, ret) => {
-        const body = fnBody(read('weather-post.wgsl'), name);
+        const body = fnBody(SEMANTIC_SOURCES(), name);
         const firstStatement = body.slice(body.indexOf('{') + 1).trim().split('\n')[0]!;
         expect(firstStatement).toMatch(/^if \(semParams\.blend <= 0\.0[ |)]/);
         expect(firstStatement).toContain(ret);
     });
 
     it('the compute-only particle layer thins its rain over the sky, bit-exact at weight 0', () => {
-        const source = read('weather-post-compute.wgsl');
-        const body = fnBody(source, 'semanticRainParticles');
+        const body = fnBody(SEMANTIC_SOURCES(), 'semanticRainParticles');
         expect(body.slice(body.indexOf('{') + 1).trim().split('\n')[0]).toBe('if (semParams.blend <= 0.0) { return layer; }');
-        expect(source).toContain('let particleLayer = semanticRainParticles(applyParticlePrecipitation(');
+        expect(readWesl('weather-post-compute.wesl')).toContain('let particleLayer = semanticRainParticles(applyParticlePrecipitation(');
         // The fragment path has no particle layer.
         expect(read('weather-post.wgsl')).not.toContain('semanticRainParticles');
     });

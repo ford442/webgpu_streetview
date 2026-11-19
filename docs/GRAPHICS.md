@@ -18,9 +18,11 @@ contract).
 | Compute (`?weather=compute`) | `public/shaders/weather-post-compute.wgsl` | `rgba16float` storage texture + blit; adds the depth-proxy storage target |
 | GLSL reference (not live) | `src/renderer/webgl/weatherReference.glsl.ts` | SDR approximation for must-match tests; **not constructed** at runtime |
 
-All three read the same 44-float uniform block. Shared WGSL helpers are held
-byte-identical between the two WGSL paths and guarded by
-`src/renderer/weatherShaderParity.test.ts` — if you edit one, edit both.
+All three read the same 44-float uniform block. The two WGSL paths share every
+effect helper from one WESL source (`src/shaders/weather/*.wesl`,
+`src/shaders/lib/*.wesl`, linked by `npm run gen:shaders` — AGENTS.md §6b);
+only the entry points (`weather-post.wesl`, `weather-post-compute.wesl`) and
+`weather/bindings.wesl`'s per-path bindings differ. Edit the helper once.
 
 ---
 
@@ -201,9 +203,8 @@ argument count statically. Validate locally with
 
 ```bash
 cargo install naga-cli
-naga --validate 31 public/shaders/weather-post.wgsl
-naga --validate 31 public/shaders/weather-post-compute.wgsl
-naga --validate 31 public/shaders/weather-particles.wgsl
+npm run gen:shaders        # relink public/shaders from src/shaders/**/*.wesl
+npm run validate:shaders   # naga on every linked variant
 ```
 
 ---
@@ -233,8 +234,8 @@ procedural. See `docs/WASM_BRIDGE.md`.
 ### Noise tile detail differs by path
 
 Both paths read the same 64×64 CPU tile through the same bilinear sampler
-(`weatherShaderParity.test.ts` enforces the filtering math across the `vec4`
-packing), but they are fed different tiles:
+(`sampleWasmNoiseTile` is one source; only `wasmNoiseAt` differs, across the
+`vec4` packing), but they are fed different tiles:
 
 | Path | Tile source | Why |
 |---|---|---|
@@ -530,13 +531,13 @@ the Belt of Venus in clear air with the sun 2° down, and aerial perspective at
 
 ## 11. Editing checklist
 
-- Shared WGSL helper changed? Update **both** `weather-post.wgsl` and
-  `weather-post-compute.wgsl`; `weatherShaderParity.test.ts` will fail otherwise.
-- Touched `aces_tonemap`? Its body is also a literal in
-  `shaderFeatureVariants.ts` (`ACES_TONEMAP_SDR_BODY`) and in
-  `scripts/validate-shaders.mjs`, because the `?hdr` output-referred grade is a
-  source substitution at pipeline-create time, not a uniform. Both are pinned
-  byte-for-byte by tests — change all three together.
+- Shader changed? Edit the `.wesl` under `src/shaders/` (never `public/shaders`)
+  and run `npm run gen:shaders`; a helper is written once and both weather paths
+  link it. `verify` fails on a stale link.
+- Touched `aces_tonemap`? Both bodies are in `src/shaders/weather/grade.wesl`
+  (`@if(hdr_grade)` / `@else`); the `?hdr` grade is a linked variant chosen by
+  file name, not a uniform. `linkedShaders.test.ts` pins its headroom to
+  `EXTENDED_TONEMAP_HEADROOM`.
 - New uniform? It must fit the existing 44 floats or every consumer in
   `weatherUniformLayout.ts`'s header comment changes in lockstep.
 - Preset retune? Put the intended look in §3 above and the measured delta in §4.

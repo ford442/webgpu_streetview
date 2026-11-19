@@ -10,6 +10,12 @@
       "^node_modules/@photostructure/tz-lookup/"
     ]
   },
+  "everywhere": {
+    "note": "Never in any chunk: the WESL linker runs only in scripts/gen-shaders.mjs (and the dev server's relink plugin); the app fetches the linked WGSL from public/shaders.",
+    "forbidden": [
+      "^node_modules/wesl/"
+    ]
+  },
   "defaultChunkGzipBudgetBytes": 102400,
   "chunks": [
     {

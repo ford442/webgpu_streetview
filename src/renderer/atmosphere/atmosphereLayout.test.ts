@@ -16,7 +16,7 @@ import {
     AtmosphereUniformIndex,
 } from './atmosphereLayout';
 
-const WGSL = readFileSync(join(__dirname, '..', '..', '..', 'public', 'shaders', 'atmosphere.wgsl'), 'utf8');
+const WGSL = readFileSync(join(__dirname, '..', '..', '..', 'src', 'shaders', 'atmosphere.wesl'), 'utf8');
 
 describe('atmosphere layout', () => {
     it('AtmosphereParams is 8 vec4 fields (32 floats)', () => {
