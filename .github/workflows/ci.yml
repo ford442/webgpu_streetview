@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   test-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # No emsdk here: `build-wasm-emscripten` proves the committed binaries equal
       # a pinned-emcc rebuild, and build-wasm.sh checks their source hash.
@@ -121,9 +121,23 @@ jobs:
   # no Node, runs in seconds, and asserts the C++ against vectors captured from
   # the binary that actually ships. See docs/WASM_BRIDGE.md.
   wasm-cpp-host:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # The clang that formats, tidies and builds is named here, not taken from
+    # the image: a runner-image bump must never change the formatter or the
+    # warning set under -Werror. toolchain-canary.yml tries the next image weekly.
+    env:
+      CLANG_FORMAT: clang-format-18
+      CLANG_TIDY: clang-tidy-18
+      CLANG_CXX: clang++-18
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install the pinned clang (18)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 clang-tidy-18 clang-format-18
+          "$CLANG_CXX" --version | head -1
+          "$CLANG_FORMAT" --version
 
       - name: Host build + golden tests (g++, -Werror)
         run: |
@@ -132,24 +146,21 @@ jobs:
           cmake --build cpp/build-host -j"$(nproc)"
           ctest --test-dir cpp/build-host --output-on-failure
 
-      # Gating: clang-format (cpp/.clang-format, checked — Ubuntu 24.04's
-      # clang-format 18, the version the tree is formatted with) and
-      # clang-tidy, whose WarningsAsErrors covers bugprone-*, clang-analyzer-*
-      # and performance-* (pro-bounds-* and modernize-* only print). Missing
-      # tools or a missing compilation database fail too, so the step cannot
+      # Gating: clang-format-18 (cpp/.clang-format, checked — the version the
+      # tree is formatted with; bumping it is a reformat PR) and clang-tidy-18,
+      # whose WarningsAsErrors covers bugprone-*, clang-analyzer-* and
+      # performance-* (pro-bounds-* and modernize-* only print). Missing tools
+      # or a missing compilation database fail too, so the step cannot
       # silently skip.
       - name: clang-format + clang-tidy (gating)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-tidy clang-format
-          bash scripts/lint-cpp.sh
+        run: bash scripts/lint-cpp.sh
 
       # Two compilers because -Wconversion/-Wshadow diagnostics differ between
       # them, and emcc is clang — a clang-clean tree is what the WASM build needs.
       - name: Host build + golden tests (clang++, -Werror)
         run: |
           cmake -S cpp -B cpp/build-clang -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_CXX_COMPILER=clang++
+            -DCMAKE_CXX_COMPILER="$CLANG_CXX"
           cmake --build cpp/build-clang -j"$(nproc)"
           ctest --test-dir cpp/build-clang --output-on-failure
 
@@ -161,7 +172,7 @@ jobs:
       - name: Host build + golden tests (clang++, -march=x86-64-v3 / FMA)
         run: |
           cmake -S cpp -B cpp/build-clang-v3 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-march=x86-64-v3
+            -DCMAKE_CXX_COMPILER="$CLANG_CXX" -DCMAKE_CXX_FLAGS=-march=x86-64-v3
           cmake --build cpp/build-clang-v3 -j"$(nproc)"
           ctest --test-dir cpp/build-clang-v3 --output-on-failure
 
@@ -209,7 +220,7 @@ jobs:
   # Rebuild the WASM modules through the C++/Emscripten ship path and prove the
   # committed public/wasm/streetview-{wasm,dsp}.simd.wasm match this pinned emcc.
   build-wasm-emscripten:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -255,7 +266,7 @@ jobs:
   # The doctest suite (goldens included) as -msimd128 wasm with ASan + UBSan,
   # run under node: the real wasm_simd128.h path, not SIMDe.
   wasm-sanitizers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -277,7 +288,7 @@ jobs:
         run: bash scripts/test-wasm-sanitizers.sh
 
   e2e-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Chromium smoke + the `gpu` lane. Over this means a spec is waiting on
     # something SwiftShader cannot do in time — move it to `gpu-models` (#358).
     timeout-minutes: 25

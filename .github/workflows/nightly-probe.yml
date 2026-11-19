@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   hold-pause-probe:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Includes the `gpu-models` lane (real depth + semantic weights on SwiftShader).
     timeout-minutes: 60
     if: ${{ github.repository == 'ford442/webgpu_streetview' }}
@@ -109,7 +109,7 @@ jobs:
   # clang + ASan/UBSan on the SIMDe path, 60 s per target. Corpora are cached
   # across nights; a crash uploads its reproducer.
   cpp-fuzz:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.repository == 'ford442/webgpu_streetview' }}
     steps:
       - uses: actions/checkout@v5

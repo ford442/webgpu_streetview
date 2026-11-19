@@ -960,7 +960,13 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
 - **CI**: `wasm-cpp-host` (host builds + sanitizers + golden reproducibility),
   `build-wasm-emscripten` (C++ → the binaries via pinned emcc; the committed
   ones must match; ABI check; the scalar oracle against the goldens) and
-  `wasm-sanitizers`. All are required.
+  `wasm-sanitizers`. All are required. Every CI job runs on a pinned image
+  (`ubuntu-24.04`) and `wasm-cpp-host` installs a named clang
+  (`clang-18`/`clang-tidy-18`/`clang-format-18`, passed to
+  `scripts/lint-cpp.sh` as `CLANG_FORMAT`/`CLANG_TIDY`): moving either pin is
+  a deliberate PR (a clang-format bump is a reformat). The weekly
+  `toolchain-canary.yml` builds on floating `ubuntu-latest` and opens a
+  `toolchain` issue when the next image breaks, never a red `main`.
 - **Cabin audio engine** (`cabin_dsp_module.cpp`, #321): runs inside the
   AudioWorklet (`src/car/audio/cabinWorkletSource.ts`) from
   `streetview-dsp.simd.wasm`; its convolver is UPOLS (128-sample partitions,
