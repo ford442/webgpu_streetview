@@ -27,6 +27,7 @@ import { getGpuChoresStats } from './gpuChores/gpuChoresStatsStore';
 import { getGpuPassTimings, roadGpuMs, setGpuPassTimingsWanted } from './gpuPassTimingStore';
 import {
     configureRenderScale,
+    getAppliedRenderScale,
     getRenderScaleRequest,
     resolveRenderScaleRequest,
     setRequestedRenderScale,
@@ -297,6 +298,7 @@ export class FrameDriver {
                 // smooths with its own windowed median.
                 frameMs: this.meter.lastIntervalMs,
                 frozen: holdActive || reducedMotion,
+                temporal: getAppliedRenderScale().upscale === 'temporal',
             }, { ...DEFAULT_FRAME_BUDGET, min: request.min, max: request.max });
             this.budget = budget;
             if (budget.scale !== request.scale) {

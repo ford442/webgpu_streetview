@@ -9,9 +9,10 @@
  * yielding an invalid pipeline) and the field texture, recreated when the
  * intermediate's size changes. Holds no texture until the first `ensureTarget`.
  *
- * Its consumers — the temporal resolve (slice 2), DOF and rain streaks (slice
- * 4) — read `getView()` after `encode`; the history-validity decision that
- * says whether they may is `motionMath.TemporalHistoryTracker`, on the CPU.
+ * Owned and encoded by the temporal resolve (`TemporalPass.ts`), which reads
+ * `getView()` after `encode`; DOF and rain streaks will too (#360 slice 5).
+ * The history-validity decision that says whether they may is
+ * `motionMath.TemporalHistoryTracker`, on the CPU.
  */
 import { PUBLIC_URL } from '../../config/publicUrl';
 import {

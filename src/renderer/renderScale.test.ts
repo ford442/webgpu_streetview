@@ -4,6 +4,8 @@ import { PRESETS } from '../config/visualPresets';
 import {
     configureRenderScale,
     getAppliedRenderScale,
+    getEffectiveRequestedScale,
+    getRenderScaleRange,
     getRenderScaleRequest,
     publishAppliedRenderScale,
     quantizeRenderScale,
@@ -12,6 +14,7 @@ import {
     scaledSize,
     setRequestedRenderScale,
     type RenderScaleFrame,
+    type RenderScaleRequest,
 } from './renderScale';
 
 const frame = (scale: number, extra: Partial<RenderScaleFrame> = {}): RenderScaleFrame => ({
@@ -116,5 +119,34 @@ describe('publishAppliedRenderScale', () => {
         publishAppliedRenderScale(frame(0.5, { limitedBy: null }));
         expect(probe.renderScale).toBe(getAppliedRenderScale());
         expect(probe.renderScale).toMatchObject({ scale: 0.5, width: 960 });
+    });
+});
+
+describe('temporal lever (#360)', () => {
+    const auto: RenderScaleRequest = { mode: 'auto', scale: 0.7, min: 0.7, max: 1, reason: 'preset' };
+
+    it('the budget may go below the preset floor only while the temporal resolve presents', () => {
+        configureRenderScale(auto);
+        setRequestedRenderScale(0.55, 'over-budget');
+        expect(getRenderScaleRequest().scale).toBe(0.7);
+
+        publishAppliedRenderScale(frame(0.7, { upscale: 'temporal' }));
+        expect(getRenderScaleRange()).toEqual({ min: 0.5, max: 1 });
+        expect(getAppliedRenderScale().min).toBe(0.5);
+        setRequestedRenderScale(0.55, 'over-budget');
+        expect(getRenderScaleRequest().scale).toBe(0.55);
+        expect(getEffectiveRequestedScale()).toBe(0.55);
+
+        // The resolve stops presenting (it failed, or `?temporal` went off): back to the preset floor.
+        publishAppliedRenderScale(frame(0.55, { upscale: 'fsr' }));
+        expect(getRenderScaleRange()).toEqual({ min: 0.7, max: 1 });
+        expect(getEffectiveRequestedScale()).toBe(0.7);
+    });
+
+    it('a fixed request is never widened', () => {
+        configureRenderScale({ mode: 'fixed', scale: 0.8, min: 0.8, max: 0.8, reason: 'flag' });
+        publishAppliedRenderScale(frame(0.8, { upscale: 'temporal' }));
+        expect(getRenderScaleRange()).toEqual({ min: 0.8, max: 0.8 });
+        expect(getEffectiveRequestedScale()).toBe(0.8);
     });
 });

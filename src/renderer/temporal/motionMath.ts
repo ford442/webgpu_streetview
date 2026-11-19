@@ -1,7 +1,8 @@
 /**
  * The road frame's motion field (#360 slice 1): where each intermediate pixel
- * was one frame ago, so a temporal resolve (slice 2) can fetch its history and
- * DOF / rain streaks (slice 4) can smear along one field instead of guessing.
+ * was one frame ago, so the temporal resolve (`TemporalPass.ts`) can fetch its
+ * history and DOF / rain streaks (slice 5) can smear along one field instead
+ * of guessing.
  *
  * Pure maths only — the GPU half is `motion.wgsl` + `motionVectors.ts`. The
  * CPU reference here mirrors the shader line for line (like `reprojectMath.ts`

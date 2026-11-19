@@ -18,11 +18,25 @@
  *   budget for a while, and a level that then overloads is blocked for a
  *   cooldown that doubles every time it fails again.
  *
+ * **Temporal lever** (#360): while the temporal resolve presents the road, a
+ * scaled frame accumulates back toward native over a few frames, so the loop
+ * may drop as far as `temporalMin` (below the preset's floor) before it gives
+ * up quality the resolve cannot win back. `renderScale.ts` applies the same
+ * floor to the request.
+ *
  * Every move is one `step` (5 %), at most once per `windowFrames` frames,
  * decided on the median of that window. A frozen frame (hold-pause, reduced
  * motion) resets the window: the scale never moves during a hold, and the
  * first decision after one waits for a full window of fresh frames.
  */
+
+/** How far the scale may drop while the temporal resolve presents (#360). */
+export const TEMPORAL_RENDER_SCALE_MIN = 0.5;
+
+/** The budget's floor: the preset's, or the temporal one while the resolve presents. */
+export function budgetFloor(min: number, temporal: boolean, temporalMin: number = TEMPORAL_RENDER_SCALE_MIN): number {
+    return temporal ? Math.min(min, temporalMin) : min;
+}
 
 export interface FrameBudgetConfig {
     /** The frame budget, ms (60 Hz). */
@@ -31,6 +45,8 @@ export interface FrameBudgetConfig {
     gpuShare: number;
     min: number;
     max: number;
+    /** The floor while the temporal resolve presents (`min` when that is lower). */
+    temporalMin: number;
     step: number;
     /** Frames per decision — and the minimum distance between two moves. */
     windowFrames: number;
@@ -56,6 +72,7 @@ export interface FrameBudgetConfig {
 export const DEFAULT_FRAME_BUDGET: Omit<FrameBudgetConfig, 'min' | 'max'> = {
     targetFrameMs: 1000 / 60,
     gpuShare: 0.75,
+    temporalMin: TEMPORAL_RENDER_SCALE_MIN,
     step: 0.05,
     windowFrames: 10,
     minGpuSamples: 3,
@@ -81,6 +98,8 @@ export interface FrameBudgetInput {
     frameMs: number | null;
     /** Hold-pause or reduced motion: do not move, start a fresh window afterwards. */
     frozen: boolean;
+    /** The temporal resolve presents the road: the floor is `temporalMin`. */
+    temporal?: boolean;
 }
 
 interface FrameBudgetBlock {
@@ -139,8 +158,10 @@ function moved(
 export function stepFrameBudget(
     state: FrameBudgetState,
     input: FrameBudgetInput,
-    config: FrameBudgetConfig,
+    baseConfig: FrameBudgetConfig,
 ): FrameBudgetState {
+    const min = budgetFloor(baseConfig.min, !!input.temporal, baseConfig.temporalMin);
+    const config = min === baseConfig.min ? baseConfig : { ...baseConfig, min };
     const scale = Math.min(config.max, Math.max(config.min, state.scale));
     if (input.frozen) {
         return { ...state, scale, framesSinceChange: 0, window: [], atBudgetSinceMs: null };

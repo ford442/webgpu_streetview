@@ -21,6 +21,7 @@
  */
 import { readFlag } from '../config/flags';
 import { PRESETS, type QualityLevel } from '../config/visualPresets';
+import { budgetFloor } from './frameBudget';
 
 const RENDER_SCALE_MIN = 0.5;
 const RENDER_SCALE_MAX = 1;
@@ -71,8 +72,12 @@ export interface AppliedRenderScale {
     /** Swap chain size, px. */
     outputWidth: number;
     outputHeight: number;
-    /** `none` at scale 1 (no upscale pass in the frame). */
-    upscale: 'fsr' | 'bilinear' | 'none';
+    /**
+     * What presents the road: `none` at scale 1 (weather writes the swap
+     * chain), the `upscale` pass's mode below it, or `temporal` when the
+     * temporal resolve does (`?temporal`, #360 — also at scale 1 under `on`).
+     */
+    upscale: 'fsr' | 'bilinear' | 'temporal' | 'none';
     /** True while a hold keeps the scale the hold was armed at. */
     frozen: boolean;
     limitedBy: RenderScaleLimit;
@@ -145,15 +150,40 @@ export function getRenderScaleRequest(): RenderScaleRequest {
     return request;
 }
 
+/** Whether the temporal resolve presented the last frame (`AppliedRenderScale.upscale`). */
+function temporalPresenting(): boolean {
+    return applied.upscale === 'temporal';
+}
+
+/**
+ * The range the budget loop may move in right now: the request's, with the
+ * floor lowered while the temporal resolve presents (`frameBudget.ts`'s
+ * temporal lever). Fixed requests are never widened.
+ */
+export function getRenderScaleRange(): { min: number; max: number } {
+    if (request.mode !== 'auto') return { min: request.min, max: request.max };
+    return { min: budgetFloor(request.min, temporalPresenting()), max: request.max };
+}
+
+/**
+ * The scale the renderer should apply: the request, raised back to the
+ * preset's floor when the budget loop had gone below it under the temporal
+ * resolve and the resolve no longer presents.
+ */
+export function getEffectiveRequestedScale(): number {
+    return Math.max(getRenderScaleRange().min, request.scale);
+}
+
 /** Install the session's request — `WebGPUCanvas` on mount, from the active preset. */
 export function configureRenderScale(next: RenderScaleRequest): void {
     request = next;
 }
 
-/** The budget loop's write. Ignored in fixed mode; clamped to the request's range. */
+/** The budget loop's write. Ignored in fixed mode; clamped to `getRenderScaleRange()`. */
 export function setRequestedRenderScale(scale: number, reason: RenderScaleReason): void {
     if (request.mode !== 'auto') return;
-    const next = Math.min(request.max, Math.max(request.min, quantizeRenderScale(scale)));
+    const { min, max } = getRenderScaleRange();
+    const next = Math.min(max, Math.max(min, quantizeRenderScale(scale)));
     if (next === request.scale) return;
     request = { ...request, scale: next, reason };
 }
@@ -176,8 +206,6 @@ export function publishAppliedRenderScale(frame: RenderScaleFrame): void {
     applied.mode = request.mode;
     applied.reason = request.reason;
     applied.requested = request.scale;
-    applied.min = request.min;
-    applied.max = request.max;
     applied.scale = frame.scale;
     applied.width = frame.width;
     applied.height = frame.height;
@@ -186,6 +214,9 @@ export function publishAppliedRenderScale(frame: RenderScaleFrame): void {
     applied.upscale = frame.upscale;
     applied.frozen = frame.frozen;
     applied.limitedBy = frame.limitedBy;
+    const range = getRenderScaleRange();
+    applied.min = range.min;
+    applied.max = range.max;
     publishProbe();
 }
 

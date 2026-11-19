@@ -97,6 +97,7 @@ function formatAutoExposureState(status: AutoExposureStatus | undefined): string
 const UPSCALE_LABEL: Record<AppliedRenderScale['upscale'], string> = {
   fsr: 'FSR 1.0',
   bilinear: 'bilinear',
+  temporal: 'temporal',
   none: 'native',
 };
 

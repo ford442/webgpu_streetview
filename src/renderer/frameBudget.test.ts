@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_FRAME_BUDGET,
+    TEMPORAL_RENDER_SCALE_MIN,
+    budgetFloor,
     createFrameBudgetState,
     stepFrameBudget,
     type FrameBudgetConfig,
@@ -248,5 +250,25 @@ describe('frame budget — frozen', () => {
         const input = { nowMs: 100, gpuMs: 30, gpuAvailable: true, frameMs: 33, frozen: false };
         expect(stepFrameBudget(s, input, config)).toEqual(stepFrameBudget(s, input, config));
         expect(s).toEqual(createFrameBudgetState(0.8));
+    });
+});
+
+describe('frame budget — temporal lever (#360)', () => {
+    it('while the temporal resolve presents, the floor drops to temporalMin', () => {
+        expect(budgetFloor(0.7, false)).toBe(0.7);
+        expect(budgetFloor(0.7, true)).toBe(TEMPORAL_RENDER_SCALE_MIN);
+        expect(budgetFloor(0.4, true)).toBe(0.4);
+
+        const config = { ...DEFAULT_FRAME_BUDGET, min: 0.7, max: 1 };
+        const overloaded = (temporal: boolean) => {
+            let s = createFrameBudgetState(0.7);
+            for (let i = 0; i < 40; i++) {
+                s = stepFrameBudget(s, { nowMs: i * 16, gpuMs: 40, gpuAvailable: true, frameMs: null, frozen: false, temporal }, config);
+            }
+            return s.scale;
+        };
+        expect(overloaded(false)).toBe(0.7);
+        expect(overloaded(true)).toBeLessThan(0.7);
+        expect(overloaded(true)).toBeGreaterThanOrEqual(TEMPORAL_RENDER_SCALE_MIN);
     });
 });

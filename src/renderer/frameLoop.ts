@@ -17,6 +17,8 @@ const TIMESTAMP_SLOTS: Partial<Record<FramePassId, readonly [number, number]>> =
     weather: [2, 3],
     'present-fallback': [2, 3],
     upscale: [6, 7],
+    // Presents in `upscale`'s place (#360) — only one of the two encodes.
+    temporal: [6, 7],
 };
 /** The compute weather path's blit-to-swap-chain span. */
 const COMPUTE_BLIT_TIMESTAMP_SLOTS = [4, 5] as const;
@@ -33,6 +35,7 @@ export function buildFramePassTimings(
     return {
         pass1: { timer, startIndex: pass1Start, endIndex: pass1End },
         upscale: { timer, startIndex: upscaleStart, endIndex: upscaleEnd },
+        temporal: { timer, startIndex: upscaleStart, endIndex: upscaleEnd },
         weather: {
             timer,
             weatherStartIndex: weatherStart,
@@ -53,13 +56,20 @@ export interface FrameUniformInput {
     inlineTransitionProgress: number;
     holdActive: boolean;
     capturePan: { x: number; y: number };
+    /**
+     * The temporal resolve's sub-pixel jitter (#360), in screen UV — the
+     * offset pass 1 samples the canvas at. Zero (the default) without the
+     * resolve: then floats 8–11 are zero and the frame is the pre-#360 one.
+     */
+    jitterUV?: readonly [number, number];
 }
 
-export const FRAME_UNIFORM_FLOAT_COUNT = 8;
+export const FRAME_UNIFORM_FLOAT_COUNT = 12;
 
 /**
- * Pack the pass-1 uniform buffer. 8 floats; must match `streetview.wgsl`.
- * Pass `out` to reuse one array across frames — `writeBuffer` copies it.
+ * Pack the pass-1 uniform buffer. 12 floats (48 bytes); must match
+ * `streetview.wgsl`'s `PanoramaUniforms`. Pass `out` to reuse one array
+ * across frames — `writeBuffer` copies it.
  */
 export function packFrameUniforms(
     input: FrameUniformInput,
@@ -73,6 +83,10 @@ export function packFrameUniforms(
     out[5] = input.holdActive ? 1.0 : 0.0;
     out[6] = input.capturePan.x;
     out[7] = input.capturePan.y;
+    out[8] = input.jitterUV?.[0] ?? 0;
+    out[9] = input.jitterUV?.[1] ?? 0;
+    out[10] = 0;
+    out[11] = 0;
     return out;
 }
 

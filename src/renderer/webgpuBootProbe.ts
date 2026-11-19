@@ -7,6 +7,7 @@ import type { RendererBackendPreference, WeatherPostProcessMode } from './types'
 import type { DeviceCapabilityMatrix } from './deviceCapabilities';
 import { getPassStatuses, type PassStatusRecord } from './passStatus';
 import type { AppliedRenderScale } from './renderScale';
+import type { TemporalStats } from './temporal/temporalStats';
 import type { CabinRendererProbe } from '../debug/probeTypes';
 
 export type WebGpuProbeStage =
@@ -79,6 +80,11 @@ export interface WebGpuProbeRecord {
    * Absent until the renderer has encoded a frame.
    */
   renderScale?: AppliedRenderScale | undefined;
+  /**
+   * The temporal resolve's last frame (#360, `temporal/temporalStats.ts`):
+   * whether it presented, blended history, and why not. Absent until it has.
+   */
+  temporal?: TemporalStats | undefined;
   /** The cabin renderer choice, mirrored by `publishCabinRendererProbe`. */
   cabin?: CabinRendererProbe;
   updatedAt: number;

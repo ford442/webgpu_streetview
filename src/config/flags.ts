@@ -124,6 +124,10 @@ export const FLAGS = {
     kind: 'enum', values: ['fsr', 'bilinear'], default: 'fsr',
     doc: 'How a scaled road frame reaches the screen: FSR 1.0 EASU + RCAS, or a plain bilinear stretch.',
   },
+  temporal: {
+    kind: 'tri', default: 'off',
+    doc: 'Temporal resolve (#360, `renderer/temporal/`): pass 1 samples with a Halton(2,3) sub-pixel jitter and the resolve accumulates the road frame over the motion field into a swap-chain-size history. `auto` presents scaled frames (render scale below 1) through it instead of `?upscale`; `on` also at scale 1 (anti-aliasing); `off` (default) is the frame without it, bit for bit. A resolve that fails to build falls back to `?upscale`.',
+  },
   latelatch: {
     kind: 'bool', default: false,
     doc: 'Late-latched look: the road frame is presented after the car loop and re-aimed at that frame\'s POV, with this frame\'s cabin (`renderer/reproject/`). A bit-exact copy at rest.',

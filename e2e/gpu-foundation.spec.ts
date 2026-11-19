@@ -18,6 +18,9 @@ import { requireGpuAdapter } from './gpuLane';
  *   weather wrote, bit for bit; with the view moved after packing it turns the
  *   frame the right way by the right amount; `?stereo=sbs|anaglyph` present
  *   without validation errors; a broken reproject.wgsl leaves the frame unsplit.
+ * - temporal resolve (#360): `?temporal` presents through the lazy resolve
+ *   (also at scale 1 under `on`); a broken temporal.wgsl falls back to FSR 1;
+ *   a hold, its release and a wipe reset the history in their own frame.
  *
  * Unit tests pin the same logic against a fake device; this is where a real
  * `getCompilationInfo` / `createRenderPipelineAsync` / error scope runs.
@@ -54,6 +57,11 @@ interface Out {
     upscale: string;
     limitedBy: string | null;
   } | null;
+  temporal?: { mode: string; presenting: boolean; history: boolean; historyReset: string | null; frames: number } | null;
+  temporalEvents?: {
+    wiped: boolean;
+    events: Array<{ event: string; history: boolean; historyReset: string | null; presenting: boolean }>;
+  };
   lateLatch?: {
     enabled: boolean;
     mode: string;
@@ -200,6 +208,8 @@ test.describe('GPU foundation on a real WebGPU device', () => {
     // Render scale 1: the upscale pass is lazy and never built.
     expect(out.passes?.upscale).toBeUndefined();
     expect(out.renderScale).toMatchObject({ scale: 1, width: 400, height: 300, upscale: 'none' });
+    // No `?temporal`: the temporal resolve is lazy and never built.
+    expect(out.passes?.temporal).toBeUndefined();
     expect(out.uncaptured).toEqual([]);
     expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
     expect(out.maxTextureDimension2D).toBeGreaterThanOrEqual(4096);
@@ -239,6 +249,65 @@ test.describe('GPU foundation on a real WebGPU device', () => {
       expect(out.renderScale).toMatchObject({ scale: 1, width: 400, limitedBy: 'upscale-unavailable' });
       expect(out.uncaptured).toEqual([]);
       expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
+    });
+  });
+
+  test.describe('temporal resolve (#360)', () => {
+    test('?temporal=auto at 0.6: the resolve presents the scaled frame, with history, in place', async ({ page }, testInfo) => {
+      await run(page, testInfo);
+      const native = await presentedGrid(page);
+      const out = await run(page, testInfo, '?scale=0.6&temporal=auto');
+      expect(out.passes?.temporal?.state, out.passes?.temporal?.reason).toBe('ready');
+      expect(out.renderScale).toMatchObject({
+        scale: 0.6, width: 240, height: 180, outputWidth: 400, outputHeight: 300, upscale: 'temporal', limitedBy: null,
+      });
+      expect(out.temporal).toMatchObject({ mode: 'auto', presenting: true, history: true, historyReset: null });
+      expect(out.uncaptured).toEqual([]);
+      expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
+      expect(maxCellDelta(await presentedGrid(page), native)).toBeLessThan(24);
+    });
+
+    test('?temporal=on at scale 1: the resolve presents the native frame', async ({ page }, testInfo) => {
+      await run(page, testInfo);
+      const native = await presentedGrid(page);
+      const out = await run(page, testInfo, '?temporal=on');
+      expect(out.passes?.temporal?.state, out.passes?.temporal?.reason).toBe('ready');
+      expect(out.renderScale).toMatchObject({ scale: 1, width: 400, upscale: 'temporal' });
+      expect(out.temporal).toMatchObject({ mode: 'on', presenting: true, history: true });
+      expect(out.uncaptured).toEqual([]);
+      expect(maxCellDelta(await presentedGrid(page), native)).toBeLessThan(12);
+    });
+
+    test('a broken temporal.wgsl: failed on the probe, FSR 1 presents the scaled frame', async ({ page }, testInfo) => {
+      const out = await run(page, testInfo, '?scale=0.6&temporal=auto&break=temporal.wgsl');
+      const temporal = out.passes?.temporal;
+      expect(temporal?.state).toBe('failed');
+      expect(temporal?.compilation?.some((m) => m.type === 'error' && m.lineNum > 0)).toBe(true);
+      expect(out.passes?.upscale?.state).toBe('ready');
+      expect(out.renderScale).toMatchObject({ scale: 0.6, width: 240, upscale: 'fsr', limitedBy: null });
+      expect(out.uncaptured).toEqual([]);
+      expect(await presentedBrightness(page)).toBeGreaterThan(PRESENTED);
+    });
+
+    test('a hold, its release and a year-chip wipe each reset the history in their own frame', async ({ page }, testInfo) => {
+      const out = await run(page, testInfo, '?scale=0.6&temporal=auto&resets=1');
+      const walk = out.temporalEvents!;
+      testInfo.annotations.push({ type: 'temporal-resets', description: JSON.stringify(walk) });
+      expect(walk.wiped).toBe(true);
+      for (const e of walk.events) {
+        expect(e.presenting, e.event).toBe(true);
+        if (e.event.startsWith('steady')) {
+          expect(e.history, JSON.stringify(e)).toBe(true);
+        } else if (['hold', 'release', 'wipe'].includes(e.event)) {
+          // The very frame the event is on screen: no history blended into it.
+          expect(e.history, JSON.stringify(e)).toBe(false);
+          expect(e.historyReset, JSON.stringify(e)).not.toBeNull();
+        }
+      }
+      // The frame after a crossfade or wipe still resets: its history holds the ghost.
+      const after = walk.events.filter((e) => e.event === 'after-release' || e.event === 'after-wipe');
+      expect(after[0]!.history, JSON.stringify(after[0])).toBe(false);
+      expect(out.uncaptured).toEqual([]);
     });
   });
 
