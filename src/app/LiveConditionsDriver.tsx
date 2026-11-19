@@ -4,7 +4,7 @@ import { useLightingSettings, useWeatherSettings } from '../hooks/useEnvironment
 import { fetchLiveConditions, mapConditionsToWeather, shouldFetchConditions } from '../services/conditions/openMeteo';
 import { type WeatherTarget } from '../types/conditions';
 import { liveConditionsStore, useLiveConditions } from '../state';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, requestFrame } from '../xr/frameClock';
 
 /** Time the weather takes to ease onto new live conditions — a hop never snaps the sky. */
 export const LIVE_CONDITIONS_SMOOTHING_MS = 1000;
@@ -107,7 +107,7 @@ export function LiveConditionsDriver(): null {
       setters.current.setFogDensity(v.fogDensity);
       setters.current.setWind(v.wind);
     };
-    const t0 = performance.now();
+    const t0 = frameNow();
     let raf = 0;
     tweening.current = true;
     const step = (now: number): void => {

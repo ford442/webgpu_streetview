@@ -72,6 +72,7 @@ import {
 import type { SceneDepthOptions } from './sceneDepthOptions';
 import type { SemanticResult, SemanticReadyMessage } from './depthProtocol';
 import type { SemanticLoadOptions } from './DepthEstimator';
+import type { FrameInputWork } from '../../types/frameInputs';
 
 /** The semantic layer's side of the shared pipeline (#352). */
 export interface SemanticSink {
@@ -233,6 +234,18 @@ export class DepthController {
         const estimator = this.estimator;
         if (!estimator || this.disposed) throw new Error('scene depth was switched off');
         return estimator.loadSemantic(options);
+    }
+
+    /**
+     * For a virtual frame step (#374): is depth work in flight that the next
+     * frame should include? Busy while the estimator loads (or recovers from a
+     * loss) and while an inference runs; off when switched off or failed.
+     */
+    public frameWork(): FrameInputWork {
+        if (this.disposed || !this.options.enabled) return 'off';
+        if (getSceneDepthStats().state === 'failed') return 'off';
+        if (this.inFlight || !this.estimator?.isReady()) return 'busy';
+        return 'idle';
     }
 
     /** Bumped on every hold release: a map from an older epoch labels another pano. */

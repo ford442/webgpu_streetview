@@ -11,6 +11,7 @@
  * The value decays on its own: if nothing publishes for ~400 ms (car mode
  * exited, cruise stopped) it falls back to zero so blur can't get stuck on.
  */
+import { frameNow } from '../xr/frameClock';
 
 /** Speed treated as "full throttle" for normalization purposes (km/h). */
 export const MOTION_SIGNAL_MAX_KMH = 90;
@@ -22,13 +23,13 @@ let speedKmh = 0;
 let lastPublishedAt = 0;
 
 /** Publish the current travel speed in km/h. Called from animation loops. */
-export function publishCameraSpeed(kmh: number, now: number = Date.now()): void {
+export function publishCameraSpeed(kmh: number, now: number = frameNow()): void {
     speedKmh = Number.isFinite(kmh) ? Math.max(0, kmh) : 0;
     lastPublishedAt = now;
 }
 
 /** Normalized 0–1 travel speed, or 0 when the signal has gone stale. */
-export function getCameraSpeedNormalized(now: number = Date.now()): number {
+export function getCameraSpeedNormalized(now: number = frameNow()): number {
     if (lastPublishedAt === 0 || now - lastPublishedAt > MOTION_SIGNAL_STALE_MS) return 0;
     return Math.min(1, speedKmh / MOTION_SIGNAL_MAX_KMH);
 }

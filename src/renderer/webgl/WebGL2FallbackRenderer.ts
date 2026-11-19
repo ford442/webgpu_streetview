@@ -16,6 +16,7 @@ import {
 } from '../weatherUniformLayout';
 import { createDefaultWeatherParams } from '../packWeatherParams';
 import { WEBGL_WEATHER_FRAGMENT_GLSL, WEBGL_WEATHER_VERTEX_GLSL } from './weatherReference.glsl';
+import { frameNow } from '../../xr/frameClock';
 
 function effectIsolationToUniform(effect: RendererEffectIsolation): number {
     switch (effect) {
@@ -74,7 +75,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
     private texture: WebGLTexture | null = null;
     private vao: WebGLVertexArrayObject | null = null;
     private weatherParams = createDefaultWeatherParams();
-    private startTime = Date.now();
+    private startTime = frameNow();
     private shaderEffectsEnabled = true;
     private debugOptions: RendererDebugOptions;
     private lastSource: CanvasImageSource | null = null;
@@ -217,7 +218,7 @@ export class WebGL2FallbackRenderer implements StreetViewRenderer {
     }
 
     public updateWeatherAnimation(): void {
-        this.weatherParams[WeatherParamIndex.time] = ((Date.now() - this.startTime) / 1000) % 10000.0;
+        this.weatherParams[WeatherParamIndex.time] = ((frameNow() - this.startTime) / 1000) % 10000.0;
         if (this.lastSource) {
             this.draw(1.0, 0.5, 0.5);
         } else {

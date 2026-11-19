@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, requestFrame } from '../xr/frameClock';
 
 export type EasingFunction = (t: number) => number;
 
@@ -77,7 +77,7 @@ function useTransition(options: TransitionOptions) {
     }
 
     isActiveRef.current = true;
-    startTimeRef.current = performance.now();
+    startTimeRef.current = frameNow();
 
     setState({
       isTransitioning: true,

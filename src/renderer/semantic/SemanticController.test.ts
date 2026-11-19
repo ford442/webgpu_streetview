@@ -249,3 +249,18 @@ describe('semantic layer — a lazy pass on the depth pipeline', () => {
         expect(layer.semantic.wantsMaps()).toBe(true);
     });
 });
+
+describe('semantic layer — virtual frame readiness (#374)', () => {
+    it('is off until switched on and busy until its session is in the depth Worker', async () => {
+        const layer = makeLayer();
+        expect(layer.semantic.frameWork()).toBe('off');
+        layer.depth.setOptions({ enabled: true, blend: 0.8, reducedMotion: false });
+        await layer.depth.pass.init();
+        layer.semantic.setOptions({ enabled: true, blend: 1, reducedMotion: false });
+        expect(layer.semantic.frameWork()).toBe('busy');
+        await layer.semantic.pass.init();
+        expect(layer.semantic.frameWork()).toBe('idle');
+        layer.semantic.setOptions({ enabled: false, blend: 0, reducedMotion: false });
+        expect(layer.semantic.frameWork()).toBe('off');
+    });
+});

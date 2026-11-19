@@ -10,6 +10,7 @@ import { publishCabinOverlaySource } from '../../renderer';
 import { getState, setState, type CarModeState } from './state';
 import { cabinHeadOffsetStore } from '../../state';
 import type { CabinRendererHandle } from '../interior/createCabinRenderer';
+import { frameNow } from '../../xr/frameClock';
 
 /**
  * Construction, per-frame update and teardown of the car cabin.
@@ -180,7 +181,7 @@ export function updateCarMode(carHeading: number, headYaw: number, headPitch: nu
     const state = getState();
     if (!state || !state.isActive) return;
 
-    const now = performance.now();
+    const now = frameNow();
     const deltaTime = (now - lastTimestamp) / 1000;
     lastTimestamp = now;
 

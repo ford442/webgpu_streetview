@@ -90,6 +90,10 @@ export interface StreetViewRenderer {
     beginHoldTransition(heading?: number, pitch?: number, cpuSnapshot?: HTMLCanvasElement, travelHeading?: number): void;
     endHoldTransition(): void;
     isHoldActive(): boolean;
+    /** WebGPU only (#374) — what a virtual frame step waits for (hold, depth, semantic). */
+    frameInputs?(): import('../types/frameInputs').FrameInputsState;
+    /** WebGPU only (#374) — resolves when the submitted GPU work has finished. */
+    whenGpuIdle?(): Promise<void>;
     setTransitionProgress(progress: number): void;
     /** Draw the frozen outgoing panorama (GPU snapshot) without uploading any source. */
     renderHeldFrame(heading?: number, pitch?: number, zoom?: number): void;

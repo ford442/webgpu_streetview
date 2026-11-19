@@ -1,5 +1,6 @@
 import { WEATHER_PARAMS_FLOAT_COUNT, WeatherParamIndex } from '../weatherUniformLayout';
 import { createDefaultWeatherParams } from '../packWeatherParams';
+import { frameNow } from '../../xr/frameClock';
 
 /**
  * The shared 44-float weather parameter block (binding 10).
@@ -14,7 +15,7 @@ import { createDefaultWeatherParams } from '../packWeatherParams';
  */
 export class WeatherParamBlock {
     private readonly values = new Float32Array(WEATHER_PARAMS_FLOAT_COUNT);
-    private readonly startTime = Date.now();
+    private readonly startTime = frameNow();
     private dirty = true;
 
     constructor(
@@ -79,7 +80,7 @@ export class WeatherParamBlock {
     /** Advance shader time. Wraps at 10000s to stay inside f32 sin/hash precision. */
     public tick(): void {
         try {
-            const time = (Date.now() - this.startTime) / 1000;
+            const time = (frameNow() - this.startTime) / 1000;
             this.values[WeatherParamIndex.time] = time % 10000.0;
             this.dirty = true;
         } catch {

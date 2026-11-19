@@ -14,6 +14,7 @@ import {
     sunSideFromBearing,
     sunStrengthFromAltitude,
 } from './cabinLightingRamps';
+import { frameNow } from '../../xr/frameClock';
 
 export class CarInteriorLightingManager {
     constructor(
@@ -243,7 +244,7 @@ export class CarInteriorLightingManager {
         const rain = this.weatherIntensity;
         const breathe = this.reducedMotion
             ? 0
-            : Math.sin(performance.now() * 0.0006) * 0.02;
+            : Math.sin(frameNow() * 0.0006) * 0.02;
 
         const rampIn = {
             effectiveNight,
@@ -295,7 +296,7 @@ export class CarInteriorLightingManager {
             );
         }
 
-        const t = performance.now() * 0.001;
+        const t = frameNow() * 0.001;
         for (const glow of this.emitterGlows) {
             const level = glow.kind === 'dome'
                 ? domeGlowLevel(rampIn)

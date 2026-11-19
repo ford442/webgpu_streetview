@@ -20,7 +20,7 @@ import {
 import { createConfiguredRouteProvider, resolveRoutingConfig, type RoutingConfig } from '../services/routing/routingConfig';
 import { povStore, tripStore, useTripSelector, type TripStop } from '../state';
 import { signedAngleDiff } from '../wasm/navigation';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, requestFrame } from '../xr/frameClock';
 import { ignoreRejection } from '../config/ignoreRejection';
 
 /** Drive with the cached graph planner: no network, or `?offline=1`. */
@@ -129,7 +129,7 @@ export function useTripBindings({
         apply(1);
         return;
       }
-      const t0 = performance.now();
+      const t0 = frameNow();
       const step = (now: number): void => {
         const k = Math.min(1, (now - t0) / CAR_HEADING_EASE_MS);
         apply(1 - (1 - k) ** 3);

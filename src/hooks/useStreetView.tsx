@@ -12,7 +12,7 @@ import { povStore } from '../state';
 import { streetViewZoomLevel } from '../config/streetViewFov';
 import { streetViewProbe } from '../debug/streetViewProbe';
 import { installStreetViewProbe } from './installStreetViewProbe';
-import { cancelFrame, requestFrame } from '../xr/frameClock';
+import { cancelFrame, frameNow, requestFrame } from '../xr/frameClock';
 
 // Types
 export interface TeleportToPanoOptions {
@@ -504,10 +504,10 @@ export const StreetViewProvider: React.FC<StreetViewProviderProps> = ({
       && renderer.beginHistoricalWipe?.(reveal.direction) === true;
 
     const RELEASE_DURATION = 250;
-    const startTime = performance.now();
+    const startTime = frameNow();
 
     const animateRelease = () => {
-      const elapsed = performance.now() - startTime;
+      const elapsed = frameNow() - startTime;
       let progress: number;
       if (wiping) {
         progress = Math.min(1.0, elapsed / HISTORICAL_WIPE_DURATION_MS);

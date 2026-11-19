@@ -6,7 +6,7 @@ import { VehicleSim, useVehicleTelemetry, vehicleTelemetryStore, type VehicleTel
 import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect, cabinHeadStore, tripStore, liveConditionsStore } from '../../state';
 import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../config/carSpatialModel';
-import { cancelFrame, isXrDriven, requestFrame } from '../../xr/frameClock';
+import { cancelFrame, frameNow, isXrDriven, requestFrame } from '../../xr/frameClock';
 
 /**
  * The world the cabin engine hears, read imperatively once per frame: the
@@ -227,11 +227,11 @@ export function useCarDashboardBridge({
     if (!carModeStateRef.current) return;
     let active = true;
     let rafId: number;
-    let lastTime = performance.now();
+    let lastTime = frameNow();
 
     const animate = (frameTime?: number) => {
       if (!active) return;
-      const now = performance.now();
+      const now = frameNow();
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
 

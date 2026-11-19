@@ -129,6 +129,8 @@ import {
     type PresentTailOptions,
 } from './reproject/presentTail';
 import { ignoreRejection } from '../config/ignoreRejection';
+import { frameNow } from '../xr/frameClock';
+import type { FrameInputsState } from '../types/frameInputs';
 
 const NO_LATCH: LatchDelta = { yawDeg: 0, pitchDeg: 0, magnitudeDeg: 0 };
 const NO_JITTER: readonly [number, number] = [0, 0];
@@ -280,7 +282,7 @@ export class Renderer implements StreetViewRenderer {
     private teardownIntended = false;
     private isDestroyed: boolean = false;
     private isDisposed: boolean = false;
-    private startTime: number = Date.now();
+    private startTime: number = frameNow();
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -1165,7 +1167,7 @@ export class Renderer implements StreetViewRenderer {
      */
     private scheduleTail(packed: PovSample): void {
         this.lastPacked = packed;
-        const frameTime = this.frameTime ?? performance.now();
+        const frameTime = this.frameTime ?? frameNow();
         frameTailScheduler.submit(frameTime, () => this.encodeTail(packed));
     }
 
@@ -1374,6 +1376,25 @@ export class Renderer implements StreetViewRenderer {
         return this.holdTransition.isHoldActive();
     }
 
+    /**
+     * The asynchronous inputs a virtual frame step waits for (#374): the hold,
+     * and scene depth / semantic work in flight. A lazy pass still
+     * initialising is busy; a failed one is off (nothing will arrive).
+     */
+    public frameInputs(): FrameInputsState {
+        const depth = isPassFailed('depth') ? 'off' : this.depthInit ? 'busy' : this.depth?.frameWork() ?? 'off';
+        const semantic = isPassFailed('semantic')
+            ? 'off'
+            : this.semanticInit ? 'busy' : this.semantic?.frameWork() ?? 'off';
+        return { holdActive: this.holdTransition.isHoldActive(), depth, semantic };
+    }
+
+    /** Resolves once the GPU has finished everything submitted so far (#374: before a captured frame is read). */
+    public whenGpuIdle(): Promise<void> {
+        if (this.isDestroyed || this.isDisposed) return Promise.resolve();
+        return this.device.queue.onSubmittedWorkDone();
+    }
+
     public setTransitionProgress(progress: number): void {
         this.transitionManager?.setTransitionProgress(progress);
     }
@@ -1435,7 +1456,7 @@ export class Renderer implements StreetViewRenderer {
                 || !!this.transitionManager?.isInTransition()
                 || !!this.historicalWipe?.isActive();
             this.depth?.onFrame({
-                nowMs: performance.now(),
+                nowMs: frameNow(),
                 view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 },
                 holdActive,
                 transitioning,
@@ -1443,7 +1464,7 @@ export class Renderer implements StreetViewRenderer {
             this.frameAux.depth = passes.isReady('depth') && !isPassFailed('depth')
                 ? this.depth?.currentAux()
                 : undefined;
-            this.semantic?.onFrame({ nowMs: performance.now(), view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 } });
+            this.semantic?.onFrame({ nowMs: frameNow(), view: { panX: wrapUnit(panX), panY, zoom: zoom || 1 } });
             this.frameAux.semantic = passes.isReady('semantic') && !isPassFailed('semantic')
                 ? this.semantic?.currentAux()
                 : undefined;
@@ -1475,7 +1496,7 @@ export class Renderer implements StreetViewRenderer {
                 textures: this.textures,
                 uniformBuffer,
                 uniforms: packFrameUniforms({
-                    time: (Date.now() - this.startTime) / 1000,
+                    time: (frameNow() - this.startTime) / 1000,
                     zoom: zoom || 1,
                     panX,
                     panY,

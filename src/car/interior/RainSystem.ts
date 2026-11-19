@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { frameNow } from '../../xr/frameClock';
 
 /**
  * Windshield rain droplet particle system using InstancedMesh.
@@ -75,7 +76,7 @@ export class RainSystem {
       this.positions[i * 3 + 1]! -= this.velocities[i]! * dt;
 
       // Slight horizontal wiggle
-      this.positions[i * 3]! += Math.sin(i * 7.3 + performance.now() * 0.001) * 0.0002;
+      this.positions[i * 3]! += Math.sin(i * 7.3 + frameNow() * 0.001) * 0.0002;
 
       // Reset if below windshield
       if (this.positions[i * 3 + 1]! < -0.3) {
