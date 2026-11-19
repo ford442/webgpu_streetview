@@ -216,6 +216,8 @@ export async function instantiateStreetViewWasm(
     dsp_create, dsp_destroy, dsp_set_params, dsp_set_ir, dsp_render, dsp_max_ir_taps,
     depth_percentiles, depth_near_depth, depth_normalize,
     atmo_param_count, atmo_params, atmo_transmittance, atmo_transmittance_lut, atmo_sun_color,
+    veh_param_count, veh_state_count, veh_input_count, veh_telemetry_count, veh_params, veh_reset,
+    veh_step, veh_telemetry,
     sv_malloc: malloc, sv_free: free,
   } = fns;
   const stackBase = fns.sv_stack_base();
@@ -652,6 +654,57 @@ export async function instantiateStreetViewWasm(
     return new Float32Array(wasmMemory.buffer.slice(start, start + n * 4));
   };
 
+  // Vehicle (veh_*): the caller keeps params/state/inputs as Float64Arrays;
+  // each call copies them through the arena and the state back out.
+  const VEH_PARAMS = veh_param_count();
+  const VEH_STATE = veh_state_count();
+  const VEH_INPUTS = veh_input_count();
+  const VEH_TELEMETRY = veh_telemetry_count();
+  const vehCopyIn = (ptr: number, src: Float64Array, n: number): void => {
+    const view = new Float64Array(wasmMemory.buffer, ptr, n);
+    if (src.length >= n) view.set(src.subarray(0, n));
+    else {
+      view.fill(0);
+      view.set(src);
+    }
+  };
+  const vehicleParams = (variant: number): Float64Array => {
+    const ptr = scratch.reserve(VEH_PARAMS * 8);
+    veh_params(Math.trunc(variant) | 0, ptr);
+    return new Float64Array(wasmMemory.buffer.slice(ptr, ptr + VEH_PARAMS * 8));
+  };
+  const vehicleReset = (params: Float64Array, speedMps: number, selector: number, seed: number): Float64Array => {
+    const ptr = scratch.reserve((VEH_PARAMS + VEH_STATE) * 8);
+    vehCopyIn(ptr, params, VEH_PARAMS);
+    const statePtr = ptr + VEH_PARAMS * 8;
+    veh_reset(ptr, statePtr, speedMps, Math.trunc(selector) | 0, seed >>> 0);
+    return new Float64Array(wasmMemory.buffer.slice(statePtr, statePtr + VEH_STATE * 8));
+  };
+  const vehicleStep = (
+    params: Float64Array, state: Float64Array, inputs: Float64Array, dt: number, steps: number,
+  ): void => {
+    if (state.length < VEH_STATE) throw new RangeError(`vehicle state needs ${VEH_STATE} f64, got ${state.length}`);
+    const ptr = scratch.reserve((VEH_PARAMS + VEH_STATE + VEH_INPUTS) * 8);
+    const statePtr = ptr + VEH_PARAMS * 8;
+    const inputsPtr = statePtr + VEH_STATE * 8;
+    vehCopyIn(ptr, params, VEH_PARAMS);
+    vehCopyIn(statePtr, state, VEH_STATE);
+    vehCopyIn(inputsPtr, inputs, VEH_INPUTS);
+    veh_step(ptr, statePtr, inputsPtr, dt, Math.trunc(steps) | 0);
+    state.set(new Float64Array(wasmMemory.buffer, statePtr, VEH_STATE));
+  };
+  const vehicleTelemetry = (params: Float64Array, state: Float64Array, out?: Float64Array): Float64Array => {
+    const ptr = scratch.reserve((VEH_PARAMS + VEH_STATE + VEH_TELEMETRY) * 8);
+    const statePtr = ptr + VEH_PARAMS * 8;
+    const outPtr = statePtr + VEH_STATE * 8;
+    vehCopyIn(ptr, params, VEH_PARAMS);
+    vehCopyIn(statePtr, state, VEH_STATE);
+    veh_telemetry(ptr, statePtr, outPtr);
+    const result = out && out.length >= VEH_TELEMETRY ? out : new Float64Array(VEH_TELEMETRY);
+    result.set(new Float64Array(wasmMemory.buffer, outPtr, VEH_TELEMETRY));
+    return result;
+  };
+
   const api: StreetViewWasmAPI = {
     seed,
     noise2d,
@@ -679,6 +732,10 @@ export async function instantiateStreetViewWasm(
     atmoTransmittance,
     atmoTransmittanceLut,
     atmoSunColor,
+    vehicleParams,
+    vehicleReset,
+    vehicleStep,
+    vehicleTelemetry,
     graphAstar,
     graphNearest,
   };

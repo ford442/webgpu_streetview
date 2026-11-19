@@ -4,7 +4,7 @@
  * speed/RPM/gear on its own.
  */
 import { SPEED_DIAL_MAX_KMH, TACHO_DIAL_MAX_RPM } from './interior/CarInteriorGauges';
-import type { VehicleTelemetry } from './VehicleDynamics';
+import type { VehicleTelemetry } from './vehicle/vehicleTelemetry';
 
 export interface HudTelemetry {
   speedKmh: number;

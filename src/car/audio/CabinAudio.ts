@@ -39,7 +39,7 @@ import {
   type CabinDspParams,
   type StreetViewWasmAPI,
 } from '../../wasm';
-import type { VehicleTelemetry } from '../VehicleDynamics';
+import type { VehicleTelemetry } from '../vehicle/vehicleTelemetry';
 import type { VehicleType } from '../VehicleManager';
 import { publishCabinAudioProbe } from './cabinAudioProbe';
 import { buildCabinIr, cabinIrTaps } from './cabinIr';

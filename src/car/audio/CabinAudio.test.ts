@@ -31,7 +31,7 @@ import { CABIN_IR_TAPS } from './cabinIr';
 import { CABIN_PROCESSOR_NAME } from './cabinWorkletSource';
 import { isCabinEngineAttached, resetCarAudioGraphForTests } from '../../audio/carAudioGraph';
 import { resetAudioRuntimeForTests } from '../../audio/audioRuntime';
-import type { VehicleTelemetry } from '../VehicleDynamics';
+import { PARKED_TELEMETRY, type VehicleTelemetry } from '../vehicle/vehicleTelemetry';
 
 interface PortMessage {
   type: string;
@@ -148,6 +148,8 @@ function install(ctxCtor: unknown, nodeCtor: unknown): void {
 }
 
 const telemetry = (over: Partial<VehicleTelemetry> = {}): VehicleTelemetry => ({
+  ...PARKED_TELEMETRY,
+  load: 0.35,
   speedKmh: 42,
   rpm: 2400,
   gear: 'D',

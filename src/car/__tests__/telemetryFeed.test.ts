@@ -5,9 +5,10 @@ import {
   telemetryToCluster,
   telemetryToHud,
 } from '../telemetryFeed';
-import type { VehicleTelemetry } from '../VehicleDynamics';
+import { PARKED_TELEMETRY, type VehicleTelemetry } from '../vehicle/vehicleTelemetry';
 
 const SAMPLE: VehicleTelemetry = {
+  ...PARKED_TELEMETRY,
   speedKmh: 47.7,
   rpm: 2100,
   gear: 'D',

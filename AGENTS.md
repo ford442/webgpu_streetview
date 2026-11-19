@@ -240,6 +240,7 @@ webgpu_streetview/
 │   │   ├── rearViewFeed.ts          # Throttled/budgeted Street View Static rear imagery (billable)
 │   │   ├── SelectivePostProcessing.ts # Post-process settings manager
 │   │   ├── VehicleManager.ts        # Vehicle configs (sedan, convertible, science-lab, limousine)
+│   │   ├── vehicle/                 # The vehicle model's handle (WASM veh_*): 120 Hz accumulator, hop → target speed, telemetry store — docs/VEHICLE.md
 │   │   ├── theme.ts                 # Car interior theme tokens
 │   │   ├── interior/                # Low-level interior building blocks
 │   │   │   ├── GeometryFactory.ts
@@ -932,7 +933,7 @@ The hot CPU math (noise tiles, fBm, particle seeds, batch geodesy, the cabin
 audio engine, panorama luma analysis, scene-depth calibration) has **one
 implementation**: the C++ in `cpp/src/*_module.cpp` (one translation unit per
 domain: noise, geodesy, audio, hrtf, luma, cabin dsp, depth, link graph,
-atmosphere), shipped
+atmosphere, vehicle), shipped
 as two committed SIMD128 binaries: `public/wasm/streetview-wasm.simd.wasm`
 (every kernel, main thread) and `streetview-dsp.simd.wasm` (the cabin engine
 alone, fixed memory, the AudioWorklet). The scalar build is CI's oracle and
@@ -1024,6 +1025,20 @@ shipping binary by `scripts/gen-wasm-goldens.mjs`:
   cross-origin isolated, else `params` messages. The car radio
   shares `src/audio/carAudioGraph.ts`'s context so it can run through the
   cabin. Probe: `window.__CABIN_AUDIO_PROBE__`; e2e: `e2e/cabin-audio.spec.ts`.
+- **Vehicle model** (`vehicle_module.cpp`, `veh_*`; `docs/VEHICLE.md`): the
+  car's physics — engine torque table, torque converter + lockup, automatic
+  gearbox (shift map, edge-triggered kickdown), brakes, and pitch/heave/roll
+  springs over a distance-keyed road profile — at a fixed 120 Hz step whose
+  accumulator `src/car/vehicle/vehicleSim.ts` owns. The hop/cruise layer
+  supplies only a *target speed*; the model's driver makes the pedals. It
+  replaced `VehicleDynamics.ts`: never add a TS speed/rpm model back
+  (`vehicleModel.scan.test.ts`). Telemetry is per-frame data in
+  `vehicleTelemetryStore` (never context); the cabin engine's `load` is the
+  model's. Probe: `window.__VEHICLE__` (`__SV__.vehicle`: speedKmh, rpm, gear,
+  load, gearIndex, throttle, brake, accelMps2, latAccelMps2, pitchRad, heaveM,
+  rollRad, shifting, shiftCount, lockup, redlineRpm). The parameter sheets
+  (0–100 / 100–0 per variant) are held within 5 % by
+  `vehicleSim.wasm.test.ts`.
 
 **Language rule**: hot numeric / batch CPU work goes in **C++ → WASM only**. Do
 not hand-write `.wat` algorithms and do not add new `src/**/*.js`

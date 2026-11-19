@@ -367,6 +367,10 @@
     "note": "Vehicle configs (sedan, convertible, science-lab, limousine)"
   },
   {
+    "path": "src/car/vehicle/",
+    "note": "The vehicle model's handle (WASM veh_*): 120 Hz accumulator, hop → target speed, telemetry store — docs/VEHICLE.md"
+  },
+  {
     "path": "src/car/theme.ts",
     "note": "Car interior theme tokens"
   },

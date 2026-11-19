@@ -34,6 +34,8 @@
  *   graph_module.cpp      graph_astar / graph_nearest over the cached link graph
  *   atmosphere_module.cpp atmo_* — the physically based sky's CPU reference
  *                         (params, transmittance, its LUT, the sun's colour)
+ *   vehicle_module.cpp    veh_* — the car's longitudinal + ride model (engine,
+ *                         converter, automatic gearbox, brakes, body springs)
  *   runtime.cpp           sv_malloc / sv_free / sv_stack_base / sv_stack_end —
  *                         what the loader's scratch arena and stack check use
  *
@@ -495,6 +497,93 @@ void sw_atmo_transmittance_lut(const float* params, int width, int height, float
 SV_EXPORT(atmo_sun_color)
 void sw_atmo_sun_color(const float* params, double sin_elevation, double altitude_m,
                        float* out_rgb);
+
+/*
+ * Vehicle (vehicle_module.cpp): the car's fixed-step longitudinal + ride
+ * model. The caller owns three blocks of doubles and runs the accumulator
+ * (src/car/vehicle/vehicleSim.ts, 120 Hz):
+ *
+ * params, sw_veh_param_count() (64), from sw_veh_params(variant):
+ *   [0-5]   mass kg, CdA m^2, Crr, wheel radius m, final drive, gear count
+ *   [6-13]  forward ratios (1st first; unused gears 0), [14] reverse ratio
+ *   [15-18] engine inertia kg m^2, idle rpm, redline rpm, torque bin step rpm
+ *   [19-26] full-load torque N m at 0, step, 2 step, ... rpm
+ *   [27-30] friction N m at 0 rpm, + N m per 1000 rpm, throttle tau s, brake tau s
+ *   [31-35] converter stall rpm, stall torque ratio, coupling speed ratio,
+ *           lockup lowest gear, lockup speed m/s
+ *   [36-43] upshift rpm light/full pedal, downshift rpm light/full, shift
+ *           time s, min s between shifts, kickdown pedal, torque kept shifting
+ *   [44-45] full-brake deceleration m/s^2, driveline efficiency
+ *   [46-53] pitch Hz, zeta, rad per m/s^2; heave Hz, zeta; roll Hz, zeta,
+ *           rad per m/s^2
+ *   [54-56] road amplitude m (roughness 1), road knot spacing m, roll rad/m
+ *   [57-61] driver kp 1/s, effort trim gain 1/s, max accel / decel asked m/s^2, accel
+ *           full pedal is taken to give m/s^2; [62-63] reserved
+ *
+ * inputs, sw_veh_input_count() (8), held for the whole sw_veh_step call:
+ *   [0] mode (0 target speed — the built-in driver, 1 pedals)
+ *   [1] target speed m/s (mode 0)   [2] throttle 0-1, [3] brake 0-1 (mode 1)
+ *   [4] selector (0 P, 1 R, 2 N, 3 D; anything else is D)
+ *   [5] yaw rate rad/s (+ = turning left)   [6] road roughness 0-1
+ *   [7] grade, rise over run (+ = uphill)
+ *
+ * telemetry, sw_veh_telemetry_count() (24):
+ *   [0] speed m/s (signed, + forward)  [1] |speed| km/h  [2] engine rpm
+ *   [3] gear (-1 R, 0 P/N, 1..n)  [4] selector  [5] throttle  [6] brake
+ *   [7] engine load 0-1  [8] longitudinal accel m/s^2  [9] lateral accel m/s^2
+ *   [10] pitch rad (+ nose up)  [11] heave m  [12] roll rad (+ right side down)
+ *   [13] pitch rate rad/s  [14] shifting (0/1)  [15] shift count (an event
+ *   counter)  [16] lockup (0/1)  [17] converter slip rpm  [18] engine torque N m
+ *   [19] drive force N  [20] distance m  [21] simulated time s  [22] turbine rpm
+ *   [23] redline rpm
+ *
+ * The state is sw_veh_state_count() (32) opaque doubles: only sw_veh_reset
+ * writes a fresh one; persist it between calls verbatim.
+ */
+
+/** Doubles in a vehicle params block (64). */
+SV_EXPORT(veh_param_count)
+SW_NODISCARD int sw_veh_param_count(void);
+
+/** Doubles in a vehicle state block (32). */
+SV_EXPORT(veh_state_count)
+SW_NODISCARD int sw_veh_state_count(void);
+
+/** Doubles in a vehicle inputs block (8). */
+SV_EXPORT(veh_input_count)
+SW_NODISCARD int sw_veh_input_count(void);
+
+/** Doubles in a vehicle telemetry block (24). */
+SV_EXPORT(veh_telemetry_count)
+SW_NODISCARD int sw_veh_telemetry_count(void);
+
+/** Built-in variants: 0 sedan, 1 sports, 2 limousine, 3 van. */
+SV_EXPORT(veh_variant_count)
+SW_NODISCARD int sw_veh_variant_count(void);
+
+/** Fill a params block with a variant's sheet; an unknown variant is the sedan. */
+SV_EXPORT(veh_params)
+void sw_veh_params(int variant, double* out);
+
+/**
+ * A fresh state: cruising at `speed_mps` (clamped to [0, 90]; 0 in P and N,
+ * backwards in R) in the gear the shift map would hold, with the road
+ * profile's generator seeded from `seed` (0 picks a fixed default).
+ */
+SV_EXPORT(veh_reset)
+void sw_veh_reset(const double* params, double* state, double speed_mps, int selector,
+                  unsigned int seed);
+
+/**
+ * Advance `steps` fixed steps of `dt` seconds (dt is capped at 1/30 s, steps
+ * at 240 per call) with the same inputs. Bit-exact on every build.
+ */
+SV_EXPORT(veh_step)
+void sw_veh_step(const double* params, double* state, const double* inputs, double dt, int steps);
+
+/** Read the telemetry block out of a state. */
+SV_EXPORT(veh_telemetry)
+void sw_veh_telemetry(const double* params, const double* state, double* out);
 
 /*
  * Runtime (runtime.cpp). The loader's scratch arena and every caller-owned

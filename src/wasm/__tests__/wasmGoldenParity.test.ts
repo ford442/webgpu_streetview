@@ -129,6 +129,26 @@ interface Goldens {
     transmittanceLut: { width: number; height: number; expected: number[] };
     sunColor: { altitudeM: number; sinElevation: number; expected: number[] }[];
   };
+  vehicle: {
+    paramCount: number;
+    stateCount: number;
+    inputCount: number;
+    telemetryCount: number;
+    variantCount: number;
+    params: { variant: number; expected: number[] }[];
+    scenarios: {
+      label: string;
+      variant: number;
+      speedMps: number;
+      selector: number;
+      seed: number;
+      dt: number;
+      sampleSteps: number;
+      phases: { inputs: number[]; steps: number }[];
+      samples: number[][];
+      finalState: number[];
+    }[];
+  };
 }
 
 const goldens: Goldens = JSON.parse(
@@ -496,6 +516,36 @@ describe.each(BINARIES)('WASM golden parity: %s', (file) => {
     expect(f32Bits(got)).toEqual(f32Bits(Float32Array.from(expected)));
     expect(api.atmoTransmittanceLut(atmoRayParams(), 0, height)).toHaveLength(0);
   });
+
+  it('vehicleParams matches the goldens for every variant', () => {
+    for (const c of goldens.vehicle.params) {
+      const got = api.vehicleParams(c.variant);
+      expect(got).toHaveLength(goldens.vehicle.paramCount);
+      Array.from(got).forEach((v, i) => expectExact(v, c.expected[i]!, `variant ${c.variant}[${i}]`));
+    }
+  });
+
+  for (const sc of goldens.vehicle.scenarios) {
+    it(`vehicle replays "${sc.label}" exactly`, () => {
+      const params = api.vehicleParams(sc.variant);
+      const state = api.vehicleReset(params, sc.speedMps, sc.selector, sc.seed);
+      expect(state).toHaveLength(goldens.vehicle.stateCount);
+      const telemetry = new Float64Array(goldens.vehicle.telemetryCount);
+      let sample = 0;
+      for (const phase of sc.phases) {
+        const inputs = Float64Array.from(phase.inputs);
+        for (let done = 0; done < phase.steps; done += sc.sampleSteps) {
+          api.vehicleStep(params, state, inputs, sc.dt, sc.sampleSteps);
+          api.vehicleTelemetry(params, state, telemetry);
+          const expected = sc.samples[sample]!;
+          telemetry.forEach((v, i) => expectExact(v, expected[i]!, `${sc.label} sample ${sample}[${i}]`));
+          sample++;
+        }
+      }
+      expect(sample).toBe(sc.samples.length);
+      state.forEach((v, i) => expectExact(v, sc.finalState[i]!, `${sc.label} state[${i}]`));
+    });
+  }
 
   for (const script of goldens.cabinDsp) {
     it(`cabin DSP renders "${script.label}" bit-for-bit`, () => {

@@ -7,13 +7,12 @@ import { describe, it, expect } from 'vitest';
 
 import { cabinDspParams, PANEL_WIND_FULL_MPS, SOAKED_ROAD_MM } from './cabinParams';
 import { CABIN_IR_VEHICLE_INDEX } from './cabinIr';
-import type { VehicleTelemetry } from '../VehicleDynamics';
+import { PARKED_TELEMETRY, type VehicleTelemetry } from '../vehicle/vehicleTelemetry';
 
 const telem = (over: Partial<VehicleTelemetry> = {}): VehicleTelemetry => ({
-  speedKmh: 0,
+  ...PARKED_TELEMETRY,
   rpm: 850,
-  gear: 'P',
-  accelerating: false,
+  load: 0.12,
   ...over,
 });
 
@@ -22,10 +21,18 @@ const calm = { rainIntensity: 0, wind: 0, wipersEnabled: false };
 describe('cabinDspParams', () => {
   it('maps telemetry to rpm, load and m/s', () => {
     expect(cabinDspParams(telem(), { openness: 0 })).toMatchObject({ rpm: 850, load: 0.12, speedMps: 0 });
-    expect(cabinDspParams(telem({ speedKmh: 90, rpm: 2600 }), { openness: 0 })).toMatchObject({
+    expect(cabinDspParams(telem({ speedKmh: 90, rpm: 2600, load: 0.35 }), { openness: 0 })).toMatchObject({
       rpm: 2600, load: 0.35, speedMps: 25,
     });
-    expect(cabinDspParams(telem({ speedKmh: 30, accelerating: true }), { openness: 0 }).load).toBe(0.85);
+  });
+
+  it('the engine load is the vehicle model\'s, not inferred from speed', () => {
+    // Full pedal before the speed moves: the engine is heard loading up.
+    expect(cabinDspParams(telem({ speedKmh: 0, load: 1, accelerating: false }), { openness: 0 }).load).toBe(1);
+    // The overrun's fuel cut at speed.
+    expect(cabinDspParams(telem({ speedKmh: 80, load: 0 }), { openness: 0 }).load).toBe(0);
+    expect(cabinDspParams(telem({ load: 7 }), { openness: 0 }).load).toBe(1);
+    expect(cabinDspParams(telem({ load: Number.NaN }), { openness: 0 }).load).toBe(0);
   });
 
   it('follows the vehicle picker and the roof', () => {

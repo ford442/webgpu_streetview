@@ -32,6 +32,7 @@ load fails the boot (§4).
 | `cpp/src/depth_module.cpp` | scene-depth calibration: disparity percentiles, ground-calibrated near depth, normalisation + easing (`docs/SCENE_DEPTH.md`) |
 | `cpp/src/graph_module.cpp` | A* (`graph_astar`) and nearest node (`graph_nearest`) over the CSR link graph a trip prefetch saves — see `docs/ROAD_TRIPS.md` |
 | `cpp/src/atmosphere_module.cpp` | the physically based atmosphere's CPU reference (`atmo_*`): the medium's constants (Mie from visibility), the transmittance integral and its LUT, the sun's colour — on its own `exp`, so bit-exact everywhere (`docs/GRAPHICS.md` §10) |
+| `cpp/src/vehicle_module.cpp` | the car's fixed-step longitudinal + ride model (`veh_*`): engine torque table, torque converter + lockup, automatic gearbox with kickdown, brakes, pitch/heave/roll springs over a distance-keyed road profile — IEEE ops and `sqrt` only, so bit-exact everywhere (`docs/VEHICLE.md`) |
 | `cpp/src/runtime.cpp` | `sv_malloc` / `sv_free` / `sv_stack_base` / `sv_stack_end` and the ABI `static_assert`s |
 | `cpp/include/streetview/abi.h` | **the ABI**: every export is one `SV_EXPORT(name)` declaration here, with its contract (§2) |
 | `cpp/include/streetview/platform.h` | `SV_EXPORT` (export_name + used under emcc, nothing on the host) and the stack-bounds shim — no `#ifdef __EMSCRIPTEN__` anywhere else |
@@ -297,6 +298,10 @@ The exports (the cabin engine's `dsp_*` family is in §3a):
 | `graph_astar(offsets, neighbors, coords, n, edges, from, to, work, out, max) → i32` | `graphAstar` | shortest path over a directed CSR graph (haversine cost + heuristic); `work` is `n × 32` B of arena; returns the path length (`snprintf`-style; -1 unreachable / invalid). Ties break on the lower node index, so paths are bit-stable across every build |
 | `graph_nearest(coords, n, lat, lng) → i32` | `graphNearest` | index of the nearest node (ties: lower index), -1 when empty |
 | `fill_engine_noise(ptr, count, rpm, load, speed, phase: f64, sampleIndex: f64, sr) → f64` | `fillEngineNoise` | mono f32 engine+road PCM in `[-1, 1]`; returns the next oscillator phase (feed it back, advance `sampleIndex` by `count`) |
+| `veh_params(variant, out)` (+ `veh_*_count`) | `vehicleParams` | a variant's 64-double sheet (0 sedan, 1 sports, 2 limousine, 3 van; unknown → sedan) — `docs/VEHICLE.md` |
+| `veh_reset(params, state, speed, selector, seed)` | `vehicleReset` | a fresh 32-double state cruising at `speed` in the gear the shift map would hold |
+| `veh_step(params, state, inputs, dt, steps)` | `vehicleStep` | `steps` fixed steps (≤ 240, `dt` ≤ 1/30 s) with one 8-double inputs block; the loader copies the state back in place |
+| `veh_telemetry(params, state, out)` | `vehicleTelemetry` | the 24-double telemetry block (abi.h); `car/vehicle/vehicleTelemetry.ts` decodes it |
 | `fill_cabin_ir(ptr, count, vehicle, openness, sr)` | `fillCabinIr` | short cabin impulse response, DC gain normalised to 1 |
 | `fill_hrtf(leftPtr, rightPtr, count, azimuthDeg, sr)` | `fillHrtf` | analytic per-ear binaural shadow (ITD + level), not a measured HRTF; identical ears at azimuth 0 |
 | `luma_histogram_bt709(rgba, w, h, bins)` | `lumaHistogramBt709` | 256-bin Rec.709 histogram of packed RGBA8 |
@@ -384,6 +389,7 @@ binary to pin this.
 | Consumer | Export | What it does |
 |---|---|---|
 | `TourPanel` via `src/services/routing/routeStats.ts` | `batch_haversine` | per-tour route length + longest-hop labels |
+| `useCarDashboardBridge` via `car/vehicle/vehicleSim.ts` (car mode, every display frame) | `veh_params` / `veh_reset` / `veh_step` / `veh_telemetry` | the car's physics at 120 Hz: speed, rpm, gear, engine load (the cabin engine's `load`), body motion — `docs/VEHICLE.md` |
 | cabin AudioWorklet (`cabinWorkletSource.ts`, car mode) | `dsp_create` / `dsp_set_params` / `dsp_set_ir` / `dsp_render` / `dsp_destroy` / `dsp_max_ir_taps` (from `streetview-dsp.simd.wasm`) | the whole car bed + radio, rendered on the audio thread — see §3a |
 | `CabinAudio` → `cabinIr.ts` (car mode) | `fill_cabin_ir` | per-vehicle cabin IR (1024–2048 taps) posted to the worklet; roof openness raises its high-frequency transfer and lets the late tail escape |
 | `DepthController` (`renderer/depth/depthMath.ts`, `?depth`) | `depth_normalize` / `depth_percentiles` / `depth_near_depth` | turns each network inference into the `r16float` depth texture — see `docs/SCENE_DEPTH.md` |
