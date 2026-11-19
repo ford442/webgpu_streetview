@@ -17,6 +17,7 @@
  *   currentTime()                    the audio clock
  */
 import { CabinAudio } from '/src/car/audio/CabinAudio';
+import { PARKED_TELEMETRY } from '/src/car/vehicle/vehicleTelemetry';
 import { acquireCarAudioGraph } from '/src/audio/carAudioGraph';
 import type { VehicleType } from '/src/car/VehicleManager';
 
@@ -24,6 +25,7 @@ interface DriveInput {
   speedKmh?: number;
   rpm?: number;
   accelerating?: boolean;
+  load?: number;
   openness?: number;
   vehicle?: VehicleType;
   rainIntensity?: number;
@@ -55,10 +57,13 @@ startButton.addEventListener('click', () => {
     last = { ...last, ...input };
     audio.update(
       {
+        ...PARKED_TELEMETRY,
         speedKmh: last.speedKmh ?? 0,
         rpm: last.rpm ?? 850,
         gear: 'D',
         accelerating: last.accelerating ?? false,
+        // The model's engine load; the spec drives it through `accelerating`.
+        load: last.load ?? (last.accelerating ? 0.85 : 0.2),
       },
       { openness: last.openness ?? 0, vehicle: last.vehicle ?? 'sedan' },
       {

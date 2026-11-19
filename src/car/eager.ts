@@ -15,7 +15,9 @@ export type { CabinInputEvent, CabinInputTransition, ControlMode } from './input
 export { readCabinRendererProbe } from './interior/cabinRendererProbe';
 export type { RearViewFeedStats, RearViewSample } from './rearViewFeed';
 export { buildStudioShareUrl, parseStudioLinkParams } from './studioLink';
-export { VehicleDynamics, gearChainedHopIntervalMs } from './VehicleDynamics';
-export type { VehicleTelemetry } from './VehicleDynamics';
+export { gearChainedHopIntervalMs } from './vehicle/hopCadence';
+export { VehicleSim } from './vehicle/vehicleSim';
+export { useVehicleTelemetry, vehicleTelemetryStore } from './vehicle/vehicleTelemetry';
+export type { VehicleTelemetry } from './vehicle/vehicleTelemetry';
 export { getVehicleConfig, isValidVehicleType, vehicleManager } from './VehicleManager';
 export type { VehicleConfig, VehicleType } from './VehicleManager';

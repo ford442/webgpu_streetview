@@ -180,6 +180,10 @@ describe('WASM ABI lock', () => {
       atmoTransmittance: ['atmo_transmittance'],
       atmoTransmittanceLut: ['atmo_transmittance_lut'],
       atmoSunColor: ['atmo_sun_color'],
+      vehicleParams: ['veh_param_count', 'veh_variant_count', 'veh_params'],
+      vehicleReset: ['veh_state_count', 'veh_reset'],
+      vehicleStep: ['veh_input_count', 'veh_step'],
+      vehicleTelemetry: ['veh_telemetry_count', 'veh_telemetry'],
       graphAstar: ['graph_astar'],
       graphNearest: ['graph_nearest'],
     };

@@ -22,7 +22,7 @@ import { getUnhandledErrors, type UnhandledErrorStats } from '../debug/unhandled
 import { mapsCanvasSource, type FrameSourceStats, perfStore, type FrameRateStats } from '../renderer';
 import type { RendererDebugHandle, AdapterCapabilitySummary, WebGpuProbeRecord, GpuChoresBreadcrumbs, GpuPassTimings, SceneDepthStats, SceneSemanticStats } from '../renderer';
 import type { CabinRendererProbe } from '../debug/probeTypes';
-import type { CabinAudioProbe } from '../car/eager';
+import type { CabinAudioProbe, VehicleTelemetry } from '../car/eager';
 import type { RearViewFeed } from '../car';
 import type { PlaceSearchKillSwitch } from '../search/placeSearchBudget';
 import { getRuntimeContexts, type RuntimeContexts } from '../runtime/contexts';
@@ -36,6 +36,8 @@ export interface SvDebug {
     readonly adapter: AdapterCapabilitySummary | undefined;
     readonly cabin: CabinRendererProbe | undefined;
     readonly cabinAudio: CabinAudioProbe | undefined;
+    /** The vehicle model's latest telemetry (`window.__VEHICLE__`, car/vehicle/). */
+    readonly vehicle: VehicleTelemetry | undefined;
     readonly gpuChores: GpuChoresBreadcrumbs | undefined;
     readonly gpuTimings: GpuPassTimings | undefined;
     readonly sceneDepth: SceneDepthStats | undefined;
@@ -71,6 +73,7 @@ export function installSvGlobals(): void {
         get adapter() { return window.rendererAdapterInfo; },
         get cabin() { return window.__CABIN_RENDERER_PROBE__ ?? window.webgpuProbe?.cabin; },
         get cabinAudio() { return window.__CABIN_AUDIO_PROBE__; },
+        get vehicle() { return window.__VEHICLE__; },
         get gpuChores() { return window.__GPU_CHORES__; },
         get gpuTimings() { return window.rendererGpuTimings; },
         get sceneDepth() { return window.__SCENE_DEPTH__; },

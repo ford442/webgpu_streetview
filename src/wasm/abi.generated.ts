@@ -53,6 +53,15 @@ export const WASM_ABI = {
   atmo_transmittance: { params: ['i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
   atmo_transmittance_lut: { params: ['i32', 'i32', 'i32', 'i32'], results: [], binaries: ['main'] },
   atmo_sun_color: { params: ['i32', 'f64', 'f64', 'i32'], results: [], binaries: ['main'] },
+  veh_param_count: { params: [], results: ['i32'], binaries: ['main'] },
+  veh_state_count: { params: [], results: ['i32'], binaries: ['main'] },
+  veh_input_count: { params: [], results: ['i32'], binaries: ['main'] },
+  veh_telemetry_count: { params: [], results: ['i32'], binaries: ['main'] },
+  veh_variant_count: { params: [], results: ['i32'], binaries: ['main'] },
+  veh_params: { params: ['i32', 'i32'], results: [], binaries: ['main'] },
+  veh_reset: { params: ['i32', 'i32', 'f64', 'i32', 'i32'], results: [], binaries: ['main'] },
+  veh_step: { params: ['i32', 'i32', 'i32', 'f64', 'i32'], results: [], binaries: ['main'] },
+  veh_telemetry: { params: ['i32', 'i32', 'i32'], results: [], binaries: ['main'] },
   sv_malloc: { params: ['i32'], results: ['i32'], binaries: ['main', 'dsp'] },
   sv_free: { params: ['i32'], results: [], binaries: ['main', 'dsp'] },
   sv_stack_base: { params: [], results: ['i32'], binaries: ['main', 'dsp'] },
@@ -134,6 +143,24 @@ export interface StreetViewWasmExports {
   atmo_transmittance_lut(params: number, width: number, height: number, outRgba: number): void;
   /** `void sw_atmo_sun_color(const float* params, double sin_elevation, double altitude_m, float* out_rgb)` (atmosphere_module.cpp) */
   atmo_sun_color(params: number, sinElevation: number, altitudeM: number, outRgb: number): void;
+  /** `int sw_veh_param_count(void)` (vehicle_module.cpp) */
+  veh_param_count(): number;
+  /** `int sw_veh_state_count(void)` (vehicle_module.cpp) */
+  veh_state_count(): number;
+  /** `int sw_veh_input_count(void)` (vehicle_module.cpp) */
+  veh_input_count(): number;
+  /** `int sw_veh_telemetry_count(void)` (vehicle_module.cpp) */
+  veh_telemetry_count(): number;
+  /** `int sw_veh_variant_count(void)` (vehicle_module.cpp) */
+  veh_variant_count(): number;
+  /** `void sw_veh_params(int variant, double* out)` (vehicle_module.cpp) */
+  veh_params(variant: number, out_: number): void;
+  /** `void sw_veh_reset(const double* params, double* state, double speed_mps, int selector, unsigned int seed)` (vehicle_module.cpp) */
+  veh_reset(params: number, state: number, speedMps: number, selector: number, seed: number): void;
+  /** `void sw_veh_step(const double* params, double* state, const double* inputs, double dt, int steps)` (vehicle_module.cpp) */
+  veh_step(params: number, state: number, inputs: number, dt: number, steps: number): void;
+  /** `void sw_veh_telemetry(const double* params, const double* state, double* out)` (vehicle_module.cpp) */
+  veh_telemetry(params: number, state: number, out_: number): void;
   /** `void* sv_malloc(size_t bytes)` (runtime.cpp) */
   sv_malloc(bytes: number): number;
   /** `void sv_free(void* ptr)` (runtime.cpp) */

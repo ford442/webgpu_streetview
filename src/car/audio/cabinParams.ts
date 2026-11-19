@@ -9,7 +9,7 @@
  */
 
 import type { CabinDspParams } from '../../wasm';
-import type { VehicleTelemetry } from '../VehicleDynamics';
+import type { VehicleTelemetry } from '../vehicle/vehicleTelemetry';
 import type { VehicleType } from '../VehicleManager';
 import { cabinIrVehicleIndex } from './cabinIr';
 
@@ -56,7 +56,10 @@ export function cabinDspParams(
   const tripSpeed = Math.max(0, finiteOr(env.tripSpeedMps, 0));
   return {
     rpm: Math.max(0, finiteOr(telem.rpm, 0)),
-    load: telem.accelerating ? 0.85 : speedKmh > 1 ? 0.35 : 0.12,
+    // The vehicle model's engine load: idle governor, part throttle, full
+    // pedal, 0 on the overrun's fuel cut — the engine is heard loading up
+    // before the speed moves.
+    load: clamp01(finiteOr(telem.load, 0)),
     speedMps: Math.max(speedKmh / 3.6, tripSpeed),
     openness: clamp01(finiteOr(occlusion.openness, 0)),
     vehicle: cabinIrVehicleIndex(occlusion.vehicle),

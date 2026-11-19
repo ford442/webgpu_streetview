@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { ControlMode } from '../../hooks/useViewMode';
 import { initCarMode, toggleCarMode, disposeCarMode, updateCarMode, setCarSteering, setCarWipers, setCarSeatOffset, updateCarGauges, setWindowTint, setMirrorStreetViewCanvas, setCarZoomFOV, setCarWeatherAmbient, setCarInteriorEditMode, triggerCarInteriorPress, isCarCenterDisplayHit, cycleCarDisplayPage, setCarWeather, isConvertibleOpen, getCurrentVehicleType, gearHopCount, type CarModeState, type GearPosition, applyVehicleTelemetry, CabinAudio, createCabinRendererAsync, preloadWebGPUCabinRenderer, resolveCabinRendererPreference, detectGPUProfile, createCabinPovSync } from '../../car';
 import { publishCameraSpeed, frameTailScheduler } from '../../renderer';
-import { VehicleDynamics, type VehicleTelemetry, type CabinEnvironment } from '../../car/eager';
+import { VehicleSim, useVehicleTelemetry, vehicleTelemetryStore, type VehicleTelemetry, type CabinEnvironment } from '../../car/eager';
 import { currentSearch } from '../../config/flags';
 import { povStore, usePovEffect, cabinHeadStore, tripStore, liveConditionsStore } from '../../state';
 import { STEER_HEAD_RECENTER_RATE, dampTowardZero } from '../../config/carSpatialModel';
@@ -87,12 +87,12 @@ export function useCarDashboardBridge({
 
   const steeringInputRef = useRef(0);
   const carSpeedRef = useRef(0);
-  const dynamicsRef = useRef<VehicleDynamics | null>(null);
-  if (!dynamicsRef.current) dynamicsRef.current = new VehicleDynamics();
-  const [telemetry, setTelemetry] = useState<VehicleTelemetry>({
-    speedKmh: 0, rpm: 850, gear: 'P', accelerating: false,
-  });
-  const lastTelemetryPushRef = useRef(0);
+  // The vehicle model (WASM, car/vehicle/vehicleSim.ts): this hook feeds it
+  // hops, thrust, the shifter and the heading; it supplies everything else.
+  const dynamicsRef = useRef<VehicleSim | null>(null);
+  if (!dynamicsRef.current) dynamicsRef.current = new VehicleSim(getCurrentVehicleType());
+  // The HUD's copy, rate-limited; per-frame readers use the store itself.
+  const telemetry = useVehicleTelemetry(150);
   const cabinAudioRef = useRef<CabinAudio | null>(null);
   // Read by the frame loop; a ref so a weather slider drag does not restart it.
   const cabinWeatherRef = useRef({ rainIntensity, wind, wipersEnabled });
@@ -267,8 +267,12 @@ export function useCarDashboardBridge({
 
       setCarSteering(steeringInputRef.current);
 
-      dynamicsRef.current!.noteGear(String(gearRef.current));
-      const telem = dynamicsRef.current!.update(deltaTime);
+      const sim = dynamicsRef.current!;
+      sim.setVehicle(getCurrentVehicleType());
+      sim.noteGear(String(gearRef.current));
+      sim.noteHeading(povStore.get().carHeading, deltaTime);
+      const telem = sim.update(deltaTime);
+      vehicleTelemetryStore.set(telem);
       carSpeedRef.current = telem.speedKmh;
       applyVehicleTelemetry(telem, { updateCluster: updateCarGauges });
       publishCameraSpeed(telem.speedKmh);
@@ -282,11 +286,6 @@ export function useCarDashboardBridge({
         },
         readCabinEnvironment(cabinWeatherRef.current),
       );
-
-      if (now - lastTelemetryPushRef.current > 150) {
-        lastTelemetryPushRef.current = now;
-        setTelemetry(telem);
-      }
 
       if (steeringInputRef.current !== 0) {
         steeringInputRef.current *= 0.92;

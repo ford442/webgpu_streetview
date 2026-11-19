@@ -379,6 +379,28 @@ export interface StreetViewWasmAPI {
   /** Linear RGB of a white sun at `sinElevation`, seen from `altitudeM` (0 below the horizon). */
   atmoSunColor(params: Float32Array, sinElevation: number, altitudeM: number): [number, number, number];
 
+  /**
+   * A vehicle variant's params block (`veh_params`, 64 f64, abi.h): 0 sedan,
+   * 1 sports, 2 limousine, 3 van; unknown → sedan. The C++ owns the sheets.
+   */
+  vehicleParams(variant: number): Float64Array;
+
+  /**
+   * A fresh vehicle state (`veh_reset`, 32 opaque f64): cruising at
+   * `speedMps` in `selector` (0 P, 1 R, 2 N, 3 D), road generator `seed`.
+   */
+  vehicleReset(params: Float64Array, speedMps: number, selector: number, seed: number): Float64Array;
+
+  /**
+   * Advance `state` in place by `steps` fixed steps of `dt` s (`veh_step`;
+   * capped at 1/30 s and 240 steps) with one inputs block (8 f64:
+   * mode, target m/s, throttle, brake, selector, yaw rad/s, roughness, grade).
+   */
+  vehicleStep(params: Float64Array, state: Float64Array, inputs: Float64Array, dt: number, steps: number): void;
+
+  /** The telemetry block of a state (`veh_telemetry`, 24 f64, abi.h), into `out` when given. */
+  vehicleTelemetry(params: Float64Array, state: Float64Array, out?: Float64Array): Float64Array;
+
   /** Integer box-filter downsample of packed RGBA8. */
   downsample2d(
     src: Uint8Array | Uint8ClampedArray,
