@@ -4,7 +4,7 @@ Single-header C++ test framework used by the native (non-Emscripten) host test
 target in `cpp/tests`.
 
 - Upstream: https://github.com/doctest/doctest
-- Version: **v2.4.11**
+- Version: **v2.5.3**
 - Files: `doctest.h` (verbatim), `LICENSE.txt` (MIT)
 
 Vendored rather than fetched so `cmake -S cpp -B cpp/build-host && ctest` works

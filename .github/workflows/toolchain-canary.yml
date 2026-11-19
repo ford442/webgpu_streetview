@@ -1,0 +1,67 @@
+name: Toolchain canary
+
+# CI pins every job to ubuntu-24.04 and a named clang (ci.yml). This canary
+# runs the native C++ build + lint on the floating `ubuntu-latest` image with
+# its default compilers, so the next image's breakage (e.g. libstdc++ 15's
+# <ciso646> #warning under -Werror, which turned main red in Nov 2026) shows up
+# as an issue here instead of as a red main. It is a separate workflow and is
+# never a required check: failing is its job.
+
+on:
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  cpp-on-latest-image:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'ford442/webgpu_streetview' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Image toolchain
+        run: |
+          grep PRETTY_NAME /etc/os-release
+          g++ --version | head -1
+          clang++ --version | head -1
+
+      - name: Host build + golden tests (image g++, -Werror)
+        run: |
+          cmake -S cpp -B cpp/build-host -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=g++
+          cmake --build cpp/build-host -j"$(nproc)"
+          ctest --test-dir cpp/build-host --output-on-failure
+
+      - name: Host build + golden tests (image clang++, -Werror)
+        run: |
+          cmake -S cpp -B cpp/build-clang -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++
+          cmake --build cpp/build-clang -j"$(nproc)"
+          ctest --test-dir cpp/build-clang --output-on-failure
+
+      # The image's clang-format may legitimately disagree with the pinned 18
+      # (that is a reformat decision, not a bug); it is reported, not fatal.
+      - name: clang-format + clang-tidy (image default, advisory format)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy clang-format
+          clang-format --version
+          bash scripts/lint-cpp.sh || echo "::warning::lint-cpp fails with the image's clang tools"
+
+      - name: Open a canary issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Toolchain canary: C++ build fails on ubuntu-latest"
+          gh label create toolchain --color 5319E7 --description "Runner image / compiler drift" 2>/dev/null || true
+          existing=$(gh issue list --state open --label toolchain --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing on $(git rev-parse --short HEAD): $RUN_URL"
+          else
+            gh issue create --title "$title" --label toolchain \
+              --body "The weekly canary (floating ubuntu-latest, image compilers) failed on $(git rev-parse --short HEAD): $RUN_URL. CI itself is pinned to ubuntu-24.04 + clang-18 and is unaffected; fix this before moving the pin."
+          fi

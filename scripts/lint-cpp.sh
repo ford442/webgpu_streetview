@@ -15,6 +15,11 @@
 #   npm run format:cpp      # rewrite in place instead of checking
 set -euo pipefail
 
+# CI names the version (CLANG_FORMAT=clang-format-18 CLANG_TIDY=clang-tidy-18) so
+# the formatter is a decision, not whatever the runner image ships.
+CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
+CLANG_TIDY="${CLANG_TIDY:-clang-tidy}"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="${ROOT}/cpp/build-host"
 EM_DB="${ROOT}/cpp/build-emscripten"
@@ -37,16 +42,16 @@ SOURCES=(
 mapfile -t FORMATTED < <(cd "$ROOT" && ls cpp/src/*.cpp cpp/include/streetview/*.h \
   cpp/tests/*.cpp cpp/fuzz/*.cpp cpp/fuzz/*.h | grep -v 'goldens_generated\.h$')
 
-if ! command -v clang-format >/dev/null 2>&1; then
+if ! command -v "${CLANG_FORMAT}" >/dev/null 2>&1; then
   echo "lint:cpp: clang-format not found (install clang-format)" >&2
   exit 1
 fi
 if [[ "${1:-}" == "--fix" ]]; then
-  (cd "$ROOT" && clang-format -i --style=file:cpp/.clang-format "${FORMATTED[@]}")
+  (cd "$ROOT" && "${CLANG_FORMAT}" -i --style=file:cpp/.clang-format "${FORMATTED[@]}")
   echo "lint:cpp: formatted ${#FORMATTED[@]} files"
   exit 0
 fi
-(cd "$ROOT" && clang-format --dry-run --Werror --style=file:cpp/.clang-format "${FORMATTED[@]}") || {
+(cd "$ROOT" && "${CLANG_FORMAT}" --dry-run --Werror --style=file:cpp/.clang-format "${FORMATTED[@]}") || {
   echo "lint:cpp: run npm run format:cpp" >&2
   exit 1
 }
@@ -56,19 +61,19 @@ if [[ ! -f "${DB}/compile_commands.json" ]]; then
   exit 1
 fi
 
-if ! command -v clang-tidy >/dev/null 2>&1; then
+if ! command -v "${CLANG_TIDY}" >/dev/null 2>&1; then
   echo "lint:cpp: clang-tidy not found (install clang-tidy)" >&2
   exit 1
 fi
 
-clang-tidy -p "${DB}" --config-file="${ROOT}/cpp/.clang-tidy" "${SOURCES[@]}"
+"${CLANG_TIDY}" -p "${DB}" --config-file="${ROOT}/cpp/.clang-tidy" "${SOURCES[@]}"
 
 # The wasm32 pass parses emsdk's libc++, which only supports the clang it
 # ships with and the release before; an older clang-tidy cannot even parse
 # <algorithm> there (missing __builtin_clzg …, then a crash). Point
 # EM_CLANG_TIDY at a new enough one (e.g. clang-tidy-23 for emsdk 6.0.6's
 # LLVM 24); otherwise the pass is skipped, loudly.
-EM_TIDY="${EM_CLANG_TIDY:-clang-tidy}"
+EM_TIDY="${EM_CLANG_TIDY:-${CLANG_TIDY}}"
 major() { "$1" --version 2>/dev/null | grep -oE 'version [0-9]+' | head -1 | grep -oE '[0-9]+'; }
 if [[ ! -f "${EM_DB}/compile_commands.json" ]] || ! command -v em++ >/dev/null 2>&1; then
   echo "lint:cpp: no cpp/build-emscripten database or em++ — wasm32 tidy pass skipped"
