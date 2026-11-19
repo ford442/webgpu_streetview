@@ -16,7 +16,7 @@ export const OPTIONAL_DEVICE_FEATURES = {
     shaderF16: 'shader-f16' as GPUFeatureName,
     /** Packed HDR intermediate (`rg11b10ufloat`) when alpha is unused. */
     rg11b10ufloatRenderable: 'rg11b10ufloat-renderable' as GPUFeatureName,
-    /** Fragment weather precip as `@second_blend_source`; in-shader add is the fallback. */
+    /** Fragment weather precip as `@blend_src(1)` (the `dual_source` variant); in-shader add is the fallback. */
     dualSourceBlending: 'dual-source-blending' as GPUFeatureName,
     /** Cabin windshield portal if/when cabin shares this device. */
     clipDistances: 'clip-distances' as GPUFeatureName,

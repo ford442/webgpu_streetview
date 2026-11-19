@@ -3,8 +3,8 @@
  * uniform layout shared by:
  *  - src/renderer/WeatherPostProcessor.ts   (fragment pass, uniform buffer)
  *  - src/renderer/ComputeWeatherPostProcessor.ts (compute pass, storage buffer)
- *  - public/shaders/weather-post.wgsl        (`struct WeatherParams`)
- *  - public/shaders/weather-post-compute.wgsl (`extraBuffer` accessors)
+ *  - src/shaders/weather/bindings.wesl       (fragment `struct WeatherParams`
+ *                                            and the compute `p_*` accessors)
  *  - src/renderer/webgl/weatherReference.glsl.ts (SDR GLSL reference; not a live backend)
  *
  * Changing an index here means updating the live WebGPU paths in lockstep. See

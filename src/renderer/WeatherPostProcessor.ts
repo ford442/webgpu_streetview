@@ -19,10 +19,9 @@ import {
     createLutSampler,
 } from './lutGpu';
 import {
-    assembleDualSourceWeatherShader,
-    assembleExtendedToneMappingShader,
     deviceHasFeature,
     DUAL_SOURCE_PRECIP_BLEND,
+    weatherPostShaderFile,
 } from './shaderFeatureVariants';
 import { OPTIONAL_DEVICE_FEATURES } from './deviceCapabilities';
 import { createTrackedBuffer, destroyTracked } from './gpuMemoryTracking';
@@ -47,7 +46,7 @@ import { PUBLIC_URL } from '../config/publicUrl';
 import { timestampWritesField } from './gpuPassTimer';
 
 // Must match NOISE_TILE_SIZE in src/renderer/weatherNoiseTile.ts and the
-// `array<f32, 4096>` storage buffer declared in weather-post.wgsl.
+// `array<f32, 4096>` storage buffer `wasmNoiseTile` (src/shaders/weather/bindings.wesl).
 const NOISE_TILE_SIZE = 64;
 const NOISE_BUFFER_BYTES = NOISE_TILE_SIZE * NOISE_TILE_SIZE * 4;
 
@@ -113,29 +112,22 @@ export class WeatherPostProcessor implements WeatherPostProcessorLike {
         presentationFormat: GPUTextureFormat,
         options: WeatherPostInitOptions = {},
     ): Promise<void> {
-        const shaderUrl = `${PUBLIC_URL}/shaders/weather-post.wgsl`;
+        // The linked variant for this device and swap chain (scripts/gen-shaders.mjs):
+        // `hdr_grade` when the canvas applied extended tone mapping, `dual_source`
+        // when the device enabled dual-source blending.
+        this.dualSourcePrecip = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
+        const shaderFile = weatherPostShaderFile(options.canvasToneMapping ?? 'standard', this.dualSourcePrecip);
+        const shaderUrl = `${PUBLIC_URL}/shaders/${shaderFile}`;
         let shaderCode: string;
         try {
-            shaderCode = await fetchShaderSource(shaderUrl, 'weather-post.wgsl');
+            shaderCode = await fetchShaderSource(shaderUrl, shaderFile);
         } catch (error) {
             console.error(`[Renderer] Failed to load weather-post shader from ${shaderUrl}:`, error);
             throw error;
         }
 
-        // Output-referred grade first: it rewrites the `aces_tonemap` body, which
-        // the dual-source assembler never touches, so the two stay independent.
-        shaderCode = assembleExtendedToneMappingShader(
-            shaderCode,
-            options.canvasToneMapping ?? 'standard',
-        );
-
-        this.dualSourcePrecip = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.dualSourceBlending);
-        if (this.dualSourcePrecip) {
-            shaderCode = assembleDualSourceWeatherShader(shaderCode);
-        }
-
         const shaderModule = await createShaderModuleChecked(this.device, {
-            label: 'weather-post.wgsl',
+            label: shaderFile,
             code: shaderCode,
         });
 

@@ -39,8 +39,8 @@ export function blitPassTimestampWrites(
 export interface WeatherPostInitOptions {
     /**
      * Tone mapping `configureCanvasContext` actually **applied** to the swap
-     * chain — never the requested `?hdr` flag. `'extended'` assembles the
-     * output-referred grade (`assembleExtendedToneMappingShader`) so highlights
+     * chain — never the requested `?hdr` flag. `'extended'` selects the
+     * `hdr_grade` linked variant (the output-referred ACES) so highlights
      * survive into display headroom; `'standard'` (the default, and every
      * default boot) keeps the historical SDR ACES pixels.
      */

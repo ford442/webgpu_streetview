@@ -111,7 +111,7 @@ export class ComputeWeatherPostProcessor implements WeatherPostProcessorLike {
 
         this.computePipeline = await createWeatherComputePipeline(
             this.device,
-            `${base}/shaders/weather-post-compute.wgsl`,
+            `${base}/shaders`,
             this.lut.createLayout(),
             options.canvasToneMapping ?? 'standard',
         );

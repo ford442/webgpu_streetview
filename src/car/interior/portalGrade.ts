@@ -7,7 +7,7 @@
  * per change and uploads a `vec3`, instead of paying for it inside every lens
  * pixel.
  *
- * This is a literal port of `public/shaders/weather-post/01-foundation.wgsl`'s
+ * This is a literal port of `src/shaders/weather/grade.wesl`'s
  * `kelvinToRGB` / `applyTemperatureTint`; `windshieldPortal.parity.test.ts`
  * reads the WGSL and fails if any coefficient here drifts from it.
  */

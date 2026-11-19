@@ -24,8 +24,8 @@ describe('gpu-chores isolation (#216)', () => {
   it('loads a scalar hist by default and a subgroup hist when the feature is on', () => {
     expect(read('public', 'shaders', 'gpu-chores-hist.wgsl')).toMatch(/atomicAdd/);
     expect(read('public', 'shaders', 'gpu-chores-hist.wgsl')).not.toMatch(/enable subgroups/);
-    expect(read('public', 'shaders', 'gpu-chores-hist-subgroups.wgsl')).toMatch(/enable subgroups/);
-    expect(read('src', 'renderer', 'gpuChores', 'GpuChores.ts')).toMatch(/gpu-chores-hist-subgroups/);
+    expect(read('public', 'shaders', 'gpu-chores-hist.subgroups.wgsl')).toMatch(/enable subgroups/);
+    expect(read('src', 'renderer', 'gpuChores', 'GpuChores.ts')).toMatch(/linkedShaderFile\('gpu-chores-hist', \{\s*subgroups: deviceHasFeature\(this\.device, OPTIONAL_DEVICE_FEATURES\.subgroups\)/);
   });
 
   it('?no_gpu_compute does not select weather fragment/compute', () => {

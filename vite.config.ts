@@ -76,6 +76,41 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = {
  * - outDir build/ + static/js/main.[hash].js preserves deploy.py key baking
  * - Allowlisted REACT_APP_* / VITE_* keys surfaced as import.meta.env.VITE_PUBLIC_*
  */
+/**
+ * Dev server only: relink public/shaders/*.wgsl from src/shaders/**\/*.wesl
+ * (scripts/gen-shaders.mjs) at start and whenever a source changes, then reload
+ * the page. A build never links — `prebuild` only checks that the committed
+ * linked files are current.
+ */
+function weslRelinkPlugin(): Plugin {
+  return {
+    name: 'wesl-relink',
+    apply: 'serve',
+    async configureServer(server) {
+      const { syncLinkedShaders } = await import('./scripts/gen-shaders.mjs');
+      const relink = async () => {
+        try {
+          const { stale } = await syncLinkedShaders();
+          if (stale.length) {
+            server.config.logger.info(`[wesl] relinked ${stale.length} shader(s)`);
+            server.ws.send({ type: 'full-reload' });
+          }
+        } catch (error) {
+          server.config.logger.error(`[wesl] ${error instanceof Error ? error.message : String(error)}`);
+        }
+      };
+      await relink();
+      const sources = path.join(__dirname, 'src/shaders');
+      server.watcher.add(sources);
+      for (const event of ['add', 'change', 'unlink'] as const) {
+        server.watcher.on(event, (file: string) => {
+          if (file.startsWith(sources) && (file.endsWith('.wesl') || file.endsWith('shaders.manifest.json'))) void relink();
+        });
+      }
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ['REACT_APP_', 'VITE_']);
   const buildVersion = env.REACT_APP_BUILD_VERSION || env.VITE_BUILD_VERSION || gitShortHash();
@@ -113,6 +148,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       chunkGraphPlugin(),
+      ...(process.env.VITEST ? [] : [weslRelinkPlugin()]),
       // Typecheck in CI via `npm run typecheck`; skip overlay during vitest.
       ...(process.env.VITEST
         ? []

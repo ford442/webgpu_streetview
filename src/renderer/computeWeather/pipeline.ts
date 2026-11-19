@@ -1,13 +1,7 @@
 import { BLIT_SHADER, COMPUTE_WEATHER_OUTPUT_FORMAT } from './constants';
-import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
 import { getSceneDepthBindGroupLayout } from '../depth/sceneDepthBinding';
 import { getSceneSemanticBindGroupLayout } from '../semantic/sceneSemanticBinding';
-import {
-    assembleExtendedToneMappingShader,
-    deviceHasFeature,
-    withSubgroupLumaReduce,
-    type CanvasToneMapping,
-} from '../shaderFeatureVariants';
+import { computeWeatherShaderFile, type CanvasToneMapping } from '../shaderFeatureVariants';
 import {
     createComputePipelineChecked,
     createRenderPipelineChecked,
@@ -20,7 +14,7 @@ import {
  *
  * The 13-entry layout mirrors `image_video_effects` so the same WGSL can be
  * shared; the binding numbers are load-bearing and must stay in step with
- * `public/shaders/weather-post-compute.wgsl`.
+ * `src/shaders/weather/bindings.wesl` (the `compute` path of group 0).
  */
 
 /** Binding indices for the weather compute group — the contract with the WGSL. */
@@ -82,27 +76,25 @@ function createComputeBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
  */
 export async function createWeatherComputePipeline(
     device: GPUDevice,
-    shaderUrl: string,
+    shaderDir: string,
     lutBindGroupLayout: GPUBindGroupLayout,
     /** Tone mapping actually applied to the swap chain — see `WeatherPostInitOptions`. */
     canvasToneMapping: CanvasToneMapping = 'standard',
 ): Promise<GPUComputePipeline> {
+    // The linked variant (scripts/gen-shaders.mjs): `hdr_grade` when the canvas
+    // applied extended tone mapping.
+    const shaderFile = computeWeatherShaderFile(canvasToneMapping);
+    const shaderUrl = `${shaderDir}/${shaderFile}`;
     let shaderCode: string;
     try {
-        shaderCode = await fetchShaderSource(shaderUrl, 'weather-post-compute.wgsl');
+        shaderCode = await fetchShaderSource(shaderUrl, shaderFile);
     } catch (error) {
         console.error(`[Renderer] Failed to load weather-post-compute shader from ${shaderUrl}:`, error);
         throw error;
     }
 
-    shaderCode = assembleExtendedToneMappingShader(shaderCode, canvasToneMapping);
-
-    if (deviceHasFeature(device, OPTIONAL_DEVICE_FEATURES.subgroups)) {
-        shaderCode = withSubgroupLumaReduce(shaderCode);
-    }
-
     const computeModule = await createShaderModuleChecked(device, {
-        label: 'weather-post-compute.wgsl',
+        label: shaderFile,
         code: shaderCode,
     });
     return createComputePipelineChecked(device, {

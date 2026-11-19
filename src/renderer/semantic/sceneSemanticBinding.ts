@@ -36,8 +36,8 @@ export const WEATHER_SCENE_SEMANTIC_GROUP = 3;
 
 /**
  * `SceneSemanticParams` in the WGSL (all `f32`, 64 bytes). Must match the
- * struct in `weather-post/01-foundation.wgsl` and `weather-post-compute.wgsl`
- * (`sceneSemanticBinding.test.ts` reads both).
+ * struct in `src/shaders/weather/semantic.wesl`, which both weather paths link
+ * (`sceneSemanticBinding.test.ts` reads it).
  */
 export const SceneSemanticParamIndex = {
     /** Preset weight × trust in the map. 0 = every consumer's pre-semantic branch (bit-exact). */

@@ -89,7 +89,7 @@ describe('deviceInit limits and features', () => {
         const { readFileSync } = await import('node:fs');
         const { join } = await import('node:path');
         const n = COMPUTE_CHORES_WORKGROUP_SIZE;
-        for (const file of ['gpu-chores-hist.wgsl', 'gpu-chores-hist-subgroups.wgsl', 'gpu-chores-downsample.wgsl']) {
+        for (const file of ['gpu-chores-hist.wgsl', 'gpu-chores-hist.subgroups.wgsl', 'gpu-chores-downsample.wgsl']) {
             const src = readFileSync(join(process.cwd(), 'public/shaders', file), 'utf8');
             expect(src, file).toMatch(new RegExp(`@workgroup_size\\(\\s*${n}\\s*,\\s*${n}\\s*,\\s*1\\s*\\)`));
         }

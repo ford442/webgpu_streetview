@@ -48,6 +48,16 @@ describe('chunk contracts (scripts/chunks.json)', () => {
     expect(errors.join('\n')).toMatch(/main chunk contains forbidden module node_modules\/cesium/);
   });
 
+  it('fails when the WESL linker lands in any chunk (shaders are linked at build time only)', () => {
+    const graph = goodGraph();
+    const lazy = 'static/js/carModeRuntime.BBBBBBBB.chunk.js';
+    const id = 'node_modules/wesl/dist/core-BAZCHOez.js';
+    graph.chunks[lazy]!.modules.push(id);
+    (graph.modules[id] ??= []).push(lazy);
+    expect(checkChunkGraph(graph, contracts).join('\n')).toMatch(/contains node_modules\/wesl\/.*must never ship/);
+    expect(checkChunkGraph(withMainModule(goodGraph(), id), contracts).join('\n')).toMatch(/must never ship/);
+  });
+
   it('fails when a lazy chunk entry is also in the main chunk', () => {
     const errors = checkChunkGraph(withMainModule(goodGraph(), 'src/car/carModeRuntime.ts'), contracts);
     expect(errors.join('\n')).toMatch(/entry of lazy chunk "carModeRuntime"/);

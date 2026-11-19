@@ -1,0 +1,22 @@
+{
+  "$comment": "Every WGSL file the renderer fetches is linked from src/shaders/<entry>.wesl by scripts/gen-shaders.mjs into public/shaders/<entry>[.<condition>...].wgsl — one file per subset of `conditions`, named in this order (`linkedShaderFile` in src/renderer/shaderFeatureVariants.ts). `fixed` conditions hold for every variant of the entry. Shared helpers live once under lib/ and weather/ and are imported, never copied.",
+  "entries": {
+    "atmosphere": {},
+    "cabin-composite": {},
+    "gpu-chores-downsample": {},
+    "gpu-chores-hist": { "conditions": ["subgroups"] },
+    "historical-wipe": {},
+    "motion": { "fixed": { "scene_depth_group1": true } },
+    "reproject": { "fixed": { "scene_depth_group1": true } },
+    "streetview": { "fixed": { "scene_depth_group1": true } },
+    "temporal": {},
+    "transition-fade": {},
+    "transition-zoom": {},
+    "transition-zoom-blur": {},
+    "transition-zoom-chromatic": {},
+    "upscale": {},
+    "weather-particles": { "fixed": { "compute": true, "weather_particles": true } },
+    "weather-post": { "conditions": ["dual_source", "hdr_grade"] },
+    "weather-post-compute": { "fixed": { "compute": true }, "conditions": ["hdr_grade"] }
+  }
+}

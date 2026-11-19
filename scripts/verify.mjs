@@ -35,6 +35,11 @@ const steps = [
   },
   { name: 'AGENTS.md structure tree is current', cmd: 'node', args: ['scripts/gen-structure-doc.mjs', '--check'] },
   {
+    name: 'linked shaders (public/shaders current with src/shaders/**/*.wesl)',
+    cmd: 'node',
+    args: ['scripts/gen-shaders.mjs', '--check'],
+  },
+  {
     name: 'WASM ABI (abi.generated.ts current; binaries match abi.h by signature)',
     cmd: 'npm',
     args: ['run', '--silent', 'check:wasm-abi'],

@@ -18,7 +18,7 @@ import {
 import { resolveGpuChoresEligibility, type GpuChoresBackend } from './gpuChoresPolicy';
 import { setGpuChoresStats } from './gpuChoresStatsStore';
 import { OPTIONAL_DEVICE_FEATURES } from '../deviceCapabilities';
-import { deviceHasFeature } from '../shaderFeatureVariants';
+import { deviceHasFeature, linkedShaderFile } from '../shaderFeatureVariants';
 import { createComputePipelineChecked, createShaderModuleChecked } from '../gpuPipelineFactory';
 import { PUBLIC_URL } from '../../config/publicUrl';
 
@@ -87,9 +87,9 @@ export class GpuChores {
 
     try {
       const base = `${PUBLIC_URL}/shaders`;
-      const histFile = deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.subgroups)
-        ? 'gpu-chores-hist-subgroups.wgsl'
-        : 'gpu-chores-hist.wgsl';
+      const histFile = linkedShaderFile('gpu-chores-hist', {
+        subgroups: deviceHasFeature(this.device, OPTIONAL_DEVICE_FEATURES.subgroups),
+      });
       const [histCode, downCode] = await Promise.all([
         fetchShader(`${base}/${histFile}`),
         fetchShader(`${base}/gpu-chores-downsample.wgsl`),

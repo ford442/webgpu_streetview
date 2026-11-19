@@ -6,13 +6,12 @@
  * of `fs_main`. The authoritative check is GPU-side (`e2e/windshield-portal.spec.ts`
  * compares the real shader's pixels with the mirror's, to within a code value) —
  * but that needs a WebGPU browser. This is the jsdom-side complement: it reads the
- * shipped WGSL and fails, by name, when a constant or the stage ORDER the mirror
+ * shipped (linked, default-variant) WGSL and fails, by name, when a constant or the stage ORDER the mirror
  * assumes stops being true, so the mirror gets updated in the same change.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { ACES_TONEMAP_SDR_BODY } from '../../renderer/shaderFeatureVariants';
 import {
     PORTAL_ACES,
     PORTAL_NIGHT,
@@ -43,7 +42,10 @@ function fnBody(source: string, name: string): string {
 const numbers = (text: string): number[] =>
     (text.replace(/vec\d<f32>|\b[fiu]32\b/g, '').match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
 
-const FS_MAIN = fnBody(WEATHER, 'fs_main');
+/** The fragment pass's shading body (`fs_main` returns its colour; weather-post.wesl). */
+const FS_MAIN = fnBody(WEATHER, 'shadeWeather');
+/** The SDR ACES the default variant links (weather/grade.wesl, `hdr_grade` off). */
+const ACES_SDR = fnBody(WEATHER, 'aces_tonemap');
 
 /** `portalGrade.ts` as written — not `Function.toString()`, because esbuild prints 1000 as `1e3`. */
 const PORTAL_GRADE_TS = readFileSync(join(__dirname, 'portalGrade.ts'), 'utf8')
@@ -85,7 +87,7 @@ describe('the stages the mirror assumes, in the order fs_main runs them', () => 
     it('returns the raw intermediate, ungraded, when shader effects are off', () => {
         // The portal's `graded` flag mirrors this bypass.
         expect(norm(FS_MAIN)).toContain(
-            'if (p.shaderEffectsEnabled < 0.5) { return vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0); }',
+            'if (p.shaderEffectsEnabled < 0.5) { return WeatherShade(vec4<f32>(textureSample(sceneTex, linearSampler, uv).rgb, 1.0), vec3<f32>(0.0)); }',
         );
     });
 });
@@ -93,14 +95,18 @@ describe('the stages the mirror assumes, in the order fs_main runs them', () => 
 describe('ACES', () => {
     it('mirrors the SDR aces_tonemap the road ends on', () => {
         const coefficient = (name: string) =>
-            Number(new RegExp(`let ${name} = ([0-9.]+);`).exec(ACES_TONEMAP_SDR_BODY)![1]);
+            Number(new RegExp(`let ${name} = ([0-9.]+);`).exec(ACES_SDR)![1]);
         expect(
             (['a', 'b', 'c', 'd', 'e'] as const).map(coefficient),
         ).toEqual([PORTAL_ACES.a, PORTAL_ACES.b, PORTAL_ACES.c, PORTAL_ACES.d, PORTAL_ACES.e]);
     });
 
-    it('is the shader that actually ships', () => {
-        expect(WEATHER_N).toContain(norm(ACES_TONEMAP_SDR_BODY.split('\n').slice(1, -1).join('\n')));
+    it('is the SDR curve the default variant ships (no headroom)', () => {
+        expect(norm(ACES_SDR)).toContain(
+            'return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));',
+        );
+        expect(ACES_SDR).not.toContain('headroom');
+        expect(WEATHER_N.match(/fn aces_tonemap\(/g)).toHaveLength(1);
     });
 });
 

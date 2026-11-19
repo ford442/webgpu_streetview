@@ -1,10 +1,13 @@
-enable subgroups;
+@if(subgroups) enable subgroups;
 
 /**
- * gpu-chores histogram — subgroup-coalesced atomics.
- * Same BT.709 256-bin, 1/4-res samples, workgroup (8,8) as gpu-chores-hist.wgsl.
- * Loaded only when `subgroups` is enabled on the shared GPUDevice; the scalar
- * atomicAdd path stays the naga-validated default (`?gpu=compat` included).
+ * gpu-chores histogram — BT.709 luma, 256 bins, 1/4-res samples, workgroup (8,8).
+ * Matches the WASM `luma_histogram_bt709` (cpp/src/luma_module.cpp).
+ *
+ * `subgroups` (linked as gpu-chores-hist.subgroups.wgsl, loaded only when the
+ * shared GPUDevice enabled the feature) coalesces the atomics across the
+ * subgroup; the scalar atomicAdd path stays the naga-validated default
+ * (`?gpu=compat` included).
  */
 
 @group(0) @binding(0) var srcTex: texture_2d<f32>;
@@ -18,6 +21,7 @@ fn bt709_bin(rgb: vec3<f32>) -> u32 {
     return u32(clamp(floor(acc + 0.5), 0.0, 255.0));
 }
 
+@if(subgroups)
 @compute @workgroup_size(8, 8, 1)
 fn luma_histogram_bt709(
     @builtin(global_invocation_id) gid: vec3<u32>,
@@ -52,4 +56,15 @@ fn luma_histogram_bt709(
     if (is_leader && count > 0u) {
         atomicAdd(&bins[bin], count);
     }
+}
+@else
+@compute @workgroup_size(8, 8, 1)
+fn luma_histogram_bt709(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let dims = textureDimensions(srcTex);
+    let px = gid.xy * 2u;
+    if (px.x >= dims.x || px.y >= dims.y) {
+        return;
+    }
+    let rgb = textureLoad(srcTex, vec2<i32>(px), 0).rgb;
+    atomicAdd(&bins[bt709_bin(rgb)], 1u);
 }
