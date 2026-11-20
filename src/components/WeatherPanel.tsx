@@ -111,7 +111,7 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                 backgroundColor: 'rgba(0,0,0,0.3)',
             }}>
                 <h3 style={{ margin: 0, color: '#4FC3F7', fontSize: '15px', letterSpacing: '0.5px' }}>
-                    🌧️ Weather &amp; Atmosphere
+                    🌧️ Weather & Atmosphere
                 </h3>
                 <button
                     onClick={onClose}
@@ -306,6 +306,7 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                                 { id: 'storm', label: '⛈️ Storm' },
                                 { id: 'arctic', label: '❄️ Arctic' },
                                 { id: 'neon-rain', label: '🌃 Neon Rain' },
+                                { id: 'christmas', label: '🎄 Christmas' },
                             ].map((p) => {
                                 const selected = activeLookId === p.id;
                                 return (
