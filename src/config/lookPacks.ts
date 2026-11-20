@@ -25,7 +25,8 @@ export type LookId =
   | 'golden-hour'
   | 'storm'
   | 'arctic'
-  | 'neon-rain';
+  | 'neon-rain'
+  | 'christmas';
 
 /** Three-stop luminance/color curve approximated by the 6 grading uniforms. */
 interface LookCurveNotes {
@@ -75,6 +76,7 @@ export const LOOK_IDS: readonly LookId[] = [
   'storm',
   'arctic',
   'neon-rain',
+  'christmas',
 ] as const;
 
 export const LOOK_PACKS: Record<LookId, LookPack> = {
@@ -311,6 +313,37 @@ export const LOOK_PACKS: Record<LookId, LookPack> = {
     highBeam: true,
     domeLight: false,
     wipers: true,
+  },
+  christmas: {
+    id: 'christmas',
+    name: 'Christmas',
+    emoji: '🎄',
+    tagline: 'Snowy festive night',
+    description:
+      'Heavy snow under a warm night sky. Cool whites of the flakes against a warm Christmas-light temperature grade. Headlights on for the drive home, soft fog for atmosphere, dome light for cabin glow.',
+    before: 'Stock night or day street — dry, cool or flat color.',
+    after: 'Gentle falling snow, warm festive tint on lights and sky, headlight pools on the snowy road, soft atmospheric fog.',
+    curve: {
+      shadows: 'warm lift under night floor (temp +0.32, exposure +0.08)',
+      mids: 'festive vibrance 1.25 / sat 1.15 — reds and greens pop',
+      highlights: 'warm Christmas lights + headlight specular; ACES rolloff',
+    },
+    timeOfDay: 'night',
+    rain: 0,
+    snow: 92,
+    wind: -18,
+    fog: 18,
+    vibrance: 1.25,
+    saturation: 1.15,
+    contrast: 1.18,
+    exposure: 0.08,
+    temperature: 0.32,
+    tint: 0.12,
+    nightIntensity: 0.92,
+    headlights: true,
+    highBeam: false,
+    domeLight: true,
+    wipers: false,
   },
 };
 
