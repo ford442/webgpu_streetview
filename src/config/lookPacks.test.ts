@@ -16,7 +16,7 @@ describe('look packs', () => {
   it('ships at least four named artistic looks with before/after notes', () => {
     const artistic = LOOK_IDS.filter((id) => id !== 'clear');
     expect(artistic.length).toBeGreaterThanOrEqual(4);
-    expect(LOOK_IDS).toHaveLength(8);
+    expect(LOOK_IDS).toHaveLength(9);
     for (const id of LOOK_IDS) {
       const pack = LOOK_PACKS[id];
       expect(pack.id).toBe(id);
@@ -57,6 +57,7 @@ describe('look packs', () => {
 
   it('rejects unknown look ids', () => {
     expect(isLookId('noir')).toBe(true);
+    expect(isLookId('christmas')).toBe(true);
     expect(isLookId('sepia')).toBe(false);
     expect(getLookPack('sepia')).toBeNull();
   });
