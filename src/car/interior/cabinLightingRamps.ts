@@ -221,7 +221,7 @@ export function cabinEmitterTargets(input: CabinRampInput): CabinEmitterTargets 
     // Fixture emissive 0xffe8b0. Above ~0.9 the red channel clips under
     // NoToneMapping and the disc goes white; 0.85 stays a warm diffuser.
     // The point light is on another layer so it cannot blast this mesh.
-    domeFixture: input.domeLightOn ? 0.85 : 0.015,
+    domeFixture: input.domeLightOn ? 0.85 : 0,
     domeSwitch: input.domeLightOn ? 0.45 : 0,
   };
 }

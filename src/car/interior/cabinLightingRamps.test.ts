@@ -157,7 +157,7 @@ describe('cabinLightingRamps', () => {
     expect(fill.dash).toBe(0);
     expect(emit.cluster).toBeLessThan(0.3);
     expect(emit.centerDisplay).toBeGreaterThan(0.15);
-    expect(emit.domeFixture).toBeLessThan(0.05);
+    expect(emit.domeFixture).toBe(0);
     expect(clusterGlowLevel({
       effectiveNight: 0,
       rain: 0,
