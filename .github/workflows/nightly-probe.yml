@@ -104,6 +104,69 @@ jobs:
               --body "The nightly probe failed on $(git rev-parse --short HEAD): $RUN_URL"
           fi
 
+  # Production smoke with the Maps key (#384): the same bundle shape that ships (hashed sub-path assets,
+  # stamped service worker, COOP/COEP), built here with the key baked in as a deploy does, served by
+  # `vite preview`, and driven through every core flow — first frame, look / pan / hops with hold-pause,
+  # place search → teleport, cabin (pointer lock, vehicle telemetry, cabin audio), a routed drive with zero
+  # extra Maps calls per hop, the renderer fallbacks — under the console / network gate.
+  # The PR lane (ci.yml `e2e-prod`) runs only the keyless half. docs/PRODUCTION_SMOKE.md.
+  production-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    if: ${{ github.repository == 'ford442/webgpu_streetview' }}
+    env:
+      SV_WASM_PREBUILT: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Build the production bundle (key baked in, as in a deploy)
+        run: npm run build
+        env:
+          REACT_APP_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
+          VITE_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
+
+      - name: Production smoke (keyed, vite preview of build/)
+        run: npm run test:e2e:prod
+        env:
+          CI: true
+          # The key's HTTP-referrer allowlist already covers http://localhost:3000/* (the dev-server lane above).
+          E2E_PREVIEW_PORT: '3000'
+          REACT_APP_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-production-smoke-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+      - name: Open a regression issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly production smoke is failing"
+          gh label create regression --color B60205 --description "Something that worked is broken" 2>/dev/null || true
+          existing=$(gh issue list --state open --label regression --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Failed again on $(git rev-parse --short HEAD): $RUN_URL"
+          else
+            gh issue create --title "$title" --label regression \
+              --body "The production-bundle smoke (e2e/prod, console/network gate) failed on $(git rev-parse --short HEAD): $RUN_URL"
+          fi
+
   # libFuzzer over the ABI (cpp/fuzz/: luma_analyze + downsample_2d,
   # polyline_project, the cabin engine's set_ir/params/render, depth_*),
   # clang + ASan/UBSan on the SIMDe path, 60 s per target. Corpora are cached

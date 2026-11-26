@@ -65,7 +65,7 @@ After the script says "complete", immediately do the post-deploy checks below.
 
 ## 5. Post-deploy verification (within 2 minutes of upload)
 
-0. **One command** (the Deploy workflow runs it as its last step): `npm run verify:live -- --url https://test.1ink.us/streetview/ --expect-sha <full sha> --files`.
+0. **Two commands** (the Deploy workflow runs both as its last steps; the second is the production smoke, `docs/PRODUCTION_SMOKE.md`: `npm run test:e2e:prod -- --live https://test.1ink.us/streetview/ --expect-sha <full sha>`). **First**: `npm run verify:live -- --url https://test.1ink.us/streetview/ --expect-sha <full sha> --files`.
    It checks the live `build-info.json` SHA, that COOP is `same-origin` and COEP `credentialless` **each sent once** (a duplicate makes
    `crossOriginIsolated` false), that every built file is on the host (a `.wasm` not served as `application/wasm` only warns). In the live console,
    `crossOriginIsolated` must be `true` and `__SV__.build.sha` must equal the deployed commit. The host answers `429` to bursts, so

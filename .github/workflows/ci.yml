@@ -71,6 +71,15 @@ jobs:
         # Vite build + wasm + verify-build (bundle budget + env-leak scan). Checks ran in `Verify` above.
         run: npm run build
 
+      # The very bundle this job just built, handed to `e2e-prod`: the production smoke tests what CI
+      # built (hashed sub-path assets, stamped service worker), not a second build that might differ.
+      - name: Upload the production build
+        uses: actions/upload-artifact@v5
+        with:
+          name: production-build
+          path: build/
+          retention-days: 1
+
       - name: Bundle size report
         # Visibility / SME artifact. Hard fail thresholds live in
         # scripts/check-bundle-budget.sh (invoked by verify-build.sh).
@@ -340,6 +349,64 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: playwright-smoke-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+  # Production smoke (#384): the Playwright `prod` project against `vite preview` of the build above —
+  # the stamped service worker, COOP/COEP, hashed sub-path assets, wasm / shader files, build identity,
+  # and a console / network gate (any console.error, uncaught error or failed request fails it). Keyless
+  # on a PR: the Street View flows (cabin, trip drive, hold-pause hops, fallbacks) skip here and run in
+  # nightly-probe.yml with the key, and live in deploy.yml after every deploy. docs/PRODUCTION_SMOKE.md.
+  e2e-prod:
+    needs: test-and-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: production-build
+          path: build
+
+      - name: Read Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+
+      - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Production smoke (keyless, vite preview of build/)
+        run: npm run test:e2e:prod
+        env:
+          CI: true
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-prod-artifacts
           path: |
             test-results/
             playwright-report/

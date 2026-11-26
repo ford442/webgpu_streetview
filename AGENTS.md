@@ -959,11 +959,13 @@ The project uses Vitest + React Testing Library plus a side-by-side Playwright E
   - `npm run test:e2e:smoke` — keyless UI shell (PR CI); skips `@keyed` tests
   - `npm run test:e2e:keyed` / `npm run test:e2e` — full suite; Maps-dependent cases need `REACT_APP_MAPS_API_KEY`
   - Optional: start `npm start` yourself and set `E2E_SKIP_WEBSERVER=1`
+  - `npm run test:e2e:prod` — the **production bundle** (`vite preview` of `build/`) or, with `--live <url> --expect-sha <sha>`, a deployed site, under a console / network gate (#384, `e2e/prod/`, `docs/PRODUCTION_SMOKE.md`). PR lane: `ci.yml` `e2e-prod` (keyless); nightly: `production-smoke` (keyed); `deploy.yml` ends with the live run.
 - **Artifacts**: traces / screenshots / video under `test-results/` and `playwright-report/` (gitignored); CI uploads them on failure
 
 ### Unit tests (Vitest/jsdom) vs. browser E2E (Playwright)
 - **Vitest covers**: pure logic and math (`navigation.ts`, `panoramaStability.ts`, `scraperHealth.ts`, `app/mapsKeyUtils.ts`, `app/mapsLoadingOverlay.ts`, `app/sharedSessionSync.ts`, `app/historicalExperience.ts`), hook state machines (`useDeviceDetection`, `useTouchControls`, `useStreetView` hold-arming), backend hard-fail selection (`RendererBackend.test.ts`, `createStreetViewRenderer*.test.ts`, `webgpuBootProbe.test.ts`), and component smoke tests with `StreetView`/`WebGPUCanvas` mocked out (`App.test.tsx`). These run in jsdom with no real GPU — `navigator.gpu` is undefined, so `createStreetViewRenderer.test.ts` exercises the WebGPU hard-fail path (no WebGL construct); the `console.warn` noise (`WebGPU not supported...`) is expected test output, not a failure.
 - **Playwright E2E covers**: real Chromium against `npm start` (or a static `build/` server): welcome boot, missing-key banner, bookmark panel input isolation, car-mode toolbar toggle, offline `service-worker.js` registration, `?renderer=webgl` → `window.rendererType` (when a Maps canvas exists), and keyed hold-pause hops via `window.__STREETVIEW_PROBE__`. Specs live in `e2e/*.spec.ts`.
+- **Production smoke (`e2e/prod/`)**: boots the *built* app and fails on any `console.error`, uncaught error, failed request or same-origin 4xx/5xx (`gate.ts`; allowlist `gateAllowlist.ts` stays empty unless a third-party source is proven and reviewed). New prod specs import `test` from `./fixtures` and open pages with relative URLs (`openApp(page, '?flag')`) so a sub-path host works.
 - **Legacy probe**: `npm run probe:hold-pause` remains for deeper intra-hold pixel checks; nightly runs both the keyed Playwright suite and this probe.
 
 ### WASM numeric layer (`cpp/` + `src/wasm/`)

@@ -11,6 +11,29 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const PORT = Number(process.env.E2E_PORT || 3000);
 const BASE_URL = process.env.E2E_BASE_URL || `http://127.0.0.1:${PORT}`;
+
+/**
+ * Production-mode smoke (#384): `E2E_PROD=1` swaps the dev lanes for the one `prod` project,
+ * which runs `e2e/prod/` against the BUILT app — `vite preview` of `build/` by default, or a
+ * deployed site when `E2E_BASE_URL` is an absolute non-loopback URL (live mode). Normally
+ * driven by `npm run test:e2e:prod` / `scripts/e2e-prod.mjs`; see docs/PRODUCTION_SMOKE.md.
+ */
+const PROD = process.env.E2E_PROD === '1';
+const PREVIEW_PORT = Number(process.env.E2E_PREVIEW_PORT || 4173);
+/** A site that is not this machine: no web server is started and the specs respect `callBudget`. */
+const LIVE_URL = (() => {
+  const raw = process.env.E2E_BASE_URL;
+  if (!PROD || !raw) return null;
+  const url = new URL(raw);
+  return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(url.hostname) ? null : url;
+})();
+/** Trailing slash on purpose: the prod specs resolve relative paths (`./?cabin=webgl`) against it, so a sub-path deploy works. */
+const PROD_BASE_URL = LIVE_URL
+  ? `${LIVE_URL.origin}${LIVE_URL.pathname.replace(/\/?$/, '/')}`
+  : process.env.E2E_BASE_URL
+    ? process.env.E2E_BASE_URL.replace(/\/?$/, '/')
+    : `http://127.0.0.1:${PREVIEW_PORT}/streetview/`;
+
 const hasMapsKey = Boolean(
   process.env.REACT_APP_MAPS_API_KEY &&
     !/placeholder|your_|replace|example/i.test(process.env.REACT_APP_MAPS_API_KEY),
@@ -56,7 +79,26 @@ const GPU_MODEL_SPECS = /(scene-depth|scene-semantic)\.spec\.ts$/;
 const swiftShaderWebGpu = {
   ...devices['Desktop Chrome'],
   channel: 'chromium',
-  launchOptions: { args: SWIFTSHADER_WEBGPU_ARGS },
+  launchOptions: {
+    args: SWIFTSHADER_WEBGPU_ARGS,
+    // A machine whose preinstalled Chromium is not the build this Playwright pins (a sandbox,
+    // a distro image) can point at it instead of downloading one. CI never sets this.
+    ...(process.env.E2E_CHROMIUM_PATH ? { executablePath: process.env.E2E_CHROMIUM_PATH } : {}),
+  },
+};
+
+const prodProject = {
+  // Same SwiftShader WebGPU browser as `gpu`, pointed at the production bundle.
+  name: 'prod',
+  testMatch: /e2e\/prod\/.*\.spec\.ts$/,
+  // Live + keyed flows run minutes at hop pace; the PR lane's keyless half is seconds.
+  timeout: 180_000,
+  use: {
+    ...swiftShaderWebGpu,
+    baseURL: PROD_BASE_URL,
+    // Recording needs Playwright's own ffmpeg, which a machine with a substituted Chromium may not have.
+    ...(process.env.E2E_CHROMIUM_PATH ? { video: 'off' as const } : {}),
+  },
 };
 
 export default defineConfig({
@@ -76,10 +118,12 @@ export default defineConfig({
     video: 'retain-on-failure',
     viewport: { width: 1280, height: 720 },
   },
-  projects: [
+  projects: PROD
+    ? [prodProject]
+    : [
     {
       name: 'chromium',
-      testIgnore: [GPU_SPECS, GPU_MODEL_SPECS],
+      testIgnore: [GPU_SPECS, GPU_MODEL_SPECS, /e2e\/prod\//],
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -110,9 +154,18 @@ export default defineConfig({
       use: swiftShaderWebGpu,
     },
   ],
-  webServer: process.env.E2E_SKIP_WEBSERVER
+  webServer: process.env.E2E_SKIP_WEBSERVER || LIVE_URL
     ? undefined
-    : {
+    : PROD
+      ? {
+          // The production bundle, as built: hashed assets under a sub-path, the stamped service
+          // worker, COOP/COEP from `preview.headers`. `--base` mirrors the host's `/streetview/`.
+          command: `npx vite preview --host 127.0.0.1 --port ${PREVIEW_PORT} --strictPort --base /streetview/`,
+          url: PROD_BASE_URL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 60_000,
+        }
+      : {
         // Bind IPv4 explicitly — `npm start` / Vite `localhost` can listen on
         // ::1 only, which never answers Playwright's http://127.0.0.1:3000 check.
         command: `npx vite --host 127.0.0.1 --port ${PORT}`,
