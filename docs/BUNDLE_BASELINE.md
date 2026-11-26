@@ -70,7 +70,7 @@ Main chunk alone: 302.6 kB gzip of a 1021.5 kB file — budget 400.0 kB (76% use
 71 files · 60.18 MiB raw · ≈ 57.86 MiB transfer with gzip (≈ 2.22 MiB without the on-demand models).
 
 
-## Release budgets (Issue 4/5, #386)
+## Release budgets (release issue 4/5)
 
 Measured at `06befe2` (`npm ci` → `npm run build`, `check-bundle-budget.sh` default-level gzip). Budgets in `scripts/chunks.json`
 were tightened to ≈ release size + 10 % so a regression fails `verify-build.sh`.
