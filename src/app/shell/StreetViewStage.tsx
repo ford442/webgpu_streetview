@@ -102,6 +102,9 @@ export function StreetViewStage({
             message={mapsLoadingOverlay.message}
             progress={mapsLoadingOverlay.progress}
             error={mapsLoadingOverlay.error}
+            errorTitle={mapsLoadingOverlay.errorTitle}
+            errorHint={mapsLoadingOverlay.errorHint}
+            retryLabel={mapsLoadingOverlay.retryLabel}
             retryable={mapsLoadingOverlay.retryable}
             onRetry={mapsLoadingOverlay.onRetry}
             size="fullscreen"

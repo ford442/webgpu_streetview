@@ -22,7 +22,7 @@ test('a .wasm that does not load fails the boot at stage "wasm" with the blockin
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByText(/WebGPU is required and failed to initialize.*streetview-wasm failed to load: HTTP 404/))
     .toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('button', { name: /retry/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /reload/i })).toBeVisible();
 
   const probe = await page.evaluate(() => ({
     ok: window.webgpuProbe?.ok,

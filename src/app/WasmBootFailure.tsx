@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { publishWebGpuProbe } from '../renderer';
-import { WEBGPU_FAILURE_USER_MESSAGE } from '../debug/scraperHealth';
+import { WEBGPU_FAILURE_USER_MESSAGE, WEBGPU_RECOVERY_HINT } from '../debug/scraperHealth';
 
 /**
  * What src/index.tsx renders instead of the app when the WASM numeric layer
@@ -19,6 +19,9 @@ export function WasmBootFailure({ reason }: { reason: string }): React.ReactElem
       isVisible
       message=""
       error={`${WEBGPU_FAILURE_USER_MESSAGE} (${reason})`}
+      errorTitle="The app could not start"
+      errorHint={WEBGPU_RECOVERY_HINT}
+      retryLabel="Reload"
       retryable
       onRetry={() => window.location.reload()}
     />

@@ -36,6 +36,7 @@
     "gen:structure-doc": "node scripts/gen-structure-doc.mjs",
     "fetch:depth-model": "node scripts/fetch-models.mjs --model depth",
     "fetch:models": "node scripts/fetch-models.mjs",
+    "gen:share-images": "node scripts/gen-share-images.mjs",
     "gen:hero-cabin": "node scripts/author-sedan-cabin.mjs",
     "capture:look-goldens": "node scripts/capture-look-goldens.mjs",
     "capture:depth-looks": "node scripts/capture-depth-looks.mjs",

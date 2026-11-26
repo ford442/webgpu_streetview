@@ -200,7 +200,7 @@ describe('App', () => {
     act(() => mockLatestStreetViewStatusChange?.('canvas-timeout'));
 
     expect(screen.getByText('Street View unavailable at this location.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reload/i })).toBeInTheDocument();
   });
 
   it('shows an auth banner + overlay error (no modal) and retries Maps with the current runtime key', async () => {
@@ -217,10 +217,10 @@ describe('App', () => {
 
     expect(screen.getByText(/Google Maps API authentication failed/)).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Retry$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Check again$/i })).toBeInTheDocument();
 
     window.MAPS_API_KEY = 'fixed-runtime-key';
-    fireEvent.click(screen.getByRole('button', { name: /^Retry$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Check again$/i }));
 
     await waitFor(() => {
       expect(mockLoadMapsApi).toHaveBeenCalledWith('fixed-runtime-key');

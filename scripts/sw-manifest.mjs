@@ -26,6 +26,7 @@ export const STATIC_PRECACHE_URLS = [
   // The cabin AudioWorklet's engine alone (fixed memory, < 32 KB).
   './wasm/streetview-dsp.simd.wasm',
   './icons/icon.svg',
+  './icons/icon-192.png',
 ];
 
 /** Entries of `STATIC_PRECACHE_URLS` that are build output, not files under `public/`. */

@@ -26,6 +26,7 @@ const panelStyle: React.CSSProperties = {
   left: '50%',
   transform: 'translate(-50%, -50%)',
   width: 'min(520px, 92vw)',
+  boxSizing: 'border-box', // the 92vw includes the padding: no phone overflow (#385)
   maxHeight: '85vh',
   overflowY: 'auto',
   background: 'rgba(12,12,12,0.96)',

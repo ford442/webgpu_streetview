@@ -26,8 +26,10 @@ const PlaceSearchBar: React.FC<PlaceSearchBarProps> = ({ search, compact = false
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        minWidth: compact ? 220 : 320,
+        // `min(…, 100%)`: never wider than its container on a 360 px phone (#385).
+        minWidth: compact ? 'min(220px, 100%)' : 'min(320px, 100%)',
         maxWidth: compact ? 280 : 420,
+        boxSizing: 'border-box',
         pointerEvents: 'auto',
         fontFamily: 'system-ui, sans-serif',
       }}
@@ -51,6 +53,7 @@ const PlaceSearchBar: React.FC<PlaceSearchBarProps> = ({ search, compact = false
           autoComplete="off"
           style={{
             flex: 1,
+            minWidth: 0,
             padding: compact ? '8px 10px' : '10px 12px',
             borderRadius: 8,
             border: '1px solid rgba(255,255,255,0.25)',

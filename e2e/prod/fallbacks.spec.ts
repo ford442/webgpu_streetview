@@ -22,7 +22,7 @@ test.describe('renderer fallbacks', () => {
     await openApp(page);
 
     await expect(page.getByText(/WebGPU is required/i).first()).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByRole('button', { name: /retry/i }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /reload/i }).first()).toBeVisible();
     const probe = await page.evaluate(() => {
       const w = window as unknown as SvWindow;
       return { ok: w.webgpuProbe?.ok, stage: w.webgpuProbe?.stage, rendererType: w.rendererType ?? null };

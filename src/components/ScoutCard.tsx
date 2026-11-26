@@ -75,6 +75,8 @@ const ScoutCard: React.FC<ScoutCardProps> = ({
                 transform: 'translate(-50%, -50%)',
                 zIndex: 210,
                 width: 320,
+                // Never wider than a phone (#385): room for a 20px edge offset and up to 16px padding each side (content-box).
+                maxWidth: 'calc(100vw - 72px)',
                 backgroundColor: 'rgba(15, 15, 20, 0.95)',
                 borderRadius: 12,
                 border: '1px solid rgba(0,204,255,0.5)',

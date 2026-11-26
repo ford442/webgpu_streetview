@@ -144,6 +144,10 @@ export function scraperHealthUserMessage(health: ScraperHealth): string | null {
 export const WEBGPU_FAILURE_USER_MESSAGE =
   'WebGPU is required and failed to initialize. This browser or GPU cannot run the Street View weather renderer.';
 
+/** The recovery step shown under a WebGPU / WASM boot failure (#385). */
+export const WEBGPU_RECOVERY_HINT =
+  'Use a current Chrome, Edge or Safari with hardware acceleration turned on, then reload.';
+
 export function reduceScraperHealth(
   state: ScraperHealth,
   event: ScraperHealthEvent,

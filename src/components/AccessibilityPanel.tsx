@@ -89,8 +89,10 @@ const AccessibilityPanel: React.FC<AccessibilityPanelProps> = ({
                 backgroundColor: settings.highContrast ? '#000' : 'rgba(0, 0, 0, 0.95)',
                 borderRadius: '16px',
                 padding: '24px',
-                minWidth: '360px',
-                maxWidth: '90vw',
+                // border-box + min(): 360px + padding overflowed a 360 px phone (#385).
+                boxSizing: 'border-box',
+                minWidth: 'min(360px, 92vw)',
+                maxWidth: '92vw',
                 maxHeight: '80vh',
                 overflow: 'auto',
                 boxShadow: settings.highContrast

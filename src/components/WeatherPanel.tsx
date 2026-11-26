@@ -90,6 +90,8 @@ const WeatherPanel: React.FC<WeatherPanelProps> = ({
                 top: '80px',
                 right: '20px',
                 width: '300px',
+                // Never wider than a phone (#385): room for a 20px edge offset and up to 16px padding each side (content-box).
+                maxWidth: 'calc(100vw - 72px)',
                 maxHeight: 'calc(100vh - 120px)',
                 backgroundColor: 'rgba(20, 28, 38, 0.96)',
                 borderRadius: '12px',
