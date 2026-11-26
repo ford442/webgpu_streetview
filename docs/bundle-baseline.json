@@ -1,0 +1,166 @@
+{
+  "build": {
+    "sha": "efd52140f01b5e3917f2f8bbb77a2440e8795977",
+    "shortSha": "efd5214",
+    "version": "1.0.0-rc.0",
+    "builtAt": "2026-11-26T09:44:07.231Z",
+    "dirty": false,
+    "ref": null
+  },
+  "main": {
+    "raw": 1046055,
+    "gzip": 309884,
+    "budget": 409600
+  },
+  "initial": {
+    "jsGzip": 309884,
+    "jsRaw": 1046055,
+    "cssGzip": 6290,
+    "htmlAndConfigGzip": 2377,
+    "mainWasmGzip": 29572,
+    "total": 348123
+  },
+  "lazy": [
+    {
+      "file": "static/js/three.webgpu.rmDvBbSy.chunk.js",
+      "raw": 585299,
+      "gzip": 164069,
+      "budget": 204800
+    },
+    {
+      "file": "static/js/three.core.8yKEV1qB.chunk.js",
+      "raw": 375494,
+      "gzip": 101882,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/createCabinRenderer.D94ud0LJ.chunk.js",
+      "raw": 329644,
+      "gzip": 80608,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/carModeRuntime.BU5qhCOO.chunk.js",
+      "raw": 171757,
+      "gzip": 50412,
+      "budget": 143360
+    },
+    {
+      "file": "static/js/tz.DBU_06iF.chunk.js",
+      "raw": 73865,
+      "gzip": 29638,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/CarModeView.BNCYK4xx.chunk.js",
+      "raw": 72098,
+      "gzip": 24982,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/GLTFLoader.BuS95B53.chunk.js",
+      "raw": 44914,
+      "gzip": 13264,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/TripPlannerPanel.Dx-tTruz.chunk.js",
+      "raw": 16675,
+      "gzip": 5604,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/CoverageMap.B-zpLIwC.chunk.js",
+      "raw": 13897,
+      "gzip": 5347,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/WebGL2FallbackRenderer.Bn3MyL3a.chunk.js",
+      "raw": 16015,
+      "gzip": 5347,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/GlobeView.948Xgfk2.chunk.js",
+      "raw": 14791,
+      "gzip": 4573,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/cabinTslMaterials.vMXAyJDA.chunk.js",
+      "raw": 10020,
+      "gzip": 4319,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/SemanticController.Dfj_-XkI.chunk.js",
+      "raw": 6781,
+      "gzip": 2523,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/AtmosphereController.DaI3dRTj.chunk.js",
+      "raw": 6181,
+      "gzip": 2360,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/performance._WjQ330g.chunk.js",
+      "raw": 3193,
+      "gzip": 1459,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/windshieldWetMask.gqXSvkEV.chunk.js",
+      "raw": 2590,
+      "gzip": 1233,
+      "budget": 102400
+    },
+    {
+      "file": "static/js/globeInput.sTHJfMXi.chunk.js",
+      "raw": 2358,
+      "gzip": 1143,
+      "budget": 102400
+    }
+  ],
+  "workers": [
+    {
+      "file": "static/js/depthWorker.C1Ykp7A2.worker.js",
+      "raw": 8549,
+      "gzip": 3617
+    }
+  ],
+  "wasm": [
+    {
+      "file": "wasm/streetview-dsp.simd.wasm",
+      "bytes": 20808,
+      "gzip": 8393
+    },
+    {
+      "file": "wasm/streetview-wasm.simd.wasm",
+      "bytes": 66564,
+      "gzip": 29572
+    }
+  ],
+  "models": [
+    {
+      "file": "models/depth/depth-anything-v2-small.q4.onnx",
+      "bytes": 27404416
+    },
+    {
+      "file": "models/depth/depth-anything-v2-small.q4f16.onnx",
+      "bytes": 19126267
+    },
+    {
+      "file": "models/semantic/ddrnet23-slim-street7.onnx",
+      "bytes": 11820427
+    }
+  ],
+  "total": {
+    "files": 71,
+    "raw": 63098543,
+    "transfer": 60675049,
+    "transferWithoutModels": 2323939
+  }
+}

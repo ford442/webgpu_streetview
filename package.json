@@ -1,6 +1,6 @@
 {
   "name": "webgpu-react-app",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.0",
   "private": true,
   "type": "module",
   "homepage": ".",
@@ -47,6 +47,10 @@
     "lint:cpp": "bash scripts/lint-cpp.sh",
     "format:cpp": "bash scripts/lint-cpp.sh --fix",
     "check:install": "node scripts/check-install.mjs",
+    "check:toolchain": "node scripts/check-toolchain.mjs",
+    "check:build-info": "node scripts/check-build-info.mjs",
+    "verify:live": "node scripts/verify-live.mjs",
+    "report:bundle": "node scripts/bundle-report.mjs",
     "pretest": "node scripts/check-install.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -63,7 +67,7 @@
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --project=chromium --project=gpu --grep-invert @keyed",
     "test:e2e:keyed": "playwright test",
-    "analyze": "source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html",
+    "analyze": "source-map-explorer 'build/static/js/*.js' --no-border-checks --html /tmp/bundle-report.html",
     "preview": "vite preview"
   },
   "devDependencies": {

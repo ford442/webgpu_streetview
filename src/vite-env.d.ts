@@ -19,6 +19,8 @@ declare global {
     readonly VITE_PUBLIC_TURN_CREDENTIAL: string;
     readonly VITE_PUBLIC_BUILD_VERSION: string;
     readonly VITE_PUBLIC_BUILD_TIME: string;
+    /** JSON of `BuildInfo` (scripts/build-info.mjs): the commit, version and time of this build. */
+    readonly VITE_PUBLIC_BUILD_INFO: string;
   }
 
   interface ImportMeta {

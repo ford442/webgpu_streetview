@@ -7,6 +7,7 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import publicEnvKeys from './scripts/public-env-keys.json';
+import { resolveBuildInfo, type BuildInfo } from './scripts/build-info.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,29 @@ function chunkGraphPlugin(): Plugin {
       }
       const dir = options.dir ?? path.resolve(__dirname, 'build');
       fs.writeFileSync(path.join(dir, 'chunk-graph.json'), `${JSON.stringify({ version: 1, chunks, modules }, null, 1)}\n`);
+    },
+  };
+}
+
+/**
+ * `build/build-info.json` — which commit, version and time this build is (scripts/build-info.mjs;
+ * the same object is inlined as `VITE_PUBLIC_BUILD_INFO` and published as `window.__SV__.build`).
+ * `scripts/verify-build.sh` checks it against the checkout and the bundle; `scripts/verify-live.mjs`
+ * checks the deployed copy. In dev the file is served too, so the same checks run against `npm start`.
+ */
+function buildInfoPlugin(info: BuildInfo): Plugin {
+  const source = `${JSON.stringify(info, null, 2)}\n`;
+  return {
+    name: 'streetview-build-info',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'build-info.json', source });
+    },
+    configureServer(server) {
+      server.middlewares.use('/build-info.json', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.end(source);
+      });
     },
   };
 }
@@ -129,9 +153,11 @@ export default defineConfig(({ mode }) => {
   // wins); every name is always set (empty) so reads never see `undefined`.
   // Vite loads `envPrefix` vars from process.env after this function returns, so
   // setting them here covers `vite`, `vite build` and vitest alike.
+  const buildInfo = resolveBuildInfo({ root: __dirname });
   const publicEnv: Record<string, string> = {
     VITE_PUBLIC_BUILD_VERSION: buildVersion,
     VITE_PUBLIC_BUILD_TIME: buildTime,
+    VITE_PUBLIC_BUILD_INFO: JSON.stringify(buildInfo),
   };
   for (const key of PUBLIC_ENV_KEYS) {
     const rest = key.replace(/^(REACT_APP|VITE)_/, '');
@@ -148,6 +174,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       chunkGraphPlugin(),
+      buildInfoPlugin(buildInfo),
       ...(process.env.VITEST ? [] : [weslRelinkPlugin()]),
       // Typecheck in CI via `npm run typecheck`; skip overlay during vitest.
       ...(process.env.VITEST
@@ -208,6 +235,9 @@ export default defineConfig(({ mode }) => {
       // older engines: Chrome/Edge 113 (first WebGPU), Firefox 141, Safari 26.
       target: ['chrome113', 'edge113', 'firefox141', 'safari26'],
       emptyOutDir: true,
+      // Size is gated by scripts/chunks.json (main + every lazy chunk, gzip, checked by verify-build.sh);
+      // Rollup's flat 500 kB advisory would only repeat a known, budgeted size on every build.
+      chunkSizeWarningLimit: 1100,
       // 'hidden': maps are written (CI keeps them for symbolication) but the bundle
       // carries no sourceMappingURL, and deploy.py does not upload them.
       sourcemap: 'hidden',

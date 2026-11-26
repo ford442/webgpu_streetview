@@ -427,10 +427,23 @@ input[type="text"]:focus {
     outline: 3px solid #ffff00 !important;
 }
 
-/* Reduced Motion */
-@media (prefers-reduced-motion: reduce),
-       .reduced-motion,
-       .reduced-motion * {
+/* Reduced Motion: the OS preference and the in-app setting (`body.reduced-motion`,
+   app/useAppAccessibility.ts). A selector cannot sit in a media query list, so these are two rules. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+.reduced-motion,
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

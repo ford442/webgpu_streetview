@@ -65,6 +65,12 @@ After the script says "complete", immediately do the post-deploy checks below.
 
 ## 5. Post-deploy verification (within 2 minutes of upload)
 
+0. **One command** (the Deploy workflow runs it as its last step): `npm run verify:live -- --url https://test.1ink.us/streetview/ --expect-sha <full sha> --files`.
+   It checks the live `build-info.json` SHA, that COOP is `same-origin` and COEP `credentialless` **each sent once** (a duplicate makes
+   `crossOriginIsolated` false), that every built file is on the host (a `.wasm` not served as `application/wasm` only warns). In the live console,
+   `crossOriginIsolated` must be `true` and `__SV__.build.sha` must equal the deployed commit. The host answers `429` to bursts, so
+   do not script more than the script's own spaced requests.
+
 1. `curl -I https://test.1ink.us/streetview/config.js` (and the go.1ink.us equivalent) — expect 200 and your key text (not empty string).
 2. Hard refresh (Ctrl/Cmd + Shift + R) the live URL(s).
 3. Dismiss welcome modal → Street View should appear with real imagery (no black, no loading spinner forever, no Google error watermark in top-left).

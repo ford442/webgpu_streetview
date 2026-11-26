@@ -26,6 +26,7 @@ import type { CabinAudioProbe, VehicleTelemetry } from '../car/eager';
 import type { RearViewFeed } from '../car';
 import type { PlaceSearchKillSwitch } from '../search/placeSearchBudget';
 import { getRuntimeContexts, type RuntimeContexts } from '../runtime/contexts';
+import { BUILD_INFO, type BuildInfo } from '../config/buildInfo';
 
 /**
  * The typed namespace. Every field is a live getter.
@@ -54,6 +55,8 @@ export interface SvDebug {
     readonly errors: UnhandledErrorStats;
     /** The capability manifest (#361): GPU, display, audio, isolation, storage, power. */
     readonly contexts: Readonly<RuntimeContexts>;
+    /** Which commit is running (`build/build-info.json`, scripts/build-info.mjs): sha, version, builtAt, dirty, ref. */
+    readonly build: BuildInfo;
     /** True when the page was opened with `?debug` (mutators installed). */
     readonly debug: boolean;
 }
@@ -86,6 +89,7 @@ export function installSvGlobals(): void {
         get perf() { return perfStore.get(); },
         get errors() { return getUnhandledErrors(); },
         get contexts() { return getRuntimeContexts(); },
+        build: BUILD_INFO,
         debug,
     };
     Object.defineProperty(window, '__SV__', { value: sv, configurable: true, enumerable: false });

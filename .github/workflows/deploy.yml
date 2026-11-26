@@ -57,6 +57,10 @@ jobs:
       - name: Install naga-cli (WGSL validation)
         run: command -v naga >/dev/null 2>&1 || cargo install naga-cli --locked
 
+      # Names anything missing or the wrong version (emcc must equal cpp/emsdk.version) before the long steps.
+      - name: Toolchain
+        run: npm run check:toolchain
+
       # The same gate CI and the pre-push hook run: typecheck, lint, knip,
       # secrets, unit tests, WGSL, C++ goldens — a deploy cannot skip one.
       - name: Verify
@@ -70,6 +74,8 @@ jobs:
       - name: Build production bundle
         run: npm run build
         env:
+          # build-info.json must name a commit the tree actually IS (scripts/check-build-info.mjs).
+          SV_REQUIRE_CLEAN: "1"
           REACT_APP_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
           VITE_MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
 
@@ -87,3 +93,11 @@ jobs:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
           DEPLOY_TARGET: ${{ inputs.target }}
+
+      # "Deployed" has to mean "this commit is live": build-info.json on the host names the SHA that was
+      # just built, the page's COOP/COEP arrive once each (a duplicate disables crossOriginIsolated) and every
+      # built file is on the host. A green upload alone proved none of that (#358).
+      - name: Verify the live site is this commit
+        run: |
+          host="test.1ink.us"; [ "${{ inputs.target }}" = "go" ] && host="go.1ink.us"
+          node scripts/verify-live.mjs --url "https://${host}/streetview/" --expect-sha "${{ github.sha }}" --files
