@@ -1,4 +1,26 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
+
+/**
+ * Publishes the banner stack's height as `--sv-banner-h` on <html>, so the toolbar and the
+ * welcome dialog start below the banners at every width (they wrap to several lines on a
+ * phone; the old fixed 44/48 px offsets assumed one line, #385).
+ */
+function useBannerHeightVar(ref: React.RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const root = typeof document !== 'undefined' ? document.documentElement : null;
+    if (!el || !root) return;
+    const publish = () => root.style.setProperty('--sv-banner-h', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    publish();
+    if (typeof ResizeObserver === 'undefined') return () => root.style.removeProperty('--sv-banner-h');
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty('--sv-banner-h');
+    };
+  }, [ref]);
+}
 
 interface AppBannersProps {
   showMissingKeyBanner: boolean;
@@ -25,18 +47,17 @@ const AppBanners: React.FC<AppBannersProps> = ({
       ? window.location.hostname
       : 'this host';
 
-  const topOffset =
-    (showMissingKeyBanner ? 44 : 0) +
-    (isRecoveringMapsAuth || (showAuthFailedBanner && !isRecoveringMapsAuth) ? 48 : 0);
+  const stackRef = useRef<HTMLDivElement>(null);
+  useBannerHeightVar(stackRef);
 
   return (
-    <>
+    <div ref={stackRef} className="sv-banner-stack" data-testid="banner-stack">
       {/* Missing API key banner */}
       {showMissingKeyBanner && (
         <div
           role="alert"
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2000,
+            position: 'relative',
             background: 'rgba(180,100,0,0.95)', color: '#fff',
             padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
             fontFamily: 'system-ui, sans-serif', fontSize: 14,
@@ -51,7 +72,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
           </span>
           <button
             onClick={() => setShowMissingKeyBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13 }}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 6, padding: '0 14px', minHeight: 44, cursor: 'pointer', fontSize: 13, flexShrink: 0 }}
           >
             Dismiss
           </button>
@@ -62,7 +83,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
         <div
           role="status"
           style={{
-            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
+            position: 'relative',
             background: 'rgba(26,92,120,0.96)', color: '#fff',
             padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
             fontFamily: 'system-ui, sans-serif', fontSize: 14,
@@ -82,7 +103,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
         <div
           role="alert"
           style={{
-            position: 'fixed', top: showMissingKeyBanner ? 44 : 0, left: 0, right: 0, zIndex: 2000,
+            position: 'relative',
             background: 'rgba(180,0,0,0.97)', color: '#fff',
             padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12,
             fontFamily: 'system-ui, sans-serif', fontSize: 14, lineHeight: 1.35,
@@ -101,7 +122,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
           </div>
           <button
             onClick={() => setShowAuthFailedBanner(false)}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 13, flexShrink: 0, marginTop: 2 }}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.6)', color: '#fff', borderRadius: 6, padding: '0 14px', minHeight: 44, cursor: 'pointer', fontSize: 13, flexShrink: 0 }}
             title="Dismiss (error may still affect the map)"
           >
             Dismiss
@@ -114,11 +135,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
         <div
           role="status"
           style={{
-            position: 'fixed',
-            top: topOffset || (showMissingKeyBanner ? 44 : 0),
-            left: 0,
-            right: 0,
-            zIndex: 1990,
+            position: 'relative',
             background: 'rgba(90,70,20,0.96)',
             color: '#fff',
             padding: '10px 16px',
@@ -140,7 +157,7 @@ const AppBanners: React.FC<AppBannersProps> = ({
           </span>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

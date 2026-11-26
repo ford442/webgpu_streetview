@@ -10,45 +10,15 @@ interface WelcomeModalProps {
 
 const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart, search }) => {
     return (
-        <div 
+        <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="welcome-title"
             aria-describedby="welcome-description"
-            style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                zIndex: 1000,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                backdropFilter: 'blur(5px)'
-            }}
+            className="sv-welcome"
         >
-            <div style={{
-                backgroundColor: '#ffffff',
-                padding: '40px',
-                borderRadius: '12px',
-                maxWidth: '600px',
-                width: '90%',
-                boxShadow: '0 10px 25px rgba(0, 255, 0, 0.2)',
-                textAlign: 'center',
-                color: '#333'
-            }}>
-                <h1 
-                    id="welcome-title"
-                    style={{
-                        color: '#2e7d32', // Green
-                        marginTop: 0,
-                        marginBottom: '20px',
-                        fontSize: '2.5rem',
-                        letterSpacing: '-1px'
-                    }}
-                >
+            <div className="sv-welcome__card">
+                <h1 id="welcome-title" className="sv-welcome__title">
                     1ink.us Streetview
                 </h1>
 
@@ -107,7 +77,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ onStart, search }) => {
                     Start Exploring
                 </button>
 
-                <div style={{ marginTop: '20px', fontSize: '0.9rem', color: '#666' }}>
+                <div style={{ marginTop: '20px', fontSize: '0.9rem', color: '#595959' }}>
                     <p>Press <kbd>Tab</kbd> to navigate, <kbd>Enter</kbd> to select</p>
                 </div>
             </div>

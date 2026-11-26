@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId, useState } from 'react';
 import PlaceSearchBar from './PlaceSearchBar';
 import type { UsePlaceSearchResult } from '../hooks/usePlaceSearch';
 import { usePanelsSnapshot } from '../app/useAppPanels';
@@ -59,148 +59,160 @@ const AppToolbar: React.FC<AppToolbarProps> = ({
     isMapOpen,
     setIsMapOpen,
   } = usePanelsSnapshot();
+  // Phones / short landscape screens collapse the action column behind a Menu button (CSS
+  // shows the toggle only there, so desktop always renders the column, #385).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const actionsId = useId();
   return (
     <div
-      style={{
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        zIndex: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        gap: 8,
-        pointerEvents: 'auto',
-      }}
+      className="app-toolbar"
+      data-testid="app-toolbar"
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
     >
       {search && <PlaceSearchBar search={search} compact />}
       <button
-        className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
-        disabled={!isPanoramaReady}
-        style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110, opacity: isPanoramaReady ? 1 : 0.5 }}
-        onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
+        type="button"
+        className="control-btn app-toolbar__menu-toggle"
+        aria-expanded={menuOpen}
+        aria-controls={actionsId}
+        onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
       >
-        Cruise: {isCruiseMode ? 'ON' : 'OFF'}
+        {menuOpen ? '✕ Close' : '☰ Menu'}
       </button>
-      <button
-        className={`control-btn${isRadioPlaying ? ' disconnect' : ''}`}
-        style={{ backgroundColor: isRadioPlaying ? 'rgba(255,71,87,0.85)' : undefined, minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); toggleRadio(); }}
+      <div
+        id={actionsId}
+        className="app-toolbar__actions"
+        data-open={menuOpen ? 'true' : 'false'}
+        // On a phone, picking an action closes the menu so the panel it opens is not under it.
+        onClickCapture={() => setMenuOpen(false)}
       >
-        Radio: {isRadioPlaying ? 'ON' : 'OFF'}
-      </button>
-      <button
-        className="control-btn"
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); onTakeSnapshot(); }}
-      >
-        📸 Snapshot
-      </button>
-      <button
-        className="control-btn"
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen); }}
-      >
-        📷 Gallery
-      </button>
-      <button
-        className={`control-btn${isBookmarkPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsBookmarkPanelOpen(!isBookmarkPanelOpen); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-      >
-        🔖 Bookmarks
-      </button>
-      <button
-        className={`control-btn${isHistoryPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsHistoryPanelOpen(!isHistoryPanelOpen); setIsBookmarkPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-      >
-        🕒 History
-      </button>
-      <button
-        className={`control-btn${isColorGradingPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsColorGradingPanelOpen(!isColorGradingPanelOpen); setIsBookmarkPanelOpen(false); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
-      >
-        🎨 Color
-      </button>
-      <button
-        className={`control-btn${isWeatherPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
-      >
-        🌧 Weather
-      </button>
-      <button
-        className={`control-btn${isLooksPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsLooksPanelOpen(!isLooksPanelOpen); }}
-      >
-        🎞 Looks
-      </button>
-      <button
-        className={`control-btn${isHistoricalTimelineOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsHistoricalTimelineOpen(!isHistoricalTimelineOpen); }}
-      >
-        🕰 Time Travel
-      </button>
-      <button
-        className={`control-btn${isTourPanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsTourPanelOpen(!isTourPanelOpen); }}
-      >
-        🗺 Tours
-      </button>
-      {setIsTripPanelOpen && (
         <button
-          className={`control-btn${isTripPanelOpen ? ' disconnect' : ''}`}
-          style={{ minWidth: 110 }}
-          onClick={e => { e.stopPropagation(); setIsTripPanelOpen(!isTripPanelOpen); }}
+          className={`control-btn${isCruiseMode ? ' disconnect' : ''}`}
+          disabled={!isPanoramaReady}
+          style={{ backgroundColor: isCruiseMode ? 'rgba(46,125,50,0.85)' : undefined, minWidth: 110, opacity: isPanoramaReady ? 1 : 0.5 }}
+          onClick={e => { e.stopPropagation(); setIsCruiseMode(!isCruiseMode); }}
         >
-          🧭 Trip
+          Cruise: {isCruiseMode ? 'ON' : 'OFF'}
         </button>
-      )}
-      <button
-        className={`control-btn${isSharedSessionPanelOpen || isSharedSessionActive ? ' disconnect' : ''}`}
-        style={{ minWidth: 110, backgroundColor: isSharedSessionActive ? 'rgba(46,125,50,0.85)' : undefined }}
-        onClick={e => { e.stopPropagation(); setIsSharedSessionPanelOpen(!isSharedSessionPanelOpen); }}
-      >
-        🧑‍🤝‍🧑 Road Trip
-      </button>
-      <button
-        className={`control-btn${isStoragePanelOpen ? ' disconnect' : ''}`}
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); setIsStoragePanelOpen(!isStoragePanelOpen); }}
-      >
-        💾 Offline
-      </button>
-      {setIsMapOpen && (
         <button
-          className={`control-btn${isMapOpen ? ' disconnect' : ''}`}
-          style={{ minWidth: 110 }}
-          aria-pressed={isMapOpen}
-          onClick={e => { e.stopPropagation(); setIsMapOpen(!isMapOpen); }}
+          className={`control-btn${isRadioPlaying ? ' disconnect' : ''}`}
+          style={{ backgroundColor: isRadioPlaying ? 'rgba(255,71,87,0.85)' : undefined, minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); toggleRadio(); }}
         >
-          🛰 Coverage
+          Radio: {isRadioPlaying ? 'ON' : 'OFF'}
         </button>
-      )}
-      <button
-        className="control-btn"
-        style={{ minWidth: 110 }}
-        onClick={e => { e.stopPropagation(); toggleViewMode(); }}
-      >
-        {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
-      </button>
-      <button
-        className={`control-btn${isGlobeEngaged ? ' disconnect' : ''}`}
-        style={{ minWidth: 110, backgroundColor: isGlobeEngaged ? 'rgba(0,204,255,0.25)' : undefined }}
-        onClick={e => { e.stopPropagation(); onGlobeToggle(); }}
-      >
-        {isGlobeEngaged ? '🗺️ Street View' : '🌍 Globe'}
-      </button>
+        <button
+          className="control-btn"
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); onTakeSnapshot(); }}
+        >
+          📸 Snapshot
+        </button>
+        <button
+          className="control-btn"
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsSnapshotGalleryOpen(!isSnapshotGalleryOpen); }}
+        >
+          📷 Gallery
+        </button>
+        <button
+          className={`control-btn${isBookmarkPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsBookmarkPanelOpen(!isBookmarkPanelOpen); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+        >
+          🔖 Bookmarks
+        </button>
+        <button
+          className={`control-btn${isHistoryPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsHistoryPanelOpen(!isHistoryPanelOpen); setIsBookmarkPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+        >
+          🕒 History
+        </button>
+        <button
+          className={`control-btn${isColorGradingPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsColorGradingPanelOpen(!isColorGradingPanelOpen); setIsBookmarkPanelOpen(false); setIsHistoryPanelOpen(false); setIsSnapshotGalleryOpen(false); }}
+        >
+          🎨 Color
+        </button>
+        <button
+          className={`control-btn${isWeatherPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsWeatherPanelOpen(!isWeatherPanelOpen); }}
+        >
+          🌧 Weather
+        </button>
+        <button
+          className={`control-btn${isLooksPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsLooksPanelOpen(!isLooksPanelOpen); }}
+        >
+          🎞 Looks
+        </button>
+        <button
+          className={`control-btn${isHistoricalTimelineOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsHistoricalTimelineOpen(!isHistoricalTimelineOpen); }}
+        >
+          🕰 Time Travel
+        </button>
+        <button
+          className={`control-btn${isTourPanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsTourPanelOpen(!isTourPanelOpen); }}
+        >
+          🗺 Tours
+        </button>
+        {setIsTripPanelOpen && (
+          <button
+            className={`control-btn${isTripPanelOpen ? ' disconnect' : ''}`}
+            style={{ minWidth: 110 }}
+            onClick={e => { e.stopPropagation(); setIsTripPanelOpen(!isTripPanelOpen); }}
+          >
+            🧭 Trip
+          </button>
+        )}
+        <button
+          className={`control-btn${isSharedSessionPanelOpen || isSharedSessionActive ? ' disconnect' : ''}`}
+          style={{ minWidth: 110, backgroundColor: isSharedSessionActive ? 'rgba(46,125,50,0.85)' : undefined }}
+          onClick={e => { e.stopPropagation(); setIsSharedSessionPanelOpen(!isSharedSessionPanelOpen); }}
+        >
+          🧑‍🤝‍🧑 Road Trip
+        </button>
+        <button
+          className={`control-btn${isStoragePanelOpen ? ' disconnect' : ''}`}
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); setIsStoragePanelOpen(!isStoragePanelOpen); }}
+        >
+          💾 Offline
+        </button>
+        {setIsMapOpen && (
+          <button
+            className={`control-btn${isMapOpen ? ' disconnect' : ''}`}
+            style={{ minWidth: 110 }}
+            aria-pressed={isMapOpen}
+            onClick={e => { e.stopPropagation(); setIsMapOpen(!isMapOpen); }}
+          >
+            🛰 Coverage
+          </button>
+        )}
+        <button
+          className="control-btn"
+          style={{ minWidth: 110 }}
+          onClick={e => { e.stopPropagation(); toggleViewMode(); }}
+        >
+          {viewMode === 'car' ? '🚶 Free Look' : '🚗 Car Mode'}
+        </button>
+        <button
+          className={`control-btn${isGlobeEngaged ? ' disconnect' : ''}`}
+          style={{ minWidth: 110, backgroundColor: isGlobeEngaged ? 'rgba(0,204,255,0.25)' : undefined }}
+          onClick={e => { e.stopPropagation(); onGlobeToggle(); }}
+        >
+          {isGlobeEngaged ? '🗺️ Street View' : '🌍 Globe'}
+        </button>
+      </div>
     </div>
   );
 };

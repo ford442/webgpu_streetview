@@ -497,12 +497,184 @@ textarea:focus-visible {
     outline-offset: 2px;
 }
 
-/* Ensure controls have proper hit areas */
+/* Ensure controls have proper hit areas. Checkboxes, radios and sliders keep their native
+   size (44px made them empty white squares, #385); their <label> carries the hit area. */
 button,
-input,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 select {
     min-height: 44px;
     min-width: 44px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: #4CAF50;
+    flex-shrink: 0;
+}
+
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+    min-height: 44px;
+    cursor: pointer;
+}
+
+/* ============================================
+   RESPONSIVE CHROME (#385)
+   `--sv-banner-h` is the height of the top banner stack (AppBanners measures it), so the
+   toolbar and the welcome dialog start below it instead of under it.
+   ============================================ */
+:root {
+    --sv-banner-h: 0px;
+    --sv-safe-top: env(safe-area-inset-top, 0px);
+    --sv-safe-right: env(safe-area-inset-right, 0px);
+    --sv-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --sv-safe-left: env(safe-area-inset-left, 0px);
+}
+
+.sv-banner-stack {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--sv-safe-top);
+    pointer-events: none;
+}
+
+.sv-banner-stack > * {
+    pointer-events: auto;
+    padding-left: max(16px, var(--sv-safe-left)) !important;
+    padding-right: max(16px, var(--sv-safe-right)) !important;
+}
+
+.sv-banner-stack code {
+    overflow-wrap: anywhere;
+}
+
+.app-toolbar {
+    position: absolute;
+    top: calc(16px + max(var(--sv-banner-h), var(--sv-safe-top)));
+    right: max(16px, var(--sv-safe-right));
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: auto;
+    max-width: calc(100vw - 32px);
+    /* The column ends above the bottom edge; the action list (below) is what shrinks and scrolls. */
+    max-height: calc(100dvh - 32px - max(var(--sv-banner-h), var(--sv-safe-top)) - var(--sv-safe-bottom));
+}
+
+.app-toolbar__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    /* Every button stays reachable: the column scrolls instead of running off the screen. */
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    /* Keep the hover lift and focus ring inside the scroll box. */
+    padding: 4px 4px 4px 12px;
+    margin: -4px -4px -4px -12px;
+}
+
+.app-toolbar__menu-toggle {
+    display: none !important;
+}
+
+@media (max-width: 640px), (max-height: 480px) {
+    .app-toolbar__menu-toggle {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .app-toolbar__actions[data-open="false"] {
+        display: none;
+    }
+
+    .app-toolbar__actions {
+        padding: 8px;
+        margin: 0;
+        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(8px);
+    }
+}
+
+.sv-welcome {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: calc(16px + max(var(--sv-banner-h), var(--sv-safe-top))) max(16px, var(--sv-safe-right)) max(16px, var(--sv-safe-bottom)) max(16px, var(--sv-safe-left));
+    background-color: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(5px);
+}
+
+.sv-welcome__card {
+    box-sizing: border-box;
+    /* `margin: auto` centres when it fits and lets the dialog scroll from its top when it does not. */
+    margin: auto;
+    width: 100%;
+    max-width: 600px;
+    padding: clamp(20px, 5vw, 40px);
+    border-radius: 12px;
+    background-color: #ffffff;
+    box-shadow: 0 10px 25px rgba(0, 255, 0, 0.2);
+    text-align: center;
+    color: #333;
+}
+
+.sv-welcome__title {
+    color: #2e7d32;
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
+    letter-spacing: -1px;
+    line-height: 1.15;
+}
+
+/* The search bar is a dark HUD control; on the white welcome card give it the card's colours. */
+.sv-welcome__card [data-testid="place-search"] input[role="combobox"] {
+    background-color: #fff !important;
+    color: #212121 !important;
+    border: 1px solid #9e9e9e !important;
+}
+
+.sv-welcome__card [data-testid="place-search"] input[role="combobox"]::placeholder {
+    color: #616161;
+}
+
+.sv-welcome__card [data-testid="place-search"] label {
+    color: #424242 !important;
+}
+
+.sv-error-action {
+    padding: 10px 28px;
+    background-color: #2e7d32;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 22px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.sv-error-action:hover {
+    background-color: #1b5e20;
 }
 
 /* Large text mode */
@@ -980,4 +1152,21 @@ select {
 
 .car-dashboard--animate {
     animation: dashboardSlideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.sv-welcome__card [data-testid="place-search"] [role="status"],
+.sv-welcome__card [data-testid="place-search"] > div {
+    color: #8a4b00 !important;
+}
+
+/* Fullscreen loading / error overlay: `safe center` so a tall card scrolls from its top instead
+   of being cut off; on phones it starts below the banner + collapsed toolbar (search + Menu). */
+.loading-overlay--fullscreen {
+    justify-content: safe center !important;
+}
+
+@media (max-width: 640px), (max-height: 480px) {
+    .loading-overlay--fullscreen {
+        padding-top: calc(max(var(--sv-banner-h), var(--sv-safe-top)) + 170px) !important;
+    }
 }

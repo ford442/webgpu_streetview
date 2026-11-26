@@ -31,6 +31,7 @@ const PRECACHE_URLS = [
   // The cabin AudioWorklet's engine alone (fixed memory, < 32 KB).
   './wasm/streetview-dsp.simd.wasm',
   './icons/icon.svg',
+  './icons/icon-192.png',
 ].concat(SHADER_URLS);
 
 const GOOGLE_HOST_RE = /(^|\.)google(?:apis)?\.com$|(^|\.)gstatic\.com$/;

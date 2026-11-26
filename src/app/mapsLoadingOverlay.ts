@@ -2,6 +2,7 @@ import type { MapsLoadStatus } from '../components/StreetView';
 import {
   scraperHealthUserMessage,
   WEBGPU_FAILURE_USER_MESSAGE,
+  WEBGPU_RECOVERY_HINT,
   type ScraperHealth,
 } from '../debug/scraperHealth';
 import type { WebGpuConnectionStatus } from './useAppConnection';
@@ -11,6 +12,12 @@ export interface MapsLoadingOverlayConfig {
   message: string;
   progress?: number;
   error?: string;
+  /** Short heading above `error` (the designed error card, #385). */
+  errorTitle?: string;
+  /** What the user can do next, under `error`. */
+  errorHint?: string;
+  /** Label of the recovery button (defaults to "Try again"). */
+  retryLabel?: string;
   retryable?: boolean;
   onRetry?: () => void;
 }
@@ -64,6 +71,9 @@ export function buildMapsLoadingOverlay(
       message: '',
       error:
         'No Google Maps API key is configured. Set REACT_APP_MAPS_API_KEY in .env.local and rebuild, or deploy with MAPS_API_KEY=... python deploy.py.',
+      errorTitle: 'Street View is not set up here',
+      errorHint: 'If a key was just added to config.js, check again.',
+      retryLabel: 'Check again',
       retryable: true,
       onRetry: handleRetryMapsAuth,
     };
@@ -78,6 +88,9 @@ export function buildMapsLoadingOverlay(
       error: detail
         ? `${WEBGPU_FAILURE_USER_MESSAGE} (${detail})`
         : WEBGPU_FAILURE_USER_MESSAGE,
+      errorTitle: 'This browser cannot run the renderer',
+      errorHint: WEBGPU_RECOVERY_HINT,
+      retryLabel: 'Reload',
       retryable: true,
       onRetry: () => window.location.reload(),
     };
@@ -93,6 +106,8 @@ export function buildMapsLoadingOverlay(
       isVisible: true,
       message: 'Reconnecting Street View canvas…',
       error: scraperHealthUserMessage(scraperHealth) || undefined,
+      errorTitle: 'Street View was interrupted',
+      retryLabel: 'Reload',
       progress: 60,
       retryable: true,
       onRetry: () => window.location.reload(),
@@ -112,6 +127,9 @@ export function buildMapsLoadingOverlay(
           : null) ||
         canvasError ||
         'Failed to load Google Maps API. Please check your API key and network connection.',
+      errorTitle: 'Google Maps refused to load',
+      errorHint: 'Check your connection, or ask the site owner to allow this address on the Maps key.',
+      retryLabel: 'Try again',
       retryable: true,
       onRetry: handleRetryMapsAuth,
     };
@@ -157,6 +175,9 @@ export function buildMapsLoadingOverlay(
             ? scraperHealthUserMessage(scraperHealth)
             : null) ||
           'Street View unavailable at this location.',
+        errorTitle: 'No Street View here',
+        errorHint: 'Search for another place, or reload to try this spot again.',
+        retryLabel: 'Reload',
         retryable: true,
         onRetry: () => window.location.reload(),
       };
@@ -169,6 +190,9 @@ export function buildMapsLoadingOverlay(
             canvasError ||
             scraperHealthUserMessage(scraperHealth) ||
             'Street View unavailable at this location.',
+          errorTitle: 'No Street View here',
+          errorHint: 'Search for another place, or reload to try this spot again.',
+          retryLabel: 'Reload',
           retryable: true,
           onRetry: () => window.location.reload(),
         };

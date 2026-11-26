@@ -2,17 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#4CAF50" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="color-scheme" content="dark" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="./manifest.json" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
-    <title>1ink.us Streetview</title>
-    <meta name="description" content="WebGPU Street View Experience" />
+    <link rel="icon" href="./icons/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>1ink.us Streetview — drive the world in your browser</title>
+    <meta name="description" content="Drive Google Street View in your browser: WebGPU weather, day and night, road trips and a car cabin. Search any place and start exploring." />
+    <!-- Share cards (#385). Images are rendered by `npm run gen:share-images`. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="1ink.us Streetview" />
+    <meta property="og:title" content="1ink.us Streetview" />
+    <meta property="og:description" content="Drive Google Street View in your browser: WebGPU weather, day and night, road trips and a car cabin." />
+    <meta property="og:image" content="./images/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="1ink.us Streetview logo and tagline" />
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
-      body { margin: 0; background-color: #000; overflow: hidden; }
+      /* Paints before the bundle: no white flash and no unstyled page during a cold boot. */
+      html, body { margin: 0; background-color: #000; color: #e0e0e0; color-scheme: dark; }
+      body { overflow: hidden; }
+      #boot-splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; font: 500 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #bdbdbd; }
+      #boot-splash img { width: 72px; height: 72px; }
+      #boot-splash .bar { width: 160px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+      #boot-splash .bar::after { content: ''; display: block; width: 40%; height: 100%; background: #4CAF50; animation: boot-slide 1.2s ease-in-out infinite; }
+      @keyframes boot-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @media (prefers-reduced-motion: reduce) { #boot-splash .bar::after { animation: none; width: 100%; opacity: 0.6; } }
     </style>
     <script>
       (function loadRuntimeMapsConfig() {
@@ -30,7 +51,7 @@
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="root"><div id="boot-splash" role="status" aria-live="polite"><img src="./icons/icon.svg" alt="" /><div>Loading 1ink.us Streetview…</div><div class="bar"></div></div></div>
     <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>

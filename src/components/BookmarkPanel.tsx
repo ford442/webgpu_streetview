@@ -77,6 +77,8 @@ const BookmarkPanel: React.FC<BookmarkPanelProps> = ({
                 top: '80px',
                 right: '20px',
                 width: '360px',
+                // Never wider than a phone (#385): room for a 20px edge offset and up to 16px padding each side (content-box).
+                maxWidth: 'calc(100vw - 72px)',
                 maxHeight: 'calc(100vh - 120px)',
                 backgroundColor: 'rgba(30, 30, 30, 0.95)',
                 borderRadius: '12px',
