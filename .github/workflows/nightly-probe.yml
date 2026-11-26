@@ -137,8 +137,9 @@ jobs:
         run: npm run test:e2e:prod
         env:
           CI: true
-          # The key's HTTP-referrer allowlist already covers http://localhost:3000/* (the dev-server lane above).
-          E2E_PREVIEW_PORT: '3000'
+          # The key's HTTP-referrer allowlist covers http://localhost:3000/* — so serve and browse `localhost`,
+          # not 127.0.0.1 (a different referrer host). The preview server binds the same host and port.
+          E2E_BASE_URL: http://localhost:3000/streetview/
           REACT_APP_MAPS_API_KEY: ${{ secrets.REACT_APP_MAPS_API_KEY }}
 
       - name: Upload Playwright artifacts

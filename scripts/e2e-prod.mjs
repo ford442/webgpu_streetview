@@ -30,6 +30,16 @@ const playwrightArgs = passthroughAt === -1 ? [] : argv.slice(passthroughAt + 1)
 const value = (name) => (own.includes(name) ? own[own.indexOf(name) + 1] : undefined);
 
 const reportDir = path.join(root, 'test-results', 'prod-report');
+for (const option of ['--live', '--expect-sha', '--screens']) {
+  if (own.includes(option) && (own[own.indexOf(option) + 1] ?? '').startsWith('--')) {
+    console.error(`e2e-prod: ${option} needs a value.`);
+    process.exit(2);
+  }
+  if (own.includes(option) && own.indexOf(option) === own.length - 1) {
+    console.error(`e2e-prod: ${option} needs a value.`);
+    process.exit(2);
+  }
+}
 const live = value('--live');
 const expectSha = value('--expect-sha') ?? process.env.E2E_EXPECT_SHA;
 const screens = value('--screens');
@@ -61,7 +71,7 @@ const run = spawnSync('npx', ['playwright', 'test', '--project=prod', '--reporte
   stdio: 'inherit',
 });
 
-/** @typedef {{ title: string, status: string, expectedStatus?: string, requests: number, consoleErrors: string[], consoleWarnings: string[], pageErrors: string[], failedRequests: string[], httpErrors: string[], htmlMasquerades: string[], thirdPartyHttp: string[], permitted: string[], unmetExpectations: string[], violations: string[] }} GateEntry */
+/** @typedef {{ title: string, retry?: number, throttledDocuments?: string[], status: string, expectedStatus?: string, requests: number, consoleErrors: string[], consoleWarnings: string[], pageErrors: string[], failedRequests: string[], httpErrors: string[], htmlMasquerades: string[], thirdPartyHttp: string[], permitted: string[], unmetExpectations: string[], violations: string[] }} GateEntry */
 
 /** @type {GateEntry[]} */
 const entries = fs
@@ -100,9 +110,10 @@ lines.push('| --- | --- | ---: | ---: | ---: | ---: | ---: |');
 for (const e of entries) {
   const failed = e.failedRequests.length + e.httpErrors.length + e.htmlMasquerades.length;
   const result = e.status === 'failed' && e.expectedStatus === 'failed' ? 'known defect (expected failure)' : e.status;
-  lines.push(`| ${e.title.replace(/\|/g, '\\|')} | ${result} | ${e.requests} | ${e.consoleErrors.length} | ${e.consoleWarnings.length} | ${e.pageErrors.length} | ${failed} |`);
+  const name = `${e.title}${e.retry ? ` (retry ${e.retry})` : ''}`;
+  lines.push(`| ${name.replace(/\|/g, '\\|')} | ${result} | ${e.requests} | ${e.consoleErrors.length} | ${e.consoleWarnings.length} | ${e.pageErrors.length} | ${failed} |`);
 }
-const detail = entries.filter((e) => e.violations.length || e.consoleWarnings.length || e.permitted.length || e.thirdPartyHttp.length);
+const detail = entries.filter((e) => e.violations.length || e.consoleWarnings.length || e.permitted.length || e.thirdPartyHttp.length || e.throttledDocuments?.length);
 if (detail.length) {
   lines.push('', '### Full text', '');
   for (const e of detail) {
@@ -110,6 +121,7 @@ if (detail.length) {
     for (const v of e.violations) lines.push(`VIOLATION  ${v}`);
     for (const w of e.consoleWarnings) lines.push(`warning    ${w}`);
     for (const t of e.thirdPartyHttp) lines.push(`third-party ${t}`);
+    for (const t of e.throttledDocuments ?? []) lines.push(`throttled  ${t}`);
     for (const p of e.permitted) lines.push(`permitted  ${p}`);
     lines.push('```', '', '</details>', '');
   }

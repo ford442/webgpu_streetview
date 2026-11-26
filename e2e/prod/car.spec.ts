@@ -47,14 +47,14 @@ test.describe('car / cabin mode', () => {
           await page.waitForTimeout(1500);
           const telemetry = await page.evaluate(() => (window as unknown as SvWindow).__VEHICLE__);
           if (telemetry) speeds.add(Math.round(telemetry.speedKmh * 10));
-          return telemetry?.speedKmh ?? 0;
+          // Positive speed AND a second distinct sample: poll stops at the first success, so both go in the condition.
+          return (telemetry?.speedKmh ?? 0) > 0 && speeds.size > 1;
         },
-        { timeout: 60_000, intervals: [500], message: 'window.__VEHICLE__.speedKmh while driving' },
+        { timeout: 60_000, intervals: [500], message: 'window.__VEHICLE__ speed positive and changing while driving' },
       )
-      .toBeGreaterThan(0);
+      .toBe(true);
     const telemetry = await page.evaluate(() => (window as unknown as SvWindow).__VEHICLE__);
     expect(telemetry?.rpm, 'engine rpm').toBeGreaterThan(0);
-    expect(speeds.size, 'telemetry changes between samples').toBeGreaterThan(1);
 
     // --- cabin audio: the WASM engine renders in the worklet, with one AudioContext and no underruns ---
     await expect

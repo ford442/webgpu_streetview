@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { KEYED, NEEDS_KEY, openApp, readCallBudget, snapshot, useMapsKey, waitForRenderer, type SvWindow } from './app';
+import { KEYED, NEEDS_KEY, openApp, snapshot, useMapsKey, waitForRenderer, type SvWindow } from './app';
 
 /**
  * Production smoke, flow 5: the trip planner, then cruise along the route. The panel works without a key;
@@ -19,6 +19,25 @@ async function openTripPanel(page: Page): Promise<void> {
   await page.getByRole('button', { name: /🧭 Trip/ }).click();
   await expect(page.getByRole('heading', { name: /Trip planner/i })).toBeVisible();
 }
+
+/** The call meter and the trip counters in ONE browser task, so a re-snap cannot land between the two reads. */
+const countersSnapshot = (page: Page) =>
+  page.evaluate(() => {
+    const probe = (window as unknown as SvWindow).__STREETVIEW_PROBE__;
+    if (!probe) throw new Error('window.__STREETVIEW_PROBE__ is not installed');
+    const stats = probe.getCallBudget();
+    return {
+      budget: {
+        total: stats.total,
+        panorama: stats.byKind.panorama.used,
+        placeSearch: stats.byKind.placeSearch.used,
+        directions: stats.byKind.directions.used,
+        routing: stats.byKind.routing.used,
+        bySource: { ...stats.bySource },
+      },
+      trip: probe.getTrip(),
+    };
+  });
 
 const trip = (page: Page) =>
   page.evaluate(() => {
@@ -85,11 +104,11 @@ test.describe('routed drive', () => {
     const windowStartM = 30;
     const windowLengthM = 60;
     await expect.poll(async () => (await trip(page)).alongM ?? 0, { timeout: 4 * 60_000, intervals: [2000], message: 'driving past the first 30 m' }).toBeGreaterThan(windowStartM);
-    const startedAt = { budget: await readCallBudget(page), trip: await trip(page) };
+    const startedAt = await countersSnapshot(page);
     await expect
       .poll(async () => (await trip(page)).alongM ?? 0, { timeout: 4 * 60_000, intervals: [2000], message: 'driving a further 60 m' })
       .toBeGreaterThan((startedAt.trip.alongM ?? windowStartM) + windowLengthM);
-    const endedAt = { budget: await readCallBudget(page), trip: await trip(page) };
+    const endedAt = await countersSnapshot(page);
 
     const resnapCalls = (endedAt.budget.bySource['route-resnap'] ?? 0) - (startedAt.budget.bySource['route-resnap'] ?? 0);
     const panoramaCalls = endedAt.budget.panorama - startedAt.budget.panorama;

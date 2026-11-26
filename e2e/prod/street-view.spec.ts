@@ -43,14 +43,20 @@ test.describe('look, pan and hop', () => {
 
       const armedAt = Date.now();
       let sawHold = false;
+      let released = false;
       while (Date.now() - armedAt < 4000) {
         const timeline = await page.evaluate(() => (window as unknown as SvWindow).__STREETVIEW_PROBE__?.getTimeline() ?? []);
         const entry = timeline[timeline.length - 1];
         if (entry) sawHold = true;
-        if (entry && entry.releasedAt !== null) break;
+        if (entry && entry.releasedAt !== null) {
+          released = true;
+          break;
+        }
         await page.waitForTimeout(120);
       }
       await page.waitForTimeout(400);
+      // A hold that armed must release (an unreleased one would otherwise be cleared by the next hop, unseen).
+      if (sawHold) expect(released, `hop ${hop}: the hold armed but was not released within 4 s`).toBe(true);
       if (sawHold) holdsSeen += 1;
 
       const warnings = await page.evaluate(() => (window as unknown as SvWindow).__STREETVIEW_PROBE__?.getWarnings() ?? []);

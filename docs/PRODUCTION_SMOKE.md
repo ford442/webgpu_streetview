@@ -65,8 +65,10 @@ hops, one teleport, a short drive — the specs read `callBudget` and stay well 
 `gm_authFailure`, but `services/maps/loader.ts` has already resolved the load and ignores every auth failure for
 1.2 s afterwards (`AUTH_FAILURE_IGNORE_WINDOW_MS`, "post-success debounce window" — meant for a stale failure of a
 *previous* key, but `gm_authFailure` carries no key, so a fresh failure looks the same). The user is left on Google's
-own "Oops! Something went wrong" overlay. `maps-key.spec.ts` pins it with `test.fail`: green while it is broken,
-red the day the banner appears (then delete the `test.fail` line). Not fixed in #384 — it needs a way to tell a stale
+own "Oops! Something went wrong" overlay. `maps-key.spec.ts` pins the current behaviour (Google's error, no banner) with
+the gate still fatal: green while it is broken, red the day the banner appears (then assert `toBeVisible()` and drop the
+note). Both key cases skip on a build with a compiled key — it wins over the runtime `config.js` — so they run in the PR
+lane, not the keyed nightly. Not fixed in #384 — it needs a way to tell a stale
 failure from a current one.
 
 ## Adding to the suite

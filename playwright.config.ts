@@ -160,7 +160,8 @@ export default defineConfig({
       ? {
           // The production bundle, as built: hashed assets under a sub-path, the stamped service
           // worker, COOP/COEP from `preview.headers`. `--base` mirrors the host's `/streetview/`.
-          command: `npx vite preview --host 127.0.0.1 --port ${PREVIEW_PORT} --strictPort --base /streetview/`,
+          // Host and port follow the base URL (a key's HTTP-referrer allowlist names `localhost`, not `127.0.0.1`).
+          command: `npx vite preview --host ${new URL(PROD_BASE_URL).hostname} --port ${new URL(PROD_BASE_URL).port || PREVIEW_PORT} --strictPort --base /streetview/`,
           url: PROD_BASE_URL,
           reuseExistingServer: !process.env.CI,
           timeout: 60_000,

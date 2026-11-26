@@ -41,6 +41,8 @@ export interface GateReport {
   htmlMasquerades: string[];
   /** Third-party 4xx/5xx: not a failure, but listed. */
   thirdPartyHttp: string[];
+  /** Document 429s the host's rate limit answered; `openApp` waits them out and fails if the retries run out. Listed, not gated. */
+  throttledDocuments: string[];
   /** What the allowlist / `gate.expect` swallowed, so the report shows what was ignored. */
   permitted: string[];
   unmetExpectations: string[];
@@ -63,6 +65,7 @@ export class ConsoleNetworkGate {
   private readonly httpErrors: string[] = [];
   private readonly htmlMasquerades: string[] = [];
   private readonly thirdPartyHttp: string[] = [];
+  private readonly throttledDocuments: string[] = [];
   private readonly permitted: string[] = [];
 
   constructor(page: Page, baseURL: string) {
@@ -141,6 +144,12 @@ export class ConsoleNetworkGate {
       if (status >= 400) this.thirdPartyHttp.push(`${status} ${response.request().method()} ${url}`);
       return;
     }
+    if (status === 429 && response.request().resourceType() === 'document') {
+      // Only the page document, and only here: `openApp` retries it and fails the test when the retries are
+      // exhausted, so a 429 that is never cleared still fails. An asset's 429 stays a violation below.
+      this.throttledDocuments.push(`429 ${response.request().method()} ${url}`);
+      return;
+    }
     if (status >= 400) {
       const text = `${status} ${response.request().method()} ${url}`;
       if (!this.permits('request', text, [])) {
@@ -181,6 +190,7 @@ export class ConsoleNetworkGate {
       httpErrors: [...this.httpErrors],
       htmlMasquerades: [...this.htmlMasquerades],
       thirdPartyHttp: [...this.thirdPartyHttp],
+      throttledDocuments: [...this.throttledDocuments],
       permitted: [...this.permitted],
       unmetExpectations,
       violations,

@@ -60,3 +60,23 @@ test('gate.expect permits a provoked error, and fails the test when it never app
   expect(report.permitted).toEqual([expect.stringContaining('this test breaks the wasm on purpose')]);
   expect(report.violations).toEqual([expect.stringContaining('stale expectation')]);
 });
+
+test('a throttled DOCUMENT (429) is listed but not gated; a throttled asset still is', async ({ page }) => {
+  await page.route('http://gate.test/**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/app/') {
+      return route.fulfill({ contentType: 'text/html', body: '<!doctype html><script src="busy.js"></script>' });
+    }
+    return route.fulfill({ status: 429, headers: { 'retry-after': '1' }, contentType: 'text/plain', body: 'slow down' });
+  });
+  const gate = new ConsoleNetworkGate(page, BASE);
+  await page.goto(BASE);
+  await page.waitForTimeout(300);
+  // The document itself answered 200 above; fetch a document-typed 429 through a navigation as well.
+  await page.route('http://gate.test/doc', (route) => route.fulfill({ status: 429, headers: { 'retry-after': '1' }, body: 'slow down' }));
+  await page.goto('http://gate.test/doc');
+
+  const report = gate.report();
+  expect(report.throttledDocuments).toEqual([expect.stringContaining('http://gate.test/doc')]);
+  expect(report.httpErrors).toEqual([expect.stringContaining('429 GET http://gate.test/app/busy.js')]);
+});
