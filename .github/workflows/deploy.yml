@@ -97,7 +97,36 @@ jobs:
       # "Deployed" has to mean "this commit is live": build-info.json on the host names the SHA that was
       # just built, the page's COOP/COEP arrive once each (a duplicate disables crossOriginIsolated) and every
       # built file is on the host. A green upload alone proved none of that (#358).
-      - name: Verify the live site is this commit
+      - name: Resolve the deployed host
+        id: target
         run: |
           host="test.1ink.us"; [ "${{ inputs.target }}" = "go" ] && host="go.1ink.us"
-          node scripts/verify-live.mjs --url "https://${host}/streetview/" --expect-sha "${{ github.sha }}" --files
+          echo "host=${host}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the live site is this commit
+        run: node scripts/verify-live.mjs --url "https://${{ steps.target.outputs.host }}/streetview/" --expect-sha "${{ github.sha }}" --files
+
+      # ...and that it WORKS (#384): the production smoke against the live URL — the commit stamped in the
+      # running bundle, the stamped service worker, COOP/COEP, wasm/shaders, first frame, hops, search,
+      # cabin, a routed drive, the fallbacks — with 0 console errors and 0 failed requests required.
+      # A live run spends real (metered) Maps calls, so the specs stay inside callBudget. Fails the workflow.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Post-deploy smoke (live)
+        run: |
+          npm run test:e2e:prod -- --live "https://${{ steps.target.outputs.host }}/streetview/" \
+            --expect-sha "${{ github.sha }}" --screens live-screens
+        env:
+          CI: true
+
+      - name: Upload the live smoke report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: live-smoke-${{ github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+            live-screens/
+          retention-days: 30

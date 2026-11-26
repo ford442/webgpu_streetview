@@ -51,6 +51,7 @@ npm test        # Vitest (node env by default; `// @vitest-environment jsdom` pe
 npm run typecheck   # tsc -b (one composite project per layer)
 npm run lint
 npm run build
+npm run test:e2e:prod  # production-bundle smoke + console/network gate (needs build/; --live <url> --expect-sha <sha> for a deployed site; docs/PRODUCTION_SMOKE.md)
 npm run test:cpp  # native C++ golden tests (needs cmake + a C++20 compiler)
 npm run check:toolchain  # Node 24, emcc 6.0.6, naga, cmake — names what is missing
 npm run verify:live -- --url https://test.1ink.us/streetview/ --expect-sha <sha> --files  # is the deployed site this commit?
