@@ -69,3 +69,19 @@ Main chunk alone: 302.6 kB gzip of a 1021.5 kB file — budget 400.0 kB (76% use
 
 71 files · 60.18 MiB raw · ≈ 57.86 MiB transfer with gzip (≈ 2.22 MiB without the on-demand models).
 
+
+## Release budgets (Issue 4/5, #386)
+
+Measured at `06befe2` (`npm ci` → `npm run build`, `check-bundle-budget.sh` default-level gzip). Budgets in `scripts/chunks.json`
+were tightened to ≈ release size + 10 % so a regression fails `verify-build.sh`.
+
+| part | #383 baseline | release | old budget | new budget |
+| --- | ---: | ---: | ---: | ---: |
+| main | 302.6 kB | 304.1 kB | 400 kB | 336 kB |
+| three.webgpu | 160.2 kB | 159.8 kB | 200 kB | 176 kB |
+| three.core | 99.5 kB | 99.4 kB | 100 kB (default) | 100 kB (explicit) |
+| createCabinRenderer | 78.7 kB | 78.5 kB | 100 kB (default) | 88 kB |
+| carModeRuntime | 49.2 kB | 49.4 kB | 140 kB | 56 kB |
+| every other lazy chunk (largest: tz 28.6 kB, CarModeView 24.2 kB) | — | ≤ 28.6 kB | 100 kB | 32 kB (default) |
+| depthWorker | 3.5 kB | 3.6 kB | 16 kB | 8 kB |
+| streetview-dsp.simd.wasm | 20,808 B | 20,808 B | < 32 KB | < 32 KB (unchanged) |
