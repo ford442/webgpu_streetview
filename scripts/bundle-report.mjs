@@ -44,8 +44,8 @@ function walk(dir) {
 const rel = (/** @type {string} */ f) => path.relative(buildDir, f).split(path.sep).join('/');
 const raw = (/** @type {string} */ f) => fs.statSync(f).size;
 const wire = (/** @type {string} */ f) => (TEXT.test(f) ? zlib.gzipSync(fs.readFileSync(f), { level: 9 }).length : raw(f));
-const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} kB`;
-const mb = (/** @type {number} */ n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
+const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} kB`; // 1 kB = 1024 bytes
+const mb = (/** @type {number} */ n) => `${(n / 1024 / 1024).toFixed(2)} MiB`;
 
 const shipped = walk(buildDir).filter((f) => !f.endsWith('.map') && !['chunk-graph.json', 'architecture-report.html'].includes(rel(f)));
 const contracts = JSON.parse(fs.readFileSync(path.join(root, 'scripts/chunks.json'), 'utf8'));

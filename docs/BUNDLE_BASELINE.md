@@ -13,22 +13,24 @@ Reading it:
   chunk is at 76 % of 400 kB. Any change that touches three.js imports can fail `verify-build.sh` on the budget alone.
 - The main chunk still bundles the Supabase client (`GoTrueClient` 63 kB, `phoenix` 26 kB, `storage-js` 22 kB, `postgrest-js` 16 kB raw — 126 kB between them) and `piexifjs`
   (30 kB raw) — candidates for Issue 4, measured with `npm run analyze`.
-- gzip is `gzip -9` of the file (the budget script uses the default level, so its main number is ~0.5 kB lower); the host's real content
+- `kB` here is 1024 bytes. gzip is `gzip -9` of the file (the budget script uses the default level, so its main number is ~0.5 kB lower); the host's real content
   encoding for `.wasm`/`.wgsl` was not measured here.
 
-Built 2026-11-26T09:34:53.508Z · `891c1255a2f120fae1ebe173fcd4706d5ddcc71c`
+**Measured at** — 1.0.0-rc.0 @ efd5214 (clean checkout, `npm ci` → `fetch:models` → `npm run build`)
+
+Built 2026-11-26T09:44:07.231Z · `efd52140f01b5e3917f2f8bbb77a2440e8795977`
 
 ## First load (static payload before the app can paint)
 
 | part | gzip |
 | --- | ---: |
-| main JS + its static imports | 302.7 kB |
+| main JS + its static imports | 302.6 kB |
 | CSS | 6.1 kB |
 | index.html + config.js | 2.3 kB |
 | main-thread WASM (boot needs it) | 28.9 kB |
 | **initial total** | **340.0 kB** |
 
-Main chunk alone: 302.7 kB gzip of a 1021.6 kB file — budget 400.0 kB (76% used).
+Main chunk alone: 302.6 kB gzip of a 1021.5 kB file — budget 400.0 kB (76% used).
 
 ## Lazy chunks vs `scripts/chunks.json`
 
@@ -65,5 +67,5 @@ Main chunk alone: 302.7 kB gzip of a 1021.6 kB file — budget 400.0 kB (76% use
 
 ## Everything the Deploy uploads
 
-71 files · 60.18 MB raw · ≈ 57.86 MB transfer with gzip (≈ 2.22 MB without the on-demand models).
+71 files · 60.18 MiB raw · ≈ 57.86 MiB transfer with gzip (≈ 2.22 MiB without the on-demand models).
 

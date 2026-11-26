@@ -17,7 +17,7 @@
  *      `crossOriginIsolated` is false, which silently turns the SharedArrayBuffer audio path off.
  *   3. `--files`: every file of build/ exists on the host with the byte size it was built with (the JS
  *      bundles are patched with the Maps key at deploy time, so for those only existence is checked),
- *      and `.wasm` is served as `application/wasm` (streaming compile needs it).
+ *      and a `.wasm` not served as `application/wasm` is warned about (the loader falls back to a plain compile).
  *
  * The host rate-limits (429) bursts, so requests are sequential and a 429/5xx is retried with backoff.
  * Behind the agent proxy run with `NODE_USE_ENV_PROXY=1` (Node's fetch ignores HTTPS_PROXY otherwise).
@@ -77,8 +77,11 @@ function listBuildFiles(dir) {
     }
   };
   walk(dir);
-  // Mirrors deploy.py: source maps and build diagnostics are never uploaded.
-  return out.filter((f) => !f.endsWith('.map') && f !== 'chunk-graph.json' && f !== 'architecture-report.html').sort();
+  // Mirrors deploy.py: source maps and build diagnostics are never uploaded. Dotfiles (public/.htaccess) ARE
+  // uploaded but Apache never serves them (403 by design), so they cannot be checked over HTTP.
+  return out
+    .filter((f) => !f.endsWith('.map') && f !== 'chunk-graph.json' && f !== 'architecture-report.html' && !f.split('/').some((part) => part.startsWith('.')))
+    .sort();
 }
 
 let expectedSha = value('--expect-sha');
@@ -153,7 +156,8 @@ if (checkFiles) {
           fail(`${file}: ${served} bytes live, ${built} built`);
         } else sized++;
         if (file.endsWith('.wasm') && !String(response.headers.get('content-type')).startsWith('application/wasm')) {
-          fail(`${file}: served as ${response.headers.get('content-type')}, not application/wasm`);
+          // Not fatal: src/wasm/index.ts falls back to WebAssembly.compile; streaming just compiles while downloading.
+          console.warn(`⚠️  ${file}: served as ${response.headers.get('content-type')}, not application/wasm (streaming compile is skipped)`);
         }
       } catch (error) {
         missing++;

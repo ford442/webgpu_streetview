@@ -1,24 +1,24 @@
 {
   "build": {
-    "sha": "891c1255a2f120fae1ebe173fcd4706d5ddcc71c",
-    "shortSha": "891c125",
+    "sha": "efd52140f01b5e3917f2f8bbb77a2440e8795977",
+    "shortSha": "efd5214",
     "version": "1.0.0-rc.0",
-    "builtAt": "2026-11-26T09:34:53.508Z",
-    "dirty": true,
-    "ref": "claude/relaxed-cray-vlb9qg"
+    "builtAt": "2026-11-26T09:44:07.231Z",
+    "dirty": false,
+    "ref": null
   },
   "main": {
-    "raw": 1046101,
-    "gzip": 309929,
+    "raw": 1046055,
+    "gzip": 309884,
     "budget": 409600
   },
   "initial": {
-    "jsGzip": 309929,
-    "jsRaw": 1046101,
+    "jsGzip": 309884,
+    "jsRaw": 1046055,
     "cssGzip": 6290,
-    "htmlAndConfigGzip": 2375,
+    "htmlAndConfigGzip": 2377,
     "mainWasmGzip": 29572,
-    "total": 348166
+    "total": 348123
   },
   "lazy": [
     {
@@ -34,55 +34,55 @@
       "budget": 102400
     },
     {
-      "file": "static/js/createCabinRenderer.DOCqwbKm.chunk.js",
+      "file": "static/js/createCabinRenderer.D94ud0LJ.chunk.js",
       "raw": 329644,
       "gzip": 80608,
       "budget": 102400
     },
     {
-      "file": "static/js/carModeRuntime.DBGFIhCz.chunk.js",
+      "file": "static/js/carModeRuntime.BU5qhCOO.chunk.js",
       "raw": 171757,
-      "gzip": 50410,
+      "gzip": 50412,
       "budget": 143360
     },
     {
-      "file": "static/js/tz.wWjYoXti.chunk.js",
+      "file": "static/js/tz.DBU_06iF.chunk.js",
       "raw": 73865,
       "gzip": 29638,
       "budget": 102400
     },
     {
-      "file": "static/js/CarModeView.BHHFJYx_.chunk.js",
+      "file": "static/js/CarModeView.BNCYK4xx.chunk.js",
       "raw": 72098,
-      "gzip": 24981,
+      "gzip": 24982,
       "budget": 102400
     },
     {
-      "file": "static/js/GLTFLoader.eG81t5Rm.chunk.js",
+      "file": "static/js/GLTFLoader.BuS95B53.chunk.js",
       "raw": 44914,
-      "gzip": 13263,
+      "gzip": 13264,
       "budget": 102400
     },
     {
-      "file": "static/js/TripPlannerPanel.Bxh-9ifL.chunk.js",
+      "file": "static/js/TripPlannerPanel.Dx-tTruz.chunk.js",
       "raw": 16675,
-      "gzip": 5603,
+      "gzip": 5604,
       "budget": 102400
     },
     {
-      "file": "static/js/CoverageMap.BIRfJfFY.chunk.js",
+      "file": "static/js/CoverageMap.B-zpLIwC.chunk.js",
       "raw": 13897,
       "gzip": 5347,
       "budget": 102400
     },
     {
-      "file": "static/js/WebGL2FallbackRenderer.zXOHKYrD.chunk.js",
+      "file": "static/js/WebGL2FallbackRenderer.Bn3MyL3a.chunk.js",
       "raw": 16015,
       "gzip": 5347,
       "budget": 102400
     },
     {
-      "file": "static/js/GlobeView.CYZZBs4H.chunk.js",
+      "file": "static/js/GlobeView.948Xgfk2.chunk.js",
       "raw": 14791,
       "gzip": 4573,
       "budget": 102400
@@ -94,21 +94,21 @@
       "budget": 102400
     },
     {
-      "file": "static/js/SemanticController.DqEMTqa7.chunk.js",
+      "file": "static/js/SemanticController.Dfj_-XkI.chunk.js",
       "raw": 6781,
-      "gzip": 2522,
+      "gzip": 2523,
       "budget": 102400
     },
     {
-      "file": "static/js/AtmosphereController.DTl9pqHg.chunk.js",
+      "file": "static/js/AtmosphereController.DaI3dRTj.chunk.js",
       "raw": 6181,
-      "gzip": 2359,
+      "gzip": 2360,
       "budget": 102400
     },
     {
-      "file": "static/js/performance.B_dGcV2o.chunk.js",
+      "file": "static/js/performance._WjQ330g.chunk.js",
       "raw": 3193,
-      "gzip": 1461,
+      "gzip": 1459,
       "budget": 102400
     },
     {
@@ -159,8 +159,8 @@
   ],
   "total": {
     "files": 71,
-    "raw": 63098612,
-    "transfer": 60675101,
-    "transferWithoutModels": 2323991
+    "raw": 63098543,
+    "transfer": 60675049,
+    "transferWithoutModels": 2323939
   }
 }
