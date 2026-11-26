@@ -22,6 +22,11 @@ describe('window.__SV__', () => {
     expect(sv?.probe).toBe(probe);
   });
 
+  it('publishes which commit is running as __SV__.build', () => {
+    installSvGlobals();
+    expect(window.__SV__?.build).toEqual(expect.objectContaining({ sha: expect.stringMatching(/^[0-9a-f]{40}$|^unknown$/), version: expect.any(String) }));
+  });
+
   it('exposes one cabin probe shape, from either publisher slot', () => {
     installSvGlobals();
     window.webgpuProbe = { ok: true } as unknown as WebGpuProbeRecord;

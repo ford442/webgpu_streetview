@@ -678,7 +678,7 @@
   },
   {
     "path": "deploy.py",
-    "note": "Contabo bundle deploy (reads DEPLOY_TOKEN from env)"
+    "note": "Contabo bundle deploy: parts, index.html last (reads DEPLOY_TOKEN from env)"
   },
   {
     "path": "package.json"
@@ -709,6 +709,18 @@
   {
     "path": "docs/DEVELOPER_CONTEXT.md",
     "note": "Architecture deep-dive"
+  },
+  {
+    "path": "docs/BUILD_ENVIRONMENT.md",
+    "note": "Reproducible toolchain (Node 24, emcc 6.0.6, naga, cmake), build identity, hosting headers"
+  },
+  {
+    "path": "docs/BUNDLE_BASELINE.md",
+    "note": "1.0 release bundle-size baseline (npm run report:bundle)"
+  },
+  {
+    "path": "docs/RELEASING.md",
+    "note": "Version scheme (SemVer, -rc.N) and how an RC is cut"
   },
   {
     "path": "docs/FLAGS.md",

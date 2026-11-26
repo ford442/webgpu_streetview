@@ -28,6 +28,13 @@ if ! node "$SCRIPT_ROOT/scripts/check-build-env-leak.mjs" "$BUILD_DIR"; then
 fi
 
 # ---------------------------------------------------------------------------
+# 0a. build-info.json must say which commit this is (file = checkout = bundle).
+# ---------------------------------------------------------------------------
+if ! node "$SCRIPT_ROOT/scripts/check-build-info.mjs" "$BUILD_DIR"; then
+  ERRORS=$((ERRORS+1))
+fi
+
+# ---------------------------------------------------------------------------
 # 0b. The service worker must be stamped (content-derived cache id): an unstamped
 #     worker would keep serving a returning user's old cached wasm/shaders.
 # ---------------------------------------------------------------------------

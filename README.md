@@ -148,7 +148,7 @@ If neither is configured, "Road Trip" surfaces a clear "signaling connection is 
 
 ### Requirements
 
-- Node.js 18+
+- Node.js 24+ (`.nvmrc`; `package.json` `engines`). `npm run check:toolchain` lists everything a build needs; `docs/BUILD_ENVIRONMENT.md` is the recipe (emsdk `cpp/emsdk.version`, naga-cli, cmake).
 - Chrome 113+, Edge 113+, or Firefox Nightly with `dom.webgpu.enabled`
 - Google Maps API key with **Maps JavaScript API** and **Street View Static API** enabled (the Static API is used only by the billing-gated rearview feed — see `BILLING_SAFETY_CHECKLIST.md`)
 
@@ -191,6 +191,8 @@ MAPS_API_KEY='AIzaSy...' python deploy.py
 ```
 
 See `.env.deploy.example` for all supported environment variables and `docs/DEPLOY_CHECKLIST.md` for the full pre/post deploy checklist.
+
+Every build records its commit in `build/build-info.json` (also `window.__SV__.build`); `npm run verify:live -- --url https://test.1ink.us/streetview/ --expect-sha <sha> --files` proves what is live. Versioning and tagging: `docs/RELEASING.md`. Sizes of a build: `npm run report:bundle` (baseline in `docs/BUNDLE_BASELINE.md`).
 
 ---
 

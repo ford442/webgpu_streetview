@@ -332,7 +332,7 @@ webgpu_streetview/
 │   ├── types/
 │   └── xr/
 ├── build/                           # Production build output
-├── deploy.py                        # Contabo bundle deploy (reads DEPLOY_TOKEN from env)
+├── deploy.py                        # Contabo bundle deploy: parts, index.html last (reads DEPLOY_TOKEN from env)
 ├── package.json
 ├── tsconfig.json
 ├── .env.example                     # Build-time env template (real values: untracked .env.local)
@@ -342,6 +342,9 @@ webgpu_streetview/
 ├── CLAUDE.md                        # AI quick-reference (danger zones)
 ├── docs/
 │   ├── DEVELOPER_CONTEXT.md         # Architecture deep-dive
+│   ├── BUILD_ENVIRONMENT.md         # Reproducible toolchain (Node 24, emcc 6.0.6, naga, cmake), build identity, hosting headers
+│   ├── BUNDLE_BASELINE.md           # 1.0 release bundle-size baseline (npm run report:bundle)
+│   ├── RELEASING.md                 # Version scheme (SemVer, -rc.N) and how an RC is cut
 │   ├── FLAGS.md                     # Generated URL flag table
 │   ├── GRAPHICS.md                  # Graphics pipeline documentation
 │   └── archive/                     # Historical plans / task specs / PR bodies (not current)
@@ -1259,6 +1262,10 @@ MAPS_API_KEY='...' python deploy.py
 ```
 
 `deploy.py` POSTs a zip of `build/` to the Contabo storage manager API. **Never commit `DEPLOY_TOKEN` or SFTP passwords** — use environment variables or GitHub Actions secrets (see `.env.deploy.example` and `.github/workflows/deploy.yml`).
+
+**Upload in parts, `index.html` last (#358).** The 2026-10-27 failure was `400 {"detail":"There was an error parsing the body"}` on a single 46 MB POST; the last good deploy (run 6) sent 3.7 MB, and the three ONNX models (`build/models/`, ≈ 56 MiB raw of the build's ≈ 60 MiB) are what grew it. `deploy.py` now plans parts of at most `DEPLOY_PART_MAX_MB` (default 8) raw MiB, uploads `index.html` last, and when the API refuses a part with 400/413 halves it and retries; a single file refused on its own (the depth models are 19–27 MB) stops the deploy and names the file, its size and the response headers — that is the API's real body limit. Whether the API keeps files it is not re-sent (which the parts rely on) was not observable from the repo; the first multi-part deploy proves it, and `verify:live --files` checks every file arrived.
+
+**Build identity and live verification.** `build/build-info.json` (`{sha, shortSha, version, builtAt, dirty, ref}`, `scripts/build-info.mjs`) is also inlined as `window.__SV__.build` (`src/config/buildInfo.ts`). `verify-build.sh` runs `check-build-info.mjs` (file = `package.json` version = checkout `HEAD` = main bundle); the Deploy workflow builds with `SV_REQUIRE_CLEAN=1` and ends with `npm run verify:live` (`scripts/verify-live.mjs`): the live SHA equals the deployed commit, COOP/COEP each arrive **once** (a duplicate COOP — seen live on 2026-11-26 — makes `crossOriginIsolated` false and turns the SharedArrayBuffer audio path off), and every built file is on the host. Toolchain: `npm run check:toolchain`, recipe in `docs/BUILD_ENVIRONMENT.md`; versions and tags: `docs/RELEASING.md`; sizes: `npm run report:bundle`, baseline `docs/BUNDLE_BASELINE.md`.
 
 `python deploy.py --dry-run [--out bundle.zip]` builds and sizes the zip (total, file count, largest entries — the scene models under `build/models/` dominate) and uploads nothing; it needs no `DEPLOY_TOKEN`. Every real deploy prints the same report before the upload. Use it first when the API answers `400 {"detail":"There was an error parsing the body"}` (the 2026-10-27 failure, #358): compare the size against the last good deploy.
 

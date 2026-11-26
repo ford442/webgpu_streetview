@@ -22,6 +22,11 @@ Environment variables:
   PROJECT_NAME       streetview (default)
   BUILD_DIR          build (default)
   DEPLOY_FOLDER      Remote folder override (default: PROJECT_NAME)
+  DEPLOY_PART_MAX_MB Largest raw payload per upload POST, in MiB (default 8; 0 = one
+                     bundle). build/ goes up as several smaller bundles, index.html
+                     last, because a single 46 MB POST was answered with
+                     400 "error parsing the body" (#358) while 3.7 MB had passed.
+                     A part the API still rejects (400/413) is split and retried.
 
 Requirements:
   pip install requests
@@ -44,6 +49,13 @@ import requests
 
 MAPS_KEY_SENTINEL = "__RUNTIME_MAPS_KEY_SENTINEL__"
 CESIUM_ION_TOKEN_SENTINEL = "__RUNTIME_CESIUM_ION_TOKEN_SENTINEL__"
+
+# Raw bytes per upload POST. The last good deploy (run 6) sent 3.7 MB; the first bad one
+# (run 7, 2026-10-27) sent one 46 MB body and got 400 "There was an error parsing the body".
+DEFAULT_PART_MAX_MB = 8
+# Statuses that mean "this body was refused" — worth splitting the part and trying again.
+_SPLITTABLE_STATUSES = (400, 413)
+_TRANSIENT_RETRIES = 2
 
 # Patterns that identify placeholder / template Maps keys — not real keys.
 _PLACEHOLDER_PATTERNS = [
@@ -85,6 +97,7 @@ class DeployConfig:
     deploy_token: str
     maps_api_key: Optional[str]
     cesium_ion_token: Optional[str]
+    part_max_bytes: int = DEFAULT_PART_MAX_MB * 1024 * 1024
 
 
 def _is_placeholder(key: str) -> bool:
@@ -114,6 +127,16 @@ def load_deploy_config(dry_run: bool = False) -> DeployConfig:
     maps_key = os.environ.get("MAPS_API_KEY", "").strip() or None
     cesium_ion_token = os.environ.get("CESIUM_ION_TOKEN", "").strip() or None
 
+    raw_part_mb = os.environ.get("DEPLOY_PART_MAX_MB", "").strip()
+    try:
+        part_max_mb = float(raw_part_mb) if raw_part_mb else float(DEFAULT_PART_MAX_MB)
+    except ValueError:
+        print(f"\nERROR: DEPLOY_PART_MAX_MB must be a number of MiB (got {raw_part_mb!r}).")
+        sys.exit(1)
+    if part_max_mb < 0:
+        print(f"\nERROR: DEPLOY_PART_MAX_MB must be >= 0 (got {raw_part_mb!r}).")
+        sys.exit(1)
+
     return DeployConfig(
         project_name=os.environ.get("PROJECT_NAME", "streetview").strip() or "streetview",
         build_dir=os.environ.get("BUILD_DIR", "build").strip() or "build",
@@ -124,6 +147,7 @@ def load_deploy_config(dry_run: bool = False) -> DeployConfig:
         deploy_token=deploy_token,
         maps_api_key=maps_key,
         cesium_ion_token=cesium_ion_token,
+        part_max_bytes=int(part_max_mb * 1024 * 1024),
     )
 
 
@@ -160,6 +184,10 @@ def _build_index_problems(build_path: Path) -> list[str]:
     if 'type="module"' not in content:
         problems.append(
             'main script is missing type="module" (Vite ESM bundle will throw on import.meta)'
+        )
+    if not (build_path / "build-info.json").is_file():
+        problems.append(
+            "build-info.json is missing (nothing could prove which commit is live; rebuild with 'npm run build')"
         )
     return problems
 
@@ -309,54 +337,54 @@ def _repair_index_html(index_html: bytes, build_path: Path) -> bytes:
     return repaired.encode("utf-8")
 
 
-def build_zip(
+def collect_files(
     build_path: Path,
     maps_api_key: Optional[str],
     cesium_ion_token: Optional[str] = None,
-) -> bytes:
-    buf = io.BytesIO()
+) -> list[tuple[str, bytes]]:
+    """Every deployable file of build/ as (posix relative path, bytes), secrets baked in."""
+    files: list[tuple[str, bytes]] = []
     maps_key_patched = False
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for file in sorted(build_path.rglob("*")):
-            if file.is_dir():
-                continue
-            rel = file.relative_to(build_path)
-            parts = rel.parts
-            if any(p in (".git", "node_modules", "__pycache__") for p in parts):
-                continue
-            if file.suffix == ".map":
-                # Source maps are not served: they stay a CI artifact for symbolication.
-                continue
-            if str(rel) in ("chunk-graph.json", "architecture-report.html"):
-                # Build diagnostics (scripts/check-chunk-graph.mjs, scripts/check-architecture.mjs): CI artifacts.
-                continue
+    for file in sorted(build_path.rglob("*")):
+        if file.is_dir():
+            continue
+        rel = file.relative_to(build_path)
+        parts = rel.parts
+        if any(p in (".git", "node_modules", "__pycache__") for p in parts):
+            continue
+        if file.suffix == ".map":
+            # Source maps are not served: they stay a CI artifact for symbolication.
+            continue
+        if str(rel) in ("chunk-graph.json", "architecture-report.html"):
+            # Build diagnostics (scripts/check-chunk-graph.mjs, scripts/check-architecture.mjs): CI artifacts.
+            continue
 
-            file_data = file.read_bytes()
+        file_data = file.read_bytes()
 
-            if str(rel) == "index.html":
-                file_data = _repair_index_html(file_data, build_path)
+        if str(rel) == "index.html":
+            file_data = _repair_index_html(file_data, build_path)
 
-            is_js_bundle = (
-                len(parts) >= 2
-                and parts[0] == "static"
-                and parts[1] == "js"
-                and str(rel).endswith(".js")
-            )
-            if is_js_bundle and (maps_api_key or cesium_ion_token):
-                patched = file_data
-                if maps_api_key:
-                    patched = _inject_maps_key_into_bundle(patched, maps_api_key)
-                    if patched != file_data:
-                        maps_key_patched = True
-                if cesium_ion_token:
-                    patched = _inject_cesium_ion_token_into_bundle(patched, cesium_ion_token)
+        is_js_bundle = (
+            len(parts) >= 2
+            and parts[0] == "static"
+            and parts[1] == "js"
+            and str(rel).endswith(".js")
+        )
+        if is_js_bundle and (maps_api_key or cesium_ion_token):
+            patched = file_data
+            if maps_api_key:
+                patched = _inject_maps_key_into_bundle(patched, maps_api_key)
                 if patched != file_data:
-                    print(f"  + {rel} (secrets baked into bundle)")
-                    zf.writestr(str(rel), patched)
-                    continue
+                    maps_key_patched = True
+            if cesium_ion_token:
+                patched = _inject_cesium_ion_token_into_bundle(patched, cesium_ion_token)
+            if patched != file_data:
+                print(f"  + {rel} (secrets baked into bundle)")
+                files.append((rel.as_posix(), patched))
+                continue
 
-            zf.writestr(str(rel), file_data)
-            print(f"  + {rel}")
+        files.append((rel.as_posix(), file_data))
+        print(f"  + {rel}")
 
     if maps_api_key:
         if not maps_key_patched:
@@ -371,7 +399,53 @@ def build_zip(
     if cesium_ion_token:
         print(f"[deploy] Cesium Ion token baked into JS bundle (length {len(cesium_ion_token)}).")
 
+    return files
+
+
+def zip_files(files: list[tuple[str, bytes]]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files:
+            zf.writestr(name, data)
     return buf.getvalue()
+
+
+def build_zip(
+    build_path: Path,
+    maps_api_key: Optional[str],
+    cesium_ion_token: Optional[str] = None,
+) -> bytes:
+    """The whole of build/ as one archive (the `--out` artifact and the size report)."""
+    return zip_files(collect_files(build_path, maps_api_key, cesium_ion_token))
+
+
+def plan_parts(files: list[tuple[str, bytes]], max_bytes: int) -> list[list[tuple[str, bytes]]]:
+    """Group files into upload parts of at most `max_bytes` raw bytes each.
+
+    - `max_bytes <= 0` keeps the legacy single bundle.
+    - A file larger than the cap is a part of its own (it cannot be split further).
+    - `index.html` is always the last part, alone: a visitor never sees a new
+      page before the hashed assets it references are on the server.
+    """
+    entry = [f for f in files if f[0] == "index.html"]
+    rest = [f for f in files if f[0] != "index.html"]
+    if max_bytes <= 0:
+        return [files]
+    parts: list[list[tuple[str, bytes]]] = []
+    current: list[tuple[str, bytes]] = []
+    size = 0
+    for item in rest:
+        n = len(item[1])
+        if current and size + n > max_bytes:
+            parts.append(current)
+            current, size = [], 0
+        current.append(item)
+        size += n
+    if current:
+        parts.append(current)
+    if entry:
+        parts.append(entry)
+    return parts
 
 
 def describe_zip(zip_bytes: bytes, top: int = 10) -> list[tuple[str, int, int]]:
@@ -394,10 +468,76 @@ def print_bundle_report(zip_bytes: bytes) -> None:
     print()
 
 
+def _describe_failure(response: "requests.Response") -> str:
+    """Status, body and the headers that say WHO refused it (never the request's token)."""
+    interesting = ("server", "content-type", "content-length", "via", "x-request-id", "retry-after")
+    headers = ", ".join(f"{k}: {v}" for k, v in response.headers.items() if k.lower() in interesting)
+    return f"{response.status_code}: {response.text[:400]} [{headers}]"
+
+
+def _post_part(
+    config: DeployConfig, url: str, target_folder: str, label: str, part: list[tuple[str, bytes]]
+) -> tuple[bool, Optional[int]]:
+    """POST one part. Returns (ok, refused_status); `refused_status` is set only for a 4xx the caller may split on."""
+    zip_bytes = zip_files(part)
+    mib = len(zip_bytes) / (1024 * 1024)
+    for attempt in range(_TRANSIENT_RETRIES + 1):
+        print(f"  ↑ {label}: {len(part)} file(s), {mib:.2f} MiB" + (f" (retry {attempt})" if attempt else ""))
+        try:
+            response = requests.post(
+                url,
+                files={"bundle": ("build.zip", zip_bytes, "application/zip")},
+                data={"target_folder": target_folder, "target_site": config.deploy_target},
+                headers={"X-Deploy-Token": config.deploy_token},
+                timeout=300,
+            )
+        except Exception as exc:
+            print(f"    ✗ upload exception: {exc}")
+            continue
+
+        if response.status_code == 200:
+            data = response.json()
+            print(f"    ✓ {data.get('uploaded', 0)} files uploaded")
+            failed = data.get("failed") or []
+            for f in failed:
+                print(f"    ✗ {f['path']}: {f['error']}")
+            return (not failed, None)
+
+        print(f"    ✗ {_describe_failure(response)}")
+        if response.status_code in (401, 403):
+            print("    Hint: check DEPLOY_TOKEN — it must match the value configured on the storage manager VPS.")
+            return (False, None)
+        if response.status_code in _SPLITTABLE_STATUSES:
+            return (False, response.status_code)
+        if response.status_code < 500:
+            return (False, None)
+    return (False, None)
+
+
+def _upload_part(
+    config: DeployConfig, url: str, target_folder: str, label: str, part: list[tuple[str, bytes]]
+) -> bool:
+    """Upload a part; if the API refuses its body (400/413), halve it and try each half."""
+    ok, refused = _post_part(config, url, target_folder, label, part)
+    if ok or refused is None:
+        return ok
+    if len(part) == 1:
+        name, data = part[0]
+        print(
+            f"    ✗ {name} ({len(data) / (1024 * 1024):.2f} MiB) is refused on its own — the bundle API's body limit is "
+            "below this file's size. Raise it on the storage manager, or serve this file from elsewhere."
+        )
+        return False
+    mid = len(part) // 2
+    print(f"    ↳ {label} refused ({refused}); splitting {len(part)} files into {mid} + {len(part) - mid}")
+    return _upload_part(config, url, target_folder, f"{label}a", part[:mid]) and _upload_part(
+        config, url, target_folder, f"{label}b", part[mid:]
+    )
+
+
 def deploy_bundle(config: DeployConfig, build_path: Path, dry_run: bool = False, out: Optional[Path] = None) -> bool:
     target_folder = config.deploy_folder or config.project_name
     url = f"{config.contabo_base_url.rstrip('/')}/api/deploy/{config.project_name}/bundle"
-    headers = {"X-Deploy-Token": config.deploy_token}
 
     print("Building zip archive...")
     if config.maps_api_key:
@@ -416,8 +556,11 @@ def deploy_bundle(config: DeployConfig, build_path: Path, dry_run: bool = False,
     else:
         print("  No CESIUM_ION_TOKEN env — GlobeView/MiniMap use the CartoCDN + ellipsoid fallback")
 
-    zip_bytes = build_zip(build_path, config.maps_api_key, config.cesium_ion_token)
+    files = collect_files(build_path, config.maps_api_key, config.cesium_ion_token)
+    zip_bytes = zip_files(files)
     print_bundle_report(zip_bytes)
+    parts = plan_parts(files, config.part_max_bytes)
+    print(f"Upload plan: {len(parts)} part(s), at most {config.part_max_bytes / (1024 * 1024):.1f} MiB raw each (index.html last)")
     if out is not None:
         out.write_bytes(zip_bytes)
         print(f"Wrote {out}")
@@ -426,31 +569,12 @@ def deploy_bundle(config: DeployConfig, build_path: Path, dry_run: bool = False,
         return True
 
     print("Uploading bundle...")
-    try:
-        response = requests.post(
-            url,
-            files={"bundle": ("build.zip", zip_bytes, "application/zip")},
-            data={"target_folder": target_folder, "target_site": config.deploy_target},
-            headers=headers,
-            timeout=300,
-        )
-    except Exception as exc:
-        print(f"  ✗ Upload exception: {exc}")
-        return False
-
-    if response.status_code == 200:
-        data = response.json()
-        print(f"  ✓ {data.get('uploaded', 0)} files uploaded")
-        if data.get("failed"):
-            print("  Failures:")
-            for f in data["failed"]:
-                print(f"    ✗ {f['path']}: {f['error']}")
-        return not data.get("failed")
-
-    print(f"  ✗ {response.status_code}: {response.text[:400]}")
-    if response.status_code in (401, 403):
-        print("  Hint: check DEPLOY_TOKEN — it must match the value configured on the storage manager VPS.")
-    return False
+    for i, part in enumerate(parts, start=1):
+        if not _upload_part(config, url, target_folder, f"part {i}/{len(parts)}", part):
+            if i < len(parts):
+                print(f"  ✗ stopping at part {i}/{len(parts)}: index.html was NOT uploaded, so the live page still references the previous build's files (assuming the API keeps files it was not sent).")
+            return False
+    return True
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:

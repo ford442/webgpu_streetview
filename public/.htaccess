@@ -9,6 +9,13 @@ DirectoryIndex index.html
   # Ensure only one COEP/COOP header value is sent.
   # Some hosts inject `require-corp` at a higher level, which conflicts with
   # Street View subresource requests and causes flicker/error overlays.
+  # `always unset` only clears the error-response table; a vhost-level plain `Header set`
+  # lives in the success table and survived it — test.1ink.us then sent COOP TWICE
+  # (`same-origin, same-origin` is not a valid value, so the browser ignores it and
+  # crossOriginIsolated is false). Unset both tables, then set once.
+  # scripts/verify-live.mjs fails the Deploy when the live page still carries a duplicate.
+  Header unset Cross-Origin-Embedder-Policy
+  Header unset Cross-Origin-Opener-Policy
   Header always unset Cross-Origin-Embedder-Policy
   Header always unset Cross-Origin-Opener-Policy
 
@@ -17,4 +24,11 @@ DirectoryIndex index.html
   # require-corp does (ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep).
   Header always set Cross-Origin-Embedder-Policy "credentialless"
   Header always set Cross-Origin-Opener-Policy "same-origin"
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Which commit is live must never be answered from a cache (scripts/verify-live.mjs).
+  <FilesMatch "^build-info\.json$">
+    Header always set Cache-Control "no-cache"
+  </FilesMatch>
 </IfModule>

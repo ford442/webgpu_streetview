@@ -77,7 +77,10 @@ jobs:
         # See docs/DEVELOPER_CONTEXT.md#6-chunk-strategy-bundle-size.
         run: |
           echo "### JS bundle sizes (gzip)" | tee -a "$GITHUB_STEP_SUMMARY"
-          npx --no-install source-map-explorer 'build/static/js/*.js' --html /tmp/bundle-report.html || true
+          # --no-border-checks: without it the explorer rejects every minified file ("generated column
+          # Infinity") and writes no report; the old `|| true` made that invisible.
+          npx --no-install source-map-explorer 'build/static/js/*.js' --no-border-checks --html /tmp/bundle-report.html >/dev/null \
+            || echo "::warning::source-map-explorer failed — no bundle report was written"
           for f in build/static/js/*.js; do
             gzip -c "$f" | wc -c | awk -v f="$f" '{printf "%s: %.1f kB\n", f, $1/1024}'
           done | tee -a "$GITHUB_STEP_SUMMARY"
